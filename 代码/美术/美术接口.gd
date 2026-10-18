@@ -154,7 +154,9 @@ static func apply_team_color(root: Node3D, color: Color) -> void:
 	#    这条路同阵营共享 ShaderMaterial，比旧实现"逐 surface duplicate"省内存也省 draw call。
 	var mk := _script(PATH_MAT_KIT)
 	if mk != null:
-		var changed: int = int(mk.call("apply", root, color))
+		# 带骨骼的是角色 → 挂反向外壳描边；建筑/道具不挂（draw call 会翻倍、黑边过粗）
+		var is_char: bool = _has_animation_player(root) or _find_skeleton(root) != null
+		var changed: int = int(mk.call("apply", root, color, is_char and OPEN_OUTLINE))
 		if changed > 0:
 			return
 	# ② 旧资产（GLB 里是 StandardMaterial3D 且没按 zone 命名）：退回逐 surface 染色。
@@ -294,6 +296,16 @@ static func attach_anim(root: Node3D) -> Node:
 ## 模型里有没有 AnimationPlayer（递归找一层够用：GLB 根下就是）
 static func _has_animation_player(root: Node) -> bool:
 	return _find_anim_player(root) != null
+
+
+static func _find_skeleton(n: Node) -> Skeleton3D:
+	if n is Skeleton3D:
+		return n as Skeleton3D
+	for c in n.get_children():
+		var found := _find_skeleton(c)
+		if found != null:
+			return found
+	return null
 
 
 static func _find_anim_player(n: Node) -> AnimationPlayer:

@@ -15,6 +15,15 @@ extends RefCounted
 
 const SHADER_PATH := "res://美术/着色器/卡通.gdshader"
 const PALETTE_PATH := "res://美术/调色板/联盟调色板.tres"
+## 角色描边（反向外壳）。只给带骨骼的角色挂 —— 建筑面积大、网格多，
+## 全挂会让 draw call 翻倍且黑边过粗（v1.1 已踩过这个坑）。
+const OUTLINE_PATH := "res://美术/着色器/描边.gdshader"
+const OUTLINE_WIDTH := 0.012
+## 是否给角色开描边。**默认关**，原因（实测，别轻易改回去）：
+##   这套描边是"按视距加粗"的反向外壳，RTS 镜头离地 30m 时单位只有约 40px 高，
+##   描边一挂就把整个人糊成一坨黑边，蓝披风/钢甲的层次全丢（截图对比一眼可见）。
+##   近景/过场/头像台想要描边时，运行时把 MatKit.outline_enabled 置 true 再刷新即可。
+static var outline_enabled: bool = false
 
 ## 队伍色区默认强度（调色板里可以逐 zone 覆盖）
 const DEFAULT_TEAM_STRENGTH := 0.9
@@ -22,6 +31,7 @@ const DEFAULT_TEAM_STRENGTH := 0.9
 const RAMP_STEPS := 4
 
 static var _materials: Dictionary = {}      # key -> ShaderMaterial
+static var _outline: ShaderMaterial = null
 static var _shader: Shader = null
 static var _palette: RtsPalette = null
 static var _enabled: bool = true
@@ -62,11 +72,14 @@ static func _get_shader() -> Shader:
 
 
 ## 取一个 zone 的材质（缓存共享）。team_color 只在 _team 区被用到。
-static func material_for(zone: String, team_color: Color, is_team_zone: bool) -> ShaderMaterial:
+static func material_for(zone: String, team_color: Color, is_team_zone: bool,
+		outline: bool = false) -> ShaderMaterial:
 	var pal := palette()
 	var key := zone
 	if is_team_zone:
 		key += "#" + team_color.to_html(false)
+	if outline:
+		key += "|o"
 	if _materials.has(key):
 		return _materials[key]
 	var sh := _get_shader()
@@ -87,9 +100,30 @@ static func material_for(zone: String, team_color: Color, is_team_zone: bool) ->
 	m.set_shader_parameter("rim_strength", 0.10)
 	m.set_shader_parameter("emission_color", _emission_for(zone))
 	m.set_shader_parameter("emission_energy", _emission_energy(zone))
+	if outline and outline_enabled:
+		var op := _outline_pass()
+		if op != null:
+			m.next_pass = op
 	m.resource_name = "MK_" + key
 	_materials[key] = m
 	return m
+
+
+## 描边 pass（全模型共用一份材质，别再按 zone 复制）
+static func _outline_pass() -> ShaderMaterial:
+	if _outline != null:
+		return _outline
+	if not ResourceLoader.exists(OUTLINE_PATH):
+		return null
+	var sh := load(OUTLINE_PATH) as Shader
+	if sh == null:
+		return null
+	_outline = ShaderMaterial.new()
+	_outline.shader = sh
+	_outline.set_shader_parameter("outline_width", OUTLINE_WIDTH)
+	_outline.set_shader_parameter("outline_color", Color(0.055, 0.060, 0.095))
+	_outline.resource_name = "MK_outline"
+	return _outline
 
 
 static func _emission_for(zone: String) -> Color:
@@ -109,7 +143,7 @@ static func _emission_energy(zone: String) -> float:
 
 
 ## 给整棵模型树换材质（幂等：已经换过的不会重复包一层）
-static func apply(root: Node3D, team_color: Color) -> int:
+static func apply(root: Node3D, team_color: Color, outline: bool = false) -> int:
 	if root == null or not _enabled:
 		return 0
 	var sh := _get_shader()
@@ -131,7 +165,7 @@ static func apply(root: Node3D, team_color: Color) -> int:
 			var zone := zone_of(nm)
 			if zone.is_empty():
 				continue          # 不是 M_ 协议里的材质：原样保留
-			var m := material_for(zone, team_color, is_team(nm))
+			var m := material_for(zone, team_color, is_team(nm), outline)
 			if m == null:
 				continue
 			mi.set_surface_override_material(i, m)
