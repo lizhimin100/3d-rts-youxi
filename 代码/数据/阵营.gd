@@ -48,11 +48,16 @@ func food_used() -> int:
 	return total
 
 
-## 人口上限（所有建筑 food_provided 之和）
+## 人口上限（**已完工**建筑的 food_provided 之和）。
+## 工地不算：农场刚放下就立刻 +8 人口的话，"建造过程"等于不存在，
+## 而且会把"人口满了再造农场"这条博弈直接抹掉。
 func food_cap() -> int:
 	var total: int = 0
 	for b in buildings:
 		if b == null or not is_instance_valid(b):
+			continue
+		var built: Variant = b.get("is_constructed")
+		if built is bool and not bool(built):
 			continue
 		var d: UnitDef = b.def
 		if d != null:
@@ -60,9 +65,27 @@ func food_cap() -> int:
 	return total
 
 
-## 人口是否够用
+## 训练队列已经"预定"的人口。
+## 只看已出队单位会漏掉排队中的部队：上限 20 / 已用 18 时还能连排 5 个 2 人口的兵，
+## 出队瞬间直接 28/20。把队列里的 food_cost 一起算进占用，排队时就该卡住。
+func food_reserved() -> int:
+	var total: int = 0
+	for b in buildings:
+		if b == null or not is_instance_valid(b):
+			continue
+		var q: Variant = b.get("train_queue")
+		if q == null or not (q is Array):
+			continue
+		for id in (q as Array):
+			var d: UnitDef = Cfg.unit(id)
+			if d != null:
+				total += d.food_cost
+	return total
+
+
+## 人口是否够用（已用 + 队列预定 + 本次申请）
 func has_food(amount: int) -> bool:
-	return food_used() + amount <= food_cap()
+	return food_used() + food_reserved() + amount <= food_cap()
 
 
 ## 资源是否够

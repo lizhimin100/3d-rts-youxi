@@ -88,6 +88,11 @@ var visual: UnitVisual = null
 var _moving: bool = false
 ## 移动指令被"还手/追击"打断过：敌人清完后要继续走完原目的地
 var _move_interrupted: bool = false
+## **指令目的地**：下达移动/攻击移动那一刻记下的终点。
+## 为什么要单独存一份：_goal 在追击时会被改成敌人坐标，打完了拿它"续行"就会跑偏
+## （实测：攻击移动半路打一架，收场后跑到世界原点，离终点 46m）。
+## 这个字段才是"玩家的原始命令"，任何战斗都不许覆盖它。
+var _order_goal: Vector3 = Vector3.ZERO
 ## 被打断前的原目的地（追击时 _goal 会被改写成敌人坐标，所以必须单独存）
 var _saved_goal: Vector3 = Vector3.ZERO
 var _goal: Vector3 = Vector3.ZERO
@@ -117,6 +122,8 @@ var _cast_id: StringName = &""
 var _cast_pos: Vector3 = Vector3.ZERO
 var _cast_target: Node3D = null
 var _cast_t: float = 0.0
+## 施法结束后要恢复的指令（自动施法不能把部队的攻击/移动指令吃掉）
+var _cast_return_order: int = RtsConst.Order.NONE
 
 # 采集
 var _gather_node: Node3D = null
@@ -143,6 +150,11 @@ var _was_gathering: bool = false
 
 # 建造
 var _build_site: Node3D = null
+## 送资源要去的交汇点
+var _return_drop: Node3D = null
+## 上一次送达的数量（提示文案用）
+var _carry_last_gold: int = 0
+var _carry_last_wood: int = 0
 
 # 死亡
 var _dying: bool = false
@@ -379,6 +391,8 @@ func order_move(pos: Vector3) -> void:
 	order = RtsConst.Order.MOVE
 	target = null
 	_flee_t = 0.0
+	_move_interrupted = false
+	_order_goal = Vector3(pos.x, 0.0, pos.z)
 	_go_to(pos, true)
 
 
@@ -389,6 +403,7 @@ func order_attack(t: Node3D) -> void:
 	order = RtsConst.Order.ATTACK
 	target = t
 	_flee_t = 0.0
+	_move_interrupted = false
 	_go_to(t.global_position, true)
 
 
@@ -399,6 +414,8 @@ func order_attack_move(pos: Vector3) -> void:
 	order = RtsConst.Order.ATTACK_MOVE
 	target = null
 	_flee_t = 0.0
+	_move_interrupted = false
+	_order_goal = Vector3(pos.x, 0.0, pos.z)
 	_go_to(pos, true)
 
 
@@ -410,6 +427,7 @@ func order_stop() -> void:
 	target = null
 	_gather_node = null
 	_build_site = null
+	_return_drop = null
 	_flee_t = 0.0
 	_swinging = false
 	_patrol_active = false
@@ -442,6 +460,8 @@ func order_patrol(pos: Vector3) -> void:
 	target = null
 	_swinging = false
 	state = RtsConst.State.MOVE
+	_move_interrupted = false
+	_order_goal = _patrol_b
 	_go_to(_patrol_b, true)
 
 
@@ -476,30 +496,42 @@ func order_gather(node: Node3D) -> void:
 	_go_to(node.global_position, true)
 
 
-## 建造：先扣钱，再走过去盖
-func order_build(building_def: UnitDef, pos: Vector3) -> void:
+## 建造：**幂等** —— 同一个点上已经有人开工，就只是"加入"，不再扣钱、不再新建。
+##
+## 为什么必须幂等（两个实测 bug 都出在这）：
+##   · 指令系统"放置建筑"时已经扣过一次钱，每个农民又各调一次 order_build，
+##     老代码按人头重复扣 —— 1 个农民造 80 金的农场，实测扣了 160。
+##   · 工地一旦落地 `is_buildable` 立刻变 false，第 2/3 个农民被拦下后**静默不动**。
+## 所以顺序改成：先找附近（水平 0.8m）同阵营/同类型/没完工的工地 → 有就加入；
+##   没有才走 钱够不够 → 地形能不能放 → 扣钱 → 落工地。整支队伍只扣一次钱。
+func order_build(building_def: UnitDef, pos: Vector3) -> Node3D:
 	if _dying or building_def == null:
-		return
+		return null
 	if def == null or not RtsWorld.is_worker_def(def) or faction == null:
-		return
+		return null
 
-	# 钱不够 / 位置不合法 → 给玩家提示，别默默失败
+	# ① 已经有人在同一个点开工：直接加入，绝不再扣一次钱
+	var existing: Node3D = _find_open_site(building_def, pos)
+	if existing != null and order_build_site(existing):
+		return existing
+
+	# ② 钱不够 / 位置不合法 → 给玩家提示，别默默失败
 	if not Game.can_afford(faction, building_def.id):
 		if faction.is_player:
 			Game.toast("资源不足：%s" % building_def.display_name, Color(1, 0.5, 0.4))
-		return
+		return null
 	var fp: Vector2i = building_def.footprint
 	if fp == Vector2i.ZERO:
 		fp = Vector2i(1, 1)
 	if not RtsWorld.is_buildable(pos, fp):
 		if faction.is_player:
 			Game.toast("这里不能建造", Color(1, 0.6, 0.35))
-		return
-	# 真扣钱
+		return null
+	# 真扣钱：同一块工地整支队伍只扣这一次
 	if not Game.pay(faction, building_def.id):
 		if faction.is_player:
 			Game.toast("资源不足：%s" % building_def.display_name, Color(1, 0.5, 0.4))
-		return
+		return null
 
 	var site: RtsBuilding = RtsBuilding.new()
 	site.name = "建造中_%s" % String(building_def.id)
@@ -507,7 +539,7 @@ func order_build(building_def: UnitDef, pos: Vector3) -> void:
 	if parent == null:
 		parent = get_parent() as Node3D
 	if parent == null:
-		return
+		return null
 	parent.add_child(site)
 	site.global_position = RtsWorld.ground(pos)
 	site.setup_construction(faction, building_def)
@@ -518,7 +550,82 @@ func order_build(building_def: UnitDef, pos: Vector3) -> void:
 	_build_site = site
 	order = RtsConst.Order.BUILD
 	_flee_t = 0.0
+	_swinging = false
 	_go_to(site.global_position, true)
+	return site
+
+
+## 找 pos 附近（水平 0.8m 内）同阵营、同类型、还没完工的工地。
+## 走 Game 的注册表而不是扫场景：工地本来就在 _units 里。
+func _find_open_site(building_def: UnitDef, pos: Vector3) -> Node3D:
+	if building_def == null or faction == null:
+		return null
+	for u in Game.all_units():
+		if u == null or not is_instance_valid(u):
+			continue
+		var b := u as RtsBuilding
+		if b == null or b.def == null:
+			continue
+		if b.faction != faction or b.def.id != building_def.id:
+			continue
+		if b.is_constructed or not b.is_alive():
+			continue
+		var dx: float = b.global_position.x - pos.x
+		var dz: float = b.global_position.z - pos.z
+		if dx * dx + dz * dz <= 0.8 * 0.8:
+			return b
+	return null
+
+
+## 加入一块**已经在施工**的工地（第 2/3 个农民走这条）：
+## 不新建、不扣费、也不再查地形 —— 活儿直接接着干，进度按人头叠加。
+## 返回是否真的接上了（地块已完成 / 已被拆就返回 false）。
+func order_build_site(site: Node3D) -> bool:
+	if _dying or site == null or not is_instance_valid(site):
+		return false
+	if def == null or not RtsWorld.is_worker_def(def):
+		return false
+	var b := site as RtsBuilding
+	if b == null or b.is_constructed or not b.is_alive():
+		return false
+	_build_site = site
+	order = RtsConst.Order.BUILD
+	_flee_t = 0.0
+	_swinging = false
+	_go_to(site.global_position, true)
+	return true
+
+
+## 送资源回基地：走到最近的交汇点（大本营），把身上的东西**真的入账**。
+## 以前这个接口是空的 —— 右键自家建筑，农民走过去站着，钱照旧挂在身上。
+## 现在：到点 _deposit_carry()；送完如果还有采集点，自己回去接着采。
+func order_return_res(drop: Node3D = null) -> void:
+	if _dying or faction == null:
+		return
+	if def == null or not RtsWorld.is_worker_def(def):
+		return
+	var target_drop: Node3D = drop
+	if not _alive_node(target_drop):
+		target_drop = _nearest_dropoff()
+	if target_drop == null:
+		if faction.is_player:
+			Game.toast("附近没有交汇点（大本营）", Color(1.0, 0.6, 0.35))
+		return
+	_return_drop = target_drop
+	order = RtsConst.Order.RETURN_RES
+	target = null
+	_swinging = false
+	_flee_t = 0.0
+	_go_to(target_drop.global_position, true)
+
+
+## 节点是否还活着（建筑/资源点都实现 is_alive；没有这个接口就别拦）
+func _alive_node(n: Node3D) -> bool:
+	if n == null or not is_instance_valid(n):
+		return false
+	if n.has_method("is_alive"):
+		return bool(n.call("is_alive"))
+	return true
 
 
 ## 释放技能
@@ -534,6 +641,7 @@ func order_cast(ability: StringName, pos: Vector3, t: Node3D = null) -> void:
 			Game.toast("技能冷却中", Color(0.7, 0.8, 1.0))
 		return
 	order = RtsConst.Order.CAST
+	_cast_return_order = RtsConst.Order.NONE  # 玩家主动点的技能：放完就待机
 	_stop_moving()
 	if not RtsSkills.begin_cast(self, ability, pos, t):
 		order = RtsConst.Order.NONE
@@ -575,6 +683,8 @@ func _process(delta: float) -> void:
 	_update_move(dt)
 	_update_attack(dt)
 	_update_auto_cast(dt)
+	# 状态归约：前面各分支自己写 state，这里做唯一出口（见 _settle_state）
+	_settle_state()
 
 	_update_separation(dt)
 	_rescue_if_inside_wall()
@@ -632,7 +742,8 @@ func _update_order(dt: float) -> void:
 					state = RtsConst.State.ATTACK
 				else:
 					_move_interrupted = false
-					_go_to(_saved_goal, true)
+					# 续行只认原始命令的目的地（_saved_goal 可能被追击覆盖过）
+					_go_to(_order_goal, true)
 			else:
 				order = RtsConst.Order.NONE
 				state = RtsConst.State.IDLE
@@ -644,6 +755,8 @@ func _update_order(dt: float) -> void:
 			_order_gather(dt)
 		RtsConst.Order.BUILD:
 			_order_build_tick(dt)
+		RtsConst.Order.RETURN_RES:
+			_order_return_res_tick(dt)
 		RtsConst.Order.HOLD:
 			state = RtsConst.State.IDLE
 			_acquire(dt)
@@ -652,6 +765,26 @@ func _update_order(dt: float) -> void:
 			if target == null or not is_instance_valid(target) or not target.is_alive():
 				target = null
 			_acquire(dt)
+
+
+## **状态归约（每帧唯一出口）**：把前面各分支零散写的 `state` 收一次口。
+##
+## 为什么需要：`_begin_swing()` 会把 state 设成 ATTACK，但"待机单位自动还击"走的是
+## `_update_order` 的 default 分支 —— 那里没人负责把 state 改回来。目标一死，
+## 单位就永远举着刀站着（动画停在 attack），HUD 也会以为它还在打。
+## 这里只做"没有事实支撑就必须退出"，绝不凭空造状态：
+##   · 还在前摇 / 目标仍在射程内 → 保留 ATTACK
+##   · 没在移动却挂着 MOVE   → 回 IDLE
+func _settle_state() -> void:
+	if _dying or state == RtsConst.State.DEAD or state == RtsConst.State.CAST:
+		return
+	if state == RtsConst.State.ATTACK:
+		if _swinging or _target_in_reach():
+			return
+		state = RtsConst.State.IDLE
+		return
+	if state == RtsConst.State.MOVE and not _moving:
+		state = RtsConst.State.IDLE
 
 
 ## 攻击指定目标：追到射程内
@@ -672,11 +805,20 @@ func _order_attack_move(dt: float) -> void:
 	_acquire(dt)
 	if target != null and is_instance_valid(target) and target.is_alive():
 		return
-	if not _moving:
-		order = RtsConst.Order.NONE
-		state = RtsConst.State.IDLE
-	else:
+	if _moving:
 		state = RtsConst.State.MOVE
+		return
+	# 打完了：接着走完**原始命令的目的地**。
+	# 没有这段的话，半路打一架就 order = NONE 原地解散 —— 玩家下达的攻击移动
+	# 会被一次遭遇战吃掉（_update_attack 停下还手时 _moving 已经是 false）。
+	# 注意用 _order_goal 而不是 _saved_goal：_goal 在追击时已被改成敌人坐标。
+	if _order_goal.length_squared() > 0.0001 and _flat_dist(_order_goal) > 1.2:
+		_move_interrupted = false
+		_go_to(_order_goal, true)
+		state = RtsConst.State.MOVE
+		return
+	order = RtsConst.Order.NONE
+	state = RtsConst.State.IDLE
 
 
 ## 调试/自检用：当前采集阶段（-1 = 不在采集）
@@ -792,6 +934,42 @@ func _order_build_tick(dt: float) -> void:
 	state = RtsConst.State.BUILD
 	_face_pos(site.global_position, dt)
 	site.advance_construction(dt, self)
+
+
+## 送资源：走到交汇点 → 入账 → 手上有活就回去接着干
+func _order_return_res_tick(dt: float) -> void:
+	if faction == null:
+		order = RtsConst.Order.NONE
+		state = RtsConst.State.IDLE
+		return
+	var drop: Node3D = _return_drop
+	if not _alive_node(drop):
+		drop = _nearest_dropoff()
+		_return_drop = drop
+		if drop == null:
+			order = RtsConst.Order.NONE
+			state = RtsConst.State.IDLE
+			return
+		_go_to(drop.global_position, true)
+	if _flat_dist(drop.global_position) > _stand_off(drop) + ARRIVE_SLACK:
+		state = RtsConst.State.MOVE
+		_go_to(drop.global_position)
+		return
+	_stop_moving()
+	state = RtsConst.State.RETURN
+	_face_pos(drop.global_position, dt)
+	var got: bool = _deposit_carry()
+	_return_drop = null
+	order = RtsConst.Order.NONE
+	state = RtsConst.State.IDLE
+	if got and faction != null and faction.is_player:
+		Game.toast("资源已送达 → 金 +%d 木 +%d" % [_carry_last_gold, _carry_last_wood], Color(0.85, 0.92, 0.65))
+	# 采集中被叫回来送钱的：送完自己回去接着采
+	if _gather_node != null and is_instance_valid(_gather_node):
+		_gather_phase = GatherPhase.TO_NODE
+		_gather_t = 0.0
+		order = RtsConst.Order.GATHER
+		_go_to(_gather_node.global_position, true)
 
 
 ## 逃跑结束：回去继续干活
@@ -1116,7 +1294,20 @@ func _stand_off(t: Node3D) -> float:
 	return maxf(r, 0.6)
 
 
-## 自动索敌：走 Game 的注册表（不遍历场景），带分片
+## 当前指令会不会"追出去"（决定索敌半径，也决定够不着时追不追）
+func _may_pursue() -> bool:
+	if not is_mobile():
+		return false
+	return order == RtsConst.Order.ATTACK \
+			or order == RtsConst.Order.ATTACK_MOVE \
+			or order == RtsConst.Order.MOVE
+
+
+## 自动索敌：走 Game 的注册表（不遍历场景），带分片。
+##
+## ⚠ 待机/警戒**只认射程内的敌人**：老代码对任何指令都用 acquire_range（步兵 11m、
+##   攻击距离 1.35m），待机会锁一个够不着的目标；而 `_acquire` 开头"已有目标就返回"
+##   又让它再也不索敌 —— 结果就是站在那儿对着 9m 外的敌人发呆。
 func _acquire(dt: float) -> void:
 	if def == null or def.acquire_range <= 0.0:
 		return
@@ -1126,7 +1317,14 @@ func _acquire(dt: float) -> void:
 	if _think_t > 0.0:
 		return
 	_think_t = THINK_SLICE
-	target = Game.find_nearest_enemy(global_position, faction, def.acquire_range)
+	var pursue: bool = _may_pursue()
+	var radius: float = def.acquire_range if pursue else def.attack_range
+	if radius <= 0.0:
+		return
+	var cand: Node3D = Game.find_nearest_enemy(global_position, faction, radius)
+	if cand != null and not pursue and _flat_dist(cand.global_position) > _attack_reach(cand):
+		cand = null
+	target = cand
 
 
 ## 攻击循环：冷却 → 前摇（攻击动画）→ 出手 → 后摇
@@ -1154,20 +1352,22 @@ func _update_attack(dt: float) -> void:
 	var dist: float = _flat_dist(target.global_position)
 
 	if dist > reach:
-		# 不在射程：攻击/攻击移动/行军途中都会扑上去（行军的原目的地先记下来，打完再走）
-		if is_mobile():
-			if order == RtsConst.Order.ATTACK or order == RtsConst.Order.ATTACK_MOVE:
-				_go_to(target.global_position)
-				state = RtsConst.State.MOVE
-			elif order == RtsConst.Order.MOVE:
-				_interrupt_move_for_combat()
-				_go_to(target.global_position)
-				state = RtsConst.State.MOVE
+		# 不在射程：会追的指令扑上去；待机/警戒/建筑直接**放掉锁定**。
+		# 不放掉的话，`_acquire` 的"已有目标就返回"会让它永远盯着一个够不着的敌人，
+		# 既不打也不走 —— 这就是"待机单位看到 9m 外敌人却一动不动"的根因。
+		if not _may_pursue():
+			target = null
+			return
+		# 行军 / 攻击移动：原目的地先记下来，打完还要接着走
+		if order == RtsConst.Order.MOVE or order == RtsConst.Order.ATTACK_MOVE:
+			_interrupt_move_for_combat()
+		_go_to(target.global_position)
+		state = RtsConst.State.MOVE
 		return
 
 	# 到射程：停下、转向、开打
-	if order == RtsConst.Order.MOVE:
-		# 收到移动指令的部队只"停下还手"，打完要继续走（不能把指令吃掉）
+	if order == RtsConst.Order.MOVE or order == RtsConst.Order.ATTACK_MOVE:
+		# 收到移动/攻击移动的部队只"停下还手"，打完要继续走（不能把指令吃掉）
 		_interrupt_move_for_combat()
 	_stop_moving()
 	_face_pos(target.global_position, dt)
@@ -1239,7 +1439,12 @@ func _update_auto_cast(_dt: float) -> void:
 	# 只在目标进入普攻射程内才自动开火（别隔半个地图丢）
 	if _flat_dist(target.global_position) > maxf(def.attack_range, 1.0):
 		return
-	RtsSkills.begin_cast(self, ab, target.global_position, target)
+	# 记住当前指令：`_update_cast` 收尾时会还回来。
+	# 不记的话，法师自动放完一个火球就把 ATTACK/ATTACK_MOVE 清成 NONE ——
+	# 表现是"打一半突然站住不动了"。
+	var keep: int = order
+	if RtsSkills.begin_cast(self, ab, target.global_position, target):
+		_cast_return_order = keep
 
 
 ## 施法前摇
@@ -1252,8 +1457,11 @@ func _update_cast(dt: float) -> void:
 	var tgt: Node3D = _cast_target
 	_cast_id = &""
 	_cast_target = null
+	_cast_id = &""
+	_cast_target = null
 	state = RtsConst.State.IDLE
-	order = RtsConst.Order.NONE
+	# 恢复施法前的指令：主动施法记的是 NONE，自动施法记的是原来的 ATTACK/ATTACK_MOVE…
+	order = _cast_return_order
 	RtsSkills.release(self, id, pos, tgt)
 
 
@@ -1353,8 +1561,23 @@ func _nearest_dropoff() -> Node3D:
 	return best
 
 
-## 卸货
+## 只记账：把身上的东西入账（不碰采集状态机；采集与送资源共用）
+func _deposit_carry() -> bool:
+	if _carry <= 0 or faction == null:
+		return false
+	var gold: int = _carry if _carry_kind == RtsConst.Harvest.GOLD else 0
+	var wood: int = _carry if _carry_kind == RtsConst.Harvest.WOOD else 0
+	Game.add_resource(faction, gold, wood)
+	_carry_last_gold = gold
+	_carry_last_wood = wood
+	_carry = 0
+	_deposit_count += 1
+	return true
+
+
+## 卸货（采集状态机的一环）
 func _deposit() -> void:
+	_deposit_carry()
 	if _carry > 0:
 		var gold: int = _carry if _carry_kind == RtsConst.Harvest.GOLD else 0
 		var wood: int = _carry if _carry_kind == RtsConst.Harvest.WOOD else 0

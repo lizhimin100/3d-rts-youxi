@@ -583,6 +583,8 @@ func _tags_text(target: Node3D, def: UnitDef) -> String:
 			parts.append("建造中 %d%%" % int(clampf(b.progress, 0.0, 1.0) * 100.0))
 		elif not b.train_queue.is_empty():
 			parts.append("训练队列 %d" % b.train_queue.size())
+		if b.is_researching():
+			parts.append("研究中 %d%%" % int(clampf(b.research_progress(), 0.0, 1.0) * 100.0))
 		parts.append("占地 %d×%d" % [def.footprint.x, def.footprint.y])
 	elif def.is_harvestable():
 		parts.append("可采集")

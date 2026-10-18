@@ -22,6 +22,8 @@ var train_progress: float = 0.0
 ## 集结点
 var rally_point: Vector3 = Vector3.ZERO
 var has_rally: bool = false
+## 集结点小旗（地面上的旗杆 + 旗面 + 落点圈，设了才出现）
+var _rally_flag: Node3D = null
 
 # 研究
 var _research_id: StringName = &""
@@ -207,7 +209,7 @@ func _spawn_trained(id: StringName) -> void:
 	if u == null:
 		return
 	if has_rally and u.has_method("order_move"):
-		u.call("order_move", rally_point)
+		u.call("order_move", RtsWorld.walkable_pos(rally_point))
 
 
 ## 出兵点：建筑正前方（-Z 侧）散开
@@ -225,17 +227,95 @@ func spawn_point() -> Vector3:
 	return RtsWorld.walkable_pos(p)
 
 
-## 设集结点
+## 设集结点：同时在地面立一面小旗（旗是建筑的孩子，建筑没了旗跟着没）
 func set_rally(pos: Vector3) -> void:
-	rally_point = pos
+	rally_point = RtsWorld.walkable_pos(pos)
 	has_rally = true
+	_refresh_rally_flag()
+
+
+## 拔掉集结点（命令卡的"取消集结点"用；旗子跟着消失）
+func clear_rally() -> void:
+	has_rally = false
+	rally_point = Vector3.ZERO
+	_refresh_rally_flag()
+
+
+## 同步小旗的显隐与位置（懒创建：没设过集结点就不花这个节点）
+func _refresh_rally_flag() -> void:
+	if not has_rally:
+		if _rally_flag != null and is_instance_valid(_rally_flag):
+			_rally_flag.visible = false
+		return
+	if _rally_flag == null or not is_instance_valid(_rally_flag):
+		_rally_flag = _build_rally_flag()
+	if _rally_flag == null:
+		return
+	_rally_flag.visible = true
+	_rally_flag.global_position = RtsWorld.ground(rally_point)
+
+
+## 地面小旗：旗杆 + 阵营色旗面 + 落点圈。纯代码生成，吃 faction.color。
+## 为什么不用 GLB：它得随阵营换色，而且要能随时拔掉 —— 代码生成最省事。
+func _build_rally_flag() -> Node3D:
+	var root := Node3D.new()
+	root.name = "集结点旗"
+	add_child(root)
+
+	var col: Color = faction.color if faction != null else Color(0.90, 0.75, 0.30)
+	var metal := StandardMaterial3D.new()
+	metal.albedo_color = Color(0.30, 0.28, 0.26)
+	metal.roughness = 0.85
+	var cloth := StandardMaterial3D.new()
+	cloth.albedo_color = col
+	cloth.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	cloth.cull_mode = BaseMaterial3D.CULL_DISABLED
+	cloth.no_depth_test = false
+
+	# 旗杆
+	var pole := MeshInstance3D.new()
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = 0.045
+	cyl.bottom_radius = 0.045
+	cyl.height = 2.0
+	cyl.radial_segments = 6
+	pole.mesh = cyl
+	pole.material_override = metal
+	pole.position = Vector3(0.0, 1.0, 0.0)
+	pole.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(pole)
+
+	# 旗面
+	var flag := MeshInstance3D.new()
+	var quad := QuadMesh.new()
+	quad.size = Vector2(0.86, 0.52)
+	flag.mesh = quad
+	flag.material_override = cloth
+	flag.position = Vector3(0.45, 1.62, 0.0)
+	flag.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(flag)
+
+	# 地面落点圈：告诉玩家"兵出来会站这儿"
+	var ring := MeshInstance3D.new()
+	var torus := TorusMesh.new()
+	torus.inner_radius = 0.55
+	torus.outer_radius = 0.76
+	torus.rings = 16
+	torus.ring_segments = 6
+	ring.mesh = torus
+	ring.material_override = cloth
+	ring.position = Vector3(0.0, 0.05, 0.0)
+	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(ring)
+	return root
 
 
 # ===========================================================================
 # 研究（铁匠铺）
 # ===========================================================================
 
-## 开始一项研究（attack_up / armor_up）。可以反复升，但不能并行。
+## 开始一项研究（attack_up / armor_up）：**当场扣费**，可以逐级升，但不能并行。
+## 返回 false 的原因由调用方用 research_block_reason() 解释（界面提示用）。
 func research(id: StringName) -> bool:
 	if def == null or not is_constructed:
 		return false
@@ -245,9 +325,43 @@ func research(id: StringName) -> bool:
 		return false
 	if not RtsCombat.has_research(id):
 		return false
+	var rd: ResearchDef = Cfg.research(id)
+	if rd == null:
+		return false
+	if faction != null and RtsCombat.research_level(faction, id) >= maxi(rd.max_level, 1):
+		return false
+	if faction != null:
+		if faction.gold < rd.gold_cost or faction.wood < rd.wood_cost:
+			return false
+		faction.gold -= rd.gold_cost
+		faction.wood -= rd.wood_cost
+		Game.resources_changed.emit(faction)
 	_research_id = id
 	_research_t = 0.0
 	return true
+
+
+## 研究为什么点不了的中文原因（空串 = 可以研究）。界面/提示共用这一处判定。
+func research_block_reason(id: StringName) -> String:
+	if def == null or not is_constructed:
+		return "建筑还没完工"
+	if not def.researches.has(id):
+		return "这里不能研究这项"
+	var rd: ResearchDef = Cfg.research(id)
+	if rd == null:
+		return "未定义的研究"
+	if _research_id != &"":
+		return "已有研究在进行中"
+	if faction != null and RtsCombat.research_level(faction, id) >= maxi(rd.max_level, 1):
+		return "%s 已满级" % rd.display_name
+	if faction != null and (faction.gold < rd.gold_cost or faction.wood < rd.wood_cost):
+		return "资源不足：%s" % rd.display_name
+	return ""
+
+
+## 当前正在研究的研究 id（空闲返回空串）
+func current_research() -> StringName:
+	return _research_id
 
 
 ## 是否正在研究
@@ -264,8 +378,9 @@ func research_progress() -> float:
 func _tick_research(dt: float) -> void:
 	if _research_id == &"":
 		return
-	var total: float = maxf((def.train_time if def != null else 20.0)
-			* _train_time_multiplier(), 1.0)
+	var rd: ResearchDef = Cfg.research(_research_id)
+	var base_time: float = rd.research_time if rd != null else 25.0
+	var total: float = maxf(base_time * _train_time_multiplier(), 1.0)
 	_research_t += dt / total
 	if _research_t < 1.0:
 		return

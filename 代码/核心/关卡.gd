@@ -246,8 +246,11 @@ func _spawn_faction_start(cfg: GameConfig, faction: RtsFaction,
 		pos = snap_grid(pos)
 		var b: Node3D = Game.spawn_unit(faction, id, pos, self)
 		if b != null:
-			# 朝向固定为 0：建筑一律轴对齐，**不许有任何偏航角**（歪七扭八就是被人骂的那个）
-			b.rotation = Vector3(0.0, 0.0, 0.0)
+			# 建筑一律轴对齐（歪七扭八就是被人骂的那个），但**要转 180°**：
+			# 模型的正门在 Blender +Y（导入 Godot 后是 -Z），而镜头是从南往北看，
+			# 不转的话玩家永远对着基地的屁股 —— 大门、旗子、门楼全在背面。
+			# 180° 仍然轴对齐，占地是对称的，不影响寻路。
+			b.rotation = Vector3(0.0, PI, 0.0)
 			mark_footprint(b)
 			_add_banners(b, faction)
 			if b.has_method("set_constructed"):

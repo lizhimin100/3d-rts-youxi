@@ -187,6 +187,8 @@ extends Resource
 # ---------------------------------------------------------------------------
 ## id → UnitDef
 var units: Dictionary = {}
+## id → ResearchDef（铁匠铺升级，运行时由 单位表.gd 填充）
+var researches: Dictionary = {}
 
 
 ## 取一个单位定义（找不到返回 null 并警告）
@@ -200,6 +202,14 @@ func unit_def(id: StringName) -> UnitDef:
 ## 全部已定义 id
 func unit_ids() -> Array:
 	return units.keys()
+
+
+## 取一项研究定义（找不到返回 null 并警告）
+func research_def(id: StringName) -> ResearchDef:
+	var r: ResearchDef = researches.get(id, null)
+	if r == null:
+		push_warning("[Cfg] 未定义的研究 id: %s" % id)
+	return r
 
 
 ## 按种子生成一档默认难度数组（若 .tres 里没配）

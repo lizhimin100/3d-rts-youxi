@@ -13,6 +13,9 @@ extends RefCounted
 
 const PATH_MODEL_FACTORY := "res://代码/美术/模型工厂.gd"
 const PATH_PROC_ANIM := "res://代码/美术/程序动画.gd"
+## v3：真骨骼动画播放器 + 参数化材质库（有 AnimationPlayer 的模型走这一条）
+const PATH_SKEL_ANIM := "res://代码/美术/骨骼动画.gd"
+const PATH_MAT_KIT := "res://代码/美术/材质库.gd"
 const PATH_VFX := "res://代码/美术/特效生成.gd"
 const PATH_ENV := "res://美术/环境/战斗环境.tres"
 const PATH_THEME := "res://美术/主题/游戏主题.tres"
@@ -20,6 +23,9 @@ const PATH_MAT_CHAR := "res://美术/材质/角色主材质.tres"
 ## 清空静态缓存（退出时调用，避免引擎报 "resources still in use at exit"）
 static func clear_cache() -> void:
 	_cache.clear()
+	var mk := _script(PATH_MAT_KIT)
+	if mk != null:
+		mk.call("clear_cache")
 
 
 ## 是否开启反向外壳描边（每 surface 多一次 draw call，性能敏感时关掉）
@@ -144,10 +150,28 @@ static func _walk_apply(n: Node, mat: Material) -> void:
 static func apply_team_color(root: Node3D, color: Color) -> void:
 	if root == null:
 		return
-	# 只给"角色"开描边（角色根下有 Body 关节节点）。
-	# 建筑/道具不开：它们网格多、面积大，开描边会让 draw call 翻倍且黑边过粗。
+	# ① v3 资产（材质命名 M_<zone>）：交给材质库按 zone 换卡通材质 + 注入队伍色。
+	#    这条路同阵营共享 ShaderMaterial，比旧实现"逐 surface duplicate"省内存也省 draw call。
+	var mk := _script(PATH_MAT_KIT)
+	if mk != null:
+		var changed: int = int(mk.call("apply", root, color))
+		if changed > 0:
+			return
+	# ② 旧资产（GLB 里是 StandardMaterial3D 且没按 zone 命名）：退回逐 surface 染色。
 	var is_character: bool = root.get_node_or_null("Body") != null
 	_walk_tint(root, color, is_character and OPEN_OUTLINE)
+
+
+## 按调色板给整棵树换材质（与 apply_team_color 等价，名字更直白；供设置界面/换肤用）
+static func apply_palette(root: Node3D, team_color: Color) -> void:
+	apply_team_color(root, team_color)
+
+
+## 运行时改一个 zone 的主色：全场已加载的同 zone 部件立刻变色（不用重载场景）
+static func set_zone_color(zone: String, color: Color) -> void:
+	var mk := _script(PATH_MAT_KIT)
+	if mk != null:
+		mk.call("set_zone_color", zone, color)
 
 
 ## 递归给每个网格实例套"队伍色 + 描边"。
@@ -237,6 +261,22 @@ static func _outline_material() -> Material:
 static func attach_anim(root: Node3D) -> Node:
 	if root == null:
 		return null
+	# ① v3 骨骼动画：模型里带 AnimationPlayer 就用它（宁可停在 T-pose 也别播假动画）
+	if _has_animation_player(root):
+		var sk := _script(PATH_SKEL_ANIM)
+		if sk != null:
+			var inst_s: Variant = sk.call("new")
+			var ns := inst_s as Node
+			if ns != null:
+				root.add_child(ns)
+				if ns.has_method("bind"):
+					ns.call("bind", root)
+				if ns.has_method("has_state") and bool(ns.call("has_state", "idle")):
+					return ns
+				# 绑不上（没动画）就退回程序动画，别留一个空壳
+				root.remove_child(ns)
+				ns.queue_free()
+	# ② 旧资产：程序动画（按 Body 关节层级摆姿态）
 	var s := _script(PATH_PROC_ANIM)
 	if s == null:
 		return null
@@ -251,6 +291,21 @@ static func attach_anim(root: Node3D) -> Node:
 
 
 ## 安全地切换动画状态（动画节点为 null 时静默跳过）
+## 模型里有没有 AnimationPlayer（递归找一层够用：GLB 根下就是）
+static func _has_animation_player(root: Node) -> bool:
+	return _find_anim_player(root) != null
+
+
+static func _find_anim_player(n: Node) -> AnimationPlayer:
+	if n is AnimationPlayer:
+		return n as AnimationPlayer
+	for c in n.get_children():
+		var found := _find_anim_player(c)
+		if found != null:
+			return found
+	return null
+
+
 static func set_anim(anim_node: Node, state: String, speed_ratio: float = 1.0) -> void:
 	if anim_node == null or not is_instance_valid(anim_node):
 		return

@@ -14,8 +14,11 @@ extends Node
 ## 所有调用都走 §6 冻结的 order_* 接口；对尚未实现的接口用 has_method 兜底，
 ## 保证在单位脚本还是骨架时也不会崩。
 ##
-## 资源扣费纪律：训练/建造都在**下达那一刻**扣费（魔兽3 的做法），
-## 失败给出中文提示，绝不让玩家白点。
+## 资源扣费纪律：
+##   · 训练：本系统在指令下达那一刻扣（request_train）。
+##   · 建造：本系统**只校验、不扣钱**；钱由 RtsUnit.order_build 在工地成立那一刻扣一次。
+##     （以前这里也 Game.pay 一次、order_build 再扣一次，造 80 金的农场实扣 160 —— 已修。）
+## 失败一律给中文提示，绝不让玩家白点。
 
 ## 等待落点的状态
 enum Pending {
@@ -23,6 +26,7 @@ enum Pending {
 	ATTACK_MOVE = 1,
 	BUILD = 2,
 	CAST = 3,
+	RALLY = 4,
 }
 
 ## 编队间距（米）
@@ -36,6 +40,8 @@ var pending: int = Pending.NONE
 var pending_build: StringName = &""
 ## 等待施法的技能 id
 var pending_ability: StringName = &""
+## 等待设置集结点的建筑（null = 用当前选中的建筑）
+var _rally_building: Node = null
 
 ## 建造预览（半透明盒子）
 var _ghost: MeshInstance3D = null
@@ -79,6 +85,9 @@ func pending_prompt() -> String:
 			return "左键选择建造位置：%s（右键取消）" % (d.display_name if d != null else String(pending_build))
 		Pending.CAST:
 			return "左键选择技能目标点（右键取消）"
+		Pending.RALLY:
+			var rb := _rally_target(_rally_building)
+			return "左键选择集结点：%s（右键取消）" % (rb.def.display_name if rb != null and rb.def != null else "建筑")
 		_:
 			return ""
 
@@ -88,6 +97,8 @@ func request_cancel() -> void:
 	pending = Pending.NONE
 	pending_build = &""
 	pending_ability = &""
+	_rally_building = null
+	_patrol_next = false
 	_free_ghost()
 
 
@@ -125,6 +136,27 @@ func request_cancel_train() -> void:
 	if d != null:
 		Game.add_resource(Game.player_faction, d.gold_cost, d.wood_cost)
 		_toast("已取消 %s" % d.display_name, _accent())
+
+
+## 研究一项铁匠铺升级（命令卡调用）：花费/上限全部读 Cfg 的研究定义。
+func request_research(research_id: StringName) -> void:
+	var b := _primary_building()
+	if b == null:
+		return
+	var rd: ResearchDef = Cfg.research(research_id)
+	if rd == null:
+		return
+	if b.def == null or not b.def.researches.has(research_id):
+		_toast("这里不能研究 %s" % rd.display_name, _warn())
+		return
+	var reason: String = String(b.research_block_reason(research_id))
+	if reason != "":
+		_toast(reason, _warn())
+		return
+	if b.research(research_id):
+		_toast("开始研究：%s（%.0f 秒）" % [rd.display_name, rd.research_time], _accent())
+	else:
+		_toast("研究失败：%s" % rd.display_name, _warn())
 
 
 ## 进入建造模式（命令卡/快捷键 B 调用）
@@ -244,6 +276,8 @@ func _on_pending_left_click(screen_pos: Vector2) -> void:
 				_attack_move(ground, screen_pos)
 		Pending.BUILD:
 			_place_building(ground)
+		Pending.RALLY:
+			_place_rally(ground)
 		Pending.CAST:
 			var ab := pending_ability
 			pending = Pending.NONE
@@ -330,8 +364,7 @@ func _context_order(screen_pos: Vector2) -> void:
 		var b := target as RtsBuilding
 		# 选中的是己方建筑 → 设集结点
 		if _primary_unit() == null:
-			b.rally_point = _walkable(ground)
-			b.has_rally = true
+			b.set_rally(_walkable(ground))
 			_toast("%s 集结点已设置" % (b.def.display_name if b.def != null else "建筑"), _accent())
 			return
 		# 选中的是农民 → 送回资源（接口没实现就先把人带到建筑旁）
@@ -431,69 +464,242 @@ func _issue_simple(order: int, label: String) -> void:
 # 建造
 # ===========================================================================
 
-## 放置建筑：校验 → 扣费 → 让每个选中的农民去造
+## 放置建筑（命令卡/快捷键 B → 左键落点走这里）：只负责"取选中的农民 + 收尾"
 func _place_building(ground: Vector3) -> void:
-	var d: UnitDef = Cfg.unit(pending_build)
+	var id := pending_build
 	var workers := _selected_workers()
-	if d == null or workers.is_empty():
+	if id == &"" or workers.is_empty():
 		request_cancel()
 		return
+	var site := place_building(id, ground, workers)
+	if site != null:
+		pending = Pending.NONE
+		pending_build = &""
+		_free_ghost()
 
+
+## **建造主入口**（界面 / 快捷键 / 自检统一调它）。成功返回工地节点，失败 null。
+##
+## 三条纪律（都是踩过的坑）：
+##   1. **本函数不扣钱**：扣费只在 RtsUnit.order_build 里发生一次。
+##      以前这里先 Game.pay、order_build 又 pay，造 80 金的农场实扣 160。
+##   2. **同一处已有同类未完工工地 → 不新建、不扣费**，把农民挂到那栋工地上。
+##      （以前第 2/3 个农民被 is_buildable 静默拦下，不干活也不提示。）
+##   3. 落点先吸到严格网格锚点，再过 _can_place；不合法就红着拒绝，绝不悄悄滑走。
+func place_building(building_id: StringName, ground: Vector3, workers: Array = []) -> Node3D:
+	var d: UnitDef = Cfg.unit(building_id)
+	if d == null:
+		return null
+	if workers.is_empty():
+		_toast("需要农民才能建造", _warn())
+		return null
+
+	# --- 1. 这里是否已经有一栋同类工地？有就"加入"，不重复建也不重复扣钱 ---
+	var existing := _find_pending_site(building_id, ground, d.footprint)
+	if existing != null:
+		var joined: int = 0
+		for w in workers:
+			if _attach_worker(w, existing):
+				joined += 1
+		if joined > 0:
+			Game.notify.emit("已有 %s 在施工，%d 个农民加入" % [d.display_name, joined], _accent())
+			Game.order_issued.emit(workers, RtsConst.Order.BUILD, existing.global_position, existing)
+		else:
+			_toast("这栋 %s 已经在施工了" % d.display_name, _warn())
+		return existing
+
+	# --- 2. 吸附 + 校验（越界 / 压建筑 / 压水 / 压资源点都会被拒）---
 	var pos := _snap_build_pos(ground, d.footprint)
 	if not _can_place(pos, d):
-		_toast("这里不能建造（地形/重叠/资源不足）", _warn())
-		return
-	if not Game.can_afford(Game.player_faction, pending_build):
+		_toast("这里不能建造（越界 / 挡住已有建筑 / 水面 / 地形不可建）", _warn())
+		return null
+	if not Game.can_afford(Game.player_faction, building_id):
 		_toast("资源不足：%s" % d.display_name, _warn())
-		return
-	if not Game.pay(Game.player_faction, pending_build):
-		_toast("资源不足：%s" % d.display_name, _warn())
-		return
+		return null
 
+	# --- 3. 第一个农民真的立工地（它负责扣那一次钱）---
+	var first: Node = null
 	for w in workers:
-		if w.has_method("order_build"):
-			w.order_build(d, pos)
-	Game.order_issued.emit(workers, RtsConst.Order.BUILD, pos, null)
+		if w != null and is_instance_valid(w) and w.has_method("order_build"):
+			first = w
+			break
+	if first == null:
+		_toast("需要农民才能建造", _warn())
+		return null
+	first.call("order_build", d, pos)
+	var site: Node3D = first.get("_build_site") as Node3D
+	if site == null or not is_instance_valid(site) or not site.is_alive():
+		return null   # order_build 自己失败了，它已经给过提示
+
+	# --- 4. 其余农民挂到同一块工地（不新建、不扣费）---
+	for w in workers:
+		if w == first:
+			continue
+		_attach_worker(w, site)
+
+	Game.order_issued.emit(workers, RtsConst.Order.BUILD, pos, site)
 	_toast("建造 %s" % d.display_name, _accent())
-	pending = Pending.NONE
-	pending_build = &""
-	_free_ghost()
+	return site
 
 
-## 能不能放（地形可建 + 不与已有建筑重叠）
+## 把一个农民挂到已有工地：优先 order_build_site（只接活、不扣钱）；
+## 旧版单位脚本没有这个接口时退化成"对着同一坐标 order_build"。
+func _attach_worker(w: Node, site: Node3D) -> bool:
+	if w == null or not is_instance_valid(w) or site == null or not is_instance_valid(site):
+		return false
+	if w.has_method("order_build_site"):
+		return bool(w.call("order_build_site", site))
+	if w.has_method("order_build"):
+		var sd: Variant = site.get("def")
+		if sd != null:
+			w.call("order_build", sd, site.global_position)
+			return true
+	return false
+
+
+## 这个落点附近是否已经有一栋"同类 + 未完工"的工地
+func _find_pending_site(building_id: StringName, ground: Vector3, footprint: Vector2i) -> Node3D:
+	var reach: float = maxf(float(maxi(footprint.x, footprint.y)), 2.0) * 0.85
+	var best: Node3D = null
+	var best_d: float = INF
+	for n in Game.all_units():
+		if n == null or not is_instance_valid(n) or not (n is RtsBuilding):
+			continue
+		var b := n as RtsBuilding
+		if b.def == null or b.def.id != building_id:
+			continue
+		if b.is_constructed or not b.is_alive():
+			continue
+		var dx: float = b.global_position.x - ground.x
+		var dz: float = b.global_position.z - ground.z
+		var dist: float = sqrt(dx * dx + dz * dz)
+		if dist <= reach and dist < best_d:
+			best_d = dist
+			best = b
+	return best
+
+
+## 能不能放：占地**逐格**在图内且可走（水面/岩石/已占格都不可走），且不与已有建筑重叠
 func _can_place(pos: Vector3, d: UnitDef) -> bool:
 	var lv := Game.level as RtsLevel
-	if lv == null:
+	if lv == null or d == null:
 		return false
-	if not lv.is_buildable(pos, d.footprint):
+	var pf := lv.grid_pathfinder()
+	if pf == null:
 		return false
-	# 别和已有建筑叠在一起（is_buildable 只看地形与寻路格，够用；这里再兜一层）
-	var half := Vector2(d.footprint) * 0.5
+	var fp: Vector2i = Vector2i(maxi(d.footprint.x, 1), maxi(d.footprint.y, 1))
+	var center: Vector2i = pf.world_to_cell(pos)
+	var half_x: int = fp.x / 2
+	var half_z: int = fp.y / 2
+	for dz in range(-half_z, half_z + fp.y % 2):
+		for dx in range(-half_x, half_x + fp.x % 2):
+			var c := Vector2i(center.x + dx, center.y + dz)
+			if not pf.in_bounds(c) or not pf.is_cell_walkable(c):
+				return false
+	# 再兜一层：不与已有建筑（含工地）的占地重叠
+	var half := Vector2(fp) * 0.5
 	for b in Game.all_units():
-		if b == null or not is_instance_valid(b):
+		if b == null or not is_instance_valid(b) or not (b is RtsBuilding):
 			continue
-		if not (b is RtsBuilding):
+		var other := b as RtsBuilding
+		if not other.is_alive():
 			continue
-		var off: Vector3 = (b as Node3D).global_position - pos
+		var off: Vector3 = other.global_position - pos
 		var bg := Vector2(off.x, off.z)
-		var bh: Vector2 = Vector2((b as RtsUnit).def.footprint) * 0.5 if (b as RtsUnit).def != null else Vector2.ONE
+		var bh: Vector2 = Vector2(other.def.footprint) * 0.5 if other.def != null else Vector2.ONE
 		if absf(bg.x) < (half.x + bh.x) and absf(bg.y) < (half.y + bh.y):
 			return false
 	return true
 
 
-## 把落点吸到"建筑中心格"上（占地偶数时对齐半格），减少半格错位
+## 落点 → **严格网格锚点**：footprint 正好压住整数个格子。
+##   · 偶数边长 → 中心落在格子边界（世界坐标是格宽的整数倍）
+##   · 奇数边长 → 中心落在格子中心
+## 必须与 is_buildable / mark_blocked_rect 的"格心约定"完全一致，
+## 否则建筑和寻路阻挡区会错开半格（贴脸卡单位、农民绕不进去）。
+## ★ 这里**不做 clamp_to_walkable**：以前 `_walkable()` 会把落点悄悄挪到旁边的
+##   可走格 —— 玩家点水里，房子跑到岸上。宁可拒绝，不许偷换位置。
 func _snap_build_pos(pos: Vector3, footprint: Vector2i) -> Vector3:
-	var p := pos
-	if footprint.x % 2 == 0:
-		p.x = floorf(p.x) + 0.0
-	else:
-		p.x = floorf(p.x) + 0.5
-	if footprint.y % 2 == 0:
-		p.z = floorf(p.z) + 0.0
-	else:
-		p.z = floorf(p.z) + 0.5
-	return _walkable(p)
+	var lv := Game.level as RtsLevel
+	if lv == null or lv.grid_pathfinder() == null:
+		return pos
+	var pf := lv.grid_pathfinder()
+	var fp := Vector2i(maxi(footprint.x, 1), maxi(footprint.y, 1))
+	var cell: Vector2i = pf.world_to_cell(pos)
+	var p: Vector3 = pf.cell_to_world(cell)
+	if fp.x % 2 == 0:
+		p.x -= GridPathfinder.CELL * 0.5
+	if fp.y % 2 == 0:
+		p.z -= GridPathfinder.CELL * 0.5
+	p.y = lv.height_at(p.x, p.z)
+	return p
+
+
+## 对外（界面预览 / 自检）：把落点吸到严格网格锚点。
+func snap_build_pos(ground: Vector3, footprint: Vector2i) -> Vector3:
+	return _snap_build_pos(ground, footprint)
+
+
+# ===========================================================================
+# 集结点（三接口：request_set_rally / is_rally_pending / cancel_rally）
+# ===========================================================================
+
+## 进入"设集结点"状态。building 为空时用当前选中的建筑。
+## 成功进入返回 true；没有可设的建筑时给一句提示并返回 false。
+func request_set_rally(building: Node = null) -> bool:
+	var b := _rally_target(building)
+	if b == null:
+		_toast("先选中一座己方建筑才能设集结点", _warn())
+		return false
+	_rally_building = b
+	pending = Pending.RALLY
+	pending_build = &""
+	pending_ability = &""
+	_patrol_next = false
+	_free_ghost()
+	return true
+
+
+## 是否正在等玩家点集结点落点（界面据此让出左键；自检据此断言）
+func is_rally_pending() -> bool:
+	return pending == Pending.RALLY
+
+
+## 取消集结点：① 退出"等落点"；② 把该建筑的集结点拔掉（地面小旗跟着消失）。
+## 返回是否真的取消了什么（既没在等、也没旗子时返回 false）。
+func cancel_rally() -> bool:
+	var did: bool = false
+	var b := _rally_target(_rally_building)
+	if pending == Pending.RALLY:
+		pending = Pending.NONE
+		did = true
+	if b != null and b.has_rally and b.has_method("clear_rally"):
+		b.clear_rally()
+		did = true
+	_rally_building = null
+	return did
+
+
+## 集结点落点：贴到最近可走格（集结点不必压格子中心，能被走到就行）
+func _place_rally(ground: Vector3) -> void:
+	# 注意：这里**不清 _rally_building**。它是"上一次设过集结点的建筑"，
+	# cancel_rally() 要靠它把旗子拔掉；清掉的话，玩家设法设完再点取消就会静默失败
+	# （实测：建造自检里 cancel_rally 返回 false、旗子还在）。
+	var b := _rally_target(_rally_building)
+	pending = Pending.NONE
+	if b == null:
+		return
+	b.set_rally(_walkable(ground))
+	_toast("%s 集结点已设置" % (b.def.display_name if b.def != null else "建筑"), _accent())
+
+
+## 解析"要给哪栋建筑设集结点"：显式传入 > 待设置的 > 当前选中的
+func _rally_target(building: Node = null) -> RtsBuilding:
+	if building != null and is_instance_valid(building) and building is RtsBuilding:
+		var rb := building as RtsBuilding
+		if rb.is_alive():
+			return rb
+	return _primary_building()
 
 
 # ===========================================================================

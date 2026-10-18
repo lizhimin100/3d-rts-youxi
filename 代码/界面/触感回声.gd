@@ -3,8 +3,8 @@ extends Node3D
 ## **ECHO（触感回声）** —— 点击 / 下令的"手感反馈"。
 ##
 ## 三条规则，全部是为了"点下去有肉感，但绝不廉价"：
-##   1. **左键点中单位** → 脚下打一圈快速扩散的圆环（0.35s，缩放到 3 倍并淡出）；
-##   2. **右键下指令** → 目标地面打 2 道错开的队伍色涟漪（0.55s，外圈更慢更淡）；
+##   1. **左键点中单位** → 脚下打一圈快速扩散的圆环（原 0.35s / 3 倍，现整体 ×0.45）；
+##   2. **右键下指令** → 目标地面打 2 道错开的队伍色涟漪（原 0.55s，现整体 ×0.45）；
 ##   3. **点空地 / 空选** → **什么都不放**。乱放特效比没特效还掉价。
 ##
 ## 怎么挂到的：只订阅全局信号（`Game.selection_changed` / `Game.order_issued`），
@@ -15,11 +15,15 @@ extends Node3D
 ## 快连点也不会一口气生出几百个 MeshInstance。
 
 ## 同时在飞的特效上限
-const MAX_ACTIVE := 24
-## 点选圆环时长（秒）—— 任务书 0.35s
-const PICK_TIME := 0.35
+const MAX_ACTIVE := 16
+## 反馈音量/体积的整体缩放：
+##   任务书 A-2 要求"点击/指令的视觉回声尺寸、透明度、持续时间整体压到原来的 40%~55%"。
+##   这里取 0.45（区间中位），所有时长 / 半径 / 透明度都乘它，改一个数字即可整体调轻/调重。
+const FX_SCALE := 0.45
+## 点选圆环时长（秒）—— 原 0.35s × FX_SCALE
+const PICK_TIME := 0.35 * FX_SCALE
 ## 右键涟漪时长
-const RIPPLE_TIME := 0.55
+const RIPPLE_TIME := 0.55 * FX_SCALE
 ## 圆环贴地抬高（避免与地形 z-fighting）
 const GROUND_LIFT := 0.055
 
@@ -75,10 +79,10 @@ func _process(delta: float) -> void:
 	var p: Vector3 = u.global_position + Vector3(2.6, 0.0, 2.6)
 	var col: Color = _team_color_of(u)
 	var gy: float = _ground_y(p)
-	var mi := _make_ring(Vector3(p.x, gy, p.z), Color(col.r, col.g, col.b, 0.72))
+	var mi := _make_ring(Vector3(p.x, gy, p.z), Color(col.r, col.g, col.b, 0.72 * FX_SCALE))
 	if mi != null:
-		mi.scale = Vector3(0.55, 1.0, 0.55)
-		_animate(mi, RIPPLE_TIME, 3.9)
+		mi.scale = Vector3(0.55 * FX_SCALE, 1.0, 0.55 * FX_SCALE)
+		_animate(mi, RIPPLE_TIME, 3.9 * FX_SCALE)
 
 
 ## 退出时主动放掉网格（同样是为了避开"资源比渲染服务后死"的关停顺序）
@@ -105,7 +109,9 @@ func _on_selection_changed(units: Array) -> void:
 	if fresh.is_empty():
 		return
 	# 一次点中很多（双击同类 / 框选）时别刷满屏，取前 12 个
-	var limit: int = mini(fresh.size(), 12)
+	# 框选 12 个单位时，每个都放一圈 = 12 圈叠在一起，屏幕像放烟花（用户明确说过"特效太大"）。
+	# 规则：单选 1 圈；≥3 个只放 1 圈（落在第一个单位上）；最多 2 圈。
+	var limit: int = 1 if fresh.size() >= 3 else mini(fresh.size(), 2)
 	for i in limit:
 		var n := fresh[i] as Node3D
 		if n == null:
@@ -123,14 +129,14 @@ func _spawn_pick_ring(u: Node3D) -> void:
 		if u is RtsBuilding and def.footprint != Vector2i.ZERO:
 			r = clampf(float(maxi(def.footprint.x, def.footprint.y)) * 0.5, 1.0, 4.0)
 	var col: Color = _team_color_of(u)
-	col.a = 0.95
+	col.a = 0.95 * FX_SCALE
 	var pos: Vector3 = u.global_position + Vector3.UP * GROUND_LIFT
 	var mi := _make_ring(pos, col)
 	if mi == null:
 		return
 	var dur: float = PICK_TIME
-	var from_scale: float = maxf(r * 0.50, 0.20)
-	var to_scale: float = maxf(r * 3.4, 1.5)
+	var from_scale: float = maxf(r * 0.50 * FX_SCALE, 0.10)
+	var to_scale: float = maxf(r * 3.4 * FX_SCALE, 0.70)
 	mi.scale = Vector3(from_scale, 1.0, from_scale)
 	_animate(mi, dur, to_scale)
 
@@ -154,12 +160,12 @@ func _on_order_issued(units: Array, order: int, target_pos: Vector3, target: Nod
 	var col: Color = _team_color_of(first)
 	var gy: float = _ground_y(pos)
 	# 两道错开的涟漪：内圈快、外圈慢，看起来像水波一圈套一圈
-	var mi := _make_ring(Vector3(pos.x, gy, pos.z), Color(col.r, col.g, col.b, 0.72))
+	var mi := _make_ring(Vector3(pos.x, gy, pos.z), Color(col.r, col.g, col.b, 0.72 * FX_SCALE))
 	if mi != null:
-		mi.scale = Vector3(0.55, 1.0, 0.55)
-		_animate(mi, RIPPLE_TIME, 3.9)
-	var delay: float = 0.11
-	var mi2 := _make_ring(Vector3(pos.x, gy + 0.004, pos.z), Color(col.r, col.g, col.b, 0.55))
+		mi.scale = Vector3(0.55 * FX_SCALE, 1.0, 0.55 * FX_SCALE)
+		_animate(mi, RIPPLE_TIME, 3.9 * FX_SCALE)
+	var delay: float = 0.11 * FX_SCALE
+	var mi2 := _make_ring(Vector3(pos.x, gy + 0.004, pos.z), Color(col.r, col.g, col.b, 0.55 * FX_SCALE))
 	if mi2 != null:
 		mi2.visible = false
 		var tw := create_tween()
@@ -167,8 +173,8 @@ func _on_order_issued(units: Array, order: int, target_pos: Vector3, target: Nod
 		tw.tween_callback(func() -> void:
 			if is_instance_valid(mi2):
 				mi2.visible = true)
-		mi2.scale = Vector3(0.9, 1.0, 0.9)
-		_animate(mi2, RIPPLE_TIME * 1.08, 5.2, delay)
+		mi2.scale = Vector3(0.9 * FX_SCALE, 1.0, 0.9 * FX_SCALE)
+		_animate(mi2, RIPPLE_TIME * 1.08, 5.2 * FX_SCALE, delay)
 
 
 # ===========================================================================
@@ -283,7 +289,7 @@ func _team_color_of(u: Node3D) -> Color:
 
 ## 贴地高度（地形有起伏，不贴地会出现"悬空圆环"这种一眼假的画面）
 func _ground_y(p: Vector3) -> float:
-	var lv := Game.level
+	var lv: RtsLevel = Game.level
 	if lv != null and is_instance_valid(lv) and lv.has_method("height_at"):
 		return float(lv.call("height_at", p.x, p.z)) + GROUND_LIFT
 	return p.y + GROUND_LIFT

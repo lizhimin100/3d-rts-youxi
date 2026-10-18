@@ -1,0 +1,38 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="PackedScene" path="res://美术/模型/岩石.glb" id="1_glb"]
+
+[node name="岩石_场景" type="Node3D"]
+metadata/decor_kind = "rock"
+
+[node name="岩石" parent="." instance=ExtResource("1_glb")]
+
+[node name="主石" parent="岩石/Root/Body" index="0"]
+cast_shadow = 0
+visibility_range_end = 130.0
+visibility_range_fade_mode = 1
+
+[node name="次石A" parent="岩石/Root/Body" index="1"]
+cast_shadow = 0
+visibility_range_end = 130.0
+visibility_range_fade_mode = 1
+
+[node name="次石B" parent="岩石/Root/Body" index="2"]
+cast_shadow = 0
+visibility_range_end = 130.0
+visibility_range_fade_mode = 1
+
+[node name="石屑0" parent="岩石/Root/Body" index="3"]
+cast_shadow = 0
+visibility_range_end = 130.0
+visibility_range_fade_mode = 1
+
+[node name="石屑1" parent="岩石/Root/Body" index="4"]
+cast_shadow = 0
+visibility_range_end = 130.0
+visibility_range_fade_mode = 1
+
+[node name="石屑2" parent="岩石/Root/Body" index="5"]
+cast_shadow = 0
+visibility_range_end = 130.0
+visibility_range_fade_mode = 1

@@ -305,6 +305,33 @@ static func build_units() -> Dictionary:
 	return out
 
 
+## 铁匠铺研究项（阵营级升级）。花费/耗时/上限全在这里，RtsCombat 只负责效果。
+static func build_researches() -> Dictionary:
+	var out: Dictionary = {}
+
+	var atk := ResearchDef.new()
+	atk.id = &"attack_up"
+	atk.display_name = "武器锻造"
+	atk.description = "全军攻击力 +15% / 级（对已存在与后续单位同时生效）"
+	atk.gold_cost = 120
+	atk.wood_cost = 40
+	atk.research_time = 25.0
+	atk.max_level = 3
+	out[&"attack_up"] = atk
+
+	var arm := ResearchDef.new()
+	arm.id = &"armor_up"
+	arm.display_name = "护甲锻造"
+	arm.description = "全军护甲 +15% / 级（对已存在与后续单位同时生效）"
+	arm.gold_cost = 100
+	arm.wood_cost = 60
+	arm.research_time = 25.0
+	arm.max_level = 3
+	out[&"armor_up"] = arm
+
+	return out
+
+
 ## 三档难度
 static func build_difficulties() -> Array[DifficultyDef]:
 	var arr: Array[DifficultyDef] = []

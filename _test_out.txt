@@ -1,0 +1,3 @@
+Godot Engine v4.7.2.stable.steam.ed1daf0bf - https://godotengine.org
+
+[战斗自检] A_秒杀收场 {"击杀耗时(秒)":"0.58","攻击者初始指令":"NONE","攻击者初始状态":"IDLE","死后0.6s 动画":"attack","死后0.6s 指令":"NONE","死后0.6s 状态":"ATTACK","死后0.6s 目标":"已清空","目标初始血量":"1"}

@@ -1,0 +1,82 @@
+[gd_resource type="Resource" script_class="RtsPalette" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://代码/美术/调色板.gd" id="1_palette"]
+
+[resource]
+script = ExtResource("1_palette")
+colors = {
+"stone": Color(0.678, 0.631, 0.502, 1),
+"stone_dark": Color(0.502, 0.463, 0.353, 1),
+"stone_light": Color(0.769, 0.718, 0.588, 1),
+"plaster": Color(0.89, 0.847, 0.737, 1),
+"roof": Color(0.165, 0.361, 0.749, 1),
+"roof_dark": Color(0.106, 0.243, 0.525, 1),
+"gold": Color(0.886, 0.702, 0.298, 1),
+"gold_dark": Color(0.659, 0.482, 0.165, 1),
+"wood": Color(0.478, 0.322, 0.188, 1),
+"wood_dark": Color(0.333, 0.216, 0.125, 1),
+"steel": Color(0.596, 0.635, 0.682, 1),
+"steel_dark": Color(0.369, 0.404, 0.451, 1),
+"steel_light": Color(0.737, 0.769, 0.808, 1),
+"iron": Color(0.42, 0.396, 0.361, 1),
+"leather": Color(0.541, 0.357, 0.204, 1),
+"leather_dark": Color(0.341, 0.22, 0.137, 1),
+"cloth": Color(0.169, 0.373, 0.69, 1),
+"cloth_dark": Color(0.11, 0.251, 0.475, 1),
+"skin": Color(0.851, 0.647, 0.486, 1),
+"skin_dark": Color(0.702, 0.482, 0.333, 1),
+"hair": Color(0.42, 0.29, 0.169, 1),
+"crystal": Color(0.498, 0.847, 1.0, 1),
+"ember": Color(1.0, 0.541, 0.192, 1),
+"glass": Color(0.125, 0.188, 0.29, 1),
+"bark": Color(0.357, 0.255, 0.153, 1),
+"leaf": Color(0.306, 0.486, 0.204, 1),
+"leaf_dark": Color(0.204, 0.345, 0.157, 1),
+"ore": Color(0.914, 0.761, 0.29, 1),
+"grass": Color(0.42, 0.561, 0.227, 1),
+"water": Color(0.18, 0.431, 0.557, 1),
+"dirt": Color(0.482, 0.388, 0.267, 1),
+"hay": Color(0.788, 0.663, 0.306, 1),
+"rope": Color(0.612, 0.518, 0.333, 1),
+"bone": Color(0.847, 0.824, 0.745, 1)
+}
+roughness = {
+"steel": 0.38,
+"steel_dark": 0.42,
+"steel_light": 0.32,
+"gold": 0.34,
+"gold_dark": 0.42,
+"iron": 0.6,
+"crystal": 0.1,
+"glass": 0.2,
+"water": 0.1,
+"roof": 0.86,
+"roof_dark": 0.9,
+"hay": 0.95,
+"stone": 0.94,
+"stone_dark": 0.95,
+"stone_light": 0.92,
+"plaster": 0.95,
+"wood": 0.9,
+"wood_dark": 0.92,
+"leaf": 0.9,
+"leaf_dark": 0.92,
+"bark": 0.95,
+"grass": 0.95
+}
+metallic = {
+"steel": 0.8,
+"steel_dark": 0.75,
+"steel_light": 0.82,
+"gold": 0.85,
+"gold_dark": 0.8,
+"iron": 0.55,
+"ore": 0.7,
+"glass": 0.1
+}
+team_zones = {
+"cloth": 0.92,
+"roof": 0.38,
+"banner": 0.95
+}
+fallback = Color(0.62, 0.62, 0.6, 1)

@@ -1,0 +1,54 @@
+[1] Godot --import ...
+  ✗ 脚本解析 发现 2 条解析错误
+    SCRIPT ERROR: Parse Error: Function "select_units" has the same name as a previously declared function.
+    ERROR: Failed to load script "res://代码/操作/选择系统.gd" with error "Parse error".
+[2] 无头运行 300 帧 ...
+    SCRIPT ERROR: Parse Error: Function "select_units" has the same name as a previously declared function.
+    ERROR: Failed to load script "res://代码/操作/选择系统.gd" with error "Parse error".
+    ERROR: Attempted to push_back an object of type 'PanelContainer' into a TypedArray, which does not inherit from 'Panel'.
+    ERROR: Condition "!_p->typed.validate(value, "push_back")" is true.
+    ERROR: Attempted to push_back an object of type 'PanelContainer' into a TypedArray, which does not inherit from 'Panel'.
+    ERROR: Condition "!_p->typed.validate(value, "push_back")" is true.
+    ERROR: Attempted to push_back an object of type 'PanelContainer' into a TypedArray, which does not inherit from 'Panel'.
+    ERROR: Condition "!_p->typed.validate(value, "push_back")" is true.
+    ERROR: Attempted to push_back an object of type 'PanelContainer' into a TypedArray, which does not inherit from 'Panel'.
+    ERROR: Condition "!_p->typed.validate(value, "push_back")" is true.
+    ERROR: Attempted to push_back an object of type 'PanelContainer' into a TypedArray, which does not inherit from 'Panel'.
+    ERROR: Condition "!_p->typed.validate(value, "push_back")" is true.
+  ✗ 运行期无报错 发现 12 条 ERROR
+  [主场景] 镜头=镜头 fov=52 类=res://代码/镜头/魔兽镜头.gd
+  [主场景] 就绪：地形 6728 面，地图 116m，玩家单位 12，敌人单位 7（节点总数 5788）
+[3] 寻路自检 ...
+  ✓ 寻路自检 结果：通过 15 / 失败 0  —— 全部通过 ✓
+[4] 交互自检 ...
+  ✗ 交互自检 {"右键移动":{"单位数":1,"移动数":0},"小结":{"右键移动":false,"框选":false,"点选":false,"缩放平滑":true,"镜头加速平滑":true},"框选":{"选中数":0},"框选备注":"框选没选中 ≥2 个单位（检查 overlay/投影判定）","点选":{"屏幕坐标":"(962.0, 996.0)","是单个己方单位":false,"目标是同单位":false,"选中数":0},"结果":"失败","缩放":{"20帧后":"28.01","一帧后":"30.00","起始":"30.00"},"视口":"(1920.0, 1920.0)","镜头加速":{"前5帧":["0.0000","0.0080","0.0156","0.0236","0.0314"],"峰值位移":"0.1658","最大帧间跳变":"0.0080","首帧位移":"0.0001"},"镜头滑行":"0.0000"}
+    SCRIPT ERROR: Parse Error: Function "select_units" has the same name as a previously declared function.
+    ERROR: Failed to load script "res://代码/操作/选择系统.gd" with error "Parse error".
+    SCRIPT ERROR: Parse Error: Function "build_page_ids()" not found in base self.
+    SCRIPT ERROR: Parse Error: Function "enter_build_page()" not found in base self.
+    SCRIPT ERROR: Compile Error: Failed to compile depended scripts.
+    ERROR: Failed to load script "res://代码/界面/HUD.gd" with error "Compilation failed".
+    ERROR: Attempted to push_back an object of type 'PanelContainer' into a TypedArray, which does not inherit from 'Panel'.
+    ERROR: Condition "!_p->typed.validate(value, "push_back")" is true.
+    ERROR: Attempted to push_back an object of type 'PanelContainer' into a TypedArray, which does not inherit from 'Panel'.
+    ERROR: Condition "!_p->typed.validate(value, "push_back")" is true.
+[5] 自动试玩 ...
+  ✓ 自动试玩 {"结果":"通过","重开":{"玩家单位":12,"玩家建筑":3,"通过":true,"阶段":1},"首局通过":true}
+  AUTOTEST-PHASE1 {"AI":{"单位数":9,"建筑数":4,"金币":236},"开局":{"人口":"20/24","敌人单位":7,"敌人建筑":4,"玩家单位":12,"玩家建筑":3,"玩家木材":380,"玩家金币":620},"战斗":{"命中次数":54,"战斗死亡数":1,"死亡链路":true,"空投敌人数":3},"移动":{"实际移动数":7,"战斗单位":7},"经济":{"增长":0,"当前金币":620,"起始金币":620},"经济终局":{"增长":90,"终局木材增长":0,"终局金币":710,"起始金币":620},"结果首局":"通过","胜负":{"胜利?":true,"阶段":2}}
+[5.2] 采集压力自检 ...
+  ✗ 采集压力自检 {"农民数":0,"卡住的那个":-1,"时长(秒)":90.0,"最少卸货次数":999,"最长原地不动(秒)":"0.0","结束时阶段分布":{},"结果":"失败：金币增长不足（0 < 150），采集链路没跑通","过程采样":[{"t":"10","状态":{},"阶段":{}},{"t":"20","状态":{},"阶段":{}},{"t":"30","状态":{},"阶段":{}},{"t":"40","状态":{},"阶段":{}},{"t":"50","状态":{},"阶段":{}},{"t":"60","状态":{},"阶段":{}},{"t":"70","状态":{},"阶段":{}},{"t":"80","状态":{},"阶段":{}},{"t":"90","状态":{},"阶段":{}}],"金币增长":0}
+[5.4] 升级 / 人口自检 ...
+  ✗ 升级/人口自检 {"检查项":[{"检查":"玩家阵营存在","通过":true},{"检查":"开局有铁匠铺","通过":false}],"结果":"失败"}
+    SCRIPT ERROR: Parse Error: Could not resolve class "RtsUnit".
+    SCRIPT ERROR: Parse Error: Not all code paths return a value.
+    SCRIPT ERROR: Compile Error: Failed to compile depended scripts.
+    ERROR: Failed to load script "res://代码/核心/游戏状态.gd" with error "Compilation failed".
+    SCRIPT ERROR: Parse Error: Function "select_units" has the same name as a previously declared function.
+    ERROR: Failed to load script "res://代码/操作/选择系统.gd" with error "Parse error".
+    ERROR: Attempted to push_back an object of type 'PanelContainer' into a TypedArray, which does not inherit from 'Panel'.
+    ERROR: Condition "!_p->typed.validate(value, "push_back")" is true.
+    ERROR: Attempted to push_back an object of type 'PanelContainer' into a TypedArray, which does not inherit from 'Panel'.
+    ERROR: Condition "!_p->typed.validate(value, "push_back")" is true.
+[5.5] 手感自检 ...
+  ✓ 手感自检 {"结果":"通过","镜头平移":{"刹停到10%(秒)":"0.117","刹停合格":true,"前6帧":["0.0000","0.0458","0.0917","0.1375","0.1833","0.2292"],"峰值速度(米/帧)":"0.4000","峰值速度(米/秒)":"24.00","松手后6帧":["0.4000","0.2866","0.2054","0.1472","0.1054","0.0756"],"起速到90%(秒)":"0.133","起速合格":true},"镜头旋转":{"合格":true,"转45度(秒)":"0.183"},"镜头缩放":{"合格":true,"收敛(秒)":"0.167","最终距离":"27.80","起始距离":"30.00"}}
+[5.6] 边缘滚动自检 ...

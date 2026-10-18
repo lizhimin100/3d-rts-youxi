@@ -159,6 +159,23 @@ func is_build_page() -> bool:
 	return _build_page
 
 
+## 进入建造页（命令卡第一格「建造」和 B 键都走这里；重复调用安全）
+func enter_build_page() -> void:
+	if not _build_page:
+		_build_page = true
+	refresh(_selection)
+
+
+## 当前选择能不能进建造页（自检的唯一判据：选中里有农民）
+func can_enter_build_page() -> bool:
+	return _has_worker()
+
+
+## 建造页里列出的建筑 id（顺序即按钮顺序；界面与自检共用这一份）
+func build_page_ids() -> Array:
+	return [&"farm", &"barracks", &"tower", &"blacksmith"]
+
+
 # ===========================================================================
 # 内容
 # ===========================================================================
@@ -170,6 +187,8 @@ func _title_text() -> String:
 	var b := _first_building()
 	if b != null and b.def != null:
 		var extra: String = "" if b.train_queue.is_empty() else "（队列 %d）" % b.train_queue.size()
+		if b.is_researching():
+			extra += "（研究中 %d%%）" % int(clampf(b.research_progress(), 0.0, 1.0) * 100.0)
 		return "%s%s" % [b.def.display_name, extra]
 	var u := _first_unit()
 	if u != null and u.def != null:
@@ -189,6 +208,8 @@ func _build_entries() -> Array:
 	if b != null and b.def != null:
 		for id in b.def.trains:
 			out.append(_train_entry(b, id))
+		for rid in b.def.researches:
+			out.append(_research_entry(b, rid))
 		if not b.train_queue.is_empty():
 			out.append({
 				"label": "取消训练",
@@ -204,7 +225,7 @@ func _build_entries() -> Array:
 
 	# --- 2. 建造页（或农民选中时顺便给建造快捷键）---
 	if _build_page and worker:
-		for bid in [&"farm", &"barracks", &"tower", &"blacksmith"]:
+		for bid in build_page_ids():
 			out.append(_build_entry(bid))
 		out.append({
 			"label": "返回",
@@ -221,14 +242,16 @@ func _build_entries() -> Array:
 
 	# --- 4. 常备指令 ---
 	if worker:
+		# ★ 农民必须有一个"看得见"的建造入口：B 键能切页，但界面上没有入口时
+		#   玩家（和验收）会以为农民根本不能造东西。这里把「建造」放在第一格。
+		out.append({
+			"label": "建造",
+			"hint": "打开建造菜单：农场 / 兵营 / 箭塔 / 铁匠铺（B 键）",
+			"color": Color(0.82, 0.94, 0.74),
+			"action": func(): enter_build_page(),
+		})
 		out.append(_build_entry(&"farm"))
 		out.append(_build_entry(&"barracks"))
-		out.append({
-			"label": "更多建造",
-			"hint": "箭塔 / 铁匠铺（B 键）",
-			"color": Color(0.80, 0.76, 0.62),
-			"action": func(): toggle_build_page(),
-		})
 
 	out.append({
 		"label": "攻击移动",
@@ -270,6 +293,39 @@ func _train_entry(b: RtsBuilding, id: StringName) -> Dictionary:
 		"color": Color(0.90, 0.90, 0.86) if ok else Color(0.55, 0.55, 0.52),
 		"disabled": not ok or b.train_queue.size() >= 5,
 		"action": func(): _call("request_train", id),
+	}
+
+
+## 研究按钮（铁匠铺）：显示当前等级 / 满级，研究进行中或资源不够就禁用
+func _research_entry(b: RtsBuilding, rid: StringName) -> Dictionary:
+	var rd: ResearchDef = Cfg.research(rid)
+	var lv: int = RtsCombat.research_level(Game.player_faction, rid)
+	var max_lv: int = maxi(rd.max_level, 1) if rd != null else 0
+	var name: String = rd.display_name if rd != null else String(rid)
+	var label: String = "%s %d/%d" % [name, lv, max_lv]
+	var busy: bool = b.is_researching()
+	var maxed: bool = lv >= max_lv
+	var built: bool = b.is_constructed
+	var afford: bool = rd != null and Game.player_faction != null \
+			and Game.player_faction.gold >= rd.gold_cost \
+			and Game.player_faction.wood >= rd.wood_cost
+	var hint: String = ""
+	if rd != null:
+		hint = "%s  升级 %d→%d  花费 %d金 %d木  研究 %.0fs" % [
+			rd.description, lv, mini(lv + 1, max_lv), rd.gold_cost, rd.wood_cost, rd.research_time
+		]
+	if not built:
+		hint += "（建筑还没完工）"
+	elif busy:
+		hint += "（研究进行中）"
+	elif maxed:
+		hint += "（已满级）"
+	return {
+		"label": label,
+		"hint": hint,
+		"color": Color(0.72, 0.86, 1.0) if afford and not maxed and built else Color(0.55, 0.55, 0.52),
+		"disabled": not built or busy or maxed or not afford,
+		"action": func(): _call("request_research", rid),
 	}
 
 

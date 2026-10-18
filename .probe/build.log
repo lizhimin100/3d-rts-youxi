@@ -1,0 +1,40 @@
+Godot Engine v4.7.2.stable.steam.ed1daf0bf - https://godotengine.org
+
+========== 建造自检 ==========
+  · 世界：地图 116m，锚点 (-36.0, 49.0)，工地=建造中_barracks
+  · 开始跑帧（兵营施工中）…
+  · 心跳 第 60 帧 阶段 0 进度 0.18 | order=7 距工地=5.3m 有工地=true | order=7 距工地=4.3m 有工地=true | order=7 距工地=6.3m 有工地=true | order=7 距工地=5.7m 有工地=true
+  · 心跳 第 120 帧 阶段 0 进度 0.38 | order=7 距工地=4.7m 有工地=true | order=7 距工地=4.3m 有工地=true | order=7 距工地=4.7m 有工地=true | order=7 距工地=5.8m 有工地=true
+  · 心跳 第 180 帧 阶段 0 进度 0.58 | order=7 距工地=6.1m 有工地=true | order=7 距工地=4.3m 有工地=true | order=7 距工地=4.7m 有工地=true | order=7 距工地=6.0m 有工地=true
+  · 心跳 第 240 帧 阶段 0 进度 0.78 | order=7 距工地=4.9m 有工地=true | order=7 距工地=4.3m 有工地=true | order=7 距工地=5.9m 有工地=true | order=7 距工地=5.8m 有工地=true
+  · 心跳 第 300 帧 阶段 0 进度 0.98 | order=7 距工地=6.0m 有工地=true | order=7 距工地=4.3m 有工地=true | order=7 距工地=5.0m 有工地=true | order=7 距工地=5.9m 有工地=true
+  · 心跳 第 360 帧 阶段 3 进度 1.00 | order=0 距工地=6.1m 有工地=false | order=0 距工地=4.3m 有工地=false | order=0 距工地=5.1m 有工地=false | order=0 距工地=5.9m 有工地=false
+  · 心跳 第 420 帧 阶段 4 进度 1.00 | order=0 距工地=6.1m 有工地=false | order=0 距工地=4.3m 有工地=false | order=0 距工地=5.1m 有工地=false | order=0 距工地=5.9m 有工地=false
+  · 心跳 第 480 帧 阶段 4 进度 1.00 | order=0 距工地=6.1m 有工地=false | order=0 距工地=4.3m 有工地=false | order=0 距工地=5.1m 有工地=false | order=0 距工地=5.9m 有工地=false
+-------------------------------
+  ✓ 5 个随机落点吸附后都是格宽整数倍（6×6 整格） (2.2,-19.7)→(2.0,-20.0) (21.0,12.9)→(20.0,12.0) (44.4,29.3)→(44.0,29.0) (-42.5,18.8)→(-43.0,18.0) (11.0,-6.9)→(10.0,-7.0)
+  ✓ 越界（贴边放占地）被拒 锚点 (56.0, 0.0)
+  ✓ 压在水面上被拒 水塘心 (2.0, 12.0)，半径 12m
+  ✓ 压在已有建筑（大本营）上被拒 大本营 (-36.0, 34.0)
+  ✓ 造一次只扣一次钱 金 -180（应 -180）木 -60（应 -60）
+  ✓ 工地已立起且 progress=0 / is_constructed=false progress=0.00
+  ✓ 3 个农民同时进 BUILD（挂同一块工地） 3 / 3
+  ✓ 重复点击同一落点 → 挂到同一工地 同一工地=true
+  ✓ 第 4 个农民加入时不重复扣钱 金 8440 → 8440
+  ✓ 未完工工地只有 1 块 实际 1 块
+  ✓ 农民走到工地并开始施工（进度已起） 进度 0.01
+  ✓ 兵营进度 0 → 1 且 is_constructed=true progress=1.00 is_constructed=true（耗时 307 帧）
+  ✓ 完工后血量补满 hp 1500 / 1500
+  ✓ 完工后农民自动退出建造 4 / 4 已退出
+  ✓ request_set_rally 进入等待落点状态 is_rally_pending=true
+  ✓ 点落点后地面出现集结点小旗 旗节点=true 位置=(-36.5,44.5)
+  ✗ cancel_rally 拔掉集结点并藏旗 
+  ✓ 大本营开始训练农民 队列 1 个
+  ✓ 训练完成，新农民出现在出兵点 位置 (-39.5, 27.5)，距集结点 17.3m，当前指令 order=1
+  ✓ 训练出的农民朝集结点走 距集结点 17.3m → 0.2m（120 帧）
+  ✓ 最终站到集结点附近 最终 0.2m
+结果：通过 20 / 失败 1  —— 有失败 ✗
+WARNING: 3 ObjectDB instances were leaked at exit (run with `--verbose` for details).
+   at: cleanup (core/object/object.cpp:2536)
+ERROR: 1 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:822)

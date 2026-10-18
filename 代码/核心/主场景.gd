@@ -75,6 +75,10 @@ func _ready() -> void:
 		if sfx_script != null:
 			sfx_script.call("attach", get_tree())
 
+	# 4.95 移动指示（绿色虚线 + 目的地标记）：一层只订阅 Game.order_issued 的观察者，
+	#       和 选择系统 / 指令系统 挂在同一层；脚本缺失时静默跳过，不影响开局。
+	_mount_script("res://代码/操作/移动指示.gd", "移动指示")
+
 	# 5) 起跑
 	Game.phase = RtsConst.Phase.RUNNING
 	Game.game_over.connect(_on_game_over)
@@ -193,6 +197,8 @@ func _mount_tests() -> void:
 		_mount_script("res://代码/测试/手感自检.gd", "手感自检")
 	if "--autotest" in args:
 		_mount_script("res://代码/测试/自动试玩.gd", "自动试玩")
+	if "--research-test" in args:
+		_mount_script("res://代码/测试/升级自检.gd", "升级自检")
 	if not _qa_select_id.is_empty():
 		_qa_select.call_deferred(_qa_select_id)
 

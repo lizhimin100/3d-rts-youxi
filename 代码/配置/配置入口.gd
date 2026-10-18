@@ -33,6 +33,7 @@ func _rebuild() -> void:
 		cfg = GameConfig.new()
 	# 单位表永远以代码为准（避免旧 .tres 里残留的 def 覆盖新数值）
 	cfg.units = UnitTable.build_units()
+	cfg.researches = UnitTable.build_researches()
 	# 难度：.tres 里配了就用，没配就代码默认
 	cfg.ensure_default_difficulties()
 	game = cfg
@@ -46,6 +47,11 @@ func unit(id: StringName) -> UnitDef:
 ## 全部单位定义
 func units() -> Dictionary:
 	return game.units
+
+
+## 取研究定义（铁匠铺升级）
+func research(id: StringName) -> ResearchDef:
+	return game.research_def(id)
 
 
 ## 取难度档（越界会夹紧到最后一档）

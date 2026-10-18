@@ -154,6 +154,25 @@ static func effective_armor(target: Node3D) -> float:
 	return d.armor * armor_mult(fac)
 
 
+## 某条研究当前的等级（0 = 还没研究过；未知 id 也返回 0）
+static func research_level(faction: RtsFaction, id: StringName) -> int:
+	match id:
+		RESEARCH_ATTACK:
+			return attack_up_level(faction)
+		RESEARCH_ARMOR:
+			return armor_up_level(faction)
+		_:
+			return 0
+
+
+## 某条研究是否已经满级（上限来自 Cfg 的研究定义）
+static func research_maxed(faction: RtsFaction, id: StringName) -> bool:
+	var rd: ResearchDef = Cfg.research(id)
+	if rd == null:
+		return true
+	return research_level(faction, id) >= maxi(rd.max_level, 1)
+
+
 # ===========================================================================
 # 铁匠铺研究（研究 id 由 UnitDef.researches 声明）
 # ===========================================================================

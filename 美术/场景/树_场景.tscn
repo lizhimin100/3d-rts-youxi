@@ -1,0 +1,173 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="PackedScene" path="res://美术/模型/树.glb" id="1_glb"]
+
+[node name="树_场景" type="Node3D"]
+metadata/decor_kind = "tree"
+
+[node name="树" parent="." instance=ExtResource("1_glb")]
+
+[node name="板根0" parent="树/Root/Body" index="0"]
+cast_shadow = 0
+visibility_range_end = 160.0
+visibility_range_fade_mode = 1
+
+[node name="板根1" parent="树/Root/Body" index="1"]
+cast_shadow = 0
+visibility_range_end = 160.0
+visibility_range_fade_mode = 1
+
+[node name="板根2" parent="树/Root/Body" index="2"]
+cast_shadow = 0
+visibility_range_end = 160.0
+visibility_range_fade_mode = 1
+
+[node name="板根3" parent="树/Root/Body" index="3"]
+cast_shadow = 0
+visibility_range_end = 160.0
+visibility_range_fade_mode = 1
+
+[node name="板根4" parent="树/Root/Body" index="4"]
+cast_shadow = 0
+visibility_range_end = 160.0
+visibility_range_fade_mode = 1
+
+[node name="枝0" parent="树/Root/Body" index="5"]
+cast_shadow = 0
+visibility_range_end = 160.0
+visibility_range_fade_mode = 1
+
+[node name="枝1" parent="树/Root/Body" index="6"]
+cast_shadow = 0
+visibility_range_end = 160.0
+visibility_range_fade_mode = 1
+
+[node name="枝2" parent="树/Root/Body" index="7"]
+cast_shadow = 0
+visibility_range_end = 160.0
+visibility_range_fade_mode = 1
+
+[node name="枝3" parent="树/Root/Body" index="8"]
+cast_shadow = 0
+visibility_range_end = 160.0
+visibility_range_fade_mode = 1
+
+[node name="树冠0" parent="树/Root/Body" index="9"]
+cast_shadow = 0
+visibility_range_end = 160.0
+visibility_range_fade_mode = 1
+
+[node name="树冠1" parent="树/Root/Body" index="10"]
+cast_shadow = 0
+visibility_range_end = 160.0
+visibility_range_fade_mode = 1
+
+[node name="树冠10" parent="树/Root/Body" index="11"]
+cast_shadow = 0
+visibility_range_end = 160.0
+visibility_range_fade_mode = 1
+
+[node name="树冠2" parent="树/Root/Body" index="12"]
+cast_shadow = 0
+visibility_range_end = 160.0
+visibility_range_fade_mode = 1
+
+[node name="树冠3" parent="树/Root/Body" index="13"]
+cast_shadow = 0
+visibility_range_end = 160.0
+visibility_range_fade_mode = 1
+
+[node name="树冠4" parent="树/Root/Body" index="14"]
+cast_shadow = 0
+visibility_range_end = 160.0
+visibility_range_fade_mode = 1
+
+[node name="树冠5" parent="树/Root/Body" index="15"]
+cast_shadow = 0
+visibility_range_end = 160.0
+visibility_range_fade_mode = 1
+
+[node name="树冠6" parent="树/Root/Body" index="16"]
+cast_shadow = 0
+visibility_range_end = 160.0
+visibility_range_fade_mode = 1
+
+[node name="树冠7" parent="树/Root/Body" index="17"]
+cast_shadow = 0
+visibility_range_end = 160.0
+visibility_range_fade_mode = 1
+
+[node name="树冠8" parent="树/Root/Body" index="18"]
+cast_shadow = 0
+visibility_range_end = 160.0
+visibility_range_fade_mode = 1
+
+[node name="树冠9" parent="树/Root/Body" index="19"]
+cast_shadow = 0
+visibility_range_end = 160.0
+visibility_range_fade_mode = 1
+
+[node name="树干" parent="树/Root/Body" index="20"]
+cast_shadow = 0
+visibility_range_end = 160.0
+visibility_range_fade_mode = 1
+
+[node name="树皮棱0_0" parent="树/Root/Body" index="21"]
+cast_shadow = 0
+visibility_range_end = 160.0
+visibility_range_fade_mode = 1
+
+[node name="树皮棱0_1" parent="树/Root/Body" index="22"]
+cast_shadow = 0
+visibility_range_end = 160.0
+visibility_range_fade_mode = 1
+
+[node name="树皮棱1_0" parent="树/Root/Body" index="23"]
+cast_shadow = 0
+visibility_range_end = 160.0
+visibility_range_fade_mode = 1
+
+[node name="树皮棱1_1" parent="树/Root/Body" index="24"]
+cast_shadow = 0
+visibility_range_end = 160.0
+visibility_range_fade_mode = 1
+
+[node name="树皮棱2_0" parent="树/Root/Body" index="25"]
+cast_shadow = 0
+visibility_range_end = 160.0
+visibility_range_fade_mode = 1
+
+[node name="树皮棱2_1" parent="树/Root/Body" index="26"]
+cast_shadow = 0
+visibility_range_end = 160.0
+visibility_range_fade_mode = 1
+
+[node name="树皮棱3_0" parent="树/Root/Body" index="27"]
+cast_shadow = 0
+visibility_range_end = 160.0
+visibility_range_fade_mode = 1
+
+[node name="树皮棱3_1" parent="树/Root/Body" index="28"]
+cast_shadow = 0
+visibility_range_end = 160.0
+visibility_range_fade_mode = 1
+
+[node name="树皮棱4_0" parent="树/Root/Body" index="29"]
+cast_shadow = 0
+visibility_range_end = 160.0
+visibility_range_fade_mode = 1
+
+[node name="树皮棱4_1" parent="树/Root/Body" index="30"]
+cast_shadow = 0
+visibility_range_end = 160.0
+visibility_range_fade_mode = 1
+
+[node name="树皮棱5_0" parent="树/Root/Body" index="31"]
+cast_shadow = 0
+visibility_range_end = 160.0
+visibility_range_fade_mode = 1
+
+[node name="树皮棱5_1" parent="树/Root/Body" index="32"]
+cast_shadow = 0
+visibility_range_end = 160.0
+visibility_range_fade_mode = 1

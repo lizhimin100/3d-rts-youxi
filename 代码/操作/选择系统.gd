@@ -216,13 +216,16 @@ func _click_select(screen_pos: Vector2, additive: bool) -> void:
 		return
 
 	var id: StringName = _def_id(hit)
+	var hit_faction := hit.get("faction") as RtsFaction
 	var now: float = Time.get_ticks_msec() * 0.001
 	var is_double: bool = (now - _last_click_time) <= DOUBLE_CLICK_WINDOW and id == _last_click_id and id != &""
 	_last_click_time = now
 	_last_click_id = id
 
-	# 双击同类：选中屏幕上所有同 id 的单位（建筑不参与，避免一次选中整片营地）
-	if is_double and not (hit is RtsBuilding):
+	# 双击同类：选中屏幕上所有同 id 的**己方单位**。
+	# 建筑/敌方/可采集物不参与：双击它们只是普通单选（不会清空已有选择，
+	# 也不会把敌人的同型兵一起框进来 —— 框选/双击都只服务"指挥自己的兵"这件事）。
+	if is_double and not (hit is RtsBuilding) and hit_faction == Game.player_faction:
 		_select_all_of_type(id)
 		return
 
@@ -236,16 +239,19 @@ func _click_select(screen_pos: Vector2, additive: bool) -> void:
 		_set_selection([hit])
 
 
-## 双击：选中视野内所有同类型单位
+## 双击：选中视野内所有同类型**己方单位**（阵营/建筑/资源一律过滤，见 is_box_unit）
 func _select_all_of_type(id: StringName) -> void:
 	if id == &"":
 		return
 	var cam := _camera()
 	if cam == null:
 		return
+	var player := Game.player_faction
 	var vp_rect := Rect2(Vector2.ZERO, get_viewport().get_visible_rect().size)
 	var out: Array = []
 	for n in _selectable_units():
+		if not is_box_unit(n, player):
+			continue
 		if _def_id(n) != id:
 			continue
 		var anchor := _anchor_point(n)
@@ -260,7 +266,11 @@ func _select_all_of_type(id: StringName) -> void:
 # 框选
 # ===========================================================================
 
-## 框选：只框玩家自己的**单位**（不含建筑，魔兽3 的惯例）
+## 框选：**只框玩家自己的移动单位**（不含建筑、不含可采集物、不含敌方 —— 魔兽3 的惯例）。
+##
+## 历史坑：这里原先把 _selectable_units() 全量塞进来，于是"点选能选敌人/资源"的能力
+## 被顺带搬到了框选上：框一次会框进敌方小兵和树/矿，玩家自己的 12 个兵变成 16 个。
+## 现在统一走 is_box_unit()：己方 + 活着 + 非建筑 + 非可采集物。
 func _select_box(rect: Rect2, additive: bool) -> void:
 	var cam := _camera()
 	if cam == null:
@@ -268,14 +278,31 @@ func _select_box(rect: Rect2, additive: bool) -> void:
 	if rect.size.x < 1.0 and rect.size.y < 1.0:
 		# 兜底：双击被当成框了
 		return
-	var out: Array = selected.duplicate() if additive else []
+	var player := Game.player_faction
+	var out: Array = []
+	# Shift 加选：保留原有选择，但同样把建筑/资源/敌方摘掉（框选结果永远只有己方单位）
+	if additive:
+		for u in selected:
+			if is_box_unit(u, player):
+				out.append(u)
+	var saw_building := false
 	for n in _selectable_units():
 		var anchor := _anchor_point(n)
 		if cam.is_position_behind(anchor):
 			continue
-		if rect.has_point(cam.unproject_position(anchor)) and not out.has(n):
+		if not rect.has_point(cam.unproject_position(anchor)):
+			continue
+		if n is RtsBuilding:
+			saw_building = true
+			continue
+		if not is_box_unit(n, player):
+			continue
+		if not out.has(n):
 			out.append(n)
 	_set_selection(out)
+	# 框里只有建筑（常见：想把基地拖进来）→ 明说一句，别让人以为框选坏了
+	if out.is_empty() and saw_building and not additive:
+		Game.toast("框选只选单位 · 建筑请单击选择", _accent_color())
 
 
 # ===========================================================================
@@ -341,6 +368,20 @@ func _ray_vs_segment(ro: Vector3, rd: Vector3, a: Vector3, b: Vector3) -> Vector
 # ===========================================================================
 # 选择集合维护
 # ===========================================================================
+
+## 直接指定选择集合（HUD / 主场景的 QA 钩子用；签名与调用方一致）。
+##
+## 为什么必须有这层：调用方一直用 has_method("select_units") 探测，但本类原先没有这个方法，
+## 于是 QA 截图全走了"set(selected) + 手动 emit"的旁路 —— 选中圈不生成、_commit 不走，
+## 选中状态只同步了一半。这里统一走 _set_selection，保证圈/信号/is_selected 一致。
+func select_units(list: Array) -> void:
+	var arr: Array = []
+	for u in list:
+		if u == null or not is_instance_valid(u):
+			continue
+		arr.append(u)
+	_set_selection(arr)
+
 
 ## 设置选择（唯一的入口，保证 is_selected / 选中圈 / 信号同步）
 func _set_selection(list: Array) -> void:
@@ -506,6 +547,28 @@ func _own_units(units_only: bool) -> Array:
 			continue
 		out.append(n)
 	return out
+
+
+## 这个节点能不能被**框选 / 双击**收进来：活着的、玩家自己的、非建筑、非可采集物的单位。
+## 抽成 static 是为了让无头自检（--headless --script）不建场景也能直接验这条规则。
+static func is_box_unit(n: Node, player: RtsFaction) -> bool:
+	if player == null or n == null or not is_instance_valid(n):
+		return false
+	var u := n as RtsUnit
+	if u == null or u.def == null:
+		return false
+	if u is RtsBuilding:
+		return false
+	if u.def.kind != RtsConst.Kind.UNIT:
+		return false
+	if not u.is_alive():
+		return false
+	return u.faction == player
+
+
+## 界面主色（提示文字用；配置没起来时有兜底）
+func _accent_color() -> Color:
+	return Cfg.game.hud_accent if Cfg.game != null else Color(0.85, 0.71, 0.36)
 
 
 ## 单位定义

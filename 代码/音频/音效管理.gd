@@ -1,33 +1,99 @@
 class_name Sfx
 extends Node
-## **音效与背景音乐管理**（素材全部由 `工具/音频` 的程序化脚本合成，无外部素材）。
+## **音效 / 语音 / BGM 管理**（全部素材由 工具/音频/合成音效.py 程序化合成，零外部素材）。
+##
+## 这一版重点解决三件事：
+##
+## 1. **总线**：Master / Music / SFX / UI / Voice，电平写在 音频/default_bus_layout.tres，
+##    启动时用 AudioServer.set_bus_layout() 应用 —— **不改 project.godot**。
+##    资源若加载失败，下面的 _ensure_bus() 会按同一套电平把缺失的总线补出来。
+##
+## 2. **素材加载绕开导入管线**：新增 WAV 直接用 AudioStreamWAV.load_from_file() 读源文件，
+##    所以**不需要 --import**（.godot 里没有导入产物也能播）。编辑器下次打开会补 .import，不影响这里。
+##
+## 3. **反馈预算**（任务书 A）：每个音效 id 有三把闸 —— 节流（最小间隔）/ 每秒上限 / 并发上限。
+##    点选 75ms、移动 80ms；一次 selection_changed 哪怕带 12 个单位也只播 1 声。
+##
+## 电平约定：WAV 峰值已经按任务书做在文件里（点选 -19 / 移动 -15 / 语音 -8 dBFS），
+## 播放端不再按声音重复衰减，只做"总线 + UI 补偿"：
+##     UI 总线 -16 dB 是整类压低，短促点击会掉到听不见，所以 UI 一声额外补 +6 dB；
+##     有效电平 = 文件峰值 + 总线 + 补偿，具体数值见 工具/音频校验.py 的汇报。
 ##
 ## 用法：
 ##     Sfx.attach(get_tree())        # 主场景启动时调一次（幂等）
-##     Sfx.play("命中_金属")          # 2D 短音
-##     Sfx.play_at("命中_弓", pos)    # 3D 定位音
-##     Sfx.set_bgm("bgm_战斗")        # 循环 BGM
-##
-## 设计要点：
-##   - **播放器池**：8 个 2D + 8 个 3D 常驻通道循环复用，不在战斗热路径上 new 节点；
-##   - **懒加载 + 缓存**：`res://音频/<name>.wav`，找不到文件静默跳过（不报错、不影响玩法）；
-##   - 自动订阅 `Game` 的信号，把"选中/命中/死亡/胜负/采集/建造"全接上。
+##     Sfx.play("战斗_命中")          # 2D 短音（按 id 自动选总线）
+##     Sfx.play_at("战斗_命中", pos)  # 3D 定位音
+##     Sfx.set_bgm("bgm_会战")        # 循环 BGM
 
 const DIR := "res://音频/"
+const BUS_LAYOUT := "res://音频/default_bus_layout.tres"
+
+## 语音映射表（用 preload 而不是全局类名：新脚本还没进 .godot 的 class 缓存时也能工作）
+const VOICE_MAP := preload("res://代码/音频/语音表.gd")
+
 const POOL_2D := 8
 const POOL_3D := 8
-const BGM_DB := -14.0
+
+const BUS_MUSIC := "Music"
+const BUS_SFX := "SFX"
+const BUS_UI := "UI"
+const BUS_VOICE := "Voice"
+
+## UI 总线的可听度补偿（见文件头"电平约定"）
+const UI_MAKEUP_DB := 6.0
+const BGM_DB := 0.0            # 音乐电平交给 Music 总线（-10 dB）
+const VOICE_THROTTLE := 5.0    # 应答语音全局 5s 节流
+const DEATH_VOICE_THROTTLE := 8.0
+const COMBAT_HOLD := 25.0      # 最后一次交战后 25s 切回经营 BGM
+
+const BGM_CALM := "bgm_经营"
+const BGM_BATTLE := "bgm_会战"
+
+## 每个音效的播放规格：
+##   bus        走哪条总线
+##   throttle   最小播放间隔（秒）——"60~90ms"这一类
+##   per_sec    1 秒窗口内最多播几次（响度预算，超了直接丢）
+##   concurrent 同一时刻最多几个（点选限 2）
+##   pitch      音高随机抖动幅度（避免机关枪式重复）
+const SPEC := {
+	"界面_点选": {"bus": BUS_UI, "throttle": 0.075, "per_sec": 4, "concurrent": 2, "pitch": 0.04},
+	"界面_框选": {"bus": BUS_UI, "throttle": 0.090, "per_sec": 3, "concurrent": 2, "pitch": 0.05},
+	"指令_移动": {"bus": BUS_UI, "throttle": 0.080, "per_sec": 4, "concurrent": 2, "pitch": 0.05},
+	"战斗_攻击": {"bus": BUS_SFX, "throttle": 0.120, "per_sec": 5, "concurrent": 3, "pitch": 0.05},
+	"战斗_命中": {"bus": BUS_SFX, "throttle": 0.030, "per_sec": 10, "concurrent": 6, "pitch": 0.08},
+	"战斗_死亡": {"bus": BUS_SFX, "throttle": 0.080, "per_sec": 4, "concurrent": 3, "pitch": 0.06},
+	"建造_完成": {"bus": BUS_SFX, "throttle": 0.150, "per_sec": 3, "concurrent": 2, "pitch": 0.04},
+	"采集_资源": {"bus": BUS_SFX, "throttle": 0.120, "per_sec": 3, "concurrent": 2, "pitch": 0.05},
+	"法术_施放": {"bus": BUS_SFX, "throttle": 0.150, "per_sec": 3, "concurrent": 2, "pitch": 0.04},
+	"结算_胜利": {"bus": BUS_SFX, "throttle": 1.000, "per_sec": 1, "concurrent": 1, "pitch": 0.0},
+	"结算_失败": {"bus": BUS_SFX, "throttle": 1.000, "per_sec": 1, "concurrent": 1, "pitch": 0.0},
+}
+
+## 没登记的 id（例如语音）走这套：不限流（调用方自己节流）、SFX 总线
+const DEFAULT_SPEC := {"bus": BUS_SFX, "throttle": 0.0, "per_sec": 0, "concurrent": 0, "pitch": 0.03}
 
 static var _inst: Sfx = null
 
-var _pool2d: Array = []
-var _pool3d: Array = []
+var _pool2d: Array[AudioStreamPlayer] = []
+var _pool3d: Array[AudioStreamPlayer3D] = []
 var _bgm: AudioStreamPlayer = null
 var _cache: Dictionary = {}
 var _next2d: int = 0
 var _next3d: int = 0
 var _last_gold: int = -1
 var _last_wood: int = -1
+
+# --- 反馈预算状态 ---
+var _last_played: Dictionary = {}   # id -> 上次播放时刻（秒）
+var _window: Dictionary = {}        # id -> Array[float] 最近 1 秒的播放时刻
+var _active: Dictionary = {}        # id -> Array[float] 结束时刻（用于并发上限）
+
+# --- 语音 / BGM 状态 ---
+var _last_voice: float = -9999.0
+var _last_death_voice: float = -9999.0
+var _last_sel_frame: int = -1
+var _combat_until: float = 0.0
+var _bgm_id: String = ""
 
 
 # ===========================================================================
@@ -48,7 +114,7 @@ static func attach(tree: SceneTree) -> void:
 	_inst._setup.call_deferred()
 
 
-## 播放 2D 音效
+## 播放 2D 音效（总线/节流/预算由 SPEC 决定）
 static func play(id: String, volume_db: float = 0.0, pitch_jitter: float = 0.06) -> void:
 	if _inst == null or not is_instance_valid(_inst):
 		return
@@ -87,27 +153,32 @@ func _exit_tree() -> void:
 			p3.stop()
 			p3.stream = null
 	_cache.clear()
+	_active.clear()
+	_window.clear()
 
 
 func _setup() -> void:
+	_setup_buses()
+
 	for i in POOL_2D:
 		var p := AudioStreamPlayer.new()
-		p.bus = "Master"
+		p.bus = BUS_SFX
 		add_child(p)
 		_pool2d.append(p)
 	for i in POOL_3D:
 		var p3 := AudioStreamPlayer3D.new()
+		p3.bus = BUS_SFX
 		p3.max_distance = 36.0
 		p3.unit_size = 7.0
 		p3.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
 		add_child(p3)
 		_pool3d.append(p3)
 	_bgm = AudioStreamPlayer.new()
-	_bgm.bus = "Master"
+	_bgm.bus = BUS_MUSIC
 	_bgm.volume_db = BGM_DB
 	add_child(_bgm)
 
-	# --- 接线：把全局信号全接上 ---
+	# --- 接线：把全局信号全接上（不碰 单位.gd / 选择系统 / 指令系统）---
 	Game.selection_changed.connect(_on_selection)
 	Game.combat_hit.connect(_on_hit)
 	Game.unit_died.connect(_on_died)
@@ -121,11 +192,48 @@ func _setup() -> void:
 	_start_bgm.call_deferred()
 
 
+## 应用总线布局；资源缺失/字段不全时就地补齐
+func _setup_buses() -> void:
+	var layout: AudioBusLayout = null
+	if ResourceLoader.exists(BUS_LAYOUT):
+		layout = load(BUS_LAYOUT) as AudioBusLayout
+	if layout != null:
+		AudioServer.set_bus_layout(layout)
+	# 兜底：布局万一没保住 Master（0 号总线），先把它改回来，否则所有播放器都没地方落
+	if AudioServer.bus_count > 0 and AudioServer.get_bus_index("Master") < 0:
+		AudioServer.set_bus_name(0, "Master")
+		AudioServer.set_bus_volume_db(0, 0.0)
+	_ensure_bus(BUS_MUSIC, -10.0)
+	_ensure_bus(BUS_SFX, -6.0)
+	_ensure_bus(BUS_UI, -16.0)
+	_ensure_bus(BUS_VOICE, -8.0)
+	var parts: PackedStringArray = []
+	for i in AudioServer.bus_count:
+		parts.append("%s(%.1fdB)" % [AudioServer.get_bus_name(i), AudioServer.get_bus_volume_db(i)])
+	print("[音效] 总线：%s" % " ".join(parts))
+
+
+## 确保某条总线存在（存在则只补 send，不改用户调好的电平）
+func _ensure_bus(bus_name: String, db: float) -> void:
+	var idx := AudioServer.get_bus_index(bus_name)
+	if idx < 0:
+		AudioServer.add_bus()
+		idx = AudioServer.bus_count - 1
+		AudioServer.set_bus_name(idx, bus_name)
+		AudioServer.set_bus_volume_db(idx, db)
+		AudioServer.set_bus_send(idx, "Master")
+		return
+	if String(AudioServer.get_bus_send(idx)).is_empty():
+		AudioServer.set_bus_send(idx, "Master")
+
+
 ## 起 BGM（必须在入树之后）
 func _start_bgm() -> void:
 	if not is_inside_tree():
 		return
-	_set_bgm("bgm_战斗")
+	_set_bgm(BGM_CALM)
+	# 预解码会战 BGM（1.4MB WAV），避免第一次交战时在主线程上卡一下
+	_stream(BGM_BATTLE)
 
 
 # ===========================================================================
@@ -133,25 +241,86 @@ func _start_bgm() -> void:
 # ===========================================================================
 
 ## 取（并缓存）音频流
+##
+## ① 先按源文件读：AudioStreamWAV.load_from_file() 不依赖 .import，
+##    这样新增 WAV 不需要跑 --import；
+## ② 再退回资源加载（老素材已导入时更省事）。
 func _stream(id: String) -> AudioStream:
 	if _cache.has(id):
 		return _cache[id]
 	var path := DIR + id + ".wav"
 	var s: AudioStream = null
-	if ResourceLoader.exists(path):
-		s = load(path)
+	if FileAccess.file_exists(path):
+		s = AudioStreamWAV.load_from_file(path)
+	if s == null and ResourceLoader.exists(path):
+		s = load(path) as AudioStream
+	if s == null:
+		push_warning("[音效] 缺素材：%s" % path)
 	_cache[id] = s
 	return s
 
 
-func _play2d(id: String, volume_db: float, jitter: float) -> void:
+func _spec_of(id: String) -> Dictionary:
+	var spec: Dictionary = SPEC.get(id, DEFAULT_SPEC)
+	return spec
+
+
+## 三条闸：节流 → 并发 → 1 秒预算；任意一条不过就丢
+func _allow(id: String, spec: Dictionary, now: float, dur: float) -> bool:
+	var throttle := float(spec.get("throttle", 0.0))
+	if throttle > 0.0 and now - float(_last_played.get(id, -9999.0)) < throttle:
+		return false
+
+	var cap := int(spec.get("concurrent", 0))
+	var ends: Array = []
+	if cap > 0:
+		# 只保留"还没播完"的；遍历而不是只砍队首 —— 同一 id 的时长可能不同，队列不保证有序
+		var raw: Array = _active.get(id, [])
+		for e in raw:
+			if float(e) > now:
+				ends.append(e)
+		if ends.size() >= cap:
+			_active[id] = ends
+			return false
+
+	var per_sec := int(spec.get("per_sec", 0))
+	var times: Array = []
+	if per_sec > 0:
+		times = _window.get(id, [])
+		var cutoff := now - 1.0
+		while not times.is_empty() and float(times[0]) < cutoff:
+			times.pop_front()
+		if times.size() >= per_sec:
+			_window[id] = times
+			return false
+
+	# 通过：登记时刻
+	if cap > 0:
+		ends.append(now + maxf(dur, 0.02))
+		_active[id] = ends
+	if per_sec > 0:
+		times.append(now)
+		_window[id] = times
+	_last_played[id] = now
+	return true
+
+
+func _play2d(id: String, volume_db: float, jitter: float, bus: String = "") -> void:
 	var s := _stream(id)
 	if s == null or _pool2d.is_empty():
+		return
+	var spec := _spec_of(id)
+	var out_bus := bus
+	if out_bus.is_empty():
+		out_bus = String(spec.get("bus", BUS_SFX))
+	var now := _now()
+	if not _allow(id, spec, now, float(s.get_length())):
 		return
 	var p: AudioStreamPlayer = _pool2d[_next2d]
 	_next2d = (_next2d + 1) % _pool2d.size()
 	p.stream = s
-	p.volume_db = volume_db
+	p.bus = out_bus
+	p.volume_db = volume_db + _bus_makeup(out_bus)
 	p.pitch_scale = 1.0 + randf_range(-jitter, jitter)
 	p.play()
 
@@ -160,13 +329,27 @@ func _play3d(id: String, pos: Vector3, volume_db: float) -> void:
 	var s := _stream(id)
 	if s == null or _pool3d.is_empty():
 		return
+	var spec := _spec_of(id)
+	var now := _now()
+	if not _allow(id, spec, now, float(s.get_length())):
+		return
 	var p: AudioStreamPlayer3D = _pool3d[_next3d]
 	_next3d = (_next3d + 1) % _pool3d.size()
 	p.stream = s
+	p.bus = String(spec.get("bus", BUS_SFX))
 	p.global_position = pos
 	p.volume_db = volume_db
 	p.pitch_scale = 1.0 + randf_range(-0.05, 0.05)
 	p.play()
+
+
+## UI 总线的可听度补偿（其余总线不补）
+func _bus_makeup(bus: String) -> float:
+	return UI_MAKEUP_DB if bus == BUS_UI else 0.0
+
+
+func _now() -> float:
+	return float(Time.get_ticks_msec()) / 1000.0
 
 
 func _set_bgm(id: String) -> void:
@@ -174,13 +357,16 @@ func _set_bgm(id: String) -> void:
 	if s == null or _bgm == null:
 		return
 	if _bgm.stream == s and _bgm.playing:
+		_bgm_id = id
 		return
 	if s is AudioStreamWAV:
-		(s as AudioStreamWAV).loop_mode = AudioStreamWAV.LOOP_FORWARD
-		(s as AudioStreamWAV).loop_begin = 0
-		(s as AudioStreamWAV).loop_end = (s as AudioStreamWAV).data.size() / 2
+		var w := s as AudioStreamWAV
+		w.loop_mode = AudioStreamWAV.LOOP_FORWARD
+		w.loop_begin = 0
+		w.loop_end = int(round(w.get_length() * float(w.mix_rate)))
 	_bgm.stream = s
 	_bgm.volume_db = BGM_DB
+	_bgm_id = id
 	_bgm.play()
 
 
@@ -188,17 +374,53 @@ func _set_bgm(id: String) -> void:
 # 信号处理
 # ===========================================================================
 
-## 选中：己方单位给一声应答
+## 选中：一次信号只播一声（点选/框选二选一）+ 至多一句类型应答
 func _on_selection(units: Array) -> void:
 	if units == null or units.is_empty():
 		return
-	var mine: int = 0
-	for u in units:
-		if u != null and is_instance_valid(u) and u.get("faction") == Game.player_faction:
-			mine += 1
-	if mine <= 0:
+	# 同一帧内可能有多处 emit（选择系统 + HUD 补选），只认第一次
+	var frame := Engine.get_process_frames()
+	if frame == _last_sel_frame:
 		return
-	_play2d("单位_应答" if randf() < 0.5 else "单位_应答2", -6.0, 0.10)
+
+	var player: RtsFaction = Game.player_faction
+	if player == null:
+		return
+	var mine: Array = []
+	for u in units:
+		if u != null and is_instance_valid(u) and u.get("faction") == player:
+			mine.append(u)
+	if mine.is_empty():
+		return
+	_last_sel_frame = frame
+
+	# ★ 12 个单位也只播 1 声：框选播"唰"（受 90ms 节流 + 每秒 3 次预算约束）
+	var cue := "界面_点选" if mine.size() == 1 else "界面_框选"
+	_play2d(cue, 0.0, 0.04, BUS_UI)
+	_try_reply_voice(mine)
+
+
+## 应答语音：按"第一个会说话的单位类型"选组，5s 节流，走 Voice 总线
+func _try_reply_voice(mine: Array) -> void:
+	var now := _now()
+	if now - _last_voice < VOICE_THROTTLE:
+		return
+	var line := ""
+	for u in mine:
+		if u is RtsBuilding:
+			continue
+		var d: UnitDef = u.get("def") as UnitDef
+		if d == null:
+			continue
+		var lines: PackedStringArray = VOICE_MAP.reply_lines(d.id)
+		if lines.is_empty():
+			continue
+		line = lines[randi() % lines.size()]
+		break
+	if line.is_empty():
+		return
+	_last_voice = now
+	_play2d(line, 0.0, 0.03, BUS_VOICE)
 
 
 ## 命中：按攻击方式选音色
@@ -210,48 +432,98 @@ func _on_hit(attacker: Node3D, target: Node3D, _damage: float, _crit: bool) -> v
 		if d != null:
 			is_ranged = d.projectile != RtsConst.Projectile.NONE or d.attack_range > 3.0
 	if is_ranged:
-		_play3d("命中_弓", pos, -8.0)
+		_play3d("战斗_命中", pos, -3.0)
 	else:
-		_play3d("命中_金属", pos, -6.0)
+		_play3d("战斗_命中", pos, 0.0)
+	_mark_combat()
 
 
 func _on_died(unit: Node3D) -> void:
 	var pos: Vector3 = unit.global_position if unit != null else Vector3.ZERO
-	_play3d("死亡", pos, -5.0)
+	_play3d("战斗_死亡", pos, 0.0)
+	_mark_combat()
+	if unit == null or not is_instance_valid(unit):
+		return
+	if unit is RtsBuilding:
+		return
+	if unit.get("faction") != Game.player_faction:
+		return
+	_try_death_voice(unit)
+
+
+func _try_death_voice(unit: Node3D) -> void:
+	var now := _now()
+	if now - _last_death_voice < DEATH_VOICE_THROTTLE:
+		return
+	var d: UnitDef = unit.get("def") as UnitDef
+	if d == null:
+		return
+	var line := String(VOICE_MAP.death_line(d.id))
+	if line.is_empty():
+		return
+	_last_death_voice = now
+	_play2d(line, 0.0, 0.02, BUS_VOICE)
 
 
 func _on_impact(pos: Vector3, _kind: int) -> void:
-	_play3d("命中_弓", pos, -9.0)
+	_play3d("战斗_命中", pos, -9.0)
 
 
 func _on_built(building: Node3D) -> void:
 	var pos: Vector3 = building.global_position if building != null else Vector3.ZERO
-	_play3d("建造_锤击", pos, -4.0)
+	_play3d("建造_完成", pos, 0.0)
 
 
 ## 资源变化：只在自己（玩家）增减时响，且要跟上一帧比
 func _on_resources(faction: RtsFaction) -> void:
 	if faction == null or faction != Game.player_faction:
 		return
+	var gained := false
 	if _last_gold >= 0 and faction.gold > _last_gold:
-		_play2d("采集_金币", -11.0, 0.08)
+		gained = true
 	if _last_wood >= 0 and faction.wood > _last_wood:
-		_play2d("采集_木材", -12.0, 0.08)
+		gained = true
+	if gained:
+		_play2d("采集_资源", 0.0, 0.08)
 	_last_gold = faction.gold
 	_last_wood = faction.wood
 
 
-## 下令：法术走火球音，其余给一声点击
+## 下令：移动 80ms 节流；攻击/施法走战斗音；其余给一声很轻的点选
 func _on_order(_units: Array, order: int, target_pos: Vector3, _target: Node3D) -> void:
 	if order == RtsConst.Order.CAST:
-		_play3d("法术_火球", target_pos, -5.0)
+		_play3d("法术_施放", target_pos, 0.0)
 	elif order == RtsConst.Order.ATTACK or order == RtsConst.Order.ATTACK_MOVE:
-		_play2d("攻击_挥砍", -13.0, 0.10)
+		_play2d("战斗_攻击", 0.0, 0.10)
+	elif order == RtsConst.Order.MOVE:
+		_play2d("指令_移动", 0.0, 0.05, BUS_UI)
 	else:
-		_play2d("界面_点击", -13.0, 0.06)
+		_play2d("界面_点选", 0.0, 0.06, BUS_UI)
 
 
 func _on_over(victory: bool) -> void:
 	if _bgm != null:
 		_bgm.stop()
-	_play2d("胜利" if victory else "失败", -3.0, 0.0)
+	_bgm_id = ""
+	_play2d("结算_胜利" if victory else "结算_失败", 0.0, 0.0)
+
+
+# ===========================================================================
+# BGM 状态机：经营 ↔ 会战
+# ===========================================================================
+
+## 交战中：切会战 BGM，并把"停战计时"往后推
+func _mark_combat() -> void:
+	_combat_until = _now() + COMBAT_HOLD
+	if _bgm_id != BGM_BATTLE and Game.phase == RtsConst.Phase.RUNNING:
+		_set_bgm(BGM_BATTLE)
+
+
+## 停战 25s 自动回经营 BGM（胜负后不再起）
+func _process(_delta: float) -> void:
+	if _bgm == null or _bgm_id != BGM_BATTLE:
+		return
+	if Game.phase != RtsConst.Phase.RUNNING:
+		return
+	if _now() >= _combat_until:
+		_set_bgm(BGM_CALM)

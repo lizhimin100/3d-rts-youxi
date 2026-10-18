@@ -26,6 +26,10 @@ const TOAST_FADE := 0.55
 const MARGIN := 14.0
 const STATS_SIZE := Vector2(432.0, 50.0)
 const CARD_SIZE := Vector2(336.0, 224.0)
+## 选中面板宽度（单位档案板 / 建筑面板共用，贴底摆放用）
+const SEL_PANEL_W := 512.0
+## 建筑面板脚本（用 preload 而不是直接写 class_name：新类还没进全局 class 缓存时也能跑）
+const BUILDING_PANEL_SCRIPT := preload("res://代码/界面/建筑面板.gd")
 
 ## 界面根节点（承载 theme，铺满视口）
 var root: Control = null
@@ -47,7 +51,9 @@ var _minimap: RtsMinimap = null
 var _sel_panel: PanelContainer = null
 ## **BASALT 档案板**：3D 头像 + 名称 + 生命 + 数值 + 多选格子（见 选中面板.gd）
 var _dossier: RtsDossierPanel = null
-## 当前选中面板高度（单选 / 多选两种版式）
+## **建筑面板**：选中单个建筑时的专属版式（训练 / 集结点 / 研究，见 建筑面板.gd）
+var _building_panel: PanelContainer = null
+## 当前选中面板高度（单位单选 / 多选 / 建筑三种版式各不相同）
 var _sel_h: float = RtsDossierPanel.H_SINGLE
 ## **ECHO 触感回声**：点选圆环 / 右键涟漪（见 触感回声.gd）
 var _echo: RtsEchoFx = null
@@ -405,12 +411,21 @@ func _build_minimap() -> void:
 	root.add_child(_minimap)
 
 
-## 中下：选中档案板（**门面**，具体版式在 RtsDossierPanel 里）
+## 中下：选中信息（**门面**）。两种版式按选中内容切换：
+##   · 单个建筑 → RtsBuildingPanel（训练队列 / 建造进度 / 集结点 / 研究）
+##   · 其余情况 → RtsDossierPanel（3D 头像 / 属性 / 多选格子）
+## 两块面板同时存在、按可见性切换：这样高度重新自适应时不会重建控件，也不会丢悬停状态。
 func _build_selection_panel() -> void:
 	_dossier = RtsDossierPanel.new()
 	_dossier.name = "选中信息"
-	_sel_panel = _dossier
 	root.add_child(_dossier)
+
+	_building_panel = BUILDING_PANEL_SCRIPT.new() as PanelContainer
+	_building_panel.name = "建筑信息"
+	_building_panel.visible = false
+	root.add_child(_building_panel)
+
+	_sel_panel = _dossier
 	_sel_h = _dossier.desired_height()
 	_place_selection_panel()
 
@@ -420,8 +435,8 @@ func _place_selection_panel() -> void:
 	if _sel_panel == null:
 		return
 	_place(_sel_panel, 0.5, 1.0, 0.5, 1.0,
-			-RtsDossierPanel.PANEL_W * 0.5, -(MARGIN + _sel_h),
-			RtsDossierPanel.PANEL_W * 0.5, -MARGIN)
+			-SEL_PANEL_W * 0.5, -(MARGIN + _sel_h),
+			SEL_PANEL_W * 0.5, -MARGIN)
 
 
 ## 右下命令卡
@@ -640,12 +655,34 @@ func _refresh_stats() -> void:
 		_pop_bar.set_ratio(float(used) / maxf(float(cap), 1.0), cap > 0 and used >= cap)
 
 
-## 选中信息（整块交给 BASALT 档案板：头像 / 名称 / 生命 / 数值 / 多选格子）
+## 选中信息：**单个建筑**走建筑面板，其余（单位 / 多选 / 空）交给 BASALT 档案板。
+## 两块面板共用贴底位置，靠 visible 切换；高度变了才重摆，避免每 0.12s 抖一下。
 func _refresh_selection() -> void:
 	var arr := _valid_selection()
-	if _dossier != null:
-		_dossier.refresh(arr)
-		var h: float = _dossier.desired_height()
+	var sole_building: RtsBuilding = null
+	if arr.size() == 1:
+		var b := arr[0] as RtsBuilding
+		if b != null and b.is_alive():
+			sole_building = b
+
+	if sole_building != null:
+		if _dossier != null:
+			_dossier.visible = false
+		if _building_panel != null:
+			_building_panel.visible = true
+			_building_panel.call("refresh", sole_building)
+		_sel_panel = _building_panel
+	else:
+		if _building_panel != null:
+			_building_panel.visible = false
+		if _dossier != null:
+			_dossier.visible = true
+			_dossier.refresh(arr)
+		_sel_panel = _dossier
+
+	if _sel_panel != null:
+		# 两块面板都实现了 desired_height()；这里按调用取，避免依赖具体面板类型
+		var h: float = float(_sel_panel.call("desired_height"))
 		if absf(h - _sel_h) > 0.5:
 			_sel_h = h
 			_place_selection_panel()
@@ -688,10 +725,13 @@ func _card_signature() -> String:
 		if d != null:
 			id = String(d.id)
 		var q: int = 0
+		var r: String = "-"
 		var b := u as RtsBuilding
 		if b != null:
 			q = b.train_queue.size()
-		parts.append("%s:%d" % [id, q])
+			# 研究状态也进签名：研究完成/满级时命令卡必须重建，否则按钮一直停在旧等级
+			r = "%s:%d" % [String(b.current_research()), int(clampf(b.research_progress(), 0.0, 1.0) * 10.0)]
+		parts.append("%s:%d:%s" % [id, q, r])
 	parts.append("page:%s" % (str(_card.is_build_page()) if _card != null else "0"))
 	parts.append("cmd:%s" % str(_command_system() != null))
 	return "|".join(parts)

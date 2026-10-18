@@ -44,9 +44,9 @@ PALETTE = {
     "gold_dark":   ("#A87B2A", 0.42, 0.80),
     "wood":        ("#7A5230", 0.78, 0.0),
     "wood_dark":   ("#553720", 0.82, 0.0),
-    "steel":       ("#A8B0BA", 0.36, 0.82),
+    "steel":       ("#98A2AE", 0.38, 0.80),
     "steel_dark":  ("#5E6773", 0.42, 0.75),
-    "steel_light": ("#D2D8DF", 0.30, 0.85),
+    "steel_light": ("#BCC4CE", 0.32, 0.82),
     "iron":        ("#6B655C", 0.60, 0.55),
     "leather":     ("#8A5B34", 0.80, 0.0),
     "leather_dark":("#573823", 0.84, 0.0),
@@ -282,7 +282,12 @@ class Builder(object):
         verts = [v.co.copy() for v in bm.verts]
         idx = {v: i for i, v in enumerate(bm.verts)}
         faces = [[idx[v] for v in f.verts] for f in bm.faces]
-        wp = weight if weight is not None else (lambda p: {})
+        wp = weight
+        if wp is None:
+            wp = lambda p: {}
+        elif isinstance(wp, dict):
+            fixed = dict(wp)
+            wp = lambda p: fixed          # 常量权重也允许（旗帜/整块静态件）
         ws = [wp(v) for v in verts]
         key = material.name
         self.parts.setdefault(key, []).append((verts, faces, ws))
@@ -290,33 +295,41 @@ class Builder(object):
 
     # --- 便捷封装 -------------------------------------------------------
     def box(self, size, loc=(0, 0, 0), rot=(0, 0, 0), material=None, bevel=0.0,
-            seg=1, weight=None, scale=None):
+            seg=1, weight=None, scale=None, xform=None):
         bm = _bm_cube(size, bevel, seg)
         M = Matrix.Translation(Vector(loc)) @ Euler(rot, "XYZ").to_matrix().to_4x4()
         if scale is not None:
             M = M @ Matrix.Diagonal(Vector(scale).to_4d())
+        if xform is not None:
+            M = xform @ M
         self.add(bm, material, weight, M)
 
     def cyl(self, r1, r2, h, loc=(0, 0, 0), rot=(0, 0, 0), material=None, sides=8,
-            weight=None, smooth=False, scale=None):
+            weight=None, smooth=False, scale=None, xform=None):
         bm = _bm_cone(r1, r2, h, sides, smooth)
         M = Matrix.Translation(Vector(loc)) @ Euler(rot, "XYZ").to_matrix().to_4x4()
         if scale is not None:
             M = M @ Matrix.Diagonal(Vector(scale).to_4d())
+        if xform is not None:
+            M = xform @ M
         self.add(bm, material, weight, M)
 
     def ico(self, r, loc=(0, 0, 0), material=None, subdiv=1, weight=None,
-            scale=(1, 1, 1), smooth=False):
+            scale=(1, 1, 1), smooth=False, xform=None):
         bm = _bm_ico(r, subdiv, smooth)
         M = Matrix.Translation(Vector(loc)) @ Matrix.Diagonal(Vector(scale).to_4d())
+        if xform is not None:
+            M = xform @ M
         self.add(bm, material, weight, M)
 
     def loft(self, rings, material, weight=None, loc=(0, 0, 0), rot=(0, 0, 0),
-             cap_a=True, cap_b=True, scale=None):
+             cap_a=True, cap_b=True, scale=None, xform=None):
         bm = _bm_loft(rings, cap_a, cap_b)
         M = Matrix.Translation(Vector(loc)) @ Euler(rot, "XYZ").to_matrix().to_4x4()
         if scale is not None:
             M = M @ Matrix.Diagonal(Vector(scale).to_4d())
+        if xform is not None:
+            M = xform @ M
         self.add(bm, material, weight, M)
 
     def poly(self, pts2d, depth, material, loc=(0, 0, 0), rot=(0, 0, 0), weight=None):
@@ -527,11 +540,69 @@ class HumanRig(object):
             pb.keyframe_insert("location", frame=frame)
 
     def finish_action(self, act, start=1, end=30, interp="BEZIER"):
-        for fc in act.fcurves:
-            for kp in fc.keyframe_points:
-                kp.interpolation = interp
-        act.frame_range  # 触发重算
+        # Blender 4.4+ 的 Action 改成了 layered/slotted，act.fcurves 已移除。
+        # 这里做版本兼容：能拿到 channelbag 就统一插值，拿不到就用默认 Bezier（不影响导出）。
+        try:
+            for layer in act.layers:
+                for strip in layer.strips:
+                    for slot in act.slots:
+                        cb = strip.channelbag(slot)
+                        if cb is None:
+                            continue
+                        for fc in cb.fcurves:
+                            for kp in fc.keyframe_points:
+                                kp.interpolation = interp
+        except Exception:
+            pass
+        try:
+            _ = act.frame_range
+        except Exception:
+            pass
         return act
+
+    def preview_action(self, name, frame=1):
+        """预览某段动画的一帧（QC 截图用）。没有该动作就退回 rest。"""
+        act = bpy.data.actions.get(name)
+        if act is None:
+            self.rest_pose()
+            return
+        ad = self.arm.animation_data
+        if ad is None:
+            self.arm.animation_data_create()
+            ad = self.arm.animation_data
+        for t in ad.nla_tracks:
+            t.mute = True
+        ad.action = act
+        try:
+            for layer in act.layers:
+                for strip in layer.strips:
+                    for slot in act.slots:
+                        if strip.channelbag(slot) is not None:
+                            ad.action_slot = slot
+                            break
+        except Exception:
+            pass
+        bpy.context.scene.frame_set(frame)
+        self._upd()
+
+    def rest_pose(self):
+        """回到静止姿态：清当前 action、静音所有 NLA 轨、清零 pose。
+        为什么要有：动画建完后骨架停在最后一帧（death 会整个人塌下去），
+        预览/量尺寸前必须复位，否则 bbox 和截图全是变形的。"""
+        ad = self.arm.animation_data
+        if ad is not None:
+            ad.action = None
+            for t in ad.nla_tracks:
+                t.mute = True
+        self.reset()
+        bpy.context.scene.frame_set(1)
+        self._upd()
+
+    def resume_nla(self):
+        ad = self.arm.animation_data
+        if ad is not None:
+            for t in ad.nla_tracks:
+                t.mute = False
 
     def push_nla(self, act):
         ad = self.arm.animation_data
@@ -556,7 +627,8 @@ def reset_scene():
     for blk in (bpy.data.meshes, bpy.data.armatures, bpy.data.actions):
         for x in list(blk):
             blk.remove(x)
-    _MAT_CACHE.clear()
+    # 注意：**不清材质缓存**。同一 Blender 进程里连续建多个资产时，
+    # 若清掉缓存再 mat("steel") 会生成 M_steel.001 —— 引擎按 M_<zone> 匹配就会失效。
     sc = bpy.context.scene
     coll = bpy.data.collections.new("COL_asset")
     sc.collection.children.link(coll)
@@ -622,19 +694,25 @@ def setup_light_and_cam(target_center, radius, res=(720, 900), cam_dir=(0.62, -1
     sc = bpy.context.scene
     sc.render.resolution_x, sc.render.resolution_y = res
     sc.render.film_transparent = False
-    sc.render.engine = "BLENDER_EEVEE_NEXT" if "BLENDER_EEVEE_NEXT" in [
-        e.bl_idname for e in bpy.types.RenderEngine.__subclasses__()] else "BLENDER_EEVEE"
+    for eng in ("BLENDER_EEVEE", "BLENDER_EEVEE_NEXT"):
+        try:
+            sc.render.engine = eng
+            break
+        except Exception:
+            continue
     try:
-        sc.eevee.taa_render_samples = 32
+        sc.eevee.taa_render_samples = 24
     except Exception:
         pass
     # 相机
     cam_data = bpy.data.cameras.new("QCCam")
-    cam_data.lens = 62.0
+    cam_data.lens = 70.0
     cam = bpy.data.objects.new("QCCam", cam_data)
     sc.collection.objects.link(cam)
     d = Vector(cam_dir).normalized()
-    cam.location = Vector(target_center) + d * (radius * 3.0)
+    # 取景：竖幅 720x900 时 sensor_fit=AUTO 用 36mm 贴在长边，
+    # 垂直覆盖 = dist * 36 / lens；要装下 2.2*radius 的高度
+    cam.location = Vector(target_center) + d * (radius * 4.3)
     direction = Vector(target_center) - cam.location
     cam.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
     sc.camera = cam
@@ -673,9 +751,9 @@ def setup_light_and_cam(target_center, radius, res=(720, 900), cam_dir=(0.62, -1
 
 
 def render_views(name, outdir, center, radius, views=None, res=(720, 900)):
-    views = views or {"正": (0.0, -1.0, 0.12), "三": (0.75, -1.0, 0.28),
-                      "四": (-0.75, -1.0, 0.28), "背": (0.0, 1.0, 0.12),
-                      "高": (0.55, -1.0, 0.75)}
+    # 视角方向是"从中心指向相机"；+Y 是角色正面，所以正视图相机在 +Y。
+    views = views or {"正": (0.0, 1.0, 0.10), "三": (0.80, 1.0, 0.26),
+                      "四": (-0.80, 1.0, 0.26), "背": (0.0, -1.0, 0.10)}
     os.makedirs(outdir, exist_ok=True)
     sc = bpy.context.scene
     outs = []

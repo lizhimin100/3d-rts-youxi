@@ -61,12 +61,8 @@ func _ready() -> void:
 	# 验收脚本改走 `--autotest`（主场景挂 代码/测试/自动试玩.gd），不再挂在 AI 上：
 	# 旧的自检会污染真实对局（刷 2 座农场、动玩家农民），并且在 t=60s 时 get_tree().quit()。
 
-	# === TEMP-SLEDGE-SELFTEST BEGIN（仅 --sledgetest 时启用，交付前整段删除）===
-	if OS.get_cmdline_user_args().has("--sledgetest"):
-		var _st := load("res://代码/单位/_自检.gd")
-		if _st != null:
-			add_child(_st.new())
-	# === TEMP-SLEDGE-SELFTEST END ===
+	# （旧的 TEMP-SLEDGE-SELFTEST 钩子已删除：它指向的 代码/单位/_自检.gd 早就不存在，
+	#   留着只会让后来的人以为还有一条自检通路。验收统一走 代码/测试/ 下的脚本。）
 
 
 func _init_wave_clock() -> void:

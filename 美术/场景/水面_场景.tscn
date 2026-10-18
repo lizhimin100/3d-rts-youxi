@@ -1,0 +1,20 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Material" path="res://美术/材质/水材质.tres" id="1_mat"]
+
+[sub_resource type="CylinderMesh" id="Cyl_water"]
+top_radius = 1.0
+bottom_radius = 1.0
+height = 0.25
+radial_segments = 40
+rings = 1
+
+[node name="水面_场景" type="Node3D"]
+metadata/decor_kind = "water"
+
+[node name="水面" type="MeshInstance3D" parent="."]
+cast_shadow = 0
+visibility_range_end = 200.0
+visibility_range_fade_mode = 1
+mesh = SubResource("Cyl_water")
+material_override = ExtResource("1_mat")

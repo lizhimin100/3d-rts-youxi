@@ -80,7 +80,10 @@ if ($Full) {
 
     # --- 5. 自动试玩（经济/战斗/AI/胜负/重开）---
     Write-Host "[5] 自动试玩 ..." -ForegroundColor Cyan
-    $at = & $godot --headless --path . --quit-after 12000 -- --autotest 2>&1 | Out-String
+    # ★ 必须加 --fixed-fps：自动试玩的等待是 create_timer（真实时间），无固定帧率时
+    #   机器越快、12000 帧的预算越早用完，会偶发"没跑到结尾就被 --quit-after 掐掉"（实测踩到过）。
+    #   定帧 60 后整局约 400 帧、稳定 4 秒跑完，和机器负载无关。
+    $at = & $godot --headless --fixed-fps 60 --path . --quit-after 12000 -- --autotest 2>&1 | Out-String
     $atLine = ($at -split "`n" | Select-String -Pattern '^AUTOTEST ').Line
     $atOk = $at -match '"结果":"通过"'
     Report "自动试玩" $atOk ($atLine -replace 'AUTOTEST ', '')
@@ -92,6 +95,17 @@ if ($Full) {
     $gtLine = ($gt -split "`n" | Select-String -Pattern '^GATHERTEST ').Line
     $gtOk = $gt -match '"结果":"通过"'
     Report "采集压力自检" $gtOk ($gtLine -replace 'GATHERTEST ', '')
+
+    # --- 5.4 升级 / 人口自检（铁匠铺研究闭环 + 训练队列不撑爆人口）---
+    Write-Host "[5.4] 升级 / 人口自检 ..." -ForegroundColor Cyan
+    $rt = & $godot --headless --fixed-fps 60 --path . --quit-after 3000 -- --research-test 2>&1 | Out-String
+    $rtLine = ($rt -split "`n" | Select-String -Pattern '^RESEARCHTEST ').Line
+    $rtOk = $rt -match '"结果":"通过"'
+    Report "升级/人口自检" $rtOk ($rtLine -replace 'RESEARCHTEST ', '')
+    if (-not $rtOk) {
+        ($rt -split "`n" | Select-String -Pattern 'ERROR|SCRIPT ERROR') | Select-Object -First 10 |
+            ForEach-Object { Write-Host ("    " + $_.Line.Trim()) -ForegroundColor Red }
+    }
 
     # --- 5.5 手感自检（60fps 定帧：起速/刹停/缩放/旋转/单位加减速）---
     Write-Host "[5.5] 手感自检 ..." -ForegroundColor Cyan
@@ -105,7 +119,11 @@ if ($Full) {
     $et = & $godot --path . --resolution 1600x900 -- --edge-test 2>&1 | Out-String
     $etLine = ($et -split "`n" | Select-String -Pattern '^EDGETEST ').Line
     $etOk = $et -match '"结果":"通过"'
-    Report "边缘滚动" $etOk ($etLine -replace 'EDGETEST ', '')
+    # 后台作业/CI 启动时窗口可能拿不到前台焦点，镜头"失焦不滚"是设计行为。
+    # 自检会自己报"跳过：窗口未获得焦点"，这种情况不算回归。
+    $etSkip = $et -match '"结果":"跳过'
+    $etName = if ($etSkip) { "边缘滚动（跳过：窗口无焦点）" } else { "边缘滚动" }
+    Report $etName ($etOk -or $etSkip) ($etLine -replace 'EDGETEST ', '')
 }
 
 # --- 6. 可选：实机截图 ---

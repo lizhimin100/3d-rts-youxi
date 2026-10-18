@@ -1,0 +1,112 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="PackedScene" path="res://美术/模型/树.glb" id="1_glb"]
+
+[node name="草丛_场景" type="Node3D"]
+metadata/decor_kind = "grass"
+metadata/batch_mesh = "树冠10"
+scale = Vector3(0.55, 0.55, 0.55)
+
+[node name="树" parent="." instance=ExtResource("1_glb")]
+position = Vector3(0, -3.3, 0)
+
+[node name="板根0" parent="树/Root/Body" index="0"]
+visible = false
+
+[node name="板根1" parent="树/Root/Body" index="1"]
+visible = false
+
+[node name="板根2" parent="树/Root/Body" index="2"]
+visible = false
+
+[node name="板根3" parent="树/Root/Body" index="3"]
+visible = false
+
+[node name="板根4" parent="树/Root/Body" index="4"]
+visible = false
+
+[node name="枝0" parent="树/Root/Body" index="5"]
+visible = false
+
+[node name="枝1" parent="树/Root/Body" index="6"]
+visible = false
+
+[node name="枝2" parent="树/Root/Body" index="7"]
+visible = false
+
+[node name="枝3" parent="树/Root/Body" index="8"]
+visible = false
+
+[node name="树冠0" parent="树/Root/Body" index="9"]
+visible = false
+
+[node name="树冠1" parent="树/Root/Body" index="10"]
+visible = false
+
+[node name="树冠10" parent="树/Root/Body" index="11"]
+cast_shadow = 0
+visibility_range_end = 80.0
+visibility_range_fade_mode = 1
+
+[node name="树冠2" parent="树/Root/Body" index="12"]
+visible = false
+
+[node name="树冠3" parent="树/Root/Body" index="13"]
+visible = false
+
+[node name="树冠4" parent="树/Root/Body" index="14"]
+visible = false
+
+[node name="树冠5" parent="树/Root/Body" index="15"]
+visible = false
+
+[node name="树冠6" parent="树/Root/Body" index="16"]
+visible = false
+
+[node name="树冠7" parent="树/Root/Body" index="17"]
+visible = false
+
+[node name="树冠8" parent="树/Root/Body" index="18"]
+visible = false
+
+[node name="树冠9" parent="树/Root/Body" index="19"]
+visible = false
+
+[node name="树干" parent="树/Root/Body" index="20"]
+visible = false
+
+[node name="树皮棱0_0" parent="树/Root/Body" index="21"]
+visible = false
+
+[node name="树皮棱0_1" parent="树/Root/Body" index="22"]
+visible = false
+
+[node name="树皮棱1_0" parent="树/Root/Body" index="23"]
+visible = false
+
+[node name="树皮棱1_1" parent="树/Root/Body" index="24"]
+visible = false
+
+[node name="树皮棱2_0" parent="树/Root/Body" index="25"]
+visible = false
+
+[node name="树皮棱2_1" parent="树/Root/Body" index="26"]
+visible = false
+
+[node name="树皮棱3_0" parent="树/Root/Body" index="27"]
+visible = false
+
+[node name="树皮棱3_1" parent="树/Root/Body" index="28"]
+visible = false
+
+[node name="树皮棱4_0" parent="树/Root/Body" index="29"]
+visible = false
+
+[node name="树皮棱4_1" parent="树/Root/Body" index="30"]
+visible = false
+
+[node name="树皮棱5_0" parent="树/Root/Body" index="31"]
+visible = false
+
+[node name="树皮棱5_1" parent="树/Root/Body" index="32"]
+visible = false
