@@ -1,0 +1,48 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Shader" path="res://美术/着色器/特效加色.gdshader" id="1_add"]
+
+[sub_resource type="ShaderMaterial" id="SM_dust"]
+shader = ExtResource("1_add")
+shader_parameter/color = Color(0.58, 0.50, 0.38, 1)
+shader_parameter/power = 0.62
+shader_parameter/soft = 0.95
+shader_parameter/quad_sharp = 0.0
+shader_parameter/use_vertex_color = 1.0
+
+[sub_resource type="QuadMesh" id="QM_dust"]
+material = SubResource("SM_dust")
+size = Vector2(0.55, 0.55)
+
+[sub_resource type="Gradient" id="G_dust"]
+offsets = PackedFloat32Array(0, 0.4, 1)
+colors = PackedColorArray(0.95, 0.90, 0.80, 0.9, 0.72, 0.66, 0.56, 0.5, 0.5, 0.46, 0.40, 0)
+
+[sub_resource type="GradientTexture1D" id="GT_dust"]
+gradient = SubResource("G_dust")
+
+[sub_resource type="ParticleProcessMaterial" id="PPM_build"]
+emission_shape = 6
+emission_ring_axis = Vector3(0, 1, 0)
+emission_ring_height = 0.05
+emission_ring_radius = 0.62
+emission_ring_inner_radius = 0.32
+direction = Vector3(0, 1, 0)
+spread = 42.0
+initial_velocity_min = 0.45
+initial_velocity_max = 1.35
+gravity = Vector3(0, 0.35, 0)
+damping_min = 1.0
+damping_max = 1.8
+scale_min = 0.8
+scale_max = 2.1
+color_ramp = SubResource("GT_dust")
+
+[node name="建造尘土" type="GPUParticles3D"]
+amount = 24
+lifetime = 1.35
+one_shot = true
+explosiveness = 0.55
+fixed_fps = 60
+process_material = SubResource("PPM_build")
+draw_pass_1 = SubResource("QM_dust")

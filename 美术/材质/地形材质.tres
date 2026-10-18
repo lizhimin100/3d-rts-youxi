@@ -1,0 +1,24 @@
+[gd_resource type="ShaderMaterial" load_steps=2 format=3]
+
+[ext_resource type="Shader" path="res://美术/着色器/地形.gdshader" id="1_terrain"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_terrain")
+shader_parameter/grass_color = Color(0.40, 0.47, 0.27, 1)
+shader_parameter/dirt_color = Color(0.52, 0.40, 0.25, 1)
+shader_parameter/rock_color = Color(0.55, 0.54, 0.50, 1)
+shader_parameter/grass_h = 1.1
+shader_parameter/dirt_h = 2.7
+shader_parameter/blend_soft = 0.30
+shader_parameter/slope_rock = 0.58
+shader_parameter/color_pow = 1.0
+shader_parameter/use_vertex_color = 1.0
+shader_parameter/noise_scale = 0.32
+shader_parameter/noise_amt = 0.10
+shader_parameter/grid_strength = 0.05
+shader_parameter/grid_size = 1.0
+shader_parameter/band_edge_a = 0.36
+shader_parameter/band_edge_b = 0.68
+shader_parameter/band_soft = 0.02
+shader_parameter/shadow_strength = 0.66

@@ -1,0 +1,85 @@
+[gd_scene load_steps=10 format=3]
+
+[ext_resource type="Shader" path="res://美术/着色器/特效加色.gdshader" id="1_add"]
+
+[sub_resource type="ShaderMaterial" id="SM_core"]
+shader = ExtResource("1_add")
+shader_parameter/color = Color(0.55, 0.86, 1, 1)
+shader_parameter/power = 4.5
+shader_parameter/soft = 0.85
+shader_parameter/quad_sharp = 0.0
+shader_parameter/use_vertex_color = 1.0
+
+[sub_resource type="QuadMesh" id="QM_core"]
+material = SubResource("SM_core")
+size = Vector2(0.30, 0.30)
+
+[sub_resource type="ShaderMaterial" id="SM_ring"]
+shader = ExtResource("1_add")
+shader_parameter/color = Color(0.62, 0.92, 1, 1)
+shader_parameter/power = 2.2
+shader_parameter/soft = 0.55
+shader_parameter/quad_sharp = 0.0
+shader_parameter/use_vertex_color = 1.0
+
+[sub_resource type="QuadMesh" id="QM_ring"]
+material = SubResource("SM_ring")
+size = Vector2(0.24, 0.24)
+
+[sub_resource type="Gradient" id="G_magic"]
+offsets = PackedFloat32Array(0, 0.45, 1)
+colors = PackedColorArray(0.85, 1, 1, 1, 0.45, 0.78, 1, 0.9, 0.2, 0.45, 0.95, 0)
+
+[sub_resource type="GradientTexture1D" id="GT_magic"]
+gradient = SubResource("G_magic")
+
+[sub_resource type="ParticleProcessMaterial" id="PPM_core"]
+emission_shape = 1
+emission_sphere_radius = 0.10
+direction = Vector3(0, 1, 0)
+spread = 180.0
+initial_velocity_min = 0.8
+initial_velocity_max = 2.6
+damping_min = 2.5
+damping_max = 4.0
+scale_min = 0.9
+scale_max = 2.0
+color_ramp = SubResource("GT_magic")
+
+[sub_resource type="ParticleProcessMaterial" id="PPM_ring"]
+emission_shape = 6
+emission_ring_axis = Vector3(0, 1, 0)
+emission_ring_height = 0.02
+emission_ring_radius = 0.30
+emission_ring_inner_radius = 0.22
+emission_ring_cone_angle = 0.0
+direction = Vector3(0, 0.12, 0)
+spread = 12.0
+flatness = 0.95
+initial_velocity_min = 3.4
+initial_velocity_max = 5.2
+damping_min = 3.0
+damping_max = 4.4
+scale_min = 0.8
+scale_max = 1.8
+color_ramp = SubResource("GT_magic")
+
+[node name="魔法爆裂" type="Node3D"]
+
+[node name="核心" type="GPUParticles3D" parent="."]
+amount = 30
+lifetime = 0.55
+one_shot = true
+explosiveness = 0.98
+fixed_fps = 60
+process_material = SubResource("PPM_core")
+draw_pass_1 = SubResource("QM_core")
+
+[node name="冲击环" type="GPUParticles3D" parent="."]
+amount = 26
+lifetime = 0.50
+one_shot = true
+explosiveness = 0.99
+fixed_fps = 60
+process_material = SubResource("PPM_ring")
+draw_pass_1 = SubResource("QM_ring")

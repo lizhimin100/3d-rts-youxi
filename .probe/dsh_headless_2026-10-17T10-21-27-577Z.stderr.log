@@ -1,0 +1,45 @@
+Traceback (most recent call last):
+  File "D:\blender\5.1\scripts\addons_core\io_scene_gltf2\__init__.py", line 1371, in execute
+    res = gltf2_blender_export.save(context, export_settings)
+  File "D:\blender\5.1\scripts\addons_core\io_scene_gltf2\blender\exp\export.py", line 42, in save
+    __write_file(json, buffer, export_settings)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\blender\5.1\scripts\addons_core\io_scene_gltf2\blender\exp\export.py", line 385, in __write_file
+    gltf2_io_export.save_gltf(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        json,
+        ^^^^^
+        export_settings,
+        ^^^^^^^^^^^^^^^^
+        json_util.BlenderJSONEncoder,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        buffer)
+        ^^^^^^^
+  File "D:\blender\5.1\scripts\addons_core\io_scene_gltf2\io\exp\export.py", line 85, in save_gltf
+    file = open(export_settings['gltf_filepath'], "wb")
+PermissionError: [Errno 13] Permission denied: 'E:\\自定义游戏\\简易rts\\.probe\\test.glb'
+Traceback (most recent call last):
+  File "C:\Users\Administrator\AppData\Local\dsh-blender-rt\dsh_headless_mvc8y5y1.py", line 544, in <module>
+    res = bpy.ops.export_scene.gltf(filepath=out, export_format='GLB', use_selection=False)
+RuntimeError: Error: Python: Traceback (most recent call last):
+  File "D:\blender\5.1\scripts\addons_core\io_scene_gltf2\__init__.py", line 1371, in execute
+    res = gltf2_blender_export.save(context, export_settings)
+  File "D:\blender\5.1\scripts\addons_core\io_scene_gltf2\blender\exp\export.py", line 42, in save
+    __write_file(json, buffer, export_settings)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\blender\5.1\scripts\addons_core\io_scene_gltf2\blender\exp\export.py", line 385, in __write_file
+    gltf2_io_export.save_gltf(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        json,
+        ^^^^^
+        export_settings,
+        ^^^^^^^^^^^^^^^^
+        json_util.BlenderJSONEncoder,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        buffer)
+        ^^^^^^^
+  File "D:\blender\5.1\scripts\addons_core\io_scene_gltf2\io\exp\export.py", line 85, in save_gltf
+    file = open(export_settings['gltf_filepath'], "wb")
+PermissionError: [Errno 13] Permission denied: 'E:\\自定义游戏\\简易rts\\.probe\\test.glb'
+Location: C:\Users\Administrator\AppData\Local\dsh-blender-rt\dsh_headless_mvc8y5y1.py:544
+

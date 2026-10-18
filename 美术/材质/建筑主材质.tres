@@ -1,0 +1,29 @@
+[gd_resource type="ShaderMaterial" load_steps=4 format=3]
+
+[ext_resource type="Shader" path="res://美术/着色器/卡通主体.gdshader" id="1_main"]
+[ext_resource type="Shader" path="res://美术/着色器/描边.gdshader" id="2_outline"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_outline"]
+render_priority = 0
+shader = ExtResource("2_outline")
+shader_parameter/outline_width = 0.022
+shader_parameter/outline_color = Color(0.05, 0.055, 0.085, 1)
+shader_parameter/max_dist = 90.0
+shader_parameter/min_dist = 1.0
+
+[resource]
+render_priority = 0
+next_pass = SubResource("ShaderMaterial_outline")
+shader = ExtResource("1_main")
+shader_parameter/base_color = Color(0.62, 0.61, 0.57, 1)
+shader_parameter/tint = Color(0.30, 0.55, 0.95, 1)
+shader_parameter/tint_strength = 0.0
+shader_parameter/roughness_v = 0.92
+shader_parameter/metallic_v = 0.0
+shader_parameter/band_edge_a = 0.32
+shader_parameter/band_edge_b = 0.64
+shader_parameter/band_soft = 0.014
+shader_parameter/shadow_strength = 0.66
+shader_parameter/lit_gain = 1.05
+shader_parameter/rim_strength = 0.32
+shader_parameter/rim_width = 0.44

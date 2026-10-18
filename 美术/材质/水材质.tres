@@ -1,0 +1,18 @@
+[gd_resource type="ShaderMaterial" load_steps=2 format=3]
+
+[ext_resource type="Shader" path="res://美术/着色器/水.gdshader" id="1_water"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_water")
+shader_parameter/shallow_color = Color(0.26, 0.55, 0.62, 1)
+shader_parameter/deep_color = Color(0.075, 0.19, 0.32, 1)
+shader_parameter/sky_color = Color(0.60, 0.72, 0.90, 1)
+shader_parameter/foam_color = Color(0.88, 0.93, 0.96, 1)
+shader_parameter/wave_scale = 3.4
+shader_parameter/wave_speed = 1.15
+shader_parameter/wave_amp = 0.055
+shader_parameter/ripple_scale = 9.0
+shader_parameter/fresnel_steps = 3.0
+shader_parameter/alpha_base = 0.80
+shader_parameter/foam_amount = 0.35

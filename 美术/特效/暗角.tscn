@@ -1,0 +1,23 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Shader" path="res://美术/着色器/暗角.gdshader" id="1_vig"]
+
+[sub_resource type="ShaderMaterial" id="SM_vig"]
+shader = ExtResource("1_vig")
+shader_parameter/strength = 0.55
+shader_parameter/softness = 0.65
+shader_parameter/tint = Color(0.03, 0.04, 0.07, 1)
+shader_parameter/aspect_correct = 1.0
+
+[node name="暗角" type="CanvasLayer"]
+layer = 90
+
+[node name="遮罩" type="ColorRect" parent="."]
+material = SubResource("SM_vig")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(1, 1, 1, 1)

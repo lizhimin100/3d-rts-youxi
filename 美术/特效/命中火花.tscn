@@ -1,0 +1,45 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Shader" path="res://美术/着色器/特效加色.gdshader" id="1_add"]
+
+[sub_resource type="ShaderMaterial" id="SM_spark"]
+shader = ExtResource("1_add")
+shader_parameter/color = Color(1, 0.78, 0.34, 1)
+shader_parameter/power = 3.2
+shader_parameter/soft = 0.42
+shader_parameter/quad_sharp = 0.30
+shader_parameter/use_vertex_color = 1.0
+
+[sub_resource type="QuadMesh" id="QM_spark"]
+material = SubResource("SM_spark")
+size = Vector2(0.085, 0.085)
+
+[sub_resource type="Gradient" id="G_fade"]
+offsets = PackedFloat32Array(0, 0.3, 1)
+colors = PackedColorArray(1, 1, 1, 1, 1, 0.86, 0.48, 1, 0.92, 0.3, 0.09, 0)
+
+[sub_resource type="GradientTexture1D" id="GT_fade"]
+gradient = SubResource("G_fade")
+
+[sub_resource type="ParticleProcessMaterial" id="PPM_spark"]
+emission_shape = 1
+emission_sphere_radius = 0.07
+direction = Vector3(0, 1, 0)
+spread = 62.0
+initial_velocity_min = 1.8
+initial_velocity_max = 4.6
+gravity = Vector3(0, -9.4, 0)
+damping_min = 0.4
+damping_max = 1.6
+scale_min = 0.55
+scale_max = 1.55
+color_ramp = SubResource("GT_fade")
+
+[node name="命中火花" type="GPUParticles3D"]
+amount = 22
+lifetime = 0.42
+one_shot = true
+explosiveness = 0.96
+fixed_fps = 60
+process_material = SubResource("PPM_spark")
+draw_pass_1 = SubResource("QM_spark")

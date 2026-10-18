@@ -1,0 +1,5 @@
+Traceback (most recent call last):
+  File "C:\Users\Administrator\AppData\Local\dsh-blender-rt\dsh_headless_mvc8y2rq.py", line 540, in <module>
+    "engines": [e.bl_idname for e in bpy.types.RenderEngine.__subclasses__()][:10],
+                ^^^^^^^^^^^
+AttributeError: type object 'HydraRenderEngine' has no attribute 'bl_idname'

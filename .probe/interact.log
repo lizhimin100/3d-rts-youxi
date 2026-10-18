@@ -1,0 +1,12 @@
+Godot Engine v4.7.2.stable.steam.ed1daf0bf - https://godotengine.org
+
+[主场景] 镜头=镜头 fov=52 类=res://代码/镜头/魔兽镜头.gd
+[主场景] 就绪：地形 6728 面，地图 116m，玩家单位 12，敌人单位 7（节点总数 5975）
+[音效] 已就绪（音频目录：res://音频/）
+[AI] 接管 兽人军团，难度 简单，思考间隔 1.40s
+[AI] 扩建兵营（已有 1 / 目标 2，军队上限 10）
+ERROR: Parameter "material" is null.
+   at: material_get_instance_shader_parameters (servers/rendering/dummy/storage/material_storage.cpp:264)
+INTERACT {"右键移动":{"单位数":16,"移动数":12},"小结":{"右键移动":true,"框选":true,"点选":true,"缩放平滑":true,"镜头加速平滑":true},"框选":{"选中数":16},"点选":{"屏幕坐标":"(955.0, 1005.0)","是单个己方单位":true,"目标是同单位":true,"选中数":1},"结果":"通过","缩放":{"20帧后":"28.01","一帧后":"30.00","起始":"30.00"},"视口":"(1920.0, 1920.0)","镜头加速":{"前5帧":["0.0000","0.0080","0.0156","0.0236","0.0314"],"峰值位移":"0.1656","最大帧间跳变":"0.0080","首帧位移":"0.0001"},"镜头滑行":"0.0000"}
+WARNING: 17 ObjectDB instances were leaked at exit (run with `--verbose` for details).
+   at: cleanup (core/object/object.cpp:2536)

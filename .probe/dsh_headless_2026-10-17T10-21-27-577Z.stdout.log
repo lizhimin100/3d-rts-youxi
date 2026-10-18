@@ -1,0 +1,34 @@
+00:00.046  system.path      | WARNING Could not generate a temp file name for 'C:\Users\Administrator\AppData\Local\Temp\blender_a18256'
+00:00.046  system.path      | WARNING Could not generate a temp session subdirectory, falling back to 'C:\Users\Administrator\AppData\Local\Temp\'
+DSH_STAGE {"name": "boot", "t": 1792232487.892, "run": "run-mvc8y5y01z86"}
+DSH_STAGE {"name": "engine-prelude", "t": 1792232487.892, "run": "run-mvc8y5y01z86"}
+DSH_STAGE {"name": "preload-done", "t": 1792232487.892, "run": "run-mvc8y5y01z86"}
+00:00.296  system.path      | WARNING Could not generate a temp file name for 'C:\Users\Administrator\AppData\Local\Temp\blender_a18256'
+00:00.296  system.path      | WARNING Could not generate a temp session subdirectory, falling back to 'C:\Users\Administrator\AppData\Local\Temp\'
+INFO Draco mesh compression is available, use library at D:\blender\5.1\scripts\addons_core\io_scene_gltf2\extern_draco.dll
+18:21:28 | INFO: Starting glTF 2.0 export
+18:21:28 | INFO: Extracting primitive: Cube
+18:21:28 | INFO: Primitives created: 1
+00:00.437  bpy.rna          | ERROR Python script error in EXPORT_SCENE_OT_gltf.execute
+Error: Python: Traceback (most recent call last):
+  File "D:\blender\5.1\scripts\addons_core\io_scene_gltf2\__init__.py", line 1371, in execute
+    res = gltf2_blender_export.save(context, export_settings)
+  File "D:\blender\5.1\scripts\addons_core\io_scene_gltf2\blender\exp\export.py", line 42, in save
+    __write_file(json, buffer, export_settings)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\blender\5.1\scripts\addons_core\io_scene_gltf2\blender\exp\export.py", line 385, in __write_file
+    gltf2_io_export.save_gltf(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        json,
+        ^^^^^
+        export_settings,
+        ^^^^^^^^^^^^^^^^
+        json_util.BlenderJSONEncoder,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        buffer)
+        ^^^^^^^
+  File "D:\blender\5.1\scripts\addons_core\io_scene_gltf2\io\exp\export.py", line 85, in save_gltf
+    file = open(export_settings['gltf_filepath'], "wb")
+PermissionError: [Errno 13] Permission denied: 'E:\\自定义游戏\\简易rts\\.probe\\... truncatedBlender 5.1.2 (hash ec6e62d40fa9 built 2026-05-19 01:37:34)
+
+Blender quit
