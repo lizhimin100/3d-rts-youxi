@@ -1,3 +1,15 @@
 # Godot 4+ specific ignores
 .godot/
 /android/
+
+# 本机探针/截图/日志：验收证据，但进版本库只会把仓库撑大、也没人 review 二进制
+.probe/
+_probe/
+_check/
+_test_*.txt
+*.stdout.log
+*.stderr.log
+
+# Blender QC 对照图（每跑一次 --qc 都会重出一批）
+工具/建模/v3/qc/
+工具/建模/v3/*.glb

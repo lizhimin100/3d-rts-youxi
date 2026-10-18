@@ -1,8 +1,0 @@
-00:00.156  system.path      | WARNING Could not generate a temp file name for 'C:\Users\Administrator\AppData\Local\Temp\blender_a14344'
-00:00.156  system.path      | WARNING Could not generate a temp session subdirectory, falling back to 'C:\Users\Administrator\AppData\Local\Temp\'
-DSH_STAGE {"name": "boot", "t": 1792232484.192, "run": "run-mvc8y2rmbzax"}
-DSH_STAGE {"name": "engine-prelude", "t": 1792232484.192, "run": "run-mvc8y2rmbzax"}
-DSH_STAGE {"name": "preload-done", "t": 1792232484.193, "run": "run-mvc8y2rmbzax"}
-Blender 5.1.2 (hash ec6e62d40fa9 built 2026-05-19 01:37:34)
-
-Blender quit
