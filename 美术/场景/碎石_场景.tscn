@@ -4,17 +4,17 @@
 
 [node name="碎石_场景" type="Node3D"]
 metadata/decor_kind = "rubble"
-metadata/batch_mesh = "rock_M_stone"
+metadata/batch_mesh = "rock_M_rock"
 scale = Vector3(1.35, 1.35, 1.35)
 
 [node name="岩石" parent="." instance=ExtResource("1_glb")]
 
-[node name="rock_M_stone" parent="岩石"]
+[node name="rock_M_rock" parent="岩石"]
 cast_shadow = 0
 visibility_range_end = 60.0
 visibility_range_fade_mode = 1
 
-[node name="rock_M_stone_dark" parent="岩石"]
+[node name="rock_M_rock_dark" parent="岩石"]
 cast_shadow = 0
 visibility_range_end = 60.0
 visibility_range_fade_mode = 1
