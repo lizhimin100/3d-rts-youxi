@@ -124,6 +124,44 @@ if ($Full) {
     $etSkip = $et -match '"结果":"跳过'
     $etName = if ($etSkip) { "边缘滚动（跳过：窗口无焦点）" } else { "边缘滚动" }
     Report $etName ($etOk -or $etSkip) ($etLine -replace 'EDGETEST ', '')
+
+    # --- 5.7 战斗自检（目标死后收场 / 攻击移动续行 / 待机不锁射程外 / 自动施法不吞指令）---
+    Write-Host "[5.7] 战斗自检 ..." -ForegroundColor Cyan
+    $ct = & $godot --headless --path . --script 代码/测试/战斗自检.gd 2>&1 | Out-String
+    $ctLine = ($ct -split "`n" | Select-String -Pattern '^COMBATTEST ').Line
+    # 自检脚本自己也不许报错（以前 _可走格数 里 int(null) 会甩一条 SCRIPT ERROR，结果看起来还是绿的）
+    $ctBad = @($ct -split "`n" | Select-String -Pattern 'ERROR' |
+        Where-Object { $_.Line -notmatch 'resources still in use at exit' })
+    $ctOk = ($ct -match '"结果":"通过"') -and ($ctBad.Count -eq 0)
+    Report "战斗自检" $ctOk (($ctLine -replace 'COMBATTEST ', '') + $(if ($ctBad.Count -gt 0) { "（脚本自身报错 " + $ctBad.Count + " 条）" } else { "" }))
+
+    # --- 5.8 建造自检（吸附 / 拒建 / 真造一格兵营 / 只扣一次钱 / 多农民同工地 / 集结点）---
+    Write-Host "[5.8] 建造自检 ..." -ForegroundColor Cyan
+    $bd = & $godot --headless --path . --script 代码/测试/建造自检.gd 2>&1 | Out-String
+    $bdLine = ($bd -split "`n" | Select-String -Pattern '^结果：').Line
+    $bdOk = ($bd -match '全部通过') -and ($bd -match '失败 0')
+    Report "建造自检" $bdOk $bdLine
+
+    # --- 5.9 界面自检（框选只收己方单位 / 建筑面板 / 训练计时条）---
+    Write-Host "[5.9] 界面自检 ..." -ForegroundColor Cyan
+    $ui = & $godot --headless --path . --script 代码/测试/界面自检.gd 2>&1 | Out-String
+    $uiLine = ($ui -split "`n" | Select-String -Pattern '^结果：').Line
+    $uiOk = ($ui -match '全部通过') -and ($ui -match '失败 0')
+    Report "界面自检" $uiOk $uiLine
+
+    # --- 5.10 装饰性能自检（规模/面数/确定性指纹 + 装饰场景能否干净实例化）---
+    Write-Host "[5.10] 装饰性能自检 ..." -ForegroundColor Cyan
+    $dc = & $godot --headless --path . --script 代码/测试/装饰性能自检.gd 2>&1 | Out-String
+    $dcLine = ($dc -split "`n" | Select-String -Pattern '^DECORTEST ').Line
+    # 这条同时守住"美术/场景/*.tscn 的节点覆盖是否还对得上 GLB"：
+    # v3 把模型按材质合并后，场景里残留的 v2 节点名（树/Root/Body/树冠0）会让每次实例化
+    # 刷 500+ 条 "Unicode parsing error" + "has vanished"，而且覆盖参数被静默丢弃。
+    $dcBad = @($dc -split "`n" | Select-String -Pattern 'Unicode parsing error|has vanished|ERROR')
+    $dcOk = ($null -ne $dcLine) -and ($dcBad.Count -eq 0)
+    Report "装饰性能自检" $dcOk (($dcLine -replace 'DECORTEST ', '') + "（异常行 " + $dcBad.Count + "）")
+    if ($dcBad.Count -gt 0) {
+        $dcBad | Select-Object -First 5 | ForEach-Object { Write-Host ("    " + $_.Line.Trim()) -ForegroundColor Red }
+    }
 }
 
 # --- 6. 可选：实机截图 ---
