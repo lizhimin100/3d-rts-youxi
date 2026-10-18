@@ -7,277 +7,37 @@ metadata/decor_kind = "goldmine"
 
 [node name="金矿" parent="." instance=ExtResource("1_glb")]
 
-[node name="券石0" parent="金矿/Root/Body" index="0"]
+[node name="goldmine_M_stone" parent="金矿"]
 cast_shadow = 0
 visibility_range_end = 150.0
 visibility_range_fade_mode = 1
 
-[node name="券石1" parent="金矿/Root/Body" index="1"]
+[node name="goldmine_M_stone_dark" parent="金矿"]
 cast_shadow = 0
 visibility_range_end = 150.0
 visibility_range_fade_mode = 1
 
-[node name="券石2" parent="金矿/Root/Body" index="2"]
+[node name="goldmine_M_ore" parent="金矿"]
 cast_shadow = 0
 visibility_range_end = 150.0
 visibility_range_fade_mode = 1
 
-[node name="券石3" parent="金矿/Root/Body" index="3"]
+[node name="goldmine_M_wood_dark" parent="金矿"]
 cast_shadow = 0
 visibility_range_end = 150.0
 visibility_range_fade_mode = 1
 
-[node name="券石4" parent="金矿/Root/Body" index="4"]
+[node name="goldmine_M_glass" parent="金矿"]
 cast_shadow = 0
 visibility_range_end = 150.0
 visibility_range_fade_mode = 1
 
-[node name="基座" parent="金矿/Root/Body" index="5"]
+[node name="goldmine_M_wood" parent="金矿"]
 cast_shadow = 0
 visibility_range_end = 150.0
 visibility_range_fade_mode = 1
 
-[node name="基座压边" parent="金矿/Root/Body" index="6"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="岩体主" parent="金矿/Root/Body" index="7"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="岩体前顶" parent="金矿/Root/Body" index="8"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="岩体右" parent="金矿/Root/Body" index="9"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="岩体左" parent="金矿/Root/Body" index="10"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="岩块31" parent="金矿/Root/Body" index="11"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="岩块32" parent="金矿/Root/Body" index="12"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="岩块33" parent="金矿/Root/Body" index="13"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="岩块34" parent="金矿/Root/Body" index="14"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="岩块35" parent="金矿/Root/Body" index="15"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="岩块36" parent="金矿/Root/Body" index="16"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="支撑柱-1" parent="金矿/Root/Body" index="17"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="支撑柱1" parent="金矿/Root/Body" index="18"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="斜撑-1" parent="金矿/Root/Body" index="19"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="斜撑1" parent="金矿/Root/Body" index="20"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="梁压条" parent="金矿/Root/Body" index="21"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="梁托" parent="金矿/Root/Body" index="22"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="梯撑0" parent="金矿/Root/Body" index="23"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="梯撑1" parent="金矿/Root/Body" index="24"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="梯撑2" parent="金矿/Root/Body" index="25"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="梯撑3" parent="金矿/Root/Body" index="26"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="梯撑4" parent="金矿/Root/Body" index="27"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="梯撑5" parent="金矿/Root/Body" index="28"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="梯撑6" parent="金矿/Root/Body" index="29"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="梯梁-1" parent="金矿/Root/Body" index="30"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="梯梁1" parent="金矿/Root/Body" index="31"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="横梁" parent="金矿/Root/Body" index="32"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="洞腔" parent="金矿/Root/Body" index="33"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="洞腔底" parent="金矿/Root/Body" index="34"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="矿石0" parent="金矿/Root/Body" index="35"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="矿石1" parent="金矿/Root/Body" index="36"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="矿石2" parent="金矿/Root/Body" index="37"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="车斗" parent="金矿/Root/Body" index="38"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="车斗矿" parent="金矿/Root/Body" index="39"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="车斗箍" parent="金矿/Root/Body" index="40"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="车轮-1-1" parent="金矿/Root/Body" index="41"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="车轮-11" parent="金矿/Root/Body" index="42"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="车轮1-1" parent="金矿/Root/Body" index="43"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="车轮11" parent="金矿/Root/Body" index="44"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="轨道-1" parent="金矿/Root/Body" index="45"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="轨道1" parent="金矿/Root/Body" index="46"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="金脉0" parent="金矿/Root/Body" index="47"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="金脉1" parent="金矿/Root/Body" index="48"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="金脉2" parent="金矿/Root/Body" index="49"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="金脉3" parent="金矿/Root/Body" index="50"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="金脉4" parent="金矿/Root/Body" index="51"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="金脉5" parent="金矿/Root/Body" index="52"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="金脉6" parent="金矿/Root/Body" index="53"]
-cast_shadow = 0
-visibility_range_end = 150.0
-visibility_range_fade_mode = 1
-
-[node name="金脉7" parent="金矿/Root/Body" index="54"]
+[node name="goldmine_M_iron" parent="金矿"]
 cast_shadow = 0
 visibility_range_end = 150.0
 visibility_range_fade_mode = 1

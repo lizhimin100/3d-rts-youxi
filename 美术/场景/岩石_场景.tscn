@@ -7,32 +7,12 @@ metadata/decor_kind = "rock"
 
 [node name="岩石" parent="." instance=ExtResource("1_glb")]
 
-[node name="主石" parent="岩石/Root/Body" index="0"]
+[node name="rock_M_stone" parent="岩石"]
 cast_shadow = 0
 visibility_range_end = 130.0
 visibility_range_fade_mode = 1
 
-[node name="次石A" parent="岩石/Root/Body" index="1"]
-cast_shadow = 0
-visibility_range_end = 130.0
-visibility_range_fade_mode = 1
-
-[node name="次石B" parent="岩石/Root/Body" index="2"]
-cast_shadow = 0
-visibility_range_end = 130.0
-visibility_range_fade_mode = 1
-
-[node name="石屑0" parent="岩石/Root/Body" index="3"]
-cast_shadow = 0
-visibility_range_end = 130.0
-visibility_range_fade_mode = 1
-
-[node name="石屑1" parent="岩石/Root/Body" index="4"]
-cast_shadow = 0
-visibility_range_end = 130.0
-visibility_range_fade_mode = 1
-
-[node name="石屑2" parent="岩石/Root/Body" index="5"]
+[node name="rock_M_stone_dark" parent="岩石"]
 cast_shadow = 0
 visibility_range_end = 130.0
 visibility_range_fade_mode = 1

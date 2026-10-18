@@ -106,8 +106,19 @@ func _可走格数() -> int:
 	var pf = 关卡.call("grid_pathfinder")
 	if pf == null:
 		return -1
-	var 尺寸: int = int(pf.get("size"))
-	return 尺寸
+	# 寻路器没有公开的尺寸字段（只有 _w / _h），以前写 pf.get("size") 取到 null，
+	# 再 int(null) 直接报 "Nonexistent 'int' constructor" —— 自检自己先报错了。
+	# 自检脚本允许读内部状态：拿 _w/_h 逐格问可走性。
+	var 宽 = pf.get("_w")
+	var 高 = pf.get("_h")
+	if 宽 == null or 高 == null:
+		return -1
+	var 可走: int = 0
+	for z in int(高):
+		for x in int(宽):
+			if bool(pf.call("is_cell_walkable", Vector2i(x, z))):
+				可走 += 1
+	return 可走
 
 
 ## 在关卡里造一个单位（血量可覆盖）；引擎自动 _process 关掉，由测试手动步进
