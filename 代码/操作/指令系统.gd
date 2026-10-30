@@ -27,6 +27,7 @@ enum Pending {
 	BUILD = 2,
 	CAST = 3,
 	RALLY = 4,
+	MOVE = 5,
 }
 
 ## 编队间距（米）
@@ -38,6 +39,9 @@ const TRAIN_QUEUE_MAX := 5
 var pending: int = Pending.NONE
 ## 等待建造的建筑 id
 var pending_build: StringName = &""
+## 等待建造的朝向（90° 档；R 键转）。
+## 默认 180°：模型正门在 -Z，镜头从南往北看；0° 会让玩家一直看建筑背面。
+var pending_yaw: float = PI
 ## 等待施法的技能 id
 var pending_ability: StringName = &""
 ## 等待设置集结点的建筑（null = 用当前选中的建筑）
@@ -46,6 +50,9 @@ var _rally_building: Node = null
 ## 建造预览（半透明盒子）
 var _ghost: MeshInstance3D = null
 var _ghost_mat: StandardMaterial3D = null
+## 占格预览（建筑网格.make_grid_preview；落点或合法性变了才重建）
+var _grid_preview: MeshInstance3D = null
+var _grid_key: String = ""
 
 ## 缓存的兄弟节点
 var _selection_system: Node = null
@@ -82,12 +89,16 @@ func pending_prompt() -> String:
 			return "左键选择攻击移动目标点（右键取消）"
 		Pending.BUILD:
 			var d: UnitDef = Cfg.unit(pending_build)
-			return "左键选择建造位置：%s（右键取消）" % (d.display_name if d != null else String(pending_build))
+			return "左键选择建造位置：%s（R 转向 %d° / 右键取消）" % [
+				d.display_name if d != null else String(pending_build),
+				int(round(rad_to_deg(pending_yaw)))]
 		Pending.CAST:
 			return "左键选择技能目标点（右键取消）"
 		Pending.RALLY:
 			var rb := _rally_target(_rally_building)
 			return "左键选择集结点：%s（右键取消）" % (rb.def.display_name if rb != null and rb.def != null else "建筑")
+		Pending.MOVE:
+			return "左键选择部署点（右键取消）"
 		_:
 			return ""
 
@@ -97,6 +108,7 @@ func request_cancel() -> void:
 	pending = Pending.NONE
 	pending_build = &""
 	pending_ability = &""
+	pending_yaw = PI
 	_rally_building = null
 	_patrol_next = false
 	_free_ghost()
@@ -170,6 +182,7 @@ func request_build(building_id: StringName) -> void:
 	pending = Pending.BUILD
 	pending_build = building_id
 	pending_ability = &""
+	pending_yaw = 建筑网格.snap_yaw(pending_yaw)
 	_make_ghost(d)
 
 
@@ -184,6 +197,14 @@ func request_ability(ability_id: StringName) -> void:
 ## 全部停止
 func request_stop() -> void:
 	_issue_simple(RtsConst.Order.STOP, "停止")
+
+
+## 自由部署：进入"点地面移动"的等待状态（参照图里的"自由部署"）
+func request_move() -> void:
+	if _selected_units().is_empty():
+		return
+	pending = Pending.MOVE
+	_toast("自由部署：左键选择落点（右键取消）", _accent())
 
 
 ## 全部原地警戒
@@ -247,6 +268,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		if k.keycode == KEY_ESCAPE and pending != Pending.NONE:
 			request_cancel()
 			get_viewport().set_input_as_handled()
+		elif k.keycode == KEY_R and pending == Pending.BUILD:
+			# 建筑朝向只走 90° 档；Shift+R 反向。落工地时 order_build 会再吸一次。
+			pending_yaw = 建筑网格.snap_yaw(pending_yaw
+				+ (-PI * 0.5 if k.shift_pressed else PI * 0.5))
+			_toast("建造朝向：%d°" % int(round(rad_to_deg(pending_yaw))), _accent())
+			get_viewport().set_input_as_handled()
 
 
 ## 右键：要么取消等待，要么下上下文指令
@@ -283,6 +310,9 @@ func _on_pending_left_click(screen_pos: Vector2) -> void:
 			pending = Pending.NONE
 			pending_ability = &""
 			_cast_at(ab, ground, screen_pos)
+		Pending.MOVE:
+			pending = Pending.NONE
+			_issue_move(_selected_units(), ground)
 	get_viewport().set_input_as_handled()
 
 
@@ -325,6 +355,23 @@ func _context_order(screen_pos: Vector2) -> void:
 	var units := _selected_units()
 	if units.is_empty():
 		return
+	# --- 0. **只选中己方建筑 → 右键直接设集结点** ---
+	# RTS 的通用手势：选中兵营右击地面 = "出来的兵去那儿"。
+	# 以前必须点「设置集结点」按钮再左键落点，纯属多一步。
+	var only_b: RtsBuilding = null
+	var has_mobile: bool = false
+	for u0 in units:
+		if u0 is RtsBuilding:
+			var b0 := u0 as RtsBuilding
+			if b0.is_alive() and only_b == null:
+				only_b = b0
+		elif u0 is RtsUnit and (u0 as RtsUnit).is_mobile():
+			has_mobile = true
+	if only_b != null and not has_mobile and only_b.has_method("set_rally"):
+		var g0 := _ground_at(screen_pos)
+		if g0 != Vector3.INF:
+			only_b.set_rally(_walkable(g0))
+			return
 	var cam := _camera()
 	if cam == null:
 		return
@@ -359,17 +406,22 @@ func _context_order(screen_pos: Vector2) -> void:
 			_toast("攻击 %s" % (foe.def.display_name if foe.def != null else "敌人"), _warn())
 			return
 
-	# --- 3. 点到自己建筑 ---
+	# --- 3. 点到自己建筑：只在"真的点在建筑上"时才当交互 ---
+	#
+	# 2026-10-18 修：以前这里无条件把"己方建筑"当成送回资源的目标。
+	# 城镇大厅又高又宽，从俯视角点它**背后**的金矿时，射线先打中大厅的胶囊体，
+	# 于是农民被派去大厅（虚线落在大厅内部、人贴墙站住），玩家以为"目的地设成了建筑内部"。
+	# 现在的要求：① 射线**命中的就是建筑**（不是背后）；② 建筑在屏幕上的投影离鼠标很近；
+	# ③ 选中的是农民。三条都满足才送回资源，否则一律落回"点地移动"。
 	if target is RtsBuilding and target.get("faction") == pl:
 		var b := target as RtsBuilding
-		# 选中的是己方建筑 → 设集结点
-		if _primary_unit() == null:
+		var workers := _selected_workers()
+		var on_building: bool = _cursor_on_building(b, screen_pos)
+		if _primary_unit() == null and on_building:
 			b.set_rally(_walkable(ground))
 			_toast("%s 集结点已设置" % (b.def.display_name if b.def != null else "建筑"), _accent())
 			return
-		# 选中的是农民 → 送回资源（接口没实现就先把人带到建筑旁）
-		var workers := _selected_workers()
-		if not workers.is_empty():
+		if not workers.is_empty() and on_building:
 			for w in workers:
 				if w.has_method("order_return_res"):
 					w.call("order_return_res")
@@ -471,7 +523,7 @@ func _place_building(ground: Vector3) -> void:
 	if id == &"" or workers.is_empty():
 		request_cancel()
 		return
-	var site := place_building(id, ground, workers)
+	var site := place_building(id, ground, workers, pending_yaw)
 	if site != null:
 		pending = Pending.NONE
 		pending_build = &""
@@ -486,7 +538,8 @@ func _place_building(ground: Vector3) -> void:
 ##   2. **同一处已有同类未完工工地 → 不新建、不扣费**，把农民挂到那栋工地上。
 ##      （以前第 2/3 个农民被 is_buildable 静默拦下，不干活也不提示。）
 ##   3. 落点先吸到严格网格锚点，再过 _can_place；不合法就红着拒绝，绝不悄悄滑走。
-func place_building(building_id: StringName, ground: Vector3, workers: Array = []) -> Node3D:
+func place_building(building_id: StringName, ground: Vector3, workers: Array = [],
+		desired_yaw: float = 0.0) -> Node3D:
 	var d: UnitDef = Cfg.unit(building_id)
 	if d == null:
 		return null
@@ -526,7 +579,7 @@ func place_building(building_id: StringName, ground: Vector3, workers: Array = [
 	if first == null:
 		_toast("需要农民才能建造", _warn())
 		return null
-	first.call("order_build", d, pos)
+	first.call("order_build", d, pos, 建筑网格.snap_yaw(desired_yaw))
 	var site: Node3D = first.get("_build_site") as Node3D
 	if site == null or not is_instance_valid(site) or not site.is_alive():
 		return null   # order_build 自己失败了，它已经给过提示
@@ -579,23 +632,16 @@ func _find_pending_site(building_id: StringName, ground: Vector3, footprint: Vec
 	return best
 
 
-## 能不能放：占地**逐格**在图内且可走（水面/岩石/已占格都不可走），且不与已有建筑重叠
+## 能不能放：逐格的通行判定走 `建筑网格.can_place`（和寻路共用同一套格，
+## 水面/岩石/已占格都不可走，关卡还在的话顺带查地形高度极差），
+## 这里只额外兜一层"不与已有建筑（含工地）的占地重叠"。
 func _can_place(pos: Vector3, d: UnitDef) -> bool:
 	var lv := Game.level as RtsLevel
-	if lv == null or d == null:
-		return false
-	var pf := lv.grid_pathfinder()
-	if pf == null:
+	if lv == null or d == null or lv.grid_pathfinder() == null:
 		return false
 	var fp: Vector2i = Vector2i(maxi(d.footprint.x, 1), maxi(d.footprint.y, 1))
-	var center: Vector2i = pf.world_to_cell(pos)
-	var half_x: int = fp.x / 2
-	var half_z: int = fp.y / 2
-	for dz in range(-half_z, half_z + fp.y % 2):
-		for dx in range(-half_x, half_x + fp.x % 2):
-			var c := Vector2i(center.x + dx, center.y + dz)
-			if not pf.in_bounds(c) or not pf.is_cell_walkable(c):
-				return false
+	if not 建筑网格.can_place(pos, fp):
+		return false
 	# 再兜一层：不与已有建筑（含工地）的占地重叠
 	var half := Vector2(fp) * 0.5
 	for b in Game.all_units():
@@ -612,32 +658,22 @@ func _can_place(pos: Vector3, d: UnitDef) -> bool:
 	return true
 
 
-## 落点 → **严格网格锚点**：footprint 正好压住整数个格子。
-##   · 偶数边长 → 中心落在格子边界（世界坐标是格宽的整数倍）
-##   · 奇数边长 → 中心落在格子中心
-## 必须与 is_buildable / mark_blocked_rect 的"格心约定"完全一致，
-## 否则建筑和寻路阻挡区会错开半格（贴脸卡单位、农民绕不进去）。
-## ★ 这里**不做 clamp_to_walkable**：以前 `_walkable()` 会把落点悄悄挪到旁边的
-##   可走格 —— 玩家点水里，房子跑到岸上。宁可拒绝，不许偷换位置。
+## 落点 → **严格网格锚点**：唯一入口是 `建筑网格.snap_point`，规则写在那里
+## （奇数边长吸格心、偶数边长吸格线，2×2 正好盖满 4 格）。
+## 这里保留函数名只因为界面 / 建造自检已经从它调起。
+## ★ 仍然**不做 clamp_to_walkable**：玩家点水里，房子不会偷偷跑到岸上，宁可拒绝。
 func _snap_build_pos(pos: Vector3, footprint: Vector2i) -> Vector3:
-	var lv := Game.level as RtsLevel
-	if lv == null or lv.grid_pathfinder() == null:
-		return pos
-	var pf := lv.grid_pathfinder()
-	var fp := Vector2i(maxi(footprint.x, 1), maxi(footprint.y, 1))
-	var cell: Vector2i = pf.world_to_cell(pos)
-	var p: Vector3 = pf.cell_to_world(cell)
-	if fp.x % 2 == 0:
-		p.x -= GridPathfinder.CELL * 0.5
-	if fp.y % 2 == 0:
-		p.z -= GridPathfinder.CELL * 0.5
-	p.y = lv.height_at(p.x, p.z)
-	return p
+	return 建筑网格.snap_point(pos, footprint)
 
 
 ## 对外（界面预览 / 自检）：把落点吸到严格网格锚点。
 func snap_build_pos(ground: Vector3, footprint: Vector2i) -> Vector3:
 	return _snap_build_pos(ground, footprint)
+
+
+## 对外（界面 / 自检）：建筑朝向吸附到 90° 档
+func snap_yaw(yaw: float) -> float:
+	return 建筑网格.snap_yaw(yaw)
 
 
 # ===========================================================================
@@ -726,7 +762,7 @@ func _make_ghost(d: UnitDef) -> void:
 	add_child(_ghost)
 
 
-## 预览跟随鼠标，颜色表示能否放
+## 预览跟随鼠标，颜色表示能否放；同时把**占用的那几格**画在地上（绿/红）
 func _update_ghost() -> void:
 	if _ghost == null or pending != Pending.BUILD:
 		return
@@ -738,6 +774,27 @@ func _update_ghost() -> void:
 	if _ghost_mat != null:
 		_ghost_mat.albedo_color = Color(0.45, 1.0, 0.55, 0.35) if ok else Color(1.0, 0.35, 0.3, 0.38)
 	_ghost.global_position = pos + Vector3.UP * (maxf(d.height, 1.0) * 0.275)
+	_ghost.rotation.y = pending_yaw
+	_refresh_grid_preview(pos, d.footprint, ok)
+
+
+## 占格预览：只在落点或合法性变化时重建（每帧重建 SurfaceTool 是白烧 CPU）
+func _refresh_grid_preview(pos: Vector3, footprint: Vector2i, ok: bool) -> void:
+	var key: String = "%d,%d,%d,%d,%s" % [
+		roundi(pos.x * 100.0), roundi(pos.z * 100.0), footprint.x, footprint.y, str(ok)]
+	if key == _grid_key and _grid_preview != null and is_instance_valid(_grid_preview):
+		return
+	_free_grid_preview()
+	_grid_key = key
+	_grid_preview = 建筑网格.make_grid_preview(pos, footprint, ok)
+	add_child(_grid_preview)
+
+
+func _free_grid_preview() -> void:
+	if _grid_preview != null and is_instance_valid(_grid_preview):
+		_grid_preview.queue_free()
+	_grid_preview = null
+	_grid_key = ""
 
 
 func _free_ghost() -> void:
@@ -745,6 +802,7 @@ func _free_ghost() -> void:
 		_ghost.queue_free()
 	_ghost = null
 	_ghost_mat = null
+	_free_grid_preview()
 
 
 # ===========================================================================
@@ -766,6 +824,32 @@ func _pick_any(ray_o: Vector3, ray_d: Vector3) -> Node3D:
 			best_t = hit.x
 			best = n
 	return best
+
+
+## 鼠标是否**真的**压在建筑上（而不是点在它背后的东西）。
+##
+## 判据用屏幕空间：把建筑占地矩形的四个角投到屏幕上，取包围盒；
+## 鼠标必须落在包围盒内（留 6px 容差）。俯视角下建筑会"遮住"背后 10~20m 的地面，
+## 只靠射线命中会把"背后的金矿"判成"建筑"——这就是玩家反馈的那个 bug。
+func _cursor_on_building(b: RtsBuilding, screen_pos: Vector2) -> bool:
+	var cam := _camera()
+	if cam == null or b == null or b.def == null:
+		return false
+	var d: UnitDef = b.def
+	# footprint 的单位是寻路格（1m/格，见 地图生成 里 walkable 的 size×size）
+	var half := Vector2(float(d.footprint.x), float(d.footprint.y)) * 0.5
+	if half.x <= 0.0 or half.y <= 0.0:
+		half = Vector2(2.0, 2.0)
+	var mn := Vector2(INF, INF)
+	var mx := Vector2(-INF, -INF)
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			var w: Vector3 = b.global_position + Vector3(half.x * sx, 0.0, half.y * sz)
+			var s: Vector2 = cam.unproject_position(w)
+			mn = Vector2(minf(mn.x, s.x), minf(mn.y, s.y))
+			mx = Vector2(maxf(mx.x, s.x), maxf(mx.y, s.y))
+	return screen_pos.x >= mn.x - 6.0 and screen_pos.x <= mx.x + 6.0 \
+		and screen_pos.y >= mn.y - 6.0 and screen_pos.y <= mx.y + 6.0
 
 
 ## 可拾取对象：所有单位/建筑 + 所有可采集物
@@ -831,15 +915,27 @@ func _ground_at(screen_pos: Vector2) -> Vector3:
 	return Vector3(p.x, y, p.z)
 
 
-## 贴到最近可站点
+## 贴到最近可站点：**带 body 净空**（0.5m），且返回连续坐标而不是格心。
+##
+## 老实现走 lv.walkable_pos() → 最近可走格**中心**：点到建筑边/拐角时，
+## 相邻的编队格会被夹到同一格中心，一队人抢同一个点，然后靠 separation 互推。
 func _walkable(p: Vector3) -> Vector3:
 	var lv := Game.level as RtsLevel
 	if lv == null:
 		return p
+	var pf: GridPathfinder = lv.grid_pathfinder()
+	if pf != null and pf.has_method("nearest_standable"):
+		return lv.snap_to_ground(pf.nearest_standable(p, 0.5))
 	return lv.walkable_pos(p)
 
 
-## 编队落点：以落点为中心的网格（列优先取整），并逐点夹到可走区域
+## 编队落点：中心网格 → 每格解析成**唯一、可站立、互相错开**的落点（确定性）。
+##
+## 为什么必须错开：老实现直接 _walkable() 到“最近可走格中心”，点到建筑边/拐角时
+## 相邻编队格会被夹到同一格 → 多个单位抢同一个点 → separation 互推 → 到了又挤开，
+## 玩家看到的就是“原地抽搐”。这里给每个点加一道最小间距闸，冲突就沿外法线让位。
+const FORMATION_MIN_GAP := 1.25
+
 func _formation_points(center: Vector3, count: int, spacing: float) -> Array:
 	var out: Array = []
 	if count <= 0:
@@ -851,12 +947,45 @@ func _formation_points(center: Vector3, count: int, spacing: float) -> Array:
 	var rows: int = int(ceil(float(count) / float(cols)))
 	var start_x: float = -float(cols - 1) * 0.5 * spacing
 	var start_z: float = -float(rows - 1) * 0.5 * spacing
+	var used: Array = []
 	for i in range(count):
 		var cx: int = i % cols
 		var cz: int = i / cols
-		var p := center + Vector3(start_x + float(cx) * spacing, 0.0, start_z + float(cz) * spacing)
-		out.append(_walkable(p))
+		var slot := center + Vector3(start_x + float(cx) * spacing, 0.0, start_z + float(cz) * spacing)
+		var p: Vector3 = _resolve_slot(slot, center, used)
+		out.append(p)
+		used.append(p)
 	return out
+
+
+## 把一格编队位解析成“可站立 + 不和已分配点抢位”的落点。
+## 冲突时沿“编队中心 → 该点”的外法线让 0.75~2.25m（后 3 次改切向），
+## 全程纯函数：同样的选中/落点 → 同样的分配，不会逐帧跳。
+func _resolve_slot(slot: Vector3, center: Vector3, used: Array) -> Vector3:
+	var p: Vector3 = _walkable(slot)
+	for attempt in range(6):
+		if not _too_close(p, used):
+			return p
+		var dir: Vector3 = p - center
+		dir.y = 0.0
+		if dir.length_squared() < 0.01:
+			dir = Vector3(1.0, 0.0, 0.0)
+		dir = dir.normalized()
+		if attempt >= 3:
+			dir = Vector3(-dir.z, 0.0, dir.x)
+		p = _walkable(p + dir * (FORMATION_MIN_GAP * (0.6 + 0.2 * float(attempt))))
+	return p
+
+
+## 这个落点离已分配的点是不是太近（< FORMATION_MIN_GAP）
+func _too_close(p: Vector3, used: Array) -> bool:
+	for u in used:
+		var q: Vector3 = u
+		var dx: float = p.x - q.x
+		var dz: float = p.z - q.z
+		if dx * dx + dz * dz < FORMATION_MIN_GAP * FORMATION_MIN_GAP:
+			return true
+	return false
 
 
 # ===========================================================================

@@ -2,14 +2,43 @@ class_name RtsMinimap
 extends Control
 ## **小地图（HAWKEYE）**
 ##
-## 全自定义 `_draw`（文档 §8）：地形底色 + 金矿/树木点 + 双方单位点 + 当前视野框。
-## 左键点击/拖动 → 镜头平滑飞过去（走 RtsCamera.focus_on）。
+## 全自定义 _draw（文档 §8）。这一版按任务书 §3.2 补齐"可读性"：
+##   · **边框**：内 1px 主色细框 + 外 3px 暗框 + 四角取景角；拖动时整框亮起；
+##   · **地形底图**：高度场烘成一张贴图（只烘一次），低绿高灰，配三分战术网格；
+##   · **视野框**：屏幕四角打地面得到的梯形，半透明白填充 + 描边；
+##   · **图例**：底部一条 12px 图例（我方 / 敌军 / 金矿 / 树林），窄屏自动减项；
+##   · **明确的可点区域**：鼠标悬停变手型，按下即飞，拖动持续跟随。
 ##
-## 性能纪律：地形底图**只烘一次**成 ImageTexture；每帧只重画几十个点，
-## 重绘频率压到 10Hz（0.1 秒），不跟着渲染帧空转。
+## 性能纪律：地形底图只烘一次；每帧只重画几十个点，重绘频率压到 10Hz。
+
+const Spec := preload("res://代码/界面/界面规格.gd")
 
 ## 重绘间隔（秒）
 const REFRESH_INTERVAL := 0.1
+## 边框留白（像素）：0 = 地图铺满控件，圆盘正好是控件的内切圆
+const PAD := 0.0
+## 图例条高度（现在是**圆内**的一条半透明浮条，不再占圆外高度）
+const LEGEND_H := 24.0
+## 圆盘遮罩色（= 面板底色）
+const MASK_COLOR := Color(0.035, 0.041, 0.052, 0.96)
+
+## 圆形裁剪用的 canvas_item 着色器。
+## 为什么不用"画四个角盖住"：底盘和遮罩同色，盖了等于没盖，仍旧是一块方板；
+## 只有 discard 才是真的圆 —— 圆外透明，直接透出战场。
+const CIRCLE_SHADER := """
+shader_type canvas_item;
+uniform vec2 size_px = vec2(240.0, 240.0);
+uniform vec2 center_px = vec2(120.0, 120.0);
+uniform float radius_px = 116.0;
+void fragment() {
+	vec2 p = UV * size_px - center_px;
+	if (length(p) > radius_px) {
+		discard;
+	}
+}
+"""
+## 视野框淡填充
+const VIEW_FILL := Color(1.0, 1.0, 1.0, 0.055)
 
 ## 世界边长（没关卡时从 Cfg 取）
 var world_size: float = 116.0
@@ -17,17 +46,127 @@ var world_size: float = 116.0
 ## 地形底图（第一次绘制时烘出来）
 var _terrain_tex: ImageTexture = null
 var _terrain_built: bool = false
+## 本张地图的高度范围（自适应，不再用硬编码的 -0.6~2.4）
+var _hmin: float = 0.0
+var _hmax: float = 1.0
 
 ## 重绘计时
 var _clock: float = 0.0
 
+## 圆形裁剪材质 / 圆盘下方的图例条
+var _mat: ShaderMaterial = null
+var _legend_bg: PanelContainer = null
+var _legend: HBoxContainer = null
+
 ## 左键拖动中
 var _dragging: bool = false
+## 鼠标悬停中（只影响边框亮度，不参与逻辑）
+var _hover: bool = false
+## 边框层：**不带圆形裁剪材质**的子控件。
+## 控件自身的 material 会把圆外的一切绘制 discard 掉，所以"圆环边框"必须画在子节点上，
+## 否则无论加多粗都看不见（之前的边框就是这么消失的）。
+var _frame: RingFrame = null
+
+
+## 圆形外框：外黑边 + 金环 + 内阴影，画在子控件上（不受父级圆形裁剪影响）
+class RingFrame extends Control:
+	var accent_color: Color = Color(0.86, 0.72, 0.40)
+	var emph: float = 0.76
+
+	func _draw() -> void:
+		var side: float = minf(size.x, size.y)
+		if side < 16.0:
+			return
+		var ctr := Vector2(size.x, size.y) * 0.5
+		var rad: float = side * 0.5 - 2.0
+		# 外黑边：让圆盘从草地背景里"跳"出来
+		draw_arc(ctr, rad + 1.5, 0.0, TAU, 160, Color(0.0, 0.0, 0.0, 0.92), 7.0, true)
+		# 金环：显式边框
+		draw_arc(ctr, rad - 2.0, 0.0, TAU, 160,
+			Color(accent_color.r, accent_color.g, accent_color.b, emph), 3.5, true)
+		# 内阴影：读起来像"嵌进去"
+		draw_arc(ctr, rad - 6.5, 0.0, TAU, 160, Color(0.0, 0.0, 0.0, 0.40), 4.0, true)
+		# 四向刻度（方向感，不是装饰）
+		for i in 4:
+			var a: float = TAU * float(i) / 4.0 - PI * 0.5
+			var d := Vector2(cos(a), sin(a))
+			draw_line(ctr + d * (rad - 11.0), ctr + d * (rad - 3.0),
+				Color(accent_color.r, accent_color.g, accent_color.b, minf(1.0, emph + 0.12)), 2.0)
 
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
-	clip_contents = true
+	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	clip_contents = false
+	_build_circle_material()
+	_build_frame()
+	_build_legend()
+	mouse_entered.connect(func() -> void: _hover = true; _sync_frame())
+	mouse_exited.connect(func() -> void: _hover = false; _sync_frame())
+	resized.connect(_update_material)
+
+
+## 圆形裁剪材质：把控件自己画的东西裁成圆（子节点图例不受影响）
+func _build_circle_material() -> void:
+	var sh := Shader.new()
+	sh.code = CIRCLE_SHADER
+	_mat = ShaderMaterial.new()
+	_mat.shader = sh
+	material = _mat
+	_update_material()
+
+
+func _update_material() -> void:
+	if _mat == null:
+		return
+	_layout_legend()
+	var mr := _map_rect()
+	var ctr: Vector2 = mr.position + mr.size * 0.5
+	_mat.set_shader_parameter("size_px", size)
+	_mat.set_shader_parameter("center_px", ctr)
+	_mat.set_shader_parameter("radius_px", minf(mr.size.x, mr.size.y) * 0.5 - 1.0)
+
+
+## 图例：圆盘下方一条横排（我方 / 敌军 / 金矿 / 树林）。
+## 用节点而不是 _draw —— 它必须"活在圆外面"，否则会被圆形裁剪一起切掉。
+func _build_legend() -> void:
+	# 图例在圆盘外侧，直接压在草地上读不清 —— 给它一条自己的深色底板
+	_legend_bg = PanelContainer.new()
+	_legend_bg.name = "图例底"
+	_legend_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_legend_bg.add_theme_stylebox_override("panel",
+			Spec.inset_style(Color(0.030, 0.036, 0.046, 0.94), 8,
+					Color(Spec.accent().r, Spec.accent().g, Spec.accent().b, 0.30), 10.0, 1.0))
+	add_child(_legend_bg)
+
+	_legend = HBoxContainer.new()
+	_legend.name = "图例"
+	_legend.add_theme_constant_override("separation", 10)
+	_legend.alignment = BoxContainer.ALIGNMENT_CENTER
+	_legend.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_legend_bg.add_child(_legend)
+	var items: Array = [
+		[Spec.player_color(), "我方"],
+		[Spec.enemy_color(), "敌军"],
+		[Spec.gold(), "金矿"],
+		[Color(0.34, 0.56, 0.30), "树林"],
+	]
+	for it in items:
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 5)
+		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_legend.add_child(row)
+		var sq := ColorRect.new()
+		sq.color = it[0]
+		sq.custom_minimum_size = Vector2(8.0, 8.0)
+		sq.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		sq.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(sq)
+		row.add_child(Spec.label(String(it[1]), Spec.FS_BODY, Color(0.74, 0.75, 0.72)))
+	# 图例条彻底隐藏：它要么占圆外（圆盘缩小、偏上），要么在圆内超宽被裁。
+	# 小地图上"蓝点=我方 / 红点=敌方 / 黄点=金矿"本来就够读，圆盘保持干净。
+	_legend_bg.visible = false
+	_layout_legend()
 
 
 func _process(delta: float) -> void:
@@ -39,12 +178,20 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 
-## 世界尺寸跟着关卡（关卡没建好就用配置）
+## 世界尺寸跟着关卡（关卡没建好就用配置）。
+##
+## ★ 这里**不能**写 `Game.level as RtsLevel`：Game.level 的静态类型是 Node3D，
+##   而关卡脚本是运行时挂上去的；一旦 RtsLevel 的全局类名没进缓存，as 直接返回 null，
+##   于是 world_size 永远停在初始值 116 —— 200m 的地图上所有点都被推到圆盘外，
+##   小地图只剩一块纯绿。玩家说的"地图 UI 对不上"就是这个。
 func _sync_world_size() -> void:
-	var lv := Game.level as RtsLevel
-	if lv != null:
-		world_size = lv.world_size
-	elif Cfg.game != null:
+	var lv: Node = Game.level
+	if lv != null and lv.get("world_size") != null:
+		var w: float = float(lv.get("world_size"))
+		if w > 1.0:
+			world_size = w
+			return
+	if Cfg.game != null:
 		world_size = Cfg.game.map_size
 
 
@@ -52,44 +199,119 @@ func _sync_world_size() -> void:
 # 绘制
 # ===========================================================================
 
+## 地图绘制区：**铺满控件**（控件本身是正方形）。
+## 旧版留 4px 边 + 底部图例占 34px，于是圆盘比控件小一圈、还偏上 ——
+## 玩家看到的"小地图没对齐圆圈"就是这两件事叠起来的。
+func _map_rect() -> Rect2:
+	# 四周留 7px 给边框：地形不再顶到控件边缘，圆形裁剪也就不会把内容切出"毛边"
+	var side: float = maxf(16.0, minf(size.x, size.y) - 14.0)
+	return Rect2(Vector2(7.0, 7.0), Vector2(side, side))
+
+
+func _build_frame() -> void:
+	_frame = RingFrame.new()
+	_frame.name = "边框"
+	_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_frame)
+	_frame.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_sync_frame()
+
+
+func _sync_frame() -> void:
+	if _frame == null:
+		return
+	_frame.accent_color = _accent()
+	_frame.emph = 0.98 if _dragging else (0.90 if _hover else 0.78)
+	# 尺寸交给 anchors(FULL_RECT) 跟着走 —— 在 `_draw` 里直接改子控件 size 会触发
+	# "Control::set_size during draw" 报错。
+	_frame.queue_redraw()
+
+
+## 图例条：**收进圆盘内部**底缘（水平居中，宽 76%，高 24）。
+## 放在圆外会让整个小地图看起来是"一个圆 + 一块贴纸"，怎么摆都不齐。
+func _layout_legend() -> void:
+	if _legend == null:
+		return
+	var side: float = minf(size.x, size.y)
+	var w: float = maxf(side * 0.76, 40.0)
+	var h: float = LEGEND_H
+	if _legend_bg != null:
+		_legend_bg.position = Vector2((side - w) * 0.5, side - h - side * 0.055)
+		_legend_bg.size = Vector2(w, h)
+
+
+
 func _draw() -> void:
 	var r := Rect2(Vector2.ZERO, size)
-	if r.size.x <= 1.0 or r.size.y <= 1.0:
+	if r.size.x <= 8.0 or r.size.y <= 8.0:
 		return
+	var acc := _accent()
+	var mr := _map_rect()
 
-	# --- 底 ---
-	draw_rect(r, Color(0.05, 0.06, 0.08, 0.95), true)
+	# --- 外底（图例区也吃这个底）---
+	draw_rect(r, Color(0.035, 0.041, 0.052, 0.96), true)
+
+	# --- 地形底图 ---
+	draw_rect(mr, Color(0.05, 0.06, 0.08, 0.95), true)
 	_build_terrain_once()
 	if _terrain_tex != null:
-		draw_texture_rect(_terrain_tex, r, false)
+		draw_texture_rect(_terrain_tex, mr, false)
 	else:
-		draw_rect(r.grow(-1.0), Color(0.16, 0.22, 0.15, 1.0), true)
+		draw_rect(mr.grow(-1.0), Color(0.16, 0.22, 0.15, 1.0), true)
 
-	# --- 水面（圆形池塘，画在底图上更准，但这里叠加更省事）---
-	var lv := Game.level as RtsLevel
-	if lv != null and lv.map_data != null and lv.map_data.pond_radius > 0.0:
-		var pc: Vector2 = _world_to_map(Vector3(lv.map_data.pond_center.x, 0.0, lv.map_data.pond_center.y))
-		var pr: float = lv.map_data.pond_radius / world_size * r.size.x
+	# --- 水面（圆形池塘）---
+	var lv: Node = Game.level
+	var md: Variant = lv.get("map_data") if lv != null else null
+	if md != null and float(md.get("pond_radius")) > 0.0:
+		var pc2: Vector2 = md.get("pond_center")
+		var pc: Vector2 = _world_to_map(Vector3(pc2.x, 0.0, pc2.y))
+		var pr: float = float(md.get("pond_radius")) / world_size * mr.size.x
 		draw_circle(pc, pr, Color(0.18, 0.34, 0.48, 0.85))
 
+	# --- 土路：真实路网映射上来，玩家才能"看图找路" ---
+	if md != null:
+		var road_col := Color(0.46, 0.395, 0.272, 0.62)
+		for rd in md.get("roads"):
+			var pts: PackedVector2Array = rd.get("pts", PackedVector2Array())
+			if pts.size() < 2:
+				continue
+			var poly := PackedVector2Array()
+			for p in pts:
+				poly.append(_world_to_map(Vector3(p.x, 0.0, p.y)))
+			var wpx: float = maxf(1.0, float(rd.get("width", 4.0)) / world_size * mr.size.x)
+			draw_polyline(poly, Color(0.0, 0.0, 0.0, 0.20), wpx + 1.4, true)
+			draw_polyline(poly, road_col, wpx, true)
+
 	# --- 战术网格：三分线，读起来才像一张"战图"而不是一坨绿 ---
-	_draw_grid(r)
+	_draw_grid(mr)
 
 	# --- 资源点 ---
-	if lv != null and lv.map_data != null:
-		var gold := Cfg.game.gold_color if Cfg.game != null else Color(1.0, 0.82, 0.24)
-		for m in lv.map_data.mines:
+	if md != null:
+		var gold := Spec.gold()
+		for m in md.get("mines"):
 			var mp: Vector2 = _world_to_map(Vector3(m.x, 0.0, m.y))
-			draw_rect(Rect2(mp - Vector2(3.2, 3.2), Vector2(6.4, 6.4)), Color(0.0, 0.0, 0.0, 0.62), true)
-			draw_rect(Rect2(mp - Vector2(2.2, 2.2), Vector2(4.4, 4.4)), gold, true)
-		for t in lv.map_data.trees:
+			draw_rect(Rect2(mp - Vector2(3.4, 3.4), Vector2(6.8, 6.8)), Color(0.0, 0.0, 0.0, 0.66), true)
+			draw_rect(Rect2(mp - Vector2(2.3, 2.3), Vector2(4.6, 4.6)), gold, true)
+		for t in md.get("trees"):
 			var tp: Vector2 = _world_to_map(Vector3(t.x, 0.0, t.y))
-			draw_rect(Rect2(tp - Vector2(1.5, 1.5), Vector2(3.0, 3.0)), Color(0.10, 0.24, 0.11, 0.9), true)
+			draw_rect(Rect2(tp - Vector2(1.6, 1.6), Vector2(3.2, 3.2)), Color(0.10, 0.24, 0.11, 0.92), true)
 
 	# --- 单位/建筑 ---
 	var pl := Game.player_faction
-	var pl_color: Color = Cfg.game.player_color if Cfg.game != null else Color(0.3, 0.62, 1.0)
-	var en_color: Color = Cfg.game.enemy_color if Cfg.game != null else Color(1.0, 0.32, 0.26)
+	if OS.has_environment("MM_DEBUG"):
+		var shown: int = 0
+		for u in Game.all_units():
+			var n3 := u as Node3D
+			if n3 == null:
+				continue
+			if shown >= 4:
+				break
+			shown += 1
+			print("[MM] %s world=%s map=%s ws=%.0f mr=%s" % [String(n3.name),
+				str(n3.global_position), str(_world_to_map(n3.global_position)),
+				world_size, str(mr)])
+	var pl_color: Color = Spec.player_color()
+	var en_color: Color = Spec.enemy_color()
 	for u in Game.all_units():
 		if u == null or not is_instance_valid(u):
 			continue
@@ -118,69 +340,78 @@ func _draw() -> void:
 	# --- 当前视野框 ---
 	var view_poly := _view_polygon()
 	if view_poly.size() >= 3:
-		draw_colored_polygon(view_poly, Color(1.0, 1.0, 1.0, 0.05))
+		draw_colored_polygon(view_poly, VIEW_FILL)
 		var closed := view_poly.duplicate()
 		closed.append(view_poly[0])
-		draw_polyline(closed, Color(1.0, 1.0, 1.0, 0.55), 1.2)
+		draw_polyline(closed, Color(1.0, 1.0, 1.0, 0.62), 1.2)
 
-	# --- 内暗角 / 外框 / 取景角 ---
-	draw_rect(r, Color(0.0, 0.0, 0.0, 0.30), false, 3.0)
-	var acc := _accent()
-	draw_rect(r.grow(-0.5), Color(acc.r, acc.g, acc.b, 0.26), false, 1.0)
-	_draw_brackets(r, acc)
+	# --- 底图内框（把地形和边框分开）---
+	draw_rect(mr, Color(acc.r, acc.g, acc.b, 0.34), false, 1.0)
+
+	# 圆形化：圆外由材质 discard 掉（真的透明）。
+	# 边框/刻度由子控件 RingFrame 画 —— 父级的 material 会把这里画的圆环一起裁掉。
+	_sync_frame()
 
 
 ## 三分网格（只在内部画，别压到边）
-func _draw_grid(r: Rect2) -> void:
-	var line := Color(1.0, 1.0, 1.0, 0.07)
+func _draw_grid(mr: Rect2) -> void:
+	var line := Color(1.0, 1.0, 1.0, 0.065)
 	for i in [1, 2, 3]:
 		var t: float = float(i) / 4.0
-		draw_line(Vector2(r.size.x * t, 1.0), Vector2(r.size.x * t, r.size.y - 1.0), line, 1.0)
-		draw_line(Vector2(1.0, r.size.y * t), Vector2(r.size.x - 1.0, r.size.y * t), line, 1.0)
+		draw_line(Vector2(mr.position.x + mr.size.x * t, mr.position.y + 1.0),
+				Vector2(mr.position.x + mr.size.x * t, mr.position.y + mr.size.y - 1.0), line, 1.0)
+		draw_line(Vector2(mr.position.x + 1.0, mr.position.y + mr.size.y * t),
+				Vector2(mr.position.x + mr.size.x - 1.0, mr.position.y + mr.size.y * t), line, 1.0)
 
 
-## 四角取景角（比一圈死边框有设计感）
-func _draw_brackets(r: Rect2, col: Color) -> void:
-	var c := Color(col.r, col.g, col.b, 0.9)
-	var arm: float = 14.0
-	var t: float = 2.0
-	# 左上
-	draw_rect(Rect2(0.0, 0.0, arm, t), c, true)
-	draw_rect(Rect2(0.0, 0.0, t, arm), c, true)
-	# 右上
-	draw_rect(Rect2(r.size.x - arm, 0.0, arm, t), c, true)
-	draw_rect(Rect2(r.size.x - t, 0.0, t, arm), c, true)
-	# 左下
-	draw_rect(Rect2(0.0, r.size.y - t, arm, t), c, true)
-	draw_rect(Rect2(0.0, r.size.y - arm, t, arm), c, true)
-	# 右下
-	draw_rect(Rect2(r.size.x - arm, r.size.y - t, arm, t), c, true)
-	draw_rect(Rect2(r.size.x - t, r.size.y - arm, t, arm), c, true)
+## 圆形裁剪说明（保留常量，方便后人改色）：
+## 真正的圆形是材质 discard 出来的（见 CIRCLE_SHADER）；MASK_COLOR 只在
+## "想退回方板 + 盖角"时才有用，别在这里再画一遍。
 
 
 ## 主色
 func _accent() -> Color:
-	return Cfg.game.hud_accent if Cfg.game != null else Color(0.85, 0.71, 0.36)
+	return Spec.accent()
 
 
 ## 地形底图：把 MapData 的高度场烘成一张 (res+1)² 的贴图
 func _build_terrain_once() -> void:
 	if _terrain_built:
 		return
-	var lv := Game.level as RtsLevel
-	if lv == null or lv.map_data == null:
+	var lv: Node = Game.level
+	var md: Variant = lv.get("map_data") if lv != null else null
+	if md == null:
 		return  # 关卡还没建好，下一帧再试
-	var md := lv.map_data
-	var res: int = maxi(md.resolution, 2)
+	var res: int = maxi(int(md.get("resolution")), 2)
 	var row: int = res + 1
-	if md.heights.size() < row * row:
+	var hs: PackedFloat32Array = md.get("heights")
+	if hs.size() < row * row:
 		return
+
+	# 自适应高度范围：旧版把 (h+0.6)/3 写死，实际地形 -8~+20m 的图会被压成
+	# "一片暗绿 + 中央一块白"，跟战场完全对不上。
+	_hmin = 1e20
+	_hmax = -1e20
+	for i in row * row:
+		var hv: float = hs[i]
+		_hmin = minf(_hmin, hv)
+		_hmax = maxf(_hmax, hv)
+	if _hmax - _hmin < 0.6:
+		_hmax = _hmin + 0.6
 
 	var bytes := PackedByteArray()
 	bytes.resize(row * row * 4)
+	# 3×3 均值：高度场逐格有噪声，直接上色会得到一张"花花绿绿的噪点图"。
+	# 小地图要的是**区域**（草甸 / 台地 / 岩脊 / 峡谷），不是地形高程图。
 	for z in range(row):
 		for x in range(row):
-			var h: float = md.heights[z * row + x]
+			var acc: float = 0.0
+			for dz in range(-2, 3):
+				var zz: int = clampi(z + dz, 0, row - 1)
+				for dx in range(-2, 3):
+					var xx: int = clampi(x + dx, 0, row - 1)
+					acc += hs[zz * row + xx]
+			var h: float = acc / 25.0
 			var c := _height_color(h)
 			var i: int = (z * row + x) * 4
 			bytes[i] = int(clampf(c.r, 0.0, 1.0) * 255.0)
@@ -192,18 +423,27 @@ func _build_terrain_once() -> void:
 	_terrain_built = true
 
 
-## 高度 → 小地图片色（低=深绿，高=土黄/灰白）
+## 高度 → 小地图片色。色阶直接对齐地表顶点色（草 → 干草 → 土 → 岩 → 亮顶），
+## 这样小地图上的一块绿/一块灰，在战场上就是同样的草坡/岩壁。
 func _height_color(h: float) -> Color:
-	var low := Color(0.13, 0.22, 0.12)
-	var mid := Color(0.24, 0.36, 0.17)
-	var high := Color(0.42, 0.38, 0.24)
-	var peak := Color(0.55, 0.54, 0.50)
-	var t: float = clampf((h + 0.6) / 3.0, 0.0, 1.0)
-	if t < 0.5:
-		return low.lerp(mid, t * 2.0)
-	if t < 0.85:
-		return mid.lerp(high, (t - 0.5) / 0.35)
-	return high.lerp(peak, (t - 0.85) / 0.15)
+	var t: float = clampf((h - _hmin) / maxf(_hmax - _hmin, 0.001), 0.0, 1.0)
+	var c_deep := Color(0.086, 0.170, 0.066)
+	var c_grass := Color(0.152, 0.292, 0.110)
+	var c_dry := Color(0.300, 0.302, 0.156)
+	var c_dirt := Color(0.330, 0.278, 0.180)
+	var c_rock := Color(0.360, 0.368, 0.382)
+	var c_top := Color(0.560, 0.552, 0.522)
+	# 低地占画面 70%：**统一成深绿**（留一点起伏），高差明显的台地/岩脊才跳出来。
+	# 旧版从头到尾都在渐变，整张图读起来像迷彩。
+	if t < 0.40:
+		return c_deep.lerp(c_grass, 0.35 + 0.65 * (t / 0.40))
+	if t < 0.62:
+		return c_grass.lerp(c_dry, (t - 0.40) / 0.22)
+	if t < 0.76:
+		return c_dry.lerp(c_dirt, (t - 0.62) / 0.14)
+	if t < 0.90:
+		return c_dirt.lerp(c_rock, (t - 0.76) / 0.14)
+	return c_rock.lerp(c_top, (t - 0.90) / 0.10)
 
 
 ## 视野框：把屏幕四角打到地面，再映射到小地图（四点组成的梯形）
@@ -231,7 +471,10 @@ func _view_polygon() -> PackedVector2Array:
 			if t < 0.0:
 				return PackedVector2Array()
 			w = ro + rd * t
-		out.append(_world_to_map(w))
+		# ★ 用**不裁剪**的映射：镜头看到地图外时，四角本来就该落在圆盘外面。
+		#   旧版在这里 clamp 到 [0,1]，梯形会被压成一块贴边的白色大方块 ——
+		#   玩家说的"小地图对不上"，一半是它。
+		out.append(_world_to_map_raw(w))
 	return out
 
 
@@ -239,22 +482,33 @@ func _view_polygon() -> PackedVector2Array:
 # 坐标 / 交互
 # ===========================================================================
 
-## 世界坐标 → 小地图局部坐标
+## 世界坐标 → 小地图局部坐标（在地图区内，避开边框与图例）
 func _world_to_map(p: Vector3) -> Vector2:
+	var mr := _map_rect()
 	var half: float = world_size * 0.5
-	var u: float = (p.x + half) / world_size
-	var v: float = (p.z + half) / world_size
-	return Vector2(u * size.x, v * size.y)
+	var u: float = clampf((p.x + half) / world_size, 0.0, 1.0)
+	var v: float = clampf((p.z + half) / world_size, 0.0, 1.0)
+	return Vector2(mr.position.x + u * mr.size.x, mr.position.y + v * mr.size.y)
 
 
 ## 小地图局部坐标 → 世界坐标（地面 y=0 附近，镜头自己会贴地）
 func _map_to_world(p: Vector2) -> Vector3:
-	if size.x <= 0.0 or size.y <= 0.0:
+	var mr := _map_rect()
+	if mr.size.x <= 0.0 or mr.size.y <= 0.0:
 		return Vector3.ZERO
 	var half: float = world_size * 0.5
-	var x: float = (p.x / size.x) * world_size - half
-	var z: float = (p.y / size.y) * world_size - half
-	return Vector3(x, 0.0, z)
+	var u: float = clampf((p.x - mr.position.x) / mr.size.x, 0.0, 1.0)
+	var v: float = clampf((p.y - mr.position.y) / mr.size.y, 0.0, 1.0)
+	return Vector3(u * world_size - half, 0.0, v * world_size - half)
+
+
+## 世界坐标 → 小地图局部坐标（**不裁剪**，超出地图的部分留给圆形遮罩切掉）
+func _world_to_map_raw(p: Vector3) -> Vector2:
+	var mr := _map_rect()
+	var half: float = world_size * 0.5
+	var u: float = (p.x + half) / world_size
+	var v: float = (p.z + half) / world_size
+	return Vector2(mr.position.x + u * mr.size.x, mr.position.y + v * mr.size.y)
 
 
 func _gui_input(event: InputEvent) -> void:
@@ -264,6 +518,7 @@ func _gui_input(event: InputEvent) -> void:
 			_dragging = mb.pressed
 			if mb.pressed:
 				_focus_at(mb.position)
+			queue_redraw()
 			accept_event()
 	elif event is InputEventMouseMotion and _dragging:
 		var mm := event as InputEventMouseMotion

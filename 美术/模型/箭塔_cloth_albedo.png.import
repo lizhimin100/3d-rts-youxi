@@ -2,14 +2,11 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://d1knm64do0xwg"
+uid="uid://bjxttmy2773oi"
 path.s3tc="res://.godot/imported/箭塔_cloth_albedo.png-f3215e875320c941308d9e3c53fd2f07.s3tc.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc"],
 "vram_texture": true
-}
-generator_parameters={
-"md5": "76af9475c5f3df629f30b257a8566668"
 }
 
 [deps]

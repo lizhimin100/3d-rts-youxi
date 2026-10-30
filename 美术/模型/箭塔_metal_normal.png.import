@@ -2,14 +2,11 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bka17f1y731v"
+uid="uid://fxx42x8pewer"
 path.s3tc="res://.godot/imported/箭塔_metal_normal.png-ca8a5ae30ef6f0b311bd5129a761913e.s3tc.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc"],
 "vram_texture": true
-}
-generator_parameters={
-"md5": "d053a1e2536277812dc5e479a2d4961b"
 }
 
 [deps]

@@ -2,14 +2,11 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cbypxvgn5kwr2"
+uid="uid://nclgdwyboj6f"
 path.s3tc="res://.godot/imported/农场_plaster_albedo.png-a06db2d002804dac2cbcbad7e177726a.s3tc.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc"],
 "vram_texture": true
-}
-generator_parameters={
-"md5": "33b30a85552324b73f7ef98c3ec5c7f0"
 }
 
 [deps]

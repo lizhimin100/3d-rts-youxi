@@ -2,14 +2,11 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cjot68acdp6ny"
+uid="uid://82s6wyiey4bf"
 path.s3tc="res://.godot/imported/箭塔_shingle_albedo.png-e3654b65e34ac0f8fb2c5ac5978f878a.s3tc.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc"],
 "vram_texture": true
-}
-generator_parameters={
-"md5": "85cb6762a43f6f7e0de165b4402e98ce"
 }
 
 [deps]

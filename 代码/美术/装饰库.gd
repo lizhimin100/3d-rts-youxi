@@ -58,7 +58,7 @@ const BATCH_ROUGHNESS := 0.94
 # --- 缓存（静态，跨地图复用；同一份 PackedScene 只 load 一次）---
 static var _scenes: Dictionary = {}
 static var _batch_meshes: Dictionary = {}
-static var _batch_material_cache: StandardMaterial3D = null
+static var _batch_material_cache: Dictionary = {}
 
 
 # ===========================================================================
@@ -96,6 +96,8 @@ static func instantiate(kind: StringName, parent: Node3D = null) -> Node3D:
 	var n := ps.instantiate() as Node3D
 	if n == null:
 		return null
+	# 单件也要吃自然材质：GLB 自带的 albedo 是灰度噪声，不套就是一块灰白。
+	自然材质库.apply(n)
 	if parent != null:
 		parent.add_child(n)
 	return n
@@ -146,9 +148,11 @@ static func make_multimesh(kind: StringName, transforms: Array,
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.mesh = mesh
-	mm.instance_count = transforms.size()
+	# use_colors 必须在 instance_count 之前打开：先分配实例缓冲、再改格式，
+	# 颜色通道不会跟着重建（运行时会刷 "Multimesh isn't using colors"）。
 	var use_color: bool = not colors.is_empty()
 	mm.use_colors = use_color
+	mm.instance_count = transforms.size()
 	for i in transforms.size():
 		var xf: Transform3D = transforms[i]
 		mm.set_instance_transform(i, xf)
@@ -158,19 +162,33 @@ static func make_multimesh(kind: StringName, transforms: Array,
 	var mmi := MultiMeshInstance3D.new()
 	mmi.name = "装饰_%s" % String(k)
 	mmi.multimesh = mm
-	mmi.material_override = _batch_material()
+	mmi.material_override = _batch_material(k)
 	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var dist: float = float(VIEW_DISTANCE.get(k, 0.0))
 	if dist > 0.0:
-		mmi.visibility_range_end = dist
+		# 可见距离是**整批**的，且按合并包围盒的中心算距离。一簇装饰铺满 200m 地图时，
+		# 直接写 dist 会让整批在镜头离地图中心远一点时突然消失 —— 必须加上批的半径。
+		mmi.visibility_range_end = dist + _batch_radius(transforms)
 		mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 	return mmi
 
 
-## 合批材质：顶点色（= 逐实例颜色）乘进 albedo。装饰物不反光、不透明、双面剔除。
-static func _batch_material() -> StandardMaterial3D:
-	if _batch_material_cache != null:
-		return _batch_material_cache
+## 一批实例的包围半径（相对原点；用于修正整批可见距离）
+static func _batch_radius(transforms: Array) -> float:
+	var r: float = 0.0
+	for xf in transforms:
+		r = maxf(r, (xf as Transform3D).origin.length())
+	return r
+
+
+## 合批材质：顶点色（= 逐实例颜色）乘进 albedo。装饰物不反光、不透明、单面剔除。
+##
+## 按**种类**分开缓存：草丛 / 碎石各带一张灰度细节贴图（叶脉 / 石面颗粒），
+## 只乘细节不改色 —— 绿/灰仍旧由逐实例色决定，所以"每实例一色"不会丢。
+static func _batch_material(kind: StringName) -> StandardMaterial3D:
+	var k := _normalize(kind)
+	if _batch_material_cache.has(k):
+		return _batch_material_cache[k]
 	var m := StandardMaterial3D.new()
 	m.albedo_color = Color(1.0, 1.0, 1.0, 1.0)
 	m.vertex_color_use_as_albedo = true
@@ -178,12 +196,37 @@ static func _batch_material() -> StandardMaterial3D:
 	m.metallic = 0.0
 	m.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
 	m.cull_mode = BaseMaterial3D.CULL_BACK
-	_batch_material_cache = m
+	var tex_path := ""
+	# 基色必须从**调色板**取，和 自然材质库 / MatKit 是同一套色。
+	# 以前这里把 albedo_color 抬到 1.25 白，等于绕开调色板：
+	# 碎石/草丛算出来是 ~0.9 的近白，跟关卡里那批"自然_rock 冷灰"完全是两种皮，
+	# 草地上一块块白斑就是它们（老板说的"杂牌军"）。
+	var base: Color = Color(1, 1, 1, 1)
+	match k:
+		&"grass":
+			tex_path = "res://美术/模型/草丛_leaf_albedo.png"
+			base = MatKit.palette().colors.get("grass", Color(0.42, 0.52, 0.30))
+		&"rubble":
+			tex_path = "res://美术/模型/岩石_rock_albedo.png"
+			base = MatKit.palette().colors.get("rock", Color(0.47, 0.50, 0.51))
+	if not tex_path.is_empty() and ResourceLoader.exists(tex_path):
+		m.albedo_texture = load(tex_path)
+		# 最终 albedo = albedo_color × 灰度贴图(≈0.88) × 逐实例顶点色。
+		# 顶点色均值：草丛 ~0.97、碎石 ~0.72（见 地表细节.gd 的 cols 生成）。
+		# 反解 albedo_color，让**最终色**落回调色板原色，而不是靠拍脑袋抬到 1.25。
+		var vc_avg: float = 0.97 if k == &"grass" else 0.72
+		var k_gain: float = 1.0 / maxf(0.05, 0.88 * vc_avg)
+		m.albedo_color = Color(base.r * k_gain, base.g * k_gain, base.b * k_gain, 1.0)
+	_batch_material_cache[k] = m
 	return m
 
 
 ## 递归把"可见网格"烘进 SurfaceTool，返回写进去的 surface 数。
 ## 变换逐级相乘：场景根上的缩放（草丛 0.55 / 碎石 1.35）也会被烘进去。
+##
+## 为什么不用 `st.append_from`：它会原样拷贝源网格，树/岩石 GLB 多半**没有 COLOR 通道**，
+## 而合批材质开了 `vertex_color_use_as_albedo` → 这些网格会整块变黑（草丛就是这样消失的）。
+## 这里逐顶点补一个白色顶点色，实例色才有地方乘。
 static func _append_surfaces(st: SurfaceTool, node: Node, parent_xf: Transform3D) -> int:
 	if node == null:
 		return 0
@@ -198,11 +241,41 @@ static func _append_surfaces(st: SurfaceTool, node: Node, parent_xf: Transform3D
 	var mi := node as MeshInstance3D
 	if mi != null and mi.mesh != null:
 		for s in mi.mesh.get_surface_count():
-			st.append_from(mi.mesh, s, xf)
+			_append_surface(st, mi.mesh, s, xf)
 			count += 1
 	for c in node.get_children():
 		count += _append_surfaces(st, c, xf)
 	return count
+
+
+## 逐顶点写入（位置 × 变换，法线 × 基，顶点色 = 白）
+static func _append_surface(st: SurfaceTool, mesh: Mesh, surf: int, xf: Transform3D) -> void:
+	var arr: Array = mesh.surface_get_arrays(surf)
+	if arr.size() < Mesh.ARRAY_MAX:
+		return
+	var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+	var norms: PackedVector3Array = arr[Mesh.ARRAY_NORMAL]
+	var has_n: bool = norms.size() == verts.size()
+	# UV 一起搬：合批材质要乘细节贴图（叶脉/石面），没 UV 就退化成平色
+	var uvs: PackedVector2Array = arr[Mesh.ARRAY_TEX_UV]
+	var has_uv: bool = uvs.size() == verts.size()
+	var nb: Basis = xf.basis.inverse().transposed()
+	var idx: Variant = arr[Mesh.ARRAY_INDEX]
+	var white := Color(1, 1, 1, 1)
+	if idx is PackedInt32Array and (idx as PackedInt32Array).size() > 0:
+		for k in (idx as PackedInt32Array):
+			st.set_color(white)
+			st.set_uv(uvs[k] if has_uv else Vector2.ZERO)
+			if has_n:
+				st.set_normal((nb * norms[k]).normalized())
+			st.add_vertex(xf * verts[k])
+	else:
+		for k in range(verts.size()):
+			st.set_color(white)
+			st.set_uv(uvs[k] if has_uv else Vector2.ZERO)
+			if has_n:
+				st.set_normal((nb * norms[k]).normalized())
+			st.add_vertex(xf * verts[k])
 
 
 # ===========================================================================
@@ -222,7 +295,7 @@ static func _normalize(kind: StringName) -> StringName:
 static func clear_cache() -> void:
 	_scenes.clear()
 	_batch_meshes.clear()
-	_batch_material_cache = null
+	_batch_material_cache.clear()
 
 
 ## 已登记的种类（调试/自检用）

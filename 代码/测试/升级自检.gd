@@ -92,8 +92,18 @@ func _run() -> void:
 		if grid != null:
 			for ch in grid.get_children():
 				var btn := ch as Button
-				if btn != null and "武器锻造" in btn.text:
+				if btn == null:
+					continue
+				# 新版命令卡是"图标 + 子 Label"的格子，Button.text 为空；
+				# 所以按钮是否存在要看自身/子节点的文本与 tooltip，不能只认 btn.text。
+				if "武器锻造" in btn.text or "武器锻造" in btn.tooltip_text:
 					found = true
+					break
+				for lb in _all_labels(btn):
+					if "武器锻造" in lb.text:
+						found = true
+						break
+				if found:
 					break
 		_check(found, "选中铁匠铺后命令卡出现研究按钮")
 
@@ -155,6 +165,19 @@ func _check(cond: bool, label: String) -> void:
 	_checks.append({"检查": label, "通过": cond})
 	if not cond:
 		_ok = false
+
+
+## 递归收集某个控件下的全部 Label（新版命令卡的文字在子节点里）
+func _all_labels(root: Node) -> Array:
+	var out: Array = []
+	var stack: Array = [root]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		if n is Label:
+			out.append(n)
+		for c in n.get_children():
+			stack.append(c)
+	return out
 
 
 func _finish() -> void:

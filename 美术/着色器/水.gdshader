@@ -24,6 +24,13 @@ uniform float alpha_base : hint_range(0.0, 1.0) = 0.80;
 uniform float foam_amount : hint_range(0.0, 1.0) = 0.35;
 uniform vec3  shadow_color : source_color = vec3(0.30, 0.38, 0.58);
 
+// 2026-10-18：加一层可平铺波纹法线。
+// 只靠顶点正弦波，俯视角下水面是一块"静止的蓝玻璃"；碎光来自法线的高频起伏。
+uniform sampler2D ripple_normal : hint_normal, filter_linear_mipmap, repeat_enable;
+uniform float ripple_strength : hint_range(0.0, 2.0) = 0.75;
+uniform vec2  wave_tex_scale = vec2(0.13, 0.11);
+uniform vec2  wave_tex_scroll = vec2(0.018, 0.012);
+
 varying vec3 v_world;
 varying vec3 v_wn;
 
@@ -35,6 +42,12 @@ void vertex() {
     VERTEX.y += h * wave_amp;
     v_world = w;
     v_wn = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
+}
+
+vec3 _ripple(vec2 wxz, float t) {
+    vec3 a = texture(ripple_normal, wxz * wave_tex_scale + vec2(t * wave_tex_scroll.x, t * wave_tex_scroll.y)).rgb * 2.0 - 1.0;
+    vec3 b = texture(ripple_normal, wxz * wave_tex_scale * 2.3 - vec2(t * wave_tex_scroll.x * 1.7, t * wave_tex_scroll.y * 1.4)).rgb * 2.0 - 1.0;
+    return normalize(vec3((a.x + b.x * 0.6) * ripple_strength, 1.0, (a.y + b.y * 0.6) * ripple_strength));
 }
 
 void fragment() {
@@ -62,4 +75,8 @@ void fragment() {
     ROUGHNESS = 0.16;
     METALLIC = 0.0;
     ALPHA = clamp(alpha_base + foam * 0.25 + fs * 0.15, 0.0, 1.0);
+
+    // 俯视角水面法线：基面朝上，叠两层滚动的波纹法线
+    vec3 rn = _ripple(v_world.xz, TIME);
+    NORMAL = normalize((VIEW_MATRIX * vec4(normalize(vec3(rn.x, 1.0, rn.z)), 0.0)).xyz);
 }

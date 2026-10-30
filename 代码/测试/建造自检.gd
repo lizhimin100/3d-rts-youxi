@@ -154,6 +154,16 @@ func _test_snap() -> void:
 		detail.append("(%.1f,%.1f)→(%.1f,%.1f)" % [p.x, p.z, s.x, s.z])
 	_ok("5 个随机落点吸附后都是格宽整数倍（%d×%d 整格）" % [fp.x, fp.y], all_ok, " ".join(detail))
 
+	# 朝向：90° 档（建筑资产是正交设计，斜放会破面/露底）
+	var snapped_yaw: float = float(_cmd.call("snap_yaw", 0.77)) \
+		if _cmd.has_method("snap_yaw") else 0.0
+	var yaw_ok: bool = false
+	if _cmd.has_method("snap_yaw"):
+		var step: float = PI * 0.5
+		var q: float = round(snapped_yaw / step) * step
+		yaw_ok = absf(angle_difference(snapped_yaw, q)) < 0.001
+	_ok("建造朝向吸到 90° 档（0.77 rad → %.0f°）" % rad_to_deg(snapped_yaw), yaw_ok)
+
 
 ## 锚点是否正好压在格子边界（偶数边长）或格子中心（奇数边长），且占地整格在图内
 func _footprint_is_whole_cells(anchor: Vector3, fp: Vector2i) -> bool:
@@ -208,10 +218,11 @@ func _test_reject() -> void:
 # ===========================================================================
 
 func _test_one_charge() -> void:
+	var fp: Vector2i = _bdef.get("footprint")
 	_crew = _spawn_crew(_anchor, 3)
 	_gold0 = int(_faction.get("gold"))
 	_wood0 = int(_faction.get("wood"))
-	_site = _cmd.call("place_building", BARRACKS, _anchor, _crew)
+	_site = _cmd.call("place_building", BARRACKS, _anchor, _crew, PI * 0.5)
 	_gold1 = int(_faction.get("gold"))
 	_wood1 = int(_faction.get("wood"))
 
@@ -223,6 +234,16 @@ func _test_one_charge() -> void:
 		_site != null and is_instance_valid(_site) and is_zero_approx(float(_site.get("progress")))
 			and not bool(_site.get("is_constructed")),
 		"progress=%s" % ("-" if _site == null else "%.2f" % float(_site.get("progress"))))
+	if _site != null and is_instance_valid(_site):
+		var sy: float = float(_site.get("rotation").y)
+		var q2: float = round(sy / (PI * 0.5)) * (PI * 0.5)
+		var grid_anchor: Vector3 = _cmd.call("snap_build_pos", _site.global_position, fp)
+		_ok("工地朝向在 90° 档且落点是严格网格锚点",
+			absf(angle_difference(sy, q2)) < 0.001 \
+				and absf(grid_anchor.x - _site.global_position.x) < 0.001 \
+				and absf(grid_anchor.z - _site.global_position.z) < 0.001,
+			"yaw=%.0f° anchor=(%.1f, %.1f)" % [rad_to_deg(sy),
+				_site.global_position.x, _site.global_position.z])
 
 
 func _test_crew() -> void:

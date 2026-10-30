@@ -42,11 +42,21 @@ var _shot_delay: float = 0.0
 var _shot_done: bool = false
 var _quit_after_shot: bool = false
 var _shot_clock: float = 0.0
+## QA 相机：--cam=x,y,z + --cam-dist=N（只用于验收截图，不影响正常开局）
+var _qa_cam_pos: Vector3 = Vector3.INF
+var _qa_cam_dist: float = -1.0
+## QA：从命令行强制镜头朝向（度）。用于"同一场景多角度"截图验收。
+var _qa_cam_yaw: float = NAN
 var _qa_select_id: String = ""
+## 地图编辑器：--map=<路径> 直接加载 MapDef（地图编辑器 Test Map 用）
+var _map_path: String = ""
+## --dump-mapdef=<路径>：把当前程序化地图导出成 MapDef（验证"统一口径"用）
+var _dump_mapdef: String = ""
 
 
 func _ready() -> void:
 	_parse_cmdline()
+	_qa_apply_yaw.call_deferred()
 
 	# 1) 全局状态与阵营
 	Game.reset()
@@ -58,22 +68,42 @@ func _ready() -> void:
 		环境节点.environment = _make_fallback_env()
 
 	# 3) 关卡：地图数据 → 地形 → 寻路 → 道具 → 开局部队
+	#    有 --map= 就走 MapDef（编辑器 Test Map）；否则保持原来的程序化流程，一行不变。
 	if level != null:
-		level.build()
-		level.spawn_props()
-		level.spawn_starting_forces()
 		Game.level = level
+		var map_def: MapDef = _load_map_arg()
+		if map_def != null:
+			if not MapLoader.apply_to_level(map_def, level):
+				push_error("[主场景] MapDef 建关失败，回退到默认地图")
+				level.build()
+				level.spawn_props()
+				level.spawn_starting_forces()
+			else:
+				print("[主场景] 已加载地图 %s（%d×%d，对象 %d 个）"
+					% [_map_path, map_def.size, map_def.size, map_def.objects.size()])
+				_apply_map_resources(map_def)
+		else:
+			level.build()
+			level.spawn_props()
+			level.spawn_starting_forces()
+		if not _dump_mapdef.is_empty():
+			_dump_map_def(_dump_mapdef)
 	else:
 		push_error("[主场景] 场景里缺少「关卡」节点")
 
 	# 4) 相机初始对准玩家基地（必须在入树之后）
 	_place_camera()
+	_apply_qa_camera.call_deferred()
 
 	# 4.9 音效与 BGM（素材是程序化合成的 WAV，缺失时静默跳过）
 	if ResourceLoader.exists("res://代码/音频/音效管理.gd"):
 		var sfx_script := load("res://代码/音频/音效管理.gd") as Script
 		if sfx_script != null:
 			sfx_script.call("attach", get_tree())
+
+	# 4.96 副官（玩家侧脚本 AI）：替玩家补农民/派采集/盖农场兵营，玩家下令即接管。
+	#      只碰农民，不碰任何战斗单位；`--no-adjutant` 可关。
+	_mount_script("res://代码/ai/副官.gd", "副官")
 
 	# 4.95 移动指示（绿色虚线 + 目的地标记）：一层只订阅 Game.order_issued 的观察者，
 	#       和 选择系统 / 指令系统 挂在同一层；脚本缺失时静默跳过，不影响开局。
@@ -82,7 +112,9 @@ func _ready() -> void:
 	# 5) 起跑
 	Game.phase = RtsConst.Phase.RUNNING
 	Game.game_over.connect(_on_game_over)
-	Game.notify.emit("战斗开始！摧毁敌人大本营即可获胜。", Cfg.game.hud_accent)
+	Game.notify.emit("战斗开始！你是玩家 1，对面是人机。摧毁敌人大本营即可获胜。",
+		Cfg.game.hud_accent)
+	# 副官不再弹提示：状态改由小地图下方的「副官 · 开/关」按钮表达（常驻、可点）。
 
 	# 6) 测试挂载（只有命令行显式要求时才挂）
 	_mount_tests()
@@ -104,6 +136,19 @@ func _ready() -> void:
 func _exit_tree() -> void:
 	# 释放静态缓存里的 Resource，否则退出时报 "resources still in use at exit"
 	ArtKit.clear_cache()
+
+
+## QA 相机落位：--cam=x,y,z --cam-dist=N 只用于验收截图。
+## 必须 deferred：关卡/单位都在同一帧里建完，focus_on 才有地面高度可查询。
+func _apply_qa_camera() -> void:
+	if camera == null:
+		return
+	if _qa_cam_pos != Vector3.INF and camera.has_method("focus_on"):
+		camera.call("focus_on", _qa_cam_pos)
+		if _qa_cam_dist < 0.0:
+			_qa_cam_dist = 18.0
+	if _qa_cam_dist > 0.0 and camera.has_method("set_distance"):
+		camera.call("set_distance", _qa_cam_dist)
 
 
 ## 相机落位（有 focus_on 就用它，没有就直接 look_at 兜底）
@@ -199,6 +244,10 @@ func _mount_tests() -> void:
 		_mount_script("res://代码/测试/自动试玩.gd", "自动试玩")
 	if "--research-test" in args:
 		_mount_script("res://代码/测试/升级自检.gd", "升级自检")
+	if "--walk-test" in args:
+		_mount_script("res://代码/测试/走姿验收.gd", "走姿验收")
+	if "--map-editor-test" in args:
+		_mount_script("res://代码/测试/地图编辑器自检.gd", "地图编辑器自检")
 	if not _qa_select_id.is_empty():
 		_qa_select.call_deferred(_qa_select_id)
 
@@ -223,7 +272,13 @@ func _qa_select(id: String) -> void:
 	for i in 3:
 		await get_tree().process_frame
 	var picked: Array = []
-	for u in Game.player_faction.units:
+	# 建筑登记在 faction.buildings（不在 units），只扫 units 会漏掉整类目标 ——
+	# 于是 --select-id=barracks 只选中、镜头不跟，验收截图永远拍在基地中心。
+	var pool: Array = []
+	if Game.player_faction != null:
+		pool.append_array(Game.player_faction.units)
+		pool.append_array(Game.player_faction.buildings)
+	for u in pool:
 		if u != null and is_instance_valid(u) and u.is_alive() and u.def != null and String(u.def.id) == id:
 			picked.append(u)
 	if picked.is_empty():
@@ -245,6 +300,20 @@ func _qa_select(id: String) -> void:
 # 自动截图
 # ===========================================================================
 
+## QA：把镜头转到指定朝向（度）。只是给截图用，不参与玩法。
+func _qa_apply_yaw() -> void:
+	if is_nan(_qa_cam_yaw):
+		return
+	for _i in 10:
+		await get_tree().process_frame
+	var cam := get_node_or_null("镜头")
+	if cam == null:
+		return
+	cam.set("_yaw", deg_to_rad(_qa_cam_yaw))
+	cam.set("_yaw_target", deg_to_rad(_qa_cam_yaw))
+	print("[QA] 镜头朝向 %.0f°" % _qa_cam_yaw)
+
+
 func _parse_cmdline() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--shot="):
@@ -255,6 +324,50 @@ func _parse_cmdline() -> void:
 			_quit_after_shot = true
 		elif arg.begins_with("--select-id="):
 			_qa_select_id = arg.substr(12)
+		elif arg.begins_with("--cam="):
+			var parts := arg.substr(6).split(",")
+			if parts.size() == 3:
+				_qa_cam_pos = Vector3(float(parts[0]), float(parts[1]), float(parts[2]))
+		elif arg.begins_with("--cam-dist="):
+			_qa_cam_dist = float(arg.substr(11))
+		elif arg.begins_with("--cam-yaw="):
+			_qa_cam_yaw = float(arg.substr(10))
+		elif arg.begins_with("--map="):
+			_map_path = arg.substr(6)
+		elif arg.begins_with("--dump-mapdef="):
+			_dump_mapdef = arg.substr(14)
+
+
+## 读 --map= 指定的 MapDef（读不到就返回 null，走默认地图）
+func _load_map_arg() -> MapDef:
+	if _map_path.is_empty():
+		return null
+	var def: MapDef = MapStore.load_any(_map_path)
+	if def == null:
+		push_warning("[主场景] 读不到地图：%s（回退到默认地图）" % _map_path)
+	return def
+
+
+## 把 MapDef 里的初始资源写进阵营（MapDef 图不跑 cfg 的开局流程）
+func _apply_map_resources(def: MapDef) -> void:
+	if def == null:
+		return
+	if def.players.size() >= 1 and def.players[0] != null and Game.player_faction != null:
+		Game.player_faction.gold = def.players[0].gold()
+		Game.player_faction.wood = def.players[0].wood()
+	var enemy: PlayerSlot = def.enemy_slot()
+	if enemy != null and Game.enemy_faction != null:
+		Game.enemy_faction.gold = enemy.gold()
+		Game.enemy_faction.wood = enemy.wood()
+
+
+## 把当前地图导出成 MapDef（只在地图编辑器/命令行需要时执行）
+func _dump_map_def(path: String) -> void:
+	if level == null or level.map_data == null:
+		return
+	var def: MapDef = MapDef.from_map_data(level.map_data, Cfg.game)
+	var err: int = MapStore.save_any(def, path)
+	print("[主场景] 导出 MapDef → %s err=%d（%d 个对象）" % [path, err, def.objects.size()])
 
 
 func _update_shot(delta: float) -> void:

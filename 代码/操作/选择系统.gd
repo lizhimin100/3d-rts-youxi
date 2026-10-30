@@ -28,6 +28,8 @@ var selected: Array = []
 var _pressing: bool = false
 var _boxing: bool = false
 var _press_pos: Vector2 = Vector2.ZERO
+## 圈选模式（参照图右列"圈选"）：拖出圆形范围，按屏幕距离选己方单位
+var circle_mode: bool = false
 
 ## 拖框覆盖层（只画、不吃事件）
 var _overlay: Control = null
@@ -56,12 +58,20 @@ class BoxOverlay extends Control:
 	var box: Rect2 = Rect2()
 	## 是否显示
 	var showing: bool = false
+	## 圈选预览
+	var circle: bool = false
+	var center: Vector2 = Vector2.ZERO
+	var radius: float = 0.0
 
 	func _draw() -> void:
 		if not showing:
 			return
-		draw_rect(box, Color(0.55, 0.80, 1.0, 0.13), true)
-		draw_rect(box, Color(0.70, 0.90, 1.0, 0.90), false, 1.5)
+		if circle:
+			draw_circle(center, radius, Color(0.55, 0.80, 1.0, 0.13))
+			draw_arc(center, radius, 0.0, TAU, 72, Color(0.70, 0.90, 1.0, 0.90), 1.5)
+		else:
+			draw_rect(box, Color(0.55, 0.80, 1.0, 0.13), true)
+			draw_rect(box, Color(0.70, 0.90, 1.0, 0.90), false, 1.5)
 
 
 # ===========================================================================
@@ -163,9 +173,15 @@ func _on_left_button(mb: InputEventMouseButton) -> void:
 		return
 	_pressing = false
 	if _boxing:
-		var rect := _box_rect(mb.position)
-		_hide_box()
-		_select_box(rect, Input.is_key_pressed(KEY_SHIFT))
+		var additive := Input.is_key_pressed(KEY_SHIFT)
+		if circle_mode:
+			var radius: float = _press_pos.distance_to(mb.position)
+			_hide_box()
+			_select_circle(_press_pos, radius, additive)
+		else:
+			var rect := _box_rect(mb.position)
+			_hide_box()
+			_select_box(rect, additive)
 	else:
 		_click_select(mb.position, Input.is_key_pressed(KEY_SHIFT))
 	get_viewport().set_input_as_handled()
@@ -179,7 +195,13 @@ func _update_box(pos: Vector2) -> void:
 		return
 	if _overlay is BoxOverlay:
 		var bo := _overlay as BoxOverlay
-		bo.box = _box_rect(pos)
+		if circle_mode:
+			bo.circle = true
+			bo.center = _press_pos
+			bo.radius = _press_pos.distance_to(pos)
+		else:
+			bo.circle = false
+			bo.box = _box_rect(pos)
 		bo.showing = true
 		bo.queue_redraw()
 
@@ -195,6 +217,36 @@ func _hide_box() -> void:
 ## 两点 → 规范化矩形
 func _box_rect(pos: Vector2) -> Rect2:
 	return Rect2(_press_pos, pos - _press_pos).abs()
+
+
+## 圈选：屏幕距离圆心 ≤ 半径的己方单位；过滤规则与框选完全一致
+func _select_circle(center: Vector2, radius: float, additive: bool) -> void:
+	var cam := _camera()
+	if cam == null or radius < 1.0:
+		return
+	var player := Game.player_faction
+	var out: Array = []
+	if additive:
+		for u in selected:
+			if is_box_unit(u, player):
+				out.append(u)
+	var saw_building := false
+	for n in _selectable_units():
+		var anchor := _anchor_point(n)
+		if cam.is_position_behind(anchor):
+			continue
+		if cam.unproject_position(anchor).distance_to(center) > radius:
+			continue
+		if n is RtsBuilding:
+			saw_building = true
+			continue
+		if not is_box_unit(n, player):
+			continue
+		if not out.has(n):
+			out.append(n)
+	_set_selection(out)
+	if out.is_empty() and saw_building and not additive:
+		Game.toast("圈选只选单位 · 建筑请单击选择", _accent_color())
 
 
 # ===========================================================================

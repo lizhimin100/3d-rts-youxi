@@ -6,41 +6,47 @@ extends PanelContainer
 ## 建筑关心的是"它能干什么、正在干什么"（训练队列 / 建造进度 / 集结点 / 研究）。
 ## 把两者塞进一张卡只会互相挤，所以这里换一套视觉语言：
 ##   · 单位面板：深色底 + 金色细描边 + 3D 头像；
-##   · 本面板：**暖色标题条 + 块状分区标题（左侧粗色条）+ 紧凑按钮卡**，无头像、无属性行。
+##   · 本面板：**暖色标题条 + 块状分区（左侧 3px 粗色条）**，无头像，版面按 8px 栅格。
 ##
-## 版式：
-##   ┌────────────────────────────────────────────────┐
-##   │ 兵营              〔建造中 42%〕        ■ 玩家 │  ← 暖色标题条 + 阵营色块
-##   │ ███████████████░░░░░  生命 940 / 1500          │
-##   │ 建造中 42%                                      │
-##   │ ███████░░░░░░░░░░░░░                            │
-##   │ ▌训练                                队列 2 / 5 │
-##   │ [步兵 135金] [弓箭手 130金] [法师 155金]        │
-##   │ ███████░░░░  剩余 8.4s  [取消训练]              │
-##   │ ①步兵  ②弓箭手                                  │
-##   │ ▌集结点                                         │
-##   │ [设置集结点]  集结点：未设置                    │
-##   └────────────────────────────────────────────────┘
+## 版式（四段，没内容的分段整块隐藏，不留空行）：
+##   ┌──────────────────────────────────────────────┐
+##   │ 兵营                 〔建造中 42%〕    ●玩家 │
+##   │ 生命 940/1500  ██████████████░░░░░░          │
+##   │ ██ 建造中 42%                                │
+##   │ ▌训练                              队列 2/5  │
+##   │ [步兵 135金] [弓箭手 130金] [法师 155金]     │
+##   │ ███████░░░░  剩余 8.4s   [取消训练]          │
+##   │ ①步兵  ②弓箭手                               │
+##   │ ▌集结点  [设置集结点]  集结点：未设置        │
+##   │ ▌研究    [攻击强化 1/3] [护甲强化 0/3]       │
+##   └──────────────────────────────────────────────┘
 ##
-## 三条纪律：
-##   1. 训练计时条由**本面板自己 _process 每帧刷**（HUD 的 0.12s 节流会让秒数一跳一跳，
-##      看起来像卡住）；其它文字/按钮状态仍可随 HUD 的刷新走，重复调 refresh() 是安全的。
-##   2. 数值/颜色只从 GameConfig 与建筑自身读，不在界面里发明规则。
+## 四条纪律：
+##   1. 训练计时条由**本面板自己 _process 每帧刷**（HUD 的 0.12s 节流会让秒数一跳一跳）；
+##   2. 数值/颜色只从 GameConfig 与建筑自身读，不在界面里发明规则；
 ##   3. 训练走 RtsBuilding.queue_train()、取消走 cancel_train()，和命令卡是同一条路；
-##      集结点走指令系统的 request_set_rally()（接口还没落地时用 has_method 兜底）。
+##   4. 宽度由 HUD 的 set_metrics() 注入，1024 档自动收窄、按钮仍不裁字。
+
+const Spec := preload("res://代码/界面/界面规格.gd")
 
 # ===========================================================================
 # 版面常量
 # ===========================================================================
 
-## 面板总宽（与单位面板同宽，HUD 复用同一套贴底摆放）
+## 面板总宽（与单位面板同宽，HUD 会按分辨率覆盖）
 const PANEL_W := 512.0
 ## 最小高度（内容更矮时也保持一块像样的面板）
-const H_MIN := 150.0
+## 2026-10-23：150 → 126。面板从"屏幕中央下方"搬到"左下角"后，高度必须收，
+## 否则选中兵营时它还是会顶到屏幕中线。
+const H_MIN := 126.0
 ## 训练队列最多显示几项（与指令系统的训练上限一致）
 const QUEUE_MAX := 5
-## 训练按钮卡尺寸
-const TRAIN_BTN := Vector2(112.0, 30.0)
+## 面板内边距（8 的倍数；压到 8 是为了把高度让给"按钮 ≥64"）
+const PAD := 6.0
+## 训练按钮卡高度（两行：名称 + 造价）
+const TRAIN_H := 50.0
+## 研究/集结点按钮高度
+const ACTION_H := 38.0
 
 
 # ===========================================================================
@@ -63,7 +69,7 @@ class Bar extends Control:
 		_label.add_theme_font_size_override("font_size", 12)
 		_label.add_theme_color_override("font_color", Color(0.97, 0.95, 0.90))
 		_label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.90))
-		_label.add_theme_constant_override("outline_size", 3)
+		_label.add_theme_constant_override("outline_size", 2)
 		_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_label.set_anchors_preset(Control.PRESET_FULL_RECT)
 		add_child(_label)
@@ -110,6 +116,14 @@ var _mono: Font = null
 var _built: bool = false
 ## 已经为哪个 def 建过按钮（换建筑类型时才重建）
 var _built_def: StringName = &""
+## HUD 注入的宽度 / 小屏标记
+var _panel_w: float = PANEL_W
+var _compact: bool = false
+## 纵向主容器（desired_height 直接量内容，避免底部一行被挤出面板）
+var _vb: VBoxContainer = null
+## 阵营色条 / 集结点文字的签名：一样就不重写（否则每帧都广播 THEME_CHANGED）
+var _faction_sig: String = ""
+var _rally_sig: int = -1
 
 # --- 控件 ---
 var _title_name: Label = null
@@ -121,9 +135,11 @@ var _build_box: VBoxContainer = null
 var _build_cap: Label = null
 var _build_bar: Bar = null
 
+var _train_box: VBoxContainer = null
 var _train_btns: HBoxContainer = null
 var _train_ids: Array[StringName] = []
 var _queue_count: Label = null
+var _timer_box: HBoxContainer = null
 var _train_bar: Bar = null
 var _train_rest: Label = null
 var _cancel: Button = null
@@ -132,7 +148,9 @@ var _queue_row: HBoxContainer = null
 ## 否则运行时报 "Attempted to push_back an object of type 'PanelContainer' into a TypedArray"。
 var _queue_chips: Array[PanelContainer] = []
 var _queue_labels: Array[Label] = []
+var _queue_icons: Array[TextureRect] = []
 
+var _rally_box: VBoxContainer = null
 var _rally_btn: Button = null
 var _rally_label: Label = null
 
@@ -212,16 +230,17 @@ func ensure_built() -> void:
 	if _built:
 		return
 	_built = true
-	_mono = _make_mono_font()
+	_mono = Spec.mono_font()
 	mouse_filter = Control.MOUSE_FILTER_STOP
-	custom_minimum_size = Vector2(PANEL_W, H_MIN)
+	custom_minimum_size = Vector2(_panel_w, H_MIN)
 	add_theme_stylebox_override("panel", _make_panel_style())
 
 	var vb := VBoxContainer.new()
 	vb.name = "纵"
-	vb.add_theme_constant_override("separation", 4)
+	vb.add_theme_constant_override("separation", 2)
 	vb.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(vb)
+	_vb = vb
 
 	_build_title(vb)
 	_build_health(vb)
@@ -232,18 +251,29 @@ func ensure_built() -> void:
 	_show_idle()
 
 
+## HUD 注入响应式尺寸
+func set_metrics(w: float, h_single: float, _h_multi: float, compact: bool) -> void:
+	ensure_built()
+	_panel_w = w
+	_compact = compact
+	# 高度下限用调用方给的实测值（HUD 传 300），**不要**再 reset_size()。
+	# reset_size 会把 HUD 刚摆好的 offset 全部覆盖，面板被压回 H_MIN，
+	# 训练条和集结点就会叠成一坨（这就是之前那个 bug）。
+	custom_minimum_size = Vector2(_panel_w, maxf(H_MIN, h_single))
+
+
 ## 面板底：偏暖的深色 + 暖色 1px 边 + 外投影（和单位面板同族但明显更暖）
 func _make_panel_style() -> StyleBoxFlat:
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = Color(0.088, 0.074, 0.056, 0.955)
 	sb.border_color = Color(_warm.r, _warm.g, _warm.b, 0.52)
 	sb.set_border_width_all(1)
-	sb.set_corner_radius_all(6)
+	sb.set_corner_radius_all(8)
 	sb.corner_detail = 8
-	sb.content_margin_left = 9.0
-	sb.content_margin_right = 9.0
-	sb.content_margin_top = 8.0
-	sb.content_margin_bottom = 8.0
+	sb.content_margin_left = PAD
+	sb.content_margin_right = PAD
+	sb.content_margin_top = PAD
+	sb.content_margin_bottom = PAD
 	sb.shadow_color = Color(0.0, 0.0, 0.0, 0.52)
 	sb.shadow_size = 10
 	sb.shadow_offset = Vector2(0.0, 3.0)
@@ -257,40 +287,33 @@ func _build_title(parent: Node) -> void:
 	strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = Color(_warm.r, _warm.g, _warm.b, 0.92)
-	sb.set_corner_radius_all(4)
-	sb.content_margin_left = 9.0
+	sb.set_corner_radius_all(5)
+	sb.content_margin_left = 10.0
 	sb.content_margin_right = 8.0
-	sb.content_margin_top = 2.0
-	sb.content_margin_bottom = 2.0
+	sb.content_margin_top = 1.0
+	sb.content_margin_bottom = 1.0
 	strip.add_theme_stylebox_override("panel", sb)
 	parent.add_child(strip)
 
 	var row := HBoxContainer.new()
 	row.name = "行"
 	row.add_theme_constant_override("separation", 8)
+	row.custom_minimum_size = Vector2(0.0, 28.0)
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	strip.add_child(row)
 
-	_title_name = Label.new()
-	_title_name.text = "未选中建筑"
+	_title_name = Spec.label("未选中建筑", Spec.FS_VALUE, Color(0.11, 0.080, 0.045))
 	_title_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_title_name.add_theme_font_size_override("font_size", 19)
-	_title_name.add_theme_color_override("font_color", Color(0.11, 0.080, 0.045))
-	_title_name.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_title_name.clip_text = true
 	row.add_child(_title_name)
 
-	_title_state = Label.new()
-	_title_state.text = ""
-	_title_state.add_theme_font_size_override("font_size", 12)
-	_title_state.add_theme_color_override("font_color", Color(0.24, 0.16, 0.08))
-	_title_state.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_title_state.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_title_state = Spec.label("", Spec.FS_VALUE, Color(0.24, 0.16, 0.08))
 	row.add_child(_title_state)
 
 	# 阵营色条（标题条右端一条实色块）
 	_faction_chip = Panel.new()
 	_faction_chip.name = "阵营色条"
-	_faction_chip.custom_minimum_size = Vector2(46.0, 10.0)
+	_faction_chip.custom_minimum_size = Vector2(40.0, 10.0)
 	_faction_chip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_faction_chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(_faction_chip)
@@ -300,7 +323,7 @@ func _build_title(parent: Node) -> void:
 func _build_health(parent: Node) -> void:
 	_hp = Bar.new()
 	_hp.name = "生命条"
-	_hp.custom_minimum_size = Vector2(0.0, 18.0)
+	_hp.custom_minimum_size = Vector2(0.0, 24.0)
 	_hp.fill = Color(0.40, 0.84, 0.50)
 	parent.add_child(_hp)
 
@@ -309,16 +332,12 @@ func _build_health(parent: Node) -> void:
 func _build_construction(parent: Node) -> void:
 	_build_box = VBoxContainer.new()
 	_build_box.name = "建造进度"
-	_build_box.add_theme_constant_override("separation", 2)
+	_build_box.add_theme_constant_override("separation", 3)
 	_build_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_build_box.visible = false
 	parent.add_child(_build_box)
 
-	_build_cap = Label.new()
-	_build_cap.text = "建造中 0%"
-	_build_cap.add_theme_font_size_override("font_size", 12)
-	_build_cap.add_theme_color_override("font_color", Color(0.99, 0.80, 0.44))
-	_build_cap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_build_cap = Spec.label("建造中 0%", Spec.FS_VALUE, Color(0.99, 0.80, 0.44))
 	_build_box.add_child(_build_cap)
 
 	_build_bar = Bar.new()
@@ -329,93 +348,108 @@ func _build_construction(parent: Node) -> void:
 
 ## 训练区：分区标题 + 按钮卡 + 当前训练计时 + 队列序号
 func _build_training(parent: Node) -> void:
-	var head := _section(parent, "训练")
-	_queue_count = Label.new()
-	_queue_count.text = ""
-	_queue_count.add_theme_font_size_override("font_size", 12)
-	_queue_count.add_theme_color_override("font_color", Color(0.80, 0.74, 0.62))
-	_queue_count.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_queue_count.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_train_box = VBoxContainer.new()
+	_train_box.name = "训练区"
+	_train_box.add_theme_constant_override("separation", 4)
+	_train_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(_train_box)
+
+	var head := _section(_train_box, "训练")
+	_queue_count = Spec.label("", Spec.FS_BODY, Color(0.80, 0.74, 0.62))
 	head.add_child(_queue_count)
 
 	_train_btns = HBoxContainer.new()
 	_train_btns.name = "训练按钮"
 	_train_btns.add_theme_constant_override("separation", 6)
+	_train_btns.custom_minimum_size = Vector2(0.0, TRAIN_H)
 	_train_btns.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	parent.add_child(_train_btns)
+	_train_box.add_child(_train_btns)
 
-	var row := HBoxContainer.new()
-	row.name = "训练计时"
-	row.add_theme_constant_override("separation", 8)
-	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	parent.add_child(row)
+	_timer_box = HBoxContainer.new()
+	_timer_box.name = "训练计时"
+	_timer_box.add_theme_constant_override("separation", 8)
+	_timer_box.custom_minimum_size = Vector2(0.0, 22.0)
+	_timer_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_train_box.add_child(_timer_box)
 
 	_train_bar = Bar.new()
 	_train_bar.custom_minimum_size = Vector2(0.0, 16.0)
 	_train_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_train_bar.fill = Color(0.44, 0.76, 0.98)
-	row.add_child(_train_bar)
+	_timer_box.add_child(_train_bar)
 
-	_train_rest = Label.new()
-	_train_rest.text = "-"
-	_train_rest.custom_minimum_size = Vector2(82.0, 0.0)
-	_train_rest.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_train_rest.add_theme_font_size_override("font_size", 13)
-	_train_rest.add_theme_color_override("font_color", Color(0.86, 0.86, 0.80))
-	_train_rest.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_train_rest.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	if _mono != null:
-		_train_rest.add_theme_font_override("font", _mono)
-	row.add_child(_train_rest)
+	_train_rest = Spec.label("-", Spec.FS_VALUE, Color(0.86, 0.86, 0.80), HORIZONTAL_ALIGNMENT_RIGHT)
+	_train_rest.custom_minimum_size = Vector2(78.0, 0.0)
+	_train_rest.add_theme_font_override("font", _mono)
+	_timer_box.add_child(_train_rest)
 
 	_cancel = _small_button("取消训练", _warn)
 	_cancel.name = "取消训练"
+	_cancel.custom_minimum_size = Vector2(76.0, 22.0)
 	_cancel.pressed.connect(_on_cancel_pressed)
-	row.add_child(_cancel)
+	_timer_box.add_child(_cancel)
 
 	_queue_row = HBoxContainer.new()
 	_queue_row.name = "队列"
 	_queue_row.add_theme_constant_override("separation", 4)
+	_queue_row.custom_minimum_size = Vector2(0.0, 18.0)
 	_queue_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	parent.add_child(_queue_row)
+	_train_box.add_child(_queue_row)
 	for i in QUEUE_MAX:
 		var chip := PanelContainer.new()
 		chip.name = "队列项%d" % (i + 1)
 		chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		chip.visible = false
 		chip.add_theme_stylebox_override("panel", _chip_style())
-		var lb := Label.new()
-		lb.text = ""
-		lb.add_theme_font_size_override("font_size", 12)
-		lb.add_theme_color_override("font_color", Color(0.87, 0.83, 0.73))
+		# 队列小牌 = **单位头像 + 序号**，不是干巴巴一行字。
+		# 一眼能看出"排了几个兵、是什么兵"，不用读字。
+		var hb := HBoxContainer.new()
+		hb.add_theme_constant_override("separation", 3)
+		hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		chip.add_child(hb)
+		var ico := TextureRect.new()
+		ico.name = "头像"
+		ico.custom_minimum_size = Vector2(20.0, 20.0)
+		ico.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		ico.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		ico.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+		ico.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		hb.add_child(ico)
+		var lb := Spec.label("", Spec.FS_CAPTION, Color(0.87, 0.83, 0.73))
 		lb.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		chip.add_child(lb)
+		hb.add_child(lb)
 		_queue_row.add_child(chip)
 		_queue_chips.append(chip)
 		_queue_labels.append(lb)
+		_queue_icons.append(ico)
 
 
 ## 集结点区
 func _build_rally(parent: Node) -> void:
-	_section(parent, "集结点")
+	_rally_box = VBoxContainer.new()
+	_rally_box.name = "集结点区"
+	_rally_box.add_theme_constant_override("separation", 4)
+	_rally_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(_rally_box)
+
+	_section(_rally_box, "集结点")
 	var row := HBoxContainer.new()
 	row.name = "集结点行"
 	row.add_theme_constant_override("separation", 8)
+	row.custom_minimum_size = Vector2(0.0, 18.0)
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	parent.add_child(row)
+	_rally_box.add_child(row)
 
 	_rally_btn = _small_button("设置集结点", _warm)
 	_rally_btn.name = "设置集结点"
-	_rally_btn.custom_minimum_size = Vector2(104.0, 24.0)
+	_rally_btn.custom_minimum_size = Vector2(112.0, 36.0)
+	_rally_btn.add_theme_font_size_override("font_size", Spec.FS_BODY)
 	_rally_btn.pressed.connect(_on_rally_pressed)
 	row.add_child(_rally_btn)
 
-	_rally_label = Label.new()
-	_rally_label.text = "集结点：未设置"
-	_rally_label.add_theme_font_size_override("font_size", 12)
-	_rally_label.add_theme_color_override("font_color", Color(0.80, 0.78, 0.70))
-	_rally_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_rally_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_rally_label = Spec.label("集结点：未设置", Spec.FS_BODY, Color(0.80, 0.78, 0.70))
+	_rally_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_rally_label.clip_text = true
 	row.add_child(_rally_label)
 
 
@@ -423,7 +457,7 @@ func _build_rally(parent: Node) -> void:
 func _build_research(parent: Node) -> void:
 	_research_box = VBoxContainer.new()
 	_research_box.name = "研究"
-	_research_box.add_theme_constant_override("separation", 3)
+	_research_box.add_theme_constant_override("separation", 4)
 	_research_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_research_box.visible = false
 	parent.add_child(_research_box)
@@ -432,6 +466,7 @@ func _build_research(parent: Node) -> void:
 	_research_btns = HBoxContainer.new()
 	_research_btns.name = "研究按钮"
 	_research_btns.add_theme_constant_override("separation", 6)
+	_research_btns.custom_minimum_size = Vector2(0.0, 28.0)
 	_research_btns.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_research_box.add_child(_research_btns)
 
@@ -441,6 +476,7 @@ func _section(parent: Node, text: String) -> HBoxContainer:
 	var row := HBoxContainer.new()
 	row.name = "分区_%s" % text
 	row.add_theme_constant_override("separation", 6)
+	row.custom_minimum_size = Vector2(0.0, 15.0)
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	parent.add_child(row)
 
@@ -451,11 +487,7 @@ func _section(parent: Node, text: String) -> HBoxContainer:
 	stripe.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(stripe)
 
-	var lb := Label.new()
-	lb.text = text
-	lb.add_theme_font_size_override("font_size", 13)
-	lb.add_theme_color_override("font_color", Color(_warm.r, _warm.g, _warm.b, 0.98))
-	lb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var lb := Spec.label(text, Spec.FS_CAPTION, Color(_warm.r, _warm.g, _warm.b, 0.98))
 	row.add_child(lb)
 
 	var rule := ColorRect.new()
@@ -475,7 +507,10 @@ func _section(parent: Node, text: String) -> HBoxContainer:
 ## 面板期望高度（HUD 按它贴底摆放／贴落点提示）
 func desired_height() -> float:
 	ensure_built()
-	return maxf(get_combined_minimum_size().y, H_MIN)
+	var need: float = get_combined_minimum_size().y
+	if _vb != null:
+		need = maxf(need, _vb.get_combined_minimum_size().y + PAD * 2.0 + 8.0)
+	return maxf(need, H_MIN)
 
 
 ## 刷新（HUD 每 0.12s 会调一次；换建筑类型时才重建按钮，其余只改数值）
@@ -534,18 +569,22 @@ func _process(_delta: float) -> void:
 # ===========================================================================
 
 func _rebuild_entries(d: UnitDef) -> void:
-	# --- 训练按钮 ---
+	# --- 训练区：**只留进度信息，不再放三个训练按钮** ---
+	# 2026-10-23：训练入口和命令卡完全重复，白白把面板撑高 50px。
+	# 现在这几块只负责"告诉你在造什么、还剩几秒"，点按统一去右下角命令卡。
 	for c in _train_btns.get_children():
+		_train_btns.remove_child(c)
 		c.queue_free()
 	_train_ids.clear()
-	if d != null:
-		for id in d.trains:
-			var btn := _train_card(id)
-			_train_btns.add_child(btn)
-			_train_ids.append(id)
+	_train_btns.visible = false
+	# 没有训练项的建筑（农场/箭塔/铁匠铺）整块训练区隐藏，不留空段
+	_train_box.visible = d != null and (not d.trains.is_empty())
+	_timer_box.visible = _train_box.visible
+	_queue_row.visible = _train_box.visible
 
 	# --- 研究按钮 ---
 	for c in _research_btns.get_children():
+		_research_btns.remove_child(c)
 		c.queue_free()
 	_research_ids.clear()
 	if d != null and not d.researches.is_empty():
@@ -557,45 +596,110 @@ func _rebuild_entries(d: UnitDef) -> void:
 	else:
 		_research_box.visible = false
 
+	# --- 集结点按钮也搬到命令卡（「集结点」格），面板里只留一行状态文字 ---
+	if _rally_btn != null:
+		_rally_btn.visible = false
+	var show_rally: bool = d != null and (not d.trains.is_empty() or d.is_dropoff)
+	_rally_box.visible = show_rally
+	if show_rally and _rally_label != null:
+		_rally_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
-## 训练按钮卡：名称 + 造价（紧凑、左缘一条分类色）
+
+## 训练按钮卡：两行（名称 14 / 造价 12），左缘一条分类色
 func _train_card(id: StringName) -> Button:
 	var d: UnitDef = _def_of_id(id)
 	var nm: String = d.display_name if d != null else String(id)
-	var text: String = nm
+	var cost: String = ""
 	if d != null:
-		var cost: String = ""
 		if d.gold_cost > 0:
 			cost = "%d金" % d.gold_cost
 		if d.wood_cost > 0:
 			cost = (cost + " ") if cost != "" else ""
 			cost += "%d木" % d.wood_cost
-		if cost != "":
-			text = "%s  %s" % [nm, cost]
+
 	var btn := Button.new()
 	btn.name = "训练_%s" % String(id)
-	btn.text = text
-	btn.tooltip_text = "训练 %s（点击排队）" % nm
+	btn.text = ""
+	btn.tooltip_text = "训练 %s（点击排队）　花费 %s　人口 %d　用时 %.0fs" % [
+		nm, cost, d.food_cost if d != null else 0, d.train_time if d != null else 0.0]
 	btn.focus_mode = Control.FOCUS_NONE
 	btn.mouse_filter = Control.MOUSE_FILTER_STOP
-	btn.custom_minimum_size = TRAIN_BTN
-	btn.add_theme_font_size_override("font_size", 13)
+	# 固定宽度：一个建筑通常只训练 3 种兵，让按钮铺满整行会变成一块巨型空板
+	btn.custom_minimum_size = Vector2(104.0, TRAIN_H)
+	btn.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	btn.add_theme_stylebox_override("normal",
-			_btn_style(Color(0.118, 0.102, 0.082, 0.98), Color(_warm.r, _warm.g, _warm.b, 0.42), _warm))
+			Spec.button_style(Color(0.118, 0.102, 0.082, 0.98), Color(_warm.r, _warm.g, _warm.b, 0.42), _warm, 5, 8.0, 2.0))
 	btn.add_theme_stylebox_override("hover",
-			_btn_style(Color(0.180, 0.156, 0.120, 0.99), Color(_warm.r, _warm.g, _warm.b, 0.90), _warm))
+			Spec.button_style(Color(0.180, 0.156, 0.120, 0.99), Color(_warm.r, _warm.g, _warm.b, 0.90), _warm, 5, 8.0, 2.0))
 	btn.add_theme_stylebox_override("pressed",
-			_btn_style(Color(0.300, 0.230, 0.130, 0.99), _warm, _warm))
+			Spec.button_style(Color(0.300, 0.230, 0.130, 0.99), _warm, _warm, 5, 8.0, 2.0))
 	btn.add_theme_stylebox_override("disabled",
-			_btn_style(Color(0.085, 0.080, 0.072, 0.92), Color(0.34, 0.33, 0.30, 0.30), null))
+			Spec.button_style(Color(0.085, 0.080, 0.072, 0.92), Color(0.34, 0.33, 0.30, 0.30), null, 5, 8.0, 2.0))
 	btn.add_theme_color_override("font_color", Color(0.93, 0.90, 0.82))
-	btn.add_theme_color_override("font_hover_color", Color(1.0, 1.0, 1.0))
 	btn.add_theme_color_override("font_disabled_color", Color(0.50, 0.48, 0.44))
+
+	var vb := VBoxContainer.new()
+	vb.name = "两行"
+	vb.add_theme_constant_override("separation", 0)
+	vb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vb.set_anchors_preset(Control.PRESET_FULL_RECT)
+	vb.offset_left = 8.0
+	vb.offset_right = -6.0
+	vb.offset_top = 2.0
+	vb.offset_bottom = -2.0
+	btn.add_child(vb)
+
+	# 名称行：[单位图标][名字]。图标就是玩家说的"恰当的图标"——
+	# 步兵用剑、弓手用弓、法师用法杖、农民用锤子，一眼分得出训练的是谁。
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 4)
+	head.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vb.add_child(head)
+	head.add_child(Spec.icon(_unit_icon(id), 20.0, Color(0.92, 0.84, 0.62)))
+
+	var l1 := Spec.label(nm, Spec.FS_BODY, Color(0.95, 0.92, 0.84))
+	l1.name = "名称"
+	l1.clip_text = true
+	# clip_text 会把最小宽度算成 0；不给 EXPAND 的话 HBox 就把它压成一条缝（名字直接看不见）
+	l1.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(l1)
+
+	# 造价行：[金币图标][数量][木材图标][数量]，字形"金/木"省掉
+	var cost_row := HBoxContainer.new()
+	cost_row.add_theme_constant_override("separation", 3)
+	cost_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vb.add_child(cost_row)
+	var gc: int = d.gold_cost if d != null else 0
+	var wc: int = d.wood_cost if d != null else 0
+	if gc > 0:
+		cost_row.add_child(Spec.icon("coin", 10.0, Color(0.90, 0.78, 0.40)))
+		cost_row.add_child(Spec.label(str(gc), Spec.FS_CAPTION, Color(0.86, 0.76, 0.50)))
+	if wc > 0:
+		cost_row.add_child(Spec.icon("wood", 10.0, Color(0.72, 0.84, 0.56)))
+		cost_row.add_child(Spec.label(str(wc), Spec.FS_CAPTION, Color(0.74, 0.82, 0.58)))
+	if gc == 0 and wc == 0:
+		cost_row.add_child(Spec.label("—", Spec.FS_CAPTION, Color(0.60, 0.58, 0.52)))
+
 	btn.pressed.connect(_on_train_pressed.bind(id))
 	return btn
 
 
-## 研究按钮（铁匠铺）：名字 + 当前能不能点（原因写在 tooltip 里）
+## 训练单位 → 图标名（找不到映射就退回盾牌，绝不退回文字）
+func _unit_icon(id: StringName) -> String:
+	match String(id):
+		"footman", "soldier", "swordsman":
+			return "sword"
+		"crossbow", "archer", "rifleman":
+			return "bow"
+		"mage", "priest":
+			return "staff"
+		"peasant", "worker":
+			return "hammer"
+		_:
+			return "shield"
+
+
+## 研究按钮（铁匠铺）：名字 + 当前等级（能不能点的原因写在 tooltip 里）
 func _research_button(rid: StringName) -> Button:
 	var label: String = _research_title(rid)
 	var reason: String = ""
@@ -603,7 +707,9 @@ func _research_button(rid: StringName) -> Button:
 		reason = String(_target.call("research_block_reason", rid))
 	var btn := _small_button(label, Color(0.74, 0.86, 1.0))
 	btn.name = "研究_%s" % String(rid)
-	btn.custom_minimum_size = Vector2(112.0, 26.0)
+	btn.custom_minimum_size = Vector2(104.0, ACTION_H)
+	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	btn.add_theme_font_size_override("font_size", Spec.FS_BODY)
 	btn.tooltip_text = ("研究 " + label) if reason == "" else reason
 	btn.disabled = reason != ""
 	btn.pressed.connect(_on_research_pressed.bind(rid))
@@ -631,21 +737,25 @@ func _sync_all() -> void:
 		return
 	var d: UnitDef = _target.def
 	var shown_name: String = d.display_name if d != null else "建筑"
-	_title_name.text = shown_name
-	_title_name.add_theme_color_override("font_color", Color(0.11, 0.080, 0.045))
+	_set_text(_title_name, shown_name)
 
 	# --- 标题状态 ---
-	_title_state.text = _state_text()
+	_set_text(_title_state, _state_text())
 
-	# --- 阵营色条 ---
+	# --- 阵营色条：**只在颜色真的变了**时重建 StyleBox ---
+	# 本面板 _process 每帧跑 _sync_all()，无脑 add_theme_stylebox_override 会让
+	# 整块面板每帧广播 THEME_CHANGED（既闪又费）—— 这里用颜色签名挡住。
 	var fac: RtsFaction = _target.faction
 	var col: Color = fac.color if fac != null else Color(0.62, 0.60, 0.55)
-	var chip := StyleBoxFlat.new()
-	chip.bg_color = col
-	chip.border_color = Color(0.0, 0.0, 0.0, 0.45)
-	chip.set_border_width_all(1)
-	chip.set_corner_radius_all(2)
-	_faction_chip.add_theme_stylebox_override("panel", chip)
+	var fsig: String = str(col)
+	if fsig != _faction_sig:
+		_faction_sig = fsig
+		var chip := StyleBoxFlat.new()
+		chip.bg_color = col
+		chip.border_color = Color(0.0, 0.0, 0.0, 0.45)
+		chip.set_border_width_all(1)
+		chip.set_corner_radius_all(2)
+		_faction_chip.add_theme_stylebox_override("panel", chip)
 
 	# --- 生命 ---
 	var max_hp: float = d.max_hp if d != null and d.max_hp > 0.0 else 1.0
@@ -657,14 +767,17 @@ func _sync_all() -> void:
 	elif hp_pct <= 60:
 		hp_col = Color(0.96, 0.74, 0.30)
 	_hp.feed(hp / maxf(max_hp, 0.001), hp_col,
-			"生命 %d / %d" % [int(round(hp)), int(round(max_hp))])
+			"%d / %d　·　%d%%" % [int(round(hp)), int(round(max_hp)), hp_pct])
 
 	# --- 建造进度 ---
 	var constructing: bool = not _target.is_constructed
 	_build_box.visible = constructing
 	if constructing:
 		var p: float = clampf(_target.progress, 0.0, 1.0)
-		_build_cap.text = "建造中 %d%%" % int(round(p * 100.0))
+		var total: float = _construction_time(d)
+		var rest: float = maxf(1.0 - p, 0.0) * total
+		_build_cap.text = "建造中 %d%%　·　剩余 %.0fs" % [int(round(p * 100.0)), rest] if total > 0.0 \
+				else "建造中 %d%%" % int(round(p * 100.0))
 		_build_bar.feed(p, Color(0.96, 0.72, 0.30), "")
 
 	# --- 训练队列 ---
@@ -675,13 +788,18 @@ func _sync_all() -> void:
 	var rally_txt: String = "集结点：已设置" if _target.has_rally else "集结点：未设置"
 	if cmd != null and cmd.has_method("is_rally_pending") and bool(cmd.call("is_rally_pending")):
 		rally_txt = "集结点：左键点地面…"
-	_rally_label.text = rally_txt
-	_rally_label.add_theme_color_override("font_color",
-			Color(0.86, 0.82, 0.66) if _target.has_rally else Color(0.72, 0.70, 0.63))
+	_set_text(_rally_label, rally_txt)
+	var rsig: int = 1 if _target.has_rally else 0
+	if rsig != _rally_sig:
+		_rally_sig = rsig
+		_rally_label.add_theme_color_override("font_color",
+				Color(0.86, 0.82, 0.66) if _target.has_rally else Color(0.72, 0.70, 0.63))
 	_rally_btn.disabled = cmd == null or not cmd.has_method("request_set_rally")
 
 
 func _sync_training() -> void:
+	if not _train_box.visible:
+		return
 	var can_train_now: bool = _target.is_constructed
 	var queue_n: int = _target.train_queue.size()
 	_queue_count.text = "队列 %d / %d" % [queue_n, QUEUE_MAX]
@@ -700,7 +818,7 @@ func _sync_training() -> void:
 	var cur: StringName = _target.current_training()
 	if cur == &"":
 		_train_bar.feed(0.0, Color(0.44, 0.76, 0.98), "")
-		_train_rest.text = "-"
+		_train_rest.text = "待训练"
 		_cancel.disabled = true
 	else:
 		var p: float = clampf(_target.train_progress, 0.0, 1.0)
@@ -708,7 +826,7 @@ func _sync_training() -> void:
 		var total: float = ud.train_time if ud != null else 0.0
 		var rest: float = maxf(1.0 - p, 0.0) * total
 		var nm: String = ud.display_name if ud != null else String(cur)
-		_train_bar.feed(p, Color(0.44, 0.76, 0.98), "%s  %d%%" % [nm, int(round(p * 100.0))])
+		_train_bar.feed(p, Color(0.44, 0.76, 0.98), "%s　%d%%" % [nm, int(round(p * 100.0))])
 		_train_rest.text = "剩余 %.1fs" % rest
 		_cancel.disabled = not _target.is_constructed
 
@@ -716,13 +834,17 @@ func _sync_training() -> void:
 	for i in _queue_chips.size():
 		if i < queue_n:
 			var id: StringName = _target.train_queue[i]
-			_queue_labels[i].text = "%d %s" % [i + 1, _id_name(id)]
+			_queue_labels[i].text = str(i + 1)
+			if i < _queue_icons.size():
+				_queue_icons[i].texture = Spec.icon_tex(_unit_icon(id))
 			_queue_chips[i].visible = true
-			_queue_chips[i].modulate = Color(1, 1, 1, 1) if i == 0 else Color(0.86, 0.84, 0.78, 1)
+			# 队首那一项最亮：那是"正在出的兵"
+			_queue_chips[i].modulate = Color(1, 1, 1, 1) if i == 0 else Color(0.80, 0.79, 0.74, 1)
 		else:
 			_queue_chips[i].visible = false
+	_queue_row.visible = queue_n > 0
 
-	# 研究按钮：等级不在这里显示（研究定义在配置层），只按"能不能点"更新
+	# 研究按钮：等级显示在按钮文字里，可用性按 reason 更新
 	for i in _research_ids.size():
 		var rb := _research_btns.get_child(i) as Button
 		if rb == null:
@@ -731,6 +853,10 @@ func _sync_training() -> void:
 		if _target.has_method("research_block_reason"):
 			reason = String(_target.call("research_block_reason", _research_ids[i]))
 		rb.disabled = reason != ""
+		var lv: int = RtsCombat.research_level(_target.faction, _research_ids[i])
+		var rd: ResearchDef = Cfg.research(_research_ids[i]) if Cfg.game != null else null
+		var mx: int = maxi(rd.max_level, 1) if rd != null else 1
+		rb.text = "%s %d/%d" % [_research_title(_research_ids[i]), lv, mx]
 		rb.tooltip_text = ("研究 " + _research_title(_research_ids[i])) if reason == "" else reason
 
 
@@ -740,6 +866,14 @@ func _can_afford(d: UnitDef) -> bool:
 	if fac == null or d == null:
 		return false
 	return fac.gold >= d.gold_cost and fac.wood >= d.wood_cost
+
+
+## 建造总时长（从 UnitDef 的 build_time 取；没有就按 0 处理，面板只显示百分比）
+func _construction_time(d: UnitDef) -> float:
+	if d == null:
+		return 0.0
+	var t: Variant = d.get("build_time")
+	return float(t) if t != null else 0.0
 
 
 ## 标题右侧的一句话状态
@@ -759,7 +893,6 @@ func _show_idle() -> void:
 	if not _built:
 		return
 	_title_name.text = "未选中建筑"
-	_title_name.add_theme_color_override("font_color", Color(0.11, 0.080, 0.045))
 	_title_state.text = ""
 	if _faction_chip != null:
 		var sb := StyleBoxFlat.new()
@@ -838,6 +971,12 @@ func _on_research_pressed(rid: StringName) -> void:
 # 小工具
 # ===========================================================================
 
+## 幂等写文本：内容没变就不碰 Label（本面板每帧同步一次，写了就重排）
+func _set_text(lb: Label, txt: String) -> void:
+	if lb != null and lb.text != txt:
+		lb.text = txt
+
+
 ## 小按钮（取消训练 / 设置集结点 / 研究）
 func _small_button(text: String, col: Color) -> Button:
 	var b := Button.new()
@@ -845,63 +984,28 @@ func _small_button(text: String, col: Color) -> Button:
 	b.focus_mode = Control.FOCUS_NONE
 	b.mouse_filter = Control.MOUSE_FILTER_STOP
 	b.custom_minimum_size = Vector2(0.0, 24.0)
-	b.add_theme_font_size_override("font_size", 12)
+	b.add_theme_font_size_override("font_size", Spec.FS_CAPTION)
 	b.add_theme_stylebox_override("normal",
-			_btn_style(Color(0.120, 0.104, 0.084, 0.98), Color(col.r, col.g, col.b, 0.45), null))
+			Spec.button_style(Color(0.120, 0.104, 0.084, 0.98), Color(col.r, col.g, col.b, 0.45), null, 5, 8.0, 2.0))
 	b.add_theme_stylebox_override("hover",
-			_btn_style(Color(0.190, 0.165, 0.128, 0.99), Color(col.r, col.g, col.b, 0.92), null))
+			Spec.button_style(Color(0.190, 0.165, 0.128, 0.99), Color(col.r, col.g, col.b, 0.92), null, 5, 8.0, 2.0))
 	b.add_theme_stylebox_override("pressed",
-			_btn_style(Color(0.300, 0.230, 0.130, 0.99), col, null))
+			Spec.button_style(Color(0.300, 0.230, 0.130, 0.99), col, null, 5, 8.0, 2.0))
 	b.add_theme_stylebox_override("disabled",
-			_btn_style(Color(0.082, 0.078, 0.070, 0.92), Color(0.34, 0.33, 0.30, 0.28), null))
+			Spec.button_style(Color(0.082, 0.078, 0.070, 0.92), Color(0.34, 0.33, 0.30, 0.28), null, 5, 8.0, 2.0))
 	b.add_theme_color_override("font_color", col)
 	b.add_theme_color_override("font_hover_color", Color(1.0, 1.0, 1.0))
 	b.add_theme_color_override("font_disabled_color", Color(0.48, 0.46, 0.42))
 	return b
 
 
-## 按钮底色盒；stripe 是 Color 时左缘加一条分类色
-func _btn_style(bg: Color, border: Color, stripe) -> StyleBoxFlat:
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = bg
-	sb.border_color = border
-	sb.set_border_width_all(1)
-	sb.set_corner_radius_all(4)
-	sb.corner_detail = 6
-	sb.content_margin_left = 7.0
-	sb.content_margin_right = 7.0
-	if stripe is Color:
-		var c := stripe as Color
-		sb.border_width_left = 3
-		sb.bg_color = bg.lerp(Color(c.r, c.g, c.b, bg.a), 0.10)
-	return sb
-
-
 ## 队列小牌的底色
 func _chip_style() -> StyleBoxFlat:
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.135, 0.118, 0.094, 0.96)
-	sb.border_color = Color(_warm.r, _warm.g, _warm.b, 0.28)
-	sb.set_border_width_all(1)
-	sb.set_corner_radius_all(3)
-	sb.content_margin_left = 6.0
-	sb.content_margin_right = 6.0
-	sb.content_margin_top = 0.0
-	sb.content_margin_bottom = 0.0
-	return sb
+	return Spec.inset_style(Color(0.135, 0.118, 0.094, 0.96), 4,
+			Color(_warm.r, _warm.g, _warm.b, 0.28), 6.0, 0.0)
 
 
 ## 单位 id → 显示名（配置不在就退回 id 本身）
 func _id_name(id: StringName) -> String:
 	var d: UnitDef = _def_of_id(id)
 	return d.display_name if d != null else String(id)
-
-
-## 等宽字体：只给纯数字（剩余秒数）用，不配中文兜底也不会出方块
-func _make_mono_font() -> Font:
-	var f := SystemFont.new()
-	f.font_names = PackedStringArray([
-		"Consolas", "Cascadia Mono", "DejaVu Sans Mono",
-		"Liberation Mono", "Courier New", "monospace",
-	])
-	return f

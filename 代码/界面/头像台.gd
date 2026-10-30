@@ -58,6 +58,14 @@ var _pedestal: MeshInstance3D = null
 var _model: Node3D = null
 ## 当前程序动画器
 var _anim: Node = null
+## 模型"还没有网格"时的重试计数（有的加载路径是先给外壳、后填网格）
+var _fit_wait: int = 0
+## 是否还在等模型长出网格
+var _need_fit: bool = false
+## 当前头像目标的定义（_refit 要知道是不是建筑）
+var _key_def_target: UnitDef = null
+## 小尺寸下隐藏"×N"角标（选中卡自己会显示数量）
+var _badge_hidden: bool = false
 ## 退化占位时盖在画面中央的"名字首字"
 var _glyph: Label = null
 ## 多选角标
@@ -344,7 +352,7 @@ func show_target(target: Node3D, count: int = 1) -> void:
 
 ## 多选角标（1 就隐藏）
 func set_badge(count: int) -> void:
-	if _badge == null:
+	if _badge == null or _badge_hidden:
 		return
 	_badge.visible = count > 1
 	if count > 1:
@@ -364,6 +372,71 @@ func clear() -> void:
 ## 当前是否有模型在台上
 func has_model() -> bool:
 	return _model != null and is_instance_valid(_model)
+
+
+## 指定显示边长（选中卡按 110px 摆，不必改内部 160 的画布）：
+## 只缩放本体，SubViewport 仍是 160×160 —— 少一次重建，也不会打断动画。
+func set_display_size(px: float) -> void:
+	var total: float = float(VIEW_SIZE + FRAME * 2)
+	var s: float = clampf(px / total, 0.15, 2.5)
+	custom_minimum_size = Vector2(px, px)
+	scale = Vector2(s, s)
+	# 小尺寸下不再画"×N"角标：选中卡右上角已经有一枚，两个叠在一起是重影
+	if px < 140.0:
+		_badge_hidden = true
+		if _badge != null:
+			_badge.visible = false
+
+
+## 子视口里到底画出东西了没有（选中卡用它决定"要不要换成静态头像"）。
+## 采样 32×32 个点，>3% 不透明就算画出来了：空舞台是 0%，一个单位通常 25~45%。
+## 注意：这是**一次性**探测（换目标后 0.45s 调一次），不进每帧循环。
+func probe_rendered() -> bool:
+	if _vp == null or not is_inside_tree():
+		return false
+	var tex: ViewportTexture = _vp.get_texture()
+	if tex == null:
+		return false
+	var img: Image = tex.get_image()
+	if img == null:
+		return false
+	var w: int = img.get_width()
+	var h: int = img.get_height()
+	if w < 8 or h < 8:
+		return false
+	var step_x: int = maxi(w / 32, 1)
+	var step_y: int = maxi(h / 32, 1)
+	var hit: int = 0
+	var total: int = 0
+	for y in range(0, h, step_y):
+		for x in range(0, w, step_x):
+			total += 1
+			if img.get_pixel(x, y).a > 0.06:
+				hit += 1
+	if total <= 0:
+		return false
+	var ok: bool = float(hit) / float(total) > 0.03
+	if OS.has_environment("UI_PORTRAIT_DEBUG"):
+		var box := _aabb_of(_model) if _model != null else AABB()
+		print("[头像] hit=%d/%d ok=%s model=%s box=%s cam=%s fov=%.1f vis=%s" % [
+			hit, total, str(ok), str(_model != null),
+			str(box), str(_cam.global_position if _cam != null else Vector3.ZERO),
+			_cam.fov if _cam != null else 0.0, str(is_visible_in_tree())])
+		_dump_tree(_model, 0)
+	return ok
+
+
+## 临时诊断：把头像模型树打出来（只在 UI_PORTRAIT_DEBUG 时调）
+func _dump_tree(n: Node, depth: int) -> void:
+	if n == null or depth > 4:
+		return
+	var extra: String = ""
+	var mi := n as MeshInstance3D
+	if mi != null:
+		extra = " mesh=%s aabb=%s" % [str(mi.mesh != null), str(mi.get_aabb() if mi.mesh != null else AABB())]
+	print("[头像树] %s%s <%s>%s" % ["  ".repeat(depth), n.name, n.get_class(), extra])
+	for c in n.get_children():
+		_dump_tree(c, depth + 1)
 
 
 # ===========================================================================
@@ -401,28 +474,19 @@ func _rebuild(target: Node3D, def: UnitDef) -> void:
 	_model.position = Vector3.ZERO
 	_stage.add_child(_model)
 
+	# 有些加载路径是"先给外壳、后填网格"，这一帧可能还没有包围盒。
+	# 先照空盒子处理，交给 _process 重试；一直长不出来就整块撤掉（见 _refit）。
+	_key_def_target = def
+	_need_fit = true
+	_fit_wait = 0
+
 	# 转正：按包围盒把 XZ 居中、底面压到 y=0
 	var box := _aabb_of(_model)
 	if box.size.length_squared() > 0.000001:
 		_model.position = Vector3(-box.get_center().x, -box.position.y, -box.get_center().z)
 
-	# 重新量一次（位置变了），用于机位解算
-	var fit := _aabb_of(_model)
-	var h: float = maxf(fit.size.y, 0.2)
-	var w: float = maxf(maxf(fit.size.x, fit.size.z), 0.2)
-	# 3/4 机位看到的是对角线，方形足迹的建筑要按 1.4 倍宽算，否则塔角会被切掉
-	if is_building:
-		w *= 1.40
-	var pitch: float = PITCH_BUILDING if is_building else PITCH_UNIT
-	_frame_camera(h, w, pitch)
-
-	# 底座：只有"人"才站台子
-	if _pedestal != null:
-		var use_ped: bool = not is_building and not is_harvest
-		_pedestal.visible = use_ped
-		if use_ped:
-			var r: float = maxf(maxf(fit.size.x, fit.size.z) * 0.58, 0.28)
-			_pedestal.scale = Vector3(r, 1.0, r)
+	# 机位 / 底座：交给 _refit()（包围盒为空时它会等网格，不会把相机怼在脸上）
+	_refit()
 
 
 ## 造模型：路径存在且真能实例化才算成功
@@ -568,11 +632,56 @@ func _frame_camera(h: float, w: float, pitch_deg: float) -> void:
 	_cam.far = clampf(d * 8.0, 40.0, 400.0)
 
 
+## 按包围盒定机位；包围盒是空的（模型还没长出网格）就什么都不做，等下一帧。
+##
+## 为什么必须等：空外壳的包围盒是 0，旧代码会按 0.2m 算机位 → 相机贴到脸上，
+## 画面上只剩一块被放大的底座圆盘，看起来"头像坏了"，比空着更难解释。
+func _refit() -> void:
+	if _model == null or not is_instance_valid(_model):
+		_need_fit = false
+		return
+	var fit := _aabb_of(_model)
+	if fit.size.length_squared() < 0.000001:
+		return
+	_need_fit = false
+	var d: UnitDef = _key_def_target
+	var is_building: bool = d != null and d.is_building()
+	var is_harvest: bool = d != null and d.is_harvestable()
+	var h: float = maxf(fit.size.y, 0.2)
+	var w: float = maxf(maxf(fit.size.x, fit.size.z), 0.2)
+	# 3/4 机位看到的是对角线，方形足迹的建筑要按 1.4 倍宽算，否则塔角会被切掉
+	if is_building:
+		w *= 1.40
+	var pitch: float = PITCH_BUILDING if is_building else PITCH_UNIT
+	_frame_camera(h, w, pitch)
+	# 底座：只有"人"才站台子
+	if _pedestal != null:
+		var use_ped: bool = not is_building and not is_harvest
+		_pedestal.visible = use_ped
+		if use_ped:
+			var r: float = maxf(maxf(fit.size.x, fit.size.z) * 0.58, 0.28)
+			_pedestal.scale = Vector3(r, 1.0, r)
+
+
+## 每帧只做一件事：模型还没长出网格就再等等，等不到（40 帧）就整块撤掉。
+## 撤掉之后选中卡会看到"子视口是空的"，自动切成静态头像 —— 不会留一块蓝渐变。
+func _process(_delta: float) -> void:
+	if not _need_fit:
+		return
+	_fit_wait += 1
+	_refit()
+	if _need_fit and _fit_wait > 40:
+		_drop_model()
+
+
 func _drop_model() -> void:
 	_anim = null
 	if _model != null and is_instance_valid(_model):
 		_model.queue_free()
 	_model = null
+	_need_fit = false
+	if _pedestal != null:
+		_pedestal.visible = false
 
 
 func _accent() -> Color:

@@ -2,14 +2,11 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://b475f5qd1efdf"
+uid="uid://605qius6acsl"
 path.s3tc="res://.godot/imported/步兵_metal_albedo.png-72cb42e24406309c0679138a155a8951.s3tc.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc"],
 "vram_texture": true
-}
-generator_parameters={
-"md5": "50408699e27a569c1431e1f62284c4de"
 }
 
 [deps]

@@ -2,14 +2,11 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dcbgwlrcjfk34"
+uid="uid://hgnmlcv5tx5g"
 path.s3tc="res://.godot/imported/农场_metal_albedo.png-9a2be53179a21e4c7bb93127880a47ca.s3tc.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc"],
 "vram_texture": true
-}
-generator_parameters={
-"md5": "50408699e27a569c1431e1f62284c4de"
 }
 
 [deps]

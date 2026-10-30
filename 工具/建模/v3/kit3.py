@@ -34,24 +34,31 @@ D = math.radians
 # ===========================================================================
 # 联盟调色（sRGB）。zone 名是引擎侧调色板的键，改名要同步 代码/美术/调色板.gd。
 PALETTE = {
-    "stone":       ("#D9CFB2", 0.86, 0.0),
-    "stone_dark":  ("#B4A98C", 0.90, 0.0),
-    "stone_light": ("#E8DFC6", 0.82, 0.0),
+    "stone":       ("#C7BB9E", 0.86, 0.0),
+    "stone_dark":  ("#9C9075", 0.90, 0.0),
+    "stone_light": ("#DDD2B4", 0.82, 0.0),
     "plaster":     ("#E3D8BC", 0.90, 0.0),
-    "roof":        ("#2A5CBF", 0.55, 0.05),
-    "roof_dark":   ("#1B3E86", 0.60, 0.05),
-    "gold":        ("#E2B34C", 0.34, 0.85),
+    "roof":        ("#59656F", 0.60, 0.05),
+    "roof_dark":   ("#333C46", 0.65, 0.05),
+    # 2026-10-18 v3.3：**每栋建筑一种瓦色**。
+    # 玩家原话"建筑物之间没有区别，只靠大小和旗帜区分太差"——魔兽3 的做法是
+    # 建筑本体的屋顶颜色/材质就不一样（兵营红瓦、铁匠铺黑铁瓦、箭塔青绿瓦、农场茅草），
+    # 队伍色再叠一层（0.34 强度），这样"是什么建筑"和"是谁的建筑"两个信息在不同频道上。
+    "roof_red":    ("#7C3A32", 0.62, 0.05),
+    "roof_iron":   ("#463D36", 0.70, 0.18),
+    "roof_tower":  ("#4C6357", 0.62, 0.05),
+    "gold":        ("#F0B93F", 0.34, 0.85),
     "gold_dark":   ("#A87B2A", 0.42, 0.80),
     "wood":        ("#7A5230", 0.78, 0.0),
     "wood_dark":   ("#553720", 0.82, 0.0),
-    "steel":       ("#98A2AE", 0.38, 0.80),
-    "steel_dark":  ("#5E6773", 0.42, 0.75),
-    "steel_light": ("#BCC4CE", 0.32, 0.82),
+    "steel":       ("#9EA9B8", 0.38, 0.80),
+    "steel_dark":  ("#4C5665", 0.42, 0.75),
+    "steel_light": ("#D2DAE3", 0.32, 0.82),
     "iron":        ("#6B655C", 0.60, 0.55),
     "leather":     ("#8A5B34", 0.80, 0.0),
     "leather_dark":("#573823", 0.84, 0.0),
-    "cloth":       ("#2B5FB0", 0.88, 0.0),
-    "cloth_dark":  ("#1C4079", 0.90, 0.0),
+    "cloth":       ("#2A63C4", 0.88, 0.0),
+    "cloth_dark":  ("#183C86", 0.90, 0.0),
     "skin":        ("#D9A57C", 0.72, 0.0),
     "skin_dark":   ("#B37B55", 0.76, 0.0),
     "hair":        ("#6B4A2B", 0.88, 0.0),
@@ -422,7 +429,20 @@ class HumanRig(object):
         self.mesh_objs = []
 
     def bone_list(self):
-        out = list(self.BONES)
+        # ★ 2026-10-18 修正（头飞出去 / 躯干以膝盖为轴转的根因）：
+        # 旧 BONES 里 root~head 用的是"比例系数"（0.535 / 0.62 / 0.70 / 0.812 / 0.862 / 0.985），
+        # 而四肢用的是乘过 H 的绝对高度。H=1.78 时髋骨在 0.535m、头骨在 0.862m，
+        # 头网格却长在 1.5m —— 头骨一转，头就像被一根 0.6m 的隐形杆甩出去；
+        # death 是大角度旋转，所以"头飞了"。这里改成全部由 H 推导的绝对高度，
+        # 与 rig_human.py / 美术规范 §3.1 的关节系数逐项对齐。
+        out = [
+            ("root",  (0.0, 0.0, 0.0),          (0.0, 0.18, 0.0),          None),
+            ("hips",  (0.0, 0.0, self.hip_z),   (0.0, 0.0, self.waist_z),  "root"),
+            ("spine", (0.0, 0.0, self.waist_z), (0.0, 0.0, self.chest_z),  "hips"),
+            ("chest", (0.0, 0.0, self.chest_z), (0.0, 0.0, self.sh_z),     "spine"),
+            ("neck",  (0.0, 0.0, self.sh_z),    (0.0, 0.0, self.neck_z),   "chest"),
+            ("head",  (0.0, 0.0, self.neck_z),  (0.0, 0.0, self.head_top), "neck"),
+        ]
         sh, el, wr = self.sh_x, self.elbow_x, self.wrist_x
         for s, sx in (("L", -1.0), ("R", 1.0)):
             out += [
@@ -490,20 +510,42 @@ class HumanRig(object):
         b = self.arm.data.bones[bone]
         return (b.tail_local - b.head_local).normalized()
 
-    def aim(self, bone, direction, ref=(0, 0, 1)):
-        """把骨头指向 direction（armature 空间的向量）。父骨已摆好时是链式生效的。"""
+    def aim(self, bone, direction, ref=(0, 0, 1), twist=0.0):
+        """把骨头指向 direction（armature 空间的向量）。父骨已摆好时是链式生效的。
+
+        ★ 2026-10-18 修正（脚掌翻面的根因，别再改回去）：
+          旧实现用 x = ref × d / z = x × d 现搭一组基。这样搭出来的 roll
+          与 Blender 骨骼 rest roll 恰好差 180°——腿和脚会被**绕自身轴拧半圈**，
+          走起来脚掌朝上/朝后翻面，看起来就像倒着跑。
+          现在改成「rest 方向 → 目标方向的最小旋转」再乘回 rest 姿态：
+          只改骨头的指向，roll 跟着 rest 走。需要额外拧腕/歪头时显式传 twist（弧度）。
+        """
         pb = self.arm.pose.bones.get(bone)
         if pb is None:
             return
         d = Vector(direction).normalized()
-        r = Vector(ref)
-        if abs(d.dot(r)) > 0.985:
-            r = Vector((0, 1, 0)) if abs(d.dot(Vector((0, 1, 0)))) < 0.985 else Vector((1, 0, 0))
-        x = r.cross(d).normalized()
-        z = x.cross(d).normalized()
-        M = Matrix((x, d, z)).transposed().to_4x4()
+        b = self.arm.data.bones[bone]
+        rest_dir = (b.tail_local - b.head_local).normalized()
+        q = rest_dir.rotation_difference(d) @ b.matrix_local.to_quaternion()
+        if abs(twist) > 1e-6:
+            q = Quaternion(d, twist) @ q
+        M = q.to_matrix().to_4x4()
         M.translation = pb.head
         pb.matrix = M
+        self._upd()
+
+    def pose_rot(self, bone, x=0.0, y=0.0, z=0.0):
+        """按**骨骼局部轴**设旋转（相对 rest），用于腿这种需要"关节链"的部位。
+
+        与 aim 的区别：aim 设的是 armature 空间的绝对指向，父子骨各自绝对会让
+        膝盖/脚踝的夹角失控；pose_rot 设的是相对父骨的旋转，大腿摆多少、小腿再
+        相对弯多少，才是真的人体关节。
+        """
+        pb = self.arm.pose.bones.get(bone)
+        if pb is None:
+            return
+        pb.rotation_mode = "QUATERNION"
+        pb.rotation_quaternion = Euler((x, y, z), "XYZ").to_quaternion()
         self._upd()
 
     def rot(self, bone, rx=0.0, ry=0.0, rz=0.0):

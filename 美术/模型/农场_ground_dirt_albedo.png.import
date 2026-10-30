@@ -2,14 +2,11 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cs855jrntpro2"
+uid="uid://3i7nljbcbyxg"
 path.s3tc="res://.godot/imported/农场_ground_dirt_albedo.png-7028e907057b7430066c6cf3092a393f.s3tc.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc"],
 "vram_texture": true
-}
-generator_parameters={
-"md5": "91c5c0756c6628c9644c39d329a8a4c5"
 }
 
 [deps]

@@ -38,6 +38,9 @@ const FALLBACK := {
 const ONE_SHOT: Array[StringName] = [&"attack", &"shoot", &"cast", &"gather", &"build", &"hurt", &"death"]
 
 const BLEND := 0.16
+## 循环动作（walk）在高速播放时，0.16s 的淡入已经接近半个周期，会糊。
+## 实测 2.3x 步频下用 0.09s 既不断帧、也不吃掉落脚。
+const BLEND_LOOP := 0.09
 
 var _ap: AnimationPlayer = null
 var _current: StringName = &""
@@ -98,14 +101,15 @@ func set_state(state: String, speed_ratio: float = 1.0) -> void:
 	if _one_shot != &"" and _ap.is_playing() and _ap.current_animation == String(_one_shot) and is_loop:
 		return
 	if want == _current and is_loop:
-		_speed = clampf(speed_ratio, 0.35, 1.8)
+		# 上限 3.0：walk 按真实地速播放（4.6m/s / 2.0m/s 步幅 ≈ 2.3x）
+		_speed = clampf(speed_ratio, 0.2, 3.0)
 		_ap.speed_scale = _speed
 		return
 	_current = want
-	_speed = clampf(speed_ratio, 0.35, 1.8)
+	_speed = clampf(speed_ratio, 0.2, 3.0)
 	_ap.speed_scale = _speed if is_loop else 1.0
 	_one_shot = want if ONE_SHOT.has(want) else &""
-	_ap.play(String(want), BLEND, 1.0)
+	_ap.play(String(want), BLEND_LOOP if is_loop else BLEND, 1.0)
 
 
 func _resolve(state: StringName) -> StringName:

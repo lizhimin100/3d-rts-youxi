@@ -2,14 +2,11 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dcgktus0ua6wk"
+uid="uid://dbjiraeav04ss"
 path.s3tc="res://.godot/imported/农场_ashlar_albedo.png-82277020d4d42ca2501eb9e3703eb8a4.s3tc.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc"],
 "vram_texture": true
-}
-generator_parameters={
-"md5": "39c20b844c094de21d3b1eaef40227c5"
 }
 
 [deps]

@@ -8,9 +8,6 @@ metadata={
 "imported_formats": ["s3tc_bptc"],
 "vram_texture": true
 }
-generator_parameters={
-"md5": "def117195ede6f253f32cf1ae3f3262d"
-}
 
 [deps]
 

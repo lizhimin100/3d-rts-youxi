@@ -32,10 +32,69 @@ var _research_t: float = 0.0
 ## 上一帧的建造进度（用来算血量增量，被打掉的血不会白送回来）
 var _last_progress: float = 0.0
 
+# --- 表现（SLEDGE）：工地 / 受击 / 倒塌 ---
+## 表现层脚本用 preload 而不是全局类名：新脚本第一次进工程时 .godot 的 class 缓存可能还没扫到，
+## preload 在解析期就能解析到，不会因为缓存陈旧把整个文件拖成编译错误。
+const BUILD_SITE := preload("res://代码/单位/工地表现.gd")
+const VFXKIT := preload("res://代码/美术/建造表现.gd")
+## 倒塌用时（秒）：先晃后倒，0.9~1.4 之间最像整栋楼
+const COLLAPSE_TIME: float = 1.35
+## 废墟停留时间（秒）
+const RUINS_LINGER: float = 5.0
+## 受击尘土的最小间隔（秒）：集火时不至于每颗子弹都爆一次
+const HIT_FX_GAP: float = 0.32
+
+const PAD_SCRIPT := preload("res://代码/美术/建筑基座.gd")
+
+## 工地表现（未完工时存在；完工/被拆后由它自己释放）
+var _site_fx: Node3D = null
+## 地基台（贴地夯土 + 石砌镶边；随建筑生死）
+var _pad: Node3D = null
+## 是否已进入倒塌（只进一次）
+var _collapsing: bool = false
+var _collapse_t: float = 0.0
+var _collapse_tilt: Vector3 = Vector3.ZERO
+var _collapse_y0: float = 0.0
+var _collapse_yaw0: float = 0.0
+var _collapse_dusted: bool = false
+## 倒塌期间持续掉灰的节流（秒）
+var _collapse_dust_t: float = 0.0
+## 受击表现节流（毫秒时间戳）
+var _hit_fx_ms: int = -10000
+## 裂缝（血量掉到 90% / 67% / 34% 各加一条）
+var _crack_root: Node3D = null
+var _crack_count: int = 0
+
 
 # ===========================================================================
 # 装配
 # ===========================================================================
+
+## 外墙观建好之后立刻铺地基台（建筑与地形的接缝在这里闭合）
+func _ensure_visual() -> void:
+	super._ensure_visual()
+	_install_pad()
+
+
+## 地基台只建一次；没有占地数据（自检里的假建筑）就跳过
+##
+## 2026-10-23 停用：玩家反馈"所有建筑的地面都出了问题"——
+## 程序化地台在 RTS 机位下读起来是一圈"贴上去的灰板"，比原来的接缝更难看。
+## 地面问题改为在**地形着色**层解决（基地半径内不撒土斑），不再往建筑底下塞几何。
+func _install_pad() -> void:
+	if def == null or visual == null:
+		return
+	# ★ 真正要治的是"兵营前面那块训练场在闪"：
+	#   资产包里的兵营自带一块几乎贴地的沙土场地（plinth_a 网格的一部分），
+	#   它的顶面和地形/台阶几乎共面 → 深度值打架 → 远近切换时整块闪。
+	#   整栋模型抬 4.5cm 就好了：RTS 机位看不出来，深度差足够分出前后。
+	#   （不再往建筑下面塞程序化地台 —— 那在低机位下会读成"贴了一块灰板"。）
+	visual.position.y = PAD_LIFT
+
+
+## 模型整体抬升（米）：治 z-fighting，太小不够、太大会看出悬空
+const PAD_LIFT := 0.090
+
 
 ## 正常生成（开局建筑 / 直接建成）：直接是完工状态
 func setup(p_faction: RtsFaction, p_def: UnitDef) -> void:
@@ -58,6 +117,7 @@ func setup_construction(p_faction: RtsFaction, p_def: UnitDef) -> void:
 	if def != null:
 		hp = maxf(1.0, def.max_hp * CONSTRUCTION_START_HP)
 	global_position.y = RtsWorld.height_at(global_position.x, global_position.z)
+	_spawn_site()
 
 
 ## 关卡用来强制设完工状态
@@ -65,6 +125,10 @@ func set_constructed(v: bool) -> void:
 	is_constructed = v
 	progress = 1.0 if v else 0.0
 	_last_progress = progress
+	# 关卡把工地"催熟"（例如脚本直接把半成品设成完工）时，工地表现也要收尾
+	if v and _site_fx != null and is_instance_valid(_site_fx):
+		_site_fx.call("finish")
+		_site_fx = null
 
 
 # ===========================================================================
@@ -98,11 +162,16 @@ func can_train(id: StringName) -> bool:
 # ===========================================================================
 
 ## 农民在工地旁调这个：推进建造进度（多个农民同时建会更快）
-func advance_construction(dt: float, _builder: Node3D) -> void:
+func advance_construction(dt: float, builder: Node3D) -> void:
 	if is_constructed or def == null:
 		return
 	var total: float = maxf(def.train_time, 0.5)
 	progress = clampf(progress + dt / total, 0.0, 1.0)
+
+	# 工地表现：墙随进度从下往上长、脚手架跟着升、农民抡锤时墙根冒土
+	if _site_fx != null and is_instance_valid(_site_fx):
+		_site_fx.call("set_progress", progress)
+		_site_fx.call("strike", builder.global_position if builder != null and is_instance_valid(builder) else Vector3.ZERO)
 
 	# 血量随进度从 10% 涨到 100%（只加增量，被打掉的血不会白送回来）
 	var prev_target: float = def.max_hp * lerpf(CONSTRUCTION_START_HP, 1.0, _last_progress)
@@ -124,6 +193,10 @@ func _complete_construction() -> void:
 	hp = minf(maxf(hp, def.max_hp * CONSTRUCTION_START_HP), def.max_hp)
 	if visual != null:
 		visual.play("idle", 1.0)
+	# 完工表现：脚手架散落 + 尘土爆发 + 相机轻震 + 高光闪一下（都在 BuildSite 里）
+	if _site_fx != null and is_instance_valid(_site_fx):
+		_site_fx.call("finish")
+		_site_fx = null
 	ArtKit.vfx_build(global_position)
 	Game.building_completed.emit(self)
 	if faction != null and faction.is_player:
@@ -304,7 +377,9 @@ func _build_rally_flag() -> Node3D:
 	torus.ring_segments = 6
 	ring.mesh = torus
 	ring.material_override = cloth
-	ring.position = Vector3(0.0, 0.05, 0.0)
+	# 抬到 0.18（地形 0 + 土路 0.10 之上）：0.05 会和地面/路面共面，
+	# 远看就是"兵营前面那圈训练场在闪"—— 典型的 z-fighting。
+	ring.position = Vector3(0.0, 0.18, 0.0)
 	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(ring)
 	return root
@@ -418,13 +493,190 @@ func _update_attack(dt: float) -> void:
 
 
 ## 被摧毁：清占地（否则那块地永远走不进去）+ 更大的震屏
+##
+## 表现口径（任务书 §3.3）：**不整栋沉进地里**。这里只做"死亡瞬间"这一拍：
+##   ① 立刻停训练/研究、立刻清占地、立刻发 unit_died（信号语义不变，胜负判定不能等）；
+##   ② 进倒塌状态，交给 _update_dead() 走"倾斜 → 落地扬尘 → 留废墟"三段。
 func _die() -> void:
 	if _dying:
 		return
+	_abort_work()
 	super._die()
 	RtsWorld.clear_footprint(self)
+	# 还没盖完就被拆：脚手架跟着倒，别留一副好端端的架子立在那里
+	if _site_fx != null and is_instance_valid(_site_fx):
+		_site_fx.call("abort")
+		_site_fx = null
 	if RtsCombat.is_near_camera(global_position):
 		Game.shake(Cfg.game.shake_on_building_destroyed)
 	if faction != null and faction.is_player:
 		Game.toast("%s 被摧毁！" % (def.display_name if def != null else "建筑"),
 				Color(1.0, 0.35, 0.3))
+
+
+# ===========================================================================
+# 表现：工地 / 受击 / 倒塌（SLEDGE）
+# ===========================================================================
+
+## 建工地表现节点（只在 setup_construction 走这条；开局建筑没有工地）
+func _spawn_site() -> void:
+	if _site_fx != null and is_instance_valid(_site_fx):
+		return
+	if visual == null:
+		return
+	_site_fx = BUILD_SITE.new()
+	add_child(_site_fx)
+	var col: Color = faction.color if faction != null else Color(0.35, 0.45, 0.62)
+	_site_fx.call("attach", self, col)
+
+
+## 停掉所有"生产线"：建筑一死，训练队列和研究都不许再动（否则死了还能出兵）
+func _abort_work() -> void:
+	train_queue.clear()
+	train_progress = 0.0
+	_research_id = &""
+	_research_t = 0.0
+
+
+## 受击反馈：墙根尘土 + 石屑 + 极轻震屏（按 HIT_FX_GAP 节流）
+func _damage_fx() -> void:
+	var now: int = Time.get_ticks_msec()
+	if now - _hit_fx_ms < int(HIT_FX_GAP * 1000.0):
+		return
+	_hit_fx_ms = now
+	var hx: float = float(def.footprint.x) * 0.5 if def != null else 2.0
+	var hz: float = float(def.footprint.y) * 0.5 if def != null else 2.0
+	var ang: float = randf() * TAU
+	var at: Vector3 = global_position + Vector3(cos(ang) * hx * 0.9,
+			randf_range(0.45, 1.9), sin(ang) * hz * 0.9)
+	VFXKIT.dust(at, 5, 0.45, Color(0.62, 0.56, 0.46))
+	VFXKIT.chips(at, Color(0.54, 0.52, 0.48), 4)
+	if RtsCombat.is_near_camera(global_position):
+		Game.shake(0.05)
+
+
+## 血量跌破 90% / 67% / 34% 各加一条裂缝（真几何，不靠贴图）
+func _maybe_crack() -> void:
+	if def == null:
+		return
+	var ratio: float = hp / maxf(def.max_hp, 1.0)
+	var want: int = 0
+	if ratio < 0.34:
+		want = 3
+	elif ratio < 0.67:
+		want = 2
+	elif ratio < 0.90:
+		want = 1
+	while _crack_count < want:
+		_add_crack()
+
+
+func _add_crack() -> void:
+	if _crack_root == null or not is_instance_valid(_crack_root):
+		_crack_root = Node3D.new()
+		_crack_root.name = "损坏"
+		add_child(_crack_root)
+	var hx: float = float(def.footprint.x) * 0.5 if def != null else 2.0
+	var hz: float = float(def.footprint.y) * 0.5 if def != null else 2.0
+	var h: float = def.height if def != null else 3.0
+	var mi := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	var tall: float = randf_range(0.8, 1.7)
+	bm.size = Vector3(0.075, tall, 0.055)
+	mi.mesh = bm
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.10, 0.09, 0.08)
+	m.roughness = 0.92
+	mi.material_override = m
+	var y: float = randf_range(0.35, maxf(0.6, h * 0.55))
+	match randi() % 4:
+		0:
+			mi.position = Vector3(randf_range(-hx * 0.7, hx * 0.7), y, -hz - 0.02)
+		1:
+			mi.position = Vector3(randf_range(-hx * 0.7, hx * 0.7), y, hz + 0.02)
+		2:
+			mi.position = Vector3(-hx - 0.02, y, randf_range(-hz * 0.7, hz * 0.7))
+			mi.rotation.y = PI * 0.5
+		_:
+			mi.position = Vector3(hx + 0.02, y, randf_range(-hz * 0.7, hz * 0.7))
+			mi.rotation.y = PI * 0.5
+	mi.rotation.z = randf_range(-0.35, 0.35)
+	_crack_root.add_child(mi)
+	_crack_count += 1
+
+
+## 受击 → 先扣血，再补表现（顺序不能反：表现要用扣完血的血量决定裂缝数量）
+func take_damage(amount: float, type: int, from: Node3D) -> void:
+	var before: float = hp
+	super.take_damage(amount, type, from)
+	if _dying or not is_alive():
+		return
+	if hp < before:
+		_damage_fx()
+		_maybe_crack()
+
+
+## 倒塌第一拍：定方向、掉一批瓦石、开始计时
+func _begin_collapse() -> void:
+	_collapsing = true
+	_collapse_t = 0.0
+	_collapse_y0 = position.y
+	_collapse_yaw0 = rotation.y
+	var sx: float = 1.0 if randf() > 0.5 else -1.0
+	var sz: float = 1.0 if randf() > 0.5 else -1.0
+	_collapse_tilt = Vector3(sx * randf_range(0.22, 0.38), 0.0, sz * randf_range(0.22, 0.38))
+	var h: float = def.height if def != null else 3.0
+	VFXKIT.debris(global_position + Vector3.UP * h * 0.55, Color(0.48, 0.45, 0.41), 8, 0.22)
+
+
+## 死亡后的每一帧：三段式
+##   ① 0~45%：只晃不掉渣（先让玩家看清"它要塌了"）
+##   ② 45%~100%：倾斜加剧、开始往下沉、持续掉渣
+##   ③ 100%：落地扬尘 + 碎块四散 + 震屏 + 生成废墟 → 本节点销毁（废墟留在原地淡出）
+func _update_dead(dt: float) -> void:
+	if not _collapsing:
+		_begin_collapse()
+	_collapse_t += dt
+	var k: float = clampf(_collapse_t / COLLAPSE_TIME, 0.0, 1.0)
+	var e: float = k * k
+	rotation = Vector3(_collapse_tilt.x * e,
+			_collapse_yaw0 + _collapse_tilt.x * e * 0.35,
+			_collapse_tilt.z * e)
+	position.y = _collapse_y0 - 0.42 * e
+	if not _collapse_dusted and k > 0.45:
+		_collapse_dusted = true
+		VFXKIT.dust(global_position + Vector3.UP * 1.0, 10, 1.0, Color(0.60, 0.55, 0.44))
+	# 倒的过程中一路掉灰：静帧和实机都能看出"它在塌"，不是单纯在转
+	if k > 0.2:
+		_collapse_dust_t -= dt
+		if _collapse_dust_t <= 0.0:
+			_collapse_dust_t = 0.22
+			var hx: float = float(def.footprint.x) * 0.5 if def != null else 2.0
+			var hz: float = float(def.footprint.y) * 0.5 if def != null else 2.0
+			var edge: Vector3 = global_position + Vector3(randf_range(-hx, hx),
+					randf_range(0.4, 1.6), randf_range(-hz, hz))
+			VFXKIT.dust(edge, 4, 0.6, Color(0.62, 0.56, 0.45))
+	if k >= 1.0:
+		_land_and_ruins()
+
+
+## 落地：扬尘 / 碎块 / 震屏 / 废墟，然后把建筑本体清掉
+func _land_and_ruins() -> void:
+	var base: Vector3 = global_position
+	base.y = RtsWorld.height_at(base.x, base.z)
+	var fp: Vector2i = def.footprint if def != null else Vector2i(4, 4)
+	var h: float = def.height if def != null else 4.0
+	var hx: float = float(fp.x) * 0.5
+	var hz: float = float(fp.y) * 0.5
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			VFXKIT.dust(base + Vector3(sx * hx * 0.8, 0.3, sz * hz * 0.8),
+					14, 1.2, Color(0.66, 0.60, 0.48))
+	VFXKIT.debris(base + Vector3.UP * 0.6, Color(0.46, 0.43, 0.39), 18, 0.30)
+	if RtsCombat.is_near_camera(base):
+		Game.shake(0.22)
+	var col: Color = faction.color if faction != null else Color(0.40, 0.50, 0.70)
+	VFXKIT.make_ruins(base, fp, h, col, RUINS_LINGER)
+	if visual != null:
+		visual.visible = false
+	queue_free()

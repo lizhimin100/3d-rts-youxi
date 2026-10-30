@@ -1,8 +1,8 @@
 class_name Sfx
 extends Node
-## **音效 / 语音 / BGM 管理**（全部素材由 工具/音频/合成音效.py 程序化合成，零外部素材）。
+## **音效 / 语音 / BGM 管理**（音效与 BGM 由 工具/音频/合成音效.py、语音由 合成语音_v2.py 程序化合成，零外部素材）。
 ##
-## 这一版重点解决三件事：
+## 这一版重点解决四件事：
 ##
 ## 1. **总线**：Master / Music / SFX / UI / Voice，电平写在 音频/default_bus_layout.tres，
 ##    启动时用 AudioServer.set_bus_layout() 应用 —— **不改 project.godot**。
@@ -14,10 +14,14 @@ extends Node
 ## 3. **反馈预算**（任务书 A）：每个音效 id 有三把闸 —— 节流（最小间隔）/ 每秒上限 / 并发上限。
 ##    点选 75ms、移动 80ms；一次 selection_changed 哪怕带 12 个单位也只播 1 声。
 ##
+## 4. **语音接线（v3）**：指令_前进/进攻/撤退、提示_金币不足/人口已满/建造完成
+##    这 6 条由 工具/音频/合成语音_v2.py（SAPI 中文 TTS + DSP）生成；以前没有任何调用者，
+##    现在分别挂在 order_issued / notify / building_completed 上，各带 4~10s 节流。
+##
 ## 电平约定：WAV 峰值已经按任务书做在文件里（点选 -19 / 移动 -15 / 语音 -8 dBFS），
 ## 播放端不再按声音重复衰减，只做"总线 + UI 补偿"：
 ##     UI 总线 -16 dB 是整类压低，短促点击会掉到听不见，所以 UI 一声额外补 +6 dB；
-##     有效电平 = 文件峰值 + 总线 + 补偿，具体数值见 工具/音频校验.py 的汇报。
+##     有效电平 = 文件峰值 + 总线 + 补偿，具体数值见本文件常量与 音频/来源.md。
 ##
 ## 用法：
 ##     Sfx.attach(get_tree())        # 主场景启动时调一次（幂等）
@@ -46,8 +50,21 @@ const VOICE_THROTTLE := 5.0    # 应答语音全局 5s 节流
 const DEATH_VOICE_THROTTLE := 8.0
 const COMBAT_HOLD := 25.0      # 最后一次交战后 25s 切回经营 BGM
 
-const BGM_CALM := "bgm_经营"
-const BGM_BATTLE := "bgm_会战"
+## BGM 素材（放在 音频/BGM/ 下，用 AudioStreamWAV.load_from_file 读源文件，不依赖 .import）
+## 和BGM = 开局/发育；战BGM = 打起来。切回经营的判定见 COMBAT_HOLD。
+const BGM_CALM := "BGM/和BGM"
+const BGM_BATTLE := "BGM/战BGM_90s"
+
+## 口令 / 提示语音 id（= 音频/ 下的文件名；由 合成语音_v2.py 生成）
+const VOICE_FORWARD := "指令_前进"
+const VOICE_ATTACK := "指令_进攻"
+const VOICE_FALLBACK := "指令_撤退"
+const VOICE_NO_GOLD := "提示_金币不足"
+const VOICE_NO_FOOD := "提示_人口已满"
+const VOICE_BUILT := "提示_建造完成"
+
+## 低血警报阈值（己方最惨单位低于这个血量比就响；5s 节流在 SPEC 里）
+const LOW_HP_RATIO := 0.30
 
 ## 每个音效的播放规格：
 ##   bus        走哪条总线
@@ -67,6 +84,20 @@ const SPEC := {
 	"法术_施放": {"bus": BUS_SFX, "throttle": 0.150, "per_sec": 3, "concurrent": 2, "pitch": 0.04},
 	"结算_胜利": {"bus": BUS_SFX, "throttle": 1.000, "per_sec": 1, "concurrent": 1, "pitch": 0.0},
 	"结算_失败": {"bus": BUS_SFX, "throttle": 1.000, "per_sec": 1, "concurrent": 1, "pitch": 0.0},
+	# --- v3 新增 ---
+	"战斗_箭矢": {"bus": BUS_SFX, "throttle": 0.050, "per_sec": 6, "concurrent": 4, "pitch": 0.08},
+	"战斗_塔射": {"bus": BUS_SFX, "throttle": 0.090, "per_sec": 4, "concurrent": 3, "pitch": 0.06},
+	"建造_放置": {"bus": BUS_SFX, "throttle": 0.150, "per_sec": 3, "concurrent": 2, "pitch": 0.05},
+	"建造_锤击": {"bus": BUS_SFX, "throttle": 0.120, "per_sec": 5, "concurrent": 3, "pitch": 0.07},
+	"提示_低血": {"bus": BUS_UI, "throttle": 5.000, "per_sec": 1, "concurrent": 1, "pitch": 0.0},
+	"升级_完成": {"bus": BUS_SFX, "throttle": 1.000, "per_sec": 1, "concurrent": 1, "pitch": 0.0},
+	# --- 口令语音（走 Voice 总线，节流压住刷屏） ---
+	"指令_前进": {"bus": BUS_VOICE, "throttle": 8.000, "per_sec": 1, "concurrent": 1, "pitch": 0.02},
+	"指令_进攻": {"bus": BUS_VOICE, "throttle": 8.000, "per_sec": 1, "concurrent": 1, "pitch": 0.02},
+	"指令_撤退": {"bus": BUS_VOICE, "throttle": 10.000, "per_sec": 1, "concurrent": 1, "pitch": 0.02},
+	"提示_金币不足": {"bus": BUS_VOICE, "throttle": 4.000, "per_sec": 1, "concurrent": 1, "pitch": 0.0},
+	"提示_人口已满": {"bus": BUS_VOICE, "throttle": 4.000, "per_sec": 1, "concurrent": 1, "pitch": 0.0},
+	"提示_建造完成": {"bus": BUS_VOICE, "throttle": 8.000, "per_sec": 1, "concurrent": 1, "pitch": 0.0},
 }
 
 ## 没登记的 id（例如语音）走这套：不限流（调用方自己节流）、SFX 总线
@@ -94,6 +125,7 @@ var _last_death_voice: float = -9999.0
 var _last_sel_frame: int = -1
 var _combat_until: float = 0.0
 var _bgm_id: String = ""
+var _hp_check_t: float = 0.0
 
 
 # ===========================================================================
@@ -103,6 +135,8 @@ var _bgm_id: String = ""
 ## 挂载到场景树（幂等）
 static func attach(tree: SceneTree) -> void:
 	if _inst != null and is_instance_valid(_inst):
+		# 重开一局：节点挂在 /root 下不会被 reload 掉，但结算时 BGM 已经 stop 了
+		_inst._resume_after_restart.call_deferred()
 		return
 	if tree == null:
 		return
@@ -187,6 +221,7 @@ func _setup() -> void:
 	Game.resources_changed.connect(_on_resources)
 	Game.order_issued.connect(_on_order)
 	Game.game_over.connect(_on_over)
+	Game.notify.connect(_on_notify)
 	print("[音效] 已就绪（音频目录：%s）" % DIR)
 	# BGM 起（延迟一帧，确保已经在树里）
 	_start_bgm.call_deferred()
@@ -227,12 +262,31 @@ func _ensure_bus(bus_name: String, db: float) -> void:
 		AudioServer.set_bus_send(idx, "Master")
 
 
+## 重开一局时复位 BGM（attach 的幂等分支走这里）
+##
+## 结算时 _on_over() 会 stop 并把 _bgm_id 清空，而 attach() 因为单例还在会直接返回，
+## 结果是重开后一直没有经营 BGM，要等第一次交战才被 _mark_combat() 拉起来。
+func _resume_after_restart() -> void:
+	if _bgm == null or not is_inside_tree():
+		return
+	if Game.phase != RtsConst.Phase.RUNNING:
+		return
+	_last_gold = -1
+	_last_wood = -1
+	_combat_until = 0.0
+	_bgm_id = ""
+	if _bgm.playing:
+		_bgm.stop()
+	_set_bgm(BGM_CALM)
+	print("[音效] 重开：BGM 复位 → %s" % BGM_CALM)
+
+
 ## 起 BGM（必须在入树之后）
 func _start_bgm() -> void:
 	if not is_inside_tree():
 		return
 	_set_bgm(BGM_CALM)
-	# 预解码会战 BGM（1.4MB WAV），避免第一次交战时在主线程上卡一下
+	# 预解码会战 BGM（48k 立体声 72s ≈ 13MB），避免第一次交战时在主线程上卡一下
 	_stream(BGM_BATTLE)
 
 
@@ -427,11 +481,15 @@ func _try_reply_voice(mine: Array) -> void:
 func _on_hit(attacker: Node3D, target: Node3D, _damage: float, _crit: bool) -> void:
 	var pos: Vector3 = target.global_position if target != null else Vector3.ZERO
 	var is_ranged := false
+	var is_tower := attacker is RtsBuilding
 	if attacker != null and is_instance_valid(attacker):
 		var d: UnitDef = attacker.get("def") as UnitDef
 		if d != null:
 			is_ranged = d.projectile != RtsConst.Projectile.NONE or d.attack_range > 3.0
-	if is_ranged:
+	if is_tower:
+		# 箭塔/建筑开火：弩机声，而不是普通命中
+		_play3d("战斗_塔射", pos, -4.0)
+	elif is_ranged:
 		_play3d("战斗_命中", pos, -3.0)
 	else:
 		_play3d("战斗_命中", pos, 0.0)
@@ -465,13 +523,18 @@ func _try_death_voice(unit: Node3D) -> void:
 	_play2d(line, 0.0, 0.02, BUS_VOICE)
 
 
-func _on_impact(pos: Vector3, _kind: int) -> void:
-	_play3d("战斗_命中", pos, -9.0)
+func _on_impact(pos: Vector3, kind: int) -> void:
+	if kind == RtsConst.Projectile.ARROW:
+		_play3d("战斗_箭矢", pos, -7.0)
+	else:
+		_play3d("战斗_命中", pos, -9.0)
 
 
 func _on_built(building: Node3D) -> void:
 	var pos: Vector3 = building.global_position if building != null else Vector3.ZERO
 	_play3d("建造_完成", pos, 0.0)
+	if building is RtsBuilding and (building as RtsBuilding).faction == Game.player_faction:
+		_play2d(VOICE_BUILT, -4.0, 0.0)
 
 
 ## 资源变化：只在自己（玩家）增减时响，且要跟上一帧比
@@ -495,8 +558,13 @@ func _on_order(_units: Array, order: int, target_pos: Vector3, _target: Node3D) 
 		_play3d("法术_施放", target_pos, 0.0)
 	elif order == RtsConst.Order.ATTACK or order == RtsConst.Order.ATTACK_MOVE:
 		_play2d("战斗_攻击", 0.0, 0.10)
+		_play2d(VOICE_ATTACK, -4.0, 0.02)          # 8s 节流在 SPEC 里
 	elif order == RtsConst.Order.MOVE:
 		_play2d("指令_移动", 0.0, 0.05, BUS_UI)
+		_play2d(VOICE_FORWARD, -5.0, 0.02)
+	elif order == RtsConst.Order.STOP or order == RtsConst.Order.HOLD:
+		_play2d("界面_点选", 0.0, 0.06, BUS_UI)
+		_play2d(VOICE_FALLBACK, -5.0, 0.02)
 	else:
 		_play2d("界面_点选", 0.0, 0.06, BUS_UI)
 
@@ -506,6 +574,18 @@ func _on_over(victory: bool) -> void:
 		_bgm.stop()
 	_bgm_id = ""
 	_play2d("结算_胜利" if victory else "结算_失败", 0.0, 0.0)
+
+
+## 顶部提示兼做"语音播报"：这 6 条口令以前生成了却没人播，现在按文本前缀接上。
+## 用前缀匹配是因为全部失败提示都走 Game.toast()（5 处调用点），
+## 在音频层一处收口，比在 单位/建筑/指令系统 里各加一行更不容易漏。
+func _on_notify(text: String, _color: Color) -> void:
+	if text.begins_with("资源不足"):
+		_play2d(VOICE_NO_GOLD, 0.0, 0.0)
+	elif text.begins_with("人口不足") or text.begins_with("人口已满"):
+		_play2d(VOICE_NO_FOOD, 0.0, 0.0)
+	elif text.begins_with("研究完成"):
+		_play2d("升级_完成", -2.0, 0.0)
 
 
 # ===========================================================================
@@ -519,11 +599,40 @@ func _mark_combat() -> void:
 		_set_bgm(BGM_BATTLE)
 
 
-## 停战 25s 自动回经营 BGM（胜负后不再起）
-func _process(_delta: float) -> void:
-	if _bgm == null or _bgm_id != BGM_BATTLE:
+## 停战 25s 自动回经营 BGM（胜负后不再起）+ 低血看门狗
+func _process(delta: float) -> void:
+	if _bgm != null and _bgm_id == BGM_BATTLE and Game.phase == RtsConst.Phase.RUNNING:
+		if _now() >= _combat_until:
+			_set_bgm(BGM_CALM)
+
+	# 低血警报：信号里拿不到血量，只能低频轮询（0.5s 一次，几十个单位，开销可忽略）
+	_hp_check_t += delta
+	if _hp_check_t >= 0.5:
+		_hp_check_t = 0.0
+		_check_low_hp()
+
+
+## 己方最惨单位（含已完工建筑）低于 30% 就响一声；5s 节流由 SPEC 负责
+func _check_low_hp() -> void:
+	var player := Game.player_faction
+	if player == null:
 		return
-	if Game.phase != RtsConst.Phase.RUNNING:
-		return
-	if _now() >= _combat_until:
-		_set_bgm(BGM_CALM)
+	var worst := 1.0
+	var probe: Array = []
+	probe.append_array(player.units)
+	probe.append_array(player.buildings)
+	for u in probe:
+		if u == null or not is_instance_valid(u):
+			continue
+		var b := u as RtsBuilding
+		if b != null and not b.is_constructed:
+			continue                      # 半成品被拆到低血不算警报
+		var d: UnitDef = u.get("def") as UnitDef
+		if d == null or d.max_hp <= 0.0:
+			continue
+		var hp := float(u.get("hp"))
+		if hp <= 0.0:
+			continue
+		worst = minf(worst, hp / d.max_hp)
+	if worst <= LOW_HP_RATIO:
+		_play2d("提示_低血", -2.0, 0.0)

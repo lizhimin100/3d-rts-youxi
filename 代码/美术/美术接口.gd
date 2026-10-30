@@ -16,6 +16,8 @@ const PATH_PROC_ANIM := "res://代码/美术/程序动画.gd"
 ## v3：真骨骼动画播放器 + 参数化材质库（有 AnimationPlayer 的模型走这一条）
 const PATH_SKEL_ANIM := "res://代码/美术/骨骼动画.gd"
 const PATH_MAT_KIT := "res://代码/美术/材质库.gd"
+## 铁誓军团资产包建筑专用材质层（team / team_trim / 主体 / 自发光）
+const PATH_WARBAND := "res://代码/美术/铁誓建筑.gd"
 const PATH_VFX := "res://代码/美术/特效生成.gd"
 const PATH_ENV := "res://美术/环境/战斗环境.tres"
 const PATH_THEME := "res://美术/主题/游戏主题.tres"
@@ -26,6 +28,9 @@ static func clear_cache() -> void:
 	var mk := _script(PATH_MAT_KIT)
 	if mk != null:
 		mk.call("clear_cache")
+	var wb := _script(PATH_WARBAND)
+	if wb != null:
+		wb.call("clear_cache")
 
 
 ## 是否开启反向外壳描边（每 surface 多一次 draw call，性能敏感时关掉）
@@ -150,13 +155,20 @@ static func _walk_apply(n: Node, mat: Material) -> void:
 static func apply_team_color(root: Node3D, color: Color) -> void:
 	if root == null:
 		return
+	# ⓪ 铁誓军团资产包（材质名是 team / team_trim / 主体 / 自发光）：
+	#    先走专用层，严格按资产包 README "只染 team / team_trim"。
+	var wb := _script(PATH_WARBAND)
+	if wb != null:
+		var wb_changed := int(wb.call("apply", root, color))
+		if wb_changed > 0:
+			return
 	# ① v3 资产（材质命名 M_<zone>）：交给材质库按 zone 换卡通材质 + 注入队伍色。
 	#    这条路同阵营共享 ShaderMaterial，比旧实现"逐 surface duplicate"省内存也省 draw call。
 	var mk := _script(PATH_MAT_KIT)
 	if mk != null:
 		# 带骨骼的是角色 → 挂反向外壳描边；建筑/道具不挂（draw call 会翻倍、黑边过粗）
 		var is_char: bool = _has_animation_player(root) or _find_skeleton(root) != null
-		var changed: int = int(mk.call("apply", root, color, is_char and OPEN_OUTLINE))
+		var changed: int = int(mk.call("apply", root, color, is_char and OPEN_OUTLINE, is_char))
 		if changed > 0:
 			return
 	# ② 旧资产（GLB 里是 StandardMaterial3D 且没按 zone 命名）：退回逐 surface 染色。
@@ -193,6 +205,10 @@ static func _walk_tint(n: Node, color: Color, outline: bool = false) -> void:
 			var src: Material = mi.get_surface_override_material(i)
 			if src == null and mi.mesh != null:
 				src = mi.mesh.surface_get_material(i)
+			# 自然物统一材质（代码/美术/自然材质.gd）自带一套色，且是"多实例共享一份"：
+			# 被这里 duplicate + 往队伍色拉，石头会被染成阵营蓝、材质数还会翻 140 倍。
+			if src != null and String(src.resource_name).begins_with("自然_"):
+				continue
 			var dup: Material = src.duplicate() if src != null else null
 			if dup is BaseMaterial3D:
 				var bm := dup as BaseMaterial3D

@@ -2,23 +2,21 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://d4ljlvfon3obd"
-path="res://.godot/imported/弓箭手_plank_albedo.png-9023891a2e624f4fe2ca4e28a21f44b0.ctex"
+uid="uid://b8ks2vbt4e6i5"
+path.s3tc="res://.godot/imported/弓箭手_plank_albedo.png-9023891a2e624f4fe2ca4e28a21f44b0.s3tc.ctex"
 metadata={
-"vram_texture": false
-}
-generator_parameters={
-"md5": "b862b5e3e0cef3f1fc89eb9112a0df4b"
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://美术/模型/弓箭手_plank_albedo.png"
-dest_files=["res://.godot/imported/弓箭手_plank_albedo.png-9023891a2e624f4fe2ca4e28a21f44b0.ctex"]
+dest_files=["res://.godot/imported/弓箭手_plank_albedo.png-9023891a2e624f4fe2ca4e28a21f44b0.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
@@ -40,4 +38,4 @@ process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
-detect_3d/compress_to=1
+detect_3d/compress_to=0

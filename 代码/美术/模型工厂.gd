@@ -45,15 +45,68 @@ static func load_model(path: String, scale: float = 1.0) -> Node3D:
 		外壳.add_child(_建占位块(path, s))
 		return 外壳
 
-	var inst: Node = ps.instantiate()
-	if inst is Node3D:
-		外壳.add_child(inst)
+	# ★ 三档 LOD：资产包明确要求"用随包的近 / 中 / 远三档，不用引擎自动 LOD"。
+	#   约定：<名字>.glb 是近景，<名字>_中.glb / <名字>_远.glb 是另外两档。
+	#   三个文件同原点、同包围盒，整棵节点按相机距离切换，避免逐网格切出撕裂。
+	var lods := [path]
+	var base_path := path.get_basename()
+	for suf: String in ["_中", "_远"]:
+		var p_lod: String = base_path + suf + ".glb"
+		if ResourceLoader.exists(p_lod):
+			lods.append(p_lod)
+	if lods.size() > 1:
+		外壳.add_child(_build_lod_group(lods, s))
 	else:
-		# GLB 理论上必然是 Node3D；万一不是也不崩
-		inst.queue_free()
-		外壳.add_child(_建占位块(path, s))
+		# 单档模型（单位/树/矿/装饰）：直接实例化。
+		# ★ 这段不能省：早期版本把 LOD 分支写成"只有 >1 才 add_child"，
+		#   结果所有单档资产都变成空外壳（单位/树/矿集体消失，只剩阴影）。
+		var inst: Node = ps.instantiate()
+		if inst is Node3D:
+			外壳.add_child(inst)
+		else:
+			inst.queue_free()
+			外壳.add_child(_建占位块(path, s))
+	外壳.set_meta("model_path", path)
 	外壳.scale = Vector3(s, s, s)
+	# ★ 自然物材质统一（树/草/岩石/金矿/木桩/尸骨）：这批 GLB 的 albedo 是灰度噪声，
+	#   不上这一层的话树冠和石头渲染成同一个灰白（老板原话"一坨"）。
+	#   幂等且自带缓存；角色（有骨骼）与建筑（主体/team）不会被它碰。
+	自然材质库.apply(外壳)
 	return 外壳
+
+
+## 建 LOD 组：三个 GLB 都实例化，按距离显隐（见 代码/美术/建筑LOD.gd）
+static func _build_lod_group(paths: Array, s: float) -> Node3D:
+	var group := Node3D.new()
+	group.name = "LOD组"
+	var nodes: Array[Node3D] = []
+	for i in paths.size():
+		var p_lod := String(paths[i])
+		var ps_lod: PackedScene = _场景缓存.get(p_lod, null)
+		if ps_lod == null:
+			ps_lod = load(p_lod) as PackedScene
+			_场景缓存[p_lod] = ps_lod
+		if ps_lod == null:
+			nodes.append(null)
+			continue
+		var inst := ps_lod.instantiate() as Node3D
+		if inst == null:
+			nodes.append(null)
+			continue
+		# 资产包里铁匠铺的根节点名误写成"兵营"——引擎侧按路径改名，方便调试/选中。
+		inst.name = p_lod.get_file().get_basename()
+		group.add_child(inst)
+		nodes.append(inst)
+	var lod_script: Script = null
+	if ResourceLoader.exists("res://代码/美术/建筑LOD.gd"):
+		lod_script = load("res://代码/美术/建筑LOD.gd") as Script
+	if lod_script != null and nodes.size() == 3:
+		var driver := Node3D.new()
+		driver.set_script(lod_script)
+		driver.name = "LOD切换"
+		group.add_child(driver)
+		driver.call("setup", nodes[0], nodes[1], nodes[2])
+	return group
 
 
 ## 递归套材质。给了 mat 就用它覆盖；如果部件自己已经是 ShaderMaterial，

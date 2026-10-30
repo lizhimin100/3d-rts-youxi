@@ -368,7 +368,7 @@ func _build_icons() -> void:
 ## 调试：把五张图标拼成一张对照表存到工程里，方便人眼看
 func _dump_icons() -> void:
 	var dir := OS.get_executable_path().get_base_dir()
-	var out_dir := "E:/自定义游戏/简易rts/.probe"
+	var out_dir := OS.get_user_data_dir().path_join("debug")
 	DirAccess.make_dir_recursive_absolute(out_dir)
 	var sheet := Image.create(ICON * 6, ICON, false, Image.FORMAT_RGBA8)
 	sheet.fill(Color(0.16, 0.17, 0.20, 1.0))

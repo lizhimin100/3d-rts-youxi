@@ -106,6 +106,49 @@ func _run() -> void:
 
 	house2.free()
 	panel.queue_free()
+
+	# ---- 3. 农民命令卡：第一级只有「建造」，建筑全部进展开页 ----
+	var card_script: Script = load("res://代码/界面/命令卡.gd")
+	if card_script != null:
+		var card: Control = card_script.call("new")
+		root.add_child(card)
+		await process_frame
+		var worker = units_script.call("new")
+		worker.def = defs[&"peasant"]
+		worker.faction = player
+		worker.hp = 100.0
+		card.call("refresh", [worker])
+		var recs: Array = card.get("_entries")
+		var first_labels: Array = []
+		for rec in recs:
+			first_labels.append(String((rec.get("entry", {}) as Dictionary).get("label", "")))
+		var extra_build: int = 0
+		for nm in ["农场", "兵营", "箭塔", "铁匠铺"]:
+			if first_labels.has(nm):
+				extra_build += 1
+		_ok("农民第一级只有「建造」一个建筑入口（建筑按钮 %d 个）" % extra_build,
+			first_labels.count("建造") == 1 and extra_build == 0
+				and bool(card.call("can_enter_build_page")),
+			"第一级：" + ", ".join(first_labels))
+		card.call("enter_build_page")
+		var recs2: Array = card.get("_entries")
+		var page_labels: Array = []
+		for rec in recs2:
+			page_labels.append(String((rec.get("entry", {}) as Dictionary).get("label", "")))
+		var want: Array = card.call("build_page_ids")
+		var all_in: bool = true
+		for bid in want:
+			var d: UnitDef = defs.get(bid, null)
+			if d == null or not page_labels.has(d.display_name):
+				all_in = false
+		_ok("建造展开页列出全部 %d 种建筑 + 返回" % want.size(),
+			all_in and page_labels.has("返回"),
+			"展开页：" + ", ".join(page_labels))
+		card.queue_free()
+	else:
+		_skip += 1
+		_lines.append("  · 跳过：命令卡脚本加载失败")
+
 	_finish()
 
 

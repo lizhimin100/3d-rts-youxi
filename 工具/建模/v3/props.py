@@ -45,32 +45,55 @@ def faceted(b, center, radius, material, seed=1, scale=(1, 1, 1), subdiv=1, roug
 
 
 def build_tree(H=5.6):
+    """阔叶树 v2：**三层树冠 + 露出的枝杈**。
+
+    旧版是一根杆 + 6 个等大小球，远看就是棒棒糖。
+    魔兽3 的树靠三件事读出来：① 下宽上窄的锥形轮廓；② 层与层之间的缝（能看到枝杈）；
+    ③ 树冠不是球而是"一簇簇压扁的多面体"。
+    """
     coll = K3.reset_scene()
     b = Builder("tree")
     m_bark = mat("bark")
     m_leaf = mat("leaf")
     m_leaf_d = mat("leaf_dark")
 
-    # 树干：上细下粗，带一点弯
+    # 树干：上细下粗、带弯
     rings = []
-    for i in range(6):
-        t = i / 5.0
-        z = 0.05 + t * H * 0.52
-        r = 0.30 * (1.0 - 0.55 * t) + 0.02
-        cx = 0.10 * math.sin(t * 2.2)
+    for i in range(7):
+        t = i / 6.0
+        z = 0.05 + t * H * 0.60
+        r = 0.32 * (1.0 - 0.62 * t) + 0.02
+        cx = 0.12 * math.sin(t * 2.1)
         rings.append([(cx + r * math.cos(TAU * k / 9), r * 0.86 * math.sin(TAU * k / 9), z)
                       for k in range(9)])
     b.add(K3._bm_loft(rings, cap_a=True, cap_b=True), m_bark, W)
-    # 根部外扩
-    b.cyl(0.42, 0.30, 0.30, loc=(0, 0, 0.02), material=m_bark, sides=9, weight=W)
+    b.cyl(0.46, 0.32, 0.34, loc=(0, 0, 0.02), material=m_bark, sides=9, weight=W)
 
-    # 树冠：一大两中三小（错落，避免"一根棒棒糖"）
-    faceted(b, (0.0, 0.0, H * 0.62), 1.55, m_leaf, seed=11, scale=(1.15, 1.05, 0.95), subdiv=1)
-    faceted(b, (0.95, 0.25, H * 0.55), 1.05, m_leaf_d, seed=12, scale=(1.0, 1.0, 0.9), subdiv=1)
-    faceted(b, (-0.85, -0.15, H * 0.58), 1.12, m_leaf_d, seed=13, scale=(1.0, 1.0, 0.9), subdiv=1)
-    faceted(b, (0.10, -0.75, H * 0.50), 0.92, m_leaf, seed=14, subdiv=1)
-    faceted(b, (-0.15, 0.70, H * 0.72), 0.85, m_leaf, seed=15, subdiv=1)
-    faceted(b, (0.0, 0.0, H * 0.80), 0.78, m_leaf_d, seed=16, subdiv=1)
+    # 主枝杈：三根斜向上的枝，末端顶进树冠里（缝里能看见）
+    for i, (ang, tilt, ln) in enumerate(((0.4, 0.55, 1.35), (2.5, 0.62, 1.15), (4.4, 0.50, 1.25))):
+        x0, y0, z0 = 0.0, 0.0, H * 0.44 + i * 0.06
+        tip = (math.cos(ang) * ln, math.sin(ang) * ln, z0 + ln * tilt)
+        b.tube([(x0, y0, z0), (tip[0] * 0.55, tip[1] * 0.55, (z0 + tip[2]) * 0.5), tip],
+               0.085, m_bark, weight=W, sides=6)
+
+    # 树冠：三层，越往上越小；每层 4~5 团压扁多面体，团之间留缝
+    layers = (
+        (H * 0.55, 1.42, 6, 0.62, m_leaf_d),   # 底层：最宽、最暗
+        (H * 0.68, 1.15, 5, 0.58, m_leaf),     # 中层
+        (H * 0.80, 0.86, 4, 0.55, m_leaf),     # 顶层
+    )
+    seed = 10
+    for li, (z, rad, count, squash, m) in enumerate(layers):
+        for k in range(count):
+            a = TAU * k / count + li * 0.55
+            rr = rad * (0.52 if count > 1 else 0.0)
+            faceted(b, (math.cos(a) * rr, math.sin(a) * rr, z + math.sin(a * 2.0) * 0.10),
+                    rad * (0.62 if k % 2 else 0.72), m, seed=seed,
+                    scale=(1.12, 1.08, squash), subdiv=2, rough=0.20)
+            seed += 1
+    # 顶芽
+    faceted(b, (0.0, 0.0, H * 0.90), 0.44, m_leaf, seed=99, scale=(1.0, 1.0, 0.9),
+            subdiv=1, rough=0.22)
     return b.build_meshes(coll)
 
 
@@ -94,37 +117,63 @@ def build_rock(size=1.7):
 
 
 def build_goldmine():
+    """金矿 v2：**内凹的矿洞** + 木框斜撑 + 密集露头矿脉。
+
+    旧版洞口是一块贴在石头外的木板，侧面一看就穿帮；这版把洞做成
+    向内凹的方盒（深处一块近黑的玻璃材质），矿工"走进去"才像回事。
+    """
     coll = K3.reset_scene()
     b = Builder("goldmine")
     m_stone = mat("stone")
     m_stone_d = mat("stone_dark")
+    m_stone_l = mat("stone_light")
     m_ore = mat("ore")
     m_wood = mat("wood")
     m_wood_d = mat("wood_dark")
+    m_iron = mat("iron")
 
-    # 矿体：两团大石
-    faceted(b, (0.0, 0.0, 1.15), 1.85, m_stone, seed=41, scale=(1.15, 0.95, 1.0), subdiv=2, rough=0.16)
-    faceted(b, (1.35, 0.55, 0.75), 1.05, m_stone_d, seed=42, scale=(1.0, 0.9, 0.9), subdiv=1, rough=0.2)
-    faceted(b, (-1.25, -0.60, 0.70), 0.95, m_stone_d, seed=43, subdiv=1, rough=0.2)
-    # 金矿脉：露头的金块
+    # 矿体：主石 + 两侧肩石 + 顶部岩檐（把洞口压出来）
+    faceted(b, (0.0, -0.15, 1.25), 1.95, m_stone, seed=41, scale=(1.20, 1.00, 1.05),
+            subdiv=2, rough=0.15)
+    faceted(b, (1.45, 0.45, 0.72), 1.02, m_stone_d, seed=42, scale=(1.0, 0.9, 0.9),
+            subdiv=2, rough=0.20)
+    faceted(b, (-1.35, -0.50, 0.70), 0.98, m_stone_d, seed=43, subdiv=2, rough=0.20)
+    faceted(b, (0.0, 0.35, 2.55), 1.05, m_stone_l, seed=44, scale=(1.45, 0.85, 0.55),
+            subdiv=2, rough=0.18)
+
+    # 洞口：向内凹的暗腔（三层递减亮度，做出纵深）
+    b.box((1.25, 1.05, 1.30), (0.0, 1.05, 0.66), material=mat("glass"), bevel=0.02)
+    b.box((0.95, 0.30, 1.00), (0.0, 0.72, 0.62), material=m_wood_d, bevel=0.02)
+
+    # 门框：立枋 + 横梁 + 斜撑
+    for sx in (-1, 1):
+        b.box((0.19, 0.62, 1.62), (sx * 0.70, 1.42, 0.80), material=m_wood, bevel=0.02)
+        b.box((0.12, 0.14, 0.95), (sx * 0.98, 1.60, 1.34),
+              rot=(0, 0, sx * D(34)), material=m_wood_d, bevel=0.01)
+    b.box((1.72, 0.36, 0.22), (0.0, 1.42, 1.62), material=m_wood, bevel=0.02)
+    b.box((1.90, 0.30, 0.10), (0.0, 1.38, 1.76), material=m_wood_d, bevel=0.01)
+    # 门口吊灯
+    b.cyl(0.10, 0.10, 0.16, loc=(0.62, 1.30, 1.48), material=m_iron, sides=8)
+    faceted(b, (0.62, 1.30, 1.42), 0.075, mat("ember"), seed=71, subdiv=1)
+
+    # 矿脉：沿洞口两侧与顶部成簇（不是均匀撒点）
     rnd = random.Random(7)
-    for i in range(9):
-        a = rnd.uniform(0, TAU)
-        rr = rnd.uniform(0.9, 1.55)
-        z = rnd.uniform(0.55, 1.85)
-        faceted(b, (math.cos(a) * rr, math.sin(a) * rr * 0.8, z), rnd.uniform(0.16, 0.27),
-                m_ore, seed=50 + i, subdiv=1, rough=0.25)
-    # 矿洞口（木框 + 黑暗）
-    b.box((1.35, 0.50, 1.25), (0.0, 1.45, 0.62), material=m_wood_d, bevel=0.03)
-    b.box((1.05, 0.30, 1.00), (0.0, 1.62, 0.58), material=mat("glass"), bevel=0.02)
+    veins = ((0.72, 0.35, 1.75), (-0.70, 0.40, 1.70), (0.35, 0.55, 2.20),
+             (-0.40, 0.30, 1.95), (1.05, 0.20, 1.15), (-1.02, 0.10, 1.20),
+             (0.0, 0.62, 2.35), (0.90, 0.45, 0.72), (-0.88, 0.52, 0.80))
+    for i, (x, y, z) in enumerate(veins):
+        for k in range(3):
+            faceted(b, (x + rnd.uniform(-0.16, 0.16), y + rnd.uniform(-0.08, 0.12),
+                        z + rnd.uniform(-0.16, 0.16)),
+                    rnd.uniform(0.10, 0.19), m_ore, seed=50 + i * 5 + k, subdiv=1, rough=0.25)
+
+    # 矿车 + 一段窄轨
+    b.box((0.80, 0.54, 0.36), (-1.15, 1.50, 0.20), material=m_wood, bevel=0.03)
     for sx in (-1, 1):
-        b.box((0.18, 0.55, 1.45), (sx * 0.66, 1.50, 0.72), material=m_wood, bevel=0.02)
-    b.box((1.55, 0.32, 0.20), (0.0, 1.48, 1.42), material=m_wood, bevel=0.02)
-    # 矿车
-    b.box((0.75, 0.52, 0.34), (-1.05, 1.45, 0.17), material=m_wood, bevel=0.03)
+        b.cyl(0.17, 0.17, 0.06, loc=(-1.15 + sx * 0.32, 1.24, 0.17), rot=(D(90), 0, 0),
+              material=m_iron, sides=8)
     for sx in (-1, 1):
-        b.cyl(0.16, 0.16, 0.06, loc=(-1.05 + sx * 0.30, 1.20, 0.16), rot=(D(90), 0, 0),
-              material=mat("iron"), sides=8)
+        b.box((0.06, 1.90, 0.05), (-1.15 + sx * 0.22, 2.55, 0.03), material=m_iron, bevel=0.005)
     return b.build_meshes(coll)
 
 

@@ -1,0 +1,290 @@
+[
+ {
+  "name": "footman",
+  "file": "步兵.glb",
+  "size": [
+   1.215,
+   0.808,
+   2.022
+  ],
+  "zmin": 0.0,
+  "zmax": 2.022,
+  "zones": {
+   "cloth_dark": 1,
+   "steel": 1,
+   "steel_light": 1,
+   "steel_dark": 1,
+   "leather_dark": 1,
+   "gold": 1,
+   "gold_dark": 1,
+   "cloth": 1,
+   "leather": 1
+  },
+  "mats": [
+   "M_cloth_dark",
+   "M_cloth_team",
+   "M_gold",
+   "M_gold_dark",
+   "M_leather",
+   "M_leather_dark",
+   "M_steel",
+   "M_steel_dark",
+   "M_steel_light"
+  ],
+  "meshes": 9,
+  "ao_baked": 9,
+  "qc": [
+   "qc\\footman_正.png",
+   "qc\\footman_三四.png"
+  ],
+  "kb": 3660.0,
+  "tris": 9344,
+  "animations": [
+   "idle",
+   "walk",
+   "attack",
+   "hurt",
+   "death"
+  ],
+  "materials": [
+   "M_cloth_dark",
+   "M_cloth_team",
+   "M_gold",
+   "M_gold_dark",
+   "M_leather",
+   "M_leather_dark",
+   "M_steel",
+   "M_steel_dark",
+   "M_steel_light"
+  ],
+  "nodes": 37,
+  "skins": 1,
+  "joints": 27,
+  "path": "步兵.glb",
+  "seconds": 3.6
+ },
+ {
+  "name": "crossbow",
+  "file": "弓箭手.glb",
+  "size": [
+   1.186,
+   0.801,
+   1.795
+  ],
+  "zmin": 0.0,
+  "zmax": 1.796,
+  "zones": {
+   "leather": 1,
+   "steel_dark": 1,
+   "leather_dark": 1,
+   "steel": 1,
+   "cloth": 1,
+   "steel_light": 1,
+   "skin": 1,
+   "hair": 1,
+   "wood": 1,
+   "cloth_dark": 1,
+   "bone": 1,
+   "iron": 1
+  },
+  "mats": [
+   "M_bone",
+   "M_cloth_dark",
+   "M_cloth_team",
+   "M_hair",
+   "M_iron",
+   "M_leather",
+   "M_leather_dark",
+   "M_skin",
+   "M_steel",
+   "M_steel_dark",
+   "M_steel_light",
+   "M_wood"
+  ],
+  "meshes": 12,
+  "ao_baked": 12,
+  "qc": [
+   "qc\\archer_正.png",
+   "qc\\archer_三四.png"
+  ],
+  "kb": 4257.0,
+  "tris": 4750,
+  "animations": [
+   "idle",
+   "walk",
+   "shoot",
+   "hurt",
+   "death"
+  ],
+  "materials": [
+   "M_bone",
+   "M_cloth_dark",
+   "M_cloth_team",
+   "M_hair",
+   "M_iron",
+   "M_leather",
+   "M_leather_dark",
+   "M_skin",
+   "M_steel",
+   "M_steel_dark",
+   "M_steel_light",
+   "M_wood"
+  ],
+  "nodes": 40,
+  "skins": 1,
+  "joints": 27,
+  "path": "弓箭手.glb",
+  "seconds": 3.8
+ },
+ {
+  "name": "mage",
+  "file": "法师.glb",
+  "size": [
+   0.809,
+   0.518,
+   2.26
+  ],
+  "zmin": 0.0,
+  "zmax": 2.26,
+  "zones": {
+   "cloth": 1,
+   "gold": 1,
+   "cloth_dark": 1,
+   "leather": 1,
+   "skin": 1,
+   "leather_dark": 1,
+   "hair": 1,
+   "steel_dark": 1,
+   "gold_dark": 1,
+   "wood": 1,
+   "crystal": 1,
+   "steel_light": 1,
+   "bone": 1
+  },
+  "mats": [
+   "M_bone",
+   "M_cloth_dark",
+   "M_cloth_team",
+   "M_crystal",
+   "M_gold",
+   "M_gold_dark",
+   "M_hair",
+   "M_leather",
+   "M_leather_dark",
+   "M_skin",
+   "M_steel_dark",
+   "M_steel_light",
+   "M_wood"
+  ],
+  "meshes": 13,
+  "ao_baked": 13,
+  "qc": [
+   "qc\\mage_正.png",
+   "qc\\mage_三四.png"
+  ],
+  "kb": 3962.8,
+  "tris": 3288,
+  "animations": [
+   "idle",
+   "walk",
+   "cast",
+   "hurt",
+   "death"
+  ],
+  "materials": [
+   "M_bone",
+   "M_cloth_dark",
+   "M_cloth_team",
+   "M_crystal",
+   "M_gold",
+   "M_gold_dark",
+   "M_hair",
+   "M_leather",
+   "M_leather_dark",
+   "M_skin",
+   "M_steel_dark",
+   "M_steel_light",
+   "M_wood"
+  ],
+  "nodes": 41,
+  "skins": 1,
+  "joints": 27,
+  "path": "法师.glb",
+  "seconds": 6.2
+ },
+ {
+  "name": "peasant",
+  "file": "农民.glb",
+  "size": [
+   0.605,
+   0.588,
+   1.634
+  ],
+  "zmin": -0.0,
+  "zmax": 1.634,
+  "zones": {
+   "cloth": 1,
+   "cloth_dark": 1,
+   "rope": 1,
+   "leather_dark": 1,
+   "leather": 1,
+   "iron": 1,
+   "skin": 1,
+   "hair": 1,
+   "steel_dark": 1,
+   "hay": 1,
+   "wood": 1,
+   "steel_light": 1
+  },
+  "mats": [
+   "M_cloth_dark",
+   "M_cloth_team",
+   "M_hair",
+   "M_hay",
+   "M_iron",
+   "M_leather",
+   "M_leather_dark",
+   "M_rope",
+   "M_skin",
+   "M_steel_dark",
+   "M_steel_light",
+   "M_wood"
+  ],
+  "meshes": 12,
+  "ao_baked": 12,
+  "qc": [
+   "qc\\peasant_正.png",
+   "qc\\peasant_三四.png"
+  ],
+  "kb": 4909.4,
+  "tris": 3774,
+  "animations": [
+   "idle",
+   "walk",
+   "attack",
+   "gather",
+   "build",
+   "hurt",
+   "death"
+  ],
+  "materials": [
+   "M_cloth_dark",
+   "M_cloth_team",
+   "M_hair",
+   "M_hay",
+   "M_iron",
+   "M_leather",
+   "M_leather_dark",
+   "M_rope",
+   "M_skin",
+   "M_steel_dark",
+   "M_steel_light",
+   "M_wood"
+  ],
+  "nodes": 40,
+  "skins": 1,
+  "joints": 27,
+  "path": "农民.glb",
+  "seconds": 12.1
+ }
+]

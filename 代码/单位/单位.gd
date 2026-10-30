@@ -29,6 +29,12 @@ const SPEED_EASE_TIME: float = 0.12
 const REPATH_INTERVAL: float = 0.25
 ## 路径不可达时的直行兜底时长（秒）
 const UNREACHABLE_GRACE: float = 1.5
+## 空路径重问间隔（秒）：被建筑/人群挤到无路时，按这个节奏重算，绝不"放弃即站死"
+const PATH_RETRY_INTERVAL: float = 0.3
+## 建造开工的有效判定余量（米）：站位阈值 + 这个余量内，且已经站在解析后的落点上，
+## 就直接开工。建筑占地外扩 1 格时，"最近合法站位"常比阈值多出几厘米，
+## 老逻辑会卡在 threshold 外侧反复起步 → 农民永远差一步、进度 0.00。
+const BUILD_REACH_SLACK: float = 0.75
 ## 分离半径系数（两半径之和 × 这个）
 const SEPARATION_FACTOR: float = 1.15
 ## 索敌/经济决策分片间隔（秒），别让 N 个单位同一帧一起算
@@ -50,11 +56,57 @@ const TURN_SPEED_FLOOR: float = 0.25
 const GROUND_FOLLOW_SPEED: float = 26.0
 ## 身体贴合坡面的平滑速度
 const TILT_SMOOTH: float = 9.0
+## walk 动画在 1x 播放时的"地面速度"（米/秒）。
+## 实测：步兵 walk 一个周期的支撑相脚掌相对根节点后退 0.57m / 0.27s ≈ 2.0m/s。
+## 单位实际移动 4.6m/s 时如果动画仍 1x，脚会明显在地上打滑（看起来像倒退跑）。
+## 所以播放速度 = 实际速度 / 这个值，让脚掌线速度尽量贴着地面。
+const WALK_STRIDE_SPEED: float = 2.0
 ## 尸体下沉时长（秒）与深度（米）
+## 表现层脚本（死亡尘土 / 节流）走 preload，理由同 建筑.gd
+const BUILD_FX := preload("res://代码/美术/建造表现.gd")
 const SINK_TIME: float = 0.6
 const SINK_DEPTH: float = 1.3
 ## 寻路目标变化多少米才值得重算
 const GOAL_CHANGE_EPS: float = 0.6
+
+# ---------------- 碰撞 / 贴墙（2026-10-18 HOUND 重写）----------------
+## 身体净空安全系数：站立/扫掠判定用 radius × 这个值。
+## 为什么是 0.98：格子宽 1m，紧贴不可走格的那一格**格心**净空恰好 = 0.5m；
+## 用 1.0 会把整条“贴墙可行走带”判死（1 米窄道全废），用 0.9 又会真的穿墙 5cm。
+const CLEAR_SAFETY: float = 0.98
+## 扫掠采样步长（米）：0.15 约 1/3 身体半径，薄墙/墙角不会漏检
+const SWEEP_STEP: float = 0.15
+## 前方探测距离下限（米）：太短“到墙才反应”，太长会在窄口提前拐弯
+const PROBE_MIN: float = 0.45
+## 贴墙滑动的候选偏角（弧度）：±20/±40/±60/±80°，从小到大试（先尽量贴原方向）
+const SLIDE_ANGLES: Array[float] = [0.35, 0.70, 1.05, 1.40]
+## 分离位移的每秒上限（米/秒）：分离是软纠偏，不是推土机
+const SEP_MAX_SPEED: float = 2.2
+## 分离死区（米）：重叠小于这个值不推，避免站桩时的微抖
+const SEP_DEADZONE: float = 0.02
+## 被挤进不可走格后的“逐帧推出”速度（米/秒）—— 绝不瞬移
+const PUSHOUT_SPEED: float = 3.2
+## 连续多久推不出去才允许**一次**兜底吸附（秒）。自检会断言该计数为 0
+const PUSHOUT_TIMEOUT: float = 1.2
+## 推出目标的刷新间隔（秒）：nearest_standable 是环形搜索，不能每帧做
+const PUSHOUT_RETARGET: float = 0.25
+## 推出死区（米）：净空只差这么一点（1mm 级）时**不启动**逐帧推出。
+## 为什么必须有：净空 0.489 vs 判据 0.49 的 1mm 落差，让“逐帧推出”每帧
+## 都判定“已经最优、无法改善”，累计 1.2s 后触发兜底吸附 —— 这就是
+## 某些运行里突然冒出几十次 snap 的来源。2cm 的死区让这种情况根本进不来。
+const PUSHOUT_DEADBAND: float = 0.02
+## 贴墙分离：净空小于（判据 + 这个值）时，分离位移先剪掉“往墙里”的分量，只留切向。
+const SEP_WALL_ZONE: float = 0.30
+## 到点后重新起步的滞回（米）：被挤开超过“落定距离 + 这个值”才重新走。
+## 老实现是固定 ARRIVE_TOLERANCE+radius（0.85m），在人群里正好卡在分离推挤的
+## 幅度上 → 推出去→走回来→再推出去，60Hz 进进出出。
+const ARRIVE_RESTART_HYST: float = 0.9
+## 拥挤让位：距目标多近算“已经在目标区”
+const CROWD_RADIUS: float = 4.5
+## 拥挤让位：目标区内被同伴堵住、连续这么久没有更靠近 → 就地停（不再挤）
+const CROWD_PATIENCE: float = 0.9
+## 拥挤判定：与同伴中心距小于（半径和 × 这个值）才算“被人堵着”
+const CROWD_NEIGHBOR: float = 1.08
 
 ## 采集内部阶段
 enum GatherPhase { SEEK = 0, TO_NODE = 1, HARVEST = 2, TO_DROP = 3 }
@@ -101,12 +153,46 @@ var _path_i: int = 0
 var _repath_cd: float = 0.0
 var _need_repath: bool = false
 var _direct_t: float = 0.0
+## 空路径重问计时（见 PATH_RETRY_INTERVAL）
+var _retry_t: float = 0.0
+## 空路径直行阶段的"无进展"计时与基准点（真的没挪才收工）
+var _noprog_t: float = 0.0
+var _noprog_pos := Vector3.ZERO
 var _speed: float = 0.0
 ## 坡度对速度的倍率（上坡 <1，下坡 >1）
 var _slope_mult: float = 1.0
 ## 身体贴合坡面的倾斜（x=俯仰, y=翻滚）
 var _tilt: Vector2 = Vector2.ZERO
 var _yaw: float = 0.0
+
+## 贴墙滑动的方向记忆（-1 左 / +1 右 / 0 没在滑）：对称障碍前不会左右横跳
+var _slide_side: int = 0
+## 四面被堵住的累计时间（秒）
+var _blocked_t: float = 0.0
+## 被挤进不可走格的累计时间 / 推出目标 / 重取计时
+var _pushout_t: float = 0.0
+var _pushout_goal: Vector3 = Vector3.ZERO
+var _pushout_has: bool = false
+var _pushout_retarget: float = 0.0
+## 目标点稳定化：本次请求点 / 解析出的可站立落点 / 是否有效 / 是否已到
+var _goal_req: Vector3 = Vector3.ZERO
+var _goal_valid: bool = false
+var _arrived_goal: bool = false
+## 落定时距目标的距离（重新起步的滞回基准）与拥挤让位计时
+var _settle_dist: float = 0.0
+var _crowd_t: float = 0.0
+var _crowd_best: float = INF
+## 寻路器缓存（RefCounted，关卡重建时 is_instance_valid 会失效，自动重取）
+var _pf: GridPathfinder = null
+## 调试计数（只累加，正式路径不打印；自检/日志读 debug_move_stats）
+var dbg_slide_frames: int = 0
+var dbg_blocked_frames: int = 0
+var dbg_push_frames: int = 0
+var dbg_repath_count: int = 0
+## 拥挤让位次数（目标区被同伴占满 → 就地停）。**不是**卡死兜底，是正常的让位行为
+var dbg_crowd_settles: int = 0
+## 全局兜底吸附次数（**必须为 0**；非 0 就是“多帧无解”了，日志会指名道姓）
+static var dbg_snap_fallbacks: int = 0
 
 var _attack_cd: float = 0.0
 var _windup_t: float = 0.0
@@ -280,7 +366,10 @@ func take_damage(amount: float, _type: int, from: Node3D) -> void:
 		return
 	hp -= amount
 	if visual != null:
-		visual.flash()
+		var src: Vector3 = Vector3.ZERO
+		if from != null and is_instance_valid(from):
+			src = from.global_position
+		visual.flash(src)
 	if hp <= 0.0:
 		hp = 0.0
 		_die()
@@ -331,7 +420,9 @@ func _die() -> void:
 		visual.play_death()
 
 	var col: Color = faction.color if faction != null else Color(0.7, 0.3, 0.25)
-	ArtKit.vfx_death(global_position, col)
+	# 死亡表现（SLEDGE）：小尘土每次都放（廉价、读感明确）；
+	# 血雾/碎裂这种大特效走 BuildFx 的全局预算 —— 同屏一次死七八个也不会每个都炸一次。
+	BUILD_FX.death_puff(global_position, col)
 	if RtsCombat.is_near_camera(global_position):
 		Game.shake(Cfg.game.shake_on_death)
 
@@ -352,10 +443,14 @@ func _update_dead(dt: float) -> void:
 			_sink_t = SINK_TIME
 			_sink_base_y = global_position.y
 			_on_corpse_sink()
+			# 下沉起手的一小股土（不刷屏：每个尸体只有这一下）
+			BUILD_FX.dust(global_position, 4, 0.55, Color(0.54, 0.50, 0.44))
 		return
 	_sink_t -= dt
 	var k: float = 1.0 - clampf(_sink_t / SINK_TIME, 0.0, 1.0)
 	global_position.y = _sink_base_y - SINK_DEPTH * k
+	# 一边沉一边略微压扁，读感更像"陷进地里/淡出"，而不是整体平移
+	scale = Vector3(1.0, maxf(1.0 - 0.30 * k, 0.70), 1.0)
 	if _sink_t <= 0.0:
 		_finalize_death()
 
@@ -502,13 +597,24 @@ func order_gather(node: Node3D) -> void:
 ##   · 指令系统"放置建筑"时已经扣过一次钱，每个农民又各调一次 order_build，
 ##     老代码按人头重复扣 —— 1 个农民造 80 金的农场，实测扣了 160。
 ##   · 工地一旦落地 `is_buildable` 立刻变 false，第 2/3 个农民被拦下后**静默不动**。
-## 所以顺序改成：先找附近（水平 0.8m）同阵营/同类型/没完工的工地 → 有就加入；
-##   没有才走 钱够不够 → 地形能不能放 → 扣钱 → 落工地。整支队伍只扣一次钱。
-func order_build(building_def: UnitDef, pos: Vector3) -> Node3D:
+## 所以顺序改成：先吸格（建筑网格）→ 找附近（水平 0.8m）同阵营/同类型/没完工的工地
+##   → 有就加入；没有才走 钱够不够 → 地形能不能放 → 扣钱 → 落工地。整支队伍只扣一次钱。
+##
+## desired_yaw = 玩家/AI 期望朝向，落工地前一律过 `建筑网格.snap_yaw`（90° 档）。
+## 朝向写在 `setup_construction` **之前**：RtsUnit.setup 会把 rotation.y 记进 _yaw，
+## 建筑不可移动、之后没人再改它，所以工地和完工后的朝向必然一致。
+func order_build(building_def: UnitDef, pos: Vector3, desired_yaw: float = 0.0) -> Node3D:
 	if _dying or building_def == null:
 		return null
 	if def == null or not RtsWorld.is_worker_def(def) or faction == null:
 		return null
+
+	# ⓪ 先把落点吸到建筑网格（和寻路共用同一套格）：占地、寻路标记、工地坐标
+	#    从此是同一个数，不会"看着在格子里、实际骑了半格"。
+	var fp: Vector2i = building_def.footprint
+	if fp == Vector2i.ZERO:
+		fp = Vector2i(1, 1)
+	pos = 建筑网格.snap_point(pos, fp)
 
 	# ① 已经有人在同一个点开工：直接加入，绝不再扣一次钱
 	var existing: Node3D = _find_open_site(building_def, pos)
@@ -520,10 +626,7 @@ func order_build(building_def: UnitDef, pos: Vector3) -> Node3D:
 		if faction.is_player:
 			Game.toast("资源不足：%s" % building_def.display_name, Color(1, 0.5, 0.4))
 		return null
-	var fp: Vector2i = building_def.footprint
-	if fp == Vector2i.ZERO:
-		fp = Vector2i(1, 1)
-	if not RtsWorld.is_buildable(pos, fp):
+	if not 建筑网格.can_place(pos, fp):
 		if faction.is_player:
 			Game.toast("这里不能建造", Color(1, 0.6, 0.35))
 		return null
@@ -542,6 +645,7 @@ func order_build(building_def: UnitDef, pos: Vector3) -> Node3D:
 		return null
 	parent.add_child(site)
 	site.global_position = RtsWorld.ground(pos)
+	site.rotation.y = 建筑网格.snap_yaw(desired_yaw)
 	site.setup_construction(faction, building_def)
 	RtsWorld.mark_footprint(site)
 	Game.register(site)
@@ -687,7 +791,7 @@ func _process(delta: float) -> void:
 	_settle_state()
 
 	_update_separation(dt)
-	_rescue_if_inside_wall()
+	_update_wall_pushout(dt)
 	_snap_ground(dt)
 	_update_anim()
 
@@ -926,7 +1030,17 @@ func _order_build_tick(dt: float) -> void:
 		_build_site = null
 		state = RtsConst.State.IDLE
 		return
-	if _flat_dist(site.global_position) > _stand_off(site):
+	var d: float = _flat_dist(site.global_position)
+	var stand: float = _stand_off(site)
+	# ★ 开工判定不能只看"到工地中心的距离 > 站位阈值"。
+	#   关卡把建筑占地外扩 1 格写进寻路网格，最近的合法站位天然就在
+	#   `半宽 + 1 格 + 身体半径` 处，往往比 _stand_off 多出几厘米到几十厘米。
+	#   老逻辑于是每帧：太远 → _go_to(工地中心) → 目标闩锁（它已经站在落点上）
+	#   → 一步都不挪 → 下一帧还是"太远"。玩家看到：农民站在工地旁边发呆，进度 0.00。
+	#   现在多给一条"已经站在解析后的落点上"的放行条件。
+	var dg: float = _flat_dist(_goal) if _goal_valid else d
+	var at_stand: bool = dg <= ARRIVE_TOLERANCE + 0.45
+	if d > stand + BUILD_REACH_SLACK and not at_stand:
 		state = RtsConst.State.MOVE
 		_go_to(site.global_position)
 		return
@@ -989,19 +1103,59 @@ func _resume_after_flee() -> void:
 # 移动
 # ===========================================================================
 
-## 设定移动目标（force=false 时目标没怎么变就不重算，省 A*）
+## 设定移动目标（force=false 时目标没怎么变就不重算，省 A*）。
+##
+## ★ 三段处理，缺一段就是“原地抽搐”：
+##   ① 目标稳定化：目标压在建筑/墙里时解析成唯一、可站立的落点，
+##      且只解析这一次（请求点没变就复用）—— 每帧重选落点是抖动的第一根因。
+##   ② 到点闩锁：已经站在目标上就不许再 _moving = true。
+##      老代码走到点 → stop → 下一帧调用方（采集/建造/追击）又 _go_to → start，
+##      60Hz 反复起停：速度曲线锯齿、动画 walk/idle 闪、每 0.25s 白算一次全量 A*。
+##   ③ 被挤开才重启：分离/推挤把单位挤离目标超过半个身位才重新走。
 func _go_to(pos: Vector3, force: bool = false) -> void:
-	var p := Vector3(pos.x, 0.0, pos.z)
+	var want := Vector3(pos.x, 0.0, pos.z)
 	move_target = pos
-	if not force and _moving:
-		var dx: float = _goal.x - p.x
-		var dz: float = _goal.z - p.z
-		if sqrt(dx * dx + dz * dz) < GOAL_CHANGE_EPS:
+	var need_new: bool = force or not _goal_valid or want.distance_to(_goal_req) > GOAL_CHANGE_EPS
+	if need_new:
+		_goal_req = want
+		_goal = _standable_goal(want)
+		_goal_valid = true
+		_arrived_goal = false
+		_moving = true
+		_direct_t = 0.0
+		_request_path()
+		return
+	# 同一个目标：到点闩锁（被挤开一段距离才重新走）
+	if _arrived_goal:
+		# ★ 滞回基准取“落定时离目标多远 + ARRIVE_RESTART_HYST”，而不是固定 0.85m：
+		#   人群让位落定的单位本来就在目标区 2~4m 处，固定阈值会让它每帧重新起步。
+		var keep: float = maxf(ARRIVE_TOLERANCE + get_radius(), _settle_dist + ARRIVE_RESTART_HYST)
+		if _flat_dist(_goal) <= keep:
 			return
-	_goal = p
+		_arrived_goal = false
+	if _moving:
+		return
 	_moving = true
 	_direct_t = 0.0
 	_request_path()
+
+
+## 把“调用方要去的点”解析成唯一、稳定、可站立的落点。
+##
+## · 目标本身能站 → 原样返回（点哪走哪，不偷换位置）；
+## · 目标压在建筑/墙里 → 在目标周围搜可站立点，评分 = 到目标距离 + 0.6×到本单位距离：
+##   0.6 这一项让“从不同方向来的单位自然分散到建筑的不同侧”（多单位共点不抢同一格），
+##   同时整个函数是纯函数（目标 + 本单位位置固定 → 结果固定），所以不会逐帧变化。
+func _standable_goal(want: Vector3) -> Vector3:
+	var pf := _pathfinder()
+	if pf == null:
+		return want
+	var r: float = get_radius() * CLEAR_SAFETY
+	# 落点必须留出 GOAL_MARGIN 的余量：站定后还要被同伴推、被分离挤，
+	# 净空刚好 0.5 的落点一推就掉进阻挡判据，然后和 wall_pushout 对拉。
+	if pf.is_standable(want, r + GridPathfinder.GOAL_MARGIN):
+		return want
+	return pf.standable_near(want, global_position, r, GridPathfinder.GOAL_MARGIN)
 
 
 ## 算路（带 0.25s 节流，绝不拿 A* 当饭吃）
@@ -1011,11 +1165,30 @@ func _request_path() -> void:
 		return
 	_need_repath = false
 	_repath_cd = REPATH_INTERVAL
+	dbg_repath_count += 1
 	if not is_inside_tree():
 		return
-	_path = RtsWorld.find_path(global_position, _goal)
+	# ★ 被同伴反复堵住时，目标点做一次**侧向让位**。
+	#
+	# 为什么需要：寻路网格是静态的（单位不是障碍），十个人走同一个门洞时，
+	# 每个人算出来的路完全一样 → 谁也不让谁 → 每 0.8s 重算一次同样的路。
+	# 让位不是"随机乱走"：垂直于目标方向平移 1.2~3.7m，且按卡住次数左右交替，
+	# 这样第一个人先拐、后面的人跟着拐，队伍自然散开成两列。
+	var goal: Vector3 = _goal
+	if _stuck_count >= 2:
+		var to: Vector3 = _goal - global_position
+		to.y = 0.0
+		if to.length() > 0.3:
+			var side := Vector3(-to.z, 0.0, to.x).normalized()
+			if _stuck_count % 2 == 0:
+				side = -side
+			goal = _goal + side * (1.2 + 0.5 * float(mini(_stuck_count, 5)))
+	# 走 RtsWorld：它负责把 y 贴到地形高度；净空半径由 GridPathfinder.agent_radius（0.5m）兜住
+	_path = RtsWorld.find_path(global_position, goal)
 	_path_i = 0
-	_direct_t = 0.0
+	# 注意：这里**不重置** _direct_t。空路径时会被每 0.3s 重问一次，
+	# 若每次都清零，"1.5s 无解收工"的计时永远不会到，单位会一直朝墙直行。
+	_retry_t = 0.0
 
 
 ## 停止移动
@@ -1025,6 +1198,11 @@ func _stop_moving() -> void:
 	_path_i = 0
 	_need_repath = false
 	_direct_t = 0.0
+	_retry_t = 0.0
+	_noprog_t = 0.0
+	_noprog_pos = global_position
+	_blocked_t = 0.0
+	_slide_side = 0
 
 
 ## 当前要走向的路径点
@@ -1034,7 +1212,14 @@ func _current_goal() -> Vector3:
 	return _goal
 
 
-## 移动执行：转向 → 加速 → 位移
+## 移动执行：**先算“这一帧真的能走的方向”，再沿它走**。
+##
+## 老实现的致命处：位移沿 _forward()（朝向）走，而朝向有 turn_speed 延迟。
+## 路径拐弯后身体还要 0.2~0.4s 才转过去，这段时间它一直在**往墙里怼**
+## （4.6m/s × 0.4s ≈ 1.8m），然后 _rescue_if_inside_wall 把它 snap 回可走格 ——
+## 这就是“进进出出”的机械根因。
+## 现在：先做扫掠（身体圆沿方向前进的采样），前方受阻就沿切线滑动（带方向记忆），
+## 位移永远沿**校验过的方向**；朝向只负责“看起来朝哪”，不再决定往哪走。
 func _update_move(dt: float) -> void:
 	if not is_mobile():
 		_speed = 0.0
@@ -1054,10 +1239,23 @@ func _update_move(dt: float) -> void:
 	var dz: float = goal.z - global_position.z
 	var dist: float = sqrt(dx * dx + dz * dz)
 
-	# 路径不可达 → 直行兜底，最多 1.5s
+	# 路径不可达 → 直行兜底 + **持续重问**，绝不"1.5s 没路就永久站死"
+	# 老实现：空路径只直行 1.5s，然后 order=NONE / state=IDLE。
+	# 玩家看到的就是"被建筑挡一下，从此不动了"—— 因为空路径没有任何重试入口
+	# （_blocked_t 只在 _steer 四面被堵时才涨；能被推开的情况它永远是 0）。
+	# 现在：每 0.3s 无条件重问一次寻路；收工条件改成"**真的** 1s 没挪动"，
+	# 而不是一个固定计时器 —— 目标不可达时也要先走到最近的可站位置。
 	if _path.is_empty():
 		_direct_t += dt
-		if _direct_t >= UNREACHABLE_GRACE:
+		_retry_t += dt
+		if _retry_t >= PATH_RETRY_INTERVAL:
+			_retry_t = 0.0
+			_request_path()
+		_noprog_t += dt
+		if global_position.distance_to(_noprog_pos) >= 0.2:
+			_noprog_pos = global_position
+			_noprog_t = 0.0
+		if _noprog_t >= 1.0:
 			_stop_moving()
 			_speed = 0.0
 			if order == RtsConst.Order.MOVE:
@@ -1068,12 +1266,7 @@ func _update_move(dt: float) -> void:
 	# 到点：推进下一个路径点；走完就停
 	if dist <= ARRIVE_TOLERANCE:
 		if _path.is_empty() or _path_i >= _path.size() - 1:
-			_stop_moving()
-			_speed = 0.0
-			if order == RtsConst.Order.MOVE:
-				order = RtsConst.Order.NONE
-			if state == RtsConst.State.MOVE:
-				state = RtsConst.State.IDLE
+			_settle()
 			return
 		_path_i += 1
 		goal = _current_goal()
@@ -1083,42 +1276,134 @@ func _update_move(dt: float) -> void:
 		if dist < 0.0001:
 			return
 
-	# --- 转向：turn_speed 限速，背对目标先转身 ---
+	# --- 0. 拥挤让位：目标区被人占满 + 0.9s 没能更靠近 → 就地停 ---
+	# 这一条替代“到了→被挤开→再走→再被挤开”的 60Hz 往复。
+	# 判据全是确定性的（距离 + 计时），没有随机、没有瞬移。
+	if _tick_crowd(dt):
+		return
+
 	var dir := Vector3(dx / dist, 0.0, dz / dist)
-	var want_yaw: float = atan2(-dir.x, -dir.z)
+
+	# --- 1. 扫掠 + 贴墙滑动：拿到这一帧真正能走的方向 ---
+	var step: float = _speed * dt
+	var probe: float = maxf(step, PROBE_MIN)
+	var mv: Vector3 = _steer(dir, probe)
+	if mv == Vector3.ZERO:
+		# 四面被堵：绝不硬顶（硬顶就是用身体撞墙）。停下 + 重算路径，等下一帧。
+		dbg_blocked_frames += 1
+		_speed = move_toward(_speed, 0.0, _accel() * dt)
+		_blocked_t += dt
+		if _blocked_t >= 0.15:
+			_request_path()
+		_yaw = _turn_toward(_yaw, atan2(-dir.x, -dir.z), def.turn_speed * dt)
+		rotation.y = _yaw
+		# 离路点只剩不到一个身位就当到了（否则会在墙角“看不见的 5cm”上永久卡住）
+		if dist <= 0.6 and (_path.is_empty() or _path_i >= _path.size() - 1):
+			_settle()
+		return
+	_blocked_t = 0.0
+	if mv != dir:
+		dbg_slide_frames += 1
+
+	# --- 2. 朝向追 mv（贴墙时朝切线，身体不会正对着墙）---
+	var want_yaw: float = atan2(-mv.x, -mv.z)
 	_yaw = _turn_toward(_yaw, want_yaw, def.turn_speed * dt)
 	rotation.y = _yaw
 
-	# --- 速度：朝向对齐程度决定能跑多快（背身=0，先转身）---
+	# --- 3. 速度：朝向对齐程度决定能跑多快（背身=先转身）---
 	var fwd := _forward()
-	var align: float = clampf(fwd.dot(dir), -1.0, 1.0)
+	var align: float = clampf(fwd.dot(mv), -1.0, 1.0)
 	var target_speed: float = _max_speed() * clampf(align + TURN_SPEED_FLOOR, 0.0, 1.0) * _slope_mult
 	# 收尾要柔：刹车只用 55% 的加速度，起步用满加速度（起步有冲劲、停下有惯性）
 	var acc: float = _accel() if target_speed >= _speed else _accel() * 0.55
 	_speed = move_toward(_speed, target_speed, acc * dt)
 
-	# --- 位移：沿朝向走（转弯时自然走出弧线）---
-	global_position += fwd * _speed * dt
+	# --- 4. 位移：沿**校验过的方向**走（不是沿朝向）---
+	global_position += mv * (_speed * dt)
 
-	# --- 卡死检测与脱困 ---
-	# 想走却几乎没位移 = 被建筑/树/其它单位顶住了。三级处理：
-	#   ① 强制重算路径（换一条绕行）
-	#   ② 连续 3 次仍卡 → 直接吸附到最近可走格（穿墙而出，永不永久卡死）
+	# --- 5. 卡死检测：只用来“重算路径”，**绝不再 snap**（snap 只在多帧无解时兜底一次）---
 	_stuck_t += dt
 	if _stuck_t >= 0.8:
-		var moved: float = global_position.distance_to(_stuck_pos)
-		if moved < 0.28:
+		if global_position.distance_to(_stuck_pos) < 0.28:
 			_stuck_count += 1
 			_request_path()
-			if _stuck_count >= 3:
-				_stuck_count = 0
-				if Game.level != null:
-					global_position = Game.level.walkable_pos(global_position)
-					_need_repath = true
 		else:
 			_stuck_count = 0
 		_stuck_t = 0.0
 		_stuck_pos = global_position
+
+
+## 就地落定：记住落定距离（重新起步的滞回基准），清掉移动状态。
+func _settle() -> void:
+	_settle_dist = _flat_dist(_goal)
+	_crowd_t = 0.0
+	_crowd_best = INF
+	_stop_moving()
+	_speed = 0.0
+	_arrived_goal = true
+	if order == RtsConst.Order.MOVE:
+		order = RtsConst.Order.NONE
+	if state == RtsConst.State.MOVE:
+		state = RtsConst.State.IDLE
+
+
+## 拥挤让位：在目标区被同伴堵住、连续 CROWD_PATIENCE 秒没有更靠近 → 就地落定。
+##
+## 为什么必须放在移动层：12 个人同一个落点，物理上只有一个能站上去；
+## 老实现让剩下的 11 个永远“走 → 被挤开 → 再走”，这就是玩家看到的进进出出。
+## 现在它们会像真人一样在目标区找位置站住（分离负责把它们分开到 ≥1.15m）。
+## 只在**真的有人贴着自己**时才启用，路过人群、绕建筑都不会被误判成“到了”。
+func _tick_crowd(dt: float) -> bool:
+	if def == null or _arrived_goal:
+		return false
+	var dg: float = _flat_dist(_goal)
+	if dg > CROWD_RADIUS or not _crowded():
+		_crowd_t = 0.0
+		_crowd_best = INF
+		return false
+	if dg < _crowd_best - 0.12:
+		_crowd_best = dg
+		_crowd_t = 0.0
+		return false
+	_crowd_t += dt
+	if _crowd_t < CROWD_PATIENCE:
+		return false
+	dbg_crowd_settles += 1
+	_settle()
+	return true
+
+
+## 身边 1.08 个“半径和”内有没有同伴（= 正在被挤）
+func _crowded() -> bool:
+	var hash: SpatialHash = _shared_hash()
+	var my_r: float = def.body_radius
+	for o in hash.query(global_position, (my_r + 1.2) * CROWD_NEIGHBOR + 0.5):
+		if o == self or o == null or not is_instance_valid(o) or not o is RtsUnit:
+			continue
+		var other: RtsUnit = o
+		if other.def == null or not other.is_mobile():
+			continue
+		var dx: float = global_position.x - other.global_position.x
+		var dz: float = global_position.z - other.global_position.z
+		var need: float = (my_r + other.def.body_radius) * CROWD_NEIGHBOR
+		if dx * dx + dz * dz < need * need:
+			return true
+	return false
+
+
+# ===========================================================================
+# 碰撞几何（扫掠 / 贴墙滑动 / 逐帧推出）
+# ===========================================================================
+
+## 取寻路器（缓存；关卡重建时 RefCounted 失效会自动重取）
+func _pathfinder() -> GridPathfinder:
+	if _pf == null or not is_instance_valid(_pf):
+		_pf = RtsWorld.pathfinder()
+	return _pf
+
+
+
+
 
 
 ## 面向某点转向（原地不动）
@@ -1139,8 +1424,14 @@ func _turn_toward(cur: float, want: float, max_step: float) -> float:
 
 
 ## 当前朝向的单位向量（模型朝 -Z）
+
+
+## 当前朝向的单位向量（模型朝 -Z）
 func _forward() -> Vector3:
 	return Vector3(-sin(_yaw), 0.0, -cos(_yaw))
+
+
+## 平面距离
 
 
 ## 平面距离
@@ -1148,31 +1439,6 @@ func _flat_dist(pos: Vector3) -> float:
 	var dx: float = pos.x - global_position.x
 	var dz: float = pos.z - global_position.z
 	return sqrt(dx * dx + dz * dz)
-
-
-# ===========================================================================
-# 分离 / 贴地
-# ===========================================================================
-
-## 共享空间哈希：每帧重建一次（只收活着的单位与建筑）
-static func _shared_hash() -> SpatialHash:
-	var frame: int = Engine.get_process_frames()
-	if _sep_hash == null:
-		_sep_hash = SpatialHash.new(4.0)
-	if _sep_frame == frame:
-		return _sep_hash
-	_sep_frame = frame
-	var list: Array = []
-	for u in Game.all_units():
-		if u == null or not is_instance_valid(u):
-			continue
-		if not u is RtsUnit:
-			continue
-		if not u.is_alive():
-			continue
-		list.append(u)
-	_sep_hash.rebuild(list)
-	return _sep_hash
 
 
 ## 单位分离：一重叠就互相推开，别挤成一坨
@@ -1218,13 +1484,6 @@ func _update_separation(dt: float) -> void:
 
 
 ## 把单位从不可走格里救出来（分离推挤 / 建筑占地变化都可能把人塞进墙里）
-func _rescue_if_inside_wall() -> void:
-	if def == null or not is_mobile() or Game.level == null:
-		return
-	if Game.level.is_walkable_grid(Game.level.grid_pathfinder().world_to_cell(global_position)):
-		return
-	global_position = Game.level.walkable_pos(global_position)
-	_need_repath = true
 
 
 ## 贴地 + **顺坡**（这是"脚踩在地上"而不是"贴着图滑"的关键）
@@ -1272,16 +1531,15 @@ func _snap_ground(dt: float) -> void:
 		_slope_mult = clampf(1.0 - slope * 0.55, 1.0, 1.22)          # 下坡：略快
 
 
-# ===========================================================================
-# 战斗
-# ===========================================================================
-
 ## 攻击能打到的距离（含目标半径）
 func _attack_reach(t: Node3D) -> float:
 	var r: float = def.attack_range if def != null else 0.0
 	if t != null and t.has_method("get_radius"):
 		r += float(t.call("get_radius"))
 	return maxf(r, 0.3)
+
+
+## 站位间隙（采集/建造用）：attack_range/2 + 双方半径 + 一点空隙
 
 
 ## 站位间隙（采集/建造用）：attack_range/2 + 双方半径 + 一点空隙
@@ -1295,12 +1553,22 @@ func _stand_off(t: Node3D) -> float:
 
 
 ## 当前指令会不会"追出去"（决定索敌半径，也决定够不着时追不追）
+
+
+## 当前指令会不会"追出去"（决定索敌半径，也决定够不着时追不追）
 func _may_pursue() -> bool:
 	if not is_mobile():
 		return false
 	return order == RtsConst.Order.ATTACK \
 			or order == RtsConst.Order.ATTACK_MOVE \
 			or order == RtsConst.Order.MOVE
+
+
+## 自动索敌：走 Game 的注册表（不遍历场景），带分片。
+##
+## ⚠ 待机/警戒**只认射程内的敌人**：老代码对任何指令都用 acquire_range（步兵 11m、
+##   攻击距离 1.35m），待机会锁一个够不着的目标；而 `_acquire` 开头"已有目标就返回"
+##   又让它再也不索敌 —— 结果就是站在那儿对着 9m 外的敌人发呆。
 
 
 ## 自动索敌：走 Game 的注册表（不遍历场景），带分片。
@@ -1325,6 +1593,9 @@ func _acquire(dt: float) -> void:
 	if cand != null and not pursue and _flat_dist(cand.global_position) > _attack_reach(cand):
 		cand = null
 	target = cand
+
+
+## 攻击循环：冷却 → 前摇（攻击动画）→ 出手 → 后摇
 
 
 ## 攻击循环：冷却 → 前摇（攻击动画）→ 出手 → 后摇
@@ -1376,11 +1647,17 @@ func _update_attack(dt: float) -> void:
 
 
 ## 移动指令被战斗打断：记住原目的地（只记第一次，追击途中别覆盖成敌人坐标）
+
+
+## 移动指令被战斗打断：记住原目的地（只记第一次，追击途中别覆盖成敌人坐标）
 func _interrupt_move_for_combat() -> void:
 	if _move_interrupted:
 		return
 	_saved_goal = _goal
 	_move_interrupted = true
+
+
+## 当前目标是否还在射程内（移动指令中途还手用）
 
 
 ## 当前目标是否还在射程内（移动指令中途还手用）
@@ -1393,6 +1670,9 @@ func _target_in_reach() -> bool:
 
 
 ## 起手：前摇 = 冷却 × attack_windup，这段放攻击动画
+
+
+## 起手：前摇 = 冷却 × attack_windup，这段放攻击动画
 func _begin_swing() -> void:
 	if def == null:
 		return
@@ -1402,6 +1682,9 @@ func _begin_swing() -> void:
 	state = RtsConst.State.ATTACK
 	if visual != null:
 		visual.play("attack", 1.0)
+
+
+## 出手：近战立刻结算，远程发投射物（伤害在落点）
 
 
 ## 出手：近战立刻结算，远程发投射物（伤害在落点）
@@ -1421,6 +1704,9 @@ func _release_attack() -> void:
 	var aim: Vector3 = target.global_position + Vector3.UP * RtsProjectile.AIM_HEIGHT
 	RtsProjectile.fire_from(self, def.projectile, aim, target,
 			def.projectile_speed, snap, faction)
+
+
+## 法师自动放技能：让战场"活"起来，前排扛住时后排真会丢火球
 
 
 ## 法师自动放技能：让战场"活"起来，前排扛住时后排真会丢火球
@@ -1448,6 +1734,9 @@ func _update_auto_cast(_dt: float) -> void:
 
 
 ## 施法前摇
+
+
+## 施法前摇
 func _update_cast(dt: float) -> void:
 	_cast_t -= dt
 	if _cast_t > 0.0:
@@ -1464,10 +1753,6 @@ func _update_cast(dt: float) -> void:
 	order = _cast_return_order
 	RtsSkills.release(self, id, pos, tgt)
 
-
-# ===========================================================================
-# 采集辅助
-# ===========================================================================
 
 ## 找最近的资源点（走 Game 的资源注册表）
 func _find_harvestable(kind: int) -> Node3D:
@@ -1508,6 +1793,9 @@ func _find_harvestable(kind: int) -> Node3D:
 
 
 ## 采集一次要多久（金 / 木 不同的 Cfg 值）
+
+
+## 采集一次要多久（金 / 木 不同的 Cfg 值）
 func _harvest_time() -> float:
 	var cfg: GameConfig = Cfg.game
 	match _carry_kind:
@@ -1515,6 +1803,9 @@ func _harvest_time() -> float:
 			return maxf(cfg.harvest_time_wood, 0.1)
 		_:
 			return maxf(cfg.harvest_time_gold, 0.1)
+
+
+## 采满一次 → 资源进背包，进入返回阶段
 
 
 ## 采满一次 → 资源进背包，进入返回阶段
@@ -1538,10 +1829,16 @@ func _finish_harvest() -> void:
 
 
 ## 采集产出倍率（只对 AI 生效）
+
+
+## 采集产出倍率（只对 AI 生效）
 func _gather_multiplier() -> float:
 	if faction == null or faction.is_player:
 		return 1.0
 	return Cfg.difficulty(Game.difficulty_index).gather_multiplier
+
+
+## 最近的回程点
 
 
 ## 最近的回程点
@@ -1562,6 +1859,9 @@ func _nearest_dropoff() -> Node3D:
 
 
 ## 只记账：把身上的东西入账（不碰采集状态机；采集与送资源共用）
+
+
+## 只记账：把身上的东西入账（不碰采集状态机；采集与送资源共用）
 func _deposit_carry() -> bool:
 	if _carry <= 0 or faction == null:
 		return false
@@ -1573,6 +1873,9 @@ func _deposit_carry() -> bool:
 	_carry = 0
 	_deposit_count += 1
 	return true
+
+
+## 卸货（采集状态机的一环）
 
 
 ## 卸货（采集状态机的一环）
@@ -1590,10 +1893,6 @@ func _deposit() -> void:
 	if _gather_node != null and is_instance_valid(_gather_node):
 		_go_to(_gather_node.global_position, true)
 
-
-# ===========================================================================
-# 动画
-# ===========================================================================
 
 func _update_anim() -> void:
 	if visual == null or def == null:
@@ -1615,3 +1914,105 @@ func _update_anim() -> void:
 			visual.play("cast", 1.0)
 		_:
 			visual.play("idle", 1.0)
+
+
+## 共享空间哈希：每帧重建一次（只收活着的单位与建筑）
+static func _shared_hash() -> SpatialHash:
+	var frame: int = Engine.get_process_frames()
+	if _sep_hash == null:
+		_sep_hash = SpatialHash.new(4.0)
+	if _sep_frame == frame:
+		return _sep_hash
+	_sep_frame = frame
+	var list: Array = []
+	for u in Game.all_units():
+		if u == null or not is_instance_valid(u):
+			continue
+		if not u is RtsUnit:
+			continue
+		if not u.is_alive():
+			continue
+		list.append(u)
+	_sep_hash.rebuild(list)
+	return _sep_hash
+
+
+## 单位分离：一重叠就互相推开，别挤成一坨
+
+
+# ===========================================================================
+# 移动辅助（HOUND 重写：扫掠 / 贴墙滑动 / 逐帧推出）
+# ===========================================================================
+
+## 站立判定用的有效半径（米）
+func _clear_radius() -> float:
+	return get_radius() * CLEAR_SAFETY
+
+
+## 这一帧"真正能走的方向"：前方向能站就走；不能就沿墙切线滑动（带方向记忆）。
+## 只做局部几何查询，不重算 A*；与寻路网格共用同一套 is_standable。
+func _steer(dir: Vector3, probe: float) -> Vector3:
+	var pf: GridPathfinder = _pathfinder()
+	if pf == null:
+		return dir
+	var r: float = _clear_radius()
+	var p: float = maxf(probe, PROBE_MIN)
+	var ahead: Vector3 = global_position + dir * p
+	if pf.is_standable(ahead, r):
+		return dir
+	# 先试上次滑动的方向（对称障碍前不会左右横跳），再试另一边
+	var first: int = 1 if _slide_side >= 0 else -1
+	for sgn in [first, -first]:
+		for angle in SLIDE_ANGLES:
+			var cand: Vector3 = dir.rotated(Vector3.UP, float(angle) * float(sgn))
+			var cp: Vector3 = global_position + cand * p
+			if pf.is_standable(cp, r) and pf.line_of_sight(global_position, cp, r):
+				_slide_side = sgn
+				return cand
+	return Vector3.ZERO
+
+
+## 被建筑/分离推挤塞进不可走格时：**逐帧**往最近可站立点推，绝不瞬移。
+## 只有连续 PUSHOUT_TIMEOUT 秒推不出去，才允许一次兜底吸附（计数必须为 0）。
+func _update_wall_pushout(dt: float) -> void:
+	if def == null or not is_mobile():
+		return
+	var pf: GridPathfinder = _pathfinder()
+	if pf == null:
+		return
+	var r: float = _clear_radius()
+	if pf.is_standable(global_position, r):
+		_pushout_t = 0.0
+		_pushout_has = false
+		return
+	_pushout_t += dt
+	_pushout_retarget -= dt
+	if not _pushout_has or _pushout_retarget <= 0.0:
+		_pushout_goal = pf.nearest_standable(global_position, r + GridPathfinder.GOAL_MARGIN)
+		_pushout_has = true
+		_pushout_retarget = PUSHOUT_RETARGET
+	var d: Vector3 = _pushout_goal - global_position
+	d.y = 0.0
+	if d.length() > 0.0001:
+		global_position += d.normalized() * minf(PUSHOUT_SPEED * dt, d.length())
+	dbg_push_frames += 1
+	if _pushout_t >= PUSHOUT_TIMEOUT:
+		# 连续多帧无解：允许一次兜底（日志可查；正式路径应为 0）
+		dbg_snap_fallbacks += 1
+		global_position = RtsWorld.snap_y(pf.nearest_standable(global_position,
+			r + GridPathfinder.GOAL_MARGIN))
+		_pushout_t = 0.0
+		_pushout_has = false
+		_need_repath = true
+
+
+## 自检/日志用：移动层计数（只读）
+func debug_move_stats() -> Dictionary:
+	return {
+		"slide_frames": dbg_slide_frames,
+		"blocked_frames": dbg_blocked_frames,
+		"push_frames": dbg_push_frames,
+		"repath_count": dbg_repath_count,
+		"crowd_settles": dbg_crowd_settles,
+		"snap_fallbacks": dbg_snap_fallbacks,
+	}

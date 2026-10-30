@@ -106,31 +106,69 @@ extends Resource
 # ---------------------------------------------------------------------------
 @export_group("地图")
 ## 可行走区域边长（米），地图是以原点为中心的正方形
-@export var map_size: float = 116.0
+@export var map_size: float = 200.0
 ## 随机种子（保证每次地形一致，方便测试）
 @export var map_seed: int = 20261017
 ## 地形起伏幅度（米）
-@export var terrain_amplitude: float = 1.6
+@export var terrain_amplitude: float = 2.8
 ## 地形细分数（每边的格子数）
-@export var terrain_resolution: int = 58
+@export var terrain_resolution: int = 112
 ## 玩家基地坐标
-@export var player_base_pos: Vector2 = Vector2(-36.0, 34.0)
+@export var player_base_pos: Vector2 = Vector2(-62.0, 58.0)
 ## 敌人基地坐标
-@export var enemy_base_pos: Vector2 = Vector2(36.0, -34.0)
-## 每个基地附近的金矿相对偏移
-@export var gold_mine_offset: Vector2 = Vector2(-7.0, -9.0)
-## 树林簇数量
-@export var tree_clusters: int = 9
+@export var enemy_base_pos: Vector2 = Vector2(62.0, -58.0)
+## 每个基地附近的金矿相对偏移（敌人侧取反，保证点对称）
+@export var gold_mine_offset: Vector2 = Vector2(-13.0, -17.0)
+## 树林簇数量（**成对**生成：每簇同时镜像一份，保证双方资源对等）
+@export var tree_clusters: int = 7
 ## 每簇树的半径范围
-@export var tree_cluster_radius_min: float = 4.0
-@export var tree_cluster_radius_max: float = 9.0
+@export var tree_cluster_radius_min: float = 5.0
+@export var tree_cluster_radius_max: float = 10.0
 ## 单簇树数量范围
-@export var tree_cluster_count_min: int = 7
-@export var tree_cluster_count_max: int = 16
+@export var tree_cluster_count_min: int = 8
+@export var tree_cluster_count_max: int = 14
 ## 岩石数量
-@export var rock_count: int = 26
-## 是否生成中央水潭
+@export var rock_count: int = 40
+## 是否生成中央水潭（本轮水潭放在峡谷底部）
 @export var has_pond: bool = true
+
+## --- 地形大特征（台地 / 峡谷 / 外圈山脊 / 压平） ---
+## 中央台地顶面高度（米）
+@export var map_mesa_height: float = 7.4
+## 中央台地半径（米）
+@export var map_mesa_radius: float = 24.0
+## 峡谷深度（米，负高差）
+@export var map_gorge_depth: float = 6.5
+## 峡谷宽度（米）
+@export var map_gorge_width: float = 12.0
+## 地图外圈山脊高度（米）
+@export var map_edge_height: float = 16.0
+## 基地压平半径（米，这个范围内完全平）
+@export var map_base_flat: float = 18.0
+## 地表草丛数量（MultiMesh 合批）
+@export var map_decor_grass: int = 0
+## 地表碎石数量（MultiMesh 合批，含路边碎石带）
+@export var map_decor_rubble: int = 0
+
+## --- 地表叙事（土路 / 边角装饰；纯视觉，不写寻路格） ---
+## 主路宽度（米，双方基地 → 关口 → 台地 → 对方基地）
+@export var map_road_width: float = 4.6
+## 采矿支路宽度（米，基地 → 门口金矿）
+@export var map_road_branch_width: float = 2.9
+## 峡谷绕行小径宽度（米）
+@export var map_road_trail_width: float = 2.2
+## 沿路撒碎石带的间距（米）
+@export var map_roadside_step: float = 3.2
+## 蘑菇/小花簇数量（林缘 + 沟底）
+@export var map_decor_mushroom: int = 0
+## 枯木数量（树林边缘）
+@export var map_decor_deadtree: int = 0
+## 每方营地道具数量（木箱/木桶/栅栏/篝火/柴堆）
+@export var map_decor_camp: int = 14
+## 断墙遗迹组数（每组 6 段，成对镜像）
+@export var map_decor_ruin_groups: int = 1
+## 每道岩脊上的碎石墙数量（关口两侧，纯视觉）
+@export var map_decor_gate_rocks: int = 22
 
 # ---------------------------------------------------------------------------
 # 开局
@@ -139,8 +177,10 @@ extends Resource
 ## 玩家开局建筑（id → 相对基地的偏移 Vector2）
 @export var player_buildings: Dictionary = {
 	&"townhall": Vector2(0.0, 0.0),
-	&"barracks": Vector2(9.0, 4.0),
-	&"blacksmith": Vector2(-1.5, 10.0),
+	# 三座新建筑体量比旧版大（大本营 9.4m 宽 / 13m 高），旧偏移 (9,4)/(-1.5,10)
+	# 会让兵营贴脸、铁匠铺挡在镜头与大门之间。左右各拉开 12m，三座都进画面。
+	&"barracks": Vector2(12.0, 2.0),
+	&"blacksmith": Vector2(-12.0, 4.0),
 }
 ## 玩家开局单位（id → 数量）
 @export var player_units: Dictionary = {
@@ -152,8 +192,8 @@ extends Resource
 ## 敌人开局建筑
 @export var enemy_buildings: Dictionary = {
 	&"townhall": Vector2(0.0, 0.0),
-	&"barracks": Vector2(-9.0, -4.0),
-	&"blacksmith": Vector2(1.5, -10.0),
+	&"barracks": Vector2(-12.0, -2.0),
+	&"blacksmith": Vector2(12.0, -4.0),
 }
 ## 敌人开局单位
 @export var enemy_units: Dictionary = {
@@ -161,7 +201,7 @@ extends Resource
 	&"footman": 2,
 }
 ## 出兵时单位围绕建筑散开的半径
-@export var rally_spread: float = 3.2
+@export var rally_spread: float = 4.2
 
 # ---------------------------------------------------------------------------
 # 界面

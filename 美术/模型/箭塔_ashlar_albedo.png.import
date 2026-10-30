@@ -2,14 +2,11 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://px8vqxwa1oat"
+uid="uid://dm4b8g7nqmvh3"
 path.s3tc="res://.godot/imported/箭塔_ashlar_albedo.png-193f94d1c1d0ab6ff84b386329e80665.s3tc.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc"],
 "vram_texture": true
-}
-generator_parameters={
-"md5": "39c20b844c094de21d3b1eaef40227c5"
 }
 
 [deps]

@@ -2,23 +2,21 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://b0grpbdgwdudh"
-path="res://.godot/imported/金矿_metal_albedo.png-dad5cd2572e55cbe3f917af5e77e4015.ctex"
+uid="uid://bea872avfm2gb"
+path.s3tc="res://.godot/imported/金矿_metal_albedo.png-dad5cd2572e55cbe3f917af5e77e4015.s3tc.ctex"
 metadata={
-"vram_texture": false
-}
-generator_parameters={
-"md5": "50408699e27a569c1431e1f62284c4de"
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://美术/模型/金矿_metal_albedo.png"
-dest_files=["res://.godot/imported/金矿_metal_albedo.png-dad5cd2572e55cbe3f917af5e77e4015.ctex"]
+dest_files=["res://.godot/imported/金矿_metal_albedo.png-dad5cd2572e55cbe3f917af5e77e4015.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
@@ -40,4 +38,4 @@ process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
-detect_3d/compress_to=1
+detect_3d/compress_to=0

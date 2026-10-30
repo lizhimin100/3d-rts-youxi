@@ -1,56 +1,58 @@
-[gd_scene load_steps=9 format=3 uid="uid://b1rtsmain0001"]
+[gd_scene format=3 uid="uid://b1rtsmain0001"]
 
-[ext_resource type="Script" path="res://代码/核心/主场景.gd" id="1_main"]
-[ext_resource type="Environment" path="res://美术/环境/战斗环境.tres" id="2_env"]
-[ext_resource type="Script" path="res://代码/核心/关卡.gd" id="3_level"]
-[ext_resource type="Script" path="res://代码/镜头/魔兽镜头.gd" id="4_cam"]
-[ext_resource type="Script" path="res://代码/操作/选择系统.gd" id="5_sel"]
-[ext_resource type="Script" path="res://代码/操作/指令系统.gd" id="6_cmd"]
-[ext_resource type="Script" path="res://代码/界面/HUD.gd" id="7_hud"]
-[ext_resource type="Script" path="res://代码/ai/简单AI.gd" id="8_ai"]
+[ext_resource type="Script" uid="uid://bdxcosdxeljep" path="res://代码/核心/主场景.gd" id="1_main"]
+[ext_resource type="Environment" uid="uid://c6pi44yllmdp" path="res://美术/环境/战斗环境.tres" id="2_env"]
+[ext_resource type="Script" uid="uid://dpuifrug4muuc" path="res://代码/核心/关卡.gd" id="3_level"]
+[ext_resource type="Script" uid="uid://dcecar7r0x430" path="res://代码/镜头/魔兽镜头.gd" id="4_cam"]
+[ext_resource type="Script" uid="uid://c11pd86hgv1oh" path="res://代码/操作/选择系统.gd" id="5_sel"]
+[ext_resource type="Script" uid="uid://dfl15rwhe07nr" path="res://代码/操作/指令系统.gd" id="6_cmd"]
+[ext_resource type="Script" uid="uid://d01gbay5v0twh" path="res://代码/界面/HUD.gd" id="7_hud"]
+[ext_resource type="Script" uid="uid://by1i3f10s0ipq" path="res://代码/ai/简单AI.gd" id="8_ai"]
+[ext_resource type="PackedScene" path="res://美术/特效/暗角.tscn" id="9_vig"]
 
-[node name="主场景" type="Node3D"]
+[node name="主场景" type="Node3D" unique_id=2108769075]
 script = ExtResource("1_main")
 
-[node name="环境" type="WorldEnvironment" parent="."]
+[node name="环境" type="WorldEnvironment" parent="." unique_id=1381655757]
 environment = ExtResource("2_env")
 
-[node name="主光" type="DirectionalLight3D" parent="."]
-rotation_degrees = Vector3(-46, -38, 0)
-light_color = Color(1, 0.93, 0.8, 1)
-light_energy = 2.2
+[node name="主光" type="DirectionalLight3D" parent="." unique_id=139099467]
+transform = Transform3D(0.4067366, 0.67889667, -0.6112812, 0, 0.66913056, 0.74314487, 0.9135455, -0.3022642, 0.2721599, 0, 0, 0)
+light_color = Color(1, 0.94, 0.83, 1)
+light_energy = 2.35
+light_angular_distance = 0.1
 shadow_enabled = true
-directional_shadow_mode = 1
-directional_shadow_max_distance = 90.0
-shadow_bias = 0.028
-shadow_normal_bias = 1.1
-shadow_opacity = 0.9
-light_angular_distance = 1.1
-shadow_blur = 1.8
+shadow_bias = 0.085
+shadow_normal_bias = 1.85
+shadow_opacity = 0.94
+shadow_blur = 0.42
 directional_shadow_blend_splits = true
 directional_shadow_fade_start = 0.85
+directional_shadow_max_distance = 80.0
 directional_shadow_pancake_size = 22.0
 
-[node name="补光" type="DirectionalLight3D" parent="."]
-rotation_degrees = Vector3(-24, 150, 0)
-light_color = Color(0.42, 0.56, 0.85, 1)
-light_energy = 0.35
-shadow_enabled = false
+[node name="补光" type="DirectionalLight3D" parent="." unique_id=350861646]
+transform = Transform3D(-0.46947157, -0.33075798, 0.8186547, 0, 0.92718387, 0.37460658, -0.88294756, 0.17586714, -0.43528646, 0, 0, 0)
+light_color = Color(0.46, 0.61, 0.95, 1)
+light_energy = 0.3
 
-[node name="关卡" type="Node3D" parent="."]
+[node name="关卡" type="Node3D" parent="." unique_id=1195277155]
 script = ExtResource("3_level")
 
-[node name="镜头" type="Node3D" parent="."]
+[node name="镜头" type="Node3D" parent="." unique_id=947967409]
 script = ExtResource("4_cam")
 
-[node name="选择系统" type="Node" parent="."]
+[node name="选择系统" type="Node" parent="." unique_id=1669093602]
 script = ExtResource("5_sel")
 
-[node name="指令系统" type="Node" parent="."]
+[node name="指令系统" type="Node" parent="." unique_id=1635094709]
 script = ExtResource("6_cmd")
 
-[node name="界面" type="CanvasLayer" parent="."]
+[node name="界面" type="CanvasLayer" parent="." unique_id=689765601]
 script = ExtResource("7_hud")
 
-[node name="AI" type="Node" parent="."]
+[node name="AI" type="Node" parent="." unique_id=1445982483]
 script = ExtResource("8_ai")
+
+[node name="暗角" parent="." unique_id=480294901 instance=ExtResource("9_vig")]
+layer = 0

@@ -2,14 +2,11 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bm6sdljxuxgmp"
+uid="uid://krj6vlvpi3md"
 path.s3tc="res://.godot/imported/农场_metal_normal.png-e9fc3781765941eae7b28ebd048457a4.s3tc.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc"],
 "vram_texture": true
-}
-generator_parameters={
-"md5": "d053a1e2536277812dc5e479a2d4961b"
 }
 
 [deps]

@@ -167,7 +167,7 @@ if ($Full) {
 # --- 6. 可选：实机截图 ---
 if ($Shot) {
     Write-Host "[6] 实机截图 ..." -ForegroundColor Cyan
-    if ([string]::IsNullOrWhiteSpace($Out)) { $Out = Join-Path $root '.probe\shot_auto.png' }
+    if ([string]::IsNullOrWhiteSpace($Out)) { $Out = Join-Path $env:TEMP 'rts_shot_auto.png' }
     $dir = Split-Path -Parent $Out
     if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
     if (Test-Path $Out) { Remove-Item $Out -Force }

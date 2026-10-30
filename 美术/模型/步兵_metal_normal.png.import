@@ -2,14 +2,11 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://c46vayafqppgm"
+uid="uid://cnkkrlykgtnt4"
 path.s3tc="res://.godot/imported/步兵_metal_normal.png-dafadcc837473c1bb8d5da06cd8c937b.s3tc.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc"],
 "vram_texture": true
-}
-generator_parameters={
-"md5": "d053a1e2536277812dc5e479a2d4961b"
 }
 
 [deps]

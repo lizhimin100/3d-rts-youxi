@@ -2,23 +2,21 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dbjqhqrfg44jn"
-path="res://.godot/imported/树_leaf_albedo.png-3733ae690db63e243912979feb0b897c.ctex"
+uid="uid://dw4tx432t654e"
+path.s3tc="res://.godot/imported/树_leaf_albedo.png-3733ae690db63e243912979feb0b897c.s3tc.ctex"
 metadata={
-"vram_texture": false
-}
-generator_parameters={
-"md5": "cfa1bb0c99487dea2ae1b9bc4e2a9171"
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://美术/模型/树_leaf_albedo.png"
-dest_files=["res://.godot/imported/树_leaf_albedo.png-3733ae690db63e243912979feb0b897c.ctex"]
+dest_files=["res://.godot/imported/树_leaf_albedo.png-3733ae690db63e243912979feb0b897c.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
@@ -40,4 +38,4 @@ process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
-detect_3d/compress_to=1
+detect_3d/compress_to=0

@@ -2,14 +2,11 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://d2onbk1ne02gq"
+uid="uid://crb8xj5rixdlw"
 path.s3tc="res://.godot/imported/农场_hay_albedo.png-ad0dc2f35e596d539201f760bcff01e1.s3tc.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc"],
 "vram_texture": true
-}
-generator_parameters={
-"md5": "10d448909b9d044fc6762c6d48a25e5e"
 }
 
 [deps]

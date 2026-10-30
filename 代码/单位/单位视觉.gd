@@ -8,25 +8,46 @@ extends Node3D
 ##
 ## 注意：美术资产可能还没到位 —— ArtKit 会自动退化成占位盒，这里不需要判空。
 
-## 命中闪白持续（秒）——任务书冻结 0.12s
-const FLASH_TIME: float = 0.12
+## 命中反馈时长（秒）。建筑比单位更短：整栋楼亮一下太久会显得迟钝。
+const FLASH_TIME_UNIT: float = 0.10
+const FLASH_TIME_BUILDING: float = 0.07
 ## 两次受伤动画之间的最小间隔（防止被集火时动画抖成抽搐）
 const HURT_ANIM_GAP: float = 0.3
-## 闪白颜色（纯白略透，叠在模型上"啪"一下）
-const FLASH_COLOR: Color = Color(1.0, 1.0, 1.0, 0.82)
+## 命中反馈色：**深暖橙，不是白**。
+## 以前用 (1,1,1,0.82) 的 unshaded 白整块盖上去 —— 材质细节、队伍色、金属高光
+## 全被洗掉，看起来像"变成石膏像"或"整片泛白"（老板原话）。
+## 现在只做两层：① 极短的低强度暖光脉冲（ADD，只抬亮不夺色）
+##              ② 0.12s 的方向性受击顿挫（Tween），像"被打得晃了一下"
+const FLASH_COLOR: Color = Color(1.0, 0.34, 0.13)
+## 叠加峰值（ADD 混合的 alpha）。单位 0.18 已经很克制；建筑**不用整面闪白**，
+## 改为墙根尘土 + 裂缝 + 轻微顿挫（见 建筑.gd 的 _damage_fx）。
+const FLASH_PEAK_UNIT: float = 0.18
+const FLASH_PEAK_BUILDING: float = 0.0
+## 受击顿挫距离 / 时长（米 / 秒）
+const HIT_NUDGE: float = 0.075
+const HIT_NUDGE_TIME: float = 0.12
 
 ## 模型根
 var _model: Node3D = null
+## 建筑抬升量（米）：资产包的"训练场/散水"平面在 z=0，和地形共面会 z-fighting
+## （现场图里的橙黑噪点就是它）。抬高 12cm + 下面垫一层石基，平面离开地形，闪烁根除。
+const BUILDING_LIFT := 0.06
 ## 程序动画器（可能为 null：美术没到位时）
 var _anim: Node = null
 ## 收集到的所有网格（闪白要挨个套 overlay）
 var _meshes: Array = []
-## 闪白计时
-var _flash_t: float = 0.0
+## 本次命中的时长 / 峰值（按单位或建筑分档，见 build）
+var _flash_dur: float = FLASH_TIME_UNIT
+var _flash_peak: float = FLASH_PEAK_UNIT
 ## 闪白材质（复用一份，别每次 new）
 var _flash_mat: StandardMaterial3D = null
 ## 被闪白覆盖前的原 overlay，恢复时用
 var _prev_overlay: Dictionary = {}
+## 暖光脉冲 / 受击顿挫：全部走 Tween，不自己做逐帧动画
+var _flash_tween: Tween = null
+var _nudge_tween: Tween = null
+## 顿挫的基准位置（模型的本地坐标）
+var _nudge_base: Vector3 = Vector3.ZERO
 ## 当前动画状态（去重用）
 var _anim_state: String = ""
 ## 受伤动画剩余时间
@@ -60,15 +81,84 @@ func build(def: UnitDef, team_color: Color) -> void:
 	_model = ArtKit.build_model(def.model_path, def.model_scale, fallback)
 	if _model != null:
 		add_child(_model)
+		if def.is_building():
+			# 只抬 6cm：资产包自带 0.55m 石台，6cm 足够离开地形又不显悬空；
+			# 不再加"黑色大石台"（实测比建筑还抢眼）。
+			_model.position.y = BUILDING_LIFT
 		ArtKit.apply_team_color(_model, team_color)
 		_anim = ArtKit.attach_anim(_model)
 		_collect_meshes(_model)
+		_add_ground_shadow(def)
+		_nudge_base = _model.position
 
 	_flash_mat = StandardMaterial3D.new()
 	_flash_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_flash_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	_flash_mat.albedo_color = FLASH_COLOR
+	# ADD 叠加：只是在原色上"加一点暖光"，不是覆盖一层不透明的白。
+	# 这是"泛白"和"被打了一下"的分水岭。
+	_flash_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	_flash_mat.albedo_color = Color(FLASH_COLOR.r, FLASH_COLOR.g, FLASH_COLOR.b, 0.0)
 	_flash_mat.no_depth_test = false
+	# 建筑分档：面大、颜色浅，同样的强度会刺眼得多
+	if def.kind == RtsConst.Kind.BUILDING:
+		_flash_dur = FLASH_TIME_BUILDING
+		_flash_peak = FLASH_PEAK_BUILDING
+	else:
+		_flash_dur = FLASH_TIME_UNIT
+		_flash_peak = FLASH_PEAK_UNIT
+
+
+## 接触阴影（Decal 贴地）。
+## 为什么必须加：建筑/单位脚下的地形是程序化低模，没有"落地暗角"，
+## 模型再精细也像剪下来贴在图上。Decal 沿 -Y 投影，把柔和暗斑压进地面，
+## 比在 Blender 里烘一张阴影贴图更吃实时地形高度，也不会随地形起伏悬空。
+const SHADOW_TEX := "res://美术/贴图/接触阴影.png"
+static var _shadow_texture: Texture2D = null
+
+func _add_ground_shadow(def: UnitDef) -> void:
+	if def == null:
+		return
+	if _shadow_texture == null and ResourceLoader.exists(SHADOW_TEX):
+		_shadow_texture = load(SHADOW_TEX) as Texture2D
+	if _shadow_texture == null:
+		return
+	var w: float = 1.2
+	var d: float = 1.2
+	var alpha: float = 0.62
+	if def.is_building():
+		w = float(maxi(def.footprint.x, 2)) * 1.72
+		d = float(maxi(def.footprint.y, 2)) * 1.72
+		alpha = 0.58
+	elif def.is_harvestable():
+		w = def.body_radius * 3.1
+		d = def.body_radius * 3.1
+		alpha = 0.42
+	else:
+		w = def.body_radius * 2.7
+		d = def.body_radius * 2.7
+		alpha = 0.52
+	# 用"贴地半透明面片"而不是 Decal：
+	# 地形是自定义 ShaderMaterial，Decal 投影不吃它的光照/材质路径（实测脚下不出现暗角）。
+	# 面片是 unshaded 的软阴影图，压在地面上 6cm，任何着色器都吃得下。
+	var quad := MeshInstance3D.new()
+	quad.name = "接触阴影"
+	var pm := PlaneMesh.new()
+	pm.size = Vector2(w, d)
+	quad.mesh = pm
+	var mat := StandardMaterial3D.new()
+	mat.albedo_texture = _shadow_texture
+	mat.albedo_color = Color(1.0, 1.0, 1.0, alpha)
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
+	mat.disable_receive_shadows = true
+	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+	quad.material_override = mat
+	quad.position = Vector3(0.0, 0.012 if def.is_building() else 0.06, 0.0)
+	quad.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	quad.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
+	add_child(quad)
 
 
 ## 递归收集网格（闪白用）
@@ -96,15 +186,18 @@ func play(state: String, speed_ratio: float = 1.0) -> void:
 	if state == _anim_state and state != "move":
 		return
 	_anim_state = state
-	ArtKit.set_anim(_anim, state, clampf(speed_ratio, 0.15, 2.0))
+	# 上限放宽到 3.0：walk 要按真实地速加速，4.6m/s 的步兵需要 ~2.3x 步频才不打滑
+	ArtKit.set_anim(_anim, state, clampf(speed_ratio, 0.15, 3.0))
 
 
-## 命中反馈：闪白 + 受伤动作（受伤动作限流，闪白每次都闪）
-func flash() -> void:
+## 命中反馈：暖光脉冲 + 方向性顿挫 + 受伤动作（受伤动作限流，脉冲每次都打）
+## from_pos 是攻击来源的世界坐标（可为 Vector3.ZERO：远程/脚本伤害没有方向）。
+func flash(from_pos: Vector3 = Vector3.ZERO) -> void:
 	_apply_flash()
+	_apply_hit_nudge(from_pos)
 	if _hurt_gap <= 0.0:
 		_hurt_gap = HURT_ANIM_GAP
-		_hurt_t = FLASH_TIME
+		_hurt_t = _flash_dur
 		if _anim != null and _anim_state != "death":
 			ArtKit.set_anim(_anim, "hurt", 1.0)
 
@@ -116,11 +209,14 @@ func play_death() -> void:
 	ArtKit.set_anim(_anim, "death", 1.0)
 
 
-## 套白
+## 打一发暖光脉冲（ADD 混合，见 build 里的材质参数）。
+## 建筑峰值 = 0：**不做整面墙泛白**，只靠尘土/裂缝/顿挫表达挨打。
 func _apply_flash() -> void:
-	if _flash_mat == null:
+	if _flash_mat == null or _flash_peak <= 0.001:
 		return
-	_flash_t = FLASH_TIME
+	if _flash_tween != null and _flash_tween.is_valid():
+		_flash_tween.kill()
+	_set_flash_alpha(_flash_peak)
 	for m in _meshes:
 		if m == null or not is_instance_valid(m):
 			continue
@@ -130,6 +226,51 @@ func _apply_flash() -> void:
 		if not _prev_overlay.has(mi):
 			_prev_overlay[mi] = mi.material_overlay
 		mi.material_overlay = _flash_mat
+	# Tween 把 ADD 层的 alpha 从峰值收到 0；比逐帧手写曲线更好调、也不会漏状态
+	_flash_tween = create_tween()
+	_flash_tween.tween_property(_flash_mat, "albedo_color:a", 0.0, _flash_dur) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	_flash_tween.tween_callback(_clear_flash)
+
+
+## 方向性受击顿挫：单位/建筑都只用 7.5cm、0.12s —— 是"晃一下"，不是"整栋跳"
+func _apply_hit_nudge(from_pos: Vector3) -> void:
+	if _model == null or not is_instance_valid(_model):
+		return
+	if _nudge_tween != null and _nudge_tween.is_valid():
+		_nudge_tween.kill()
+	_model.position = _nudge_base
+	var dir := Vector3.ZERO
+	if from_pos != Vector3.ZERO:
+		dir = global_position - from_pos
+		dir.y = 0.0
+	if dir.length_squared() < 0.0001:
+		dir = Vector3(cos(randf() * TAU), 0.0, sin(randf() * TAU))
+	dir = dir.normalized()
+	var off: Vector3 = dir * HIT_NUDGE
+	_nudge_tween = create_tween()
+	_nudge_tween.tween_property(_model, "position", _nudge_base + off, HIT_NUDGE_TIME * 0.38) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_nudge_tween.tween_property(_model, "position", _nudge_base, HIT_NUDGE_TIME * 0.62) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+
+
+func _set_flash_alpha(a: float) -> void:
+	var c := FLASH_COLOR
+	c.a = clampf(a, 0.0, 1.0)
+	_flash_mat.albedo_color = c
+
+
+## 自检：当前命中反馈是否"暖色 + 低强度 + 非白"（不依赖渲染）
+func flash_debug() -> Dictionary:
+	var c: Color = _flash_mat.albedo_color if _flash_mat != null else Color.WHITE
+	return {
+		"color": c,
+		"peak": _flash_peak,
+		"building_no_overlay": _flash_peak <= 0.001,
+		"blend_add": _flash_mat.blend_mode == BaseMaterial3D.BLEND_MODE_ADD if _flash_mat != null else false,
+		"white": c.r > 0.98 and c.g > 0.90 and c.b > 0.90,
+	}
 
 
 ## 撤白
@@ -157,8 +298,3 @@ func _process(delta: float) -> void:
 		if _hurt_t <= 0.0 and _anim_state != "death":
 			# 受伤动作播完：清掉状态缓存，让单位逻辑下一帧重新推一次正确动画
 			_anim_state = ""
-
-	if _flash_t > 0.0:
-		_flash_t -= delta
-		if _flash_t <= 0.0:
-			_clear_flash()

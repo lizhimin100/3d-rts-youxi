@@ -3,8 +3,8 @@
 一个用 **Godot 4.7 + 纯 GDScript** 从零做出来的 **3D 即时战略游戏**，玩法对标《魔兽争霸 3》：
 左键选中 / 拖框群选、右键移动与攻击、屏幕边缘平滑滚屏、采金伐木、造兵升级、摧毁敌人大本营取胜。
 
-**全部美术资产（模型、着色器、材质、环境、特效）都是在项目里用 Blender 程序化生成的**，
-零外部素材；卡通三渲二（cel shading）着色器全部写在 `美术/着色器/*.gdshader` 文件里。
+美术由**项目内 Blender 管线 + 铁誓军团资产包**组成：三座建筑用资产包近/中/远 LOD，
+单位/自然物用 v7 程序化模型；环境/UI/特效仍在项目内生成。
 
 ---
 
@@ -40,7 +40,7 @@
 | 攻击移动 | **F** 然后左键点地 |
 | 停止 / 原地警戒 | **X** / **H** |
 | 释放技能（法师火球） | **Q / 1** |
-| 建造菜单 | **B** |
+| 建造菜单 / 建筑转向 | **B** / 放置时 **R**（Shift+R 反向） |
 | 研究升级（铁匠铺） | 选中铁匠铺 → 命令卡「武器锻造 / 护甲锻造」 |
 | 镜头平移 | **方向键 / WASD / 鼠标怼到屏幕边缘** |
 | 镜头旋转 | **Q / E** 或 **按住鼠标中键拖拽** |
@@ -97,8 +97,7 @@ project.godot              工程配置（自动加载 Cfg / Game）
 场景/主场景.tscn            唯一场景，其余全部代码构建
 文档/
   作战条令.md              ★ 接口契约（坐标/模型层级/API/规范），改接口先改它
-  测试用例.md              ★ 严格测试用例（A~I 共 60+ 条）
-  测试报告.md              每次验收自动生成
+  美术规范.md              ★ 美术/材质/模型规范
 代码/
   配置/                    唯一数值来源（Cfg 单例 + GameConfig/UnitDef/DifficultyDef + 单位表）
   核心/                    常量、全局状态(Game)、主场景编排、关卡、地图生成、地形
@@ -108,12 +107,14 @@ project.godot              工程配置（自动加载 Cfg / Game）
   ai/                      简单 AI
   镜头/                    魔兽式 RTS 镜头
   操作/                    选择系统、指令系统、指针拾取
-  界面/                    HUD、小地图、命令卡
+  界面/                    HUD、小地图、命令卡、设计令牌(界面规格.gd)
   美术/                    美术接口门面 + 模型工厂 / 程序动画 / 特效生成
   数据/                    阵营（经济与军队容器）
+  地图核心/                MapDef / MapLoader / MapStore / 区域 / 波次（编辑器与游戏共用）
   测试/                    自检脚本与测试运行器
+addons/map_editor/          Godot EditorPlugin 地图编辑器（Theme 资源 / Tree 历史 / 建造网格）
 美术/
-  模型/*.glb               12 个程序化生成的模型（v3：带骨骼动画 + M_<zone> 材质协议）
+  模型/*.glb               建筑资产包近/中/远 + v7 单位/自然物（骨骼动画 + M_<zone> 材质协议）
   着色器/*.gdshader        三渲二主材质 / 描边 / 地形 / 水 / 特效 / 选中圈
   材质/*.tres              材质实例
   环境/战斗环境.tres       光照与后期
@@ -158,21 +159,41 @@ project.godot              工程配置（自动加载 Cfg / Game）
 # 寻路专项自检（15 条用例）
 & 'godot.exe' --headless --path . --script 代码/测试/寻路自检.gd
 
+# 寻路抖动 / 贴墙 / 人群专项（36 项；必须 fixed-fps 60）
+& 'godot.exe' --headless --fixed-fps 60 --path . --script 代码/测试/寻路抖动自检.gd
+
 # 升级 / 人口专项自检（铁匠铺研究闭环 + 训练队列不撑爆人口）
 & 'godot.exe' --headless --fixed-fps 60 --path . -- --research-test
+
+# 走姿 / 死亡骨架回归（脚掌不翻面、死亡头颈不分离）
+& 'godot.exe' --path . --resolution 1280x800 -- --walk-test
+
+# 建造 / 死亡 / 倒塌 / 废墟 / 受击反馈自检（30 项；不生成截图）
+& 'godot.exe' --headless --path . --script 代码/测试/表现自检.gd
+
+# 建造 / 界面自检
+& 'godot.exe' --headless --path . --script 代码/测试/建造自检.gd
+& 'godot.exe' --headless --path . --script 代码/测试/界面自检.gd
+
+# 地图编辑器：链路自检（Theme / Tree 历史 / 建筑网格 / 装饰边界）+ 数据自检
+& 'godot.exe' --headless --editor --path . -- --map-editor-selftest
+& 'godot.exe' --headless --path . -- --map-editor-test
 ```
+
+> 材质/UI/验证的长期经验统一写在 `.workbuddy/memory/MEMORY.md`；
+> 分轮截图、QC 图、旧报告已清理，不再保留。
 
 ---
 
 ## 七、美术复现
 
-所有模型都由 `工具/建模/*.py` 在 Blender 里程序化生成，不依赖任何外部素材：
+单位/自然物 v7 由 `工具/建模/*.py` 在 Blender 里生成；三座建筑来自 `美术/铁誓军团_资产包_v1`：
 
 ```powershell
 # 例：重建农民（Blender 5.x）
-& 'D:\blender\blender.exe' -b --factory-startup --python 工具\建模\build_农民.py
+& 'E:\tmp\blender_ok\blender.exe' -b --factory-startup --python 工具\建模\build_农民.py
 ```
 
 生成脚本会输出 GLB 到 Blender 侧的可写目录，再拷进 `美术/模型/` 即可。
-（注：本机 Blender 进程被低完整性沙箱限制，只能往 `D:\blender\` 树下写，
-所以脚本里把输出目录设在那里，这是环境约束不是设计选择。）
+（注：本机 Blender 必须用 `E:\tmp\blender_ok\blender.exe` 这份全量副本；
+D 盘原目录带低完整性标签，启动即零输出 exit=1。这是环境约束，不是设计选择。）

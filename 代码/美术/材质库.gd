@@ -29,6 +29,25 @@ static var outline_enabled: bool = false
 const DEFAULT_TEAM_STRENGTH := 0.9
 ## 卡通色阶数
 const RAMP_STEPS := 4
+## 贴图细节层增益：贴图均值 0.9，乘 1.06 拉回中性（不改变调色板明度语义）
+const DETAIL_GAIN := 1.06
+## 法线总强度倍率：Blender 侧法线节点 strength × 这个系数 = 引擎侧强度。
+## 1.15 是在 RTS 镜头高度（约 26m）下"看得见凹凸、又不炸成噪点"的实测值。
+const NORMAL_BOOST := 1.15
+
+# --- 角色（单位）与建筑分开的两档曝光 ---------------------------------------
+# 为什么必须分开：建筑是"大面积浅色石材"，按 0.94 压一档才对；
+# 单位是"深色军装 + 亮钢盔"，同一档压下去中间调全死，远看就是黑白剪影
+# （老板原话"多多少少都有毛病、材质各玩各的"）。
+# 角色提亮 + 减 AO + 加强边缘光，才有"深色但看得清层次"的读法。
+## 建筑 / 道具
+const GAIN_PROP := 0.94
+const AO_PROP := 0.55
+const RIM_PROP := 0.10
+## 角色（走 is_char 那条路时用）
+const GAIN_CHAR := 1.12
+const AO_CHAR := 0.30
+const RIM_CHAR := 0.20
 
 static var _materials: Dictionary = {}      # key -> ShaderMaterial
 static var _outline: ShaderMaterial = null
@@ -72,14 +91,27 @@ static func _get_shader() -> Shader:
 
 
 ## 取一个 zone 的材质（缓存共享）。team_color 只在 _team 区被用到。
+##
+## v5：把 GLB 里带出来的手绘贴图 + 法线接进卡通着色器。
+##   贴图**不进调色板语义** —— 它只是乘算在 base_color 上的细节层（均值 0.9），
+##   但不同贴图组合必须分开缓存，所以 key 里带贴图资源路径。
 static func material_for(zone: String, team_color: Color, is_team_zone: bool,
-		outline: bool = false) -> ShaderMaterial:
+		outline: bool = false, alb_tex: Texture2D = null, nrm_tex: Texture2D = null,
+		nrm_scale: float = 1.0, is_char: bool = false) -> ShaderMaterial:
 	var pal := palette()
 	var key := zone
 	if is_team_zone:
 		key += "#" + team_color.to_html(false)
 	if outline:
 		key += "|o"
+	# 角色档必须进 key：同一个 steel zone 在建筑和单位上是两份参数，
+	# 不进 key 会互相顶掉（后建的那份覆盖前面所有实例）。
+	if is_char:
+		key += "|char"
+	if alb_tex != null:
+		key += "|a:" + alb_tex.resource_path
+	if nrm_tex != null:
+		key += "|n:" + nrm_tex.resource_path + "@%.2f" % nrm_scale
 	if _materials.has(key):
 		return _materials[key]
 	var sh := _get_shader()
@@ -97,9 +129,33 @@ static func material_for(zone: String, team_color: Color, is_team_zone: bool,
 	m.set_shader_parameter("tint", team_color if is_team_zone else Color(1, 1, 1, 1))
 	m.set_shader_parameter("tint_strength", strength)
 	m.set_shader_parameter("ramp_steps", RAMP_STEPS)
-	m.set_shader_parameter("rim_strength", 0.10)
-	m.set_shader_parameter("emission_color", _emission_for(zone))
-	m.set_shader_parameter("emission_energy", _emission_energy(zone))
+	# 顶点 AO 只压到 55%：v7 单位的护肩/披风叠层更多，Cycles AO 烘出来比 v6 更深，
+	# 全强度会把钢甲压成黑块（walk-test 实拍）。留住轮廓阴影，但让固有色读得出来。
+	# 角色再放宽到 30% —— 单位的深色军装在 0.55 下就是纯黑剪影。
+	m.set_shader_parameter("ao_strength", AO_CHAR if is_char else AO_PROP)
+	m.set_shader_parameter("rim_strength", RIM_CHAR if is_char else RIM_PROP)
+	m.set_shader_parameter("albedo_gain", GAIN_CHAR if is_char else GAIN_PROP)
+	# 角色暗部环境补偿：
+	#   diffuse_toon 只有 4 阶，背光面直接掉到接近 0 —— 深色军装的腿/躯干在
+	#   RTS 俯视角度下就是一团纯黑（截图实拍：蓝披风+银甲+黑腿的剪影）。
+	#   这里给角色一份 **等于自身基色×16%** 的极弱自发光，等价于"补一点环境光"：
+	#   不发亮、不改色相，只把暗部从 0 拉到能读出布料褶皱。
+	#   建筑不这么做（大面积浅色石材+0.16 会整体发灰、发飘）。
+	var em_col: Color = _emission_for(zone)
+	var em_energy: float = _emission_energy(zone)
+	if is_char and em_energy <= 0.001:
+		em_col = base
+		em_energy = 0.16
+	m.set_shader_parameter("emission_color", em_col)
+	m.set_shader_parameter("emission_energy", em_energy)
+	if alb_tex != null:
+		m.set_shader_parameter("detail_albedo", alb_tex)
+		m.set_shader_parameter("detail_on", 1.0)
+		m.set_shader_parameter("detail_gain", DETAIL_GAIN)
+	if nrm_tex != null:
+		m.set_shader_parameter("detail_normal", nrm_tex)
+		m.set_shader_parameter("normal_on", 1.0)
+		m.set_shader_parameter("normal_strength", clampf(nrm_scale * NORMAL_BOOST, 0.0, 2.0))
 	if outline and outline_enabled:
 		var op := _outline_pass()
 		if op != null:
@@ -131,6 +187,9 @@ static func _emission_for(zone: String) -> Color:
 		return Color(0.35, 0.85, 1.0)
 	if zone == "ember":
 		return Color(1.0, 0.42, 0.10)
+	if zone == "ore":
+		# 金矿的金块：一点暖金自发光，矿洞在阴影里也"值钱"
+		return Color(1.0, 0.70, 0.20)
 	return Color(0, 0, 0)
 
 
@@ -139,11 +198,16 @@ static func _emission_energy(zone: String) -> float:
 		return 1.6
 	if zone == "ember":
 		return 2.0
+	if zone == "ore":
+		return 0.8
 	return 0.0
 
 
 ## 给整棵模型树换材质（幂等：已经换过的不会重复包一层）
-static func apply(root: Node3D, team_color: Color, outline: bool = false) -> int:
+## is_char = 带骨骼的角色：走另一档曝光（见 GAIN_CHAR / AO_CHAR），
+## 让深色军装也读得出层次，而不是一团黑白剪影。
+static func apply(root: Node3D, team_color: Color, outline: bool = false,
+		is_char: bool = false) -> int:
 	if root == null or not _enabled:
 		return 0
 	var sh := _get_shader()
@@ -165,7 +229,19 @@ static func apply(root: Node3D, team_color: Color, outline: bool = false) -> int
 			var zone := zone_of(nm)
 			if zone.is_empty():
 				continue          # 不是 M_ 协议里的材质：原样保留
-			var m := material_for(zone, team_color, is_team(nm), outline)
+			# v5：从 GLB 材质里取出手绘贴图 / 法线。glTF 导入后是 BaseMaterial3D，
+			# 贴图就挂在 albedo_texture / normal_texture 上；normal_scale 是 Blender
+			# 法线节点的强度，原样带进着色器，保证 Blender 里调好的凹凸在引擎里一致。
+			var alb: Texture2D = null
+			var nrm: Texture2D = null
+			var nsc := 1.0
+			var bm := src as BaseMaterial3D
+			if bm != null:
+				alb = bm.albedo_texture
+				if bm.normal_enabled:
+					nrm = bm.normal_texture
+					nsc = bm.normal_scale
+			var m := material_for(zone, team_color, is_team(nm), outline, alb, nrm, nsc, is_char)
 			if m == null:
 				continue
 			mi.set_surface_override_material(i, m)

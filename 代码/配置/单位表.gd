@@ -42,7 +42,9 @@ static func build_units() -> Dictionary:
 	peasant.acquire_range = 5.0
 	peasant.gold_cost = 75
 	peasant.wood_cost = 0
-	peasant.food_cost = 1
+	# 农民**不占人口**：副官/玩家可以放心爆农，人口永远留给军队。
+	# （农场只服务战斗单位，这条改动让"多造农民"不再是经济自杀。）
+	peasant.food_cost = 0
 	peasant.train_time = 11.0
 	peasant.height = 1.62
 	peasant.gather_rate = 3.0
@@ -152,6 +154,9 @@ static func build_units() -> Dictionary:
 	townhall.display_name = "大本营"
 	townhall.kind = RtsConst.Kind.BUILDING
 	townhall.model_path = MODEL_DIR + "大本营.glb"
+	# ★ 临时：回到"导入铁誓军团资产包之前"的三座建筑（旧 v6 模型，1 unit = 1 m，无缩放）。
+	#   资产包版本是 0.55 缩放 / 10×10 足迹 / 13.85 高；旧模型按原尺寸 8×8 / 9.0 高。
+	townhall.model_scale = 1.0
 	townhall.anim_set = RtsConst.AnimSet.CIVIC_BUILDING
 	townhall.max_hp = 2600.0
 	townhall.armor = 6.0
@@ -175,6 +180,8 @@ static func build_units() -> Dictionary:
 	barracks.display_name = "兵营"
 	barracks.kind = RtsConst.Kind.BUILDING
 	barracks.model_path = MODEL_DIR + "兵营.glb"
+	# ★ 临时：旧 v6 模型原尺寸，不缩放
+	barracks.model_scale = 1.0
 	barracks.anim_set = RtsConst.AnimSet.MILITARY_BUILDING
 	barracks.max_hp = 1500.0
 	barracks.armor = 5.0
@@ -199,6 +206,8 @@ static func build_units() -> Dictionary:
 	blacksmith.display_name = "铁匠铺"
 	blacksmith.kind = RtsConst.Kind.BUILDING
 	blacksmith.model_path = MODEL_DIR + "铁匠铺.glb"
+	# ★ 临时：旧 v6 模型原尺寸，不缩放
+	blacksmith.model_scale = 1.0
 	blacksmith.anim_set = RtsConst.AnimSet.MILITARY_BUILDING
 	blacksmith.max_hp = 1300.0
 	blacksmith.armor = 4.0

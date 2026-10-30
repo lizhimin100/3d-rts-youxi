@@ -55,6 +55,32 @@ var _last_mouse_pos: Vector2 = Vector2(-1.0, -1.0)
 ## 是否已经完成第一次定位（第一次 focus_on 直接瞬移，避免开局镜头从天边飞进来）
 var _placed: bool = false
 
+## 测试夹具覆写：正式游戏留 null，自动走 Cfg/Game 单例；
+## 地形自检里可以直接塞一个合成关卡/配置，不依赖 HOUND 的单位脚本。
+var level_override: RtsLevel = null
+var cfg_override: GameConfig = null
+
+# ===========================================================================
+# 地形高度保护（RIDGE 2026-10-18）
+# ===========================================================================
+## 相机最低离地高度（米）。必须大于近裁剪面（0.25m）+ 一点余量，
+## 崖边看下去时才不会把近平面切进岩石里。
+const TERRAIN_SAFE_HEIGHT: float = 1.5
+## 相机正下方 1.2m 邻域的最低离地高度（防止崖壁从镜头侧面切进来）
+const TERRAIN_NEAR_SAFE: float = 0.9
+## 视线采样从这里开始计算净空（太靠近注视点的一小段允许贴地，
+## 否则注视点在沟底时相机会被"要求瞬间抬到天上"）
+const TERRAIN_SWEEP_MIN_T: float = 0.18
+
+
+## 设置相机距离（QA / 过场用；正常游戏走滚轮）
+func set_distance(d: float) -> void:
+	var cfg: GameConfig = _config()
+	var lo: float = cfg.camera_distance_min if cfg != null else 8.0
+	var hi: float = cfg.camera_distance_max if cfg != null else 44.0
+	_dist = clampf(d, lo, hi)
+	_dist_target = _dist
+
 
 ## 记录鼠标状态。
 ##
@@ -92,15 +118,16 @@ func _ready() -> void:
 	# 显式声明当前相机：别的系统靠 get_viewport().get_camera_3d() 拿它做射线
 	cam.current = true
 
-	var cfg: GameConfig = Cfg.game
+	var cfg: GameConfig = _config()
 	if cfg != null:
 		_dist = cfg.camera_distance_default
 		_dist_target = _dist
-	Game.camera_shake.connect(_on_shake_requested)
+	if Game != null and Game.has_signal("camera_shake"):
+		Game.camera_shake.connect(_on_shake_requested)
 
 
 func _process(delta: float) -> void:
-	var cfg: GameConfig = Cfg.game
+	var cfg: GameConfig = _config()
 	if cfg == null or cam == null:
 		return
 	_cache_siblings()
@@ -125,6 +152,36 @@ func yaw_degrees() -> float:
 ## 当前注视点（贴地的世界坐标）
 func focus_point() -> Vector3:
 	return _focus
+
+
+## 相机离它正下方地形的净空（米）。自检/调试用；相机没建好返回 INF。
+func terrain_clearance() -> float:
+	if cam == null:
+		return INF
+	var lv := _level()
+	if lv == null:
+		return INF
+	return cam.global_position.y - lv.height_at(cam.global_position.x, cam.global_position.z)
+
+
+## 地形高度保护是否生效（净空 >= margin）
+func is_terrain_safe(margin: float = 0.6) -> bool:
+	return terrain_clearance() >= margin
+
+
+## 两点之间的视线是否在地形之上（按 1m 采样）。镜头/高地遮挡自检用。
+func line_of_sight_clear(a: Vector3, b: Vector3, clearance: float = 0.0) -> bool:
+	var lv := _level()
+	if lv == null:
+		return true
+	var dist: float = Vector2(b.x - a.x, b.z - a.z).length()
+	var n: int = clampi(int(ceil(dist)), 8, 96)
+	for i in range(n + 1):
+		var t: float = float(i) / float(n)
+		var p: Vector3 = a.lerp(b, t)
+		if p.y < lv.height_at(p.x, p.z) + clearance:
+			return false
+	return true
 
 
 # ===========================================================================
@@ -159,7 +216,7 @@ func screen_to_ground(screen_pos: Vector2) -> Vector3:
 func ray_ground(from: Vector3, dir: Vector3) -> Vector3:
 	if absf(dir.y) < 0.00001:
 		return Vector3(from.x, 0.0, from.z)
-	var lv := Game.level as RtsLevel
+	var lv := _level()
 	var y: float = 0.0
 	var p: Vector3 = Vector3(from.x, 0.0, from.z)
 	for _i in range(3):
@@ -209,8 +266,9 @@ func _handle_home(_cfg: GameConfig) -> void:
 		if n > 0:
 			focus_on(sum / float(n))
 			return
-	if Game.level is RtsLevel and Game.player_faction != null:
-		focus_on((Game.level as RtsLevel).base_center(Game.player_faction))
+	var lv := _level()
+	if lv != null and Game.player_faction != null:
+		focus_on(lv.base_center(Game.player_faction))
 
 
 ## 滚轮/键盘缩放
@@ -260,7 +318,7 @@ func _pan_axis() -> Vector2:
 	if vp != null and _edge_scroll_allowed() and not _mouse_over_ui():
 		var vsize: Vector2 = vp.get_visible_rect().size
 		var mp: Vector2 = vp.get_mouse_position()
-		var m: float = Cfg.game.camera_edge_margin
+		var m: float = _config().camera_edge_margin
 		# ★ 关键修正：窗口模式下 OS **不锁光标**，鼠标推到边缘时会跑到窗口外，
 		#   get_mouse_position() 会给出负数或超出画面的值。原实现要求"必须在窗口内"，
 		#   于是玩家把光标顶到边缘反而滚不动（被投诉成"没做完"）。
@@ -369,15 +427,81 @@ func _apply_pose(cfg: GameConfig, delta: float) -> void:
 	else:
 		_shake_amp = 0.0
 
+	# 地形高度保护：只在最后一步抬 y，不碰俯角/距离/缩放/平移参数。
+	# 抖动之后再做，免得受击时画面把镜头甩进崖壁。
+	pos = _protect_from_terrain(pos)
+
 	cam.global_position = pos
 	var look := _focus + Vector3.UP * (_dist * 0.06)
 	if pos.distance_squared_to(look) > 0.25:
 		cam.look_at(look, Vector3.UP)
 
 
+## 地形高度保护（只抬 y，不动 _dist/_yaw/_focus/手感参数）
+##
+## 两道保险：
+##   1) **相机自身**：y >= 正下方地形 + TERRAIN_SAFE_HEIGHT；再检查 1.2m 邻域，
+##      防止崖壁从镜头侧面切进近裁剪面；
+##   2) **视线**：从注视点向相机做 1m 级采样。如果中间有崖/脊高出视线，
+##      把相机沿 y 抬到"刚好越过"的高度。台地边缘/沟壑里看单位时，
+##      近平面就不会切进岩壁，也不会被自己脚下的高地挡死。
+func _protect_from_terrain(raw: Vector3) -> Vector3:
+	var lv := _level()
+	if lv == null:
+		return raw
+	var out: Vector3 = raw
+	var focus_y: float = _focus.y
+
+	# 1) 相机正下方
+	out.y = maxf(out.y, lv.height_at(out.x, out.z) + TERRAIN_SAFE_HEIGHT)
+
+	# 2) 视线采样（按水平距离 1m 一点，限制 12~56 点）
+	var horiz: float = Vector2(out.x - _focus.x, out.z - _focus.z).length()
+	var n: int = clampi(int(ceil(horiz)), 12, 56)
+	for i in range(1, n + 1):
+		var t: float = float(i) / float(n)
+		if t < TERRAIN_SWEEP_MIN_T:
+			continue
+		var sx: float = lerpf(_focus.x, out.x, t)
+		var sz: float = lerpf(_focus.z, out.z, t)
+		var gy: float = lv.height_at(sx, sz)
+		# 靠近注视点的净空从 0 逐渐加到满值，避免沟底注视点把镜头顶上天
+		var clear: float = TERRAIN_SAFE_HEIGHT * smoothstep(TERRAIN_SWEEP_MIN_T, 0.65, t)
+		var req: float = focus_y + (gy + clear - focus_y) / t
+		out.y = maxf(out.y, req)
+
+	# 3) 相机 1.2m 邻域：崖壁从侧面切进近平面也算穿模
+	for k in range(8):
+		var ang: float = TAU * float(k) / 8.0
+		var px: float = out.x + cos(ang) * 1.2
+		var pz: float = out.z + sin(ang) * 1.2
+		out.y = maxf(out.y, lv.height_at(px, pz) + TERRAIN_NEAR_SAFE)
+
+	return out
+
+
+## 配置：测试夹具优先，正式游戏走 Cfg 单例
+func _config() -> GameConfig:
+	if cfg_override != null:
+		return cfg_override
+	if Cfg == null:
+		return null
+	return Cfg.game
+
+
+## 当前关卡：测试夹具优先，正式游戏走 Game.level
+func _level() -> RtsLevel:
+	if level_override != null and is_instance_valid(level_override):
+		return level_override
+	if Game == null:
+		return null
+	var v: Variant = Game.get("level")
+	return v as RtsLevel
+
+
 ## 贴地高度（关卡没建好就是 0）
 func _ground_y(x: float, z: float) -> float:
-	var lv := Game.level as RtsLevel
+	var lv := _level()
 	if lv == null:
 		return 0.0
 	return lv.height_at(x, z)
@@ -391,10 +515,10 @@ func _ground_y(x: float, z: float) -> float:
 ##   （实测就是这样，虽然被远景底板挡住了，但会看到一大片死黑）。
 ##   所以边界要按当前缩放实时收窄：能看的地方 = 地图半宽 - 相机后撤距离。
 func _clamp_focus(p: Vector3) -> Vector3:
-	var cfg: GameConfig = Cfg.game
+	var cfg: GameConfig = _config()
 	var out := p
 	out.y = 0.0
-	var lv := Game.level as RtsLevel
+	var lv := _level()
 	if lv != null and cfg != null:
 		var pitch: float = deg_to_rad(cfg.camera_pitch_deg)
 		var reach: float = _dist * cos(pitch)          # 相机往后撤的水平距离
@@ -442,7 +566,7 @@ func _edge_scroll_allowed() -> bool:
 # ===========================================================================
 
 func _unhandled_input(event: InputEvent) -> void:
-	var cfg: GameConfig = Cfg.game
+	var cfg: GameConfig = _config()
 	if cfg == null:
 		return
 	if event is InputEventMouseButton:

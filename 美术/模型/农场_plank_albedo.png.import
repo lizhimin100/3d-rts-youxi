@@ -2,14 +2,11 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://6rgnf7umnle2"
+uid="uid://b3ufadwevddpf"
 path.s3tc="res://.godot/imported/农场_plank_albedo.png-2f990cab0e18f5633ec9b85b7f2b3fdd.s3tc.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc"],
 "vram_texture": true
-}
-generator_parameters={
-"md5": "b862b5e3e0cef3f1fc89eb9112a0df4b"
 }
 
 [deps]
