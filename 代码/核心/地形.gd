@@ -825,8 +825,10 @@ func _make_material() -> Material:
 const _DETAIL_TEX := {
 	"detail_grass": "res://美术/贴图/ground_grass_normal.png",
 	"detail_dirt": "res://美术/贴图/ground_dirt_normal.png",
-	"detail_grass_col": "res://美术/贴图/ground_grass_albedo.png",
-	"detail_dirt_col": "res://美术/贴图/ground_dirt_albedo.png",
+	# 2026-10-30：底色换成铁誓军团资产包 v1 的无缝底材（512² / 1 tile = 8m）。
+	# 法线仍用老的：包里的 atlas_*_n 是"双材质硬边过渡"图集的法线，不是可平铺法线。
+	"detail_grass_col": "res://美术/贴图/地形/草地.png",
+	"detail_dirt_col": "res://美术/贴图/地形/泥土.png",
 }
 
 

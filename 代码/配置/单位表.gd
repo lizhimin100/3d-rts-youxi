@@ -154,22 +154,22 @@ static func build_units() -> Dictionary:
 	townhall.display_name = "大本营"
 	townhall.kind = RtsConst.Kind.BUILDING
 	townhall.model_path = MODEL_DIR + "大本营.glb"
-	# ★ 临时：回到"导入铁誓军团资产包之前"的三座建筑（旧 v6 模型，1 unit = 1 m，无缩放）。
-	#   资产包版本是 0.55 缩放 / 10×10 足迹 / 13.85 高；旧模型按原尺寸 8×8 / 9.0 高。
-	townhall.model_scale = 1.0
+	# ★ 铁誓军团资产包 v1：模型按"1 unit = 1 m"做但整体大一号（实测 18.1 × 9.0 × 25.2），
+	#   统一 ×0.5 落到游戏尺度：高 12.6m、占地 9×5。
+	townhall.model_scale = 0.5
 	townhall.anim_set = RtsConst.AnimSet.CIVIC_BUILDING
 	townhall.max_hp = 2600.0
 	townhall.armor = 6.0
 	townhall.armor_type = RtsConst.ArmorType.FORTIFIED
-	townhall.footprint = Vector2i(8, 8)
-	townhall.height = 9.0
+	townhall.footprint = Vector2i(9, 5)
+	townhall.height = 12.6
 	townhall.is_dropoff = true
 	townhall.food_provided = 24
 	townhall.trains = [&"peasant"]
 	townhall.train_time = 11.0
 	townhall.sight_range = 15.0
-	townhall.body_radius = 4.2
-	townhall.selection_radius = 5.4
+	townhall.body_radius = 3.0
+	townhall.selection_radius = 5.6
 	out[&"townhall"] = townhall
 
 	# =======================================================================
@@ -180,19 +180,19 @@ static func build_units() -> Dictionary:
 	barracks.display_name = "兵营"
 	barracks.kind = RtsConst.Kind.BUILDING
 	barracks.model_path = MODEL_DIR + "兵营.glb"
-	# ★ 临时：旧 v6 模型原尺寸，不缩放
-	barracks.model_scale = 1.0
+	# 资产包实测 11.1 × 14.7 × 11.6 → ×0.5
+	barracks.model_scale = 0.5
 	barracks.anim_set = RtsConst.AnimSet.MILITARY_BUILDING
 	barracks.max_hp = 1500.0
 	barracks.armor = 5.0
 	barracks.armor_type = RtsConst.ArmorType.FORTIFIED
-	barracks.footprint = Vector2i(6, 6)
-	barracks.height = 4.6
+	barracks.footprint = Vector2i(6, 7)
+	barracks.height = 5.8
 	barracks.trains = [&"footman", &"archer", &"mage"]
 	barracks.train_time = 18.0
 	barracks.sight_range = 12.0
-	barracks.body_radius = 3.2
-	barracks.selection_radius = 4.2
+	barracks.body_radius = 2.8
+	barracks.selection_radius = 4.4
 	barracks.gold_cost = 180
 	barracks.wood_cost = 60
 	barracks.train_time = 30.0
@@ -206,18 +206,18 @@ static func build_units() -> Dictionary:
 	blacksmith.display_name = "铁匠铺"
 	blacksmith.kind = RtsConst.Kind.BUILDING
 	blacksmith.model_path = MODEL_DIR + "铁匠铺.glb"
-	# ★ 临时：旧 v6 模型原尺寸，不缩放
-	blacksmith.model_scale = 1.0
+	# 资产包实测 9.9 × 11.8 × 11.8 → ×0.5
+	blacksmith.model_scale = 0.5
 	blacksmith.anim_set = RtsConst.AnimSet.MILITARY_BUILDING
 	blacksmith.max_hp = 1300.0
 	blacksmith.armor = 4.0
 	blacksmith.armor_type = RtsConst.ArmorType.FORTIFIED
-	blacksmith.footprint = Vector2i(6, 6)
-	blacksmith.height = 4.2
+	blacksmith.footprint = Vector2i(5, 6)
+	blacksmith.height = 5.9
 	blacksmith.researches = [&"attack_up", &"armor_up"]
 	blacksmith.sight_range = 11.0
-	blacksmith.body_radius = 3.0
-	blacksmith.selection_radius = 4.0
+	blacksmith.body_radius = 2.6
+	blacksmith.selection_radius = 4.2
 	blacksmith.gold_cost = 140
 	blacksmith.wood_cost = 50
 	blacksmith.train_time = 25.0
@@ -231,16 +231,18 @@ static func build_units() -> Dictionary:
 	farm.display_name = "农场"
 	farm.kind = RtsConst.Kind.BUILDING
 	farm.model_path = MODEL_DIR + "农场.glb"
+	# 资产包实测 15.4 × 12.8 × 10.1 → ×0.5
+	farm.model_scale = 0.5
 	farm.anim_set = RtsConst.AnimSet.CIVIC_BUILDING
 	farm.max_hp = 750.0
 	farm.armor = 3.0
 	farm.armor_type = RtsConst.ArmorType.FORTIFIED
-	farm.footprint = Vector2i(4, 4)
-	farm.height = 2.6
+	farm.footprint = Vector2i(8, 7)
+	farm.height = 5.1
 	farm.food_provided = 8
 	farm.sight_range = 8.0
-	farm.body_radius = 2.0
-	farm.selection_radius = 2.8
+	farm.body_radius = 3.2
+	farm.selection_radius = 4.6
 	farm.gold_cost = 80
 	farm.wood_cost = 20
 	farm.train_time = 20.0
@@ -254,12 +256,14 @@ static func build_units() -> Dictionary:
 	tower.display_name = "箭塔"
 	tower.kind = RtsConst.Kind.BUILDING
 	tower.model_path = MODEL_DIR + "箭塔.glb"
+	# 资产包实测 7.1 × 7.0 × 17.5 → ×0.5
+	tower.model_scale = 0.5
 	tower.anim_set = RtsConst.AnimSet.TOWER
 	tower.max_hp = 1050.0
 	tower.armor = 6.0
 	tower.armor_type = RtsConst.ArmorType.FORTIFIED
 	tower.footprint = Vector2i(4, 4)
-	tower.height = 8.0
+	tower.height = 8.7
 	tower.attack_damage = 18.0
 	tower.attack_spread = 4.0
 	tower.attack_cooldown = 1.5
@@ -275,6 +279,52 @@ static func build_units() -> Dictionary:
 	tower.wood_cost = 60
 	tower.train_time = 25.0
 	out[&"tower"] = tower
+
+	# =======================================================================
+	# 铁誓资产包 v1 新增的四座（美术已就位，玩法待定）
+	# =======================================================================
+	# 这四座是本次资产包带来的**新建筑**。玩法数值先按"同类建筑的合理量级"给一套，
+	# 不接任何生产/研究（trains / researches 留空）—— 先把美术塞进游戏能看、能摆，
+	# 等设计定下来再往这里填功能，不用再动美术资源。
+	var 新增 := [
+		# id, 显示名, 模型基名, 实测(×0.5) 占地, 高, HP, 护甲, 花费金/木, anim_set
+		[&"watchtower", "哨塔", "哨塔", Vector2i(4, 4), 8.7, 800.0, 5.0, 90, 50],
+		[&"lumbercamp", "伐木场", "伐木场", Vector2i(9, 6), 3.9, 700.0, 3.0, 90, 0],
+		[&"sanctum", "神秘圣地", "神秘圣地", Vector2i(7, 8), 8.1, 900.0, 4.0, 140, 80],
+		[&"workshop", "蒸汽车坊", "蒸汽车坊", Vector2i(7, 8), 5.0, 1100.0, 6.0, 160, 120],
+	]
+	for row in 新增:
+		var b := UnitDef.new()
+		b.id = row[0]
+		b.display_name = String(row[1])
+		b.kind = RtsConst.Kind.BUILDING
+		b.model_path = MODEL_DIR + String(row[2]) + ".glb"
+		b.model_scale = 0.5
+		b.anim_set = RtsConst.AnimSet.MILITARY_BUILDING if row[0] == &"watchtower" \
+			else RtsConst.AnimSet.CIVIC_BUILDING
+		b.footprint = row[3]
+		b.height = float(row[4])
+		b.max_hp = float(row[5])
+		b.armor = float(row[6])
+		b.armor_type = RtsConst.ArmorType.FORTIFIED
+		b.gold_cost = int(row[7])
+		b.wood_cost = int(row[8])
+		b.train_time = 25.0
+		b.sight_range = 12.0 if row[0] == &"watchtower" else 9.0
+		b.body_radius = float(maxi(int((row[3] as Vector2i).x), int((row[3] as Vector2i).y))) * 0.5
+		b.selection_radius = b.body_radius * 1.5
+		# 哨塔和箭塔一样会放箭，但更便宜更弱
+		if row[0] == &"watchtower":
+			b.attack_damage = 12.0
+			b.attack_spread = 3.0
+			b.attack_cooldown = 1.6
+			b.attack_range = 11.0
+			b.attack_type = RtsConst.DamageType.PIERCE
+			b.projectile = RtsConst.Projectile.ARROW
+			b.projectile_speed = 26.0
+			b.acquire_range = 11.0
+			b.sight_range = 13.0
+		out[b.id] = b
 
 	# =======================================================================
 	# 金矿 / 树木 —— 可采集物
