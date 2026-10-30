@@ -47,6 +47,10 @@ class MapData:
 	var walkable: PackedByteArray = PackedByteArray()
 	## 树的落点（世界 XZ）
 	var trees: Array[Vector2] = []
+	## 每棵树的外观参数（与 trees 同序、同长度；空 = 由落点反推种子）。
+	## 元素：{"season": "春/夏/秋/冬"（可空）, "seed": int, "yaw": float}
+	## 程序化生成的地图不填这里（省内存），编辑器存的地图才会带着种子进来。
+	var trees_proc: Array = []
 	## 岩石落点（世界坐标 + 缩放）
 	var rocks: Array = []
 	## 金矿落点（世界 XZ）

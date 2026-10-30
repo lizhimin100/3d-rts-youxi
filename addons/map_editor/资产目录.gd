@@ -103,6 +103,38 @@ static func is_natural_id(id: String) -> bool:
 	return files.has(id + ".glb") or files.has(id + ".glb.import")
 
 
+## 程序化树？（tree / tree_春 / tree_夏 / tree_秋 / tree_冬）
+## 这批 id **不需要任何模型文件**：外观由 树库 按种子现场长。
+static func is_proc_tree(id: StringName) -> bool:
+	return String(id).begins_with("tree")
+
+
+## 取品种后缀："tree_秋" → "秋"；没后缀（混生树）→ 空串
+static func season_suffix(id: StringName) -> String:
+	var s := String(id)
+	for k in ["春", "夏", "秋", "冬"]:
+		if s.ends_with(k):
+			return k
+	return ""
+
+
+## ★ 程序化树"掷骰子"：摆一棵就把种子/品种/朝向/缩放一次定好，写进对象里。
+## 单独抽成纯函数（不碰会话）有两个原因：
+##   ① 无头自检能覆盖到它 —— add_object 需要编辑器会话，测不了；
+##   ② 以后要加"重掷这一棵"的菜单项，直接再调一次就行。
+static func roll_proc_tree(o: MapObject, type_id: StringName, rng: RandomNumberGenerator) -> void:
+	if o == null:
+		return
+	o.properties["seed"] = rng.randi()
+	var season: String = season_suffix(type_id)
+	if season.is_empty():
+		o.properties.erase("season")
+	else:
+		o.properties["season"] = season
+	o.rotation = rng.randf() * TAU
+	o.scale = rng.randf_range(0.88, 1.14)
+
+
 static func _scan_dir(dir: String, out: Array, seen: Dictionary) -> void:
 	var d := DirAccess.open(dir)
 	if d == null:

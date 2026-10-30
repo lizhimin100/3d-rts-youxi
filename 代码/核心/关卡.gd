@@ -895,10 +895,26 @@ func spawn_props() -> void:
 	for m in map_data.mines:
 		var p := snap_to_ground(Vector3(m.x, 0.0, m.y))
 		_spawn_harvestable(&"goldmine", p)
-	# 树
-	for t in map_data.trees:
+	# 树：位置 + 程序化外观参数（品种 / 种子 / 朝向）。
+	# 程序化地图没存种子时留空 —— 由 树库.proc_at(落点) 反推，同一棵每次进游戏都长一样。
+	#
+	# ★ 先把本图要用的树一次性生成好（4 品种 × 3 档 × 变体 全量只要 ~70ms），
+	#   否则"第一棵某品种的树"会在玩家镜头推进时现长，卡一帧。
+	TreeLibrary.prewarm(ProcTree.SEASON_ORDER, float(Cfg.unit(&"tree").height))
+	for i in map_data.trees.size():
+		var t: Vector2 = map_data.trees[i]
 		var p := snap_to_ground(Vector3(t.x, 0.0, t.y))
-		_spawn_harvestable(&"tree", p)
+		var proc: Dictionary = {}
+		if i < map_data.trees_proc.size():
+			proc = map_data.trees_proc[i]
+		# 品种由 id 决定：编辑器摆的是 tree_秋 就长秋树；程序化地图统一 tree（混生）。
+		var id := StringName(String(proc.get("id", "tree")))
+		_spawn_harvestable(id, p, proc)
+	# 每棵树 1 个 surface / 1 个材质（旧管线是 5 个材质 = 5 次 draw call）。
+	# 一行日志方便以后回归时看数量级：树 150 棵 ≈ 150 draw call，面数走三档 LOD。
+	var 池: Dictionary = TreeLibrary.stats()
+	print("[关卡] 树：%d 棵（程序化生成，网格池 %d 份，%s）" % [
+		map_data.trees.size(), int(池["网格份数"]), String(池["LOD"])])
 	# 岩石（纯装饰）：用 MultiMesh 合批。
 	# 原来 26 块 × 4 个子网格 = 104 个 MeshInstance（104 次 draw call），
 	# 现在每种子网格一份 MultiMesh，总共只要 4 次。
@@ -906,8 +922,8 @@ func spawn_props() -> void:
 
 
 ## 生成一个可采集物
-func _spawn_harvestable(id: StringName, pos: Vector3) -> Node3D:
-	var n: Node3D = Game.spawn_unit(null, id, pos, _props_root)
+func _spawn_harvestable(id: StringName, pos: Vector3, proc: Dictionary = {}) -> Node3D:
+	var n: Node3D = Game.spawn_unit(null, id, pos, _props_root, proc)
 	if n == null:
 		return null
 	if id == &"goldmine":
@@ -924,6 +940,9 @@ func _spawn_harvestable(id: StringName, pos: Vector3) -> Node3D:
 		glow.shadow_enabled = false
 		glow.add_to_group("矿灯")
 		n.add_child(glow)
+	elif proc.has("yaw"):
+		# 树：每棵转一个角度，一片林子才不会像复制粘贴
+		n.rotation.y = float(proc["yaw"])
 	# 树/矿不再关阴影：整片林子"没有落地影"是场景显得像贴纸的最大元凶。
 	# 140 棵树只在 95m 阴影范围内进 shadow pass，实测代价可接受（见性能自检）。
 	_cast_shadow(n, true)

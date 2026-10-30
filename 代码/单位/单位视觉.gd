@@ -63,7 +63,9 @@ var _built: bool = false
 # ===========================================================================
 
 ## 建模型 + 套队伍色 + 挂动画器。重复调用安全。
-func build(def: UnitDef, team_color: Color) -> void:
+## proc：程序化外观的参数（当前只有树用），空字典 = 走 GLB 老路。
+##   {"season": "春/夏/秋/冬"（可空 → 按种子定）, "seed": int, "yaw": float}
+func build(def: UnitDef, team_color: Color, proc: Dictionary = {}) -> void:
 	if _built or def == null:
 		return
 	_built = true
@@ -78,15 +80,22 @@ func build(def: UnitDef, team_color: Color) -> void:
 	else:
 		fallback = Vector3(def.body_radius * 2.0, def.height, def.body_radius * 2.0)
 
-	_model = ArtKit.build_model(def.model_path, def.model_scale, fallback)
+	# ★ 程序化树：不吃 glb、不套阵营色、不挂骨骼动画。
+	#   三档 LOD 直接由 树库 造好（每档一个 MeshInstance3D，靠 visibility_range 切）。
+	var 程序化树: bool = def.kind == RtsConst.Kind.HARVESTABLE and TreeLibrary.is_tree(def.id)
+	if 程序化树:
+		_model = TreeLibrary.build_visual(def, proc)
+	else:
+		_model = ArtKit.build_model(def.model_path, def.model_scale, fallback)
 	if _model != null:
 		add_child(_model)
 		if def.is_building():
 			# 只抬 6cm：资产包自带 0.55m 石台，6cm 足够离开地形又不显悬空；
 			# 不再加"黑色大石台"（实测比建筑还抢眼）。
 			_model.position.y = BUILDING_LIFT
-		ArtKit.apply_team_color(_model, team_color)
-		_anim = ArtKit.attach_anim(_model)
+		if not 程序化树:
+			ArtKit.apply_team_color(_model, team_color)
+			_anim = ArtKit.attach_anim(_model)
 		_collect_meshes(_model)
 		_add_ground_shadow(def)
 		_nudge_base = _model.position
@@ -114,6 +123,11 @@ func build(def: UnitDef, team_color: Color) -> void:
 ## 比在 Blender 里烘一张阴影贴图更吃实时地形高度，也不会随地形起伏悬空。
 const SHADOW_TEX := "res://美术/贴图/接触阴影.png"
 static var _shadow_texture: Texture2D = null
+## ★ 阴影贴片要**按尺寸共享**：以前每个单位 new 一份 PlaneMesh + StandardMaterial3D，
+##   单局 150 棵树 = 150 份材质 = 150 次独立批处理，纯浪费。
+##   同一类单位尺寸相同（树的 body_radius 都是 0.9），共享之后全场景只有 1~3 份。
+static var _shadow_mesh_cache: Dictionary = {}
+static var _shadow_mat_cache: Dictionary = {}
 
 func _add_ground_shadow(def: UnitDef) -> void:
 	if def == null:
@@ -142,18 +156,25 @@ func _add_ground_shadow(def: UnitDef) -> void:
 	# 面片是 unshaded 的软阴影图，压在地面上 6cm，任何着色器都吃得下。
 	var quad := MeshInstance3D.new()
 	quad.name = "接触阴影"
-	var pm := PlaneMesh.new()
-	pm.size = Vector2(w, d)
+	var key := "%.2f|%.2f|%.2f" % [w, d, alpha]
+	var pm: PlaneMesh = _shadow_mesh_cache.get(key, null) as PlaneMesh
+	if pm == null:
+		pm = PlaneMesh.new()
+		pm.size = Vector2(w, d)
+		_shadow_mesh_cache[key] = pm
 	quad.mesh = pm
-	var mat := StandardMaterial3D.new()
-	mat.albedo_texture = _shadow_texture
-	mat.albedo_color = Color(1.0, 1.0, 1.0, alpha)
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
-	mat.disable_receive_shadows = true
-	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+	var mat: StandardMaterial3D = _shadow_mat_cache.get(key, null) as StandardMaterial3D
+	if mat == null:
+		mat = StandardMaterial3D.new()
+		mat.albedo_texture = _shadow_texture
+		mat.albedo_color = Color(1.0, 1.0, 1.0, alpha)
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
+		mat.disable_receive_shadows = true
+		mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+		_shadow_mat_cache[key] = mat
 	quad.material_override = mat
 	quad.position = Vector3(0.0, 0.012 if def.is_building() else 0.06, 0.0)
 	quad.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF

@@ -41,7 +41,8 @@ static func object_block_radius(o: MapObject) -> float:
 		return 0.0
 	match int(o.category):
 		MapObject.Category.RESOURCE:
-			if o.type_id == &"tree":
+			# tree / tree_春 / tree_夏 / tree_秋 / tree_冬 都是"树"，占地一个口径
+			if String(o.type_id).begins_with("tree"):
 				return 1.05 * maxf(0.2, o.scale)
 			if o.type_id == &"goldmine":
 				return 2.6 * maxf(0.2, o.scale)
@@ -206,6 +207,7 @@ static func to_map_data(m: MapDef) -> MapGenerator.MapData:
 	d.heights = m.heightmap.duplicate()
 	d.walkable = build_walkable_mask(m)
 	d.trees = []
+	d.trees_proc = []
 	d.mines = []
 	d.rocks = []
 	# 只有"资源"类别进 MapData（树/金矿/其它资源点）。
@@ -215,8 +217,14 @@ static func to_map_data(m: MapDef) -> MapGenerator.MapData:
 		if o == null or int(o.category) != MapObject.Category.RESOURCE:
 			continue
 		var p := Vector2(o.position.x, o.position.z)
-		if o.type_id == &"tree":
+		if String(o.type_id).begins_with("tree"):
 			d.trees.append(p)
+			# ★ 每棵树的"长相"跟着对象走：品种(id 后缀) + 种子 + 朝向。
+			#   关卡.spawn_props 会按这份参数建树，所以编辑器里摆成什么样，
+			#   进游戏就是什么样（同一棵永远长一样）。
+			var proc: Dictionary = _proc_of(o)
+			proc["id"] = String(o.type_id)
+			d.trees_proc.append(proc)
 		elif o.type_id == &"goldmine":
 			d.mines.append(p)
 		else:
@@ -325,6 +333,17 @@ static func spawn_map_objects(m: MapDef, level: RtsLevel) -> void:
 				level.add_child(dn)
 			_:
 				pass
+
+
+## 资源类（树）的程序化外观参数。
+## 老地图没有 properties.seed（这个功能是后加的）→ 由落点反推，保证老地图也能长出多样的林子。
+static func _proc_of(o: MapObject) -> Dictionary:
+	var seed_val: int = int(o.properties.get("seed", -1))
+	var season: String = String(o.properties.get("season", ""))
+	if seed_val < 0:
+		var d: Dictionary = TreeLibrary.proc_at(o.position)
+		seed_val = int(d["seed"])
+	return {"season": season, "seed": seed_val, "yaw": float(o.rotation)}
 
 
 ## 造一个装饰节点（纯视觉）。找不到模型时返回 null（不吞警告，但也不崩）。

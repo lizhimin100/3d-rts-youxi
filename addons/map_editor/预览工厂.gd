@@ -26,6 +26,14 @@ static func build(o: MapObject) -> Node3D:
 		path = String(o.properties.get("model", ""))
 	var root := Node3D.new()
 	root.name = "预览_" + String(o.type_id)
+	# ★ 程序化树：没有 glb，直接按 (品种, 种子) 长一棵出来。
+	#   编辑器里看到的形状 = 进游戏后看到的形状（同一个种子、同一套生成器）。
+	if int(o.category) == MapObject.Category.RESOURCE and MapAssets.is_proc_tree(o.type_id):
+		var mi: MeshInstance3D = _proc_tree_preview(o)
+		if mi != null:
+			root.add_child(mi)
+			root.scale = Vector3.ONE * maxf(0.05, o.scale)
+			return root
 	var inst: Node3D = null
 	if not path.is_empty():
 		inst = _instance(path)
@@ -42,6 +50,37 @@ static func build(o: MapObject) -> Node3D:
 
 
 static var _自然脚本: Script = null
+static var _树库脚本: Script = null
+static var _单位表脚本: Script = null
+
+
+## 程序化树预览。
+## 注意：@tool 脚本里不要直接 `TreeLibrary.xxx` —— class_name 在编辑器首次加载时
+## 可能还没注册，会静默变成 null。统一 load() 脚本再 call 静态方法。
+static func _proc_tree_preview(o: MapObject) -> MeshInstance3D:
+	if _树库脚本 == null:
+		_树库脚本 = load("res://代码/美术/树库.gd") as Script
+	if _树库脚本 == null:
+		return null
+	var d: UnitDef = null
+	# 高度只跟 UnitDef 有关，别为了一个 height 去拉整个 MapLoader
+	# （MapLoader 依赖 Game 自动加载单例，在编辑器/无头脚本里可能是不可用的上下文）
+	if _单位表脚本 == null:
+		_单位表脚本 = load("res://代码/配置/单位表.gd") as Script
+	if _单位表脚本 != null:
+		var table: Dictionary = _单位表脚本.call("build_units")
+		d = table.get(o.type_id, null) as UnitDef
+	var h: float = d.height if d != null else 5.5
+	var seed_val: int = int(o.properties.get("seed", -1))
+	if seed_val < 0:
+		# 老地图 / 手摆的没有种子 → 由落点反推（和游戏内同一套规则）
+		var pd: Dictionary = _树库脚本.call("proc_at", o.position)
+		seed_val = int(pd.get("seed", 0))
+	var season: String = String(o.properties.get("season", ""))
+	if season.is_empty():
+		season = String(_树库脚本.call("season_of", String(o.type_id), seed_val))
+	var mi: MeshInstance3D = _树库脚本.call("build_preview", season, seed_val, h)
+	return mi
 
 
 ## 给预览件套材质。

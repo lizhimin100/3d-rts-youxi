@@ -62,6 +62,10 @@ var region_purpose: int = RegionDef.Purpose.ATTACK
 ## 默认 180°：模型正门在 -Z，镜头从南往北看，0° 会一直对着建筑屁股。
 var place_yaw: float = PI
 
+## 摆放随机（程序化树的种子/朝向/缩放）用。用固定种子的 RNG 而不是全局 randi()：
+## 同一个会话里连续摆树不会因为别处调用了 randi() 而"跳号"，调试时更好复现。
+var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
+
 # --- 选择 ---
 var selection: Array[MapObject] = []
 var selected_region: RegionDef = null
@@ -825,6 +829,11 @@ func add_object(type_id: StringName, category: int, world_pos: Vector3) -> MapOb
 		var info: Dictionary = _asset_info(type_id)
 		if info.has("model"):
 			obj.properties["model"] = String(info["model"])
+	elif category == MapObject.Category.RESOURCE and MapAssets.is_proc_tree(type_id):
+		# ★ 程序化树：摆一棵 = 掷一次骰子（种子 + 朝向 + 缩放）。
+		#   三样都写进 properties / transform，存进 .tres —— 之后每次打开都是同一棵。
+		MapAssets.roll_proc_tree(obj, type_id, _rng)
+		obj.position.y = def.height_at(pos.x, pos.z)
 	obj.category = category
 	def.objects.append(obj)
 	selection = [obj]

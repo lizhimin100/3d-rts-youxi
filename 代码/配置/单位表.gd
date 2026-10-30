@@ -295,11 +295,17 @@ static func build_units() -> Dictionary:
 	goldmine.sight_range = 6.0
 	out[&"goldmine"] = goldmine
 
+	# =======================================================================
+	# 树 —— **程序化生成**，不吃任何 glb 资产
+	# =======================================================================
+	# 为什么 model_path 留空：外观由 代码/美术/树库.gd（TreeLibrary）按"每棵树的种子"
+	# 现场长出来（骨架 + 三档 LOD + 球形法线），一棵树的顶点数据在池子里共享。
+	# 以后美术做真树，把 model_path 填回 "树.glb" 就能整体盖掉程序化树 —— 这是留的退路。
 	var tree := UnitDef.new()
 	tree.id = &"tree"
-	tree.display_name = "树木"
+	tree.display_name = "树（混生）"
 	tree.kind = RtsConst.Kind.HARVESTABLE
-	tree.model_path = MODEL_DIR + "树.glb"
+	tree.model_path = ""
 	tree.anim_set = RtsConst.AnimSet.TREE
 	tree.max_hp = 99999.0
 	tree.footprint = Vector2i(2, 2)
@@ -310,6 +316,17 @@ static func build_units() -> Dictionary:
 	tree.selection_radius = 1.4
 	tree.sight_range = 4.0
 	out[&"tree"] = tree
+
+	# --- 四季品种：id 后缀 = 品种，形状/叶色/叶量都不同 ---
+	# 装饰面板里看到的就是这四条：春·树 / 夏·树 / 秋·树 / 冬·树。
+	# 统计口径（血量/木材/占地/半径）和混生树完全一致，只有外观不同 —— 免得玩家为了
+	# 一棵好看的树去挑资源分布。
+	var 四季 := [["春", "春·树"], ["夏", "夏·树"], ["秋", "秋·树"], ["冬", "冬·树"]]
+	for pair in 四季:
+		var t: UnitDef = tree.duplicate(true) as UnitDef
+		t.id = StringName("tree_" + String(pair[0]))
+		t.display_name = String(pair[1])
+		out[t.id] = t
 
 	return out
 

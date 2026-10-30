@@ -250,8 +250,10 @@ func pay(faction: RtsFaction, unit_id: StringName) -> bool:
 # ===========================================================================
 
 ## 生成一个单位/建筑。parent 为空时挂到关卡节点。
+## proc：程序化外观参数（树用，{"season","seed","yaw"}），其它单位传空字典即可。
 ## 返回生成出来的节点（失败返回 null）。
-func spawn_unit(faction: RtsFaction, unit_id: StringName, pos: Vector3, parent: Node3D = null) -> Node3D:
+func spawn_unit(faction: RtsFaction, unit_id: StringName, pos: Vector3,
+		parent: Node3D = null, proc: Dictionary = {}) -> Node3D:
 	var d: UnitDef = Cfg.unit(unit_id)
 	if d == null:
 		push_warning("[游戏] 未知单位 id: %s" % unit_id)
@@ -272,7 +274,11 @@ func spawn_unit(faction: RtsFaction, unit_id: StringName, pos: Vector3, parent: 
 	node.name = "%s_%d" % [String(unit_id), Time.get_ticks_usec() % 100000]
 	node.position = pos
 	parent.add_child(node)
-	node.setup(faction, d)
+	# 只有可采集物认 proc（树的品种/种子）；建筑/单位走原来的两参数 setup
+	if node is RtsHarvestable:
+		(node as RtsHarvestable).setup(faction, d, proc)
+	else:
+		node.setup(faction, d)
 	register(node)
 	unit_spawned.emit(node)
 	return node

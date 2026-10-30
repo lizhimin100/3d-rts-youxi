@@ -22,6 +22,9 @@ var faction: RtsFaction = null
 
 ## 外观（复用 UnitVisual：建模型 + 挂动画）
 var visual: UnitVisual = null
+## 程序化外观参数（树用）：{"season", "seed", "yaw"}。
+## 存在节点上而不是塞回 UnitDef —— UnitDef 是全局共享的一整份表，见不得"每棵树不一样"。
+var proc: Dictionary = {}
 var _depleting: bool = false
 var _visual_built: bool = false
 
@@ -36,13 +39,17 @@ func _ready() -> void:
 
 
 ## 装配（Game.spawn_unit 在 add_child 之后调）
-func setup(p_faction: RtsFaction, p_def: UnitDef) -> void:
+## p_proc：程序化外观参数（树）。留空 = 由落点反推种子（程序化地图走这条）。
+func setup(p_faction: RtsFaction, p_def: UnitDef, p_proc: Dictionary = {}) -> void:
 	faction = p_faction
 	def = p_def
 	if def == null:
 		return
 	remaining = maxi(def.resource_amount, 1)
 	harvest_kind = def.harvest_kind
+	proc = p_proc.duplicate(true)
+	if proc.is_empty() and TreeLibrary.is_tree(def.id):
+		proc = TreeLibrary.proc_at(position)
 	_ensure_visual()
 
 
@@ -56,7 +63,7 @@ func _ensure_visual() -> void:
 	var cfg: GameConfig = Cfg.game
 	var col: Color = cfg.gold_color if harvest_kind == RtsConst.Harvest.GOLD \
 			else Color(0.45, 0.72, 0.36)
-	visual.build(def, col)
+	visual.build(def, col, proc)
 
 
 # ===========================================================================
