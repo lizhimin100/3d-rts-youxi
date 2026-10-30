@@ -1,0 +1,8 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="PackedScene" uid="uid://b1rtsmain0001" path="res://场景/主场景.tscn" id="1_main"]
+
+[node name="四季演示" type="Node3D"]
+
+[node name="主场景" parent="." instance=ExtResource("1_main")]
+demo_tree_mode = true

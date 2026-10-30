@@ -54,10 +54,16 @@ var _map_path: String = ""
 var _dump_mapdef: String = ""
 ## --demo-tree：直接进"树品种演示"小地图（春夏秋冬并排），用来肉眼看树的生成效果
 var _demo_tree: bool = false
+## 同一件事的**编辑器入口**：在编辑器里勾上这个勾，按 F6/F5 就进演示图。
+## 之所以要这个开关：命令行参数在编辑器里不好填，而"测试/四季演示.tscn"就是
+## 一个实例化了本场景、把这个勾打上的壳场景 —— 双击就能跑。
+@export var demo_tree_mode: bool = false
 
 
 func _ready() -> void:
 	_parse_cmdline()
+	if demo_tree_mode:
+		_demo_tree = true
 	_qa_apply_yaw.call_deferred()
 
 	# 1) 全局状态与阵营
