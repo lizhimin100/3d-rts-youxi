@@ -113,6 +113,33 @@ func _init() -> void:
 	# ---------- ⑨ 接线 ----------
 	_check_wiring(fails)
 
+	# ---------- ⑩ 其它自然物（岩石 / 草丛） ----------
+	print("[⑩ 自然物] 岩石 / 草丛（同一套池化 + 种子思路）")
+	for v in ProcProp.variants(ProcProp.KIND_ROCK):
+		var rm: ArrayMesh = ProcProp.mesh(ProcProp.KIND_ROCK, v)
+		var rv: PackedVector3Array = _verts(rm)
+		var bb: AABB = rm.get_aabb()
+		var rarr: Array = rm.surface_get_arrays(0)
+		var rns: PackedVector3Array = rarr[Mesh.ARRAY_NORMAL]
+		# 法线必须朝外（朝内 = 整块被背面剔除，只剩影子）
+		var outward := 0
+		for i in rns.size():
+			if rns[i].dot(rv[i].normalized()) > 0.0:
+				outward += 1
+		var rock_ok: bool = rm.get_surface_count() == 1 and _tris(rm) <= 200 \
+			and bb.size.y > 0.3 and bb.size.x > 1.0 \
+			and outward == rns.size()
+		print("            岩石%d：面数=%d AABB=%s 法线朝外=%d/%d → %s" % [
+			v, _tris(rm), str(bb.size), outward, rns.size(), "✓" if rock_ok else "✗"])
+		if not rock_ok:
+			fails.append("岩石变体%d" % v)
+	var gm: ArrayMesh = ProcProp.mesh(ProcProp.KIND_GRASS, 0)
+	var grass_ok: bool = gm.get_surface_count() == 1 and _tris(gm) > 0 and _tris(gm) <= 24
+	print("            草丛：面数=%d（3 张交叉卡片）→ %s" % [_tris(gm),
+		"✓" if grass_ok else "✗"])
+	if not grass_ok:
+		fails.append("草丛网格")
+
 	print("========== 结果：%s（%d 项不通过）==========" % [
 		"全部通过" if fails.is_empty() else "有失败项", fails.size()])
 	for f in fails:
@@ -155,15 +182,25 @@ func _check_wiring(fails: Array[String]) -> void:
 	if not suffix_ok:
 		fails.append("后缀解析")
 
-	# 无后缀的混生树：50 个种子应该至少覆盖 3 个品种（否则"混生"是假的）
-	var seen: Dictionary = {}
+	# 无后缀的野树：主场景现在只要夏季林（品种靠编辑器手摆）
+	var wild_ok: bool = true
 	for i in 50:
-		seen[TreeLibrary.season_of(&"tree", i * 7919)] = true
-	var mix_ok: bool = seen.size() >= 3
-	print("            混生树 50 个种子覆盖 %d 个品种 → %s" % [seen.size(),
-		"✓" if mix_ok else "✗"])
-	if not mix_ok:
-		fails.append("混生品种覆盖")
+		if TreeLibrary.season_of(&"tree", i * 7919) != TreeLibrary.WILD_SEASON:
+			wild_ok = false
+	print("            野树(tree) 一律长成「%s」→ %s" % [TreeLibrary.WILD_SEASON,
+		"✓" if wild_ok else "✗"])
+	if not wild_ok:
+		fails.append("野树品种不统一")
+
+	# 显式品种必须不被野树规则覆盖（编辑器仍然能摆四季）
+	var explicit_ok := true
+	for s in ProcTree.SEASON_ORDER:
+		if TreeLibrary.season_of(StringName("tree_" + s), 1) != s:
+			explicit_ok = false
+	print("            显式品种 tree_春/夏/秋/冬 不受野树规则影响 → %s" % [
+		"✓" if explicit_ok else "✗"])
+	if not explicit_ok:
+		fails.append("显式品种被覆盖")
 
 	# 变体号必须落在池子里
 	var var_ok := true

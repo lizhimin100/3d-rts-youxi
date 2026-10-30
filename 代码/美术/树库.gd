@@ -78,14 +78,22 @@ static func material() -> StandardMaterial3D:
 # 品种 / 变体
 # ===========================================================================
 
-## 从 type_id 的后缀判品种："tree_春" → "春"；"tree" 之类没后缀的按种子权重混生。
-## 权重偏"夏"：RTS 机位下深绿最耐看，春花和秋黄当点缀。
+## 无后缀的"野树"（程序化地图、基地树环用的都是这一个 id）默认长成哪一季。
+## 主场景现在只要**夏季林** —— 一片林子里春秋冬混着会显乱；季节留给"编辑器手摆"。
+## 想恢复混生，把它改成空串即可（season_of 里就走按种子加权那条路）。
+const WILD_SEASON := "夏"
+
+
+## 从 type_id 的后缀判品种："tree_春" → "春"；"tree" 之类没后缀的看 WILD_SEASON。
 static func season_of(type_id: String, seed_val: int) -> String:
 	var id := String(type_id)
 	for s in ProcTree.SEASON_ORDER:
 		if id.ends_with(s):
 			return s
-	# 无后缀：按种子决定（同一棵树永远同一个品种）
+	if not WILD_SEASON.is_empty():
+		return WILD_SEASON
+	# 混生模式：按种子决定（同一棵树永远同一个品种），权重偏"夏"。
+	# RTS 机位下深绿最耐看，春花和秋黄当点缀。
 	var r: float = float(abs(seed_val) % 1000) / 1000.0
 	if r < 0.30:
 		return "春"

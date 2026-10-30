@@ -898,9 +898,20 @@ func spawn_props() -> void:
 	# 树：位置 + 程序化外观参数（品种 / 种子 / 朝向）。
 	# 程序化地图没存种子时留空 —— 由 树库.proc_at(落点) 反推，同一棵每次进游戏都长一样。
 	#
-	# ★ 先把本图要用的树一次性生成好（4 品种 × 3 档 × 变体 全量只要 ~70ms），
-	#   否则"第一棵某品种的树"会在玩家镜头推进时现长，卡一帧。
-	TreeLibrary.prewarm(ProcTree.SEASON_ORDER, float(Cfg.unit(&"tree").height))
+	# ★ 先只预热"本图真的会用到的品种"：程序化地图只要夏季（树库.WILD_SEASON），
+	#   编辑器手摆的地图可能带着 tree_秋 这类显式品种，那就把它们都收进来。
+	#   一份网格 ~1ms，全量预热也就几十毫秒 —— 但能省就省，别为用不到的三季付费。
+	var 用到的品种: Array = []
+	for proc0 in map_data.trees_proc:
+		var s0: String = String((proc0 as Dictionary).get("season", ""))
+		if s0.is_empty():
+			s0 = String((proc0 as Dictionary).get("id", "tree"))
+		s0 = TreeLibrary.season_of(s0, 0)
+		if not 用到的品种.has(s0):
+			用到的品种.append(s0)
+	if 用到的品种.is_empty():
+		用到的品种 = [TreeLibrary.WILD_SEASON]
+	TreeLibrary.prewarm(用到的品种, float(Cfg.unit(&"tree").height))
 	for i in map_data.trees.size():
 		var t: Vector2 = map_data.trees[i]
 		var p := snap_to_ground(Vector3(t.x, 0.0, t.y))
@@ -1097,11 +1108,56 @@ func _add_banners(b: Node3D, faction: RtsFaction) -> void:
 		cloth.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.add_child(cloth)
 
-## 把岩石模型按"子网格"拆成若干 MultiMesh 批量绘制
+## 岩石：默认走**程序化岩石**（4 个变体共享网格，每块一个 MeshInstance3D，80 面/块）；
+## 把 PROC_ROCK 关掉就回到"拆 岩石.glb 的子网格做 MultiMesh"的老路。
+##
+## 为什么这里**不用 MultiMesh**（虽然岩石是纯装饰、天生适合合批）：
+##   MultiMesh 的实例色会覆盖/乘进顶点色，实测程序化岩石在合批下整块变黑（只剩影子）。
+##   岩石只有 ~26 块，26 次 draw call 换"顶点色正常、颜色正确"是划算的；
+##   真要合批，得改成用实例色承担颜色（放弃顶点 AO），那是另一套取舍，先不做。
+const PROC_ROCK := true
 
 func _build_rock_multimesh(rocks: Array) -> void:
 	if rocks.is_empty():
 		return
+	if PROC_ROCK and _build_rocks_proc(rocks):
+		return
+	_build_rock_multimesh_glb(rocks)
+
+
+func _build_rocks_proc(rocks: Array) -> bool:
+	var nb: int = ProcProp.variants(ProcProp.KIND_ROCK)
+	if nb <= 0:
+		return false
+	var mat: Material = ProcProp.rock_material()
+	var meshes: Array[ArrayMesh] = []
+	for i in nb:
+		var pm: ArrayMesh = ProcProp.mesh(ProcProp.KIND_ROCK, i)
+		if pm == null or pm.get_surface_count() == 0:
+			return false
+		meshes.append(pm)
+	for i in rocks.size():
+		var r: Dictionary = rocks[i]
+		var p2: Vector2 = r["pos"]
+		var pos := snap_to_ground(Vector3(p2.x, 0.0, p2.y))
+		var sc: float = float(r["scale"])
+		# 竖向再抖一点：同一块石头被拉高/压扁，读起来就不是同一块
+		var sy: float = sc * (0.86 + 0.28 * float(int(absf(p2.x * 13.0) + float(i) * 7.0) % 10) / 10.0)
+		var mi := MeshInstance3D.new()
+		mi.name = "岩石%d" % i
+		mi.mesh = meshes[i % nb]
+		mi.material_override = mat
+		mi.position = pos
+		mi.rotation.y = float(r["rot"])
+		mi.scale = Vector3(sc, sy, sc)
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		mi.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
+		_props_root.add_child(mi)
+	return true
+
+
+## 老路：把 岩石.glb 按子网格拆成若干 MultiMesh
+func _build_rock_multimesh_glb(rocks: Array) -> void:
 	var base: Node3D = ArtKit.build_model("res://美术/模型/岩石.glb", 1.0, Vector3(1.4, 1.1, 1.4))
 	if base == null:
 		return

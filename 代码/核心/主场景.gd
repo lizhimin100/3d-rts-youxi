@@ -52,6 +52,8 @@ var _qa_select_id: String = ""
 var _map_path: String = ""
 ## --dump-mapdef=<路径>：把当前程序化地图导出成 MapDef（验证"统一口径"用）
 var _dump_mapdef: String = ""
+## --demo-tree：直接进"树品种演示"小地图（春夏秋冬并排），用来肉眼看树的生成效果
+var _demo_tree: bool = false
 
 
 func _ready() -> void:
@@ -336,10 +338,19 @@ func _parse_cmdline() -> void:
 			_map_path = arg.substr(6)
 		elif arg.begins_with("--dump-mapdef="):
 			_dump_mapdef = arg.substr(14)
+		elif arg == "--demo-tree":
+			_demo_tree = true
 
 
 ## 读 --map= 指定的 MapDef（读不到就返回 null，走默认地图）
+## --demo-tree 优先：现场拼一张"四季并排"的演示图，不需要任何地图文件。
 func _load_map_arg() -> MapDef:
+	if _demo_tree:
+		var demo: Script = load("res://代码/测试/树品种演示.gd") as Script
+		if demo != null:
+			print("[主场景] 树品种演示模式（春夏秋冬并排）")
+			return demo.call("make_map", 5.0, true, 128) as MapDef
+		push_warning("[主场景] 读不到 代码/测试/树品种演示.gd，回退默认地图")
 	if _map_path.is_empty():
 		return null
 	var def: MapDef = MapStore.load_any(_map_path)

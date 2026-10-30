@@ -141,7 +141,13 @@ static func make_multimesh(kind: StringName, transforms: Array,
 	var k := _normalize(kind)
 	if transforms.is_empty():
 		return null
-	var mesh := batch_mesh(k)
+	# ★ 草丛改程序化：网格现生成（3 张交叉卡片），材质和树/岩石共用同一份。
+	#   顶点色只放"根暗尖亮"的明暗，绿色仍由调用方传的实例色染 ——
+	#   地表细节 那套染色管线一行没改。
+	var proc_mesh: ArrayMesh = null
+	if k == &"grass":
+		proc_mesh = ProcProp.mesh(ProcProp.KIND_GRASS, 0)
+	var mesh: Mesh = proc_mesh if proc_mesh != null else batch_mesh(k)
 	if mesh == null:
 		return null
 
@@ -162,7 +168,7 @@ static func make_multimesh(kind: StringName, transforms: Array,
 	var mmi := MultiMeshInstance3D.new()
 	mmi.name = "装饰_%s" % String(k)
 	mmi.multimesh = mm
-	mmi.material_override = _batch_material(k)
+	mmi.material_override = TreeLibrary.material() if proc_mesh != null else _batch_material(k)
 	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var dist: float = float(VIEW_DISTANCE.get(k, 0.0))
 	if dist > 0.0:

@@ -350,6 +350,19 @@ static func _proc_of(o: MapObject) -> Dictionary:
 static func build_doodad_node(o: MapObject) -> Node3D:
 	if o == null:
 		return null
+	# ★ 岩石走程序化：和游戏里 map_data.rocks 那条路用同一份网格 + 同一个材质，
+	#   编辑器摆出来什么样，进游戏就是什么样（以前编辑器里是 GLB 原样灰度）。
+	if String(o.type_id) == "岩石":
+		var nb: int = ProcProp.variants(ProcProp.KIND_ROCK)
+		if nb > 0:
+			var hv: int = absi(hash(Vector2(o.position.x, o.position.z)))
+			var mi := MeshInstance3D.new()
+			mi.name = "岩石"
+			mi.mesh = ProcProp.mesh(ProcProp.KIND_ROCK, hv % nb)
+			mi.material_override = ProcProp.rock_material()
+			mi.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+			return mi
 	var path: String = String(o.properties.get("model", ""))
 	if path.is_empty():
 		path = "res://美术/模型/v7_自然/%s.glb" % String(o.type_id)

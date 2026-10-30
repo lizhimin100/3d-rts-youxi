@@ -97,6 +97,8 @@ const CLUSTER_LEVEL := 2
 const ATLAS_SIZE := 256
 const UV_LEAF := Rect2(0.015, 0.515, 0.47, 0.47)
 const UV_OPAQUE := Vector2(0.75, 0.25)
+## 草丛的一小撮草叶（左上象限）。给 程序化自然物 的草丛用，和树共用同一张图、同一个材质。
+const UV_GRASS := Rect2(0.015, 0.015, 0.47, 0.47)
 
 static var _atlas: ImageTexture = null
 
@@ -168,6 +170,8 @@ static func atlas() -> ImageTexture:
 		Color(1.0, 1.0, 1.0, 1.0))
 	# —— 左下：一小枝树叶
 	_draw_leaf_cluster(img, Rect2i(0, ATLAS_SIZE / 2, ATLAS_SIZE / 2, ATLAS_SIZE / 2))
+	# —— 左上：一小撮草叶（程序化草丛用）
+	_draw_grass_tuft(img, Rect2i(0, 0, ATLAS_SIZE / 2, ATLAS_SIZE / 2))
 	_atlas = ImageTexture.create_from_image(img)
 	return _atlas
 
@@ -227,6 +231,42 @@ static func _draw_leaf_cluster(img: Image, rect: Rect2i) -> void:
 				continue
 			img.set_pixel(rect.position.x + px, rect.position.y + py,
 				Color(lum, lum, lum, 1.0))
+
+
+## 在 rect 里画"一小撮草叶"：7 根从底部中心散开的尖叶。
+## 用"点到线段距离 < 半宽"来判定，比逐像素求贝塞尔便宜，也够手游视距看。
+static func _draw_grass_tuft(img: Image, rect: Rect2i) -> void:
+	var W: float = float(rect.size.x)
+	var H: float = float(rect.size.y)
+	var blades: Array = []
+	var n := 7
+	for k in n:
+		var f: float = float(k) / float(n - 1)
+		# 从左到右铺开；中间的草叶最高，两侧矮一点
+		var base_x: float = 0.16 + 0.68 * f
+		var lean: float = (f - 0.5) * 0.42
+		var tip_x: float = base_x + lean
+		var tip_y: float = 0.10 + 0.22 * absf(f - 0.5) * 2.0
+		var half_w: float = 0.030 - 0.012 * absf(f - 0.5) * 2.0
+		blades.append({"a": Vector2(base_x, 0.99), "b": Vector2(tip_x, tip_y),
+			"w": half_w})
+	for py in rect.size.y:
+		for px in rect.size.x:
+			var p := Vector2((float(px) + 0.5) / W, (float(py) + 0.5) / H)
+			for bl in blades:
+				var a: Vector2 = bl["a"]
+				var b: Vector2 = bl["b"]
+				var ab: Vector2 = b - a
+				var t: float = clampf((p - a).dot(ab) / maxf(ab.length_squared(), 1e-6), 0.0, 1.0)
+				var d: float = p.distance_to(a + ab * t)
+				# 宽度从叶根到叶尖线性收到 15%
+				var w: float = float(bl["w"]) * lerpf(1.0, 0.15, t)
+				if d <= w:
+					# 叶根暗、叶尖亮，给一点层次
+					var lum: float = 0.62 + 0.38 * t
+					img.set_pixel(rect.position.x + px, rect.position.y + py,
+						Color(lum, lum, lum, 1.0))
+					break
 
 
 # ===========================================================================
