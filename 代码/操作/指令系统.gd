@@ -39,9 +39,10 @@ const TRAIN_QUEUE_MAX := 5
 var pending: int = Pending.NONE
 ## 等待建造的建筑 id
 var pending_build: StringName = &""
-## 等待建造的朝向（90° 档；R 键转）。
-## 默认 180°：模型正门在 -Z，镜头从南往北看；0° 会让玩家一直看建筑背面。
-var pending_yaw: float = PI
+## 等待建造的朝向：**不允许玩家自转**，全项目统一读 建筑网格.DEFAULT_YAW。
+## （默认 ±180°：模型正门在 -Z，镜头从南往北看；0° 会让玩家一直看建筑背面。）
+## 用户要求"别管是地图生成还是农民建造，都默认一个角度"，所以 R 键旋转已停用。
+var pending_yaw: float = 建筑网格.DEFAULT_YAW
 ## 等待施法的技能 id
 var pending_ability: StringName = &""
 ## 等待设置集结点的建筑（null = 用当前选中的建筑）
@@ -108,7 +109,7 @@ func request_cancel() -> void:
 	pending = Pending.NONE
 	pending_build = &""
 	pending_ability = &""
-	pending_yaw = PI
+	pending_yaw = 建筑网格.default_yaw()
 	_rally_building = null
 	_patrol_next = false
 	_free_ghost()
@@ -281,10 +282,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			request_cancel()
 			get_viewport().set_input_as_handled()
 		elif k.keycode == KEY_R and pending == Pending.BUILD:
-			# 建筑朝向只走 90° 档；Shift+R 反向。落工地时 order_build 会再吸一次。
-			pending_yaw = 建筑网格.snap_yaw(pending_yaw
-				+ (-PI * 0.5 if k.shift_pressed else PI * 0.5))
-			_toast("建造朝向：%d°" % int(round(rad_to_deg(pending_yaw))), _accent())
+			# 朝向统一之后不再允许旋转：提示一句，别让玩家以为按坏了
+			_toast("建筑朝向统一朝南，不支持旋转", _accent())
 			get_viewport().set_input_as_handled()
 
 

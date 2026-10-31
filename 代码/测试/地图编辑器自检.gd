@@ -197,11 +197,12 @@ func _test_splat_overlay() -> void:
 	ov.free()
 
 
-## 新建地图里的建筑必须落 1m 寻路格 + 90° 朝向（和游戏内建造共用 建筑网格）
+## 新建地图里的建筑必须落 1m 寻路格 + **全图同一个默认朝向**（和游戏内建造共用 建筑网格）
 func _test_new_map_building_grid() -> void:
 	var m: MapDef = MapLoader.new_map(160, 2, 20261024)
 	var bad_pos: int = 0
 	var bad_yaw: int = 0
+	var off_default: int = 0
 	var n: int = 0
 	for o in m.objects:
 		if o == null or int(o.category) != MapObject.Category.BUILDING:
@@ -214,11 +215,17 @@ func _test_new_map_building_grid() -> void:
 			bad_pos += 1
 		if not 建筑网格.yaw_is_snapped(o.rotation):
 			bad_yaw += 1
+		# 统一朝向：每一座都必须等于 建筑网格.DEFAULT_YAW（不是"各自都是 90° 档"就行）
+		if absf(angle_difference(o.rotation, 建筑网格.DEFAULT_YAW)) > 0.001:
+			off_default += 1
 	_ok(bad_pos == 0, "新建地图的建筑全部压在 1m 网格锚点上（%d 座，偏离 %d 座）"
 		% [n, bad_pos])
 	_ok(bad_yaw == 0, "新建地图的建筑朝向全部在 90° 档（%d 座，偏 %d 座）"
 		% [n, bad_yaw])
-	print("  · 建筑网格：%d 座建筑全部对齐（1m 格 + 90°）" % n)
+	_ok(off_default == 0, "新建地图有 %d 座建筑没朝默认角度（应全部 %.0f°）"
+		% [off_default, rad_to_deg(建筑网格.DEFAULT_YAW)])
+	print("  · 建筑网格：%d 座建筑全部对齐（1m 格 + 统一朝向 %.0f°）"
+		% [n, rad_to_deg(建筑网格.DEFAULT_YAW)])
 
 
 func _test_roundtrip_tres() -> void:

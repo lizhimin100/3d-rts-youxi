@@ -1052,8 +1052,11 @@ func _spawn_faction_start(cfg: GameConfig, faction: RtsFaction) -> void:
 	var buildings: Dictionary = layout["buildings"]
 	var units: Dictionary = layout["units"]
 	var forward2: Vector2 = _base_forward(center2)
-	# 模型正面是 -Z：yaw 使得 (-sin,-cos) == forward。
-	var yaw: float = atan2(-forward2.x, -forward2.y)
+	# ★ 建筑朝向**全图统一**：不再按"朝中心"算。
+	#   以前按 forward2 求出 yaw，四家基地各朝一个方向（±90°/±135°），俯视就是"歪的"。
+	#   现在统一读 建筑网格.DEFAULT_YAW，和农民建造、地图生成、编辑器放置完全一致。
+	#   注意：**位置布局**仍按 forward2 展开（营地还是朝中心摆），只有朝向被钉死。
+	var yaw: float = 建筑网格.snap_yaw(建筑网格.default_yaw())
 	# 局部坐标基：X = 右（forward 右手边），Z = 前
 	var right2 := Vector2(-forward2.y, forward2.x)
 

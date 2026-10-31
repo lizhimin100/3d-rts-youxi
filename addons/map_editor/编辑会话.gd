@@ -60,7 +60,8 @@ var region_shape: int = RegionDef.Shape.CIRCLE
 var region_purpose: int = RegionDef.Purpose.ATTACK
 ## 编辑器放置建筑时的朝向（90° 档；视口里按 R 旋转）。
 ## 默认 180°：模型正门在 -Z，镜头从南往北看，0° 会一直对着建筑屁股。
-var place_yaw: float = PI
+## 放置朝向：默认读 建筑网格 的唯一常量（和游戏内建造同一套口径）
+var place_yaw: float = GRID.DEFAULT_YAW
 
 ## 摆放随机（程序化树的种子/朝向/缩放）用。用固定种子的 RNG 而不是全局 randi()：
 ## 同一个会话里连续摆树不会因为别处调用了 randi() 而"跳号"，调试时更好复现。
@@ -127,7 +128,7 @@ func new_map(map_size: int, player_count: int, map_seed: int, blank: bool = fals
 	selected_region = null
 	selected_player_index = 0
 	selected_wave_index = 0
-	place_yaw = PI
+	place_yaw = GRID.DEFAULT_YAW
 	_normalize_buildings()
 	var flat: bool = bool(opts.get("flat", blank))
 	_emit_all("新建地图：%d×%d，%d 人，%s，%s，种子 %d" % [map_size, map_size, player_count,
@@ -148,7 +149,7 @@ func open_path(p: String) -> bool:
 	dirty = false
 	selection.clear()
 	selected_region = null
-	place_yaw = PI
+	place_yaw = GRID.DEFAULT_YAW
 	var fixed: int = _normalize_buildings()
 	MapStore.recent_add(path)
 	_emit_all("已打开 %s（%d×%d，对象 %d）%s" % [path.get_file(), def.size, def.size,

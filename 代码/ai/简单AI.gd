@@ -553,7 +553,7 @@ func _has_room(spot: Vector3, footprint: Vector2i) -> bool:
 ## 和开局那三座朝向对不上 —— 一眼就看得出是"两拨人摆的"。
 ## 而且玩家镜头永远从南往北看，朝内的房子在画面上全是后背。
 func _build_yaw_at(_spot: Vector3) -> float:
-	return 建筑网格.snap_yaw(PI)
+	return 建筑网格.snap_yaw(建筑网格.default_yaw())
 
 ## 挑一个能去盖房子的农民（优先闲着的，其次正在采集的）
 func _pick_builder() -> RtsUnit:

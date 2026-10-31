@@ -4067,7 +4067,7 @@ script = ExtResource("1_1nx3f")
 type_id = &"townhall"
 category = 1
 position = Vector3(44.5, 1.4, 44.5)
-rotation = 1.5707964
+rotation = -3.1415927
 owner = 0
 
 [sub_resource type="Resource" id="Resource_f4x5h"]
@@ -4075,7 +4075,7 @@ script = ExtResource("1_1nx3f")
 type_id = &"barracks"
 category = 1
 position = Vector3(41, 1.4, 31.5)
-rotation = 1.5707964
+rotation = -3.1415927
 owner = 0
 
 [sub_resource type="Resource" id="Resource_2msm2"]
@@ -4083,7 +4083,7 @@ script = ExtResource("1_1nx3f")
 type_id = &"blacksmith"
 category = 1
 position = Vector3(41.5, 1.4, 57)
-rotation = 1.5707964
+rotation = -3.1415927
 owner = 0
 
 [sub_resource type="Resource" id="Resource_hnawa"]
@@ -4091,7 +4091,7 @@ script = ExtResource("1_1nx3f")
 type_id = &"farm"
 category = 1
 position = Vector3(31, 1.4, 45.5)
-rotation = 1.5707964
+rotation = -3.1415927
 owner = 0
 
 [sub_resource type="Resource" id="Resource_iyyh3"]
@@ -4099,7 +4099,7 @@ script = ExtResource("1_1nx3f")
 type_id = &"watchtower"
 category = 1
 position = Vector3(30, 1.4, 29)
-rotation = 1.5707964
+rotation = -3.1415927
 owner = 0
 
 [sub_resource type="Resource" id="Resource_y6u6n"]
@@ -4203,7 +4203,7 @@ script = ExtResource("1_1nx3f")
 type_id = &"townhall"
 category = 1
 position = Vector3(-44.5, 1.4, 44.5)
-rotation = -1.5707964
+rotation = -3.1415927
 owner = 1
 
 [sub_resource type="Resource" id="Resource_3kdla"]
@@ -4211,7 +4211,7 @@ script = ExtResource("1_1nx3f")
 type_id = &"barracks"
 category = 1
 position = Vector3(-41, 1.4, 57.5)
-rotation = -1.5707964
+rotation = -3.1415927
 owner = 1
 
 [sub_resource type="Resource" id="Resource_qif2h"]
@@ -4219,7 +4219,7 @@ script = ExtResource("1_1nx3f")
 type_id = &"blacksmith"
 category = 1
 position = Vector3(-41.5, 1.3999993, 31)
-rotation = -1.5707964
+rotation = -3.1415927
 owner = 1
 
 [sub_resource type="Resource" id="Resource_s7q3e"]
@@ -4227,7 +4227,7 @@ script = ExtResource("1_1nx3f")
 type_id = &"farm"
 category = 1
 position = Vector3(-31, 1.4, 43.5)
-rotation = -1.5707964
+rotation = -3.1415927
 owner = 1
 
 [sub_resource type="Resource" id="Resource_abkdb"]
@@ -4235,7 +4235,7 @@ script = ExtResource("1_1nx3f")
 type_id = &"watchtower"
 category = 1
 position = Vector3(-30, 1.4, 60)
-rotation = -1.5707964
+rotation = -3.1415927
 owner = 1
 
 [sub_resource type="Resource" id="Resource_xdpsy"]
@@ -4339,7 +4339,7 @@ script = ExtResource("1_1nx3f")
 type_id = &"townhall"
 category = 1
 position = Vector3(-44.5, 1.4, -44.5)
-rotation = -1.5707964
+rotation = -3.1415927
 owner = 2
 
 [sub_resource type="Resource" id="Resource_c363x"]
@@ -4347,7 +4347,7 @@ script = ExtResource("1_1nx3f")
 type_id = &"barracks"
 category = 1
 position = Vector3(-41, 1.4, -57.5)
-rotation = -1.5707964
+rotation = -3.1415927
 owner = 2
 
 [sub_resource type="Resource" id="Resource_kvhjx"]
@@ -4355,7 +4355,7 @@ script = ExtResource("1_1nx3f")
 type_id = &"blacksmith"
 category = 1
 position = Vector3(-41.5, 1.4, -31)
-rotation = -1.5707964
+rotation = -3.1415927
 owner = 2
 
 [sub_resource type="Resource" id="Resource_kitor"]
@@ -4363,7 +4363,7 @@ script = ExtResource("1_1nx3f")
 type_id = &"farm"
 category = 1
 position = Vector3(-31, 1.3999996, -43.5)
-rotation = -1.5707964
+rotation = -3.1415927
 owner = 2
 
 [sub_resource type="Resource" id="Resource_8coo6"]
@@ -4371,7 +4371,7 @@ script = ExtResource("1_1nx3f")
 type_id = &"watchtower"
 category = 1
 position = Vector3(-30, 1.4, -60)
-rotation = -1.5707964
+rotation = -3.1415927
 owner = 2
 
 [sub_resource type="Resource" id="Resource_fro4x"]
@@ -4435,7 +4435,7 @@ script = ExtResource("1_1nx3f")
 type_id = &"townhall"
 category = 1
 position = Vector3(44.5, 1.4, -44.5)
-rotation = 1.5707964
+rotation = -3.1415927
 owner = 3
 
 [sub_resource type="Resource" id="Resource_cuh02"]
@@ -4443,7 +4443,7 @@ script = ExtResource("1_1nx3f")
 type_id = &"barracks"
 category = 1
 position = Vector3(41, 1.4, -31.5)
-rotation = 1.5707964
+rotation = -3.1415927
 owner = 3
 
 [sub_resource type="Resource" id="Resource_bmv48"]
@@ -4451,7 +4451,7 @@ script = ExtResource("1_1nx3f")
 type_id = &"blacksmith"
 category = 1
 position = Vector3(41.5, 1.4, -57)
-rotation = 1.5707964
+rotation = -3.1415927
 owner = 3
 
 [sub_resource type="Resource" id="Resource_cqfsa"]
@@ -4459,7 +4459,7 @@ script = ExtResource("1_1nx3f")
 type_id = &"farm"
 category = 1
 position = Vector3(31, 1.4, -45.5)
-rotation = 1.5707964
+rotation = -3.1415927
 owner = 3
 
 [sub_resource type="Resource" id="Resource_n3ubk"]
@@ -4467,7 +4467,7 @@ script = ExtResource("1_1nx3f")
 type_id = &"watchtower"
 category = 1
 position = Vector3(30, 1.3999928, -29)
-rotation = 1.5707964
+rotation = -3.1415927
 owner = 3
 
 [sub_resource type="Resource" id="Resource_sr8ed"]

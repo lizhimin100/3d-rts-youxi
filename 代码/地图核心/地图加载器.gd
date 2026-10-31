@@ -974,7 +974,7 @@ static func _build_base_layout(m: MapDef, slot: PlayerSlot, index: int) -> void:
 	#   以前按"朝地图中心"算，2 人图对角出生会得到 -45°/135°，snap 成 -90°/180°，
 	#   四家各朝一边，俯视看就是"一家斜一家正"，用户第一反应就是"朝向随机"。
 	#   固定 PI 之后四块营地长得一模一样，摆出来是板正的；布局仍按相对格位，不会变形。
-	var yaw: float = 建筑网格.snap_yaw(PI)
+	var yaw: float = 建筑网格.snap_yaw(建筑网格.default_yaw())
 	slot.start_yaw = yaw
 	var fwd := Vector2(-sin(yaw), -cos(yaw))     # 模型正面（朝镜头 / 南）
 	var right := Vector2(cos(yaw), -sin(yaw))
