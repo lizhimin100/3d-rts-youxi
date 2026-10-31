@@ -42,10 +42,10 @@ void fragment() {
 ## 但如果反过来画成"粗白框 + 12% 白底"，它又会压过营地、金矿、单位，成为最抢眼的东西
 ## （用户："梯形 UI 太大、太抢眼了"）。所以取中间值：**只有一圈细线 + 很淡的填充**，
 ## 找得到、但不抢戏。
-const VIEW_FILL := Color(0.90, 0.98, 1.0, 0.040)
-const VIEW_LINE := Color(0.90, 0.98, 1.0, 0.52)
+const VIEW_FILL := Color(0.90, 0.98, 1.0, 0.026)
+const VIEW_LINE := Color(0.90, 0.98, 1.0, 0.42)
 ## 取景框角标长度（像素）：只做"方向提示"，不做相框
-const VIEW_TICK := 4.0
+const VIEW_TICK := 3.0
 
 ## 世界边长（没关卡时从 Cfg 取）
 var world_size: float = 116.0
@@ -623,7 +623,7 @@ func _draw_view_box() -> void:
 		_thick_line_uv(poly[i], poly[j], 2.6, Color(0.02, 0.03, 0.05, 0.30))
 	for i2 in poly.size():
 		var j2: int = (i2 + 1) % poly.size()
-		_thick_line_uv(poly[i2], poly[j2], 1.2, VIEW_LINE)
+		_thick_line_uv(poly[i2], poly[j2], 1.0, VIEW_LINE)
 	# 3) 四角角标：4px 小折角，只当方向提示
 	var ctr := Vector2.ZERO
 	for c in poly:
