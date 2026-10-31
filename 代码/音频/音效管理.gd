@@ -45,15 +45,19 @@ const BUS_VOICE := "Voice"
 
 ## UI 总线的可听度补偿（见文件头"电平约定"）
 const UI_MAKEUP_DB := 6.0
-const BGM_DB := 0.0            # 音乐电平交给 Music 总线（-10 dB）
+const BGM_DB := 0.0            # 音乐电平交给 Music 总线（已降到 -14 dB）
 const VOICE_THROTTLE := 5.0    # 应答语音全局 5s 节流
 const DEATH_VOICE_THROTTLE := 8.0
 const COMBAT_HOLD := 25.0      # 最后一次交战后 25s 切回经营 BGM
 
-## BGM 素材（放在 音频/BGM/ 下，用 AudioStreamWAV.load_from_file 读源文件，不依赖 .import）
-## 和BGM = 开局/发育；战BGM = 打起来。切回经营的判定见 COMBAT_HOLD。
-const BGM_CALM := "BGM/和BGM"
-const BGM_BATTLE := "BGM/战BGM_90s"
+## BGM 素材：改用 音频/ 根目录下那对 48kHz、峰值 -4.5 / -3.6 dBFS 的"无缝循环"文件。
+## 老的 BGM/和BGM、BGM/战BGM_90s 是 40kHz、峰值 -1.4 dBFS 且循环有接缝 —— 又吵又硬。
+## 切歌 / 循环都走 _set_bgm 的双播放器 crossfade，不再硬切。
+const BGM_CALM := "bgm_经营"
+const BGM_BATTLE := "bgm_会战"
+## crossfade 时长与静音深度（切歌时一个淡入、一个淡出）
+const BGM_FADE_DUR := 1.2
+const BGM_FADE_DB := 40.0
 
 ## 口令 / 提示语音 id（= 音频/ 下的文件名；由 合成语音_v2.py 生成）
 const VOICE_FORWARD := "指令_前进"
@@ -107,7 +111,14 @@ static var _inst: Sfx = null
 
 var _pool2d: Array[AudioStreamPlayer] = []
 var _pool3d: Array[AudioStreamPlayer3D] = []
-var _bgm: AudioStreamPlayer = null
+var _bgm_a: AudioStreamPlayer = null    # 双播放器之一（交叉淡入淡出用）
+var _bgm_b: AudioStreamPlayer = null    # 双播放器之二
+var _bgm_cur: AudioStreamPlayer = null  # 当前可闻的那个
+var _bgm_in: AudioStreamPlayer = null   # 正在淡入的那个（crossfade 期间）
+var _bgm_out: AudioStreamPlayer = null  # 正在淡出的那个（crossfade 期间）
+var _bgm_fading: bool = false
+var _bgm_fade_t: float = 0.0
+var _music_limiter_added: bool = false
 var _cache: Dictionary = {}
 var _next2d: int = 0
 var _next3d: int = 0
@@ -175,9 +186,12 @@ static func set_bgm(id: String) -> void:
 
 ## 退出时释放所有音频流（否则引擎会报 "resources still in use at exit"）
 func _exit_tree() -> void:
-	if _bgm != null:
-		_bgm.stop()
-		_bgm.stream = null
+	if _bgm_a != null:
+		_bgm_a.stop()
+		_bgm_a.stream = null
+	if _bgm_b != null:
+		_bgm_b.stop()
+		_bgm_b.stream = null
 	for p in _pool2d:
 		if p != null:
 			p.stop()
@@ -207,10 +221,15 @@ func _setup() -> void:
 		p3.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
 		add_child(p3)
 		_pool3d.append(p3)
-	_bgm = AudioStreamPlayer.new()
-	_bgm.bus = BUS_MUSIC
-	_bgm.volume_db = BGM_DB
-	add_child(_bgm)
+	_bgm_a = AudioStreamPlayer.new()
+	_bgm_a.bus = BUS_MUSIC
+	_bgm_a.volume_db = BGM_DB - BGM_FADE_DB
+	add_child(_bgm_a)
+	_bgm_b = AudioStreamPlayer.new()
+	_bgm_b.bus = BUS_MUSIC
+	_bgm_b.volume_db = BGM_DB - BGM_FADE_DB
+	add_child(_bgm_b)
+	_bgm_cur = _bgm_a
 
 	# --- 接线：把全局信号全接上（不碰 单位.gd / 选择系统 / 指令系统）---
 	Game.selection_changed.connect(_on_selection)
@@ -238,7 +257,8 @@ func _setup_buses() -> void:
 	if AudioServer.bus_count > 0 and AudioServer.get_bus_index("Master") < 0:
 		AudioServer.set_bus_name(0, "Master")
 		AudioServer.set_bus_volume_db(0, 0.0)
-	_ensure_bus(BUS_MUSIC, -10.0)
+	_ensure_bus(BUS_MUSIC, -14.0)
+	_add_music_limiter()
 	_ensure_bus(BUS_SFX, -6.0)
 	_ensure_bus(BUS_UI, -16.0)
 	_ensure_bus(BUS_VOICE, -8.0)
@@ -267,7 +287,7 @@ func _ensure_bus(bus_name: String, db: float) -> void:
 ## 结算时 _on_over() 会 stop 并把 _bgm_id 清空，而 attach() 因为单例还在会直接返回，
 ## 结果是重开后一直没有经营 BGM，要等第一次交战才被 _mark_combat() 拉起来。
 func _resume_after_restart() -> void:
-	if _bgm == null or not is_inside_tree():
+	if _bgm_cur == null or not is_inside_tree():
 		return
 	if Game.phase != RtsConst.Phase.RUNNING:
 		return
@@ -275,8 +295,6 @@ func _resume_after_restart() -> void:
 	_last_wood = -1
 	_combat_until = 0.0
 	_bgm_id = ""
-	if _bgm.playing:
-		_bgm.stop()
 	_set_bgm(BGM_CALM)
 	print("[音效] 重开：BGM 复位 → %s" % BGM_CALM)
 
@@ -406,22 +424,61 @@ func _now() -> float:
 	return float(Time.get_ticks_msec()) / 1000.0
 
 
+## 切 BGM（crossfade 版）：永远在"当前可闻播放器"之外的那一个上起新曲，
+## 新曲从静音淡入、旧曲淡出，时长 BGM_FADE_DUR。两个播放器交替，绝不硬切。
 func _set_bgm(id: String) -> void:
 	var s := _stream(id)
-	if s == null or _bgm == null:
+	if s == null or _bgm_cur == null or _bgm_a == null or _bgm_b == null:
 		return
-	if _bgm.stream == s and _bgm.playing:
-		_bgm_id = id
+	# 已经在放了就跳过（避免重复起播造成的"咔哒"）
+	if _bgm_id == id and _bgm_cur.playing and not _bgm_fading:
 		return
 	if s is AudioStreamWAV:
 		var w := s as AudioStreamWAV
 		w.loop_mode = AudioStreamWAV.LOOP_FORWARD
 		w.loop_begin = 0
 		w.loop_end = int(round(w.get_length() * float(w.mix_rate)))
-	_bgm.stream = s
-	_bgm.volume_db = BGM_DB
+	var in_p: AudioStreamPlayer = _bgm_a if _bgm_cur != _bgm_a else _bgm_b
+	var out_p: AudioStreamPlayer = _bgm_cur
+	in_p.stream = s
+	in_p.volume_db = BGM_DB - BGM_FADE_DB
+	in_p.play()
+	_bgm_in = in_p
+	_bgm_out = out_p
 	_bgm_id = id
-	_bgm.play()
+	_bgm_fade_t = 0.0
+	_bgm_fading = true
+
+
+## 每帧推进 crossfade；t 从 0→1，in 从静音→BGM_DB，out 从 BGM_DB→静音，完成后停掉旧曲。
+func _drive_bgm_fade(delta: float) -> void:
+	if not _bgm_fading or _bgm_in == null or _bgm_out == null:
+		return
+	_bgm_fade_t += delta
+	var t := clampf(_bgm_fade_t / BGM_FADE_DUR, 0.0, 1.0)
+	_bgm_in.volume_db = lerp(BGM_DB - BGM_FADE_DB, BGM_DB, t)
+	_bgm_out.volume_db = lerp(BGM_DB, BGM_DB - BGM_FADE_DB, t)
+	if t >= 1.0:
+		_bgm_fading = false
+		_bgm_out.stop()
+		_bgm_out.stream = null
+		_bgm_cur = _bgm_in
+		_bgm_in = null
+		_bgm_out = null
+
+
+## Music 总线加一个软 Limiter，压住任何偶然峰值（降噪 / 不刺耳）。每会话只加一次。
+func _add_music_limiter() -> void:
+	if _music_limiter_added:
+		return
+	var idx := AudioServer.get_bus_index(BUS_MUSIC)
+	if idx < 0:
+		return
+	var lim := AudioEffectLimiter.new()
+	lim.threshold_db = -2.0
+	lim.ceiling_db = -4.0
+	AudioServer.add_bus_effect(idx, lim)
+	_music_limiter_added = true
 
 
 # ===========================================================================
@@ -570,8 +627,16 @@ func _on_order(_units: Array, order: int, target_pos: Vector3, _target: Node3D) 
 
 
 func _on_over(victory: bool) -> void:
-	if _bgm != null:
-		_bgm.stop()
+	_bgm_fading = false
+	if _bgm_a != null:
+		_bgm_a.stop()
+		_bgm_a.stream = null
+	if _bgm_b != null:
+		_bgm_b.stop()
+		_bgm_b.stream = null
+	_bgm_cur = _bgm_a
+	_bgm_in = null
+	_bgm_out = null
 	_bgm_id = ""
 	_play2d("结算_胜利" if victory else "结算_失败", 0.0, 0.0)
 
@@ -601,7 +666,8 @@ func _mark_combat() -> void:
 
 ## 停战 25s 自动回经营 BGM（胜负后不再起）+ 低血看门狗
 func _process(delta: float) -> void:
-	if _bgm != null and _bgm_id == BGM_BATTLE and Game.phase == RtsConst.Phase.RUNNING:
+	_drive_bgm_fade(delta)
+	if _bgm_id == BGM_BATTLE and Game.phase == RtsConst.Phase.RUNNING:
 		if _now() >= _combat_until:
 			_set_bgm(BGM_CALM)
 

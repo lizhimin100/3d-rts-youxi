@@ -306,17 +306,16 @@ func _resolve_aoe(pos: Vector3) -> void:
 	RtsCombat.deal_aoe(_attacker, pos, _aoe_radius, _aoe_damage, _aoe_type, _faction)
 	if _slow_time <= 0.0:
 		return
-	# 顺带减速：只对敌方**单位**生效（建筑没有移速概念）
-	var foe: RtsFaction = Game.enemy_of(_faction)
-	if foe == null:
-		return
+	# 顺带减速：只对敌方**单位**生效（建筑没有移速概念）。
+	# 多队图：对所有敌对阵营，**盟友不能被自己的火球减速**。
 	var r2: float = _aoe_radius * _aoe_radius
-	for u in foe.units:
-		if u == null or not is_instance_valid(u):
-			continue
-		if not u.is_alive():
-			continue
-		if u.global_position.distance_squared_to(pos) > r2:
-			continue
-		if u.has_method("apply_slow"):
-			u.call("apply_slow", _slow_ratio, _slow_time)
+	for foe in Game.enemies_of(_faction):
+		for u in foe.units:
+			if u == null or not is_instance_valid(u):
+				continue
+			if not u.is_alive():
+				continue
+			if u.global_position.distance_squared_to(pos) > r2:
+				continue
+			if u.has_method("apply_slow"):
+				u.call("apply_slow", _slow_ratio, _slow_time)

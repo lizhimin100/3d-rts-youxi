@@ -10,6 +10,11 @@ extends RefCounted
 ##
 ## 约定：本文件**不持有任何状态**，全是静态查询。
 
+## 单位/道具的贴地余量（米）
+const GROUND_LIFT: float = 0.03
+## 建筑底板的额外余量（米）
+const BUILD_LIFT: float = 0.03
+
 # ===========================================================================
 # 基础取用
 # ===========================================================================
@@ -27,22 +32,28 @@ static func has_level() -> bool:
 	return level() != null
 
 
-## 取地形高度（无地形时返回 0，即平地）
+## 物件离地的安全余量（米）。
+## 地形高度现在已经是"看得见的那张三角面"（见 地形.height_at），
+## 但脚/底座如果正好等于地形高度，两者就共面 —— 深度精度一抖就闪成一片
+## （玩家看到的"金矿/建筑/单位被地形穿模"多半就是这种共面）。抬高 3cm 就够了。
 static func height_at(x: float, z: float) -> float:
 	var lv: Node3D = level()
 	if lv != null and lv.has_method("height_at"):
-		return float(lv.call("height_at", x, z))
-	return 0.0
+		return float(lv.call("height_at", x, z)) + GROUND_LIFT
+	return GROUND_LIFT
 
 
-## 把世界坐标贴到地面（优先用关卡的 snap_to_ground，保证和地形算法完全一致）
+## 把世界坐标贴到地面（优先用关卡的 snap_to_ground，保证和地形算法完全一致）。
+## **建筑/道具专用**：比单位再高 BUILD_LIFT，因为建筑底面是一块大平板，
+## 和地形贴得越严越容易闪；抬高 3cm 在 30m 机位下看不出来。
 static func ground(pos: Vector3) -> Vector3:
 	var lv: Node3D = level()
 	if lv != null and lv.has_method("snap_to_ground"):
 		var out: Variant = lv.call("snap_to_ground", pos)
 		if out is Vector3:
-			return out
-	return Vector3(pos.x, height_at(pos.x, pos.z), pos.z)
+			var v: Vector3 = out
+			return Vector3(v.x, v.y + BUILD_LIFT, v.z)
+	return Vector3(pos.x, height_at(pos.x, pos.z) + BUILD_LIFT, pos.z)
 
 
 ## 只贴 y（最常用；比 ground 少一次 Variant 转换）
@@ -123,9 +134,8 @@ static func base_center(faction: RtsFaction) -> Vector3:
 		for b in faction.buildings:
 			if b != null and is_instance_valid(b):
 				return b.global_position
+	# 多队图没有"玩家/敌人各一个固定坐标"这回事：退回玩家基地坐标即可（只影响首帧）。
 	var p2: Vector2 = Cfg.game.player_base_pos
-	if faction != null and faction.index == RtsConst.Faction.ENEMY:
-		p2 = Cfg.game.enemy_base_pos
 	return Vector3(p2.x, height_at(p2.x, p2.y), p2.y)
 
 

@@ -94,6 +94,36 @@ class MapData:
 	## 生成统计与完整性检查结果
 	var stats: Dictionary = {}
 
+	# ------------------------------------------------------------------
+	# 竞技场（多队地图）专用字段
+	# ------------------------------------------------------------------
+	## 每个出生点的世界坐标（下标 = 阵营槽位 0..N-1）
+	var base_points: Array[Vector2] = []
+	## 出生平台半径（平台内**严格水平**，保证建筑占地高差 = 0）
+	var base_pad: float = 24.0
+	## 地块网格：边长 mat_cells 个 8m 格；mat_nodes 是 (mat_cells+1)² 个**格点**的 0/255
+	## （魔兽 3 口径：材质存在共享格点上，一格读它四个角）
+	var mat_cells: int = 0
+	var mat_nodes: PackedByteArray = PackedByteArray()
+	## 地块一格的边长（米）
+	var mat_tile: float = 8.0
+	## 是否要远景山脊（竞技场图关掉：那一圈灰锥在 224m 图上会贴在画面边上）
+	var far_ridges: bool = true
+
+	## 取某个世界点所在**格点**的材质（0=草 255=泥）。给装饰避让/自检用；
+	## 渲染侧走 shader（读四角做硬边过渡），这里只取最近的格点。
+	func mat_at(wx: float, wz: float) -> int:
+		if mat_nodes.is_empty() or mat_cells <= 0:
+			return 0
+		var n: int = mat_cells + 1
+		if mat_nodes.size() != n * n:
+			return 0
+		var half: float = size * 0.5
+		var step: float = size / float(mat_cells)
+		var i: int = clampi(int(round((wx + half) / step)), 0, n - 1)
+		var j: int = clampi(int(round((wz + half) / step)), 0, n - 1)
+		return int(mat_nodes[j * n + i])
+
 	## 装饰点总数（自检/性能看板用）
 	func decor_count() -> int:
 		var n: int = 0
@@ -918,15 +948,19 @@ static func _place_trees(data: MapData, cfg: GameConfig, rng: RandomNumberGenera
 					continue
 				if data.pond_radius > 0.0 and p.distance_to(data.pond_center) < data.pond_radius + 2.0:
 					continue
+				# 金矿周围留空：树冠直径 4~6m，长在矿口边上会从矿洞里穿出来
+				if _near_any(mines, p, 9.0):
+					continue
 				var too_close: bool = false
+				# 2.3 → 2.7：树冠现在更饱满（叶片更大更多），间距不拉开会互相插进对方的冠里
 				for t in out:
-					if p.distance_to(t) < 2.3:
+					if p.distance_to(t) < 2.7:
 						too_close = true
 						break
 				if too_close:
 					continue
 				out.append(p)
-	_place_edge_belt(data, cfg, rng, out)
+	_place_edge_belt(data, cfg, rng, out, mines)
 	return out
 
 
@@ -942,7 +976,8 @@ static func _place_trees(data: MapData, cfg: GameConfig, rng: RandomNumberGenera
 ##   · 林带深度 3~13m 由另一层噪声控制，深浅不一才不像刷子刷出来的；
 ##   · 与主路/矿/基地保持距离（避免挡路、也避免把金矿围死）。
 static func _place_edge_belt(data: MapData, cfg: GameConfig,
-		rng: RandomNumberGenerator, out: Array[Vector2]) -> void:
+		rng: RandomNumberGenerator, out: Array[Vector2],
+		mines: Array[Vector2] = []) -> void:
 	var half: float = data.size * 0.5
 	var gate := FastNoiseLite.new()
 	gate.seed = cfg.map_seed + 311
@@ -978,9 +1013,12 @@ static func _place_edge_belt(data: MapData, cfg: GameConfig,
 				continue
 			if p.distance_to(cfg.player_base_pos) < 20.0 or p.distance_to(cfg.enemy_base_pos) < 20.0:
 				continue
+			# 林带也要给金矿让路（以前只躲基地和主路，矿口会被树冠盖住）
+			if _near_any(mines, p, 8.0):
+				continue
 			var too_close: bool = false
 			for t in out:
-				if p.distance_to(t) < 2.6:
+				if p.distance_to(t) < 2.7:
 					too_close = true
 					break
 			if too_close:
@@ -1018,10 +1056,17 @@ static func _tree_site_ok(data: MapData, cfg: GameConfig, p: Vector2,
 	return _terrain_slope(data, p) < 0.35
 
 
-## 岩石：散落装饰 + 小阻挡，避开基地/矿/主通道
+## 岩石：散落装饰 + 小阻挡，避开基地/矿/主通道/树/别的石头。
+##
+## 2026-10-31：**每块石头的外观由生成期就定好**（变体 / 三轴缩放 / 倾斜 / 下沉），
+## 不再让关卡那边拿 `i % 4` 和一条正弦公式凑 —— 那套凑法有两个毛病：
+##   ① 变体按索引循环，一排石头必然 1-2-3-4-1-2-3-4 地重复；
+##   ② 只有旋转和统一缩放，没有倾斜和下沉，看着像"摆在地上的模型"。
+## 现在全部出自同一个 RandomNumberGenerator（种子 = 地图种子），所以确定性可复现。
 static func _place_rocks(data: MapData, cfg: GameConfig, rng: RandomNumberGenerator,
 		mines: Array[Vector2]) -> void:
 	var half: float = data.size * 0.5
+	var variants: int = ProcProp.ROCK_VARIANTS
 	for ri in range(cfg.rock_count):
 		for tries in range(30):
 			var p := Vector2(rng.randf_range(-half + 12.0, half - 12.0),
@@ -1030,12 +1075,12 @@ static func _place_rocks(data: MapData, cfg: GameConfig, rng: RandomNumberGenera
 				continue
 			if p.distance_to(cfg.enemy_base_pos) < 26.0:
 				continue
-			var near_mine: bool = false
-			for m in mines:
-				if p.distance_to(m) < 9.0:
-					near_mine = true
-					break
-			if near_mine:
+			if _near_any(mines, p, 9.0):
+				continue
+			# 树和石头会互相插进去（石头的顶端会从树冠里穿出来），留 2.8m
+			if _near_any(data.trees, p, 2.8):
+				continue
+			if _near_rocks(data.rocks, p, 2.6):
 				continue
 			if data.pond_radius > 0.0 and p.distance_to(data.pond_center) < data.pond_radius + 3.0:
 				continue
@@ -1050,10 +1095,22 @@ static func _place_rocks(data: MapData, cfg: GameConfig, rng: RandomNumberGenera
 				continue
 			if _terrain_slope(data, p) > 0.9:
 				continue
+			var sc: float = rng.randf_range(0.46, 1.12)
+			# 三轴各自抖：同一块网格能长成"压扁的台 / 竖起的刃"
+			var aniso := Vector3(
+				rng.randf_range(0.86, 1.20),
+				rng.randf_range(0.74, 1.28),
+				rng.randf_range(0.86, 1.20))
 			data.rocks.append({
 				"pos": p,
-				"scale": rng.randf_range(0.50, 1.00),
+				"scale": sc,
+				"aniso": aniso,
 				"rot": rng.randf() * TAU,
+				# 倾斜 ±5°：全都笔直立着是"摆件"，歪一点才像"半埋在地里"
+				"tilt": Vector2(rng.randf_range(-0.088, 0.088), rng.randf_range(-0.088, 0.088)),
+				# 下沉：按体积给，大石头埋得更深（不然块头一大就"浮"起来）
+				"sink": sc * rng.randf_range(0.10, 0.22),
+				"variant": rng.randi_range(0, maxi(0, variants - 1)),
 			})
 			break
 
@@ -1595,3 +1652,409 @@ static func _block_rect_cells(data: MapData, pos: Vector2, sx: int, sz: int) -> 
 			if cx < 0 or cz < 0 or cx >= w or cz >= w:
 				continue
 			data.walkable[cz * w + cx] = 0
+
+# ===========================================================================
+# 竞技场地图（多队 · 4 出生点 · 四重旋转对称 · 魔兽 3 式地块）
+# ===========================================================================
+#
+# 为什么另起一套生成器，而不是给 build() 打补丁：
+#   build() 是"2 队 + 中央台地 + 两条峡谷 + 两道岩脊"的图，它所有的地貌特征
+#   （_mesa_height / _ramp_surface / _ridge_delta / _gorge_depth / 地形的
+#   _sculpt_mesa_rim）都是**叠加在高度场上**的 —— 台地边缘、岩脊缺口、坡道压平区
+#   的 blend 环都会在建筑脚下留下 0.2~1m 的起伏，那就是"莫名的凸起 + 穿模"的来源。
+#
+# 竞技场反过来：**高度场先做干净，再谈地貌**。
+#   ① 起伏全部来自四重旋转对称的低频噪声（±2m / 波长 120m），斜率远低于建筑阈值；
+#   ② 每个出生点上切一块 25m 半径的**绝对水平**平台（格点直接等于常量，
+#      所以任意占地的高差 = 0，"一半悬空一半埋地"在数学上不可能出现）；
+#   ③ 地块（8m 一格）走魔兽 3 的口径：材质存在共享格点上、一格读四个角、交界硬边。
+#      土路 / 营地 / 矿点直接写进地块，不再叠一层路面网格（那层路面是"很杂"的一半）。
+const ARENA_TILE: float = 8.0        ## 地块一格（米），必须等于地形贴图的平铺距离
+const ARENA_PAD_FLAT: float = 25.0   ## 出生平台**严格水平**的半径
+const ARENA_PAD_BLEND: float = 48.0  ## 平台外沿到野地的过渡半径
+const ARENA_BASE_H: float = 1.40     ## 平台顶面高度（米）
+const ARENA_ROAD_HALF: float = 5.0   ## 土路半宽（米）
+const ARENA_EDGE_MARGIN: float = 14.0 ## 边界不可走内缩（米）
+
+
+## 生成一张 N 队竞技场图。slot_count = 出生点数量（默认 4 = 四角）。
+static func build_arena(cfg: GameConfig, slot_count: int = 4) -> MapData:
+	var t_start: int = Time.get_ticks_usec()
+	var data := MapData.new()
+	data.size = cfg.map_size
+	data.resolution = maxi(32, cfg.terrain_resolution)
+	var res: int = data.resolution
+	var row: int = res + 1
+	var half: float = data.size * 0.5
+	var cell: float = data.size / float(res)
+	var slots: int = maxi(2, mini(slot_count, 8))
+
+	# --- 0. 出生点：四个角（45° 起，按槽位数均分） ---
+	data.base_pad = ARENA_PAD_FLAT
+	var bases: Array[Vector2] = []
+	var base_r: float = half * 0.560
+	for k in range(slots):
+		var ang: float = PI * 0.25 + TAU * float(k) / float(slots)
+		bases.append(Vector2(cos(ang), sin(ang)) * base_r)
+	data.base_points = bases
+
+	# --- 1. 土路网：相邻基地连成环 + 对角穿过中心 ---
+	var roads: Array = _arena_roads(data, slots)
+
+	# --- 2. 金矿：每个基地两座（一近一远），四重对称 ---
+	var mines: Array[Vector2] = []
+	for k in range(slots):
+		var b: Vector2 = bases[k]
+		var to_c: Vector2 = (-b).normalized()
+		var side := Vector2(-to_c.y, to_c.x)
+		mines.append(b + to_c * 19.0 + side * 13.0)
+		mines.append(b + to_c * 22.0 - side * 13.0)
+	data.mines = mines
+
+	# --- 3. 高度场 ---
+	var n_low := FastNoiseLite.new()
+	n_low.seed = cfg.map_seed
+	n_low.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	n_low.frequency = 0.0090
+	n_low.fractal_octaves = 3
+	n_low.fractal_gain = 0.42
+	var n_fine := FastNoiseLite.new()
+	n_fine.seed = cfg.map_seed + 31
+	n_fine.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	n_fine.frequency = 0.026
+	n_fine.fractal_octaves = 2
+	var n_patch := FastNoiseLite.new()
+	n_patch.seed = cfg.map_seed + 7
+	n_patch.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	# 两级土斑：大斑 60m 定"这片地是干的"，小斑 22m 把边界啃碎。
+	# 只用一级时地块边界是规则的椭圆，俯视像"画上去的斑点"。
+	n_patch.frequency = 0.0092
+	n_patch.fractal_octaves = 4
+	n_patch.fractal_gain = 0.55
+
+	data.heights.resize(row * row)
+	var h_min: float = INF
+	var h_max: float = -INF
+	for gz in range(row):
+		for gx in range(row):
+			var p := Vector2(-half + float(gx) * cell, -half + float(gz) * cell)
+			var h: float = _sym_noise(n_low, p) * 3.20
+			h += _sym_noise(n_fine, p) * 0.38
+			# 中央高台：中路是战略高点，坡度只有 1.35m / 70m ≈ 1°
+			var r: float = p.length()
+			h += 1.35 * (1.0 - _sstep(0.0, half * 0.62, r))
+			# 出生平台：**严格水平**。d <= ARENA_PAD_FLAT 时 sstep 返回 1 → h = 常量。
+			var d: float = _min_dist(bases, p)
+			var w: float = 1.0 - _sstep(ARENA_PAD_FLAT, ARENA_PAD_BLEND, d)
+			if w > 0.0:
+				h = lerpf(h, ARENA_BASE_H, w)
+			h = clampf(h, -3.5, 7.5)
+			data.heights[gz * row + gx] = h
+			h_min = minf(h_min, h)
+			h_max = maxf(h_max, h)
+
+	# 金矿脚下再压一小块平地（4.5m 半径），免得矿基一半埋进坡里
+	for m in mines:
+		_flatten_heights(data, m, 4.5, 11.0, data.height_at(m.x, m.y))
+
+	# --- 4. 地块（魔兽 3 口径：格点表 (N+1)²） ---
+	_paint_arena_tiles(data, n_patch, roads)
+
+	# --- 5. 可走性 ---
+	var w2: int = int(data.size)
+	data.walkable.resize(w2 * w2)
+	_arena_walkable(data)
+
+	# --- 6. 压平保护区（关卡 / 装饰避让用） ---
+	var zones: Array = []
+	for b in bases:
+		zones.append({"pos": b, "full": ARENA_PAD_FLAT, "blend": ARENA_PAD_BLEND,
+			"kind": "base", "radius": ARENA_PAD_FLAT, "height": ARENA_BASE_H})
+	for m in mines:
+		zones.append({"pos": m, "full": 4.5, "blend": 11.0, "kind": "mine",
+			"radius": 4.5, "height": data.height_at(m.x, m.y)})
+	data.flat_zones = zones
+
+	data.far_ridges = false
+
+	# --- 7. 资源与装饰（全部走四重对称散点） ---
+	_arena_place_trees(data, roads)
+	_arena_place_rocks(data, roads)
+	_arena_place_decor(data, roads)
+	_apply_prop_blocks(data)
+
+	# --- 8. 统计 ---
+	var walk: int = 0
+	for i in range(data.walkable.size()):
+		if data.walkable[i] != 0:
+			walk += 1
+	data.stats = {
+		"kind": "arena",
+		"slots": slots,
+		"size": data.size,
+		"resolution": data.resolution,
+		"height_min": h_min,
+		"height_max": h_max,
+		"trees": data.trees.size(),
+		"mines": data.mines.size(),
+		"rocks": data.rocks.size(),
+		"decor": data.decor_count(),
+		"mat_cells": data.mat_cells,
+		"walkable": walk,
+		"build_ms": float(Time.get_ticks_usec() - t_start) / 1000.0,
+	}
+	RtsGroundDetail.install(data)
+	return data
+
+
+## 四重旋转对称的噪声采样：同一张噪声在 0/90/180/270 四个旋转上取平均。
+## 这样"看着随机"，但四个角的玩家看到的地形**逐顶点完全相同** —— 公平性不靠手调。
+static func _sym_noise(n: FastNoiseLite, p: Vector2) -> float:
+	return (n.get_noise_2d(p.x, p.y) + n.get_noise_2d(-p.y, p.x)
+		+ n.get_noise_2d(-p.x, -p.y) + n.get_noise_2d(p.y, -p.x)) * 0.25
+
+
+## 点绕原点转 k×90°
+static func _rot4(p: Vector2, k: int) -> Vector2:
+	var kk: int = ((k % 4) + 4) % 4
+	if kk == 0:
+		return p
+	if kk == 1:
+		return Vector2(-p.y, p.x)
+	if kk == 2:
+		return -p
+	return Vector2(p.y, -p.x)
+
+
+## 把点转到"基本扇区"（角度落在 [0, 90°)）。
+## 散点只对 **canonical 坐标**做哈希，四个旋转自然得到同一个判定 → 全图四重对称。
+static func _canon4(p: Vector2) -> Vector2:
+	var ang: float = atan2(p.y, p.x)
+	if ang < 0.0:
+		ang += TAU
+	var k: int = int(ang / (PI * 0.5)) % 4
+	return _rot4(p, -k)
+
+
+## 平面坐标的确定性哈希（0..1）
+static func _hash_v2(p: Vector2) -> float:
+	var v: float = sin(p.x * 12.9898 + p.y * 78.233 + 3.17) * 43758.5453
+	return v - floorf(v)
+
+
+## 到最近出生点的距离
+static func _min_dist(points: Array[Vector2], p: Vector2) -> float:
+	var best: float = 1e20
+	for q in points:
+		best = minf(best, p.distance_to(q))
+	return best
+
+
+## 到土路中心线的距离（米）
+static func _arena_road_dist(roads: Array, p: Vector2) -> float:
+	var best: float = 1e20
+	for rd in roads:
+		var pts: PackedVector2Array = rd["pts"]
+		for i in range(pts.size() - 1):
+			var d: float = _dist_to_segment(p, pts[i], pts[i + 1])
+			if d < best:
+				best = d
+				if best < 0.05:
+					return best
+	return best
+
+
+## 土路：相邻基地连成环（向外微鼓）+ 对角穿中心（4 队时是"口"字 + "X"）
+static func _arena_roads(data: MapData, slots: int) -> Array:
+	var out: Array = []
+	var bases: Array[Vector2] = data.base_points
+	if bases.size() < 2:
+		return out
+	for k in range(slots):
+		var a: Vector2 = bases[k]
+		var b: Vector2 = bases[(k + 1) % slots]
+		var mid: Vector2 = (a + b) * 0.5
+		var outward: Vector2 = mid.normalized() * 8.0
+		out.append({
+			"pts": _resample_polyline(PackedVector2Array([a, mid + outward, b]), 2.0),
+			"width": ARENA_ROAD_HALF * 2.0, "kind": "main"})
+	var half_slots: int = slots / 2
+	for k in range(half_slots):
+		var a2: Vector2 = bases[k]
+		var b2: Vector2 = bases[(k + half_slots) % slots]
+		out.append({
+			"pts": _resample_polyline(PackedVector2Array([a2, a2 * 0.42, b2 * 0.42, b2]), 2.0),
+			"width": ARENA_ROAD_HALF * 0.9, "kind": "main"})
+	return out
+
+
+## 地块上色：把"营地 / 土路 / 矿点 / 大尺度土斑"写进格点表。
+## 阈值 0.5 就是**硬边**：这里不做抗锯齿，过渡形状交给图集的 16 个过渡格。
+static func _paint_arena_tiles(data: MapData, n_patch: FastNoiseLite, roads: Array) -> void:
+	var cells: int = maxi(4, int(round(data.size / ARENA_TILE)))
+	data.mat_cells = cells
+	data.mat_tile = data.size / float(cells)
+	var n: int = cells + 1
+	data.mat_nodes.resize(n * n)
+	var half: float = data.size * 0.5
+	var step: float = data.size / float(cells)
+	var bases: Array[Vector2] = data.base_points
+	for j in range(n):
+		for i in range(n):
+			var p := Vector2(-half + float(i) * step, -half + float(j) * step)
+			# 营地：只有建筑群脚下那一片是踩实的土（不是整个平台）
+			var dirt: float = 1.0 - _sstep(10.0, 19.0, _min_dist(bases, p))
+			# 矿点
+			for m in data.mines:
+				dirt = maxf(dirt, 1.0 - _sstep(3.0, 7.5, p.distance_to(m)))
+			# 土路：画出来约 8m 宽（半宽 4m）。魔兽 3 的路就是一条窄土带，
+			# 之前按 ARENA_ROAD_HALF 的两倍画，结果整张图 2/3 是土 —— 那才是"很杂"。
+			if not roads.is_empty():
+				var rd: float = _arena_road_dist(roads, p)
+				dirt = maxf(dirt, 1.0 - _sstep(4.0, 6.6, rd))
+			# 大尺度土斑（对称噪声）：两级叠加，边界落在 8m 网格上自然成多边形
+			var patch: float = (_sym_noise(n_patch, p) + 1.0) * 0.5
+			patch = patch * 0.66 + (_sym_noise(n_patch, p * 2.7 + Vector2(31.0, -17.0)) + 1.0) * 0.5 * 0.34
+			dirt = maxf(dirt, _sstep(0.70, 0.84, patch))
+			data.mat_nodes[j * n + i] = 255 if dirt > 0.5 else 0
+
+
+## 可走性：边界内缩 + 坡度阈值（和 build() 同一套口径，阈值来自竞技场常量）
+static func _arena_walkable(data: MapData) -> void:
+	var w: int = int(data.size)
+	if data.walkable.size() != w * w:
+		data.walkable.resize(w * w)
+	var half: float = data.size * 0.5
+	for cz in range(w):
+		for cx in range(w):
+			var wx: float = -half + (float(cx) + 0.5)
+			var wz: float = -half + (float(cz) + 0.5)
+			var ok: bool = true
+			if absf(wx) > half - ARENA_EDGE_MARGIN or absf(wz) > half - ARENA_EDGE_MARGIN:
+				ok = false
+			if ok:
+				var hx: float = data.height_at(wx + 0.6, wz) - data.height_at(wx - 0.6, wz)
+				var hz: float = data.height_at(wx, wz + 0.6) - data.height_at(wx, wz - 0.6)
+				if Vector2(hx, hz).length() > SLOPE_WALK_MAX:
+					ok = false
+			data.walkable[cz * w + cx] = 1 if ok else 0
+
+
+## 树：对称散点。密度由"离基地距离"（中圈林带）和"离边界距离"（外圈林带）决定，
+## 避开土路与营地。所有判定都用 canonical 坐标哈希，所以四份完全一致。
+static func _arena_place_trees(data: MapData, roads: Array) -> void:
+	var half: float = data.size * 0.5
+	var step: float = 4.7
+	var bases: Array[Vector2] = data.base_points
+	var z: float = -half + 8.0
+	while z < half - 8.0:
+		var x: float = -half + 8.0
+		while x < half - 8.0:
+			var p := Vector2(x, z)
+			x += step
+			var c := _canon4(p)
+			var hsh: float = _hash_v2(Vector2(c.x * 0.37, c.y * 0.37))
+			var db: float = _min_dist(bases, p)
+			var band: float = _sstep(26.0, 34.0, db) * (1.0 - _sstep(62.0, 76.0, db))
+			var edge: float = _sstep(half * 0.66, half * 0.86, maxf(absf(p.x), absf(p.y)))
+			var dense: float = maxf(band * 0.62, edge * 0.88)
+			if dense <= 0.01 or hsh > dense:
+				continue
+			if _arena_road_dist(roads, p) < 7.5:
+				continue
+			if _terrain_slope(data, p) > 0.75:
+				continue
+			if not data.is_walkable_at(p.x, p.y):
+				continue
+			if _near_any(data.trees, p, 2.2):
+				continue
+			data.trees.append(p)
+		z += step
+
+
+## 岩石：对称散点，主要落在斜坡与边界（纯装饰，走 MultiMesh）
+static func _arena_place_rocks(data: MapData, roads: Array) -> void:
+	var half: float = data.size * 0.5
+	var step: float = 9.0
+	var z: float = -half + 10.0
+	while z < half - 10.0:
+		var x: float = -half + 10.0
+		while x < half - 10.0:
+			var p := Vector2(x, z)
+			x += step
+			var c := _canon4(p)
+			var hsh: float = _hash_v2(Vector2(c.x * 0.71 + 11.0, c.y * 0.71 - 5.0))
+			if hsh > 0.34:
+				continue
+			if _arena_road_dist(roads, p) < 7.0:
+				continue
+			var edge: float = _sstep(half * 0.66, half * 0.90, maxf(absf(p.x), absf(p.y)))
+			var steep: float = clampf(_terrain_slope(data, p) / 0.7, 0.0, 1.0)
+			if edge < 0.2 and steep < 0.40 and hsh > 0.12:
+				continue
+			if _near_any(data.trees, p, 2.0):
+				continue
+			var sc: float = 0.55 + hsh * 2.0
+			data.rocks.append({
+				"pos": p, "scale": sc,
+				"rot": _hash_v2(p * 1.9) * TAU,
+				"variant": int(_hash_v2(p * 3.1) * 97.0),
+				"aniso": Vector3(1.0 + hsh * 0.5, 0.55 + hsh * 0.55, 1.0 - hsh * 0.22),
+				"tilt": Vector2((hsh - 0.5) * 0.32, (_hash_v2(p * 5.3) - 0.5) * 0.32),
+				"sink": sc * 0.22,
+			})
+		z += step
+
+
+## 营地杂物（木箱/木桶/栅栏/篝火）+ 草丛散点。
+## 全部按"基地本地坐标 → 四重旋转"落位，四个营地一模一样。
+static func _arena_place_decor(data: MapData, roads: Array) -> void:
+	var bases: Array[Vector2] = data.base_points
+	var offsets: Array = [
+		{"kind": "crate", "off": Vector2(-13.0, 9.0), "scale": 1.0},
+		{"kind": "crate", "off": Vector2(-15.2, 7.4), "scale": 0.9},
+		{"kind": "barrel", "off": Vector2(12.6, 10.5), "scale": 1.0},
+		{"kind": "barrel", "off": Vector2(14.4, 8.9), "scale": 0.92},
+		{"kind": "fence", "off": Vector2(-4.0, 17.0), "scale": 1.0},
+		{"kind": "fence", "off": Vector2(4.0, 17.0), "scale": 1.0},
+		{"kind": "campfire", "off": Vector2(0.0, 13.5), "scale": 1.0},
+		{"kind": "log", "off": Vector2(-3.4, 15.4), "scale": 1.0},
+		{"kind": "tent", "off": Vector2(9.5, 15.0), "scale": 1.0},
+	]
+	for k in range(bases.size()):
+		var b: Vector2 = bases[k]
+		# 基地本地坐标系：+Z 朝地图中心（营门朝内），+X 是右手边
+		var to_c: Vector2 = (-b).normalized()
+		var side := Vector2(-to_c.y, to_c.x)
+		for e in offsets:
+			var off: Vector2 = e["off"]
+			var p: Vector2 = b + to_c * off.y + side * off.x
+			data.decor[e["kind"]] = data.decor.get(e["kind"], [])
+			_decor_push(data, String(e["kind"]),
+				Vector3(p.x, data.height_at(p.x, p.y), p.y),
+				float(e["scale"]), _hash_v2(p) * TAU)
+	# 草丛：对称散点，只长在草地块上（营地/土路不长草）
+	var half: float = data.size * 0.5
+	var step: float = 3.4
+	var z: float = -half + 6.0
+	while z < half - 6.0:
+		var x: float = -half + 6.0
+		while x < half - 6.0:
+			var p := Vector2(x, z)
+			x += step
+			var c := _canon4(p)
+			var hsh: float = _hash_v2(Vector2(c.x * 0.53 + 3.0, c.y * 0.53 + 9.0))
+			if hsh > 0.62:
+				continue
+			if _min_dist(bases, p) < ARENA_PAD_FLAT * 0.72:
+				continue
+			if _arena_road_dist(roads, p) < ARENA_ROAD_HALF * 1.25:
+				continue
+			if data.mat_at(p.x, p.y) != 0:
+				continue
+			data.grass.append({
+				"pos": Vector3(p.x, data.height_at(p.x, p.y), p.y),
+				"scale": 0.72 + hsh * 0.7,
+				"rot": _hash_v2(p * 2.7) * TAU,
+			})
+		z += step

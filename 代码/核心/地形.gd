@@ -34,9 +34,18 @@ var plateau_radius: float = 0.0
 var plateau_top: float = 0.0
 ## 坡道方位角（弧度）。雕刻崖壁时避开这些角度，保证坡道仍是 30° 的顺坡。
 var ramp_angles: PackedFloat32Array = PackedFloat32Array()
-## 营地中心点（玩家 / 敌方基地）。营地半径内**不允许出现大块土斑**：
-## 那些斑块是 2.7m 的低频噪声，落在建筑脚下会读成"地面破了"。
+## 营地中心点（每一个出生点）。营地半径内压暗一点、干裂纹少一点，
+## 读起来是"被踩实的营地地面"，而不是"贴了一张土斑"。
 var base_points: PackedVector2Array = PackedVector2Array()
+
+## ── 地块材质（魔兽争霸 3 口径）──────────────────────────────────────────
+## 材质存在**共享格点**上：1 texel = 1 个格点 = 8m，值 0=草 255=泥。
+## 边长 mat_cells+1 个格点；mat_cells = 0 表示没数据（整图当草地）。
+## 由关卡在 build() 之前写入（见 地图生成._paint_tiles）。
+var mat_nodes: PackedByteArray = PackedByteArray()
+var mat_cells: int = 0
+## 运行时生成的 R8 贴图（shader 里 texelFetch 逐格点取值）
+var mat_map: ImageTexture = null
 
 ## 判定"陡面"的角度（度）——统计与着色用
 const STEEP_FACE_DEG: float = 45.0
@@ -134,8 +143,14 @@ func build(p_size: float, p_resolution: int, p_heights: PackedFloat32Array,
 	_prepare_cells()
 	_build_mesh()
 	_build_skirt()
+	_build_mat_map()
 	# 材质：优先用美术侧的地形着色器，没有就退化成顶点色标准材质
 	_mesh_instance.material_override = _make_material()
+	# 边界裙边和地形共用同一份材质：裙边是竖直面，走着色器的"崖壁"分支，
+	# 岩色/两阶光/雾都和地形一致 —— 以前它是另一套 StandardMaterial3D，
+	# 边界那圈看起来像"另一块世界"。
+	if _skirt != null and is_instance_valid(_skirt):
+		_skirt.material_override = _mesh_instance.material_override
 
 	# 远景山脊默认开（游戏里需要它堵住"地图外看见天空"）；地图编辑器里关掉，
 	# 免得一圈几十米高的山挡在编辑区旁边。
@@ -668,8 +683,6 @@ func _tri(v: PackedVector3Array, n: PackedVector3Array, uv: PackedVector2Array,
 		nb = nd
 		d = tb
 		nd = tnb
-	var centroid: Vector3 = (a + b + d) / 3.0
-	var col: Color = _color_for(centroid, navg)
 	v.append(a)
 	v.append(b)
 	v.append(d)
@@ -680,8 +693,11 @@ func _tri(v: PackedVector3Array, n: PackedVector3Array, uv: PackedVector2Array,
 	uv.append(Vector2(a.x / size + 0.5, a.z / size + 0.5))
 	uv.append(Vector2(b.x / size + 0.5, b.z / size + 0.5))
 	uv.append(Vector2(d.x / size + 0.5, d.z / size + 0.5))
-	for _i in range(3):
-		c.append(col)
+	# ★ 染色**逐顶点**求，不是逐面：逐面会在 1.8m 一格上留下可见色块，
+	#   那正是旧版"迷彩布"观感的来源。逐顶点 + 三次曲面 = 平滑大色区。
+	c.append(_tint_at(a, na))
+	c.append(_tint_at(b, nb))
+	c.append(_tint_at(d, nd))
 
 	_tri_count += 1
 	var slope_deg: float = rad_to_deg(acos(clampf(navg.y, -1.0, 1.0)))
@@ -694,8 +710,18 @@ func _tri(v: PackedVector3Array, n: PackedVector3Array, uv: PackedVector2Array,
 # 高度查询（与渲染网格同源：都走 _patch 解析求值）
 # ===========================================================================
 
-## 地形高度：直接对参数曲面片在 (u,v) 处解析求值。
-## 不做查表、不做重心插值——曲面是局部的（只依赖 4×4 邻域），任意点都能精确求。
+## 地形高度 = **渲染出来的那张三角面**在 (x,z) 处的高度。
+##
+## 为什么不再直接用解析曲面片（_patch）：
+##   网格是拿 _patch 在 nu×nv 的采样点上取值、再两两连成三角面的。
+##   两个采样点**之间**，渲染是线性插值、解析面是三次曲面 —— 差值就是"弦高"，
+##   细分判据 SURFACE_TOL = 0.10 说明这个差最多 10cm。
+##   于是"按解析面落地的单位/建筑/金矿"会陷进看得见的地面最多 10cm，
+##   表现为下摆/地基被地形纹理吃掉一截（玩家报的"被地形穿模"）。
+##   现在按**和渲染完全同一条对角线**做面插值，落点就等于玩家看到的表面。
+##
+## 顶点/细分中心处两种算法结果相同，所以 地形自检 的
+## "height_at 与网格顶点一致 / 与四分裂中心一致" 两条断言不受影响。
 func height_at(wx: float, wz: float) -> float:
 	if heights.is_empty() or resolution <= 0 or _tan_u.is_empty():
 		return 0.0
@@ -705,7 +731,32 @@ func height_at(wx: float, wz: float) -> float:
 	var cz: int = clampi(floori(fz), 0, resolution - 1)
 	var u: float = clampf(fx - float(cx), 0.0, 1.0)
 	var v: float = clampf(fz - float(cz), 0.0, 1.0)
-	return _patch(cx, cz, u, v).x
+	return _mesh_height(cx, cz, u, v)
+
+
+## 该格在参数坐标 (u,v) 处**渲染三角面**的高度。
+## 渲染口径见 _cell_sag 的线性插值：每个小格沿 00-11 对角线拆两三角，
+## lu >= lv 落在 (00,10,11)，否则落在 (00,11,01)。
+func _mesh_height(cx: int, cz: int, u: float, v: float) -> float:
+	var nu: int = maxi(_nu_at(cx, cz), 1)
+	var nv: int = maxi(_nv_at(cx, cz), 1)
+	var gu: float = u * float(nu)
+	var gv: float = v * float(nv)
+	var i: int = clampi(floori(gu), 0, nu - 1)
+	var j: int = clampi(floori(gv), 0, nv - 1)
+	var lu: float = clampf(gu - float(i), 0.0, 1.0)
+	var lv: float = clampf(gv - float(j), 0.0, 1.0)
+	var u0: float = float(i) / float(nu)
+	var u1: float = float(i + 1) / float(nu)
+	var v0: float = float(j) / float(nv)
+	var v1: float = float(j + 1) / float(nv)
+	var h00: float = _patch(cx, cz, u0, v0).x
+	var h10: float = _patch(cx, cz, u1, v0).x
+	var h01: float = _patch(cx, cz, u0, v1).x
+	var h11: float = _patch(cx, cz, u1, v1).x
+	if lu >= lv:
+		return h00 * (1.0 - lu) + h10 * (lu - lv) + h11 * lv
+	return h00 * (1.0 - lv) + h11 * lu + h01 * (lv - lu)
 
 
 ## 地形法线（解析）：N ∝ (-∂S/∂x, 1, -∂S/∂z)，恒指 +Y
@@ -816,141 +867,118 @@ func _make_material() -> Material:
 	return std
 
 
-## 把台地地标喂给着色器。着色器据此把台地顶面画成"草皮 + 土斑 + 碎石"，
-## 外圈山脊顶则保持岩色——两者高度都高，只靠顶点色分不开。
+## ── 地块材质资源（魔兽争霸 3 式双材质硬边过渡） ─────────────────────
+## 图集：2048×1024，左 4×4 是 16 个"四角材质"过渡格（德布鲁因环摆位），
+##       右 4×4 是 16 个纯纹理变体（上两行 A=草 8 个、下两行 B=泥 8 个）。
+## 底材：512² 无缝，8m 一铺，与图集同节奏。
+const ATLAS_PATH := "res://美术/贴图/地形/材质/草泥/atlas_草泥_rgba.png"
+## 图集法线（Sobel 自遮罩；和 rgba 图集逐格对应）
+const ATLAS_N_PATH := "res://美术/贴图/地形/材质/草泥/atlas_草泥_n.png"
+const TEX_GRASS_PATH := "res://美术/贴图/地形/草地.png"
+const TEX_DIRT_PATH := "res://美术/贴图/地形/泥土.png"
+const TEX_CRACKED_PATH := "res://美术/贴图/地形/裂纹泥地.png"
+## 崖壁细节（灰度，当噪声用；颜色由 rock_tint 给）
+const ROCK_DETAIL_PATH := "res://美术/贴图/rock_albedo.png"
+## 一格多少米。**必须与底材平铺距离一致**，否则交界和踩踏节奏对不上。
+const TILE_M: float = 8.0
+
+
+## 把地块图集 / 底材 / 格点表喂给着色器。
 ##
-## v5 追加：地表细节贴图（草/土各一张法线 + 一张细节色）。
-## 解决的是"每一格都长一样"：程序化噪声到 0.8m 就到底了，
-## 1~20cm 的草叶/砂粒/小石子只能靠可平铺贴图补，三平面投影保证不拉伸。
-const _DETAIL_TEX := {
-	"detail_grass": "res://美术/贴图/ground_grass_normal.png",
-	"detail_dirt": "res://美术/贴图/ground_dirt_normal.png",
-	# 2026-10-30：底色换成铁誓军团资产包 v1 的无缝底材（512² / 1 tile = 8m）。
-	# 法线仍用老的：包里的 atlas_*_n 是"双材质硬边过渡"图集的法线，不是可平铺法线。
-	"detail_grass_col": "res://美术/贴图/地形/草地.png",
-	"detail_dirt_col": "res://美术/贴图/地形/泥土.png",
-}
-
-
+## 这里**只有一条主线**：地面材质由 8m 地块决定、交界是硬边。
+## 旧版的 5 套程序化噪声 + 2 套细节法线 + 面片哈希 + 1m 格线已经全部删掉 ——
+## 它们是"很杂很乱"的直接原因（10~20m 的亮黄大斑 + 1.75m 菱形碎块）。
 func _apply_material_landmarks(m: Material) -> void:
 	var sm := m as ShaderMaterial
 	if sm == null:
 		return
-	sm.set_shader_parameter("plateau_center", plateau_center)
-	sm.set_shader_parameter("plateau_radius", plateau_radius)
-	sm.set_shader_parameter("plateau_top", plateau_top)
-	for key in _DETAIL_TEX:
-		var path: String = _DETAIL_TEX[key]
-		if ResourceLoader.exists(path):
-			var t := load(path) as Texture2D
-			if t != null:
-				sm.set_shader_parameter(key, t)
+	sm.set_shader_parameter("mat_map", mat_map)
+	sm.set_shader_parameter("tile_m", TILE_M)
+	sm.set_shader_parameter("map_half", size * 0.5)
+	sm.set_shader_parameter("mat_cells", maxi(mat_cells, 1))
+	var slots := {
+		"atlas_rgba": ATLAS_PATH,
+		"atlas_n": ATLAS_N_PATH,
+		"tex_grass": TEX_GRASS_PATH,
+		"tex_dirt": TEX_DIRT_PATH,
+		"tex_cracked": TEX_CRACKED_PATH,
+		"rock_detail": ROCK_DETAIL_PATH,
+	}
+	for key in slots:
+		var path: String = slots[key]
+		if not ResourceLoader.exists(path):
+			continue
+		var t := load(path) as Texture2D
+		if t != null:
+			sm.set_shader_parameter(key, t)
 
 
-## 按高度、坡度与台地地标给三角面上色。
+## 生成 mat_map：R8、(mat_cells+1)² 个格点，1 texel = 1 个格点 = 8m。
+## 没有数据时给一张 1×1 全 0 的贴图（整图草地），着色器不会崩。
+func _build_mat_map() -> void:
+	var n: int = maxi(mat_cells + 1, 2)
+	var img := Image.create(n, n, false, Image.FORMAT_R8)
+	if mat_nodes.size() == n * n:
+		var bytes := PackedByteArray()
+		bytes.resize(n * n)
+		for i in range(n * n):
+			bytes[i] = mat_nodes[i]
+		img.set_data(n, n, false, Image.FORMAT_R8, bytes)
+	else:
+		img.fill(Color(0.0, 0.0, 0.0, 1.0))
+	mat_map = ImageTexture.create_from_image(img)
+
+
+
+## 顶点色 = **乘法染色 + 干度**，不再承担配色。
 ##
-## 颜色分层是**阶梯式**的（不是一路平滑 lerp）：低多边形地形靠硬色块读体积。
-## 这版重点治三个"廉价感"：
-##   · 台地顶不再是一整块米白岩盘 → 草皮 + 土斑 + 碎石/啃边，只在最外圈压碎石环；
-##   · 崖壁不再是纯灰竖条 → 水平岩层（3 档硬分层）+ 4m 级裂隙 + 崖脚冷影/碎石色；
-##   · 外圈山脊顶保持冷岩灰，不与台地顶共用一套"沙色"。
-func _color_for(pos: Vector3, normal: Vector3) -> Color:
+## 旧版这里是"按高度/坡度挑一堆颜色常量"（草/草高/干草/土/岩/岩高/岩暗/冷/碎石 九种），
+## 再叠 3 层哈希抖动 —— 每一层都说得通，合起来就是玩家说的"很杂很乱"：
+## 颜色是逐三角面挑的，于是 1.8m 一格一个色块，整片地像迷彩布。
+##
+## 现在配色**由地块贴图负责**（草地/泥土/裂纹泥地，见 shader），
+## 顶点色只做两件事：
+##   rgb  = 1.0 附近的乘法染色（大尺度冷暖 ±3.5%、营地压暗、陡面偏灰）
+##   a    = 干度 0..1（0 = 泥土，1 = 裂纹泥地；只在泥地那一侧起作用）
+func _tint_at(pos: Vector3, normal: Vector3) -> Color:
 	var rng: float = maxf(height_range(), 0.001)
 	var alt: float = clampf((pos.y - _height_min) / rng, 0.0, 1.0)
-	var steep: float = clampf(1.0 - normal.y, 0.0, 1.0)
+	var up: float = clampf(normal.y, 0.0, 1.0)
+	# ── 大尺度冷暖（40~90m 波长）：只 ±3.5%，是"光照/季节的偏移"，不是色块 ──
+	var warm: float = sin(pos.x * 0.052 + pos.z * 0.031) * 0.55 \
+		+ sin(pos.z * 0.074 - pos.x * 0.021 + 1.7) * 0.45
+	var k: float = 1.0 + warm * 0.035
+	var tr: float = k * 1.012
+	var tg: float = k
+	var tb: float = k * 0.978
 
-	# 2026-10-23 调色：旧版黄绿在暖阳下会糊成一片"抹茶粉"。
-	# 现在把草压深、压冷，把"干草/土"留给低频斑块（shader 里的 meadow patch），
-	# 大色块不再由每个三角面自己决定，而是由 12m 级的噪声决定。
-	var grass_deep := Color(0.075, 0.165, 0.060)
-	var grass := Color(0.125, 0.255, 0.090)
-	var grass_hi := Color(0.215, 0.355, 0.125)
-	var grass_dry := Color(0.330, 0.320, 0.135)
-	var dirt := Color(0.315, 0.235, 0.125)
-	var dirt_hi := Color(0.430, 0.320, 0.185)
-	var rock := Color(0.315, 0.320, 0.335)
-	var rock_hi := Color(0.455, 0.445, 0.430)
-	var rock_dark := Color(0.150, 0.170, 0.205)
-	var cold := Color(0.215, 0.265, 0.345)
-	var scree := Color(0.360, 0.335, 0.285)
+	# ── 干度：高处更干（裂纹泥地），低洼处保持普通泥土 ──
+	var dry: float = smoothstep(0.30, 0.95, alt) * 0.85 + warm * 0.12
 
-	var h1: float = _hash01(floori(pos.x * 1.7), floori(pos.z * 1.7))
-	var h2: float = _hash01(floori(pos.x * 0.37), floori(pos.z * 0.37))
-	var h3: float = _hash01(floori(pos.x * 4.3), floori(pos.z * 4.3))
+	# ── 陡面：偏灰、偏冷。真正的颜色由 shader 的岩石层接管，这里只让它别"绿" ──
+	var steep: float = 1.0 - up
+	if steep > 0.06:
+		var st: float = clampf((steep - 0.06) / 0.30, 0.0, 1.0)
+		tr = lerpf(tr, 0.92, st * 0.7)
+		tg = lerpf(tg, 0.94, st * 0.7)
+		tb = lerpf(tb, 1.02, st * 0.7)
+		dry *= 1.0 - st * 0.6
 
-	var rad: float = 999.0
-	var on_plateau: bool = false
-	if plateau_radius > 0.0:
-		rad = Vector2(pos.x, pos.z).distance_to(plateau_center)
-		on_plateau = rad < plateau_radius - 3.0 and pos.y > plateau_top - 2.2
+	# ── 营地：踩实的地面（压暗 ~8%，干裂纹减半），不让建筑脚下"破了" ──
+	var camp: float = 0.0
+	if not base_points.is_empty():
+		var p2 := Vector2(pos.x, pos.z)
+		for bp in base_points:
+			camp = maxf(camp, 1.0 - smoothstep(15.0, 34.0, p2.distance_to(bp)))
+		if camp > 0.001:
+			var dark: float = lerpf(1.0, 0.925, camp)
+			tr *= dark
+			tg *= dark
+			tb *= dark
+			dry *= lerpf(1.0, 0.45, camp)
 
-	var col: Color
-	if steep < 0.18:
-		if on_plateau:
-			# 台地顶：草皮为主，叠土斑与零星碎石；最外圈是磨损的碎石/土环
-			var patch: float = h2 * 0.65 + h1 * 0.35
-			col = grass.lerp(grass_hi, 0.25 + 0.45 * h1)
-			var patch_t: float = clampf((patch - 0.42) * 2.2, 0.0, 0.75)
-			col = col.lerp(dirt.lerp(dirt_hi, h3 * 0.6), patch_t)
-			var rim: float = smoothstep(plateau_radius - 8.0, plateau_radius - 3.2, rad)
-			col = col.lerp(dirt.lerp(scree, 0.45), rim * 0.72)
-			if h3 > 0.90:
-				col = col.lerp(scree, 0.55)
-			if h1 < 0.4:
-				col = col.lerp(grass_deep, 0.20)
-		elif alt < 0.30:
-			col = grass.lerp(grass_hi, 0.28 + 0.42 * h1)
-			# 营地内：**踩实的整片草皮**，不撒大块土斑。
-			# 土斑是 2.7m 一格的低频噪声，压在兵营/大本营脚下时读起来就是"地面破了"。
-			var camp: float = 0.0
-			for bp in base_points:
-				var d: float = Vector2(pos.x, pos.z).distance_to(bp)
-				camp = maxf(camp, 1.0 - smoothstep(14.0, 30.0, d))
-			if camp > 0.01:
-				# 微微压暗 + 去饱和：像被踩实、被车辙磨过的营地表皮
-				col = col.lerp(grass_dry, 0.10 + 0.08 * h1)
-				col = col.lerp(Color(0.185, 0.215, 0.130), 0.22 * camp)
-				col = col.lerp(dirt, 0.05 * camp)
-			elif h2 > 0.66:
-				col = col.lerp(dirt.lerp(grass_dry, 0.5), 0.22)
-		elif alt < 0.55:
-			col = grass_hi.lerp(grass_dry, 0.35 + 0.5 * h1)
-			col = col.lerp(dirt, 0.20 * h2)
-		elif alt < 0.78:
-			col = grass_dry.lerp(dirt, 0.35 + 0.35 * h1)
-		else:
-			# 外圈山脊顶：冷岩灰，不做成草地
-			col = rock.lerp(rock_hi, 0.20 + 0.35 * h1)
-			col = col.lerp(grass_dry, 0.14)
-		# 陡度过渡带：草皮被土/碎石顶掉，接缝处不再"一刀切"
-		if steep > 0.10:
-			var t: float = clampf((steep - 0.10) / 0.22, 0.0, 1.0)
-			col = col.lerp(dirt.lerp(scree, 0.55), t * 0.55)
-	else:
-		# 崖壁：水平岩层（3 档）+ 4m 级竖向裂隙 + 越靠崖脚越冷越暗
-		var phase: float = pos.y * 2.35 + sin(pos.x * 0.42 + pos.z * 0.37) * 1.4 + h2 * 0.8
-		var strata: float = 0.5 + 0.5 * sin(phase)
-		var band: float = floorf(strata * 3.0) / 3.0
-		col = rock.lerp(rock_dark, 0.20 + 0.55 * band)
-		col = col.lerp(rock_hi, 0.22 * clampf(h1 * 1.6 - 0.35, 0.0, 1.0))
-		if h3 > 0.84:
-			col = col.lerp(rock_dark, 0.45)
-		var cold_t: float = clampf((steep - 0.18) / 0.55, 0.0, 1.0) * (0.18 + 0.38 * (1.0 - alt))
-		col = col.lerp(cold, cold_t)
-		var foot: float = smoothstep(3.0, -0.2, pos.y)
-		col = col.lerp(scree.lerp(rock_dark, 0.35), foot * 0.55)
-		# 台地顶缘的浅色岩唇
-		if not on_plateau and plateau_radius > 0.0 and pos.y > plateau_top - 1.3:
-			col = col.lerp(rock_hi, 0.20)
-
-	# 面片级确定性抖动：低多边形的块面感
-	var jitter: float = (h1 - 0.5) * 0.075
-	return Color(
-		clampf(col.r + jitter, 0.0, 1.0),
-		clampf(col.g + jitter, 0.0, 1.0),
-		clampf(col.b + jitter, 0.0, 1.0),
-		1.0
-	)
+	return Color(clampf(tr, 0.0, 1.6), clampf(tg, 0.0, 1.6), clampf(tb, 0.0, 1.6),
+		clampf(dry, 0.0, 1.0))
 
 
 ## 确定性 0..1 哈希
@@ -1015,9 +1043,11 @@ func _build_skirt() -> void:
 	var verts := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var colors := PackedColorArray()
-	# 岩石灰：断崖要看得见是一道崖，不是一团黑影
-	var low := Color(0.190, 0.172, 0.152)
-	var high := Color(0.345, 0.316, 0.272)
+	var uvs := PackedVector2Array()
+	# 岩石灰：断崖要看得见是一道崖，不是一团黑影。
+	# 旧版压到 0.19 的近黑，"底部"读起来是一团脏影 —— 这里整体提亮一档。
+	var low := Color(0.242, 0.226, 0.206)
+	var high := Color(0.412, 0.386, 0.344)
 	# 四条边：{沿哪根轴走, 固定格, 外侧法线}
 	var edges: Array = [
 		{"axis": 0, "fixed": 0, "n": Vector3(0.0, 0.0, -1.0)},
@@ -1049,6 +1079,10 @@ func _build_skirt() -> void:
 					normals.append(n)
 					var t: float = clampf((v.y - (p0.y - depth)) / maxf(depth, 0.1), 0.0, 1.0)
 					colors.append(low.lerp(high, t))
+					# UV 沿墙面走（水平 = 沿边弧长 / 6，竖直 = 高度 / 6）：
+					# 给岩石细节贴图一个不拉伸的参数化，断崖才有"石"的读法。
+					var along: float = float(i) * cell / 6.0
+					uvs.append(Vector2(along, v.y / 6.0))
 	if verts.is_empty():
 		return
 	var arrays := []
@@ -1056,6 +1090,7 @@ func _build_skirt() -> void:
 	arrays[Mesh.ARRAY_VERTEX] = verts
 	arrays[Mesh.ARRAY_NORMAL] = normals
 	arrays[Mesh.ARRAY_COLOR] = colors
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	_skirt = MeshInstance3D.new()
@@ -1080,13 +1115,17 @@ func _build_far_ridges() -> void:
 	var verts := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var colors := PackedColorArray()
+	# 半径按地图尺寸**等比放大**：这一层原来写死 142/184/252m（给 200m 图配的），
+	# 套到 224m 图上第一圈就落在 112m 的地图边缘外 30m —— 俯视时是一圈贴脸的大灰锥。
+	# 现在最内圈 = size*0.95，保证永远在地图之外，而且越远越低、越蓝（雾色）。
+	var f: float = maxf(1.0, size / 200.0) * 1.18
 	var layers: Array = [
-		{"r": 142.0, "spread": 18.0, "base": -14.0, "h": 38.0, "n": 44,
-			"low": Color(0.115, 0.150, 0.135), "high": Color(0.185, 0.225, 0.205)},
-		{"r": 184.0, "spread": 24.0, "base": -16.0, "h": 60.0, "n": 54,
-			"low": Color(0.135, 0.165, 0.190), "high": Color(0.245, 0.280, 0.320)},
-		{"r": 252.0, "spread": 34.0, "base": -18.0, "h": 88.0, "n": 62,
-			"low": Color(0.175, 0.200, 0.240), "high": Color(0.320, 0.350, 0.400)},
+		{"r": 142.0 * f, "spread": 18.0 * f, "base": -20.0, "h": 34.0, "n": 46,
+			"low": Color(0.105, 0.145, 0.130), "high": Color(0.170, 0.215, 0.195)},
+		{"r": 184.0 * f, "spread": 24.0 * f, "base": -24.0, "h": 54.0, "n": 56,
+			"low": Color(0.125, 0.158, 0.185), "high": Color(0.215, 0.255, 0.300)},
+		{"r": 252.0 * f, "spread": 34.0 * f, "base": -28.0, "h": 78.0, "n": 64,
+			"low": Color(0.160, 0.188, 0.228), "high": Color(0.280, 0.315, 0.375)},
 	]
 	for li in range(layers.size()):
 		var L: Dictionary = layers[li]

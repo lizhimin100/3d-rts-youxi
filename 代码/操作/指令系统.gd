@@ -212,6 +212,18 @@ func request_hold() -> void:
 	_issue_simple(RtsConst.Order.HOLD, "原地警戒")
 
 
+## 全部原地**观察**（逻辑同驻守，头顶图标不同 —— 见 RtsUnit.Guard）
+func request_observe() -> void:
+	var units := _selected_units()
+	if units.is_empty():
+		return
+	for u in units:
+		if u.has_method("order_observe"):
+			u.call("order_observe")
+	Game.order_issued.emit(units, RtsConst.Order.HOLD, Vector3.ZERO, null)
+	_toast("原地观察", _accent())
+
+
 ## 巡逻模式是否已经武装（下一次左键点地面 = 下达巡逻）
 var _patrol_next: bool = false
 

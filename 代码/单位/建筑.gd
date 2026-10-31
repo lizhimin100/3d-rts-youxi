@@ -477,6 +477,63 @@ func _tick_extra(dt: float) -> void:
 		return
 	_tick_train(dt)
 	_tick_research(dt)
+	_tick_aura(dt)
+	_tick_warning(dt)
+
+
+# ===========================================================================
+# 新建筑的专属逻辑
+# ===========================================================================
+
+## 预警节流（秒）
+const WARN_GAP: float = 8.0
+## 上一次预警的时间 / 上一次报的是哪个"邻居"
+var _warn_t: float = -999.0
+var _warn_seen: int = 0
+
+
+## 神秘圣地的**法力之泉**：半径内的友军每秒多回 aura_mana_regen 法力。
+## 为什么做成"建筑推"而不是"单位拉"：光环是建筑属性，拆了就该消失，
+## 把半径判定放在建筑侧，建筑一死条件自然不成立，不用额外清理。
+func _tick_aura(dt: float) -> void:
+	if def == null or def.aura_radius <= 0.0 or def.aura_mana_regen <= 0.0:
+		return
+	if faction == null:
+		return
+	var r2: float = def.aura_radius * def.aura_radius
+	for u in faction.units:
+		if u == null or not is_instance_valid(u) or not u.is_alive():
+			continue
+		if u.global_position.distance_squared_to(global_position) > r2:
+			continue
+		if u.has_method("add_mana"):
+			u.call("add_mana", def.aura_mana_regen * dt)
+
+
+## 哨塔的**预警**：敌方单位进入 detect_radius 就朝玩家报一条提示。
+## 只对玩家的盟友阵营生效（AI 不需要提示，AI 的"耳朵"是它自己的威胁扫描）。
+func _tick_warning(_dt: float) -> void:
+	if def == null or def.detect_radius <= 0.0:
+		return
+	if faction == null or not Game.is_ally_of_player(faction):
+		return
+	if Game.elapsed - _warn_t < WARN_GAP:
+		return
+	var r2: float = def.detect_radius * def.detect_radius
+	var seen: int = 0
+	for foe in Game.enemies_of(faction):
+		for u in foe.units:
+			if u == null or not is_instance_valid(u) or not u.is_alive():
+				continue
+			if u.global_position.distance_squared_to(global_position) > r2:
+				continue
+			seen += 1
+	if seen <= 0 or seen == _warn_seen:
+		return
+	_warn_seen = seen
+	_warn_t = Game.elapsed
+	Game.toast("哨塔预警：%d 个敌军接近 (%.0f, %.0f)" % [
+		seen, global_position.x, global_position.z], Color(1.0, 0.82, 0.42))
 
 
 ## 没建完的房子不许索敌

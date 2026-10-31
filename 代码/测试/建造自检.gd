@@ -148,7 +148,12 @@ func _test_snap() -> void:
 	for i in range(5):
 		var p := Vector3(rng.randf_range(-50.0, 50.0), 0.0, rng.randf_range(-50.0, 50.0))
 		var s: Vector3 = _cmd.call("snap_build_pos", p, fp)
-		var aligned: bool = absf(s.x - roundf(s.x)) < 0.0005 and absf(s.z - roundf(s.z)) < 0.0005
+		# 判据是"占地的**最小角**落在 1m 格点上"，不是"中心必须是整数"：
+		# 偶数边长吸格线（中心整数）、奇数边长吸格心（中心 .5）——
+		# 两种都是对的，写死"中心必须整数"会把 6×7 的兵营判成失败。
+		var sx0: float = s.x - float(fp.x) * 0.5
+		var sz0: float = s.z - float(fp.y) * 0.5
+		var aligned: bool = absf(sx0 - roundf(sx0)) < 0.0005 and absf(sz0 - roundf(sz0)) < 0.0005
 		var whole: bool = _footprint_is_whole_cells(s, fp)
 		all_ok = all_ok and aligned and whole
 		detail.append("(%.1f,%.1f)→(%.1f,%.1f)" % [p.x, p.z, s.x, s.z])

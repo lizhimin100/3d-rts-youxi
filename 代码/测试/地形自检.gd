@@ -222,19 +222,44 @@ func _test_synthetic() -> void:
 			var wz: float = -half + float(gz) * cell
 			var hv: float = heights[gz * row + gx]
 			vertex_err = maxf(vertex_err, absf(float(terrain.call("height_at", wx, wz)) - hv))
+	# 细分节点：height_at 现在返回的是**渲染三角面**的高度（不是解析曲面的值），
+	# 所以在"网格节点"上它必须逐位等于解析曲面；节点**之间**则允许弦高 = 细分容差。
+	# 旧断言要求"格子中心 == 解析中心"，那只在 nu=2 时成立（中心正好是节点），
+	# nu=3 时中心根本不是节点 —— 断言本身写错了口径，不是实现回归。
+	var node_err: float = 0.0
+	var node_checks: int = 0
+	for z in range(res):
+		for x in range(res):
+			if not bool(terrain.call("is_subdivided_cell", Vector2i(x, z))):
+				continue
+			var seg: Vector2i = terrain.call("cell_subdiv_segments", Vector2i(x, z))
+			var nu: int = maxi(seg.x, 1)
+			var nv: int = maxi(seg.y, 1)
+			for j in range(nv):
+				for i in range(nu):
+					var u: float = float(i) / float(nu)
+					var v: float = float(j) / float(nv)
+					var wx2: float = -half + (float(x) + u) * cell
+					var wz2: float = -half + (float(z) + v) * cell
+					var want: float = float(terrain.call("_patch", x, z, u, v).x)
+					node_err = maxf(node_err, absf(float(terrain.call("height_at", wx2, wz2)) - want))
+					node_checks += 1
 	var center_err: float = 0.0
 	var checked_centers: int = 0
 	for z in range(res):
 		for x in range(res):
 			if bool(terrain.call("is_subdivided_cell", Vector2i(x, z))):
 				var ch: float = float(terrain.call("cell_center_height", Vector2i(x, z)))
-				var wx2: float = -half + (float(x) + 0.5) * cell
-				var wz2: float = -half + (float(z) + 0.5) * cell
-				center_err = maxf(center_err, absf(float(terrain.call("height_at", wx2, wz2)) - ch))
+				var wx3: float = -half + (float(x) + 0.5) * cell
+				var wz3: float = -half + (float(z) + 0.5) * cell
+				center_err = maxf(center_err, absf(float(terrain.call("height_at", wx3, wz3)) - ch))
 				checked_centers += 1
 	_ok("height_at 与网格顶点一致", vertex_err < 0.001, "最大误差 %.6fm" % vertex_err)
-	_ok("height_at 与四分裂中心一致", checked_centers == subdiv and center_err < 0.001,
-		"核对 %d/%d 格，最大误差 %.6fm" % [checked_centers, subdiv, center_err])
+	_ok("height_at 与细分网格节点一致", node_checks > 0 and node_err < 0.001,
+		"核对 %d 个节点，最大误差 %.6fm" % [node_checks, node_err])
+	_ok("height_at 与解析曲面的差 ≤ 细分容差（弦高口径）",
+		checked_centers == subdiv and center_err <= 0.12,
+		"核对 %d/%d 格，最大误差 %.6fm（容差 0.10）" % [checked_centers, subdiv, center_err])
 
 	# 30° 坡道 / 60° 崖壁的坡度校验
 	var ramp_slope: float = float(terrain.call("slope_degrees_at", 23.0, 0.0, 0.5))

@@ -90,6 +90,20 @@ extends Resource
 @export var abilities: Array[StringName] = []
 ## 技能冷却（秒）
 @export var ability_cooldown: float = 8.0
+## 法力上限。**0 = 没有法力条**（界面上就不画蓝条 —— 参考图的"没蓝条就不显示"）。
+@export var max_mana: float = 0.0
+## 每秒回复的法力
+@export var mana_regen: float = 0.0
+## 一个技能消耗多少法力
+@export var mana_cost: float = 0.0
+
+@export_group("光环 / 侦察")
+## 光环半径（米）。0 = 没有光环。
+@export var aura_radius: float = 0.0
+## 光环给友军每秒补多少法力（神秘圣地的"法力之泉"）
+@export var aura_mana_regen: float = 0.0
+## 预警半径（米）：敌人进入这个范围就朝玩家报一条提示（哨塔）。0 = 不预警。
+@export var detect_radius: float = 0.0
 
 
 ## 是不是建筑

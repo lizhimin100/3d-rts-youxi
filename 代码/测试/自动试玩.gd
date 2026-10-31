@@ -80,6 +80,7 @@ func _run() -> void:
 	var mine: Node3D = _find_gold_mine()
 	var gold_start: int = pf.gold
 	var _wood_start: int = pf.wood
+	var deposits_start: int = _sum_deposits(pf)
 	if peasants.size() > 0 and mine != null:
 		for i in mini(3, peasants.size()):
 			peasants[i].order_gather(mine)
@@ -177,21 +178,30 @@ func _run() -> void:
 		"起始金币": gold_start,
 		"终局金币": pf.gold,
 		"增长": pf.gold - gold_start,
+		"采集入库": _sum_deposits(pf) - deposits_start,
 		"终局木材增长": pf.wood - _wood_start,
 	}
-	print("[自动试玩] 经济终局：金币 %d → %d（增长 %d），木材增长 %d" % [
-		gold_start, pf.gold, pf.gold - gold_start, pf.wood - _wood_start,
+	print("[自动试玩] 经济终局：金币 %d → %d（增长 %d），采集入库 %d 次，木材增长 %d" % [
+		gold_start, pf.gold, pf.gold - gold_start,
+		_sum_deposits(pf) - deposits_start, pf.wood - _wood_start,
 	])
 
-	# ---------- 7. 胜负：打爆敌方大本营 ----------
-	var enemy_hall: Node3D = null
-	for b in ef.buildings:
-		if b != null and is_instance_valid(b) and b.def != null and b.def.id == &"townhall":
-			enemy_hall = b
-			break
-	if enemy_hall != null:
-		enemy_hall.take_damage(99999.0, RtsConst.DamageType.SIEGE, null)
-		print("[自动试玩] 已摧毁敌方大本营")
+	# ---------- 7. 胜负：打爆**所有敌对阵营**的大本营 ----------
+	# 多队图（4 个出生点 / 3 个队）下"敌人"不止一家：只拆一家不算赢，
+	# 这里把所有敌对阵营的大本营一起拆掉，才是"玩家赢了"的那条路径。
+	var halls: int = 0
+	for foe in Game.enemies_of(pf):
+		if foe == null:
+			continue
+		for b in foe.buildings:
+			if b == null or not is_instance_valid(b) or b.def == null:
+				continue
+			if b.def.id != &"townhall":
+				continue
+			b.take_damage(99999.0, RtsConst.DamageType.SIEGE, null)
+			halls += 1
+	if halls > 0:
+		print("[自动试玩] 已摧毁 %d 座敌方大本营（敌对阵营 %d 个）" % [halls, Game.enemies_of(pf).size()])
 	else:
 		print("[自动试玩] ⚠ 找不到敌方大本营")
 	await _wait(2.0)
@@ -210,7 +220,11 @@ func _run() -> void:
 	if not _report["战斗"].get("死亡链路", false):
 		ok = false
 		_report["战斗备注"] = "补刀后 unit_died 没触发或没从注册表移除（死亡链路断了）"
-	if _report["经济终局"]["增长"] <= 0:
+	# ⚠ 判据是"采集链路有没有产出"，**不是"净金币有没有变多"**。
+	# 净金币会被副官的开销吃掉（它一开局就在排农民、盖兵营），
+	# 用净金币判会把"采集正常 + AI 在花钱"误判成"采集坏了"。
+	# 这里同时看两个数：任一为正就说明"地里出了金子"。
+	if _report["经济终局"]["增长"] <= 0 and int(_report["经济终局"]["采集入库"]) <= 0:
 		ok = false
 		_report["经济备注"] = "农民没有产出金币（检查采集/运送/回收链路）"
 	if not _report["胜负"]["胜利?"]:
@@ -258,6 +272,20 @@ func verify_after_restart() -> void:
 # ===========================================================================
 # 工具
 # ===========================================================================
+
+## 该阵营所有农民累计"卸货次数"（每次卸货 = 一趟采集闭环完成）
+func _sum_deposits(fac: RtsFaction) -> int:
+	var n: int = 0
+	if fac == null:
+		return n
+	for u in fac.units:
+		if u == null or not is_instance_valid(u) or u.def == null:
+			continue
+		if not RtsWorld.is_worker_def(u.def):
+			continue
+		n += int(u.call("get_deposit_count"))
+	return n
+
 
 func _wait(sec: float) -> void:
 	await get_tree().create_timer(sec).timeout

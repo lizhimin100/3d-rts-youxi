@@ -144,6 +144,10 @@ static func build_units() -> Dictionary:
 	mage.height = 1.80
 	mage.abilities = [&"fireball"]
 	mage.ability_cooldown = 9.0
+	# 法力（界面上那条"蓝条"）：没有法力的单位 max_mana = 0，UI 就不画蓝条。
+	mage.max_mana = 120.0
+	mage.mana_regen = 3.2
+	mage.mana_cost = 45.0
 	out[&"mage"] = mage
 
 	# =======================================================================
@@ -188,7 +192,8 @@ static func build_units() -> Dictionary:
 	barracks.armor_type = RtsConst.ArmorType.FORTIFIED
 	barracks.footprint = Vector2i(6, 7)
 	barracks.height = 5.8
-	barracks.trains = [&"footman", &"archer", &"mage"]
+	# 法师移到「神秘圣地」—— 一座建筑只管一件事，兵营不再什么都出。
+	barracks.trains = [&"footman", &"archer"]
 	barracks.train_time = 18.0
 	barracks.sight_range = 12.0
 	barracks.body_radius = 2.8
@@ -286,45 +291,135 @@ static func build_units() -> Dictionary:
 	# 这四座是本次资产包带来的**新建筑**。玩法数值先按"同类建筑的合理量级"给一套，
 	# 不接任何生产/研究（trains / researches 留空）—— 先把美术塞进游戏能看、能摆，
 	# 等设计定下来再往这里填功能，不用再动美术资源。
-	var 新增 := [
-		# id, 显示名, 模型基名, 实测(×0.5) 占地, 高, HP, 护甲, 花费金/木, anim_set
-		[&"watchtower", "哨塔", "哨塔", Vector2i(4, 4), 8.7, 800.0, 5.0, 90, 50],
-		[&"lumbercamp", "伐木场", "伐木场", Vector2i(9, 6), 3.9, 700.0, 3.0, 90, 0],
-		[&"sanctum", "神秘圣地", "神秘圣地", Vector2i(7, 8), 8.1, 900.0, 4.0, 140, 80],
-		[&"workshop", "蒸汽车坊", "蒸汽车坊", Vector2i(7, 8), 5.0, 1100.0, 6.0, 160, 120],
-	]
-	for row in 新增:
-		var b := UnitDef.new()
-		b.id = row[0]
-		b.display_name = String(row[1])
-		b.kind = RtsConst.Kind.BUILDING
-		b.model_path = MODEL_DIR + String(row[2]) + ".glb"
-		b.model_scale = 0.5
-		b.anim_set = RtsConst.AnimSet.MILITARY_BUILDING if row[0] == &"watchtower" \
-			else RtsConst.AnimSet.CIVIC_BUILDING
-		b.footprint = row[3]
-		b.height = float(row[4])
-		b.max_hp = float(row[5])
-		b.armor = float(row[6])
-		b.armor_type = RtsConst.ArmorType.FORTIFIED
-		b.gold_cost = int(row[7])
-		b.wood_cost = int(row[8])
-		b.train_time = 25.0
-		b.sight_range = 12.0 if row[0] == &"watchtower" else 9.0
-		b.body_radius = float(maxi(int((row[3] as Vector2i).x), int((row[3] as Vector2i).y))) * 0.5
-		b.selection_radius = b.body_radius * 1.5
-		# 哨塔和箭塔一样会放箭，但更便宜更弱
-		if row[0] == &"watchtower":
-			b.attack_damage = 12.0
-			b.attack_spread = 3.0
-			b.attack_cooldown = 1.6
-			b.attack_range = 11.0
-			b.attack_type = RtsConst.DamageType.PIERCE
-			b.projectile = RtsConst.Projectile.ARROW
-			b.projectile_speed = 26.0
-			b.acquire_range = 11.0
-			b.sight_range = 13.0
-		out[b.id] = b
+	# ---- 哨塔：便宜的自卫塔 + **大视野 + 预警**（它是"哨"，不是"箭"）----
+	var watchtower := UnitDef.new()
+	watchtower.id = &"watchtower"
+	watchtower.display_name = "哨塔"
+	watchtower.kind = RtsConst.Kind.BUILDING
+	watchtower.model_path = MODEL_DIR + "哨塔.glb"
+	watchtower.model_scale = 0.5
+	watchtower.anim_set = RtsConst.AnimSet.TOWER
+	watchtower.max_hp = 820.0
+	watchtower.armor = 5.0
+	watchtower.armor_type = RtsConst.ArmorType.FORTIFIED
+	watchtower.footprint = Vector2i(4, 4)
+	watchtower.height = 8.7
+	watchtower.attack_damage = 12.0
+	watchtower.attack_spread = 3.0
+	watchtower.attack_cooldown = 1.6
+	watchtower.attack_range = 11.0
+	watchtower.attack_type = RtsConst.DamageType.PIERCE
+	watchtower.projectile = RtsConst.Projectile.ARROW
+	watchtower.projectile_speed = 26.0
+	watchtower.acquire_range = 11.0
+	watchtower.sight_range = 17.0
+	# 预警半径 > 射程：先看到、先报，打不打得到是另一回事（这就是"哨"的意义）
+	watchtower.detect_radius = 22.0
+	watchtower.body_radius = 2.0
+	watchtower.selection_radius = 3.0
+	watchtower.gold_cost = 90
+	watchtower.wood_cost = 55
+	watchtower.train_time = 22.0
+	out[&"watchtower"] = watchtower
+
+	# ---- 神秘圣地：法师产地 + 法力之泉光环 ----
+	var sanctum := UnitDef.new()
+	sanctum.id = &"sanctum"
+	sanctum.display_name = "神秘圣地"
+	sanctum.kind = RtsConst.Kind.BUILDING
+	sanctum.model_path = MODEL_DIR + "神秘圣地.glb"
+	sanctum.model_scale = 0.5
+	sanctum.anim_set = RtsConst.AnimSet.CIVIC_BUILDING
+	sanctum.max_hp = 950.0
+	sanctum.armor = 4.0
+	sanctum.armor_type = RtsConst.ArmorType.FORTIFIED
+	sanctum.footprint = Vector2i(7, 8)
+	sanctum.height = 8.1
+	sanctum.trains = [&"mage"]
+	sanctum.sight_range = 13.0
+	sanctum.body_radius = 3.4
+	sanctum.selection_radius = 5.0
+	sanctum.gold_cost = 150
+	sanctum.wood_cost = 90
+	sanctum.train_time = 30.0
+	# 法力之泉：半径 14m 内的友军每秒多回 2.2 法力（见 建筑._tick_extra）
+	sanctum.aura_radius = 14.0
+	sanctum.aura_mana_regen = 2.2
+	out[&"sanctum"] = sanctum
+
+	# ---- 蒸汽车坊：重工 —— 出蒸汽重步兵 + 提供人口 ----
+	var workshop := UnitDef.new()
+	workshop.id = &"workshop"
+	workshop.display_name = "蒸汽车坊"
+	workshop.kind = RtsConst.Kind.BUILDING
+	workshop.model_path = MODEL_DIR + "蒸汽车坊.glb"
+	workshop.model_scale = 0.5
+	workshop.anim_set = RtsConst.AnimSet.MILITARY_BUILDING
+	workshop.max_hp = 1150.0
+	workshop.armor = 6.0
+	workshop.armor_type = RtsConst.ArmorType.FORTIFIED
+	workshop.footprint = Vector2i(7, 8)
+	workshop.height = 5.0
+	workshop.trains = [&"steam_guard"]
+	workshop.food_provided = 10
+	workshop.sight_range = 11.0
+	workshop.body_radius = 3.4
+	workshop.selection_radius = 5.0
+	workshop.gold_cost = 170
+	workshop.wood_cost = 130
+	workshop.train_time = 34.0
+	out[&"workshop"] = workshop
+
+	# ---- 伐木场：资产包带来的经济建筑（暂不接功能，先在建造菜单里看得见、能落位）----
+	var lumbercamp := UnitDef.new()
+	lumbercamp.id = &"lumbercamp"
+	lumbercamp.display_name = "伐木场"
+	lumbercamp.kind = RtsConst.Kind.BUILDING
+	lumbercamp.model_path = MODEL_DIR + "伐木场.glb"
+	lumbercamp.model_scale = 0.5
+	lumbercamp.anim_set = RtsConst.AnimSet.CIVIC_BUILDING
+	lumbercamp.max_hp = 700.0
+	lumbercamp.armor = 3.0
+	lumbercamp.armor_type = RtsConst.ArmorType.FORTIFIED
+	lumbercamp.footprint = Vector2i(9, 6)
+	lumbercamp.height = 3.9
+	lumbercamp.is_dropoff = true
+	lumbercamp.sight_range = 9.0
+	lumbercamp.body_radius = 3.9
+	lumbercamp.selection_radius = 5.2
+	lumbercamp.gold_cost = 90
+	lumbercamp.wood_cost = 0
+	lumbercamp.train_time = 20.0
+	out[&"lumbercamp"] = lumbercamp
+
+	# ---- 蒸汽重步兵：蒸汽车坊出的重装单位（复用步兵模型，改尺寸/数值/定位）----
+	var steam_guard := UnitDef.new()
+	steam_guard.id = &"steam_guard"
+	steam_guard.display_name = "蒸汽重步兵"
+	steam_guard.kind = RtsConst.Kind.UNIT
+	steam_guard.model_path = MODEL_DIR + "步兵.glb"
+	steam_guard.model_scale = 1.12
+	steam_guard.anim_set = RtsConst.AnimSet.MELEE
+	steam_guard.max_hp = 640.0
+	steam_guard.armor = 9.0
+	steam_guard.armor_type = RtsConst.ArmorType.HEAVY
+	steam_guard.attack_damage = 26.0
+	steam_guard.attack_spread = 4.0
+	steam_guard.attack_cooldown = 1.7
+	steam_guard.attack_range = 1.6
+	steam_guard.attack_type = RtsConst.DamageType.SIEGE
+	steam_guard.move_speed = 3.9
+	steam_guard.turn_speed = 7.0
+	steam_guard.body_radius = 0.58
+	steam_guard.selection_radius = 0.92
+	steam_guard.sight_range = 10.0
+	steam_guard.acquire_range = 10.0
+	steam_guard.gold_cost = 190
+	steam_guard.wood_cost = 45
+	steam_guard.food_cost = 3
+	steam_guard.train_time = 26.0
+	steam_guard.height = 1.98
+	out[&"steam_guard"] = steam_guard
 
 	# =======================================================================
 	# 金矿 / 树木 —— 可采集物
@@ -447,7 +542,7 @@ static func build_difficulties() -> Array[DifficultyDef]:
 	normal.bonus_gold = 100
 	normal.aggression = 0.75
 	normal.defend_ratio = 0.6
-	normal.composition = {&"footman": 5, &"archer": 4, &"mage": 2}
+	normal.composition = {&"footman": 5, &"archer": 4, &"mage": 2, &"steam_guard": 1}
 	arr.append(normal)
 
 	var hard := DifficultyDef.new()
@@ -466,7 +561,7 @@ static func build_difficulties() -> Array[DifficultyDef]:
 	hard.bonus_gold = 250
 	hard.aggression = 0.9
 	hard.defend_ratio = 0.75
-	hard.composition = {&"footman": 6, &"archer": 5, &"mage": 3}
+	hard.composition = {&"footman": 6, &"archer": 5, &"mage": 3, &"steam_guard": 2}
 	arr.append(hard)
 
 	return arr

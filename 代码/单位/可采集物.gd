@@ -48,8 +48,14 @@ func setup(p_faction: RtsFaction, p_def: UnitDef, p_proc: Dictionary = {}) -> vo
 	remaining = maxi(def.resource_amount, 1)
 	harvest_kind = def.harvest_kind
 	proc = p_proc.duplicate(true)
-	if proc.is_empty() and TreeLibrary.is_tree(def.id):
-		proc = TreeLibrary.proc_at(position)
+	if TreeLibrary.is_tree(def.id):
+		# ★ 缺什么补什么：编辑器摆的树只存了 seed/season/yaw，
+		#   缩放/倾斜/下沉要按落点补出来 —— 否则手摆的林子会是"同一个尺寸的复制粘贴"，
+		#   而程序化地图的林子高低错落，两种来源一混就露馅。
+		var auto: Dictionary = TreeLibrary.proc_at(position)
+		for k in auto:
+			if not proc.has(k):
+				proc[k] = auto[k]
 	_ensure_visual()
 
 

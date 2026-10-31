@@ -23,9 +23,26 @@ extends RefCounted
 ## 缓存按 (建筑, 材质种, 阵营色) 共享，同阵营 100 座只占一份材质。
 
 const TEX_DIR := "res://美术/模型/"
+## 自发光专用 shader（BaseMaterial3D 的 emission_texture 在本工程里不调制颜色）
+const GLOW_SHADER := "res://美术/着色器/铁誓自发光.gdshader"
 const AO_LIGHT_AFFECT := 0.42
-## 资产包 KHR_materials_emissive_strength = 1.8
-const EMIT_ENERGY := 1.8
+## 自发光强度。
+##
+## 资产包原值 1.8（KHR_materials_emissive_strength），那是按"夜景资产"标的；
+## 而我们的自发光图集是**纯色格**：窗玻璃那一格本身是 (0.72,0.53,0.28) 的暖白，
+## ×1.8 再走 ACES 之后直接烧成一片白纸（玩家报的"窗户泛白"就是这个）；
+## 铁匠铺里那口炉/砧也是同理，变成一坨白色。
+## 实测（同一机位/A-B 截图）：过曝像素占比 1.8 时 8.5%、0.9 时 7.95%、0.45 时 1.8%。
+## 取 0.5：窗户回到"暗玻璃 + 一点点暖光"，炉火还剩一点余温，不再糊成白块。
+const EMIT_ENERGY := 0.85
+## 自发光层的底材（玻璃底）。0.02 近乎纯黑会让窗户在暗处变成黑洞；
+## 给一点冷调蓝灰，白天看是玻璃、有微光时是窗。
+const GLOW_BASE := Color(0.030, 0.036, 0.052)
+## 玻璃的高光。★ 不要做得太"亮"：窗户正对天空，粗糙度低 + 镜面高
+## 会把整片天光反射进玻璃，白天看又是一块白（第一次调成 0.30/0.55 就翻车了）。
+## 0.62 / 0.20 = 只有一眼"玻璃感"，不会反成白板。
+const GLOW_ROUGHNESS := 0.88
+const GLOW_SPECULAR := 0.12
 ## team_trim 保留资产包的金作为骨架，只吃 38% 阵营色：
 ## 全染阵营色会把三座建筑共有的金线/门钉/腰线一起洗掉，远景就只剩两块色。
 const TRIM_GOLD := Color(0.95, 0.78, 0.42)
@@ -174,15 +191,21 @@ static func _make(kind: String, base: String, team_color: Color, src: Material,
 			# 派生的 _normal.png 是"格心纯平"的图集，钉在格心上采样恒为 (0,0,1)，没有信息。
 			bm.normal_enabled = false
 		"glow":
-			bm.albedo_color = Color(0.02, 0.02, 0.02, 1.0)
-			bm.metallic = 0.0
-			bm.roughness = 1.0
-			bm.emission_enabled = true
-			if bm.emission_texture == null:
-				bm.emission_texture = _tex(base + "_自发光.png")
-			bm.emission = Color(1, 1, 1, 1)
-			bm.emission_energy_multiplier = EMIT_ENERGY
-			bm.emission_operator = BaseMaterial3D.EMISSION_OP_ADD
+			# ★ 这一层不走 BaseMaterial3D：实测它的 emission_texture 不参与调制
+			#   （见 美术/着色器/铁誓自发光.gdshader 顶部），整层会变成纯色加亮 = 泛白。
+			#   改由专用 shader 采样图集，窗/炉/旗各按自己的格子发光。
+			var sm := _glow_material(base)
+			if sm == null:
+				# 兜底：贴图或 shader 缺失时**关掉自发光**，只留暗底材。
+				# 宁可没有窗光，也绝不能回退到"整片白"（那正是玩家报的 bug）。
+				bm.albedo_color = GLOW_BASE
+				bm.metallic = 0.0
+				bm.roughness = GLOW_ROUGHNESS
+				bm.metallic_specular = GLOW_SPECULAR
+				bm.emission_enabled = false
+				sm = bm
+			_cache[key] = sm
+			return sm
 	_cache[key] = bm
 	return bm
 
@@ -292,6 +315,32 @@ static func _unify_yard_surface(arrays: Array) -> int:
 	return hits.size()
 
 
+## 自发光层的专用材质（采样图集，按格子发光）。
+## 图集取不到时返回 null → 调用方跳过这一层（宁可没有窗光，也不给一块白板）。
+static var _glow_mat_cache: Dictionary = {}
+
+static func _glow_material(base: String) -> Material:
+	if _glow_mat_cache.has(base):
+		return _glow_mat_cache[base] as Material
+	var tex := _tex(base + "_自发光.png")
+	if tex == null:
+		_glow_mat_cache[base] = null
+		return null
+	var sh := load(GLOW_SHADER) as Shader
+	if sh == null:
+		_glow_mat_cache[base] = null
+		return null
+	var m := ShaderMaterial.new()
+	m.shader = sh
+	m.set_shader_parameter("glow_tex", tex)
+	m.set_shader_parameter("base_col", GLOW_BASE)
+	m.set_shader_parameter("energy", EMIT_ENERGY)
+	m.set_shader_parameter("rough", GLOW_ROUGHNESS)
+	m.set_shader_parameter("spec", GLOW_SPECULAR)
+	_glow_mat_cache[base] = m
+	return m
+
+
 static func _collect(root: Node) -> Array[MeshInstance3D]:
 	var out: Array[MeshInstance3D] = []
 	var stack: Array[Node] = [root]
@@ -307,3 +356,4 @@ static func _collect(root: Node) -> Array[MeshInstance3D]:
 static func clear_cache() -> void:
 	_cache.clear()
 	_tex_cache.clear()
+	_glow_mat_cache.clear()

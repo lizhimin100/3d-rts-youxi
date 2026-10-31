@@ -66,6 +66,8 @@ var _hover: bool = false
 ## 控件自身的 material 会把圆外的一切绘制 discard 掉，所以"圆环边框"必须画在子节点上，
 ## 否则无论加多粗都看不见（之前的边框就是这么消失的）。
 var _frame: RingFrame = null
+## 战争迷雾节点（运行时由 RtsFog 加入 "fog_system" 组；没有就退化成无迷雾）
+var _fog_node: Node = null
 
 
 ## 圆形外框：外黑边 + 金环 + 内阴影，画在子控件上（不受父级圆形裁剪影响）
@@ -296,6 +298,14 @@ func _draw() -> void:
 			var tp: Vector2 = _world_to_map(Vector3(t.x, 0.0, t.y))
 			draw_rect(Rect2(tp - Vector2(1.6, 1.6), Vector2(3.2, 3.2)), Color(0.10, 0.24, 0.11, 0.92), true)
 
+	# --- 战争迷雾遮罩（地形 + 资源都吃这层压黑/压暗，雾中敌人由下面的单位循环跳过）---
+	if _fog_node == null or not is_instance_valid(_fog_node):
+		_fog_node = get_tree().get_first_node_in_group("fog_system")
+	if _fog_node != null:
+		var ft: Variant = _fog_node.get("fog_texture")
+		if ft != null:
+			draw_texture_rect(ft, mr, false)
+
 	# --- 单位/建筑 ---
 	var pl := Game.player_faction
 	if OS.has_environment("MM_DEBUG"):
@@ -320,6 +330,11 @@ func _draw() -> void:
 			continue
 		if n is RtsUnit and not (n as RtsUnit).is_alive():
 			continue
+		# 战争迷雾：敌方（非盟友）单位/建筑在雾中不可见则不画
+		var fac: RtsFaction = n.get("faction")
+		if _fog_node != null and fac != null and fac != pl and not pl.is_ally_of(fac):
+			if not _fog_node.is_world_visible(n.global_position.x, n.global_position.z):
+				continue
 		var col := pl_color
 		if n is RtsUnit:
 			var f: RtsFaction = (n as RtsUnit).faction
@@ -391,6 +406,12 @@ func _build_terrain_once() -> void:
 	# 自适应高度范围：旧版把 (h+0.6)/3 写死，实际地形 -8~+20m 的图会被压成
 	# "一片暗绿 + 中央一块白"，跟战场完全对不上。
 	_hmin = 1e20
+	# 地块格点表（竞技场图才有；旧的双人图 mat_cells = 0，行为不变）
+	var mat_nodes: PackedByteArray = PackedByteArray()
+	var mat_cells: int = 0
+	if md != null and md.has_method("mat_at"):
+		mat_nodes = md.get("mat_nodes")
+		mat_cells = int(md.get("mat_cells"))
 	_hmax = -1e20
 	for i in row * row:
 		var hv: float = hs[i]
@@ -413,6 +434,19 @@ func _build_terrain_once() -> void:
 					acc += hs[zz * row + xx]
 			var h: float = acc / 25.0
 			var c := _height_color(h)
+			# 地块（魔兽 3 口径的 8m 格点表）：土路 / 营地 / 矿点在图上直接是土色。
+			# 这比"按高度上色"有用得多 —— 玩家看小地图是在找"从哪条路能绕过去"。
+			if mat_nodes.size() > 0 and mat_cells > 0:
+				var n: int = mat_cells + 1
+				if mat_nodes.size() == n * n:
+					var half: float = world_size * 0.5
+					var step: float = world_size / float(mat_cells)
+					var gp := Vector2(-half + float(x) / float(maxi(row - 1, 1)) * world_size,
+						-half + float(z) / float(maxi(row - 1, 1)) * world_size)
+					var mi: int = clampi(int(round((gp.x + half) / step)), 0, n - 1)
+					var mj: int = clampi(int(round((gp.y + half) / step)), 0, n - 1)
+					if mat_nodes[mj * n + mi] > 128:
+						c = c.lerp(Color(0.36, 0.29, 0.20), 0.72)
 			var i: int = (z * row + x) * 4
 			bytes[i] = int(clampf(c.r, 0.0, 1.0) * 255.0)
 			bytes[i + 1] = int(clampf(c.g, 0.0, 1.0) * 255.0)

@@ -19,6 +19,12 @@ const CMD_ATTACK_MOVE := &"cmd_attack_move"
 const CMD_STOP := &"cmd_stop"
 const CMD_HOLD := &"cmd_hold"
 const UI_BUILD := &"ui_build"
+## 界面显隐（录演示视频用；只藏 HUD，不暂停、不改任何玩法）
+const UI_TOGGLE_HUD := &"ui_toggle_hud"
+## 全选己方部队 / 取消选择（Ctrl+A / Esc）。
+## 这两条替代了原来钉在屏幕右侧的「全选」「取消」按钮。
+const SEL_ALL := &"sel_all"
+const SEL_CLEAR := &"sel_clear"
 const ABILITY_1 := &"ability_1"
 const ABILITY_2 := &"ability_2"
 const ABILITY_3 := &"ability_3"
@@ -45,19 +51,26 @@ static func register_all() -> void:
 	_add_keys(CMD_HOLD, [KEY_H])
 	# --- 建造菜单
 	_add_keys(UI_BUILD, [KEY_B])
+	# --- 界面显隐（F9；F10 兜底，笔记本上 F9 偶尔被系统占用）
+	_add_keys(UI_TOGGLE_HUD, [KEY_F9, KEY_F10])
+	# --- 选择：Ctrl+A 全选、Esc 取消（Esc 在有等待落点的指令时由指令系统优先接管）
+	_add_keys(SEL_ALL, [KEY_A], true)
+	_add_keys(SEL_CLEAR, [KEY_ESCAPE])
 	# --- 技能
 	_add_keys(ABILITY_1, [KEY_1, KEY_KP_1])
 	_add_keys(ABILITY_2, [KEY_2, KEY_KP_2])
 	_add_keys(ABILITY_3, [KEY_3, KEY_KP_3])
 
 
-## 注册一组按键到某个动作
-static func _add_keys(action: StringName, keys: Array) -> void:
+## 注册一组按键到某个动作。
+## ctrl=true 时给事件带上 Ctrl 修饰键 —— 不带修饰的 A 是镜头左移，直接复用会打架。
+static func _add_keys(action: StringName, keys: Array, ctrl: bool = false) -> void:
 	if not InputMap.has_action(action):
 		InputMap.add_action(action, 0.2)
 	for k in keys:
 		var ev := InputEventKey.new()
 		ev.physical_keycode = int(k)
+		ev.ctrl_pressed = ctrl
 		if InputMap.action_has_event(action, ev):
 			continue
 		InputMap.action_add_event(action, ev)

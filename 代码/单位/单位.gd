@@ -124,6 +124,8 @@ static var _sep_frame: int = -1
 var def: UnitDef = null
 var faction: RtsFaction = null
 var hp: float = 1.0
+## 法力（只有定义里 max_mana > 0 的单位才有；UI 的"蓝条"读它）
+var mana: float = 0.0
 var state: int = RtsConst.State.IDLE
 var is_selected: bool = false
 var target: Node3D = null
@@ -131,6 +133,27 @@ var move_target: Vector3 = Vector3.ZERO
 
 ## 当前指令（RtsConst.Order）
 var order: int = RtsConst.Order.NONE
+
+# --- 控制权归属（由 代码/ai/控制权.gd 维护；取值见那里的 OWNER_* 常量）---
+## 最后一条指令是谁下的：0=AI（人机/副官） 1=玩家命令执行中 2=宽限 3=停止/驻守 4=锁定
+##
+## 为什么状态放在单位身上而不是登记表里：单位死了这几个字段跟着消失，
+## 不需要任何清理；登记表只是额外保存"命令组"（一批一起下令的人）。
+var order_owner: int = 0
+## 归属到期时刻（Game.elapsed 口径；0 = 无期限）。宽限/停止/驻守用它计时。
+var order_until: float = 0.0
+## 所属玩家命令组 id（0 = 不在任何组里）
+var order_group: int = 0
+## 这条指令下达的时刻（诊断 / 自检用）
+var order_since: float = 0.0
+
+## **警戒姿态**（只用于"头顶图标"和界面读法，不改变战斗逻辑）：
+##   NONE / HOLD（驻守）/ OBSERVE（观察）/ PATROL（路径巡逻）
+## 为什么单独记一个字段：驻守和观察在逻辑上是同一套（原地警戒），
+## 但玩家要能一眼看出"这队兵是被我按了驻守还是点了观察"。
+enum Guard { NONE = 0, HOLD = 1, OBSERVE = 2, PATROL = 3 }
+var guard_mode: int = Guard.NONE
+
 ## 外观（模型/动画/闪白）
 var visual: UnitVisual = null
 
@@ -273,6 +296,7 @@ func setup(p_faction: RtsFaction, p_def: UnitDef) -> void:
 	if def == null:
 		return
 	hp = def.max_hp
+	mana = def.max_mana
 	_ability_cd = 0.0
 	_ensure_visual()
 	_yaw = rotation.y
@@ -297,6 +321,23 @@ func _ensure_visual() -> void:
 # ===========================================================================
 
 ## 是否存活
+## 法力上限（没有法力返回 0）
+func max_mana() -> float:
+	return def.max_mana if def != null else 0.0
+
+
+## 有没有法力条（UI 判据：没有就不画蓝条）
+func has_mana() -> bool:
+	return max_mana() > 0.001
+
+
+## 补法力（神秘圣地的光环 / 自然回复都走这里，夹在上限内）
+func add_mana(amount: float) -> void:
+	if not has_mana() or amount <= 0.0:
+		return
+	mana = clampf(mana + amount, 0.0, max_mana())
+
+
 func is_alive() -> bool:
 	return hp > 0.0 and state != RtsConst.State.DEAD
 
@@ -322,6 +363,18 @@ func is_mobile() -> bool:
 ## 是否闲着（AI 派活用）
 func is_idle_like() -> bool:
 	return not _dying and order == RtsConst.Order.NONE
+
+
+## 这条命令的**原始目的地**（攻击移动 / 移动 / 巡逻那一头的点）。
+## AI 的"到达判定 / 重复下令过滤"要用它：只看 order 的话，
+## 单位已经在目标点旁边了还会被判成"没在执行"，于是每个思考周期重发一条。
+func command_point() -> Vector3:
+	return _order_goal
+
+
+## 这条命令还在跑吗（不是 NONE / STOP）。命令组的"结束"判定用它。
+func is_command_live() -> bool:
+	return order != RtsConst.Order.NONE and order != RtsConst.Order.STOP
 
 
 ## 当前采集的资源种类（没在采集返回 -1）
@@ -487,6 +540,8 @@ func order_move(pos: Vector3) -> void:
 	target = null
 	_flee_t = 0.0
 	_move_interrupted = false
+	_patrol_active = false
+	guard_mode = Guard.NONE
 	_order_goal = Vector3(pos.x, 0.0, pos.z)
 	_go_to(pos, true)
 
@@ -510,6 +565,8 @@ func order_attack_move(pos: Vector3) -> void:
 	target = null
 	_flee_t = 0.0
 	_move_interrupted = false
+	_patrol_active = false
+	guard_mode = Guard.NONE
 	_order_goal = Vector3(pos.x, 0.0, pos.z)
 	_go_to(pos, true)
 
@@ -526,6 +583,7 @@ func order_stop() -> void:
 	_flee_t = 0.0
 	_swinging = false
 	_patrol_active = false
+	guard_mode = Guard.NONE
 	_stop_moving()
 	if state != RtsConst.State.DEAD:
 		state = RtsConst.State.IDLE
@@ -541,6 +599,18 @@ func order_hold() -> void:
 	_patrol_active = false
 	_stop_moving()
 	state = RtsConst.State.IDLE
+	guard_mode = Guard.HOLD
+
+
+## 原地**观察**：战斗逻辑与驻守完全一致，只是头顶图标不同。
+func order_observe() -> void:
+	order_hold()
+	guard_mode = Guard.OBSERVE
+
+
+## 是否正在巡逻（路径）
+func is_patrolling() -> bool:
+	return _patrol_active and order == RtsConst.Order.ATTACK_MOVE
 
 
 ## 巡逻：在"当前位置 ↔ 目标点"之间往返，路上遇敌就打（ATTACK_MOVE 的往返版）
@@ -550,6 +620,7 @@ func order_patrol(pos: Vector3) -> void:
 	_patrol_a = global_position
 	_patrol_b = Vector3(pos.x, 0.0, pos.z)
 	_patrol_active = true
+	guard_mode = Guard.PATROL
 	_patrol_at_b = true
 	order = RtsConst.Order.ATTACK_MOVE
 	target = null
@@ -812,6 +883,9 @@ func _tick_timers(dt: float) -> void:
 		_flee_t -= dt
 		if _flee_t <= 0.0:
 			_resume_after_flee()
+	# 法力自然回复（只有 max_mana > 0 的单位会走进来）
+	if has_mana() and mana < max_mana():
+		mana = minf(max_mana(), mana + def.mana_regen * dt)
 	_tick_extra(dt)
 
 
@@ -1751,6 +1825,9 @@ func _update_cast(dt: float) -> void:
 	state = RtsConst.State.IDLE
 	# 恢复施法前的指令：主动施法记的是 NONE，自动施法记的是原来的 ATTACK/ATTACK_MOVE…
 	order = _cast_return_order
+	# 扣法力（在真正出手这一拍扣，冷却期间不会重复扣）
+	if def != null and def.mana_cost > 0.0:
+		mana = maxf(0.0, mana - def.mana_cost)
 	RtsSkills.release(self, id, pos, tgt)
 
 

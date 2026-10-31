@@ -34,6 +34,10 @@ signal notify(text: String, color: Color)
 signal game_over(victory: bool)
 ## 请求镜头抖动
 signal camera_shake(strength: float)
+## 副官给玩家的**建议**（只投递，不产生任何游戏行为）
+## payload 形如 {"code": "low_odds" / "request_control" / "under_attack",
+##               "severity": "info" / "warn", "message": "…", ...}
+signal adjutant_hint(payload: Dictionary)
 
 
 # ===========================================================================
@@ -46,12 +50,19 @@ var elapsed: float = 0.0
 ## 难度下标
 var difficulty_index: int = 0
 
-## 玩家阵营
+## 玩家阵营（人类操作的那个；槽位 0）
 var player_faction: RtsFaction = null
-## 敌人阵营
+## "主要的"敌人阵营 —— 只为兼容旧代码/旧提示语保留，**不要再拿它当敌我判据**。
+## 真正的判据是 team（见 is_enemy_of / enemies_of）。
 var enemy_faction: RtsFaction = null
+## **本局全部阵营**（多队图：每个出生点一个）。下标 = 槽位号。
+var factions: Array[RtsFaction] = []
 ## 关卡（由 主场景 挂上）
 var level: Node3D = null
+
+## **控制权登记表**（谁有权给单位下令）。由 _ready 建好，全项目共用一份：
+## 玩家下过令的单位在"命令组"生命周期内不许副官/人机碰（见 代码/ai/控制权.gd）。
+var control = null
 
 ## 全部存活单位（含建筑）。由 register/unregister 维护
 var _units: Array = []
@@ -61,33 +72,125 @@ var _buildings: Array = []
 var _harvestables: Array = []
 
 
+## 控制权登记表必须在**任何 AI 之前**建好：副官的 _ready 可能比本单例晚，
+## 但 _process 里的 tick 一定早于 AI 的思考（同一帧里自动加载先跑）。
+func _ready() -> void:
+	var s := load("res://代码/ai/控制权.gd")
+	if s != null:
+		control = s.new()
+		control.attach()
+
+
 func _process(delta: float) -> void:
 	if phase == RtsConst.Phase.RUNNING:
 		elapsed += delta
+	# 命令组状态机：组内全部 idle 才算"命令结束"，然后进宽限期。
+	if control != null:
+		control.tick(elapsed)
 
 
 # ===========================================================================
 # 初始化
 # ===========================================================================
 
-## 建立本局的两个阵营（关卡初始化时调用一次）
+## 建立本局的**全部阵营**（关卡初始化时调用一次）。
+##
+## 多队规则（用户口径）：
+##   · 出生点数量 = Cfg.game.match_slots（默认 4）；
+##   · 每个槽位属于哪个队 = Cfg.game.match_team_of_slot（默认 [1,1,2,3]）；
+##     **同队 = 盟友**，互相不能打，共用一个队色；
+##   · 队色不再是"蓝/红"两色写死，而是 match_team_colors 里的一套（蓝/红/绿/紫…）；
+##   · 队色落到模型上走的是资产自带的染色区（建筑的 team / team_trim、
+##     单位的 M_<zone>_team），所以"按模型染色区变队色"是天然成立的。
 func setup_factions() -> void:
 	var cfg: GameConfig = Cfg.game
-	player_faction = RtsFaction.new()
-	player_faction.setup(
-		RtsConst.Faction.PLAYER, true, "玩家", cfg.player_color,
-		cfg.start_gold, cfg.start_wood
-	)
-	enemy_faction = RtsFaction.new()
-	enemy_faction.setup(
-		RtsConst.Faction.ENEMY, false, "兽人军团", cfg.enemy_color,
-		cfg.start_gold + Cfg.difficulty(difficulty_index).bonus_gold, cfg.start_wood
-	)
+	factions.clear()
+	var slots: int = maxi(2, cfg.match_slots)
+	var human_slot: int = clampi(cfg.match_human_slot, 0, slots - 1)
+	var diff: DifficultyDef = Cfg.difficulty(difficulty_index)
+	for i in range(slots):
+		var f := RtsFaction.new()
+		var team: int = cfg.team_of_slot(i)
+		var human: bool = i == human_slot
+		var wealth: int = cfg.start_gold + (0 if human else diff.bonus_gold)
+		f.setup(i, human, cfg.slot_name(i, team), cfg.team_color(team),
+			wealth, cfg.start_wood)
+		f.team = team
+		f.slot = i
+		f.is_ai = not human
+		factions.append(f)
+	player_faction = factions[human_slot]
+	enemy_faction = null
+	for f in factions:
+		if f != player_faction and player_faction.is_enemy_of(f):
+			enemy_faction = f
+			break
 	_units.clear()
 	_buildings.clear()
 	_harvestables.clear()
 	phase = RtsConst.Phase.PREPARE
 	elapsed = 0.0
+
+
+# ===========================================================================
+# 队伍 / 敌我（**唯一判据**：team 相同即盟友）
+# ===========================================================================
+
+## 本局全部阵营
+func all_factions() -> Array:
+	return factions.duplicate()
+
+
+## 某个阵营的盟友（含自己；中立队为空）
+func allies_of(f: RtsFaction) -> Array:
+	var out: Array = []
+	if f == null:
+		return out
+	for o in factions:
+		if o != null and o.is_ally_of(f):
+			out.append(o)
+	return out
+
+
+## 某个阵营的敌人（所有不同队且还活着的）
+func enemies_of(f: RtsFaction) -> Array:
+	var out: Array = []
+	if f == null:
+		return out
+	for o in factions:
+		if o != null and f.is_enemy_of(o):
+			out.append(o)
+	return out
+
+
+## 敌方阵营里还有大本营的（胜负判定 / AI 目标选择用）
+func living_enemies_of(f: RtsFaction) -> Array:
+	var out: Array = []
+	for o in enemies_of(f):
+		if o.has_townhall():
+			out.append(o)
+	return out
+
+
+## 该阵营是否玩家的盟友（含自己）
+func is_ally_of_player(f: RtsFaction) -> bool:
+	if player_faction == null or f == null:
+		return true
+	return player_faction.is_ally_of(f)
+
+
+## 玩家的敌人是否已经全部出局（= 玩家赢了）
+func all_enemies_defeated() -> bool:
+	if player_faction == null:
+		return false
+	for o in factions:
+		if o == null:
+			continue
+		if not player_faction.is_enemy_of(o):
+			continue
+		if o.has_townhall():
+			return false
+	return true
 
 
 ## 清空（重开时用）
@@ -95,11 +198,22 @@ func reset() -> void:
 	_units.clear()
 	_buildings.clear()
 	_harvestables.clear()
+	factions.clear()
 	player_faction = null
 	enemy_faction = null
 	level = null
 	phase = RtsConst.Phase.PREPARE
 	elapsed = 0.0
+	if control != null:
+		control.reset()
+
+
+## 副官的"建议"通道：**只投递，不产生行为**。
+## 与直接下令的区别是这条纪律：AI 与玩家意图冲突时只能建议（见 代码/ai/副官.gd）。
+func suggest(payload: Dictionary) -> void:
+	if payload == null or payload.is_empty():
+		return
+	adjutant_hint.emit(payload)
 
 
 # ===========================================================================
@@ -159,34 +273,47 @@ func faction_units(faction: RtsFaction) -> Array:
 	return faction.units.duplicate()
 
 
-## 敌对阵营
+## **最近的**敌对阵营（兼容旧接口；多队图下"敌人"可能有 2~3 个）。
+## 新代码请用 enemies_of() / living_enemies_of()，它们返回全部敌人。
 func enemy_of(faction: RtsFaction) -> RtsFaction:
 	if faction == null:
 		return null
-	return enemy_faction if faction == player_faction else player_faction
+	var best: RtsFaction = null
+	var best_d: float = INF
+	for o in factions:
+		if o == null or not faction.is_enemy_of(o):
+			continue
+		var d: float = 0.0
+		if level != null and level.has_method("base_center"):
+			var a: Variant = level.call("base_center", faction)
+			var b: Variant = level.call("base_center", o)
+			if a is Vector3 and b is Vector3:
+				d = (a as Vector3).distance_squared_to(b as Vector3)
+		if d < best_d:
+			best_d = d
+			best = o
+	return best
 
 
-## 从某点找最近的敌人（半径限制；没有返回 null）
+## 从某点找最近的敌人（**扫全部敌对阵营**；半径限制；没有返回 null）
 func find_nearest_enemy(from: Vector3, faction: RtsFaction, radius: float) -> Node3D:
 	if faction == null:
 		return null
-	var foe: RtsFaction = enemy_of(faction)
-	if foe == null:
-		return null
 	var best: Node3D = null
 	var best_d: float = radius * radius
-	var pool: Array = []
-	pool.append_array(foe.units)
-	pool.append_array(foe.buildings)
-	for u in pool:
-		if u == null or not is_instance_valid(u):
-			continue
-		if not u.is_alive():
-			continue
-		var d: float = from.distance_squared_to(u.global_position)
-		if d < best_d:
-			best_d = d
-			best = u
+	for foe in enemies_of(faction):
+		var pool: Array = []
+		pool.append_array(foe.units)
+		pool.append_array(foe.buildings)
+		for u in pool:
+			if u == null or not is_instance_valid(u):
+				continue
+			if not u.is_alive():
+				continue
+			var d: float = from.distance_squared_to(u.global_position)
+			if d < best_d:
+				best_d = d
+				best = u
 	return best
 
 

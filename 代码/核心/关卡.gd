@@ -50,9 +50,13 @@ var _harvestables: Array = []
 
 
 ## 建关（主场景调用；不要用 _ready 自动建，方便测试按需构建）
+##
+## 2026-10-31：主场景换成**竞技场图**（4 个出生点 / 多队 / 四重旋转对称 / 魔兽 3 式地块）。
+## 旧的双人对称图（中央台地 + 双峡谷 + 双岩脊）保留为 MapGenerator.build()，供自检用，
+## 但它那些"叠加在高度场上的地貌特征"正是"莫名的凸起 + 建筑穿模"的来源，不再做主线。
 func build() -> void:
 	var cfg: GameConfig = Cfg.game
-	var data: MapGenerator.MapData = MapGenerator.build(cfg)
+	var data: MapGenerator.MapData = MapGenerator.build_arena(cfg, cfg.match_slots)
 	build_from_data(data, cfg)
 
 
@@ -67,8 +71,15 @@ func build_from_data(data: MapGenerator.MapData, cfg_override: GameConfig = null
 		return
 	map_data = data
 	world_size = data.size
-	_base_pos[RtsConst.Faction.PLAYER] = cfg.player_base_pos
-	_base_pos[RtsConst.Faction.ENEMY] = cfg.enemy_base_pos
+	# 出生点：地图给了"每个槽位一个基地"就用它（竞技场图 / 4 队），
+	# 否则退回旧的双人配置（点对称）。
+	_base_pos.clear()
+	if data.base_points.size() > 0:
+		for i in range(data.base_points.size()):
+			_base_pos[i] = data.base_points[i]
+	else:
+		_base_pos[RtsConst.Faction.PLAYER] = cfg.player_base_pos
+		_base_pos[RtsConst.Faction.ENEMY] = cfg.enemy_base_pos
 	_build_world(cfg)
 
 
@@ -123,14 +134,21 @@ func _build_world(cfg: GameConfig) -> void:
 			if rp is Dictionary and rp.has("angle"):
 				ramp_angles.append(float(rp["angle"]))
 	terrain.ramp_angles = ramp_angles
-	# 营地地标：着色时把基地半径内的地形压成"踩实的草皮"，去掉方块状土斑
+	# 营地地标：着色时把基地半径内的地面压暗一点、干裂纹减半（"踩实的营地"）。
+	# 有多少个出生点就喂多少个 —— 多队图不能再写死"玩家 / 敌人"两个。
 	var bases := PackedVector2Array()
-	for fac in [RtsConst.Faction.PLAYER, RtsConst.Faction.ENEMY]:
-		var bp: Vector2 = _base_pos.get(fac, Vector2.ZERO)
+	for k in _base_pos.keys():
+		var bp: Vector2 = _base_pos[k]
 		if bp != Vector2.ZERO:
 			bases.append(bp)
 	terrain.base_points = bases
-	terrain.build(world_size, map_data.resolution, map_data.heights, not from_map_def)
+	# 地块格点表：魔兽 3 口径（材质存在共享格点上，一格读四个角）
+	terrain.mat_cells = map_data.mat_cells
+	terrain.mat_nodes = map_data.mat_nodes
+	# 远景山脊：自建地图一律不要（半径是给 200m 默认图写死的），
+	# 竞技场图自己也会把 map_data.far_ridges 置 false。
+	var want_ridges: bool = (not from_map_def) and bool(map_data.get("far_ridges"))
+	terrain.build(world_size, map_data.resolution, map_data.heights, want_ridges)
 	if cfg != null and cfg.has_pond and map_data.pond_radius > 0.0:
 		terrain.build_water(map_data.pond_center, map_data.pond_radius, map_data.pond_level)
 
@@ -966,25 +984,58 @@ func _spawn_harvestable(id: StringName, pos: Vector3, proc: Dictionary = {}) -> 
 # 开局布阵
 # ===========================================================================
 
-## 生成双方开局建筑与部队
+## 生成**全部阵营**的开局建筑与部队（多队图：每个阵营一个基地）
 func spawn_starting_forces() -> void:
 	var cfg: GameConfig = Cfg.game
-	_spawn_faction_start(cfg, Game.player_faction, cfg.player_buildings, cfg.player_units)
-	_spawn_faction_start(cfg, Game.enemy_faction, cfg.enemy_buildings, cfg.enemy_units)
+	var list: Array = Game.factions
+	if list.is_empty():
+		list = [Game.player_faction, Game.enemy_faction]
+	for f in list:
+		_spawn_faction_start(cfg, f)
+
+
+## 阵营开局建筑表：玩家/盟友用玩家布局，敌人用敌方布局（数值在 Cfg 里）。
+func _start_layout(faction: RtsFaction) -> Dictionary:
+	var cfg: GameConfig = Cfg.game
+	var own: bool = faction != null and Game.is_ally_of_player(faction)
+	return {
+		"buildings": cfg.player_buildings if own else cfg.enemy_buildings,
+		"units": cfg.player_units if own else cfg.enemy_units,
+	}
+
+
+## 该基地的"正面"朝向（单位/建筑统一朝地图中心，且**只取 90° 整数倍**）：
+## 占地是 1m 网格上的矩形，斜着摆会让 mark_footprint 的格子矩形和视觉对不上。
+func _base_forward(center2: Vector2) -> Vector2:
+	var d: Vector2 = (-center2).normalized()
+	if d == Vector2.ZERO:
+		return Vector2(0.0, 1.0)
+	if absf(d.x) >= absf(d.y):
+		return Vector2(signf(d.x), 0.0)
+	return Vector2(0.0, signf(d.y))
 
 
 ## 生成一个阵营的开局
-func _spawn_faction_start(cfg: GameConfig, faction: RtsFaction,
-		buildings: Dictionary, units: Dictionary) -> void:
+func _spawn_faction_start(cfg: GameConfig, faction: RtsFaction) -> void:
 	if faction == null:
 		return
 	var center2: Vector2 = _base_pos.get(faction.index, Vector2.ZERO)
 	var center3 := snap_to_ground(Vector3(center2.x, 0.0, center2.y))
+	var layout: Dictionary = _start_layout(faction)
+	var buildings: Dictionary = layout["buildings"]
+	var units: Dictionary = layout["units"]
+	var forward2: Vector2 = _base_forward(center2)
+	# 模型正面是 -Z：yaw 使得 (-sin,-cos) == forward。
+	var yaw: float = atan2(-forward2.x, -forward2.y)
+	# 局部坐标基：X = 右（forward 右手边），Z = 前
+	var right2 := Vector2(-forward2.y, forward2.x)
 
 	# --- 建筑 ---
 	for id in buildings.keys():
 		var off: Vector2 = buildings[id]
-		var pos := snap_to_ground(Vector3(center2.x + off.x, 0.0, center2.y + off.y))
+		# 偏移按"营地本地坐标系"解释：x 是右手边，y 是朝中心的方向
+		var world_off: Vector2 = right2 * off.x + forward2 * off.y
+		var pos := snap_to_ground(Vector3(center2.x + world_off.x, 0.0, center2.y + world_off.y))
 		# ★ 建筑落点唯一入口：建筑网格（和寻路共用 1m 格）。
 		#   偶数足迹吸格线、奇数足迹吸格心，保证占地 = 整数个寻路格。
 		var bd: UnitDef = Cfg.unit(id)
@@ -992,24 +1043,14 @@ func _spawn_faction_start(cfg: GameConfig, faction: RtsFaction,
 		pos = 建筑网格.snap_point(pos, fp)
 		var b: Node3D = Game.spawn_unit(faction, id, pos, self)
 		if b != null:
-			# 建筑一律轴对齐（歪七扭八就是被人骂的那个），但**要转 180°**：
-			# 模型的正门在 Blender +Y（导入 Godot 后是 -Z），而镜头是从南往北看，
-			# 不转的话玩家永远对着基地的屁股 —— 大门、旗子、门楼全在背面。
-			# 180° 仍然轴对齐，占地是对称的，不影响寻路。
-			b.rotation = Vector3(0.0, 建筑网格.snap_yaw(PI), 0.0)
+			b.rotation = Vector3(0.0, 建筑网格.snap_yaw(yaw), 0.0)
 			mark_footprint(b)
 			_add_banners(b, faction)
 			if b.has_method("set_constructed"):
 				b.call("set_constructed", true)
 
-	# --- 单位（围基地一圈，左右都进画面） ---
-	var forward := Vector3(0.0, 0.0, 1.0)
-	if faction.index == RtsConst.Faction.ENEMY:
-		forward = Vector3(0.0, 0.0, -1.0)
-	# 单位围着基地站一圈，而不是挤在正前方。
-	# 为什么改：镜头从南往北看，正前方 8m 的单位会落在屏幕下沿之外（被 UI 盖住），
-	# 开局截图里一个兵都看不见。围一圈之后，左右两侧的兵始终在画面里。
-	var spawn_center := center3 + forward * -1.0
+	# --- 单位（围基地一圈站，左右都进画面） ---
+	var spawn_center := center3 + Vector3(forward2.x, 0.0, forward2.y) * 1.0
 	var idx: int = 0
 	var total: int = 0
 	for id in units.keys():
@@ -1018,7 +1059,7 @@ func _spawn_faction_start(cfg: GameConfig, faction: RtsFaction,
 		var count: int = int(units[id])
 		for i in range(count):
 			var ang: float = TAU * float(idx) / float(maxi(1, total)) + 0.15
-			var rad: float = maxf(cfg.rally_spread, 12.0) + 1.6 * float(idx % 2)
+			var rad: float = maxf(cfg.rally_spread, 10.0) + 1.6 * float(idx % 2)
 			var p := Vector3(
 				spawn_center.x + cos(ang) * rad,
 				0.0,
@@ -1027,10 +1068,12 @@ func _spawn_faction_start(cfg: GameConfig, faction: RtsFaction,
 			p = walkable_pos(p)
 			var u: Node3D = Game.spawn_unit(faction, id, p, self)
 			if u != null:
-				# 面向敌方
-				var to_enemy := base_center(Game.enemy_faction if faction.index == RtsConst.Faction.PLAYER else Game.player_faction) - p
-				if to_enemy.length_squared() > 0.01:
-					u.rotation.y = atan2(-to_enemy.x, -to_enemy.z)
+				var to_c := center3 - p
+				if to_c.length_squared() > 1.0:
+					# 面朝地图中心（出生点都在角上，中心就是主战场方向）
+					to_c = -Vector3(p.x, 0.0, p.z)
+					if to_c.length_squared() > 0.01:
+						u.rotation.y = atan2(-to_c.x, -to_c.z)
 			idx += 1
 
 
@@ -1108,13 +1151,17 @@ func _add_banners(b: Node3D, faction: RtsFaction) -> void:
 		cloth.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.add_child(cloth)
 
-## 岩石：默认走**程序化岩石**（4 个变体共享网格，每块一个 MeshInstance3D，80 面/块）；
+## 岩石：默认走**程序化岩石**（8 个变体共享网格，每块一个 MeshInstance3D）。
 ## 把 PROC_ROCK 关掉就回到"拆 岩石.glb 的子网格做 MultiMesh"的老路。
 ##
 ## 为什么这里**不用 MultiMesh**（虽然岩石是纯装饰、天生适合合批）：
 ##   MultiMesh 的实例色会覆盖/乘进顶点色，实测程序化岩石在合批下整块变黑（只剩影子）。
-##   岩石只有 ~26 块，26 次 draw call 换"顶点色正常、颜色正确"是划算的；
+##   岩石只有 ~40 块，40 次 draw call 换"顶点色正常、颜色正确"是划算的；
 ##   真要合批，得改成用实例色承担颜色（放弃顶点 AO），那是另一套取舍，先不做。
+##
+## 2026-10-31：外观参数（变体 / 三轴缩放 / 倾斜 / 下沉）**全部来自生成期**
+## （见 地图生成._place_rocks）。老地图/老存档里没有这些字段时，这里按索引
+## 兜底推一个稳定值，保证"换个地图也不会突然全是同一块石头"。
 const PROC_ROCK := true
 
 func _build_rock_multimesh(rocks: Array) -> void:
@@ -1140,16 +1187,21 @@ func _build_rocks_proc(rocks: Array) -> bool:
 		var r: Dictionary = rocks[i]
 		var p2: Vector2 = r["pos"]
 		var pos := snap_to_ground(Vector3(p2.x, 0.0, p2.y))
-		var sc: float = float(r["scale"])
-		# 竖向再抖一点：同一块石头被拉高/压扁，读起来就不是同一块
-		var sy: float = sc * (0.86 + 0.28 * float(int(absf(p2.x * 13.0) + float(i) * 7.0) % 10) / 10.0)
+		var sc: float = float(r.get("scale", 1.0))
+		var aniso: Vector3 = r.get("aniso", Vector3.ONE)
+		var tilt: Vector2 = r.get("tilt", Vector2.ZERO)
+		var sink: float = float(r.get("sink", sc * 0.14))
+		var variant: int = int(r.get("variant", i % nb))
 		var mi := MeshInstance3D.new()
 		mi.name = "岩石%d" % i
-		mi.mesh = meshes[i % nb]
+		mi.mesh = meshes[((variant % nb) + nb) % nb]
 		mi.material_override = mat
-		mi.position = pos
-		mi.rotation.y = float(r["rot"])
-		mi.scale = Vector3(sc, sy, sc)
+		# 先倾斜再转朝向，最后按三轴缩放（顺序错了会变成"整体歪掉"）
+		var basis := Basis(Vector3.UP, float(r.get("rot", 0.0)))
+		if tilt != Vector2.ZERO:
+			basis = basis * Basis(Vector3.RIGHT, tilt.x) * Basis(Vector3.FORWARD, tilt.y)
+		basis = basis.scaled(Vector3(sc * aniso.x, sc * aniso.y, sc * aniso.z))
+		mi.transform = Transform3D(basis, pos + Vector3(0.0, -sink, 0.0))
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 		mi.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
 		_props_root.add_child(mi)

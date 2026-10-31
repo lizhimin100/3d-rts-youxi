@@ -17,6 +17,9 @@ _qa/
 # 引擎缓存目录（Godot 自己写的 app_userdata 链接，不是工程内容）
 Godot/
 
+# 显卡驱动崩溃日志（本机被驱动创建，不属于工程）
+NVIDIA Corporation/
+
 # 助手/代理的工作目录（会话记忆、任务状态），不属于游戏工程
 .workbuddy/
 

@@ -5,9 +5,12 @@ extends CanvasLayer
 ## 版面（四角对齐 + 8px 栅格，任务书 §3.2）：
 ##   左上     资源条：金币 / 木材 / 人口（三枚等宽胶囊 + 人口微条）
 ##   顶部中   提示消息（最多 3 条、淡出；窄屏自动让到资源条下方，不压顶栏）
-##   左下     小地图（RtsMinimap：地形底图 + 视野框 + 图例 + 取景角）
-##   中下     选中面板：单个建筑 → 建筑面板；其余 → 档案板（两套版式按可见性切换）
-##   右下     命令卡（RtsCommandCard：4×3 指令格，未选中时是操作引导）
+## 左下     小地图（RtsMinimap：地形底图 + 视野框 + 图例 + 取景角）
+## 底部一整条   **魔兽式行动带**（2026-10-31 重排）：
+##             ┌──────────────────────────────────────────────────────┐
+##             │ [ 选中卡：头像 / 名字 / 数值 / 血条 ] [ 命令卡 4 列 ] │
+##             └──────────────────────────────────────────────────────┘
+##             两段**同高、同顶、同底**，坐在一块连续底板上 —— 不许一高一低。
 ##   选中面板上方  等待落点提示（"左键选择建造位置…"）
 ##   全屏     结束遮罩：胜/败 + 用时 + 击杀 + 「重新开始」
 ##
@@ -17,6 +20,9 @@ extends CanvasLayer
 ##   2. 字号只有 12/14/16/18/24/28 六级，层级靠"字号 + 颜色明度"两级表达；
 ##   3. 中文字体：优先美术主题（ArtKit.load_theme），没有就 SystemFont 兜底 ——
 ##      **必须保证中文能显示**，否则一屏方块，验收直接不过。
+##
+## 显隐：`F9` 一键收起/放出整层 HUD（录视频、看战场用），菜单里也有同一条；
+##       `--ui-hidden` 开局就是干净的。
 
 const Spec := preload("res://代码/界面/界面规格.gd")
 
@@ -74,6 +80,15 @@ var _sel_panel: PanelContainer = null
 var _dossier: RtsDossierPanel = null
 ## **建筑面板**：选中单个建筑时的专属版式（训练 / 集结点 / 研究，见 建筑面板.gd）
 var _building_panel: PanelContainer = null
+
+## 选中单位网格（参考图第 2 块：头像 + 短血条 + 蓝条，最多 24 个一页）
+var _grid_panel: PanelContainer = null
+var _sel_grid: RtsSelectionGrid = null
+## 头顶界面（选中单位血条 + 驻守/观察/路径状态图标）
+var _overhead: RtsOverheadUi = null
+## 底座面板脚本（preload：第一次进工程时 .godot 的 class 缓存可能还没扫到）
+const SELECTION_GRID_SCRIPT := preload("res://代码/界面/选择网格.gd")
+const OVERHEAD_SCRIPT := preload("res://代码/界面/头顶界面.gd")
 ## 当前选中面板高度（单位单选 / 多选 / 建筑三种版式各不相同）
 var _sel_h: float = 216.0
 ## 选中面板当前的左边界（响应式时会被夹在小地图和命令卡之间）
@@ -85,8 +100,16 @@ var _echo: RtsEchoFx = null
 ## **GLYPH 光标符文**：按悬停对象换图标（见 光标术.gd）
 var _glyph: RtsGlyphCursor = null
 
-## 右侧竖排快捷选择（全选 / 取消）
-var _side_box: VBoxContainer = null
+## 底栏底板（一整条）：把选中卡和命令卡锁成同一条带，见 band_style()
+var _band_plate: Panel = null
+## 上一次用的底栏高度（内容变化时用来发现"该重摆了"）
+var _band_applied: float = 0.0
+## 整层 HUD 是否显示（F9 切换；录视频时收起）
+var _hud_on: bool = true
+## 隐藏 HUD 后那条 2 秒淡出的提示（挂在 CanvasLayer 上，不在 root 里，
+## 否则它会跟着一起被藏掉，玩家不知道按什么恢复）
+var _hide_hint: Label = null
+
 ## 命令卡（_card_h_applied 记录"上一次用于摆位的高度"，用来发现行数变化）
 var _card_h_applied: float = 0.0
 var _card: RtsCommandCard = null
@@ -162,14 +185,17 @@ func _ready() -> void:
 	_recompute_metrics()
 	_sync_root_size()
 
+	_build_band_plate()
 	_build_stats()
 	_build_toasts()
 	_build_minimap()
 	_build_selection_panel()
+	_build_selection_grid()
 	_build_card()
+	_build_overhead()
 	_build_pending_label()
-	_build_side_actions()
 	_build_overlay()
+	_build_hide_hint()
 	_install_fx()
 	_apply_layout()
 
@@ -184,6 +210,9 @@ func _ready() -> void:
 	_refresh_card(true)
 	_qa_select_hook()
 	_qa_extra_hooks()
+	# --ui-hidden：开局就把整层界面收起来（录演示视频用，不需要手动按 F9）
+	if "--ui-hidden" in OS.get_cmdline_user_args():
+		set_hud_visible(false, false)
 	if OS.has_environment("UI_AUDIT"):
 		_ui_audit()
 
@@ -233,6 +262,7 @@ func _process(delta: float) -> void:
 		_recompute_metrics()
 		_apply_layout()
 	_sync_root_size()
+	_poll_hotkeys()
 	_clock += delta
 	if _clock < REFRESH_INTERVAL:
 		return
@@ -241,16 +271,11 @@ func _process(delta: float) -> void:
 	_refresh_selection()
 	_refresh_pending()
 	_refresh_card(false)
-	# 容器的最小尺寸要等控件重排后才算准（命令卡行数变了尤其明显）。
-	# 每 0.12s 比对一次"实际高度 vs 最小高度"，差 1px 就重摆 —— 右下角不会被裁半行。
-	if _card_panel != null and _card_panel.visible:
-		if OS.has_environment("UI_DEBUG"):
-			print("[CARD] h=%.1f applied=%.1f panelmin=%.1f panelsize=%s cardsize=%s cardmin=%s rows=%d" % [
-				_card_height(), _card_h_applied,
-				_card_panel.get_combined_minimum_size().y, str(_card_panel.size), str(_card.size),
-				str(_card.custom_minimum_size), int(_card.call("_row_count"))])
-		if absf(_card_height() - _card_h_applied) > 1.0:
-			_apply_layout()
+	# 底栏高度要等控件重排后才算准（命令卡行数变了尤其明显）。
+	# 每 0.12s 比对一次"该多高 vs 现在多高"，差 1px 就重摆 ——
+	# 否则右下角会裁掉半行字，或者选中卡比命令卡矮一截（就是"一边低一边高"）。
+	if absf(_band_h() - _band_applied) > 1.0:
+		_apply_layout()
 
 
 ## 把界面根节点铺满视口。
@@ -268,6 +293,13 @@ func _sync_root_size() -> void:
 		return
 	want /= _zoom
 	root.scale = Vector2(_zoom, _zoom)
+	# 头顶界面**不缩放**：它要用屏幕像素对齐 3D 投影，所以自己铺满视口
+	if _overhead != null and is_instance_valid(_overhead):
+		var vp_size: Vector2 = vp.get_visible_rect().size
+		if absf(_overhead.size.x - vp_size.x) > 1.0 or absf(_overhead.size.y - vp_size.y) > 1.0:
+			_overhead.set_anchors_preset(Control.PRESET_FULL_RECT)
+			_overhead.size = vp_size
+			_overhead.position = Vector2.ZERO
 	var area: Vector2 = root.get_parent_area_size()
 	var orr: float = want.x - area.x
 	var ob: float = want.y - area.y
@@ -298,22 +330,61 @@ func _recompute_metrics() -> void:
 	_mets = Spec.metrics(vp_size / _zoom)
 
 
-## 底部行动条：选中卡 + 命令条**左右并排**成一条，不再上下堆。
-## 参照图是"头像/数值/选择工具/指令"在同一条横向区域里，堆两层就会挡视野。
-const BAR_GAP := 8.0
+## **底部行动带（魔兽式）**：选中卡 + 命令卡 = **同一条带子的两段**。
+##
+## 2026-10-31 重排（玩家原话"不要一边低一边高"）：
+##   旧版两块各自按内容长高、各自贴底，于是选中卡 136 高、命令卡 74 高，
+##   上沿相差 60 多像素，读起来像两个随手摆的盒子。
+##   现在：一条底板 + 两段等高的段底，同顶同底，中间只留一条缝。
+const BAR_GAP := 10.0
+## 底板比段底外扩的厚度（上下左右各 6px）
+const BAND_PAD := 6.0
 
-func _bar_total() -> float:
+
+## 底栏当前该有多高：取两块内容里更高的那个，夹在 [band_h, band_max_h]
+func _band_h() -> float:
 	if _mets == null:
-		return 760.0
-	return minf(maxf(_mets.panel_w + _mets.card_w + BAR_GAP, 720.0), _sel_avail_w())
+		return 156.0
+	var want: float = _mets.band_h
+	if _sel_panel != null and is_instance_valid(_sel_panel) and _sel_panel.visible:
+		want = maxf(want, _sel_content_h())
+	if _card_panel != null and _card_panel.visible:
+		want = maxf(want, _card_height())
+	if _sel_grid != null and _grid_panel != null and _grid_panel.visible:
+		want = maxf(want, float(_sel_grid.call("content_height")))
+	return clampf(want, _mets.band_h, _mets.band_max_h)
 
 
-func _sel_width() -> float:
-	return _sel_w if _sel_w > 1.0 else 560.0
+## 选中卡"内容需要多高"：优先问面板自己的 content_height()，
+## 不能用 desired_height()——那个会把 HUD 上一帧灌进去的高度当成最小高度读回来，
+## 于是越涨越高、永远回不去。
+func _sel_content_h() -> float:
+	if _sel_panel == null or not is_instance_valid(_sel_panel):
+		return _mets.band_h if _mets != null else 156.0
+	if _sel_panel.has_method("content_height"):
+		return float(_sel_panel.call("content_height"))
+	return float(_sel_panel.call("desired_height"))
 
 
-func _card_width() -> float:
-	return _bar_total()
+## 中段（队伍网格）该不该出现：有选中 + 屏够宽
+func _grid_should_show() -> bool:
+	if _mets == null or _sel_grid == null or _grid_panel == null:
+		return false
+	if bool(_sel_grid.call("is_empty")):
+		return false
+	var m: float = _mets.margin
+	var left: float = m + BAND_PAD
+	var right: float = _mets.vw - m - BAND_PAD - _mets.card_w - BAR_GAP
+	var dw: float = clampf(_mets.vw * 0.215, 262.0, 346.0)
+	return (right - (left + dw + BAR_GAP)) >= 210.0
+
+
+## 底栏此刻该不该出现：两段都空（没选中）时整条收起，屏幕干干净净
+func _band_visible() -> bool:
+	var sel_on: bool = _sel_panel != null and is_instance_valid(_sel_panel) and _sel_panel.visible
+	var card_on: bool = _card_panel != null and _card_panel.visible
+	var grid_on: bool = _grid_panel != null and _grid_panel.visible
+	return sel_on or card_on or grid_on
 
 
 ## 把四块 HUD 钉到四角（窗口变化 / 面板高度变化时都要重摆）
@@ -341,34 +412,84 @@ func _apply_layout() -> void:
 		_place(_menu_btn, 0.0, 0.0, 0.0, 0.0,
 				m, m + _mets.minimap + 48.0,
 				m + _mets.minimap, m + _mets.minimap + 82.0)
-	# 命令条：**贴右下角**；选中卡贴左下（小地图右侧）。两块并排成一条、
-	# 中间彻底让开视野 —— 以前是"选中卡坐在命令卡正上方"，330px 高的墙直接
-	# 糊在屏幕正中偏下，谁玩都嫌挡。
-	var cw: float = _card_w()
-	if _card_panel != null:
-		# 命令条：宽时一行放下所有指令 → 高度 66；窄时自动折行，绝不裁掉指令
-		if _card != null:
-			_card.custom_minimum_size = Vector2(cw - 20.0, 44.0)
-		var ch: float = 64.0
-		if _card != null and _card.has_method("desired_height"):
-			ch = maxf(64.0, float(_card.call("desired_height")) + 20.0)
-		_card_h_applied = ch
-		if absf(_card_panel.custom_minimum_size.x - cw) > 0.5 or absf(_card_panel.custom_minimum_size.y - ch) > 0.5:
-			_card_panel.custom_minimum_size = Vector2(cw, ch)
-		_place(_card_panel, 1.0, 1.0, 1.0, 1.0,
-				-(m + cw), -(m + ch), -m, -m)
+
+	# --- 底栏：一条带子，两段等高 ---
+	var bh: float = _band_h()
+	_band_applied = bh
 	if _card != null and _card.has_method("set_tile"):
-		_card.call("set_tile", _mets.tile)
+		_card.call("set_tile", _mets.tile, _mets.card_btn_h)
 	if _card != null and _card.has_method("set_compact"):
 		_card.call("set_compact", _mets.compact)
+
+	var inner_h: float = bh - BAND_PAD * 2.0
+	var cw: float = _mets.card_w
+	# 段底 stylebox 的内边距（segment_style pad=8），面板的最小高度 =
+	# 内容最小高度 + 上下 8 → 命令卡自己要**先减掉**这 16，否则整条会高出底板。
+	const CARD_PAD := 16.0
+	if _card_panel != null:
+		if _card != null:
+			_card.custom_minimum_size = Vector2(0.0, inner_h - CARD_PAD)
+		if absf(_card_panel.custom_minimum_size.x - cw) > 0.5 \
+				or absf(_card_panel.custom_minimum_size.y - inner_h) > 0.5:
+			_card_panel.custom_minimum_size = Vector2(cw, inner_h)
+		_place(_card_panel, 1.0, 1.0, 1.0, 1.0,
+				-(m + BAND_PAD + cw), -(m + BAND_PAD + inner_h), -(m + BAND_PAD), -(m + BAND_PAD))
+	_card_h_applied = inner_h
+
+	# 底栏从 2026-10-31 起是**三段**（按玩家给的参考图）：
+	#   左 = 焦点头像 + 名字 + 血条 + 蓝条（选中卡的格式没动）
+	#   中 = 队伍网格（每个选中单位一张小头像 + 短血条 + 蓝条，24 个一页）
+	#   右 = 命令格（5 列 × 最多 4 行）
+	var left: float = m + BAND_PAD
+	var right: float = _mets.vw - m - BAND_PAD - cw - BAR_GAP
+	var dw: float = clampf(_mets.vw * 0.215, 262.0, 346.0)
+	var gx0: float = left + dw + BAR_GAP
+	var gw: float = right - gx0
+	# 屏太窄（< 1100 设计像素）就把中段让给左边的选中卡：宁可少一块清单，
+	# 也不能把选中卡压到"名字被截成两个字"。
+	var grid_on: bool = gw >= 210.0
+	if not grid_on:
+		dw = clampf(right - left, 340.0, 760.0)
+	var w: float = dw
+	_sel_left = left
+	_sel_w = w
+	if _grid_panel != null:
+		var show_grid: bool = grid_on and _grid_should_show()
+		_grid_panel.visible = show_grid and root.visible
+		if show_grid:
+			_sel_grid.call("set_metrics", gw - 12.0, inner_h - 12.0, _mets.compact)
+			_place(_grid_panel, 0.0, 1.0, 0.0, 1.0,
+					gx0, -(m + BAND_PAD + inner_h), gx0 + gw, -(m + BAND_PAD))
+	# **两块面板都摆到同一个位置**：谁可见谁占位。
+	# 只摆 _sel_panel 会出现"切到建筑面板时它是第一次显示、从没被摆过"，
+	# 结果面板停在默认尺寸，训练条和集结点叠成一坨。
+	for pnl in [_dossier, _building_panel]:
+		if pnl == null or not is_instance_valid(pnl):
+			continue
+		_place(pnl, 0.0, 1.0, 0.0, 1.0,
+				left, -(m + BAND_PAD + inner_h), left + w, -(m + BAND_PAD))
+
+	# 底板：整条（从左缘一直铺到命令卡右缘；命令卡收起时只铺选中卡那一段）
+	if _band_plate != null:
+		var on: bool = _band_visible()
+		_band_plate.visible = on and root.visible
+		if on:
+			var plate_right: float = _mets.vw - m
+			if _card_panel == null or not _card_panel.visible:
+				plate_right = left + w + BAND_PAD
+			_place(_band_plate, 0.0, 1.0, 0.0, 1.0,
+					left - BAND_PAD, -(m + bh), plate_right, -m)
+
 	_place_toasts()
-	_place_side_actions()
 	# **先**把尺寸灌进两块面板，**再**摆位置。
 	# 反过来会被 set_metrics 里的 reset_size 覆盖，面板缩回最小高度、位置也乱。
 	_apply_panel_metrics()
-	_place_selection_panel()
 	_place_pending_label()
 	_apply_theme_scale()
+	if OS.has_environment("UI_DEBUG"):
+		print("[BAND] vw=%.0f band=%.0f sel=(%.0f..%.0f) card=(%.0f..%.0f) h=%.0f tile=%.0f cardw=%.0f" % [
+			_mets.vw, bh, left, left + w, _mets.vw - m - BAND_PAD - cw, _mets.vw - m - BAND_PAD,
+			inner_h, _mets.tile, cw])
 
 
 ## 命令卡当前实际高度（行数自适应：1 行 / 2 行 / 3 行）
@@ -399,15 +520,18 @@ func _apply_theme_scale() -> void:
 
 
 ## 把响应式尺寸同步给两块选中面板（宽度 / 高度档位 / 小屏标记）
+## 高度一律用**底栏内高**：两块面板必须一样高，这是"不要一边低一边高"的物理保证。
 func _apply_panel_metrics() -> void:
 	if _mets == null:
 		return
-	var sw: float = _sel_width() if _mets != null else 432.0
+	var sw: float = _sel_w if _sel_w > 1.0 else 432.0
+	var bh: float = _band_applied - BAND_PAD * 2.0
+	if bh < 80.0:
+		bh = _mets.band_h
 	if _dossier != null and _dossier.has_method("set_metrics"):
-		_dossier.call("set_metrics", sw, 136.0, 136.0, _mets.compact)
+		_dossier.call("set_metrics", sw, bh, bh, _mets.compact)
 	if _building_panel != null and _building_panel.has_method("set_metrics"):
-		# 建筑面板有训练/研究/集结点三块，必须给它足够高度，不能压成单位卡
-		_building_panel.call("set_metrics", sw, 300.0, 300.0, _mets.compact)
+		_building_panel.call("set_metrics", sw, bh, bh, _mets.compact)
 
 
 ## 版面工具：直接设 anchor + offset，避免 set_anchors_preset 的隐式行为
@@ -619,6 +743,7 @@ func _build_menu() -> void:
 	root.add_child(_menu)
 	_menu.add_icon_item(Spec.icon_tex("gear"), "设置", 0)
 	_menu.add_icon_item(Spec.icon_tex("team"), "队伍", 1)
+	_menu.add_icon_item(Spec.icon_tex("eye"), "隐藏界面（F9）", 3)
 	_menu.add_separator()
 	_menu.add_icon_item(Spec.icon_tex("surrender"), "投降", 2)
 	_menu.id_pressed.connect(_on_menu_id)
@@ -641,6 +766,8 @@ func _on_menu_id(id: int) -> void:
 			_open_team()
 		2:
 			_open_surrender()
+		3:
+			toggle_hud()
 
 
 func _open_settings() -> void:
@@ -756,10 +883,8 @@ func _sync_adjutant() -> void:
 		if on else "副官已关闭，全部单位归你手动操作。\n点一下重新开启。")
 
 
-## 中下：选中信息（**门面**）。两种版式按选中内容切换：
-##   · 单个建筑 → RtsBuildingPanel（训练队列 / 建造进度 / 集结点 / 研究）
-##   · 其余情况 → RtsDossierPanel（3D 头像 / 属性 / 多选格子）
-## 两块面板同时存在、按可见性切换：这样高度重新自适应时不会重建控件，也不会丢悬停状态。
+## 底栏的**选中段**：左边紧贴屏幕左缘（不再被小地图挤开），
+## 高度由 _apply_layout 统一给，这里只负责"内容多高"，不碰位置。
 func _build_selection_panel() -> void:
 	_dossier = RtsDossierPanel.new()
 	_dossier.name = "选中信息"
@@ -768,70 +893,47 @@ func _build_selection_panel() -> void:
 	_building_panel = BUILDING_PANEL_SCRIPT.new() as PanelContainer
 	_building_panel.name = "建筑信息"
 	_building_panel.visible = false
-	# 建筑面板有训练/队列/集结点/研究四块，**不能被压成单位卡那个高度**
-	_building_panel.custom_minimum_size = Vector2(0.0, 190.0)
+	_building_panel.custom_minimum_size = Vector2(0.0, 150.0)
 	root.add_child(_building_panel)
 
 	_sel_panel = _dossier
 	_sel_h = _dossier.desired_height()
-	_place_selection_panel()
 
 
-## 左右并排后，选中卡不再需要抬到命令卡上方（保留给待落点提示用）
-func _lift_above_card() -> float:
-	return _sel_h + BAR_GAP
+## 选中单位网格：底栏中段（左 = 焦点头像，中 = 队伍清单，右 = 命令格）
+func _build_selection_grid() -> void:
+	_grid_panel = PanelContainer.new()
+	_grid_panel.name = "队伍网格底座"
+	_grid_panel.mouse_filter = Control.MOUSE_FILTER_PASS
+	_grid_panel.add_theme_stylebox_override("panel", Spec.segment_style(
+			Color(0.078, 0.086, 0.104, 0.90), 8, 8.0, 0.10))
+	_grid_panel.visible = false
+	root.add_child(_grid_panel)
+
+	_sel_grid = SELECTION_GRID_SCRIPT.new() as RtsSelectionGrid
+	_sel_grid.name = "队伍网格"
+	_grid_panel.add_child(_sel_grid)
 
 
-## 命令卡宽度：占屏宽的 44%（最小 420 / 最大 900）。
-## 加宽的目的是**变矮**：命令条按钮一排 96px，宽了就能一行放下 6 条指令，
-## 行数从 3 降到 1，底部整条高度从 330+ 掉到 140 上下，中央视野才真的让开。
-func _card_w() -> float:
-	if _mets == null:
-		return 560.0
-	return clampf(_mets.vw * 0.48, 460.0, 980.0)
+## 头顶界面：挂在 CanvasLayer 上（**不在 root 里** —— root 带反拉伸缩放，
+## 而头顶界面要用屏幕像素对齐 3D 投影），并排到最前面绘制 = 在 HUD 面板之下。
+func _build_overhead() -> void:
+	_overhead = OVERHEAD_SCRIPT.new() as RtsOverheadUi
+	_overhead.name = "头顶界面"
+	_overhead.zoom = _zoom
+	add_child(_overhead)
+	move_child(_overhead, 0)
 
 
-## 面板宽度上限：不能压到小地图（左右各留一条安全边）
-func _sel_avail_w() -> float:
-	if _mets == null:
-		return 360.0
-	return maxf(_mets.vw - _mets.margin * 2.0, 320.0)
-
-
-## 选中面板与命令条共用的宽度（两者必须一样宽，视觉上才是一条）
-func _panel_width() -> float:
-	if _mets == null:
-		return 560.0
-	return minf(maxf(_mets.panel_w, 520.0), _sel_avail_w())
-
-
-## **选中卡贴左下**（小地图右侧），和右下角的命令卡并排成同一条带。
-## 宽度吃满"小地图右缘 → 命令卡左缘"之间的全部空间：又宽又矮，不挡中间。
-func _place_selection_panel() -> void:
-	if _mets == null:
-		return
-	var m: float = _mets.margin
-	var left: float = m + _mets.minimap + BAR_GAP
-	var right: float = _mets.vw - m - _card_w() - BAR_GAP
-	var w: float = maxf(340.0, right - left)
-	_sel_left = left
-	_sel_w = w
-	# **两块面板都摆到同一个位置**：谁可见谁占位。
-	# 只摆 `_sel_panel` 会出现"切到建筑面板时它是第一次显示、从没被摆过"，
-	# 结果面板停在默认尺寸，训练条和集结点叠成一坨。
-	var show_h: float = _sel_h
-	if _building_panel != null and _building_panel.visible:
-		show_h = maxf(_sel_h, 186.0)
-	for pnl in [_dossier, _building_panel]:
-		if pnl == null or not is_instance_valid(pnl):
-			continue
-		_place(pnl, 0.0, 1.0, 0.0, 1.0, left, -(m + show_h), left + w, -m)
-	# 自校正：引擎把面板顶高了说明 desired_height 少算，把真实高度吃回去
-	if _sel_panel != null and is_instance_valid(_sel_panel) \
-			and _sel_panel.visible and _sel_panel.size.y > show_h + 0.5:
-		_sel_h = _sel_panel.size.y
-		_place(_sel_panel, 0.0, 1.0, 0.0, 1.0, left, -(m + _sel_h), left + w, -m)
-
+## 底栏底板：一整条深石色带（必须**最早**加入 root —— 兄弟节点按顺序绘制，
+## 晚加就会盖住两块面板）。
+func _build_band_plate() -> void:
+	_band_plate = Panel.new()
+	_band_plate.name = "底栏底板"
+	_band_plate.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_band_plate.add_theme_stylebox_override("panel", Spec.band_style())
+	_band_plate.visible = false
+	root.add_child(_band_plate)
 
 
 ## 右下命令卡
@@ -839,7 +941,9 @@ func _build_card() -> void:
 	_card_panel = PanelContainer.new()
 	_card_panel.name = "命令卡底座"
 	_card_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_card_panel.add_theme_stylebox_override("panel", Spec.panel_style(8, 0.95, 0.50, 10.0))
+	# 段底：比底板浅一档、圆角更小、无投影 —— 读起来是"底板上的一个凹槽"
+	_card_panel.add_theme_stylebox_override("panel", Spec.segment_style(
+			Color(0.088, 0.096, 0.114, 0.92), 8, 8.0, 0.14))
 	root.add_child(_card_panel)
 
 	_card = RtsCommandCard.new()
@@ -847,7 +951,7 @@ func _build_card() -> void:
 	_card_panel.add_child(_card)
 
 
-## 等待落点的提示（选中面板上方，一个可读的胶囊）
+## 等待落点的提示（底栏正上方，一个可读的胶囊）
 func _build_pending_label() -> void:
 	_pending_box = PanelContainer.new()
 	_pending_box.name = "落点提示"
@@ -864,75 +968,94 @@ func _build_pending_label() -> void:
 	_pending_box.visible = false
 
 
-## 落点提示：选中面板正上方（原版位置），宽度收窄
+## 落点提示：底栏正上方居中
 func _place_pending_label() -> void:
 	if _pending_box == null or _mets == null:
 		return
 	var pw: float = minf(_mets.panel_w, 420.0)
-	var y: float = _mets.margin + _sel_h + 10.0
+	var y: float = _mets.margin + _band_applied + 10.0
 	_place(_pending_box, 0.5, 1.0, 0.5, 1.0,
 			-pw * 0.5, -y - 26.0, pw * 0.5, -y)
 
 
-## 右侧竖排快捷选择（参照图右列：只剩下真正实现了的两件事 —— 全选 / 取消）
-func _build_side_actions() -> void:
-	_side_box = VBoxContainer.new()
-	_side_box.name = "快捷选择"
-	_side_box.add_theme_constant_override("separation", 6)
-	_side_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.add_child(_side_box)
-	_side_box.add_child(_side_button("框选", "拖拽矩形选择己方单位", _on_box_mode))
-	_side_box.add_child(_side_button("圈选", "拖拽圆形选择己方单位", _on_circle_mode))
-	_side_box.add_child(_side_button("全选", "选中所有己方单位", _on_select_all))
-	_side_box.add_child(_side_button("取消", "取消当前选择", _on_clear_selection))
+# ===========================================================================
+# 界面显隐（F9 / 菜单「隐藏界面」 / --ui-hidden）
+# ===========================================================================
+
+## 建一条"界面已隐藏"的提示：它**必须挂在 CanvasLayer 上而不是 root 里**，
+## 否则 root.visible=false 会把它一起藏掉，玩家就不知道按什么恢复。
+func _build_hide_hint() -> void:
+	_hide_hint = Spec.label("", Spec.FS_SUB, Color(0.90, 0.91, 0.88),
+			HORIZONTAL_ALIGNMENT_CENTER)
+	_hide_hint.name = "隐藏提示"
+	_hide_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hide_hint.visible = false
+	add_child(_hide_hint)
+	_hide_hint.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	_hide_hint.offset_left = -320.0
+	_hide_hint.offset_right = 320.0
+	_hide_hint.offset_top = -84.0
+	_hide_hint.offset_bottom = -44.0
 
 
-func _side_button(text: String, tip: String, cb: Callable) -> Button:
-	var b := Button.new()
-	b.text = text
-	b.tooltip_text = tip
-	b.focus_mode = Control.FOCUS_NONE
-	b.custom_minimum_size = Vector2(92.0, 50.0)
-	b.add_theme_font_size_override("font_size", Spec.FS_SUB)
-	var a: Color = Spec.accent()
-	b.add_theme_stylebox_override("normal",
-			Spec.button_style(Color(0.095, 0.105, 0.130, 0.88), Color(a.r, a.g, a.b, 0.45), a, 10, 10.0, 6.0))
-	b.add_theme_stylebox_override("hover",
-			Spec.button_style(Color(0.170, 0.185, 0.225, 0.96), Color(a.r, a.g, a.b, 0.95), a, 10, 10.0, 6.0))
-	b.add_theme_stylebox_override("pressed",
-			Spec.button_style(Color(0.270, 0.230, 0.140, 0.98), a, a, 10, 10.0, 6.0))
-	b.add_theme_color_override("font_color", Color(0.90, 0.89, 0.84))
-	b.pressed.connect(cb)
-	return b
+## 切换整层界面（录演示视频用：战场全屏、零遮挡）
+func toggle_hud() -> void:
+	set_hud_visible(not _hud_on)
 
 
-## 右侧竖排摆位：贴右边缘、垂直居中偏下（拇指够得着，又不挡战场中央）
-func _place_side_actions() -> void:
-	if _side_box == null or _mets == null:
+## announce=true 时给一条 2 秒淡出的提示（切换成功后立刻看得见"发生了什么"）
+func set_hud_visible(on: bool, announce: bool = true) -> void:
+	_hud_on = on
+	if root != null:
+		root.visible = on
+	if _overhead != null and is_instance_valid(_overhead):
+		_overhead.visible = on
+	# 收起界面时，等待落点的胶囊和结算遮罩也跟着走（它们是 root 的子节点，
+	# 但 root.visible=false 只是不画，这里额外清一下状态，避免"看不见却吃点击"）
+	if not on and _pending_box != null:
+		_pending_box.visible = false
+	if _glyph != null:
+		_glyph.set_process(on)
+	if announce:
+		_show_hide_hint("界面已隐藏 · F9 恢复" if not on else "界面已显示")
+	print("[HUD] 界面%s" % ("隐藏" if not on else "显示"))
+
+
+func _show_hide_hint(text: String) -> void:
+	if _hide_hint == null:
 		return
-	_place(_side_box, 1.0, 1.0, 1.0, 1.0,
-			-(_mets.margin + 92.0), -(m_side_bottom() + 110.0), -_mets.margin, -(m_side_bottom() - 110.0))
+	_hide_hint.text = text
+	_hide_hint.modulate.a = 1.0
+	_hide_hint.visible = true
+	var tw := create_tween()
+	tw.tween_interval(1.4)
+	tw.tween_property(_hide_hint, "modulate:a", 0.0, 0.5)
+	tw.tween_callback(func() -> void: _hide_hint.visible = false)
 
 
-func m_side_bottom() -> float:
-	if _mets == null:
-		return 120.0
-	return maxf(_mets.vh * 0.34, 120.0)
+## 键盘：F9 显隐；Ctrl+A 全选己方；Esc（没有等待落点时）取消选择。
+## 走轮询而不是 _unhandled_input：选择系统/指令系统都会吃掉鼠标键盘事件，
+## 这里抢事件容易和它们打架（表现就是"按了没反应"或"按一下触发两次"）。
+func _poll_hotkeys() -> void:
+	if Input.is_action_just_pressed(InputSetup.UI_TOGGLE_HUD):
+		toggle_hud()
+	if Input.is_action_just_pressed(InputSetup.SEL_ALL):
+		_on_select_all()
+	if Input.is_action_just_pressed(InputSetup.SEL_CLEAR):
+		var cmd := _command_system()
+		var pending: bool = cmd != null and cmd.has_method("has_pending") \
+			and bool(cmd.call("has_pending"))
+		if not pending:
+			_on_clear_selection()
 
 
-func _on_box_mode() -> void:
-	var sel := get_parent().get_node_or_null("选择系统")
-	if sel != null and sel.has_method("set_circle_mode"):
-		sel.call("set_circle_mode", false)
-	Game.toast("框选：拖拽矩形选择己方单位", Spec.accent())
-
-
-func _on_circle_mode() -> void:
-	var sel := get_parent().get_node_or_null("选择系统")
-	if sel != null and sel.has_method("set_circle_mode"):
-		sel.call("set_circle_mode", true)
-	Game.toast("圈选：拖拽圆形选择己方单位", Spec.accent())
-
+## **右侧竖排「框选 / 圈选 / 全选 / 取消」已整块删除**（2026-10-31）。
+##
+## 为什么删：那四条是"触屏没法拖框"时期的补丁，钉在屏幕右下角、压在战场最热的
+## 区域上，和魔兽式的底部行动带互相打架；而桌面上拖框本来就一直在工作
+## （选择系统 `set_circle_mode(false)` 是默认档）。功能不丢，入口换成键盘：
+##   · Ctrl+A 全选己方部队 / Esc 取消选择（`_poll_hotkeys`）
+##   · 框选：直接拖鼠标（默认就是矩形）；圈选是手游手势，桌面用不到。
 
 func _on_select_all() -> void:
 	var pl := Game.player_faction
@@ -1219,6 +1342,15 @@ func _set_label(lb: Label, txt: String) -> void:
 ## 两块面板共用贴底位置，靠 visible 切换；高度变了才重摆，避免每 0.12s 抖一下。
 func _refresh_selection() -> void:
 	var arr := _valid_selection()
+	# 队伍网格 + 头顶界面：**先喂数据再判显隐**（网格的显隐取决于它有没有内容）
+	var grid_was: bool = _grid_panel != null and _grid_panel.visible
+	if _sel_grid != null:
+		_sel_grid.call("refresh", arr)
+	if _overhead != null:
+		_overhead.zoom = _zoom
+		_overhead.call("set_selection", arr)
+	if _grid_panel != null and _grid_should_show() != grid_was:
+		_apply_layout()
 	var sole_building: RtsBuilding = null
 	if arr.size() == 1:
 		var b := arr[0] as RtsBuilding
@@ -1245,28 +1377,19 @@ func _refresh_selection() -> void:
 		_sel_panel = _dossier if show_dossier else null
 
 	if _sel_panel != null:
-		# 两块面板都实现了 desired_height()；这里按调用取，避免依赖具体面板类型
-		var h: float = float(_sel_panel.call("desired_height"))
-		# 建筑面板高度写死下限，单位卡给上下限：两块面板的内容密度差三倍，
-		# 用同一个 desired 值会出现"建筑面板压成一坨 / 单位卡空半屏"。
-		if _sel_panel == _building_panel:
-			h = maxf(h, 186.0)
-		elif _sel_panel == _dossier:
-			h = clampf(h, 108.0, 168.0)
+		# 内容高度（不含 HUD 灌进去的最小高度）——底栏靠它决定该多高。
+		var h: float = _sel_content_h()
 		if OS.has_environment("UI_DEBUG"):
-			var vbm: float = 0.0
-			var vbn: Node = _sel_panel.get("_vb")
-			if vbn is Control:
-				vbm = (vbn as Control).get_combined_minimum_size().y
-			print("[UI] sel=%s desired=%.0f selh=%.0f vbmin=%.0f min=%.0f size=%.0f" % [
-				_sel_panel.name, h, _sel_h, vbm,
-				_sel_panel.get_combined_minimum_size().y, _sel_panel.size.y])
-		if absf(h - _sel_h) > 0.5:
-			_sel_h = h
-			_place_selection_panel()
-			_place_pending_label()
-		if _sel_panel.visible and absf(_sel_panel.offset_left - _sel_left) > 0.5:
-			_place_selection_panel()
+			print("[UI] sel=%s content=%.0f selh=%.0f min=%.0f size=%.0f band=%.0f" % [
+				_sel_panel.name, h, _sel_h,
+				_sel_panel.get_combined_minimum_size().y, _sel_panel.size.y, _band_h()])
+		_sel_h = h
+	if _glyph != null:
+		_glyph.note_selection(arr)
+	# 显隐变了（选中 ↔ 未选中 / 单位 ↔ 建筑）整条底栏都要重摆：
+	# 底板要不要出现、两段谁占位，全看这个。
+	if _band_visible() != (_band_plate != null and _band_plate.visible):
+		_apply_layout()
 	if _glyph != null:
 		_glyph.note_selection(arr)
 
@@ -1289,12 +1412,11 @@ func _refresh_card(force: bool) -> void:
 	if _card == null:
 		return
 	# 【显隐】没有选中 / 选中的不是己方（敌方、中立金矿）→ 整块命令卡收起，不占位。
-	# 收起时要顺手重摆选中卡：它本来坐在命令卡上方，卡没了就该落回屏幕底边。
+	# 收起时整条底栏要重摆（底板可能只剩选中卡那一半，甚至整条消失）。
 	var show: bool = _should_show_card()
 	if _card_panel != null and _card_panel.visible != show:
 		_card_panel.visible = show
-		_place_selection_panel()
-		_place_pending_label()
+		_apply_layout()
 	if not show:
 		return
 	var sig := _card_signature()
@@ -1475,6 +1597,9 @@ func toggle_build_menu() -> void:
 ## 自动化测试用 Input.parse_input_event 灌事件时两者对不上，会误判"点在界面上"。
 ## 所以这里按控件矩形自己判，真实点击与模拟点击都一致。
 func covers_point(p: Vector2) -> bool:
+	# 界面整个收起时，屏幕上没有任何东西吃鼠标 —— 不然还能点中"看不见的按钮"
+	if not _hud_on or root == null or not root.visible:
+		return false
 	if _overlay != null and _overlay.visible:
 		return true
 	if _minimap != null and _minimap.get_global_rect().has_point(p):
@@ -1484,5 +1609,9 @@ func covers_point(p: Vector2) -> bool:
 	if _card_panel != null and _card_panel.visible and _card_panel.get_global_rect().has_point(p):
 		return true
 	if _stats_panel != null and _stats_panel.get_global_rect().has_point(p):
+		return true
+	if _adj_btn != null and _adj_btn.visible and _adj_btn.get_global_rect().has_point(p):
+		return true
+	if _menu_btn != null and _menu_btn.get_global_rect().has_point(p):
 		return true
 	return false

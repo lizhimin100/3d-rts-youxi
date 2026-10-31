@@ -4,14 +4,45 @@ extends RefCounted
 ## 玩家与 AI 都只有一个 RtsFaction，经济/军队全挂在这里。
 ## 由 Lead 提供，其他人只读/调用，不要改这个文件。
 
-# 阵营索引（RtsConst.Faction）
+# 阵营索引 = **出生点槽位号**（0..N-1）。0 号是玩家，其它是 AI / 盟友。
 var index: int = RtsConst.Faction.PLAYER
-## 是否人类玩家（否则是 AI）
+## 是否人类玩家（否则是 AI）。**只表示"由人操作"**，
+## 盟友 AI 也是 false —— 提示语/训练倍率都靠它区分，不能拿它当敌我判据。
 var is_player: bool = true
 ## 名字（界面显示）
 var display_name: String = "玩家"
-## 队伍色
+## 队伍色。**同队共用一个颜色**（魔兽口径：队色是队伍属性，不是玩家属性），
+## 所以盟友和你同色、敌人各有自己的颜色。数值来自 Cfg.game.match_team_colors。
 var color: Color = Color.WHITE
+
+# ---------------------------------------------------------------------------
+# 队伍（多队图的核心字段）
+# ---------------------------------------------------------------------------
+## 队伍编号（1 起）。**同号 = 盟友**：不许互相攻击、可以共用一个队色。
+var team: int = 1
+## 出生点槽位号（和 index 同值，语义上更明确）
+var slot: int = 0
+## 是否 AI 指挥（is_player 的补集）
+var is_ai: bool = true
+
+
+## 是不是"我方阵营"（人类玩家本人的那个阵营）
+func is_human() -> bool:
+	return is_player
+
+
+## 与另一个阵营是否同队（同队 = 盟友；自己和自己也算同队）
+func is_ally_of(other: RtsFaction) -> bool:
+	if other == null:
+		return false
+	return team == other.team
+
+
+## 与另一个阵营是否敌对（不同队 = 敌人；中立（team 0）对所有人敌对）
+func is_enemy_of(other: RtsFaction) -> bool:
+	if other == null or other == self:
+		return false
+	return team != other.team
 
 # --- 资源 ---
 var gold: int = 0

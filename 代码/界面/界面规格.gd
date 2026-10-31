@@ -60,6 +60,13 @@ class Metrics extends RefCounted:
 	var panel_w: float = 432.0
 	var panel_h_single: float = 152.0
 	var panel_h_multi: float = 152.0
+	## **底栏统一高度**（魔兽式：选中卡与命令卡必须是同一条带的两段）
+	## 这是下限；内容更高时由 HUD 按 band_max_h 往上带。
+	var band_h: float = 152.0
+	var band_max_h: float = 214.0
+	## 命令卡列数。2026-10-31 按玩家参考图改成 **5 列**（第一行 5 格、最多 4 行）
+	var card_cols: int = 5
+	var card_btn_h: float = 56.0
 	## 小屏标记（<1280 宽）：字号不变，靠缩尺寸/换行扛
 	var compact: bool = false
 
@@ -91,7 +98,10 @@ static func metrics(vp: Vector2) -> Metrics:
 		m.stats_w = 596.0
 		m.stats_h = 64.0
 		m.minimap = 208.0
-		m.tile = 58.0
+		m.tile = 112.0
+		m.card_btn_h = 62.0
+		m.band_h = 168.0
+		m.band_max_h = 214.0
 		m.panel_w = 368.0
 		m.panel_h_single = 176.0
 	elif m.vw >= 1440.0:
@@ -100,7 +110,10 @@ static func metrics(vp: Vector2) -> Metrics:
 		m.stats_w = 560.0
 		m.stats_h = 62.0
 		m.minimap = 196.0
-		m.tile = 56.0
+		m.tile = 106.0
+		m.card_btn_h = 58.0
+		m.band_h = 162.0
+		m.band_max_h = 206.0
 		m.panel_w = 356.0
 		m.panel_h_single = 172.0
 	elif m.vw >= 1280.0:
@@ -109,7 +122,10 @@ static func metrics(vp: Vector2) -> Metrics:
 		m.stats_w = 520.0
 		m.stats_h = 60.0
 		m.minimap = 184.0
-		m.tile = 54.0
+		m.tile = 98.0
+		m.card_btn_h = 54.0
+		m.band_h = 156.0
+		m.band_max_h = 198.0
 		m.panel_w = 344.0
 		m.panel_h_single = 166.0
 	else:
@@ -118,23 +134,29 @@ static func metrics(vp: Vector2) -> Metrics:
 		m.stats_w = 456.0
 		m.stats_h = 56.0
 		m.minimap = 168.0
-		m.tile = 50.0
+		m.tile = 88.0
+		m.card_btn_h = 50.0
+		m.band_h = 148.0
+		m.band_max_h = 186.0
 		m.panel_w = 330.0
 		m.panel_h_single = 158.0
 		m.compact = true
 	m.panel_h_multi = m.panel_h_single
 
-	# 命令卡底座由格子数反算：4 列 × 3 行 + 间距 + 标题/页脚 + 内边距
-	var inner: float = 14.0
-	var sep: float = 5.0
-	m.card_w = m.tile * 4.0 + sep * 3.0 + inner
-	m.card_h = m.tile * 3.0 + sep * 2.0 + 30.0 + 1.0 + 16.0 + 4.0 + inner
+	# 命令卡底座由格子数反算：5 列 × tile + 间距 + 内边距。
+	# 每格仍是**图标 + 中文名**的横条，不给玩家认纯图标。
+	var gap: float = 8.0
+	var inner: float = 10.0
+	m.card_w = m.tile * float(m.card_cols) + gap * float(m.card_cols - 1) + inner * 2.0
+	m.card_h = m.card_btn_h * 2.0 + gap + inner * 2.0
 
-	# 矮屏保护：小地图/命令卡/选中卡各自不超过屏高的一定比例
+	# 矮屏保护：小地图/底栏各自不超过屏高的一定比例
 	m.minimap = minf(m.minimap, maxf(m.vh * 0.24, 150.0))
-	m.card_h = minf(m.card_h, m.vh * 0.40)
 	m.panel_h_single = minf(m.panel_h_single, m.vh * 0.22)
 	m.panel_h_multi = m.panel_h_single
+	# 底栏上下限也跟着屏高收：1024×600 上不许吃掉 1/4 屏
+	m.band_max_h = minf(m.band_max_h, maxf(m.vh * 0.30, 132.0))
+	m.band_h = minf(m.band_h, m.band_max_h)
 	return m
 
 
@@ -330,6 +352,72 @@ static func inset_style(fill: Color, radius: int = 4, border: Color = Color(1, 1
 	sb.content_margin_right = pad_x
 	sb.content_margin_top = pad_y
 	sb.content_margin_bottom = pad_y
+	return sb
+
+
+## **底栏底板**：贯穿屏幕底部的一条深石色带（魔兽式）。
+##
+## 为什么必须有这一层：选中卡和命令卡各自有描边和投影时，它们读起来是
+## "两个飘在战场上的盒子"，左上右下随便摆；一条连续底板把它们锁成**同一条带**，
+## 边距/高度再对齐，就再也没有"一边低一边高"的观感。
+##   顶边 2px 暗金细线（整条带的视觉锚点）+ 四角 10px 圆角 + 4px 外投影。
+static func band_style(alpha: float = 0.96) -> StyleBoxFlat:
+	var a := accent()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.055, 0.062, 0.076, alpha)
+	sb.border_color = Color(a.r, a.g, a.b, 0.34)
+	sb.set_border_width_all(1)
+	sb.border_width_top = 2
+	sb.set_corner_radius_all(10)
+	sb.corner_detail = 10
+	sb.content_margin_left = 0.0
+	sb.content_margin_right = 0.0
+	sb.content_margin_top = 0.0
+	sb.content_margin_bottom = 0.0
+	sb.shadow_color = Color(0.0, 0.0, 0.0, 0.42)
+	sb.shadow_size = 8
+	sb.shadow_offset = Vector2(0.0, 3.0)
+	return sb
+
+
+## **段底**（底板上的两块内容区）：比底板更深一层、更小的圆角、无投影。
+## 配合 band_style 用：底板 = "整条带"，段底 = "带上的凹槽"，层次一眼分开。
+static func segment_style(fill: Color = Color(0.075, 0.082, 0.100, 0.90),
+		radius: int = 7, pad: float = 10.0, edge: float = 0.16) -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = fill
+	sb.border_color = Color(1.0, 0.98, 0.92, edge)
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(radius)
+	sb.corner_detail = 8
+	sb.content_margin_left = pad
+	sb.content_margin_right = pad
+	sb.content_margin_top = pad
+	sb.content_margin_bottom = pad
+	return sb
+
+
+## **压边铭牌**（头像框 / 数值块 / 队列格）：顶亮底暗的"金属压边"。
+##
+## StyleBoxFlat 只有一种边色，做不出上下不同色；这里用
+## **浅色描边 + 向下 1px 的深色投影** 伪造出"上沿高光、下沿阴影"，
+## 这是魔兽 UI 里所有小方格共用的那套读法，成本一个 shadow_size=0 的投影。
+static func bevel_style(fill: Color, edge: Color = Color(0, 0, 0, 0), radius: int = 4,
+		pad_x: float = 8.0, pad_y: float = 2.0, light: float = 0.18) -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = fill
+	sb.border_color = Color(1.0, 0.97, 0.90, light)
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(radius)
+	sb.corner_detail = 6
+	sb.content_margin_left = pad_x
+	sb.content_margin_right = pad_x
+	sb.content_margin_top = pad_y
+	sb.content_margin_bottom = pad_y
+	# 下沿阴影：1px、零模糊，读成"凹进去的底边"
+	sb.shadow_color = Color(0.0, 0.0, 0.0, 0.55) if edge.a < 0.01 else edge
+	sb.shadow_size = 0
+	sb.shadow_offset = Vector2(0.0, 1.0)
 	return sb
 
 

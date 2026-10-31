@@ -1,0 +1,248 @@
+class_name RtsOverheadUi
+extends Control
+## **头顶界面**：世界里的单位头顶那一层（不在底栏里）。
+##
+## 玩家要求的两件事：
+##   ① **选中单位头顶要有一条血条**（有法力的再加一条蓝条）；
+##   ② **处于驻守 / 观察 / 路径的单位头顶要有状态图标**。
+##
+## 实现口径：
+##   · 不建任何子节点 —— 全部在 _draw() 里画。单位上千个，一单位一个 Node 会拖垮 UI；
+##   · 世界点 → 屏幕点走 Camera3D.unproject_position，和 3D 视口同一套投影；
+##   · 这个控件挂在 HUD 的 CanvasLayer 下、且排在 HUD 面板之前，
+##     所以它画在 3D 之上、HUD 面板之下（不会盖住底栏和小地图）；
+##   · 尺寸不跟 zoom 缩放（它要对齐屏幕像素），但笔画宽度乘 zoom 保持物理大小一致。
+
+## HUD 的反拉伸系数（1.0 = 设计像素）
+var zoom: float = 1.0
+
+## 缓存刷新间隔：别在 _draw 里遍历世界
+const REFRESH: float = 0.1
+## 超过这个距离就不画（远处一堆血条会糊成马路）
+const MAX_DIST: float = 110.0
+## 最多画多少条血条（防守时几十个建筑同时选中）
+const MAX_BARS: int = 64
+## 最多画多少个状态图标
+const MAX_ICONS: int = 96
+
+var _t: float = 0.0
+var _sel: Array = []
+var _guards: Array = []
+
+const COL_HOLD := Color(0.55, 0.76, 1.0)
+const COL_OBSERVE := Color(0.42, 0.92, 0.86)
+const COL_PATROL := Color(1.0, 0.80, 0.34)
+
+
+func _ready() -> void:
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	set_anchors_preset(Control.PRESET_FULL_RECT)
+
+
+## HUD 每次刷新选择时灌进来（节点引用，不复制）
+func set_selection(units: Array) -> void:
+	_sel = units
+
+
+func _process(delta: float) -> void:
+	_t -= delta
+	if _t > 0.0:
+		queue_redraw()
+		return
+	_t = REFRESH
+	_scan_guards()
+	queue_redraw()
+
+
+## 扫一遍"有警戒姿态的己方/友军单位"（敌人不画：玩家管不着，只会挡视线）
+func _scan_guards() -> void:
+	_guards.clear()
+	if Game.player_faction == null:
+		return
+	for u in Game.all_units():
+		if u == null or not is_instance_valid(u):
+			continue
+		if not u.has_method("is_alive") or not bool(u.call("is_alive")):
+			continue
+		var g: Variant = u.get("guard_mode")
+		if g == null or int(g) == 0:
+			continue
+		if not Game.is_ally_of_player(u.faction):
+			continue
+		_guards.append(u)
+		if _guards.size() >= MAX_ICONS:
+			return
+
+
+func _draw() -> void:
+	var cam := get_viewport().get_camera_3d()
+	if cam == null:
+		return
+	var vp: Vector2 = get_viewport_rect().size
+	var cam_pos: Vector3 = cam.global_position
+
+	# --- ① 选中单位的血条 / 蓝条 ---
+	var drawn: int = 0
+	for u in _sel:
+		if drawn >= MAX_BARS:
+			break
+		if u == null or not is_instance_valid(u):
+			continue
+		if not u.has_method("is_alive") or not bool(u.call("is_alive")):
+			continue
+		var p: Vector3 = _anchor_of(u)
+		if cam_pos.distance_to(p) > MAX_DIST:
+			continue
+		if cam.is_position_behind(p):
+			continue
+		var sp: Vector2 = cam.unproject_position(p)
+		if sp.x < -60.0 or sp.y < -60.0 or sp.x > vp.x + 60.0 or sp.y > vp.y + 60.0:
+			continue
+		_draw_bars(u, sp)
+		drawn += 1
+
+	# --- ② 驻守 / 观察 / 路径 的头顶图标 ---
+	var icons: int = 0
+	for u2 in _guards:
+		if icons >= MAX_ICONS:
+			break
+		if u2 == null or not is_instance_valid(u2):
+			continue
+		var p2: Vector3 = _anchor_of(u2)
+		if cam_pos.distance_to(p2) > MAX_DIST:
+			continue
+		if cam.is_position_behind(p2):
+			continue
+		var sp2: Vector2 = cam.unproject_position(p2)
+		if sp2.x < -40.0 or sp2.y < -40.0 or sp2.x > vp.x + 40.0 or sp2.y > vp.y + 40.0:
+			continue
+		_draw_guard(u2, sp2 + Vector2(0.0, -16.0 * zoom))
+		icons += 1
+
+
+## 头顶锚点：单位高度之上再留一点（血条不压脸）
+func _anchor_of(u: Node3D) -> Vector3:
+	var h: float = 1.8
+	if u.def != null:
+		h = u.def.height
+		if u.def.is_building():
+			h *= 0.92
+	return u.global_position + Vector3(0.0, h + 0.45, 0.0)
+
+
+## 血条（+ 蓝条）。宽度按单位体量走：兵 44，建筑 108
+func _draw_bars(u: Node3D, sp: Vector2) -> void:
+	var d: UnitDef = u.def
+	var total: float = d.max_hp if d != null else 100.0
+	var cur: float = float(u.get("hp"))
+	var r: float = clampf(cur / maxf(total, 1.0), 0.0, 1.0)
+	var big: bool = d != null and d.is_building()
+	var w: float = (108.0 if big else 44.0) * zoom
+	var hh: float = 6.0 * zoom
+	var x: float = sp.x - w * 0.5
+	var y: float = sp.y - hh
+	draw_rect(Rect2(x - 1.0 * zoom, y - 1.0 * zoom, w + 2.0 * zoom, hh + 2.0 * zoom),
+		Color(0.0, 0.0, 0.0, 0.62), true)
+	draw_rect(Rect2(x, y, w, hh), Color(0.10, 0.09, 0.09, 0.86), true)
+	if r > 0.001:
+		var col: Color = _hp_color(r)
+		draw_rect(Rect2(x, y, w * r, hh), col, true)
+		draw_rect(Rect2(x, y, w * r, maxf(1.0 * zoom, hh * 0.28)),
+			Color(minf(col.r + 0.16, 1.0), minf(col.g + 0.16, 1.0), minf(col.b + 0.16, 1.0), 0.9), true)
+	# 队伍色描边：多队图里"这条血是谁的"一眼分清
+	var f: RtsFaction = u.faction
+	if f != null:
+		draw_rect(Rect2(x - 1.0 * zoom, y - 1.0 * zoom, w + 2.0 * zoom, hh + 2.0 * zoom),
+			Color(f.color.r, f.color.g, f.color.b, 0.55), false, 1.0 * zoom)
+
+	# 蓝条（没法力就不画）
+	var has_m: bool = bool(u.call("has_mana")) if u.has_method("has_mana") else false
+	if not has_m:
+		return
+	var mw: float = w * 0.78
+	var mh: float = 3.0 * zoom
+	var mx: float = sp.x - mw * 0.5
+	var my: float = y + hh + 2.0 * zoom
+	draw_rect(Rect2(mx, my, mw, mh), Color(0.04, 0.06, 0.12, 0.82), true)
+	var mmax: float = float(u.call("max_mana"))
+	var mcur: float = float(u.get("mana"))
+	var mr: float = clampf(mcur / maxf(mmax, 1.0), 0.0, 1.0)
+	if mr > 0.001:
+		draw_rect(Rect2(mx, my, mw * mr, mh), Color(0.36, 0.64, 1.0, 0.95), true)
+
+
+## 血量色：满血绿 → 半血黄 → 残血红（和底栏血条同一套阈值）
+func _hp_color(r: float) -> Color:
+	if r > 0.6:
+		return Color(0.36, 0.80, 0.34)
+	if r > 0.3:
+		return Color(0.92, 0.78, 0.26)
+	return Color(0.90, 0.26, 0.22)
+
+
+## 姿态图标：驻守 = 盾 / 观察 = 眼 / 路径 = 双旗
+func _draw_guard(u: Node3D, c: Vector2) -> void:
+	var g: int = int(u.get("guard_mode"))
+	var col: Color = COL_HOLD
+	var s: float = 9.0 * zoom
+	if g == 2:
+		col = COL_OBSERVE
+	elif g == 3:
+		col = COL_PATROL
+	draw_circle(c, s + 2.0 * zoom, Color(0.03, 0.04, 0.06, 0.72))
+	draw_arc(c, s + 2.0 * zoom, 0.0, TAU, 20, Color(col.r, col.g, col.b, 0.55), 1.2 * zoom)
+	if g == 1:
+		_draw_shield(c, s, col)
+	elif g == 2:
+		_draw_eye(c, s, col)
+	else:
+		_draw_path_flags(c, s, col)
+
+
+## 盾牌（驻守）
+func _draw_shield(c: Vector2, s: float, col: Color) -> void:
+	var pts := PackedVector2Array([
+		c + Vector2(-s * 0.62, -s * 0.72),
+		c + Vector2(s * 0.62, -s * 0.72),
+		c + Vector2(s * 0.62, s * 0.12),
+		c + Vector2(0.0, s * 0.86),
+		c + Vector2(-s * 0.62, s * 0.12),
+	])
+	draw_colored_polygon(pts, col)
+	draw_line(c + Vector2(0.0, -s * 0.55), c + Vector2(0.0, s * 0.55),
+		Color(0.06, 0.08, 0.12, 0.55), 1.2 * zoom)
+
+
+## 眼睛（观察）
+func _draw_eye(c: Vector2, s: float, col: Color) -> void:
+	var pts := PackedVector2Array()
+	for i in 13:
+		var t: float = float(i) / 12.0
+		var x: float = lerpf(-s * 0.92, s * 0.92, t)
+		pts.append(c + Vector2(x, -sin(t * PI) * s * 0.62))
+	for j in range(12, -1, -1):
+		var t2: float = float(j) / 12.0
+		var x2: float = lerpf(-s * 0.92, s * 0.92, t2)
+		pts.append(c + Vector2(x2, sin(t2 * PI) * s * 0.62))
+	draw_colored_polygon(pts, Color(0.05, 0.09, 0.10, 0.9))
+	draw_circle(c, s * 0.42, col)
+	draw_circle(c, s * 0.18, Color(0.04, 0.06, 0.08, 0.95))
+
+
+## 双旗（路径巡逻）
+func _draw_path_flags(c: Vector2, s: float, col: Color) -> void:
+	draw_line(c + Vector2(-s * 0.9, s * 0.55), c + Vector2(s * 0.9, s * 0.55),
+		Color(col.r, col.g, col.b, 0.75), 1.6 * zoom)
+	for k in 3:
+		var t: float = -0.6 + 0.6 * float(k)
+		draw_circle(c + Vector2(t * s, s * 0.55), 1.5 * zoom, col)
+	for sx in [-1.0, 1.0]:
+		var base: Vector2 = c + Vector2(sx * s * 0.62, s * 0.45)
+		draw_line(base, base + Vector2(0.0, -s * 1.15),
+			Color(col.r * 0.9, col.g * 0.9, col.b * 0.9, 0.95), 1.6 * zoom)
+		var tri := PackedVector2Array([
+			base + Vector2(0.0, -s * 1.15),
+			base + Vector2(sx * s * 0.55, -s * 0.92),
+			base + Vector2(0.0, -s * 0.70),
+		])
+		draw_colored_polygon(tri, col)

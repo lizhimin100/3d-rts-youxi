@@ -294,13 +294,14 @@ static func deal_damage(source: Node3D, target: Node3D, base: float, attack_type
 ## 群体伤害（火球 AOE）：对半径内**所有敌方**单位/建筑结算
 static func deal_aoe(source: Node3D, center: Vector3, radius: float, base: float,
 		attack_type: int, faction: RtsFaction) -> int:
-	var foe: RtsFaction = Game.enemy_of(faction)
-	if foe == null:
+	var foes: Array = Game.enemies_of(faction)
+	if foes.is_empty():
 		return 0
 	var hit_count: int = 0
 	var pool: Array = []
-	pool.append_array(foe.units)
-	pool.append_array(foe.buildings)
+	for foe in foes:
+		pool.append_array(foe.units)
+		pool.append_array(foe.buildings)
 	var r2: float = radius * radius
 	for u in pool:
 		if u == null or not is_instance_valid(u):

@@ -1,37 +1,32 @@
 class_name RtsCommandCard
 extends Control
-## **命令卡（HAWKEYE）**：右下角固定的 4 列 × 3 行指令格（魔兽 3 的肌肉记忆版式）。
+## **命令卡（HAWKEYE）**：底栏右侧的 **4 列 × 最多 3 行** 指令格（魔兽 3 的肌肉记忆版式）。
 ##
-## 这一版重做的重点（任务书 §3.2）：
-##   1. **格子在，不留大片空白**：永远铺满 12 格，没内容的位置是"暗格"而不是黑洞；
-##      未选中时整块换成"怎么玩"的引导卡（三条操作提示 + 快捷键图例）。
-##   2. **按钮像按钮**：每格 = 分类色 glyph 方块 + 名称 + 快捷键角标 + 一行花费/状态，
-##      禁用态整格压暗并写明原因（缺钱 / 队列满 / 未完工），tooltip 给完整说明。
-##   3. **8px 栅格**：标题 24、分隔线 1、正文行高 8 的倍数、格间距 6~8。
-##   4. **状态实时**：建造/训练/研究按钮的可用性由 sync_states() 每 0.12s 就地刷新，
-##      不重建控件（重建会打断悬停与 tooltip）。
+## 2026-10-31 重排：
+##   上一版是"一条能自动折行的横排文字按钮"，指令一多就折成 2~3 行，
+##   宽度还跟着屏宽乱跑 —— 和左边的选中卡既不等高、也不成形状。
+##   现在固定 **4 列网格**（魔兽的 3×4 指令格），格子等宽等高、从左上往右下填，
+##   整块贴在底栏右段里；行数由指令条数决定（≤4 一条、5~8 两条、9~12 三条）。
+##
+## 每格仍然是「图标 + 中文名 + 快捷键角标 + 副行（造价/状态）」：
+## 只放图标的话远看全是小方块（上一版就是被这么否掉的），
+## 纯文字又没有"格"的秩序感 —— 两者合起来才是既有秩序又能读懂。
 ##
 ## 只负责"按下去把请求转给指令系统"，**不做任何玩法判定**（判定在 CommandSystem）。
 ## 文字/颜色/字号统一走 界面规格.gd，不在这里自己发明。
 
 const Spec := preload("res://代码/界面/界面规格.gd")
 
-## 网格 4 列 × 3 行
-const COLS := 4
-const ROWS := 3
-const SLOTS := COLS * ROWS
+## 网格列数。2026-10-31 按玩家给的参考图改成 **5 列 × 最多 4 行**，
+## 而且第一行/第二行的顺序被钉死：移动 驻守 攻击 路径 观察 / 停止 —— 
+## 那是"拇指够得着的一圈"的肌肉记忆，不要为了多塞一格去动它。
+const COLS := 5
+## 最多几行（超出的指令不再显示）
+const MAX_ROWS := 4
 ## 训练队列最多画几格
 const QUEUE_PIPS := 5
-## 格子边长（触屏 ≥76；HUD 按分辨率注入 76/80/84）
-## 2026-10-23：格子从 80 收到 58（触屏拇指区仍够点），配合"贴右下角 + 行数自适应"，
-## 让命令卡再也不吃屏幕中央。
-## 命令条按钮高度（手游拇指区）
-const BTN_H := 54.0
-const TILE_DEFAULT := 58.0
-const TILE_MIN := 46.0
-## 命令卡标题行 / 页脚高度（原 34/16 太厚）
-const HEAD_H := 28.0
-const FOOT_H := 14.0
+## 命令条按钮高度（HUD 会按分辨率覆盖）
+const BTN_H := 56.0
 
 ## 指令系统（HUD 注入）
 var command_system: Node = null
@@ -42,28 +37,19 @@ var _selection: Array = []
 var _build_page: bool = false
 
 # --- 控件 ---
-var _title: Label = null
-## 命令条容器（自动换行）
-var _flow: HFlowContainer = null
-var _page_chip: PanelContainer = null
-var _page_label: Label = null
-var _queue_row: HBoxContainer = null
-var _queue_pips: Array[Panel] = []
-var _rule: ColorRect = null
-var _body: Control = null
+## 网格容器（4 列；每格一行指令）
 var _grid: GridContainer = null
-var _hint: PanelContainer = null
-var _hint_title: Label = null
-var _hint_rows: VBoxContainer = null
-var _hint_keys: Label = null
-var _footer: Label = null
+## 网格外面那层纵向容器：只负责"行数少于 3 时把格子垂直居中"
+var _wrap: VBoxContainer = null
 
 ## 当前这一页的按钮条目（含 state 回调，供就地刷新）
 var _entries: Array = []
 ## 小屏模式（<1280 宽）：藏掉副行，把纵向空间全给名称
 var _compact: bool = false
-## 格子边长（HUD 注入）
-var _tile: float = TILE_DEFAULT
+## 格子宽度（HUD 注入 = 界面规格.tile）
+var _tile: float = 126.0
+## 格子高度（HUD 注入 = 界面规格.card_btn_h；≤0 时退回 BTN_H）
+var _btn_h_px: float = 0.0
 
 
 # ===========================================================================
@@ -74,25 +60,28 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	custom_minimum_size = Vector2(240.0, BTN_H)
 
-	# 2026-10-23：命令卡从"4×3 图标网格"改成**一排文字按钮**（手游思路）。
-	# 参照图里就是面板正下方一条"攻击移动、驻守、观察、停止"的横条 ——
-	# 图标格子远看只剩方块，文字反而一眼读懂；HFlowContainer 自动换行，
-	# 指令多的时候才折第二行，不再永远占着 3 行 12 格。
-	_flow = HFlowContainer.new()
-	_flow.name = "命令条"
-	_flow.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_flow.add_theme_constant_override("h_separation", 6)
-	_flow.add_theme_constant_override("v_separation", 6)
-	_flow.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_flow.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_flow.offset_left = 4.0
-	_flow.offset_right = -4.0
-	_flow.offset_top = 2.0
-	_flow.offset_bottom = -2.0
-	add_child(_flow)
+	# 4 列网格（魔兽版式）。外面套一层 VBox 只做一件事：
+	# 指令只有 3~4 条时，让这一行格子**垂直居中**在段里，
+	# 而不是贴着顶边、底下空出一大块（那正是"一边低一边高"的另一种长相）。
+	_wrap = VBoxContainer.new()
+	_wrap.name = "居中"
+	_wrap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_wrap.alignment = BoxContainer.ALIGNMENT_CENTER
+	_wrap.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(_wrap)
+
+	_grid = GridContainer.new()
+	_grid.name = "指令格"
+	_grid.columns = COLS
+	_grid.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_grid.add_theme_constant_override("h_separation", 8)
+	_grid.add_theme_constant_override("v_separation", 8)
+	_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_grid.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_wrap.add_child(_grid)
 
 
-## 小屏：藏副行（文字按钮上本来只写名字，这里只影响字号）
+## 小屏：藏副行（造价/状态那行），把高度让给名称
 func set_compact(on: bool) -> void:
 	if _compact == on:
 		return
@@ -100,41 +89,51 @@ func set_compact(on: bool) -> void:
 	refresh(_selection)
 
 
-## 卡片宽度由 HUD 注入（与选中面板同宽）
-func set_tile(_px: float) -> void:
-	pass
+## 格子尺寸由 HUD 注入（宽 = 界面规格.tile，高 = card_btn_h；4 格 + 间距 = 段宽）
+func set_tile(px: float, px_h: float = 0.0) -> void:
+	var h: float = px_h if px_h > 0.0 else _btn_h()
+	if absf(px - _tile) < 0.5 and absf(h - _btn_h_px) < 0.5:
+		return
+	_tile = px
+	_btn_h_px = h
+	for rec in _entries:
+		var btn: Button = rec["btn"]
+		if btn != null and is_instance_valid(btn):
+			btn.custom_minimum_size = Vector2(_tile, _btn_h())
+
+
+## 一行放几条：固定 4 列（魔兽），不再按宽度猜
+func _per_row() -> int:
+	return COLS
 
 
 func _rows() -> int:
 	if _entries.is_empty():
 		return 1
-	# 按可用宽度估行数：每个按钮约 104px + 6 间距
-	# 96px 一格：宽度 280~300 时 3 个一行，6 条指令正好两行；
-	# 文字按钮实际最小宽 ~88，96 不会挤。
-	var avail_w: float = maxf(size.x, custom_minimum_size.x)
-	avail_w = maxf(avail_w, 240.0)
-	var per_row: int = maxi(1, int(floor((avail_w + 6.0) / 96.0)))
-	return clampi(int(ceil(float(_entries.size()) / float(per_row))), 1, 3)
+	return clampi(int(ceil(float(_entries.size()) / float(COLS))), 1, MAX_ROWS)
 
 
-## 命令条期望高度：按钮行数 × 行高 + 间距 + 内边距
+## 一行/两行/三行的实际高度（外带一层 8px 内边距，与段底的 pad 对齐）
+func _btn_h() -> float:
+	return BTN_H if _btn_h_px <= 0.0 else _btn_h_px
+
+
 func desired_height() -> float:
 	var rows: int = _rows()
-	return float(rows) * BTN_H + float(rows - 1) * 6.0 + 16.0
+	return float(rows) * _btn_h() + float(rows - 1) * 8.0 + 20.0
 
 
 func refresh(units: Array) -> void:
 	_selection = units.duplicate()
-	for c in _flow.get_children():
-		_flow.remove_child(c)
-		c.queue_free()
+	if _grid != null:
+		for c in _grid.get_children():
+			_grid.remove_child(c)
+			c.queue_free()
 	_entries.clear()
 	for e in _build_entries():
 		var btn := _make_button(e)
-		_flow.add_child(btn)
+		_grid.add_child(btn)
 		_entries.append({"entry": e, "btn": btn, "sub": e.get("sub", "")})
-	if _title != null:
-		_title.text = _title_text()
 	sync_states()
 
 
@@ -142,6 +141,8 @@ func sync_states() -> void:
 	for rec in _entries:
 		var e: Dictionary = rec["entry"]
 		var btn: Button = rec["btn"]
+		if btn == null or not is_instance_valid(btn):
+			continue
 		var disabled: bool = bool(e.get("disabled", cmd_missing()))
 		var sub: String = String(e.get("sub", ""))
 		var sub_col: Color = Spec.text_dim()
@@ -157,15 +158,17 @@ func sync_states() -> void:
 		if btn.disabled != disabled:
 			btn.disabled = disabled
 			_style_button(btn, e, disabled)
-		var sl: Label = btn.get_node_or_null("副行") as Label
+		var sl: Label = btn.find_child("副行", true, false) as Label
 		if sl != null:
 			if sl.text != sub:
 				sl.text = sub
 			if rec.get("sub_col") != sub_col:
 				rec["sub_col"] = sub_col
 				sl.add_theme_color_override("font_color", sub_col)
-		# 禁用时整格压暗（含 glyph/名称/角标）
-		var dim: float = 0.52 if disabled else 1.0
+			# 小屏只留名字，副行整行收起（不是"字号变小"，是干脆不占高度）
+			sl.visible = not _compact
+		# 禁用时整格压暗（含图标/名称/角标）
+		var dim: float = 0.55 if disabled else 1.0
 		if not is_equal_approx(float(rec.get("dim", -1.0)), dim):
 			rec["dim"] = dim
 			for c in btn.get_children():
@@ -197,47 +200,21 @@ func can_enter_build_page() -> bool:
 
 
 ## 建造页里列出的建筑 id（顺序即按钮顺序；界面与自检共用这一份）
+## 8 条 = 5 列网格的 1.6 行，正好一屏放得下，不用翻页。
 func build_page_ids() -> Array:
-	return [&"farm", &"barracks", &"tower", &"blacksmith"]
+	return [&"farm", &"barracks", &"tower", &"watchtower",
+		&"blacksmith", &"sanctum", &"workshop", &"lumbercamp"]
 
 
 # ===========================================================================
 # 内容
 # ===========================================================================
-
-func _title_text() -> String:
-	if _selection.is_empty():
-		return "指挥面板"
-	var b := _first_building()
-	if b != null and b.def != null:
-		var extra: String = "" if b.train_queue.is_empty() else " · 队列 %d" % b.train_queue.size()
-		if b.is_researching():
-			extra += " · 研究中 %d%%" % int(clampf(b.research_progress(), 0.0, 1.0) * 100.0)
-		return "%s%s" % [b.def.display_name, extra]
-	var u := _first_unit()
-	if u != null and u.def != null:
-		var n: String = "" if _selection.size() <= 1 else " ×%d" % _selection.size()
-		return "%s%s" % [u.def.display_name, n]
-	return "未选中"
-
-
-func _footer_text() -> String:
-	if _build_page:
-		return "左键点地面放置 · R 转 90° · 右键取消 · 再按 B 返回"
-	return "F 攻击移动 · X 停止 · H 驻守 · B 建造菜单"
-
-
-func _update_page_chip() -> void:
-	if _page_chip != null:
-		_page_chip.visible = _build_page
-
-
-## 训练队列小格（有几格亮几格）
-func _update_queue() -> void:
-	var b := _first_building()
-	var n: int = b.train_queue.size() if b != null else 0
-	for i in _queue_pips.size():
-		_queue_pips[i].visible = i < n
+# 说明：原先这里有一批 `_title_text / _footer_text / _update_page_chip /
+# `_update_queue / _fill_hint / _add_hint_row`，它们的控件（标题行、页脚、
+# 队列小格、操作引导卡）在上一版就**没有再造过**，属于"读起来像活的、其实没人调"
+# 的死代码（`_fill_hint` 里还会对 null 的 `_hint_rows` 解引用）。
+# 网格版不需要它们：名字/阵营/数量在左边的选中卡里，队列在建筑面板里，
+# 键位提示在每格的快捷键角标 + tooltip 里。整段删除，别再长回来。
 
 
 ## 根据选中内容拼出按钮条目
@@ -297,38 +274,15 @@ func _build_entries() -> Array:
 		})
 		return out
 
-	# --- 3. 技能 ---
-	if unit != null and unit.def != null:
-		for ab in unit.def.abilities:
-			out.append(_ability_entry(ab))
-
-	# --- 4. 常备指令 ---
-	if worker:
-		# 农民必须有一个"看得见"的建造入口：B 键能切页，但第一级界面上没有入口时，
-		# 玩家会以为农民根本不能造东西。
-		# **第一级只留「建造」这一格**：以前这里还直出「农场」「兵营」两格，
-		# 结果是农民的常用指令条被建筑按钮挤掉，界面层级混乱。
-		# 建筑一律进"建造"展开页（enter_build_page），一层只做一件事。
-		out.append({
-			"label": "建造",
-			"hint": "打开建造菜单：农场 / 兵营 / 箭塔 / 铁匠铺（B 键）",
-			"color": Color(0.82, 0.94, 0.74),
-			"glyph": "建",
-			"icon": "hammer",
-			"hotkey": "B",
-			"sub": "展开 4 种建筑",
-			"action": func(): enter_build_page(),
-		})
-
+	# --- 3. 常备指令（顺序 = 参考图：移动 驻守 攻击 路径 观察 / 停止）---
 	out.append({
-		"label": "攻击移动",
-		"hint": "沿途遇敌自动交战（F）",
-		"color": Color(0.95, 0.72, 0.45),
-		"glyph": "攻",
-		"icon": "attack_move",
-		"hotkey": "F",
-		"sub": "沿途接敌",
-		"action": func(): _call("request_attack_move"),
+		"label": "移动",
+		"hint": "点地面把队伍部署过去（自由移动）",
+		"color": Color(0.82, 0.86, 0.66),
+		"glyph": "移",
+		"icon": "move",
+		"sub": "点地移动",
+		"action": func(): _call("request_move"),
 	})
 	out.append({
 		"label": "驻守",
@@ -341,6 +295,16 @@ func _build_entries() -> Array:
 		"action": func(): _call("request_hold"),
 	})
 	out.append({
+		"label": "攻击",
+		"hint": "攻击移动：沿途遇敌自动交战（F）",
+		"color": Color(0.95, 0.72, 0.45),
+		"glyph": "攻",
+		"icon": "attack_move",
+		"hotkey": "F",
+		"sub": "沿途接敌",
+		"action": func(): _call("request_attack_move"),
+	})
+	out.append({
 		"label": "路径",
 		"hint": "在当前位置与点击点之间往返（路径巡逻）",
 		"color": Color(0.95, 0.85, 0.55),
@@ -351,23 +315,33 @@ func _build_entries() -> Array:
 	})
 	out.append({
 		"label": "观察",
-		"hint": "原地观察，不主动出击（观察 = 原地警戒）",
+		"hint": "原地观察，不主动出击（观察 = 原地警戒，头顶会挂观察图标）",
 		"color": Color(0.66, 0.84, 0.84),
 		"glyph": "观",
-		"icon": "shield",
+		"icon": "eye",
 		"sub": "原地观察",
-		"action": func(): _call("request_hold"),
+		"action": func(): _call("request_observe"),
 	})
+	# --- 4. 第二行：停止 → 技能 → 建造 ---
 	out.append(_stop_entry())
-	out.append({
-		"label": "自由部署",
-		"hint": "点地面把队伍部署过去（自由移动）",
-		"color": Color(0.82, 0.86, 0.66),
-		"glyph": "自",
-		"icon": "move",
-		"sub": "点地移动",
-		"action": func(): _call("request_move"),
-	})
+
+	if unit != null and unit.def != null:
+		for ab in unit.def.abilities:
+			out.append(_ability_entry(ab))
+
+	if worker:
+		# 农民必须有一个"看得见"的建造入口：B 键能切页，但第一级界面上没有入口时，
+		# 玩家会以为农民根本不能造东西。建筑一律进"建造"展开页，一层只做一件事。
+		out.append({
+			"label": "建造",
+			"hint": "打开建造菜单：农场 / 兵营 / 箭塔 / 哨塔 / 铁匠铺 / 神秘圣地 / 蒸汽车坊 / 伐木场（B 键）",
+			"color": Color(0.82, 0.94, 0.74),
+			"glyph": "建",
+			"icon": "hammer",
+			"hotkey": "B",
+			"sub": "展开 8 种建筑",
+			"action": func(): enter_build_page(),
+		})
 	return out
 
 
@@ -526,18 +500,24 @@ func _stop_entry() -> Dictionary:
 # ===========================================================================
 # 格子
 # ===========================================================================
+#
+# 一格的构成（魔兽式"铭牌"读法）：
+#   ┌────────────────────────────┐
+#   │ [图标]  名称            ⌨F │   ← 名称 14 号 + 右上角快捷键小牌
+#   │         135金 15木          │   ← 副行 12 号（造价 / 状态 / 禁用原因）
+#   └────────────────────────────┘
+# 左上一条 3px 分类色条（button_style 的 stripe）+ 顶亮底暗的压边（bevel）。
+# 图标 **不许省**：只有文字的格子远看是四块灰砖，只有图标的格子远看是四个方块，
+# 两样都得有。
 
-## 造一个指令格：Button（吃输入/悬停/tooltip）+ 四个只读子控件（图标/角标/名称/副行）
-## 一个文字按钮：图标 + 名称（横向），高度 44，宽度按文字自适应
 func _make_button(e: Dictionary) -> Button:
 	var btn := Button.new()
 	btn.focus_mode = Control.FOCUS_NONE
 	btn.mouse_filter = Control.MOUSE_FILTER_STOP
-	# 118 宽 = 【图标 24 + 6 间距 + 4 个中文字 64】+ 左右内边距 20。
-	# 以前 96 宽装不下「攻击移动」四个字，字直接顶出按钮边缘。
-	btn.custom_minimum_size = Vector2(118.0, BTN_H)
-	# 不要 EXPAND：HFlow 里一 EXPAND 就变成"一条一个按钮"，6 条指令竖着排出屏幕。
-	btn.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	btn.custom_minimum_size = Vector2(_tile, _btn_h())
+	# 4 列等分：EXPAND_FILL 让每格吃掉 1/4 宽度，格子边界永远对齐
+	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	btn.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	btn.tooltip_text = String(e.get("hint", ""))
 	btn.text = ""
 
@@ -547,12 +527,15 @@ func _make_button(e: Dictionary) -> Button:
 	var row := HBoxContainer.new()
 	row.name = "行"
 	row.set_anchors_preset(Control.PRESET_FULL_RECT)
-	row.offset_left = 10.0
-	row.offset_right = -10.0
+	row.offset_left = 9.0
+	row.offset_right = -6.0
+	row.offset_top = 4.0
+	row.offset_bottom = -4.0
 	row.add_theme_constant_override("separation", 6)
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	btn.add_child(row)
 
+	# --- 图标（22：再大会把四字名挤成省略号）---
 	var tex: Texture2D = _icon_tex(String(e.get("icon", "")))
 	if tex != null:
 		var tr := TextureRect.new()
@@ -560,20 +543,59 @@ func _make_button(e: Dictionary) -> Button:
 		tr.texture = tex
 		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		tr.custom_minimum_size = Vector2(24.0, 24.0)
+		tr.custom_minimum_size = Vector2(22.0, 22.0)
+		tr.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		tr.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		tr.modulate = Color(col.r, col.g, col.b, 0.96)
+		tr.modulate = Color(col.r, col.g, col.b, 0.98)
 		tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		row.add_child(tr)
 
-	# 字号统一 FS_BODY：之前紧凑版用 FS_SUB、宽版用 FS_BODY，
-	# 同一排按钮字号不一致，看着像"大小不一"。
+	# --- 文字列：名称 + 副行 ---
+	var col_box := VBoxContainer.new()
+	col_box.name = "文字列"
+	col_box.add_theme_constant_override("separation", 0)
+	col_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	col_box.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	col_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(col_box)
+
 	var lb := Spec.label(String(e.get("label", "?")), Spec.FS_BODY, Spec.text_main())
 	lb.name = "名称"
-	lb.clip_text = false
-	lb.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
-	lb.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	row.add_child(lb)
+	lb.clip_text = true
+	lb.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	lb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	col_box.add_child(lb)
+
+	var sub := Spec.label(String(e.get("sub", "")), Spec.FS_CAPTION, Spec.text_dim())
+	sub.name = "副行"
+	sub.clip_text = true
+	sub.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	sub.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sub.visible = not _compact and not String(e.get("sub", "")).is_empty()
+	col_box.add_child(sub)
+
+	# --- 快捷键角标：**绝对定位到右上角**，不占文字行的宽度 ---
+	# 之前把它塞进 HBox 里，四字指令（攻击移动）直接被挤成"攻击移…"。
+	var hk: String = String(e.get("hotkey", ""))
+	if not hk.is_empty():
+		var key := PanelContainer.new()
+		key.name = "键位"
+		key.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		key.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+		key.offset_left = -22.0
+		key.offset_top = 3.0
+		key.offset_right = -3.0
+		key.offset_bottom = 19.0
+		key.add_theme_stylebox_override("panel",
+				Spec.inset_style(Color(0.02, 0.02, 0.025, 0.72), 3,
+						Color(col.r, col.g, col.b, 0.50), 3.0, 0.0))
+		var kl := Spec.label(hk, Spec.FS_CAPTION, col.lerp(Color(1, 1, 1), 0.40),
+				HORIZONTAL_ALIGNMENT_CENTER)
+		kl.add_theme_font_override("font", Spec.mono_font())
+		key.add_child(kl)
+		btn.add_child(key)
+		# 给右上角让出 22px：文字列右侧再收一点，避免和角标叠字
+		row.offset_right = -24.0
 
 	_style_button(btn, e, bool(e.get("disabled", cmd_missing())))
 
@@ -583,68 +605,39 @@ func _make_button(e: Dictionary) -> Button:
 	return btn
 
 
-## 按钮底色：深墨 + 分类色描边（和原来的格子同一套语言，只是变横条）
+## 按钮四态：深石色铭牌 + 分类色压边。
+##   normal  —— 本色描边只到 0.42，安静地当"一格"
+##   hover   —— 描边拉满 + 底提亮（手指/鼠标明确知道压在哪）
+##   pressed —— 暖色实底（"按下去了"的机械感）
+##   disabled—— 灰底细边，文字压到 0.5 明度，但**仍然读得清为什么不能点**（副行写原因）
 func _style_button(btn: Button, e: Dictionary, disabled: bool) -> void:
 	var col: Color = btn.get_meta("col", Spec.text_main())
-	btn.add_theme_stylebox_override("normal",
-			Spec.button_style(Color(0.115, 0.125, 0.152, 0.96),
-					Color(col.r, col.g, col.b, 0.38), col, 7, 10.0, 4.0))
-	btn.add_theme_stylebox_override("hover",
-			Spec.button_style(Color(0.185, 0.200, 0.240, 0.98),
-					Color(col.r, col.g, col.b, 0.92), col, 7, 10.0, 4.0))
-	btn.add_theme_stylebox_override("pressed",
-			Spec.button_style(Color(0.300, 0.250, 0.150, 0.99), col, col, 7, 10.0, 4.0))
-	btn.add_theme_stylebox_override("disabled",
-			Spec.button_style(Color(0.082, 0.086, 0.096, 0.92),
-					Color(0.34, 0.34, 0.34, 0.26), null, 7, 10.0, 4.0))
+	var sb_n := Spec.bevel_style(Color(0.118, 0.126, 0.150, 0.97), Color(0, 0, 0, 0), 6, 0.0, 0.0, 0.10)
+	sb_n.border_color = Color(col.r, col.g, col.b, 0.42)
+	sb_n.border_width_left = 3
+	btn.add_theme_stylebox_override("normal", sb_n)
+
+	var sb_h := Spec.bevel_style(Color(0.196, 0.208, 0.244, 0.99), Color(0, 0, 0, 0), 6, 0.0, 0.0, 0.16)
+	sb_h.border_color = Color(col.r, col.g, col.b, 0.95)
+	sb_h.border_width_left = 3
+	btn.add_theme_stylebox_override("hover", sb_h)
+
+	var sb_p := Spec.bevel_style(Color(0.320, 0.262, 0.150, 0.99), Color(0, 0, 0, 0), 6, 0.0, 0.0, 0.20)
+	sb_p.border_color = col
+	sb_p.border_width_left = 3
+	btn.add_theme_stylebox_override("pressed", sb_p)
+
+	var sb_d := Spec.bevel_style(Color(0.078, 0.082, 0.092, 0.94), Color(0, 0, 0, 0), 6, 0.0, 0.0, 0.05)
+	sb_d.border_color = Color(0.34, 0.34, 0.34, 0.22)
+	btn.add_theme_stylebox_override("disabled", sb_d)
+
+	btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	btn.add_theme_color_override("font_color", Spec.text_main())
 	btn.add_theme_color_override("font_disabled_color", Color(0.50, 0.50, 0.48))
-	var nm := btn.get_node_or_null("行/名称") as Label
+	var nm := btn.find_child("名称", true, false) as Label
 	if nm != null:
-		nm.add_theme_color_override("font_color", col.lerp(Color(1, 1, 1), 0.55) if not disabled
-				else Color(0.52, 0.52, 0.50))
-
-
-func _fill_hint() -> void:
-	for c in _hint_rows.get_children():
-		_hint_rows.remove_child(c)
-		c.queue_free()
-
-	if _selection.is_empty():
-		_hint_title.text = "操作"
-		# 图标 + 四字以内：原来四行"左键点选，拖框群选己方部队"这种整句，
-		# 玩家原话是"文字太多"——图标能表达的一律不写字。
-		_add_hint_row("move", "左键选择", Spec.accent())
-		_add_hint_row("attack_move", "右键下令", Color(0.95, 0.72, 0.45))
-		_add_hint_row("hammer", "B 建造", Color(0.82, 0.94, 0.74))
-		_add_hint_row("return", "空格回中", Color(0.62, 0.78, 0.96))
-		_hint_keys.text = "选中部队后显示技能"
-	else:
-		_hint_title.text = "无可用指令"
-		_add_hint_row("attack_move", "右键下令", Color(0.95, 0.72, 0.45))
-		_add_hint_row("move", "左键换选", Spec.accent())
-		_hint_keys.text = "资源点只能采集"
-
-
-func _add_hint_row(icon_name: String, text: String, col: Color) -> void:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 8)
-	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_hint_rows.add_child(row)
-
-	var key := PanelContainer.new()
-	key.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	key.custom_minimum_size = Vector2(22.0, 22.0)
-	key.add_theme_stylebox_override("panel",
-			Spec.inset_style(Color(col.r, col.g, col.b, 0.14), 3, Color(col.r, col.g, col.b, 0.45), 0.0, 0.0))
-	row.add_child(key)
-	var holder := Spec.icon(icon_name, 22.0, col)
-	key.add_child(holder)
-
-	var lb := Spec.label(text, Spec.FS_BODY, Spec.text_sub())
-	lb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	lb.clip_text = true
-	row.add_child(lb)
+		nm.add_theme_color_override("font_color",
+				col.lerp(Color(1, 1, 1), 0.62) if not disabled else Color(0.52, 0.52, 0.50))
 
 
 # ===========================================================================
@@ -750,6 +743,8 @@ static func _icon_for_unit(id: StringName) -> String:
 			return "bow"
 		&"mage":
 			return "staff"
+		&"steam_guard":
+			return "anvil"
 	return ""
 
 
@@ -766,4 +761,12 @@ static func _icon_for_building(id: StringName) -> String:
 			return "anvil"
 		&"townhall":
 			return "flag"
+		&"watchtower":
+			return "eye"
+		&"sanctum":
+			return "staff"
+		&"workshop":
+			return "gear"
+		&"lumbercamp":
+			return "wood"
 	return "house"

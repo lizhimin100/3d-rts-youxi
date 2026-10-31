@@ -101,8 +101,21 @@ func _run() -> void:
 	# ---------------- 3. 单位移动曲线 ----------------
 	var unit: Node3D = _pick_unit()
 	if unit != null:
+		# ★ 必须先把单位停下来、等它真的静止，再测"起步"。
+		# 这条判据测的是"从静止起步有没有加速"。如果单位此刻正被副官/人机指挥
+		# （巡逻、回防、成波推进都会给它下命令），它已经是满速在跑，
+		# 测到的"起步 3 帧"就是满速 —— 判据会假红（实测：4.67 / 4.67 / 4.60）。
+		unit.order_stop()
+		for _w in 90:
+			await get_tree().process_frame
+			if float(unit.get("_speed")) < 0.05:
+				break
 		var start: Vector3 = unit.global_position
 		var goal: Vector3 = start + Vector3(0.0, 0.0, -8.0)
+		# 用"玩家下令"的口径登记控制权：测量期间副官不会来抢这条命令。
+		# （真实玩家点地也走这条路径：指令系统 → order_issued → 控制权登记表。）
+		if Game.control != null:
+			Game.control.on_player_command([unit], RtsConst.Order.MOVE)
 		unit.order_move(goal)
 		var prev: Vector3 = start
 		var speeds: Array = []

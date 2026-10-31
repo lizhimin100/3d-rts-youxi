@@ -121,6 +121,8 @@ var _panel_w: float = PANEL_W
 var _compact: bool = false
 ## 纵向主容器（desired_height 直接量内容，避免底部一行被挤出面板）
 var _vb: VBoxContainer = null
+## 右列（训练 / 研究）
+var _vb2: VBoxContainer = null
 ## 阵营色条 / 集结点文字的签名：一样就不重写（否则每帧都广播 THEME_CHANGED）
 var _faction_sig: String = ""
 var _rally_sig: int = -1
@@ -226,6 +228,12 @@ func _ready() -> void:
 
 
 ## 建控件（重复调用安全；HUD 在 refresh 前会先触发一次）
+##
+## 2026-10-31：版式从"一列往下堆"改成**两列**。
+## 底栏变宽以后，一列的结构会把血条拉成 660px 的跑道、把"剩余 11.2s"甩到屏幕中间去；
+## 两列之后左列是"这栋楼现在什么状态"（名字/血/建造进度），
+## 右列是"它正在干什么、能干什么"（训练计时/队列/集结点/研究），
+## 各占一半，密度和魔兽的建筑面板一致。
 func ensure_built() -> void:
 	if _built:
 		return
@@ -235,19 +243,37 @@ func ensure_built() -> void:
 	custom_minimum_size = Vector2(_panel_w, H_MIN)
 	add_theme_stylebox_override("panel", _make_panel_style())
 
+	var row := HBoxContainer.new()
+	row.name = "两列"
+	row.add_theme_constant_override("separation", 14)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(row)
+
 	var vb := VBoxContainer.new()
 	vb.name = "纵"
 	vb.add_theme_constant_override("separation", 2)
+	vb.custom_minimum_size = Vector2(400.0, 0.0)
+	vb.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	vb.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(vb)
+	row.add_child(vb)
 	_vb = vb
+
+	var vb2 := VBoxContainer.new()
+	vb2.name = "纵2"
+	vb2.add_theme_constant_override("separation", 2)
+	vb2.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vb2.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	vb2.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(vb2)
+	_vb2 = vb2
 
 	_build_title(vb)
 	_build_health(vb)
 	_build_construction(vb)
-	_build_training(vb)
 	_build_rally(vb)
-	_build_research(vb)
+
+	_build_training(vb2)
+	_build_research(vb2)
 	_show_idle()
 
 
@@ -262,55 +288,53 @@ func set_metrics(w: float, h_single: float, _h_multi: float, compact: bool) -> v
 	custom_minimum_size = Vector2(_panel_w, maxf(H_MIN, h_single))
 
 
-## 面板底：偏暖的深色 + 暖色 1px 边 + 外投影（和单位面板同族但明显更暖）
+## 面板底：底栏**段底**的同一套皮肤（比底板深一档、小圆角、无投影）。
+## 2026-10-31：以前这块是"自带外投影的独立卡片"，和右边的命令卡一高一低时
+## 读起来是两个盒子；现在两块面板共用 segment_style，才是"一条带子的两段"。
 func _make_panel_style() -> StyleBoxFlat:
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.088, 0.074, 0.056, 0.955)
-	sb.border_color = Color(_warm.r, _warm.g, _warm.b, 0.52)
-	sb.set_border_width_all(1)
-	sb.set_corner_radius_all(8)
-	sb.corner_detail = 8
-	sb.content_margin_left = PAD
-	sb.content_margin_right = PAD
-	sb.content_margin_top = PAD
-	sb.content_margin_bottom = PAD
-	sb.shadow_color = Color(0.0, 0.0, 0.0, 0.52)
-	sb.shadow_size = 10
-	sb.shadow_offset = Vector2(0.0, 3.0)
-	return sb
+	return Spec.segment_style(Color(0.092, 0.084, 0.070, 0.93), 8, 8.0, 0.13)
 
 
-## 标题条：整条暖色底（这是和单位面板最"一眼区分"的地方）
+## 标题行：**名字做成一块暖色小牌**（不再是一整条橙色横贯面板）。
+##
+## 2026-10-31：底栏变宽之后，一条通栏的橙色标题条在 1000px 宽的面板里
+## 变成一道橙色大杠，比建筑本身还抢眼。改成"小牌子 + 状态字 + 阵营色条"，
+## 橙色只出现在名字后面那一小段，"这是建筑"的语义还在，视觉重量降下来了。
 func _build_title(parent: Node) -> void:
+	var row := HBoxContainer.new()
+	row.name = "标题行"
+	row.add_theme_constant_override("separation", 8)
+	row.custom_minimum_size = Vector2(0.0, 26.0)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(row)
+
 	var strip := PanelContainer.new()
-	strip.name = "标题条"
+	strip.name = "名字牌"
 	strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(_warm.r, _warm.g, _warm.b, 0.92)
-	sb.set_corner_radius_all(5)
+	sb.bg_color = Color(_warm.r, _warm.g, _warm.b, 0.90)
+	sb.set_corner_radius_all(4)
 	sb.content_margin_left = 10.0
-	sb.content_margin_right = 8.0
+	sb.content_margin_right = 10.0
 	sb.content_margin_top = 1.0
 	sb.content_margin_bottom = 1.0
 	strip.add_theme_stylebox_override("panel", sb)
-	parent.add_child(strip)
-
-	var row := HBoxContainer.new()
-	row.name = "行"
-	row.add_theme_constant_override("separation", 8)
-	row.custom_minimum_size = Vector2(0.0, 28.0)
-	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	strip.add_child(row)
+	row.add_child(strip)
 
 	_title_name = Spec.label("未选中建筑", Spec.FS_VALUE, Color(0.11, 0.080, 0.045))
-	_title_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_title_name.clip_text = true
-	row.add_child(_title_name)
+	_title_name.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	strip.add_child(_title_name)
 
-	_title_state = Spec.label("", Spec.FS_VALUE, Color(0.24, 0.16, 0.08))
+	_title_state = Spec.label("", Spec.FS_BODY, Color(0.96, 0.80, 0.52))
+	_title_state.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(_title_state)
 
-	# 阵营色条（标题条右端一条实色块）
+	var grow := Control.new()
+	grow.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	grow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(grow)
+
+	# 阵营色条（右端一条实色块）
 	_faction_chip = Panel.new()
 	_faction_chip.name = "阵营色条"
 	_faction_chip.custom_minimum_size = Vector2(40.0, 10.0)
@@ -513,6 +537,14 @@ func desired_height() -> float:
 	return maxf(need, H_MIN)
 
 
+## 内容需要的高度（底栏靠它决定该多高；不含 HUD 灌进来的最小高度）
+func content_height() -> float:
+	ensure_built()
+	var a: float = _vb.get_combined_minimum_size().y if _vb != null else 0.0
+	var b: float = _vb2.get_combined_minimum_size().y if _vb2 != null else 0.0
+	return clampf(maxf(a, b) + PAD * 2.0 + 2.0, 118.0, 200.0)
+
+
 ## 刷新（HUD 每 0.12s 会调一次；换建筑类型时才重建按钮，其余只改数值）
 func refresh(target: RtsBuilding) -> void:
 	ensure_built()
@@ -695,6 +727,8 @@ func _unit_icon(id: StringName) -> String:
 			return "staff"
 		"peasant", "worker":
 			return "hammer"
+		"steam_guard":
+			return "anvil"
 		_:
 			return "shield"
 

@@ -17,8 +17,11 @@ extends RefCounted
 ##   · 每棵树同时只有 1 档参与渲染，另外两档只是"藏起来的节点"。
 
 ## 每个 (品种, 档) 的变体数量。变体越多林子越不重复，生成时间线性增长。
-## 8 是实测的性价比拐点：4 品种 × 3 档 × 8 = 96 份网格，全量预热约 90ms。
-const POOL := 8
+## 10 是实测的性价比拐点：1 品种 × 1 档（关 LOD）× 10 = 10 份网格，全量预热约 110ms。
+##
+## 2026-10-31：8 → 10。八棵树里必有一对"撞脸"，林子里一眼能数出来；
+## 十棵之后同一屏（约 15~20 棵）已经找不到两块一样的冠形了。
+const POOL := 10
 
 ## ★ 是否启用距离 LOD。
 ## 为什么默认关（2026-10-30 实测反馈）：三档的层级/叶片数不同，切档时树的**轮廓会变**，
@@ -114,13 +117,29 @@ static func is_tree(id: StringName) -> bool:
 	return String(id).begins_with("tree")
 
 
-## 程序化地图（没存种子）→ 由落点反推一个稳定种子。
+## 程序化地图（没存种子）→ 由落点反推一组稳定的外观参数。
 ## 同一棵树每次进游戏长一样；相邻两棵完全不同（坐标哈希，不是顺序计数）。
+##
+## 2026-10-31：除了 yaw，再补三样"每棵树都该不一样"的东西 ——
+##   · scale  0.84~1.18：一片林子高低错落，才不像用一把刷子刷出来的；
+##   · tilt   两轴各 ±2.4°：整齐划一的竖直树冠是"复制粘贴"最明显的破绽；
+##   · sink   6~14cm 压进地里：树根不悬空，坡地上也不会露出底盘。
+## 这三样都从同一个坐标哈希派生，所以**确定性**（同一棵树永远同一个样子）。
 static func proc_at(pos: Vector3) -> Dictionary:
 	var hx: int = int(round(absf(pos.x) * 31.0))
 	var hz: int = int(round(absf(pos.z) * 31.0))
 	var h: int = ((hx * 73856093) ^ (hz * 19349663)) & 0x7fffffff
-	return {"seed": h, "yaw": float(h % 6283) / 1000.0}
+	var h2: int = ((h * 1103515245 + 12345) & 0x7fffffff)
+	var h3: int = ((h2 * 1103515245 + 12345) & 0x7fffffff)
+	return {
+		"seed": h,
+		"yaw": float(h % 6283) / 1000.0,
+		"scale": 0.84 + float(h2 % 1000) / 1000.0 * 0.34,
+		"tilt": Vector2(
+			(float(h2 / 1000 % 1000) / 1000.0 - 0.5) * 0.084,
+			(float(h3 % 1000) / 1000.0 - 0.5) * 0.084),
+		"sink": 0.06 + float(h3 / 1000 % 1000) / 1000.0 * 0.08,
+	}
 
 
 ## 取（并缓存）一份网格。tier: 0 近 / 1 中 / 2 远
@@ -143,7 +162,8 @@ static func mesh(season: String, tier: int, variant: int, height: float) -> Arra
 ## 造一棵树的视觉根节点。
 ## 默认单档（USE_LOD=false）：一个 MeshInstance3D，永不换网格 —— "地图定格后树就不变"。
 ## 打开 LOD 时：三档 MeshInstance3D 叠在同一位置，靠 visibility_range 切档。
-## proc 里可含：season（品种）、seed（变体种子）、yaw（朝向）。
+## proc 里可含：season（品种）、seed（变体种子）、yaw（朝向）、
+##              scale（整体缩放 0.84~1.18）、tilt（两轴倾斜，弧度）、sink（压进地里几米）。
 static func build_visual(def: UnitDef, proc: Dictionary) -> Node3D:
 	var root := Node3D.new()
 	var id: String = String(def.id) if def != null else "tree"
@@ -154,6 +174,16 @@ static func build_visual(def: UnitDef, proc: Dictionary) -> Node3D:
 	var variant: int = variant_of(seed_val)
 	var height: float = def.height if def != null else 5.5
 	root.name = ROOT_PREFIX + "程序化树"
+
+	# 每棵树的"体型"：缩放 / 倾斜 / 下沉。三者都只动**这个视觉根**，
+	# 单位本体的占地、选中半径、寻路都不受影响。
+	var sc: float = clampf(float(proc.get("scale", 1.0)), 0.6, 1.6)
+	if absf(sc - 1.0) > 0.001:
+		root.scale = Vector3(sc, sc, sc)
+	var tilt: Variant = proc.get("tilt", Vector2.ZERO)
+	if tilt is Vector2 and (tilt as Vector2) != Vector2.ZERO:
+		root.rotation = Vector3((tilt as Vector2).x, 0.0, (tilt as Vector2).y)
+	root.position.y = -clampf(float(proc.get("sink", 0.0)), 0.0, 0.5)
 
 	if not USE_LOD:
 		var mi := _make_mesh_node(season, 0, variant, height, "LOD0")

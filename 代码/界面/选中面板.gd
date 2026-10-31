@@ -1,23 +1,22 @@
 class_name RtsDossierPanel
 extends PanelContainer
-## **选中卡（手游横条）** —— 坐在命令条正上方的一条"作战信息带"。
+## **选中卡（魔兽式信息段）** —— 底栏左段，和右边的命令卡**等高同底**。
 ##
-## 2026-10-23 重做（按玩家给的参照图，手游思路）：
-##   ┌────────┬──────────────────────────────────────┐
-##   │        │  农民                        ×5      │
-##   │ 头像   │  ⚔ 6    🛡 0    👟 4.3               │
-##   │ 88×88  │  ▓▓▓▓▓▓▓▓▓▓▓▓ 血条                  │
-##   │        │  ▓▓▓▓▓▓       技能条                │
-##   └────────┴──────────────────────────────────────┘
+## 2026-10-31 重做（对齐魔兽争霸三的单位信息面板）：
+##   ┌───────┬────────────────────────────────────────┬─────────────────┐
+##   │       │ 步兵   ●玩家   ×4                      │ ▣ ▣ ▣ ▣ ▣ ▣     │
+##   │ 3D头像│ ⚔15   🛡5   👟4.6                      │ ▣ ▣ ▣           │
+##   │  92²  │ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ 740/740                │（同队单位小头像）│
+##   │       │ ▓▓▓▓▓▓ 技能就绪                         │                 │
+##   └───────┴────────────────────────────────────────┴─────────────────┘
 ##
-## 三个"手游化"决定（和端游那套挤在一起的小字块正好相反）：
+## 四个决定：
 ##   1. **只留四样**：头像 / 三项数值 / 血条 / 技能条。名字一行、数量一个角标。
-##      队列、集结点、研究等级这些"翻菜单才看"的东西一律不进这张卡；
-##   2. **数字要大、间距要宽**：数值 20 号等宽、组间距 20px，一眼扫得完；
-##   3. 面板高度压到 116，宽度随屏幕，绝不顶到画面中部。
-##
-## 头像台若在实机里渲染不出东西（SubViewport 空），0.45s 后换成
-## "阵营色 + 兵种图标"的静态头像 —— 宁可静，不可空。
+##   2. **多选不再只剩一个 ×N**：右边铺一排小头像（最多 12 个），
+##      魔兽的多选面板就是这么干的 —— 一眼看出"我框到了谁"。
+##   3. **血条带数字与分段刻线**：单色长条在战场上一片糊，加了刻线才有"血量在掉"的
+##      体感；数字用等宽字体，避免宽度跳动。
+##   4. 高度由 HUD 统一灌入（= 底栏内高），面板自己只报 content_height()。
 
 const Spec := preload("res://代码/界面/界面规格.gd")
 
@@ -26,46 +25,86 @@ const Spec := preload("res://代码/界面/界面规格.gd")
 # ===========================================================================
 
 const PAD := 8.0
-## 头像边长（手游：够大但不占地方）
-const PORTRAIT_PX := 100.0
+## 头像边长（魔兽式：够大，一眼认脸）
+const PORTRAIT_PX := 88.0
 ## 条高
-const BAR_HP := 14.0
-const BAR_AB := 9.0
+const BAR_HP := 18.0
+const BAR_AB := 8.0
+## 同队小头像边长 / 最多几个
+const SQUAD_PX := 40.0
+const SQUAD_MAX := 12
+## 2026-10-31：底栏中段新增了「队伍网格」（最多 24 个 + 翻页），
+## 这里的同队小头像就成了重复信息 —— 关掉它，把宽度让给"名字 + 血条 + 蓝条"。
+const SHOW_SQUAD := false
 ## 头像渲染探测延迟（秒）
 const PROBE_DELAY := 0.45
+## 信息列的宽度：**固定档**，不跟着面板拉伸。
+## 底栏拉到 1000 宽以后，血条跟着铺满会变成一条"机场跑道"——
+## 魔兽的血条永远只有两三百像素。多出来的宽度让给同队小头像。
+const INFO_W := 380.0
 
 
 # ===========================================================================
-# 内嵌控件：一条极简进度条（血条 / 技能就绪度）
+# 内嵌控件：血条 / 技能条
 # ===========================================================================
+#
+# 魔兽的血条是"深槽 + 硬边填充 + 分段刻线"，不是渐变胶囊。
+# 分段刻线（每 10% 一条 1px 暗线）是关键：血条从满掉到 30% 的过程里，
+# 刻度提供的是**离散的节奏感**，玩家余光就能读出"还剩几格"。
 
 class MiniBar extends Control:
 	var ratio: float = 0.0
 	var fill: Color = Color(0.42, 0.86, 0.48)
+	## 分段数（0 = 不画刻线；血条 10 / 技能条 0）
+	var ticks: int = 10
+	## 条内文字（血条显示 "740 / 740"）
+	var caption: String = ""
+	var _font_size: int = 12
 
 	func _ready() -> void:
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	## 相同数值不重绘（HUD 每 0.12s 会调一次 refresh）
-	func feed(r: float, col: Color) -> void:
+	func feed(r: float, col: Color, cap: String = "") -> void:
 		var v: float = clampf(r, 0.0, 1.0)
-		if is_equal_approx(v, ratio) and col == fill:
+		if is_equal_approx(v, ratio) and col == fill and cap == caption:
 			return
 		ratio = v
 		fill = col
+		caption = cap
 		queue_redraw()
 
 	func _draw() -> void:
 		var rr := Rect2(Vector2.ZERO, size)
 		if rr.size.x < 3.0 or rr.size.y < 3.0:
 			return
-		draw_rect(rr, Color(0.02, 0.025, 0.032, 0.96), true)
+		# 槽：近黑 + 1px 内描边
+		draw_rect(rr, Color(0.015, 0.018, 0.024, 0.98), true)
 		var w: float = maxf((rr.size.x - 2.0) * ratio, 0.0)
 		if w > 0.5:
 			draw_rect(Rect2(1.0, 1.0, w, rr.size.y - 2.0), fill, true)
-			draw_rect(Rect2(1.0, 1.0, w, maxf((rr.size.y - 2.0) * 0.40, 1.0)),
-					Color(1.0, 1.0, 1.0, 0.18), true)
-		draw_rect(rr, Color(1.0, 1.0, 1.0, 0.12), false, 1.0)
+			# 顶部高光带（上 38% 提亮）：让填充有"金属条"的厚度
+			draw_rect(Rect2(1.0, 1.0, w, maxf((rr.size.y - 2.0) * 0.38, 1.0)),
+					Color(1.0, 1.0, 1.0, 0.20), true)
+			# 右端一条亮边（血量正在掉时这条线在移动，最抓眼）
+			draw_rect(Rect2(1.0 + w - 1.5, 1.0, 1.5, rr.size.y - 2.0),
+					Color(1.0, 1.0, 1.0, 0.55), true)
+		# 分段刻线
+		if ticks > 1:
+			for i in range(1, ticks):
+				var x: float = rr.size.x * float(i) / float(ticks)
+				draw_rect(Rect2(x, 1.0, 1.0, rr.size.y - 2.0), Color(0.0, 0.0, 0.0, 0.42), true)
+		draw_rect(rr, Color(1.0, 0.96, 0.86, 0.20), false, 1.0)
+		if not caption.is_empty():
+			var f: Font = get_theme_default_font()
+			if f != null:
+				var fs: float = float(_font_size)
+				var tw: float = f.get_string_size(caption, HORIZONTAL_ALIGNMENT_LEFT, -1, _font_size).x
+				var pos := Vector2((rr.size.x - tw) * 0.5, rr.size.y * 0.5 + fs * 0.36)
+				draw_string_outline(f, pos, caption, HORIZONTAL_ALIGNMENT_LEFT, -1, _font_size, 3,
+						Color(0.0, 0.0, 0.0, 0.85))
+				draw_string(f, pos, caption, HORIZONTAL_ALIGNMENT_LEFT, -1, _font_size,
+						Color(0.98, 0.97, 0.93))
 
 
 # ===========================================================================
@@ -96,6 +135,11 @@ var _count: Label = null
 var _fac_dot: Panel = null
 var _fac_label: Label = null
 var _sub: Label = null
+## 信息列（限宽用）
+var _info: VBoxContainer = null
+## 同队小头像
+var _squad: GridContainer = null
+var _squad_order: Array[int] = []
 
 ## 空态
 var _empty_mode: bool = false
@@ -124,7 +168,9 @@ func ensure_built() -> void:
 	_mono = Spec.mono_font()
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	custom_minimum_size = Vector2(_panel_w, _h)
-	add_theme_stylebox_override("panel", Spec.panel_style(10, 0.95, 0.50, PAD))
+	# 段底：和命令卡**同一种**皮肤（读起来是一整条带子的两段，不是两种面板）
+	add_theme_stylebox_override("panel", Spec.segment_style(
+			Color(0.088, 0.096, 0.114, 0.92), 8, 8.0, 0.14))
 
 	_root = HBoxContainer.new()
 	_root.name = "横排"
@@ -134,10 +180,18 @@ func ensure_built() -> void:
 
 	_build_portrait(_root)
 	_build_info(_root)
+	# 弹性留白：把"同队小头像"推到段的最右侧（紧挨命令卡）。
+	# 这样底栏拉宽时，宽出来的部分是**头像列在往右撑**，而不是中间空一块。
+	var spacer := Control.new()
+	spacer.name = "留白"
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(spacer)
+	_build_squad(_root)
 	_show_empty()
 
 
-## 左：头像（圆角方框）+ 静态兜底
+## 左：头像（压边金框）+ 静态兜底
 func _build_portrait(parent: Node) -> void:
 	var stack := Control.new()
 	stack.name = "头像位"
@@ -146,19 +200,39 @@ func _build_portrait(parent: Node) -> void:
 	stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	parent.add_child(stack)
 
+	# 外框：深底 + 1px 亮边 + 下沿阴影（bevel），头像"镶"在里面
+	var frame := Panel.new()
+	frame.name = "头像框"
+	frame.set_anchors_preset(Control.PRESET_FULL_RECT)
+	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var fsb := Spec.bevel_style(Color(0.045, 0.050, 0.062, 0.98), Color(0, 0, 0, 0), 7, 0.0, 0.0, 0.26)
+	fsb.border_color = Color(_accent.r, _accent.g, _accent.b, 0.55)
+	fsb.set_border_width_all(2)
+	frame.add_theme_stylebox_override("panel", fsb)
+	stack.add_child(frame)
+
 	_portrait = RtsPortraitStage.new()
 	_portrait.name = "头像台"
-	_portrait.set_display_size(PORTRAIT_PX)
+	_portrait.set_display_size(PORTRAIT_PX - 8.0)
+	_portrait.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_portrait.offset_left = 4.0
+	_portrait.offset_top = 4.0
+	_portrait.offset_right = -4.0
+	_portrait.offset_bottom = -4.0
 	stack.add_child(_portrait)
 
 	_fallback = Panel.new()
 	_fallback.name = "静态头像"
-	_fallback.size = Vector2(PORTRAIT_PX, PORTRAIT_PX)
+	_fallback.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_fallback.offset_left = 4.0
+	_fallback.offset_top = 4.0
+	_fallback.offset_right = -4.0
+	_fallback.offset_bottom = -4.0
 	_fallback.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_fallback.visible = false
 	_fallback.add_theme_stylebox_override("panel",
-			Spec.inset_style(Color(0.055, 0.065, 0.088, 0.98), 8,
-					Color(_accent.r, _accent.g, _accent.b, 0.30), 0.0, 0.0))
+			Spec.inset_style(Color(0.055, 0.065, 0.088, 0.98), 5,
+					Color(_accent.r, _accent.g, _accent.b, 0.22), 0.0, 0.0))
 	stack.add_child(_fallback)
 
 	_fallback_icon = TextureRect.new()
@@ -166,37 +240,56 @@ func _build_portrait(parent: Node) -> void:
 	_fallback_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_fallback_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_fallback_icon.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_fallback_icon.offset_left = 20.0
-	_fallback_icon.offset_top = 20.0
-	_fallback_icon.offset_right = -20.0
-	_fallback_icon.offset_bottom = -20.0
+	_fallback_icon.offset_left = 18.0
+	_fallback_icon.offset_top = 18.0
+	_fallback_icon.offset_right = -18.0
+	_fallback_icon.offset_bottom = -18.0
 	_fallback_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_fallback.add_child(_fallback_icon)
 
 
-## 右：名字行 → 数值行 → 血条 → 技能条（四行，间距宽）
+## 中：名字行 → 数值行 → 血条 → 技能条
 func _build_info(parent: Node) -> void:
 	var col := VBoxContainer.new()
 	col.name = "信息列"
-	col.add_theme_constant_override("separation", 5)
-	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	col.add_theme_constant_override("separation", 3)
+	col.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	col.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	col.custom_minimum_size = Vector2(INFO_W, 0.0)
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	parent.add_child(col)
+	_info = col
 
 	# --- 行1：名字 + 阵营点 + 数量 ---
 	var title := HBoxContainer.new()
-	title.add_theme_constant_override("separation", 8)
+	title.add_theme_constant_override("separation", 7)
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_child(title)
 
-	_name = Spec.label("未选中", Spec.FS_VALUE, Spec.text_main())
+	_name = Spec.label("未选中", Spec.FS_TITLE, Spec.text_main())
 	_name.name = "名称"
 	_name.clip_text = true
 	_name.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	# clip_text 会把最小宽压成 0，HBox 里会被后面的 grow 挤没；给名字留 88px
 	_name.custom_minimum_size = Vector2(88.0, 0.0)
 	title.add_child(_name)
+
+	# 数量角标紧贴名字（"步兵 ×4" 是一个整体词）；以前放在行尾、中间隔一条
+	# 大空白，读起来像两个不相干的东西。
+	_count_chip = PanelContainer.new()
+	_count_chip.name = "数量角标"
+	_count_chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_count_chip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_count_chip.visible = false
+	_count_chip.add_theme_stylebox_override("panel",
+			Spec.inset_style(Color(_accent.r, _accent.g, _accent.b, 0.18), 9,
+					Color(_accent.r, _accent.g, _accent.b, 0.62), 8.0, 0.0))
+	title.add_child(_count_chip)
+
+	_count = Spec.label("×1", Spec.FS_CAPTION,
+			Color(minf(_accent.r + 0.12, 1.0), minf(_accent.g + 0.12, 1.0), minf(_accent.b + 0.12, 1.0)))
+	_count.add_theme_font_override("font", _mono)
+	_count_chip.add_child(_count)
 
 	_fac_dot = Panel.new()
 	_fac_dot.custom_minimum_size = Vector2(9.0, 9.0)
@@ -205,10 +298,12 @@ func _build_info(parent: Node) -> void:
 	title.add_child(_fac_dot)
 
 	_fac_label = Spec.label("", Spec.FS_CAPTION, Spec.text_sub())
+	_fac_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	title.add_child(_fac_label)
 
 	_sub = Spec.label("", Spec.FS_CAPTION, Spec.text_dim())
 	_sub.clip_text = true
+	_sub.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	title.add_child(_sub)
 
 	var grow := Control.new()
@@ -216,69 +311,74 @@ func _build_info(parent: Node) -> void:
 	grow.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	title.add_child(grow)
 
-	_count_chip = PanelContainer.new()
-	_count_chip.name = "数量角标"
-	_count_chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_count_chip.visible = false
-	_count_chip.add_theme_stylebox_override("panel",
-			Spec.inset_style(Color(_accent.r, _accent.g, _accent.b, 0.16), 10,
-					Color(_accent.r, _accent.g, _accent.b, 0.55), 8.0, 0.0))
-	title.add_child(_count_chip)
-
-	_count = Spec.label("×1", Spec.FS_CAPTION, Color(_accent.r + 0.10, _accent.g + 0.10, _accent.b + 0.10))
-	_count_chip.add_child(_count)
-
-	# --- 行2：⚔攻 / 🛡防 / 👟速（横排，间距 20）---
+	# --- 行2：⚔攻 / 🛡防 / 👟速（三块等宽铭牌）---
 	var stats := HBoxContainer.new()
 	stats.name = "数值行"
-	stats.add_theme_constant_override("separation", 8)
+	stats.add_theme_constant_override("separation", 6)
 	stats.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_child(stats)
 
 	for i in 3:
 		var chip := Panel.new()
 		chip.name = "数值%d" % i
-		# 三个数值块**铺满整行**（EXPAND），不再挤在左上角留一大片空白
 		chip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		chip.custom_minimum_size = Vector2(0.0, 32.0)
+		chip.custom_minimum_size = Vector2(0.0, 26.0)
 		chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		# 铭牌：比面板再深一档 + 顶亮底暗的压边
 		chip.add_theme_stylebox_override("panel",
-				Spec.inset_style(Color(0.10, 0.115, 0.145, 0.92), 6,
-						Color(1, 1, 1, 0.07), 6.0, 0.0))
+				Spec.bevel_style(Color(0.062, 0.070, 0.086, 0.95), Color(0, 0, 0, 0), 4,
+						6.0, 0.0, 0.08))
 		stats.add_child(chip)
 		_val_chip.append(chip)
 
 		var row := HBoxContainer.new()
 		row.set_anchors_preset(Control.PRESET_FULL_RECT)
-		row.offset_left = 8.0
-		row.offset_right = -8.0
-		row.add_theme_constant_override("separation", 6)
+		row.offset_left = 7.0
+		row.offset_right = -6.0
+		row.add_theme_constant_override("separation", 5)
 		row.alignment = BoxContainer.ALIGNMENT_CENTER
 		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		chip.add_child(row)
 
-		var ic := Spec.icon(_stat_icon(i), 22.0, _stat_color(i))
+		var ic := Spec.icon(_stat_icon(i), 18.0, _stat_color(i))
 		ic.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		row.add_child(ic)
 
-		var v := Spec.label("-", Spec.FS_VALUE, Color(0.95, 0.91, 0.77))
+		var v := Spec.label("-", Spec.FS_VALUE, Color(0.96, 0.92, 0.79))
 		v.add_theme_font_override("font", _mono)
+		v.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		row.add_child(v)
 		_val.append(v)
 
-	# --- 行3/4：血条 + 技能条 ---
+	# --- 行3/4：血条（带数字与刻线）+ 技能条 ---
 	_hp = MiniBar.new()
 	_hp.name = "血条"
+	_hp.ticks = 10
+	_hp._font_size = Spec.FS_CAPTION
 	_hp.custom_minimum_size = Vector2(0.0, BAR_HP)
 	_hp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	col.add_child(_hp)
 
 	_ab = MiniBar.new()
 	_ab.name = "技能条"
+	_ab.ticks = 0
 	_ab.custom_minimum_size = Vector2(0.0, BAR_AB)
 	_ab.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_ab.fill = Color(0.36, 0.66, 0.98)
 	col.add_child(_ab)
+
+
+## 右：同队单位小头像（多选时铺开；单选时整块收起）
+func _build_squad(parent: Node) -> void:
+	_squad = GridContainer.new()
+	_squad.name = "同队"
+	_squad.columns = 6
+	_squad.add_theme_constant_override("h_separation", 3)
+	_squad.add_theme_constant_override("v_separation", 3)
+	_squad.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_squad.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_squad.visible = false
+	parent.add_child(_squad)
 
 
 func _stat_icon(i: int) -> String:
@@ -312,14 +412,31 @@ func set_metrics(w: float, h_single: float, _h_multi: float, compact: bool) -> v
 	_compact = compact
 	# 不 reset_size：位置和高度由 HUD 统一摆（reset_size 会把 HUD 的 offset 覆盖掉）
 	custom_minimum_size = Vector2(_panel_w, _h)
+	_apply_width_policy()
+
+
+## 内容需要的高度（HUD 用它决定底栏该多高）。
+## 注意**不能**用 custom_minimum_size：那是 HUD 自己灌进来的，会自我循环越涨越高。
+func content_height() -> float:
+	ensure_built()
+	var need: float = _root.get_combined_minimum_size().y + 8.0 * 2.0 + 8.0
+	return clampf(need, 104.0, 150.0)
 
 
 func desired_height() -> float:
-	ensure_built()
-	var need: float = _h
-	if _root != null:
-		need = maxf(need, _root.get_combined_minimum_size().y + PAD * 2.0)
-	return maxf(need, get_combined_minimum_size().y)
+	return maxf(content_height(), _h)
+
+
+## 窄面板（1024 档）藏掉小头像列，把宽度全留给血条
+func _apply_width_policy() -> void:
+	if _squad == null or _info == null:
+		return
+	var narrow: bool = _panel_w < 700.0
+	_squad.set_meta("blocked", narrow)
+	_squad.visible = _squad.visible and not narrow
+	# 信息列宽：宽屏吃 INFO_W，窄屏按面板 55% 收（别再挤出面板）
+	var w: float = INFO_W if not narrow else clampf(_panel_w * 0.52, 150.0, INFO_W)
+	_info.custom_minimum_size = Vector2(w, 0.0)
 
 
 func refresh(units: Array) -> void:
@@ -356,6 +473,7 @@ func refresh(units: Array) -> void:
 		_show_portrait(true)
 		_probe_on = true
 		_probe_t = 0.0
+		_sync_squad(arr)
 
 	_set_text(_val[0], _fmt(def.attack_damage if def != null else 0.0))
 	_set_text(_val[1], _fmt(def.armor if def != null else 0.0))
@@ -366,8 +484,17 @@ func refresh(units: Array) -> void:
 	if primary.get("hp") != null:
 		hp = float(primary.get("hp"))
 	var ratio: float = clampf(hp / max_hp, 0.0, 1.0)
-	_hp.feed(ratio, _hp_color(ratio))
-	_ab.feed(_ability_ratio(primary, def), Color(0.36, 0.66, 0.98))
+	_hp.feed(ratio, _hp_color(ratio), "%d / %d" % [int(round(hp)), int(round(max_hp))])
+	# 蓝条 = **法力**（参考图上的第二条）。没有法力上限的单位**整条收起** ——
+	# 这正是"没蓝条就不显示"。有法力的单位再在上面叠一层技能冷却的暗条。
+	var has_m: bool = bool(primary.call("has_mana")) if primary.has_method("has_mana") else false
+	if _ab.visible != has_m:
+		_ab.visible = has_m
+	if has_m:
+		var mmax: float = float(primary.call("max_mana"))
+		var mcur: float = float(primary.get("mana"))
+		var mr: float = clampf(mcur / maxf(mmax, 1.0), 0.0, 1.0)
+		_ab.feed(mr, Color(0.36, 0.66, 0.98), "%d / %d 法力" % [int(round(mcur)), int(round(mmax))])
 
 	# 建造进度只在这里露一句（建筑选中时）
 	var sub: String = ""
@@ -378,6 +505,78 @@ func refresh(units: Array) -> void:
 	_set_text(_sub, sub)
 
 
+## 多选小头像：按选中顺序铺，最多 SQUAD_MAX 个；同兵种共用同一张图标
+func _sync_squad(arr: Array) -> void:
+	if _squad == null:
+		return
+	if not SHOW_SQUAD:
+		_squad.visible = false
+		return
+	var ids: Array[int] = []
+	for i in mini(arr.size(), SQUAD_MAX):
+		ids.append(arr[i].get_instance_id())
+	if ids == _squad_order:
+		return
+	_squad_order = ids
+	for c in _squad.get_children():
+		_squad.remove_child(c)
+		c.queue_free()
+	var blocked: bool = bool(_squad.get_meta("blocked", false))
+	_squad.visible = arr.size() > 1 and not blocked
+	if not _squad.visible:
+		return
+	for i in mini(arr.size(), SQUAD_MAX):
+		var u := arr[i] as Node3D
+		if u == null:
+			continue
+		var d: UnitDef = u.get("def") as UnitDef
+		var team: Color = _team_color(u, d)
+		var cell := Panel.new()
+		cell.custom_minimum_size = Vector2(SQUAD_PX, SQUAD_PX)
+		cell.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var sb := Spec.bevel_style(Color(0.058, 0.066, 0.082, 0.96), Color(0, 0, 0, 0), 4,
+				0.0, 0.0, 0.07)
+		sb.border_color = Color(team.r, team.g, team.b, 0.32)
+		cell.add_theme_stylebox_override("panel", sb)
+		_squad.add_child(cell)
+
+		# 底边一条**血条**（不是纯色条）：多选时 12 个小格里谁残血一眼看得出
+		var bar_bg := ColorRect.new()
+		bar_bg.color = Color(0.02, 0.024, 0.03, 0.92)
+		bar_bg.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+		bar_bg.offset_top = -5.0
+		bar_bg.offset_left = 4.0
+		bar_bg.offset_right = -4.0
+		bar_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		cell.add_child(bar_bg)
+
+		var hp: float = 1.0
+		var hp_max: float = d.max_hp if d != null else 1.0
+		if u.get("hp") != null:
+			hp = clampf(float(u.get("hp")) / maxf(hp_max, 0.001), 0.0, 1.0)
+		var bar := ColorRect.new()
+		bar.color = _hp_color(hp)
+		bar.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+		bar.offset_top = -4.0
+		bar.offset_left = 4.0
+		bar.offset_right = -(4.0 + (1.0 - hp) * (SQUAD_PX - 8.0))
+		bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		cell.add_child(bar)
+
+		var icon := TextureRect.new()
+		icon.texture = Spec.icon_tex(_icon_for(d))
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon.set_anchors_preset(Control.PRESET_FULL_RECT)
+		icon.offset_left = 7.0
+		icon.offset_top = 5.0
+		icon.offset_right = -7.0
+		icon.offset_bottom = -9.0
+		icon.modulate = team.lerp(Color(1.0, 0.99, 0.95), 0.62)
+		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		cell.add_child(icon)
+
+
 func _show_empty() -> void:
 	if _empty_mode:
 		_refresh_empty()
@@ -385,6 +584,9 @@ func _show_empty() -> void:
 	_empty_mode = true
 	_chrome_sig = ""
 	_probe_on = false
+	if _squad != null:
+		_squad.visible = false
+		_squad_order.clear()
 	_show_portrait(false)
 	_fallback.visible = true
 	_fallback_icon.texture = Spec.icon_tex("flag")
@@ -401,7 +603,7 @@ func _refresh_empty() -> void:
 	_set_text(_val[0], str(pl.units.size() if pl != null else 0))
 	_set_text(_val[1], str(foe.units.size() if foe != null else 0))
 	_set_text(_val[2], str(pl.buildings.size() if pl != null else 0))
-	_hp.feed(0.0, Color(0.42, 0.86, 0.48))
+	_hp.feed(0.0, Color(0.42, 0.86, 0.48), "")
 	_ab.feed(0.0, Color(0.36, 0.66, 0.98))
 
 

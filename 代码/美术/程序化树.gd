@@ -80,12 +80,17 @@ const SEASON_ORDER: Array[String] = ["春", "夏", "秋", "冬"]
 ##
 ## ★ 叶片尺寸三档必须**一致**：以前远档把叶片放大到 2.6m 去保剪影，结果切档时
 ##   树像换了一棵（玩家原话"品种随镜头刷新"）。现在只在叶量/边数上做减法。
+##
+## 2026-10-31：近档 leaf_per 12 → 15、leaf_size 0.86 → 0.92。
+## 原参数下一棵 5.5m 的树只有 300 来张叶卡，冠里能透过去看到天空，
+## 远看就是"几团分开的绿球"。加量之后冠是**连通**的，轮廓才立得住；
+## 代价是单树 ~1.3k → ~1.6k 面（150 棵 +4.5 万面），在 71466 面的地形面前可以忽略。
 const TIERS: Array[Dictionary] = [
-	{"levels": 3, "segs": 3, "ring": 4, "leaf_per": 12, "leaf_size": 0.86,
+	{"levels": 3, "segs": 3, "ring": 4, "leaf_per": 15, "leaf_size": 0.92,
 		"leaf_start": 0.18, "shadow": true},
-	{"levels": 3, "segs": 2, "ring": 4, "leaf_per": 7, "leaf_size": 0.86,
+	{"levels": 3, "segs": 2, "ring": 4, "leaf_per": 9, "leaf_size": 0.92,
 		"leaf_start": 0.18, "shadow": true},
-	{"levels": 2, "segs": 2, "ring": 3, "leaf_per": 4, "leaf_size": 0.86,
+	{"levels": 2, "segs": 2, "ring": 3, "leaf_per": 4, "leaf_size": 0.92,
 		"leaf_start": 0.15, "shadow": false},
 ]
 

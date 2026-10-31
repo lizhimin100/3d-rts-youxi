@@ -35,6 +35,10 @@ extends Node3D
 # --- 胜负判定计时 ---
 var _check_timer: float = 0.0
 var _over_emitted: bool = false
+## 绑定地图热重载：监视地图文件 mtime，变化时 reload_current_scene()
+var _bound_watch_path: String = ""
+var _bound_watch_mtime: int = -1
+var _reload_lock: float = 0.0
 
 # --- QA / 自动化试玩参数 ---
 var _shot_path: String = ""
@@ -58,6 +62,10 @@ var _demo_tree: bool = false
 ## 之所以要这个开关：命令行参数在编辑器里不好填，而"测试/四季演示.tscn"就是
 ## 一个实例化了本场景、把这个勾打上的壳场景 —— 双击就能跑。
 @export var demo_tree_mode: bool = false
+## 绑定地图：在 Inspector 里指定一张 MapDef（.tres），主场景就会加载它而不是随机程序化地图。
+## 默认值由 场景/主场景.tscn 设置成 res://地图/主场景地图.tres（生成工具 工具/gen_bound_map.gd 产出）。
+## 编辑器里改这张图并存盘，运行中的游戏会自动热重载（见 _tick_map_watch）。
+@export var bound_map: MapDef = null
 
 
 func _ready() -> void:
@@ -88,12 +96,14 @@ func _ready() -> void:
 				level.spawn_starting_forces()
 			else:
 				print("[主场景] 已加载地图 %s（%d×%d，对象 %d 个）"
-					% [_map_path, map_def.size, map_def.size, map_def.objects.size()])
+					% [map_def.resource_path, map_def.size, map_def.size, map_def.objects.size()])
 				_apply_map_resources(map_def)
 		else:
 			level.build()
 			level.spawn_props()
 			level.spawn_starting_forces()
+		_setup_map_watch(map_def)
+		_setup_fog()
 		if not _dump_mapdef.is_empty():
 			_dump_map_def(_dump_mapdef)
 	else:
@@ -109,6 +119,9 @@ func _ready() -> void:
 		if sfx_script != null:
 			sfx_script.call("attach", get_tree())
 
+	# 4.97 每支 AI 阵营一个大脑（多队图：敌人可能有 2~3 个）
+	_mount_ai_brains()
+
 	# 4.96 副官（玩家侧脚本 AI）：替玩家补农民/派采集/盖农场兵营，玩家下令即接管。
 	#      只碰农民，不碰任何战斗单位；`--no-adjutant` 可关。
 	_mount_script("res://代码/ai/副官.gd", "副官")
@@ -120,8 +133,7 @@ func _ready() -> void:
 	# 5) 起跑
 	Game.phase = RtsConst.Phase.RUNNING
 	Game.game_over.connect(_on_game_over)
-	Game.notify.emit("战斗开始！你是玩家 1，对面是人机。摧毁敌人大本营即可获胜。",
-		Cfg.game.hud_accent)
+	Game.notify.emit(_opening_message(), Cfg.game.hud_accent)
 	# 副官不再弹提示：状态改由小地图下方的「副官 · 开/关」按钮表达（常驻、可点）。
 
 	# 6) 测试挂载（只有命令行显式要求时才挂）
@@ -132,11 +144,18 @@ func _ready() -> void:
 		(camera.get_node_or_null("相机") as Camera3D).fov if camera != null and camera.get_node_or_null("相机") != null else -1.0,
 		camera.get_script().resource_path if camera != null and camera.get_script() != null else "内置",
 	])
-	print("[主场景] 就绪：地形 %d 面，地图 %.0fm，玩家单位 %d，敌人单位 %d（节点总数 %d）" % [
+	var 我方单位: int = Game.player_faction.count_units() if Game.player_faction != null else 0
+	var 敌方单位: int = 0
+	if Game.player_faction != null:
+		for f in Game.enemies_of(Game.player_faction):
+			敌方单位 += f.count_units()
+	print("[主场景] 就绪：地形 %d 面，地图 %.0fm，%d 个阵营 / %d 个队，我方单位 %d，敌方单位 %d（节点总数 %d）" % [
 		level.terrain.triangle_count() if level != null and level.terrain != null else 0,
 		Cfg.game.map_size,
-		Game.player_faction.count_units(),
-		Game.enemy_faction.count_units(),
+		Game.factions.size(),
+		_team_count(),
+		我方单位,
+		敌方单位,
 		_count_nodes(self),
 	])
 
@@ -205,6 +224,7 @@ func _make_fallback_env() -> Environment:
 # ===========================================================================
 
 func _process(delta: float) -> void:
+	_tick_map_watch(delta)
 	_update_shot(delta)
 	if Game.phase != RtsConst.Phase.RUNNING:
 		return
@@ -214,9 +234,10 @@ func _process(delta: float) -> void:
 	_check_timer = 0.0
 	if _over_emitted:
 		return
-	if Game.enemy_faction == null or Game.player_faction == null:
+	if Game.player_faction == null:
 		return
-	if not Game.enemy_faction.has_townhall():
+	# 多队图：**所有敌对阵营的大本营都没了**才算赢（盟友的大本营不算数）
+	if Game.all_enemies_defeated():
 		Game.trigger_victory()
 	elif not Game.player_faction.has_townhall():
 		Game.trigger_defeat()
@@ -225,6 +246,10 @@ func _process(delta: float) -> void:
 ## 游戏结束：停掉 AI，交给界面出遮罩
 func _on_game_over(victory: bool) -> void:
 	_over_emitted = true
+	for n in get_tree().get_nodes_in_group("ai_brain"):
+		if n != null and is_instance_valid(n):
+			n.set_process(false)
+			n.set_physics_process(false)
 	if ai != null and is_instance_valid(ai):
 		ai.set_process(false)
 		ai.set_physics_process(false)
@@ -252,12 +277,81 @@ func _mount_tests() -> void:
 		_mount_script("res://代码/测试/自动试玩.gd", "自动试玩")
 	if "--research-test" in args:
 		_mount_script("res://代码/测试/升级自检.gd", "升级自检")
+	if "--adjutant-test" in args:
+		_mount_script("res://代码/测试/副官自检.gd", "副官自检")
 	if "--walk-test" in args:
 		_mount_script("res://代码/测试/走姿验收.gd", "走姿验收")
 	if "--map-editor-test" in args:
 		_mount_script("res://代码/测试/地图编辑器自检.gd", "地图编辑器自检")
 	if not _qa_select_id.is_empty():
 		_qa_select.call_deferred(_qa_select_id)
+	if "--qa-guard" in args:
+		_qa_guard.call_deferred()
+	if "--qa-terrain" in args:
+		_qa_terrain.call_deferred()
+
+
+## 每支 AI 阵营一个大脑。
+##
+## 场景里现有的 `AI` 节点接管"玩家最近的敌人"，其余敌人 / 盟友全部现场新建 ——
+## 这样 `主场景.tscn` 的节点树不用改，`命令`/`副官` 那条老链路也不受影响。
+func _mount_ai_brains() -> void:
+	if Game.player_faction == null:
+		return
+	var script: Script = load("res://代码/ai/简单AI.gd") as Script
+	if script == null:
+		return
+	var ais: Array = []
+	for f in Game.factions:
+		if f == null or f.is_player:
+			continue
+		ais.append(f)
+	if ais.is_empty():
+		return
+	# 0 号：场景里那个 AI
+	if ai != null and is_instance_valid(ai):
+		ai.set("command_faction", ais[0])
+		ai.add_to_group("ai_brain")
+	ais.remove_at(0)
+	# 其余：现场 new（名字带队伍号，场景树里一眼能分清）
+	for f in ais:
+		var n: Node = script.call("new") as Node
+		if n == null:
+			continue
+		n.name = "AI_%d队" % f.team
+		n.set("command_faction", f)
+		n.add_to_group("ai_brain")
+		add_child(n)
+
+
+## 本局一共几个队
+func _team_count() -> int:
+	var seen: Dictionary = {}
+	for f in Game.factions:
+		if f != null:
+			seen[f.team] = true
+	return seen.size()
+
+
+## 开局提示：说清楚"你是几号队、队里有谁、有几个敌人"
+func _opening_message() -> String:
+	var me: RtsFaction = Game.player_faction
+	if me == null:
+		return "战斗开始！"
+	var mates: Array = []
+	var foes: Array = []
+	for f in Game.factions:
+		if f == null or f == me:
+			continue
+		if me.is_ally_of(f):
+			mates.append(f.display_name)
+		else:
+			foes.append(f.display_name)
+	var s: String = "战斗开始！你是 %d 号队。" % me.team
+	if not mates.is_empty():
+		s += " 队友：%s。" % "、".join(mates)
+	s += " 敌人：%s（共 %d 队）。摧毁全部敌方大本营即可获胜。" % ["、".join(foes), _team_count()]
+	return s
 
 
 ## 按路径挂一个测试节点（文件不存在就跳过，不报错）
@@ -273,6 +367,59 @@ func _mount_script(path: String, node_name: String) -> Node:
 	n.name = node_name
 	add_child(n)
 	return n
+
+
+## QA：地形体检 —— 出生点是否严格水平、建筑占地高差是否为 0、可走性如何。
+## 这三条正是玩家报的"莫名凸起 / 单位建筑穿模"的判据，用数字回答，不靠截图猜。
+func _qa_terrain() -> void:
+	for i in 4:
+		await get_tree().process_frame
+	if level == null or level.terrain == null:
+		print("[QA-地形] 没有关卡")
+		return
+	var st: Dictionary = level.terrain_stats()
+	print("[QA-地形] 网格 %d 面 / 高差 %.2f m / 最大坡度 %.1f° / 可走 %d 格(%.1f%%)" % [
+		int(st.get("triangle_count", 0)), float(st.get("height_range", 0.0)),
+		float(st.get("max_slope_deg", 0.0)),
+		int(st.get("walkable_cells", 0)), float(st.get("walkable_ratio", 0.0)) * 100.0])
+	var worst: float = 0.0
+	for f in Game.factions:
+		if f == null:
+			continue
+		var c: Vector3 = level.base_center(f)
+		# 每个出生点按最大建筑占地（9×5）与 8×8 各量一次
+		var r1: float = level.footprint_height_range(c, Vector2i(9, 5))
+		var r2: float = level.footprint_height_range(c, Vector2i(8, 8))
+		var buildable: bool = level.is_buildable(c + Vector3(9.0, 0.0, 9.0), Vector2i(4, 4))
+		worst = maxf(worst, maxf(r1, r2))
+		print("[QA-地形] 槽位%d(%s) 基地(%.1f,%.1f) 高差 9×5=%.4f 8×8=%.4f 可建=%s" % [
+			f.slot, f.display_name, c.x, c.z, r1, r2, str(buildable)])
+	print("[QA-地形] 出生平台最大占地高差 = %.4f m（要求 < 0.05；>0.08 就会出现穿模）" % worst)
+
+
+## QA：给前几个战斗单位分别下 驻守 / 观察 / 路径，并把它们全选中
+## （用来验收"头顶状态图标"和"选中血条"两条需求）
+func _qa_guard() -> void:
+	for i in 6:
+		await get_tree().process_frame
+	var pool: Array = []
+	if Game.player_faction != null:
+		for u in Game.player_faction.units:
+			if u != null and is_instance_valid(u) and u.is_alive() and u.def != null 					and u.def.kind == RtsConst.Kind.UNIT and not RtsWorld.is_worker_def(u.def):
+				pool.append(u)
+	if pool.size() < 3:
+		return
+	pool[0].call("order_hold")
+	pool[1].call("order_observe")
+	pool[2].call("order_patrol", pool[2].global_position + Vector3(6.0, 0.0, 6.0))
+	var picked: Array = []
+	for i in mini(pool.size(), 26):
+		picked.append(pool[i])
+	if selection_system != null and selection_system.has_method("select_units"):
+		selection_system.call("select_units", picked)
+	if camera != null and camera.has_method("focus_on"):
+		camera.call("focus_on", pool[0].global_position)
+	print("[QA] 驻守/观察/路径 已下达，选中 %d 个" % picked.size())
 
 
 ## QA：选中指定 id 的全部己方单位（截图验收命令卡用）
@@ -338,6 +485,9 @@ func _parse_cmdline() -> void:
 				_qa_cam_pos = Vector3(float(parts[0]), float(parts[1]), float(parts[2]))
 		elif arg.begins_with("--cam-dist="):
 			_qa_cam_dist = float(arg.substr(11))
+		elif arg.begins_with("--max-dist="):
+			# QA：把镜头最远距离放开（看全图用；正常游玩仍按 Cfg 的 44m 上限）
+			Cfg.game.camera_distance_max = float(arg.substr(11))
 		elif arg.begins_with("--cam-yaw="):
 			_qa_cam_yaw = float(arg.substr(10))
 		elif arg.begins_with("--map="):
@@ -348,8 +498,12 @@ func _parse_cmdline() -> void:
 			_demo_tree = true
 
 
-## 读 --map= 指定的 MapDef（读不到就返回 null，走默认地图）
-## --demo-tree 优先：现场拼一张"四季并排"的演示图，不需要任何地图文件。
+## 解析本局要用的地图（优先级从高到低）：
+##   1. --demo-tree：现场拼一张"四季并排"演示图，不需要任何地图文件。
+##   2. --map=<路径>：编辑器 Test Map 指定的地图。
+##   3. bound_map（Inspector 绑定的 MapDef）—— 用户想"通过编辑器改图、实时落到主场景"的入口。
+##   4. 兜底：默认地图文件 res://地图/主场景地图.tres（生成工具产出）。
+##   5. 都没有 → 返回 null，走原来的程序化随机地图。
 func _load_map_arg() -> MapDef:
 	if _demo_tree:
 		var demo: Script = load("res://代码/测试/树品种演示.gd") as Script
@@ -357,12 +511,73 @@ func _load_map_arg() -> MapDef:
 			print("[主场景] 树品种演示模式（春夏秋冬并排）")
 			return demo.call("make_map", 5.0, true, 128) as MapDef
 		push_warning("[主场景] 读不到 代码/测试/树品种演示.gd，回退默认地图")
-	if _map_path.is_empty():
-		return null
-	var def: MapDef = MapStore.load_any(_map_path)
-	if def == null:
-		push_warning("[主场景] 读不到地图：%s（回退到默认地图）" % _map_path)
-	return def
+	if not _map_path.is_empty():
+		var def: MapDef = MapStore.load_any(_map_path)
+		if def == null:
+			push_warning("[主场景] 读不到地图：%s（回退到默认地图）" % _map_path)
+		return def
+	if bound_map != null:
+		return bound_map
+	# 兜底：默认地图文件（生成工具 工具/gen_bound_map.gd 产出）
+	var fallback := "res://地图/主场景地图.tres"
+	if ResourceLoader.exists(fallback):
+		var def: MapDef = MapStore.load_any(fallback)
+		if def != null:
+			print("[主场景] 未指定 --map / 未绑定，使用默认地图文件 %s" % fallback)
+			return def
+	return null
+
+
+## 记录绑定地图文件，供 _tick_map_watch 监视。仅在"真正从文件加载"时生效（演示图/程序化图不监视）。
+func _setup_map_watch(def: MapDef) -> void:
+	_bound_watch_path = ""
+	_bound_watch_mtime = -1
+	if def == null or Engine.is_editor_hint():
+		return
+	var rp: String = def.resource_path
+	if rp.is_empty() or not rp.begins_with("res://地图/"):
+		return
+	var phys: String = ProjectSettings.globalize_path(rp)
+	if phys.is_empty() or not FileAccess.file_exists(phys):
+		return
+	_bound_watch_path = rp
+	_bound_watch_mtime = FileAccess.get_modified_time(phys)
+	print("[主场景] 地图热重载已就绪：监视 %s" % rp)
+
+
+## 每秒轮询一次地图文件 mtime；编辑器存盘后，运行中的游戏自动 reload_current_scene() 把改动落实。
+## 只在非编辑器、且确实绑定了地图文件时生效；reload 后 _ready 会重新 setup 监视，不会死循环。
+func _tick_map_watch(delta: float) -> void:
+	if Engine.is_editor_hint() or _bound_watch_path.is_empty():
+		return
+	_reload_lock -= delta
+	if _reload_lock > 0.0:
+		return
+	_reload_lock = 1.0
+	var phys: String = ProjectSettings.globalize_path(_bound_watch_path)
+	if phys.is_empty():
+		return
+	var mt: int = FileAccess.get_modified_time(phys)
+	if mt > 0 and mt != _bound_watch_mtime:
+		print("[主场景] 检测到地图文件改动（%s），热重载场景" % _bound_watch_path)
+		get_tree().reload_current_scene()
+
+
+## 战争迷雾：地形 visibility 网格 + 雾区暗化 + 雾中敌方单位隐藏 + 小地图遮罩。
+## 以玩家阵营（含其盟友）为观察方，按各单位 sight_range 点亮可见格。
+func _setup_fog() -> void:
+	if level == null or level.terrain == null or Game.player_faction == null:
+		return
+	if not ResourceLoader.exists("res://代码/战争迷雾.gd"):
+		return
+	var fog_script := load("res://代码/战争迷雾.gd") as Script
+	if fog_script == null:
+		return
+	var fog: Node = fog_script.new()
+	if fog == null:
+		return
+	level.add_child(fog)
+	fog.setup(level.terrain, Game.player_faction, level.world_size)
 
 
 ## 把 MapDef 里的初始资源写进阵营（MapDef 图不跑 cfg 的开局流程）

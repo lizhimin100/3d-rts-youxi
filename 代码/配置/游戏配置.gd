@@ -105,14 +105,16 @@ extends Resource
 # 地图
 # ---------------------------------------------------------------------------
 @export_group("地图")
-## 可行走区域边长（米），地图是以原点为中心的正方形
-@export var map_size: float = 200.0
+## 可行走区域边长（米），地图是以原点为中心的正方形。
+## 2026-10-31：主场景换成 4 队竞技场图 → 224m（4 个角各一个出生点，边长太小时
+## 转身就撞到对面的基地）。
+@export var map_size: float = 224.0
 ## 随机种子（保证每次地形一致，方便测试）
 @export var map_seed: int = 20261017
 ## 地形起伏幅度（米）
 @export var terrain_amplitude: float = 2.8
 ## 地形细分数（每边的格子数）
-@export var terrain_resolution: int = 112
+@export var terrain_resolution: int = 128
 ## 玩家基地坐标
 @export var player_base_pos: Vector2 = Vector2(-62.0, 58.0)
 ## 敌人基地坐标
@@ -175,12 +177,17 @@ extends Resource
 # ---------------------------------------------------------------------------
 @export_group("开局")
 ## 玩家开局建筑（id → 相对基地的偏移 Vector2）
+## 偏移按**营地本地坐标**解释：x = 右手边，y = 朝地图中心的方向（见 关卡._spawn_faction_start）
 @export var player_buildings: Dictionary = {
 	&"townhall": Vector2(0.0, 0.0),
 	# 三座新建筑体量比旧版大（大本营 9.4m 宽 / 13m 高），旧偏移 (9,4)/(-1.5,10)
 	# 会让兵营贴脸、铁匠铺挡在镜头与大门之间。左右各拉开 12m，三座都进画面。
-	&"barracks": Vector2(12.0, 2.0),
-	&"blacksmith": Vector2(-12.0, 4.0),
+	&"barracks": Vector2(13.0, 3.0),
+	&"blacksmith": Vector2(-13.0, 3.0),
+	# 4 队图每个基地给一座农场（人口）+ 一座哨塔（开局视野与自卫），
+	# 免得开局就被人一波推平、也让"哨塔"新建筑一进游戏就能看见。
+	&"farm": Vector2(-1.0, 13.5),
+	&"watchtower": Vector2(15.5, 14.5),
 }
 ## 玩家开局单位（id → 数量）
 @export var player_units: Dictionary = {
@@ -192,8 +199,10 @@ extends Resource
 ## 敌人开局建筑
 @export var enemy_buildings: Dictionary = {
 	&"townhall": Vector2(0.0, 0.0),
-	&"barracks": Vector2(-12.0, -2.0),
-	&"blacksmith": Vector2(12.0, -4.0),
+	&"barracks": Vector2(-13.0, 3.0),
+	&"blacksmith": Vector2(13.0, 3.0),
+	&"farm": Vector2(1.0, 13.5),
+	&"watchtower": Vector2(-15.5, 14.5),
 }
 ## 敌人开局单位
 @export var enemy_units: Dictionary = {
@@ -204,10 +213,55 @@ extends Resource
 @export var rally_spread: float = 4.2
 
 # ---------------------------------------------------------------------------
+# 对局（多队）
+# ---------------------------------------------------------------------------
+@export_group("对局")
+## 出生点数量（= 阵营数量）。4 = 四角各一个。
+@export var match_slots: int = 4
+## 人类玩家所在的槽位
+@export var match_human_slot: int = 0
+## **每个槽位属于哪个队**。同号 = 盟友（同队同色、不许互相攻击）。
+## 默认 [1,1,2,3]：你和槽位 1 是队友，槽位 2、3 各成一军 —— 三队混战。
+## 想打 2v2 就改成 [1,1,2,2]；想四家乱战就 [1,2,3,4]。
+@export var match_team_of_slot: Array[int] = [1, 1, 2, 3]
+## 队色表（第 1 队 = 下标 0 …）。队色落到模型自带的染色区上
+## （建筑的 team / team_trim，单位的 M_<zone>_team），不是整模型刷一遍色。
+@export var match_team_colors: Array[Color] = [
+	Color(0.30, 0.62, 1.00),   # 1 蓝
+	Color(1.00, 0.32, 0.26),   # 2 红
+	Color(0.38, 0.84, 0.36),   # 3 绿
+	Color(0.74, 0.45, 0.96),   # 4 紫
+	Color(0.98, 0.78, 0.24),   # 5 金
+	Color(0.24, 0.82, 0.80),   # 6 青
+]
+
+
+## 某槽位属于哪个队（越界按 1 队算）
+func team_of_slot(slot: int) -> int:
+	if match_team_of_slot.is_empty():
+		return 1
+	return maxi(1, match_team_of_slot[clampi(slot, 0, match_team_of_slot.size() - 1)])
+
+
+## 某个队的队色（表里没有就按取模轮转）
+func team_color(team: int) -> Color:
+	if match_team_colors.is_empty():
+		return Color(0.30, 0.62, 1.00)
+	return match_team_colors[posmod(team - 1, match_team_colors.size())]
+
+
+## 槽位显示名（"玩家" / "AI·2队"）
+func slot_name(slot: int, team: int) -> String:
+	if slot == match_human_slot:
+		return "玩家"
+	return "AI·%d队" % team
+
+
+# ---------------------------------------------------------------------------
 # 界面
 # ---------------------------------------------------------------------------
 @export_group("界面")
-## 队伍色（玩家 / 敌人）
+## 队伍色（玩家 / 敌人）—— 旧接口保留；新代码用 match_team_colors / team_color()
 @export var player_color: Color = Color(0.30, 0.62, 1.00)
 @export var enemy_color: Color = Color(1.00, 0.32, 0.26)
 ## 中立资源色
