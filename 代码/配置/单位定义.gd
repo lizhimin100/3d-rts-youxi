@@ -63,7 +63,8 @@ extends Resource
 ## 是否资源交汇点（农民往回送资源的地方）
 @export var is_dropoff: bool = false
 ## 交汇点接收的资源种类（RtsConst.Harvest）。**空 = 金木全收**（大本营）；
-## 伐木场只收木材 → [RtsConst.Harvest.WOOD]，于是农民背着木头会**优先**去伐木场。
+## 伐木场只收木材 → [RtsConst.Harvest.WOOD]：农民背木头时它才进候选，
+## 候选里**只比距离**（谁近送谁，没有建筑优先级）。
 @export var dropoff_kinds: Array[int] = []
 ## 提供的人口上限
 @export var food_provided: int = 0

@@ -392,7 +392,7 @@ static func build_units() -> Dictionary:
 	lumbercamp.height = 3.9
 	lumbercamp.is_dropoff = true
 	# **只收木材**：大本营金木全收（dropoff_kinds 空 = 全收），伐木场专收木头。
-	# 这是"农民背木头优先去伐木场"的数据依据，不用在单位代码里写死建筑 id。
+	# 背木头时"大本营 / 伐木场"都在候选里，农民**只按距离**挑最近的送。
 	lumbercamp.dropoff_kinds = [RtsConst.Harvest.WOOD]
 	lumbercamp.researches = [&"wood_haul", &"repair_tech"]
 	lumbercamp.sight_range = 9.0

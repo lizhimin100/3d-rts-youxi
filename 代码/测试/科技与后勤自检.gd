@@ -170,10 +170,14 @@ func _test_dropoff_choice() -> void:
 	_peasant.set("_carry_kind", H_WOOD)
 	_peasant.set("_carry", 10)
 	var got: Variant = _peasant.call("_nearest_dropoff", H_WOOD)
-	_ok("农民背着木头优先去伐木场（哪怕大本营更近）",
-		got == _camp, "大本营 %.0fm / 伐木场 %.0fm → 选了 %s" % [
+	_ok("背木头时按**距离**选交汇点（大本营更近就去大本营，没有优先级）",
+		got == _hall, "大本营 %.0fm / 伐木场 %.0fm → 选了 %s" % [
 			d_hall, d_camp,
-			"伐木场" if got == _camp else ("大本营" if got == _hall else "其它")])
+			"大本营" if got == _hall else ("伐木场" if got == _camp else "其它")])
+	# 把农民挪到伐木场这边，同一份数据必须反过来选伐木场
+	_peasant.global_position = _camp.global_position + Vector3(0.0, 0.0, 3.0)
+	var got2: Variant = _peasant.call("_nearest_dropoff", H_WOOD)
+	_ok("站到伐木场旁边时选伐木场（同一个函数，只认距离）", got2 == _camp)
 	# 背金子时不能去伐木场（它不收金）
 	_peasant.set("_carry_kind", H_GOLD)
 	var got_gold: Variant = _peasant.call("_nearest_dropoff", H_GOLD)

@@ -1973,18 +1973,16 @@ func _gather_multiplier() -> float:
 	return Cfg.difficulty(Game.difficulty_index).gather_multiplier
 
 
-## 最近的回程点
+## 最近的回程点（**纯比距离**）
 ##
-## 2026-10-31：「背木头的农民**优先**去伐木场」。
-## 判据走数据（UnitDef.dropoff_kinds），不在单位代码里写死建筑 id：
-##   · 只要有伐木场活着、且它收这种资源 → 就选**最近的伐木场**（哪怕大本营更近）；
-##   · 没有伐木场（或它不收这种资源）→ 退回最近的通用交汇点（大本营）。
-## 金矿不受影响：伐木场 dropoff_kinds 只有 WOOD，背金子时它根本不在候选里。
+## 2026-10-31 二次定调（玩家原话："伐木场是可以运木头，不是优先，是和基地比较距离，
+## 谁更近就运哪里"）：只在"收这种资源"的交汇点里挑**最近的那个**，不做任何建筑优先级。
+##   · 判据走数据（UnitDef.dropoff_kinds），不在单位代码里写死建筑 id；
+##   · 背木头时候选 = 大本营 + 活着的伐木场，谁近去谁；
+##   · 背金子时伐木场根本不在候选里（它 dropoff_kinds 只有 WOOD）。
 func _nearest_dropoff(kind: int = -1) -> Node3D:
 	var list: Array = RtsWorld.dropoffs(faction)
 	var want: int = kind if kind >= 0 else _carry_kind
-	var preferred: Node3D = null
-	var preferred_d: float = INF
 	var best: Node3D = null
 	var best_d: float = INF
 	for d in list:
@@ -1999,18 +1997,7 @@ func _nearest_dropoff(kind: int = -1) -> Node3D:
 		if dist < best_d:
 			best_d = dist
 			best = d
-		# 专收这种资源的建筑（dropoff_kinds 非空，例如伐木场）当"优先项"
-		var dk: Variant = d.get("def")
-		var only: bool = dk != null and not (dk as UnitDef).dropoff_kinds.is_empty()
-		if only and dist < preferred_d:
-			preferred_d = dist
-			preferred = d
-	if preferred != null:
-		return preferred
 	return best
-
-
-## 只记账：把身上的东西入账（不碰采集状态机；采集与送资源共用）
 
 
 ## 只记账：把身上的东西入账（不碰采集状态机；采集与送资源共用）

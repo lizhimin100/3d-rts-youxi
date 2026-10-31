@@ -1133,59 +1133,15 @@ func add_banners(b: Node3D, faction: RtsFaction) -> void:
 
 
 ## 给建筑加旗杆 + 旗面（阵营色）。
-## 为什么在 Godot 里补而不是回 Blender：旗面是纯平面 + 单色，代码生成 3 个网格，
-## 比重新跑一遍整栋大本营的构建脚本便宜得多，而且能直接吃阵营色。
+##
+## ★ 2026-10-31 停用（只留函数壳，MapLoader 还在调）：
+##   这里以前是给**旧版箭塔**补旗子的补丁（判 `d.id == &"tower"`），
+##   而现在的箭塔是铁誓军团资产 —— 模型本身**没有旗**，顶上只有一根旗尖。
+##   补丁按 `height*0.92 + half_x*0.62` 定位，那面旗实际落在屋顶斜面之外，
+##   玩家看到的就是"箭塔旁边飘着一块布"（悬空/穿模）。
+##   旗子现在由资产包自己负责（team / team_trim 材质），代码不再补第二面。
 func _add_banners(b: Node3D, faction: RtsFaction) -> void:
-	if b == null or b.def == null:
-		return
-	var d: UnitDef = b.def
-	# 只给还没换新模型的主要建筑挂代码旗。
-	# 铁誓军团的大本营/兵营自身带阵营色旗与旗尖（team / team_trim 材质），
-	# 再挂一对蓝色平板旗会变成"两面假旗 + 真旗"，一眼穿帮。
-	if d.id != &"tower":
-		return
-	var color: Color = Color(0.30, 0.55, 0.95)
-	if faction != null:
-		color = faction.color
-	var half_x: float = float(d.footprint.x) * 0.5
-	var top: float = maxf(d.height * 0.92, 3.0)
-	var pole_h: float = 2.6 if d.id == &"townhall" else 1.9
-	# 左右各一面（大本营两面，兵营/箭塔一面）
-	var offsets: Array = [half_x * 0.62]
-	if d.id == &"townhall":
-		offsets = [-half_x * 0.62, half_x * 0.62]
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = color
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	mat.roughness = 0.85
-	mat.emission_enabled = true
-	mat.emission = color
-	mat.emission_energy_multiplier = 0.18
-	for ox in offsets:
-		var root := Node3D.new()
-		root.name = "旗杆"
-		root.position = Vector3(float(ox), top, half_x * 0.55)
-		b.add_child(root)
-		var pole := MeshInstance3D.new()
-		var cm := CylinderMesh.new()
-		cm.top_radius = 0.055
-		cm.bottom_radius = 0.075
-		cm.height = pole_h
-		cm.radial_segments = 6
-		pole.mesh = cm
-		pole.position.y = pole_h * 0.5
-		pole.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		root.add_child(pole)
-		var cloth := MeshInstance3D.new()
-		var pm := PlaneMesh.new()
-		pm.size = Vector2(1.25, 0.72)
-		pm.orientation = PlaneMesh.FACE_Z
-		cloth.mesh = pm
-		cloth.material_override = mat
-		cloth.position = Vector3(0.66, pole_h - 0.55, 0.0)
-		cloth.rotation.z = -0.06
-		cloth.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		root.add_child(cloth)
+	return
 
 ## 岩石：默认走**程序化岩石**（8 个变体共享网格，每块一个 MeshInstance3D）。
 ## 把 PROC_ROCK 关掉就回到"拆 岩石.glb 的子网格做 MultiMesh"的老路。
