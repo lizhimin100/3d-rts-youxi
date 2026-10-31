@@ -101,6 +101,10 @@ class MapData:
 	var base_points: Array[Vector2] = []
 	## 出生平台半径（平台内**严格水平**，保证建筑占地高差 = 0）
 	var base_pad: float = 24.0
+	## 可走区域离地图边界的距离（米）。0 = 用 MapDef/MapLoader 的默认值。
+	## 竞技场图 14m、默认图 16m —— 这是"外圈林带不参与寻路"的实现方式，
+	## 不存进地图文件的话，从文件读回来的图可走区会比原图多出一整圈。
+	var edge_keep_out: float = 0.0
 	## 地块网格：边长 mat_cells 个 8m 格；mat_nodes 是 (mat_cells+1)² 个**格点**的 0/255
 	## （魔兽 3 口径：材质存在共享格点上，一格读它四个角）
 	var mat_cells: int = 0
@@ -165,6 +169,7 @@ static func build(cfg: GameConfig) -> MapData:
 	var t_start: int = Time.get_ticks_usec()
 	var data := MapData.new()
 	data.size = cfg.map_size
+	data.edge_keep_out = EDGE_MARGIN
 	data.resolution = maxi(16, cfg.terrain_resolution)
 	var res: int = data.resolution
 	var row: int = res + 1
@@ -1691,6 +1696,7 @@ static func build_arena(cfg: GameConfig, slot_count: int = 4) -> MapData:
 
 	# --- 0. 出生点：四个角（45° 起，按槽位数均分） ---
 	data.base_pad = ARENA_PAD_FLAT
+	data.edge_keep_out = ARENA_EDGE_MARGIN
 	var bases: Array[Vector2] = []
 	var base_r: float = half * 0.560
 	for k in range(slots):

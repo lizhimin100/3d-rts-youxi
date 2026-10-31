@@ -66,7 +66,14 @@ static func object_block_radius(o: MapObject) -> float:
 
 ## 由高度场 + 水面 + 对象占地现算 1m 网格可走性（size² 字节）。
 ## 顺序很重要：先地形/水域，再压对象占地（建筑最后压，压得最死）。
-static func build_walkable_mask(m: MapDef) -> PackedByteArray:
+##
+## p_include_buildings：
+##   · true（默认）= 编辑器校验口径：建筑占地也算不可走（房子堵住的路就是堵住）；
+##   · false = **游戏加载口径**：建筑占地由 关卡.mark_footprint 在实例化时再压，
+##     和程序化地图（先算可走性、再放建筑）完全一致。
+##     不这么分的话，同一张图"程序化建"和"从文件读"的可走格数会差几千格，
+##     表现为"读图后单位走不近地图边缘/绕不开营地"。
+static func build_walkable_mask(m: MapDef, p_include_buildings: bool = true) -> PackedByteArray:
 	var out := PackedByteArray()
 	if m == null:
 		return out
@@ -88,21 +95,61 @@ static func build_walkable_mask(m: MapDef) -> PackedByteArray:
 				continue
 			if m.is_water_at(p):
 				out[i] = 0
-	# 对象占地
+	# 对象占地。**口径必须和 MapGenerator._apply_prop_blocks 完全一致**：
+	#   树 0.95m 圆、金矿 4×4 格矩形、岩石 1.05×scale 圆、建筑 fp+2 矩形。
+	# 旧版对树用 1.05（ceili 变成 2 格半径 → 每棵多挡 8 格，668 棵 ≈ 5300 格），
+	# 结果是"从文件读回来的地图比原图少走 10% 的地方" —— 玩家会觉得单位莫名绕路。
 	for o in m.objects:
 		if o == null:
 			continue
-		if int(o.category) == MapObject.Category.BUILDING:
+		var cat: int = int(o.category)
+		if cat == MapObject.Category.BUILDING:
+			if not p_include_buildings:
+				continue
 			var d: UnitDef = type_def(o.type_id)
 			var fp := Vector2i(4, 4)
 			if d != null and d.footprint.x > 0:
 				fp = d.footprint
 			_block_rect(out, w, o.position, fp.x + 2, fp.y + 2)
-		else:
-			var r: float = object_block_radius(o)
-			if r > 0.0:
-				_block_circle(out, w, Vector2(o.position.x, o.position.z), r)
+		elif cat == MapObject.Category.RESOURCE:
+			var p := Vector2(o.position.x, o.position.z)
+			if String(o.type_id).begins_with("tree"):
+				_block_circle(out, w, p, 0.95)
+			elif o.type_id == &"goldmine":
+				_block_rect_cells(out, w, p, 4, 4)
+			else:
+				var r: float = object_block_radius(o)
+				if r > 0.0:
+					_block_circle(out, w, p, r)
+		elif cat == MapObject.Category.DOODAD:
+			if String(o.type_id) == "岩石" or bool(o.properties.get("blocks", false)):
+				_block_circle(out, w, Vector2(o.position.x, o.position.z),
+					1.05 * maxf(0.2, o.scale))
+	# ground 里的岩石（走 MultiMesh 合批、不进 objects 的那批）同样要挡
+	if m.ground is Dictionary:
+		var rocks: Variant = (m.ground as Dictionary).get("rocks", [])
+		if rocks is Array:
+			for rk in rocks:
+				if rk is Dictionary:
+					_block_circle(out, w, rk.get("pos", Vector2.ZERO),
+						1.05 * maxf(0.2, float(rk.get("scale", 1.0))))
 	return out
+
+
+## 逐格矩形的"原版口径"（与 地图生成._block_rect_cells 一字不差）：
+## 中心格 = int(pos+half)，再向左上各退 sx/2、sz/2 格。
+static func _block_rect_cells(mask: PackedByteArray, w: int, p: Vector2,
+		sx: int, sz: int) -> void:
+	var half: float = float(w) * 0.5
+	var cx0: int = int(p.x + half) - sx / 2
+	var cz0: int = int(p.y + half) - sz / 2
+	for dz in range(sz):
+		for dx in range(sx):
+			var cx: int = cx0 + dx
+			var cz: int = cz0 + dz
+			if cx < 0 or cz < 0 or cx >= w or cz >= w:
+				continue
+			mask[cz * w + cx] = 0
 
 
 static func _block_circle(mask: PackedByteArray, w: int, p: Vector2, radius: float) -> void:
@@ -206,7 +253,8 @@ static func to_map_data(m: MapDef) -> MapGenerator.MapData:
 	d.size = float(m.size)
 	d.resolution = m.height_resolution
 	d.heights = m.heightmap.duplicate()
-	d.walkable = build_walkable_mask(m)
+	# 游戏口径：建筑不在这里压，交给 关卡.mark_footprint（和程序化地图一致）
+	d.walkable = build_walkable_mask(m, false)
 	d.trees = []
 	d.trees_proc = []
 	d.mines = []

@@ -665,8 +665,12 @@ static func from_map_data(data: MapGenerator.MapData, cfg: GameConfig = null) ->
 	m.mat_tile = data.mat_tile
 	m.far_ridges = data.far_ridges
 	m.base_pad = data.base_pad
-	# 竞技场图的"外圈林带不参与寻路"是靠 16m 边界内缩实现的，必须跟着地图走
-	m.edge_keep_out = 16.0 if data.base_points.size() > 2 else 3.0
+	# 竞技场图的"外圈林带不参与寻路"是靠边界内缩实现的（14m），必须跟着地图走；
+	# 生成器没填（0）才退回旧口径。
+	if data.edge_keep_out > 0.0:
+		m.edge_keep_out = data.edge_keep_out
+	else:
+		m.edge_keep_out = 16.0 if data.base_points.size() > 2 else 3.0
 	# --- 地表叙事（纯视觉、合批）---
 	m.ground = {
 		"roads": data.roads.duplicate(true),

@@ -426,6 +426,20 @@ func _qa_map_fingerprint() -> void:
 		if b > 128:
 			dirt += 1
 	parts.append("mat=%d/%d/dirt%d" % [md.mat_cells, hash(md.mat_nodes), dirt])
+	# 可走性：raw = 按 MapDef 现算的掩码（未过坡度），walk = 关卡最终生效的
+	var wk: int = 0
+	for b in md.walkable:
+		if b != 0:
+			wk += 1
+	var walk_s: String = "walk=%d/%d" % [wk, hash(md.walkable)]
+	if level.map_def != null:
+		var raw: PackedByteArray = MapLoader.build_walkable_mask(level.map_def, false)
+		var wk2: int = 0
+		for b in raw:
+			if b != 0:
+				wk2 += 1
+		walk_s += " raw=%d/%d edge=%.0f" % [wk2, hash(raw), level.map_def.edge_keep_out]
+	parts.append(walk_s)
 	parts.append("trees=%d/%d mines=%d/%d rocks=%d roads=%d grass=%d rubble=%d decor=%d far=%s" % [
 		md.trees.size(), hash(md.trees), md.mines.size(), hash(md.mines),
 		md.rocks.size(), md.roads.size(), md.grass.size(), md.rubble.size(),
