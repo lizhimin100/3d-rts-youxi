@@ -1008,6 +1008,8 @@ func _sync_all() -> void:
 
 	# --- 训练队列 ---
 	_sync_training()
+	# --- 研究（铁匠铺 / 伐木场）---
+	_sync_research()
 
 	# --- 集结点 ---
 	var cmd := _command_system()
@@ -1080,6 +1082,13 @@ func _sync_training() -> void:
 			_queue_chips[i].visible = false
 	_queue_row.visible = queue_n > 0
 
+
+## 研究区同步（铁匠铺 / 伐木场）。和训练区**解耦**：没有训练的建筑也要刷。
+func _sync_research() -> void:
+	if _target == null or not is_instance_valid(_target):
+		return
+	if not _research_box.visible:
+		return
 	# 研究按钮：等级显示在按钮文字里，可用性按 reason 更新
 	for i in _research_ids.size():
 		var rb := _research_btns.get_child(i) as Button

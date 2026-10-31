@@ -948,9 +948,11 @@ func add_object(type_id: StringName, category: int, world_pos: Vector3) -> MapOb
 		pos.y = def.height_at(pos.x, pos.z)
 	# 单位 / 建筑**必须**有归属（加载器要按 owner 找阵营）；下拉里选了"中立"也回落到槽位 0，
 	# 只在状态栏提示一句，别让"中立步兵"这种没有阵营的怪东西进地图文件。
+	# 同时按当前地图的槽位数夹一下：换图后 place_owner 可能还停在上一张图的"玩家 4"。
 	var own: int = -1
 	if category == MapObject.Category.UNIT or category == MapObject.Category.BUILDING:
-		own = maxi(place_owner, 0)
+		var max_slot: int = maxi(0, (def.players.size() if def != null else 1) - 1)
+		own = clampi(place_owner, 0, max_slot)
 	var obj := MapObject.make(type_id, category, pos, yaw, 1.0, own)
 	if category == MapObject.Category.DOODAD:
 		var info: Dictionary = _asset_info(type_id)

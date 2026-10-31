@@ -267,11 +267,14 @@ func _build_entries() -> Array:
 				"sub": "%.0f伤 · %.0fm" % [b.def.attack_damage, b.def.attack_range],
 				"disabled": true,
 			})
-		elif b.def.sight_range > 0.0:
+		elif b.def.sight_range >= 15.0:
+			# 只给"存在意义就是看"的楼（哨塔 20m）加这一格。
+			# 兵营/农场也有一点视野（12m），但那是副产品，摆一格"视野"只会把
+			# 真正的操作格（训练/研究/集结点）挤出第一屏。
 			out.append({
 				"label": "视野",
-				"hint": "%s 没有攻击能力，只提供 %.0fm 视野与预警" % [
-					b.def.display_name, b.def.sight_range],
+				"hint": "%s 没有攻击能力，只提供 %.0fm 视野与 %.0fm 预警" % [
+					b.def.display_name, b.def.sight_range, b.def.detect_radius],
 				"color": Color(0.66, 0.86, 0.92),
 				"glyph": "视",
 				"icon": "eye",

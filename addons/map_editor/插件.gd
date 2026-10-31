@@ -460,6 +460,49 @@ func _run_selftest() -> void:
 	else:
 		fails.append("撤销没删掉刚放的对象（%d → %d）" % [n0, n2])
 
+	# --- 摆放归属（先选玩家再摆）：place_owner 必须真的写进 MapObject.owner ---
+	# 这条以前一直是坏的：add_object 把 owner 写死成 1，摆谁都是"玩家 2 的兵"。
+	var want_owner: int = 1 if d.players.size() > 1 else 0
+	_session.set_place_owner(want_owner)
+	var unit_obj: MapObject = _session.add_object(&"footman",
+		MapObject.Category.UNIT, Vector3(near_spawn.x + 3.0, 0.0, near_spawn.y + 3.0))
+	if unit_obj != null and unit_obj.owner == want_owner:
+		passes += 1
+		print("  · 摆放归属：选中玩家 %d → 放下的兵 owner=%d" % [want_owner + 1, unit_obj.owner])
+	else:
+		fails.append("摆放归属没生效（owner=%s，应为 %d）" % [
+			str(unit_obj.owner) if unit_obj != null else "null", want_owner])
+	# 装饰/资源永远中立
+	var doodad_obj: MapObject = _session.add_object(&"tree",
+		MapObject.Category.RESOURCE, Vector3(near_spawn.x - 3.0, 0.0, near_spawn.y - 3.0))
+	if doodad_obj != null and doodad_obj.owner == -1:
+		passes += 1
+		print("  · 摆放归属：资源保持中立（owner=-1）")
+	else:
+		fails.append("资源被染上归属了（owner=%s）" % (str(doodad_obj.owner) if doodad_obj != null else "null"))
+	_session.delete_selection()
+	_session.set_place_owner(0)
+
+	# --- 队伍：一键排队伍（各自为战）必须真的改到 PlayerSlot.team ---
+	var solo_ok: bool = true
+	_session.set_team_layout("solo")
+	for i in d.players.size():
+		if int(d.players[i].team) != i + 1:
+			solo_ok = false
+	if solo_ok:
+		passes += 1
+		print("  · 队伍预设（各自为战）：%s" % _session.team_summary())
+	else:
+		fails.append("队伍预设没生效：%s" % _session.team_summary())
+	_session.set_team_layout("all")
+	if d.players.size() > 0 and int(d.players[0].team) == 1:
+		passes += 1
+		print("  · 队伍预设（全同盟）：%s" % _session.team_summary())
+	else:
+		fails.append("队伍全同盟没生效")
+	_session.undo()
+	_session.undo()
+
 	# --- 存盘 → 读回 ---
 	# 存到项目内的「地图」文件夹（不再写 C 盘 user://），顺便验证 res:// 可写可读
 	var tmp := "res://地图/_编辑器链路自检.tres"
