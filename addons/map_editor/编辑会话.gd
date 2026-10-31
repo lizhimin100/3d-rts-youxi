@@ -19,6 +19,8 @@ signal category_changed(category: int)
 signal tool_changed()
 ## 撤销栈变了（提交/撤销/重做/跳转/换图）—— 历史面板刷新用
 signal history_changed()
+## "这次摆放归属于哪一家"变了（魔兽式：先选玩家，再选摆什么）
+signal place_owner_changed(owner_id: int)
 
 enum Mode { TERRAIN, OBJECT, REGION, SELECT }
 enum Tool {
@@ -47,7 +49,7 @@ var dirty: bool = false
 var mode: int = Mode.TERRAIN
 var tool: int = Tool.RAISE
 ## **是否手持工具**（交互链路的唯一开关）
-## false = 手型/浏览：左键按住拖动 = 转视角，点中对象 = 选中（可拖走）
+## false = 手型/浏览：左键点选 / 空地拖动框选；对象可拖走。转视角走右键拖 / 中键 / Alt+左键
 ## true  = 手持工具：左键按下就按当前 mode 干活（刷地形 / 放对象 / 画区域）
 ## 默认 false —— 刚打开编辑器不该"左键一动就改地高"。
 var armed: bool = false
@@ -77,6 +79,12 @@ var clipboard: Array[MapObject] = []
 # --- 资产面板 ---
 var asset_category: int = MapObject.Category.UNIT
 var asset_id: StringName = &"footman"
+## **当前摆放归属**（魔兽编辑器的"玩家 N"页签）：0 = 槽位 0，-1 = 中立。
+##
+## 为什么要有它：以前 add_object 把单位/建筑的 owner 写死成 1（= 槽位 1 = 玩家 2），
+## 摆谁都是"别人的兵"，还得再选中改一次归属 —— 两遍活。
+## 现在先在这个下拉里选玩家，之后连点十只兵全归那一家。
+var place_owner: int = 0
 
 # --- 校验 ---
 var validation: Dictionary = {"ok": true, "errors": PackedStringArray(), "warnings": PackedStringArray()}
@@ -755,18 +763,30 @@ func arm() -> void:
 	tool_changed.emit()
 
 
-## 收起工具 → 回到手型：左键按住拖动就是转视角。
+## 收起工具 → 回到手型：左键 = 点选 / 框选，右键拖 = 平移，Alt+左键 / 中键 = 转视角。
 ## Esc、右键空地、点"手型"按钮都走这里。
 func disarm() -> void:
 	if not armed:
 		return
 	armed = false
 	tool_changed.emit()
-	_emit_status("已收起工具：左键拖动转视角，点对象可选中")
+	_emit_status("已收起工具：左键点选 / 框选，右键拖平移，Alt+左键转视角")
 
 
 func is_armed() -> bool:
 	return armed
+
+
+## 选"这次摆放归谁"（魔兽式：先选玩家几，再选摆什么）。
+## 只影响之后新放的对象；已选中的对象要改归属请用归属卡（set_selection_owner）。
+func set_place_owner(owner_id: int) -> void:
+	var v: int = clampi(owner_id, -1, maxi(0, (def.players.size() if def != null else 1) - 1))
+	if v == place_owner:
+		return
+	place_owner = v
+	place_owner_changed.emit(place_owner)
+	tool_changed.emit()
+	_emit_status("摆放归属：%s（之后放的兵和楼都归它）" % owner_display_name(place_owner))
 
 
 ## 放置建筑时按 R：朝向转 90°（编辑器与游戏建造共用同一个吸附档）
@@ -780,12 +800,19 @@ func rotate_place_yaw(step_deg: float = 90.0) -> void:
 ## 状态栏 / 视口徽标用的一句话
 func tool_hint() -> String:
 	if not armed:
-		return "手型 · 左键拖动转视角"
+		return "手型 · 左键点选 / 框选（Alt+左键转视角）"
 	match mode:
 		Mode.TERRAIN:
 			return "地形 · %s（笔刷 %.0fm %s）" % [
 				tool_name(), brush_radius, "方形" if brush_square else "圆形"]
 		Mode.OBJECT:
+			# 归属写进状态栏：魔兽的"当前玩家页签"也是常驻可见的，
+			# 不然连着摆十只兵之后才发现全归错了家。
+			if asset_category == MapObject.Category.UNIT \
+					or asset_category == MapObject.Category.BUILDING:
+				return "放置 · %s · %s → %s" % [
+					MapAssets.category_name(asset_category), String(asset_id),
+					owner_display_name(place_owner)]
 			return "放置 · %s · %s" % [
 				MapAssets.category_name(asset_category), String(asset_id)]
 		Mode.REGION:
@@ -919,8 +946,12 @@ func add_object(type_id: StringName, category: int, world_pos: Vector3) -> MapOb
 			pos.x = roundf(pos.x)
 			pos.z = roundf(pos.z)
 		pos.y = def.height_at(pos.x, pos.z)
-	var obj := MapObject.make(type_id, category, pos, yaw, 1.0,
-		-1 if category != MapObject.Category.UNIT and category != MapObject.Category.BUILDING else 1)
+	# 单位 / 建筑**必须**有归属（加载器要按 owner 找阵营）；下拉里选了"中立"也回落到槽位 0，
+	# 只在状态栏提示一句，别让"中立步兵"这种没有阵营的怪东西进地图文件。
+	var own: int = -1
+	if category == MapObject.Category.UNIT or category == MapObject.Category.BUILDING:
+		own = maxi(place_owner, 0)
+	var obj := MapObject.make(type_id, category, pos, yaw, 1.0, own)
 	if category == MapObject.Category.DOODAD:
 		var info: Dictionary = _asset_info(type_id)
 		if info.has("model"):
@@ -1308,6 +1339,59 @@ func _players_copy() -> Array[PlayerSlot]:
 	for p in def.players:
 		out.append(p.clone_slot() if p != null else null)
 	return out
+
+
+## 一键排队伍（玩家页的三个预设按钮）。kind：solo = 各自为战 / two = 两队 / all = 全同盟。
+## 走的是同一条 update 路径（同样进撤销栈、同样标脏），不是"直接改内存"的野路子。
+func set_team_layout(kind: String) -> void:
+	if def == null or def.players.is_empty():
+		return
+	var before: Array[PlayerSlot] = _players_copy()
+	var n: int = def.players.size()
+	for i in n:
+		var p: PlayerSlot = def.players[i]
+		if p == null:
+			continue
+		match kind:
+			"solo":
+				p.team = i + 1
+			"two":
+				p.team = 1 if i < int(ceil(float(n) * 0.5)) else 2
+			"all":
+				p.team = 1
+			_:
+				pass
+	_push_action("排队伍（%s）" % kind, [{
+		"prop": "players", "before": before, "after": _players_copy(),
+	}], UndoRedo.MERGE_DISABLE)
+	def_changed.emit("all")
+	dirty = true
+	dirty_changed.emit()
+	_emit_status("队伍已重排：%s" % team_summary())
+
+
+## 队伍一览（"队伍 1：玩家1、玩家2"），玩家页与状态栏共用
+func team_summary() -> String:
+	if def == null or def.players.is_empty():
+		return "无玩家"
+	var groups: Dictionary = {}
+	for p in def.players:
+		if p == null:
+			continue
+		var t: int = maxi(p.team, 1)
+		if not groups.has(t):
+			groups[t] = []
+		(groups[t] as Array).append(p.id + 1)
+	var keys: Array = groups.keys()
+	keys.sort()
+	var parts: Array[String] = []
+	for t in keys:
+		var ids: Array = groups[t]
+		var names: Array[String] = []
+		for i in ids:
+			names.append("玩家%d" % int(i))
+		parts.append("队伍 %d：%s" % [int(t), "、".join(names)])
+	return "　｜　".join(parts)
 
 
 func update_player(index: int, key: String, value: Variant) -> void:

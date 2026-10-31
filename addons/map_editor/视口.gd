@@ -1155,27 +1155,31 @@ func _on_left_down(pos: Vector2) -> void:
 	var g: Vector3 = _ray_ground(pos)
 	_ground = g
 	# ---------------------------------------------------------------
-	# 状态 1：手型（没拿工具）—— 左键按下拖动 = 转视角
-	#   · 点中对象仍要能选中（这是浏览时的基本操作，不能因为没拿工具就废掉）
-	#   · 点空地 → 进轨道旋转，松手不触发任何编辑
+	# 状态 1：手型（没拿工具）—— 左键 = **点选 / 框选**，不再是转视角
+	#   · 点中对象 → 选中（Shift 加选）；按住拖动 = 移动它
+	#   · 点空地   → 拉起框选矩形，松手选中框内对象（魔兽编辑器的肌肉记忆）
+	#   · 转视角改走：右键拖 / 中键拖 / Alt+左键拖（这三条一条都没动）
 	# ---------------------------------------------------------------
 	if not session.armed:
+		var hover: MapObject = _pick(pos)
+		if hover != null:
+			if Input.is_key_pressed(KEY_SHIFT):
+				if not session.selection.has(hover):
+					session.selection.append(hover)
+					session.selection_changed.emit()
+			else:
+				session.select_only(hover)
+			_reveal_object_dock()
+			_dragging = true
+			_drag_last = g
+			session.begin_drag()
+			return
+		# 空地：框选（g == INF 表示点到天空，什么都不做）
 		if g != Vector3.INF:
-			var hover: MapObject = _pick(pos)
-			if hover != null:
-				if Input.is_key_pressed(KEY_SHIFT):
-					if not session.selection.has(hover):
-						session.selection.append(hover)
-						session.selection_changed.emit()
-				else:
-					session.select_only(hover)
-				_reveal_object_dock()
-				_dragging = true
-				_drag_last = g
-				session.begin_drag()
-				return
-		_left_orbit = true
-		_orbiting = true
+			session.clear_selection()
+			_boxing = true
+			_box_start = pos
+			_set_box(pos, pos, true)
 		return
 	# ---------------------------------------------------------------
 	# 状态 2：手持工具 —— 左键按下才按当前 mode 干活

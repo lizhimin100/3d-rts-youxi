@@ -28,6 +28,7 @@ enum Pending {
 	CAST = 3,
 	RALLY = 4,
 	MOVE = 5,
+	REPAIR = 6,
 }
 
 ## 编队间距（米）
@@ -100,6 +101,8 @@ func pending_prompt() -> String:
 			return "左键选择集结点：%s（右键取消）" % (rb.def.display_name if rb != null and rb.def != null else "建筑")
 		Pending.MOVE:
 			return "左键选择部署点（右键取消）"
+		Pending.REPAIR:
+			return "左键点一栋受损的己方建筑进行修理（右键取消）"
 		_:
 			return ""
 
@@ -265,6 +268,39 @@ func request_attack_move() -> void:
 	_free_ghost()
 
 
+## 进入修理模式（命令卡「修理」调用）：下一次左键点自家受损建筑
+func request_repair() -> void:
+	if _selected_workers().is_empty():
+		_toast("需要选中农民才能修理", _warn())
+		return
+	pending = Pending.REPAIR
+	pending_build = &""
+	pending_ability = &""
+	_free_ghost()
+
+
+## 真的下达修理（左键点了建筑 / 右键点了自家受损建筑都走这里）
+func repair_building(b: Node3D) -> int:
+	var workers := _selected_workers()
+	if workers.is_empty() or b == null:
+		return 0
+	var did: int = 0
+	for w in workers:
+		if w.has_method("order_repair") and bool(w.call("order_repair", b)):
+			did += 1
+	if did <= 0:
+		_toast("这栋建筑不需要修理", _warn())
+		return 0
+	Game.order_issued.emit(workers, RtsConst.Order.REPAIR, b.global_position, b)
+	var d: UnitDef = b.get("def")
+	var wood: int = 0
+	if b.has_method("repair_wood_for_full"):
+		wood = int(b.call("repair_wood_for_full"))
+	_toast("修理 %s（%d 个农民，修满约 %d 木）" % [
+		d.display_name if d != null else "建筑", did, wood], _accent())
+	return did
+
+
 # ===========================================================================
 # 输入
 # ===========================================================================
@@ -324,6 +360,17 @@ func _on_pending_left_click(screen_pos: Vector2) -> void:
 		Pending.MOVE:
 			pending = Pending.NONE
 			_issue_move(_selected_units(), ground)
+		Pending.REPAIR:
+			pending = Pending.NONE
+			var cam2 := _camera()
+			var hit: Node3D = null
+			if cam2 != null:
+				hit = _pick_any(cam2.project_ray_origin(screen_pos),
+						cam2.project_ray_normal(screen_pos))
+			if hit is RtsBuilding:
+				repair_building(hit)
+			else:
+				_toast("修理要选一栋己方受损建筑", _warn())
 	get_viewport().set_input_as_handled()
 
 
@@ -433,6 +480,12 @@ func _context_order(screen_pos: Vector2) -> void:
 			_toast("%s 集结点已设置" % (b.def.display_name if b.def != null else "建筑"), _accent())
 			return
 		if not workers.is_empty() and on_building:
+			# ★ 先判"掉血 → 修理"，再判"背着资源 → 送回"：
+			#   受损建筑是更紧急的意图，村民背着木头右键自家残血兵营时，
+			#   玩家要的是"修"，不是"把木头放下"。
+			if b.can_repair():
+				repair_building(b)
+				return
 			for w in workers:
 				if w.has_method("order_return_res"):
 					w.call("order_return_res")

@@ -135,6 +135,13 @@ var _title_state: Label = null
 var _faction_chip: Panel = null
 var _hp: Bar = null
 
+## 建筑属性小铭牌（攻击 / 射程 / 视野 / 护甲）—— **能攻击的建筑必须显示攻击信息**
+var _stats_row: HBoxContainer = null
+var _stat_chips: Array[PanelContainer] = []
+var _stat_icons: Array[Control] = []
+var _stat_labels: Array[Label] = []
+var _stats_sig: String = ""
+
 var _build_box: VBoxContainer = null
 var _build_cap: Label = null
 var _build_bar: Bar = null
@@ -153,6 +160,7 @@ var _queue_row: HBoxContainer = null
 var _queue_chips: Array[PanelContainer] = []
 var _queue_labels: Array[Label] = []
 var _queue_icons: Array[TextureRect] = []
+var _queue_bars: Array = []
 
 var _rally_box: VBoxContainer = null
 var _rally_btn: Button = null
@@ -163,6 +171,7 @@ var _pic: TextureRect = null
 var _research_box: VBoxContainer = null
 var _research_btns: HBoxContainer = null
 var _research_ids: Array[StringName] = []
+var _research_bar: Bar = null
 
 
 # ===========================================================================
@@ -303,6 +312,7 @@ func ensure_built() -> void:
 
 	_build_title(vb)
 	_build_health(vb)
+	_build_stats(vb)
 	_build_construction(vb)
 	_build_rally(vb)
 
@@ -320,6 +330,11 @@ func set_metrics(w: float, h_single: float, _h_multi: float, compact: bool) -> v
 	# reset_size 会把 HUD 刚摆好的 offset 全部覆盖，面板被压回 H_MIN，
 	# 训练条和集结点就会叠成一坨（这就是之前那个 bug）。
 	custom_minimum_size = Vector2(_panel_w, maxf(H_MIN, h_single))
+	# ★ 2026-10-31：左列原来写死 338px 最小宽（400-52-10），
+	#   面板只有 344 宽时右列（训练/研究）被压成 0 —— 玩家报的"训练队列看不见"就是这个。
+	#   现在左列按面板宽度取 40%，右列（训练 / 研究）永远有地方站。
+	if _vb != null:
+		_vb.custom_minimum_size = Vector2(clampf(_panel_w * 0.40, 150.0, 252.0), 0.0)
 
 
 ## 面板底：底栏**段底**的同一套皮肤（比底板深一档、小圆角、无投影）。
@@ -375,6 +390,108 @@ func _build_title(parent: Node) -> void:
 	_faction_chip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_faction_chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(_faction_chip)
+
+
+## 属性小铭牌：攻击力 / 射程 / 视野 / 护甲（按建筑类型自动取舍）
+##
+## 玩家口径："箭塔这类能攻击的建筑，操作面板和信息面板要显示对应的信息"。
+## 所以**有攻击的建筑**第一格永远是攻击力（含射速），第二格射程，第三格视野；
+## 哨塔没有攻击 → 不摆一个假的攻击格，改成 视野 / 护甲 /（人口或建造耗时）。
+func _build_stats(parent: Node) -> void:
+	_stats_row = HBoxContainer.new()
+	_stats_row.name = "属性"
+	_stats_row.add_theme_constant_override("separation", 4)
+	_stats_row.custom_minimum_size = Vector2(0.0, 22.0)
+	_stats_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(_stats_row)
+
+	for i in 3:
+		var chip := PanelContainer.new()
+		chip.name = "属性%d" % i
+		chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		chip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		chip.add_theme_stylebox_override("panel",
+				Spec.inset_style(Color(0.070, 0.064, 0.052, 0.95), 4,
+						Color(_warm.r, _warm.g, _warm.b, 0.20), 5.0, 0.0))
+		_stats_row.add_child(chip)
+		_stat_chips.append(chip)
+
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 4)
+		row.alignment = BoxContainer.ALIGNMENT_CENTER
+		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		chip.add_child(row)
+
+		var ic := Spec.icon("sword", 13.0, Color(0.98, 0.62, 0.42))
+		ic.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(ic)
+		_stat_icons.append(ic)
+
+		var lb := Spec.label("-", Spec.FS_CAPTION, Color(0.94, 0.90, 0.80))
+		lb.add_theme_font_override("font", _mono)
+		lb.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		row.add_child(lb)
+		_stat_labels.append(lb)
+
+
+## 刷新属性铭牌（同一个 def 只写一次文字）
+func _sync_stats_row(d: UnitDef) -> void:
+	if _stats_row == null:
+		return
+	if d == null:
+		_stats_row.visible = false
+		return
+	var stats: Array = _stats_of(d)
+	var sig: String = "%s|%d" % [String(d.id), stats.size()]
+	if sig != _stats_sig:
+		_stats_sig = sig
+		for i in _stat_chips.size():
+			if i >= stats.size():
+				_stat_chips[i].visible = false
+				continue
+			var s: Dictionary = stats[i]
+			_stat_chips[i].visible = true
+			_stat_chips[i].tooltip_text = String(s.get("tip", ""))
+			var col: Color = s.get("color", Color(0.9, 0.88, 0.8))
+			Spec.set_icon(_stat_icons[i], String(s.get("icon", "sword")), col)
+			_stat_labels[i].text = String(s.get("text", "-"))
+			_stat_labels[i].add_theme_color_override("font_color", col.lerp(Color(1, 1, 1), 0.55))
+	_stats_row.visible = not stats.is_empty()
+
+
+func _stats_of(d: UnitDef) -> Array:
+	if d == null:
+		return []
+	if d.can_attack():
+		return [
+			{"icon": "sword", "color": Color(0.98, 0.62, 0.42),
+				"text": "%s / %.1fs" % [_num(d.attack_damage), d.attack_cooldown],
+				"tip": "攻击力 / 射击间隔"},
+			{"icon": "bow", "color": Color(0.86, 0.80, 0.52),
+				"text": "%dm" % int(round(d.attack_range)), "tip": "射程"},
+			{"icon": "eye", "color": Color(0.66, 0.86, 0.92),
+				"text": "%dm" % int(round(d.sight_range)), "tip": "视野"},
+		]
+	var out: Array = [
+		{"icon": "eye", "color": Color(0.66, 0.86, 0.92),
+			"text": "%dm" % int(round(d.sight_range)), "tip": "视野（哨塔只负责看，不攻击）"},
+		{"icon": "shield", "color": Color(0.62, 0.78, 0.98),
+			"text": _num(d.armor), "tip": "护甲"},
+	]
+	if d.food_provided > 0:
+		out.append({"icon": "house", "color": Color(0.80, 0.88, 0.66),
+			"text": "+%d" % d.food_provided, "tip": "提供人口上限"})
+	else:
+		out.append({"icon": "gear", "color": Color(0.80, 0.80, 0.76),
+			"text": "%ds" % int(round(d.train_time)), "tip": "建造耗时"})
+	return out
+
+
+func _num(v: float) -> String:
+	if absf(v - roundf(v)) < 0.05:
+		return "%d" % int(roundf(v))
+	return "%.1f" % v
 
 
 ## 血量条
@@ -450,7 +567,7 @@ func _build_training(parent: Node) -> void:
 	_queue_row = HBoxContainer.new()
 	_queue_row.name = "队列"
 	_queue_row.add_theme_constant_override("separation", 4)
-	_queue_row.custom_minimum_size = Vector2(0.0, 18.0)
+	_queue_row.custom_minimum_size = Vector2(0.0, 26.0)
 	_queue_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_train_box.add_child(_queue_row)
 	for i in QUEUE_MAX:
@@ -459,27 +576,39 @@ func _build_training(parent: Node) -> void:
 		chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		chip.visible = false
 		chip.add_theme_stylebox_override("panel", _chip_style())
-		# 队列小牌 = **单位头像 + 序号**，不是干巴巴一行字。
-		# 一眼能看出"排了几个兵、是什么兵"，不用读字。
+		# 队列小牌 = **单位头像 + 序号 + 一条自己的进度条**。
+		# 玩家口径："训练队列和时长进度条"——队首那格会自己往前走，
+		# 后排的格子条是空的，一眼看出"排了几个、正在出第几个"。
+		var vb := VBoxContainer.new()
+		vb.add_theme_constant_override("separation", 1)
+		vb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		chip.add_child(vb)
 		var hb := HBoxContainer.new()
 		hb.add_theme_constant_override("separation", 3)
 		hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		chip.add_child(hb)
+		vb.add_child(hb)
 		var ico := TextureRect.new()
 		ico.name = "头像"
-		ico.custom_minimum_size = Vector2(20.0, 20.0)
+		ico.custom_minimum_size = Vector2(16.0, 16.0)
 		ico.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		ico.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		ico.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 		ico.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		hb.add_child(ico)
 		var lb := Spec.label("", Spec.FS_CAPTION, Color(0.87, 0.83, 0.73))
+		lb.add_theme_font_override("font", _mono)
 		lb.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		hb.add_child(lb)
+		var bar := Bar.new()
+		bar.name = "进度"
+		bar.custom_minimum_size = Vector2(0.0, 4.0)
+		bar.fill = Color(0.44, 0.76, 0.98)
+		vb.add_child(bar)
 		_queue_row.add_child(chip)
 		_queue_chips.append(chip)
 		_queue_labels.append(lb)
 		_queue_icons.append(ico)
+		_queue_bars.append(bar)
 
 
 ## 集结点区
@@ -527,6 +656,14 @@ func _build_research(parent: Node) -> void:
 	_research_btns.custom_minimum_size = Vector2(0.0, 28.0)
 	_research_btns.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_research_box.add_child(_research_btns)
+
+	# 研究进度条（有研究在跑时出现）：和训练共用同一套"时长进度"语言
+	_research_bar = Bar.new()
+	_research_bar.name = "研究进度"
+	_research_bar.custom_minimum_size = Vector2(0.0, 10.0)
+	_research_bar.fill = Color(0.72, 0.86, 1.0)
+	_research_bar.visible = false
+	_research_box.add_child(_research_bar)
 
 
 ## 块状分区标题：左侧粗色条 + 标题字 + 一条淡色横线（右侧留白给附加文字）
@@ -794,13 +931,21 @@ func _research_button(rid: StringName) -> Button:
 	return btn
 
 
-## 研究 id → 中文名（研究定义由配置层持有，这里只兜底显示名，不依赖 ResearchDef）
+## 研究 id → 中文名。**优先读配置层的 ResearchDef**（伐木场那两项是新加的，
+## 界面里不再逐个 if-else 硬编码，否则新研究一上线就显示成英文 id）。
 func _research_title(rid: StringName) -> String:
+	var rd: ResearchDef = Cfg.research(rid) if Cfg.game != null else null
+	if rd != null and not rd.display_name.is_empty():
+		return rd.display_name
 	match rid:
 		&"attack_up":
-			return "攻击强化"
+			return "武器锻造"
 		&"armor_up":
-			return "护甲强化"
+			return "护甲锻造"
+		&"wood_haul":
+			return "高效搬运"
+		&"repair_tech":
+			return "修缮工艺"
 		_:
 			return String(rid)
 
@@ -846,6 +991,9 @@ func _sync_all() -> void:
 		hp_col = Color(0.96, 0.74, 0.30)
 	_hp.feed(hp / maxf(max_hp, 0.001), hp_col,
 			"%d / %d　·　%d%%" % [int(round(hp)), int(round(max_hp)), hp_pct])
+
+	# --- 属性（攻击 / 射程 / 视野 / 护甲）---
+	_sync_stats_row(d)
 
 	# --- 建造进度 ---
 	var constructing: bool = not _target.is_constructed
@@ -898,7 +1046,13 @@ func _sync_training() -> void:
 		_train_bar.feed(0.0, Color(0.44, 0.76, 0.98), "")
 		_train_rest.text = "待训练"
 		_cancel.disabled = true
+		# 空队列时那条长条没有任何信息量 —— 收起来，只留一句"待训练"，
+		# 免得玩家以为"有个进度条一直不动 = 卡住了"。
+		_train_bar.visible = false
+		_cancel.visible = false
 	else:
+		_train_bar.visible = true
+		_cancel.visible = true
 		var p: float = clampf(_target.train_progress, 0.0, 1.0)
 		var ud: UnitDef = _def_of_id(cur)
 		var total: float = ud.train_time if ud != null else 0.0
@@ -908,13 +1062,17 @@ func _sync_training() -> void:
 		_train_rest.text = "剩余 %.1fs" % rest
 		_cancel.disabled = not _target.is_constructed
 
-	# 队列序号（最多 5 项）
+	# 队列序号（最多 5 项）：队首那格带真实进度，后排只有"排到了"
 	for i in _queue_chips.size():
 		if i < queue_n:
 			var id: StringName = _target.train_queue[i]
 			_queue_labels[i].text = str(i + 1)
 			if i < _queue_icons.size():
 				_queue_icons[i].texture = Spec.icon_tex(_unit_icon(id))
+			if i < _queue_bars.size() and _queue_bars[i] != null:
+				var b: Bar = _queue_bars[i]
+				b.feed(clampf(_target.train_progress, 0.0, 1.0) if i == 0 else 0.0,
+						Color(0.44, 0.76, 0.98), "")
 			_queue_chips[i].visible = true
 			# 队首那一项最亮：那是"正在出的兵"
 			_queue_chips[i].modulate = Color(1, 1, 1, 1) if i == 0 else Color(0.80, 0.79, 0.74, 1)
@@ -936,6 +1094,16 @@ func _sync_training() -> void:
 		var mx: int = maxi(rd.max_level, 1) if rd != null else 1
 		rb.text = "%s %d/%d" % [_research_title(_research_ids[i]), lv, mx]
 		rb.tooltip_text = ("研究 " + _research_title(_research_ids[i])) if reason == "" else reason
+
+	# 研究进度条
+	if _research_bar != null:
+		var busy: bool = _target.has_method("is_researching") and bool(_target.call("is_researching"))
+		_research_bar.visible = busy
+		if busy:
+			var cur_r: StringName = _target.call("current_research")
+			var p: float = clampf(float(_target.call("research_progress")), 0.0, 1.0)
+			_research_bar.feed(p, Color(0.72, 0.86, 1.0),
+					"%s　%d%%" % [_research_title(cur_r), int(round(p * 100.0))])
 
 
 ## 建筑自己的钱够不够（不用 Game，保持面板可被单独测）
@@ -992,6 +1160,11 @@ func _show_idle() -> void:
 	_rally_label.text = "集结点：未设置"
 	_rally_btn.disabled = true
 	_research_box.visible = false
+	if _stats_row != null:
+		_stats_row.visible = false
+		_stats_sig = ""
+	if _research_bar != null:
+		_research_bar.visible = false
 
 
 # ===========================================================================

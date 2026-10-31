@@ -183,10 +183,14 @@ static func _make(kind: String, base: String, team_color: Color, src: Material,
 			# 只用资产包给的图集 + ORM。glTF 里 metallicFactor / roughnessFactor 缺省 = 1，
 			# 也就是"全交给贴图"；旧版写死 roughness=1.0 / metallic=0.55 等于把 ORM 的 B 通道废掉。
 			bm.albedo_color = Color(1, 1, 1, 1)
-			bm.metallic = 1.0
-			bm.roughness = 1.0
+			# ★ 2026-10-31：`metallic = 1.0` 只在**真有 ORM 图**时才成立（B 通道给金属度）。
+			#   方块人（单位资产）没有 ORM 图：写死 1.0 等于"整只兵纯金属"，实机是一条黑影。
+			#   没有 ORM 就保留 glb 里带的 metallicFactor / roughnessFactor（方块人是 0 / 0.88）。
 			if orm == null:
 				orm = _orm_of(bm, base)
+			if orm != null:
+				bm.metallic = 1.0
+				bm.roughness = 1.0
 			if orm != null:
 				# ORM.R = AO。glTF 的 occlusionTexture 缺省，这一步是补回来的。
 				bm.ao_enabled = true

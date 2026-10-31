@@ -259,6 +259,8 @@ var _was_gathering: bool = false
 
 # 建造
 var _build_site: Node3D = null
+## 正在修理的己方建筑（Order.REPAIR 用）
+var _repair_target: Node3D = null
 ## 送资源要去的交汇点
 var _return_drop: Node3D = null
 ## 上一次送达的数量（提示文案用）
@@ -779,6 +781,26 @@ func order_build_site(site: Node3D) -> bool:
 	return true
 
 
+## 修理一栋己方受损建筑（右键建筑 / 命令卡「修理」都走这里）。
+## 规则见 RtsBuilding.repair_step：吃木材、按秒推进、多农民叠加。
+func order_repair(building: Node3D) -> bool:
+	if _dying or building == null or not is_instance_valid(building):
+		return false
+	if def == null or not RtsWorld.is_worker_def(def) or faction == null:
+		return false
+	var b := building as RtsBuilding
+	if b == null or b.faction != faction or not b.can_repair():
+		return false
+	_repair_target = b
+	_build_site = null
+	order = RtsConst.Order.REPAIR
+	target = null
+	_swinging = false
+	_flee_t = 0.0
+	_go_to(b.global_position, true)
+	return true
+
+
 ## 送资源回基地：走到最近的交汇点（大本营），把身上的东西**真的入账**。
 ## 以前这个接口是空的 —— 右键自家建筑，农民走过去站着，钱照旧挂在身上。
 ## 现在：到点 _deposit_carry()；送完如果还有采集点，自己回去接着采。
@@ -941,6 +963,8 @@ func _update_order(dt: float) -> void:
 			_order_gather(dt)
 		RtsConst.Order.BUILD:
 			_order_build_tick(dt)
+		RtsConst.Order.REPAIR:
+			_order_repair_tick(dt)
 		RtsConst.Order.RETURN_RES:
 			_order_return_res_tick(dt)
 		RtsConst.Order.HOLD:
@@ -1130,6 +1154,32 @@ func _order_build_tick(dt: float) -> void:
 	state = RtsConst.State.BUILD
 	_face_pos(site.global_position, dt)
 	site.advance_construction(dt, self)
+
+
+## 修理：走到建筑旁 → 播 build 动画 → 让建筑按秒回血（木材由建筑侧扣）
+func _order_repair_tick(dt: float) -> void:
+	if _repair_target == null or not is_instance_valid(_repair_target):
+		order = RtsConst.Order.NONE
+		state = RtsConst.State.IDLE
+		return
+	var b := _repair_target as RtsBuilding
+	if b == null or not b.is_alive() or not b.can_repair():
+		order = RtsConst.Order.NONE
+		_repair_target = null
+		state = RtsConst.State.IDLE
+		return
+	var d: float = _flat_dist(b.global_position)
+	var stand: float = _stand_off(b)
+	var dg: float = _flat_dist(_goal) if _goal_valid else d
+	var at_stand: bool = dg <= ARRIVE_TOLERANCE + 0.45
+	if d > stand + BUILD_REACH_SLACK and not at_stand:
+		state = RtsConst.State.MOVE
+		_go_to(b.global_position)
+		return
+	_stop_moving()
+	state = RtsConst.State.BUILD
+	_face_pos(b.global_position, dt)
+	b.repair_step(dt, self)
 
 
 ## 送资源：走到交汇点 → 入账 → 手上有活就回去接着干
@@ -1924,11 +1974,17 @@ func _gather_multiplier() -> float:
 
 
 ## 最近的回程点
-
-
-## 最近的回程点
-func _nearest_dropoff() -> Node3D:
+##
+## 2026-10-31：「背木头的农民**优先**去伐木场」。
+## 判据走数据（UnitDef.dropoff_kinds），不在单位代码里写死建筑 id：
+##   · 只要有伐木场活着、且它收这种资源 → 就选**最近的伐木场**（哪怕大本营更近）；
+##   · 没有伐木场（或它不收这种资源）→ 退回最近的通用交汇点（大本营）。
+## 金矿不受影响：伐木场 dropoff_kinds 只有 WOOD，背金子时它根本不在候选里。
+func _nearest_dropoff(kind: int = -1) -> Node3D:
 	var list: Array = RtsWorld.dropoffs(faction)
+	var want: int = kind if kind >= 0 else _carry_kind
+	var preferred: Node3D = null
+	var preferred_d: float = INF
 	var best: Node3D = null
 	var best_d: float = INF
 	for d in list:
@@ -1936,10 +1992,21 @@ func _nearest_dropoff() -> Node3D:
 			continue
 		if not d.is_alive():
 			continue
+		# 不收这种资源的交汇点直接跳过（背金子时伐木场不在候选里）
+		if d.has_method("accepts_harvest") and not bool(d.call("accepts_harvest", want)):
+			continue
 		var dist: float = global_position.distance_squared_to(d.global_position)
 		if dist < best_d:
 			best_d = dist
 			best = d
+		# 专收这种资源的建筑（dropoff_kinds 非空，例如伐木场）当"优先项"
+		var dk: Variant = d.get("def")
+		var only: bool = dk != null and not (dk as UnitDef).dropoff_kinds.is_empty()
+		if only and dist < preferred_d:
+			preferred_d = dist
+			preferred = d
+	if preferred != null:
+		return preferred
 	return best
 
 
@@ -1952,6 +2019,11 @@ func _deposit_carry() -> bool:
 		return false
 	var gold: int = _carry if _carry_kind == RtsConst.Harvest.GOLD else 0
 	var wood: int = _carry if _carry_kind == RtsConst.Harvest.WOOD else 0
+	# 伐木场「高效搬运」：运回的木材 +50%（只加木材，金子不受影响）
+	if wood > 0:
+		var bonus: float = RtsCombat.wood_haul_bonus(faction)
+		if bonus > 0.0:
+			wood += int(round(float(wood) * bonus))
 	Game.add_resource(faction, gold, wood)
 	_carry_last_gold = gold
 	_carry_last_wood = wood

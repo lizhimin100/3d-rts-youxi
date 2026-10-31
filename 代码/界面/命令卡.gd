@@ -252,9 +252,34 @@ func _build_entries() -> Array:
 				"sub": "退最后一格",
 				"action": func(): _call("request_cancel_train"),
 			})
+		# ★ 能攻击的建筑（箭塔）：**操作面板也要把攻/射程/视野写出来**。
+		#   玩家口径："这种能攻击的建筑，操作面板和信息面板要显示对应的信息"。
+		#   做成不可点的信息格（disabled），不假装成一个能按的按钮。
+		if b.def.can_attack():
+			out.append({
+				"label": "攻击",
+				"hint": "%s 自动射击：%.0f 伤害 / %.1f 秒 · 射程 %.0fm · 视野 %.0fm" % [
+					b.def.display_name, b.def.attack_damage, b.def.attack_cooldown,
+					b.def.attack_range, b.def.sight_range],
+				"color": Color(0.98, 0.62, 0.42),
+				"glyph": "攻",
+				"icon": "sword",
+				"sub": "%.0f伤 · %.0fm" % [b.def.attack_damage, b.def.attack_range],
+				"disabled": true,
+			})
+		elif b.def.sight_range > 0.0:
+			out.append({
+				"label": "视野",
+				"hint": "%s 没有攻击能力，只提供 %.0fm 视野与预警" % [
+					b.def.display_name, b.def.sight_range],
+				"color": Color(0.66, 0.86, 0.92),
+				"glyph": "视",
+				"icon": "eye",
+				"sub": "%.0fm · 无攻击" % b.def.sight_range,
+				"disabled": true,
+			})
 		out.append(_stop_entry())
 		return out
-
 	var worker := _has_worker()
 	var unit := _first_unit()
 
@@ -332,6 +357,15 @@ func _build_entries() -> Array:
 	if worker:
 		# 农民必须有一个"看得见"的建造入口：B 键能切页，但第一级界面上没有入口时，
 		# 玩家会以为农民根本不能造东西。建筑一律进"建造"展开页，一层只做一件事。
+		out.append({
+			"label": "修理",
+			"hint": "左键点一栋**己方受损建筑**修理（按血量扣木材；伐木场研究「修缮工艺」后省一半）",
+			"color": Color(0.86, 0.78, 0.56),
+			"glyph": "修",
+			"icon": "hammer",
+			"sub": "点受损建筑",
+			"action": func(): _call("request_repair"),
+		})
 		out.append({
 			"label": "建造",
 			"hint": "打开建造菜单：农场 / 兵营 / 箭塔 / 哨塔 / 铁匠铺 / 神秘圣地 / 蒸汽车坊 / 伐木场（B 键）",

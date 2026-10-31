@@ -54,11 +54,15 @@ static func build_units() -> Dictionary:
 	# =======================================================================
 	# 步兵 —— 前排肉盾，重甲高血，打建筑慢
 	# =======================================================================
+	# 2026-10-31：模型换成「方块人_v2」（E:\美术资源\个人资产\方块人_v2 导出）。
+	# 它的三颗材质名正好是 主体 / team / team_trim —— 和铁誓军团建筑资产同一套契约，
+	# 所以染色、队色、图集过滤（NEAREST）全部走 WarbandStyle（建筑那条路），
+	# 单位不再过 MatKit 卡通 shader。
 	var footman := UnitDef.new()
 	footman.id = &"footman"
 	footman.display_name = "步兵"
 	footman.kind = RtsConst.Kind.UNIT
-	footman.model_path = MODEL_DIR + "步兵.glb"
+	footman.model_path = MODEL_DIR + "方块人/方块人_联盟步兵.glb"
 	footman.anim_set = RtsConst.AnimSet.MELEE
 	footman.max_hp = 430.0
 	footman.armor = 5.0
@@ -254,7 +258,7 @@ static func build_units() -> Dictionary:
 	out[&"farm"] = farm
 
 	# =======================================================================
-	# 箭塔 —— 自动射击的防御塔
+	# 箭塔 —— **有攻击**的防御塔，但视野比哨塔小（它是"箭"，不是"哨"）
 	# =======================================================================
 	var tower := UnitDef.new()
 	tower.id = &"tower"
@@ -269,19 +273,21 @@ static func build_units() -> Dictionary:
 	tower.armor_type = RtsConst.ArmorType.FORTIFIED
 	tower.footprint = Vector2i(4, 4)
 	tower.height = 8.7
-	tower.attack_damage = 18.0
+	tower.attack_damage = 22.0
 	tower.attack_spread = 4.0
 	tower.attack_cooldown = 1.5
-	tower.attack_range = 12.0
+	tower.attack_range = 13.0
 	tower.attack_type = RtsConst.DamageType.PIERCE
 	tower.projectile = RtsConst.Projectile.ARROW
 	tower.projectile_speed = 28.0
-	tower.acquire_range = 12.0
-	tower.sight_range = 14.0
+	tower.acquire_range = 13.0
+	# ★ 视野必须**小于哨塔（20）**：两座塔的分工是"看得远"和"打得着"，
+	#   数值再不区分开，玩家只会觉得多花 40 金买了个更差的哨塔。
+	tower.sight_range = 12.0
 	tower.body_radius = 1.6
 	tower.selection_radius = 2.4
-	tower.gold_cost = 110
-	tower.wood_cost = 60
+	tower.gold_cost = 130
+	tower.wood_cost = 70
 	tower.train_time = 25.0
 	out[&"tower"] = tower
 
@@ -291,7 +297,10 @@ static func build_units() -> Dictionary:
 	# 这四座是本次资产包带来的**新建筑**。玩法数值先按"同类建筑的合理量级"给一套，
 	# 不接任何生产/研究（trains / researches 留空）—— 先把美术塞进游戏能看、能摆，
 	# 等设计定下来再往这里填功能，不用再动美术资源。
-	# ---- 哨塔：便宜的自卫塔 + **大视野 + 预警**（它是"哨"，不是"箭"）----
+	# ---- 哨塔：**只负责看**的自卫建筑（大视野 + 预警，一箭不放）----
+	# 2026-10-31 定调（用户口径）：哨塔"视野宽阔，无攻击"；箭塔"视野没哨塔大，但有攻击"。
+	# 所以这里把攻击数值全部清零 —— can_attack() 立刻变 false，
+	# 索敌循环（_acquire）也不会再给它找目标，等于天然"不打架"。
 	var watchtower := UnitDef.new()
 	watchtower.id = &"watchtower"
 	watchtower.display_name = "哨塔"
@@ -304,17 +313,15 @@ static func build_units() -> Dictionary:
 	watchtower.armor_type = RtsConst.ArmorType.FORTIFIED
 	watchtower.footprint = Vector2i(4, 4)
 	watchtower.height = 8.7
-	watchtower.attack_damage = 12.0
-	watchtower.attack_spread = 3.0
-	watchtower.attack_cooldown = 1.6
-	watchtower.attack_range = 11.0
-	watchtower.attack_type = RtsConst.DamageType.PIERCE
-	watchtower.projectile = RtsConst.Projectile.ARROW
-	watchtower.projectile_speed = 26.0
-	watchtower.acquire_range = 11.0
-	watchtower.sight_range = 17.0
-	# 预警半径 > 射程：先看到、先报，打不打得到是另一回事（这就是"哨"的意义）
-	watchtower.detect_radius = 22.0
+	# 无攻击：攻/射程/索敌全 0（不靠 UI 遮掩，是数据层就不打）
+	watchtower.attack_damage = 0.0
+	watchtower.attack_range = 0.0
+	watchtower.acquire_range = 0.0
+	watchtower.projectile = RtsConst.Projectile.NONE
+	# 视野 20m：比箭塔（12）宽 2/3，是全场最远的静态视野（这也是它存在的理由）
+	watchtower.sight_range = 20.0
+	# 预警半径 > 视野：先看到、先报，打不打得到是另一回事（这就是"哨"的意义）
+	watchtower.detect_radius = 26.0
 	watchtower.body_radius = 2.0
 	watchtower.selection_radius = 3.0
 	watchtower.gold_cost = 90
@@ -370,7 +377,7 @@ static func build_units() -> Dictionary:
 	workshop.train_time = 34.0
 	out[&"workshop"] = workshop
 
-	# ---- 伐木场：资产包带来的经济建筑（暂不接功能，先在建造菜单里看得见、能落位）----
+	# ---- 伐木场：木材交汇点（农民背木头优先送这里）+ 两项木材经济研究 ----
 	var lumbercamp := UnitDef.new()
 	lumbercamp.id = &"lumbercamp"
 	lumbercamp.display_name = "伐木场"
@@ -384,6 +391,10 @@ static func build_units() -> Dictionary:
 	lumbercamp.footprint = Vector2i(9, 6)
 	lumbercamp.height = 3.9
 	lumbercamp.is_dropoff = true
+	# **只收木材**：大本营金木全收（dropoff_kinds 空 = 全收），伐木场专收木头。
+	# 这是"农民背木头优先去伐木场"的数据依据，不用在单位代码里写死建筑 id。
+	lumbercamp.dropoff_kinds = [RtsConst.Harvest.WOOD]
+	lumbercamp.researches = [&"wood_haul", &"repair_tech"]
 	lumbercamp.sight_range = 9.0
 	lumbercamp.body_radius = 3.9
 	lumbercamp.selection_radius = 5.2
@@ -476,29 +487,54 @@ static func build_units() -> Dictionary:
 	return out
 
 
-## 铁匠铺研究项（阵营级升级）。花费/耗时/上限全在这里，RtsCombat 只负责效果。
+## 铁匠铺 / 伐木场研究项（阵营级升级）。花费/耗时/上限全在这里，RtsCombat 只负责效果。
+##
+## 2026-10-31 口径（用户指定）：
+##   · 铁匠铺：步兵 / 弩手 **攻击 +1 / 级**、**防御 +1 / 级**，各最高 5 级（平铺加成，不是百分比）；
+##   · 伐木场：农民运回的木材 +50%、建筑修理消耗的木材 -50%（各一级）。
 static func build_researches() -> Dictionary:
 	var out: Dictionary = {}
 
 	var atk := ResearchDef.new()
 	atk.id = &"attack_up"
 	atk.display_name = "武器锻造"
-	atk.description = "全军攻击力 +15% / 级（对已存在与后续单位同时生效）"
-	atk.gold_cost = 120
+	atk.description = "步兵 / 弩手 攻击 +1 / 级（最高 5 级，对已存在与后续单位同时生效）"
+	atk.gold_cost = 100
 	atk.wood_cost = 40
-	atk.research_time = 25.0
-	atk.max_level = 3
+	atk.research_time = 22.0
+	atk.max_level = 5
 	out[&"attack_up"] = atk
 
 	var arm := ResearchDef.new()
 	arm.id = &"armor_up"
 	arm.display_name = "护甲锻造"
-	arm.description = "全军护甲 +15% / 级（对已存在与后续单位同时生效）"
-	arm.gold_cost = 100
-	arm.wood_cost = 60
-	arm.research_time = 25.0
-	arm.max_level = 3
+	arm.description = "步兵 / 弩手 防御 +1 / 级（最高 5 级，对已存在与后续单位同时生效）"
+	arm.gold_cost = 90
+	arm.wood_cost = 50
+	arm.research_time = 22.0
+	arm.max_level = 5
 	out[&"armor_up"] = arm
+
+	# ---- 伐木场：木材经济 ----
+	var haul := ResearchDef.new()
+	haul.id = &"wood_haul"
+	haul.display_name = "高效搬运"
+	haul.description = "农民每趟运回的木材 +50%（一次研究，永久生效）"
+	haul.gold_cost = 120
+	haul.wood_cost = 0
+	haul.research_time = 28.0
+	haul.max_level = 1
+	out[&"wood_haul"] = haul
+
+	var rep := ResearchDef.new()
+	rep.id = &"repair_tech"
+	rep.display_name = "修缮工艺"
+	rep.description = "建筑修理消耗的木材 -50%（农民可右键修理己方建筑）"
+	rep.gold_cost = 100
+	rep.wood_cost = 0
+	rep.research_time = 24.0
+	rep.max_level = 1
+	out[&"repair_tech"] = rep
 
 	return out
 

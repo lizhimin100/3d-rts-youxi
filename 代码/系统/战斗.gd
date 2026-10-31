@@ -12,15 +12,20 @@ extends RefCounted
 ##   暴击     = randf() < Cfg.game.crit_chance ? Cfg.game.crit_multiplier : 1.0
 ##   最终     = (基础伤害 ± spread 随机) × 克制 × (1 - 护甲减免) × 暴击
 ##
-## 铁匠铺升级：攻击/护甲各 +15%/级，**只乘在最后一步**（=1.0 时公式与上面逐字符相同），
-## 这样"没有升级"的路径永远不会和公式有偏差。
+## 铁匠铺升级：步兵 / 弩手 **攻击 +1、防御 +1 每级（最高 5 级）**，是**平铺加法**：
+##   伤害 = (基础伤害 + 攻击加成 ± spread) × 克制 × (1 - 护甲减免) × 暴击
+##   护甲减免里的 armor = 基础护甲 + 防御加成
+## 没有升级时（加成 0）公式与上面逐字符相同，老路径永远不会偏移。
 
 # ===========================================================================
 # 常量（Cfg 里没有对应字段的"手感/机制"常量，集中在这里，不散落）
 # ===========================================================================
 
-## 铁匠铺每级加成（attack_up / armor_up 各 +15%）
-const UPGRADE_PER_LEVEL: float = 0.15
+## 铁匠铺每级**平铺**加成（2026-10-31 改口径：+1 点，不是 +15%）
+const FLAT_PER_LEVEL: float = 1.0
+## 受铁匠铺升级影响的兵种（用户口径："步兵、弩手的攻击/防御 +1"）。
+## 弩手在本工程就是 archer（远程穿刺那一支），所以这两个 id 就是全部受益者。
+const UPGRADE_TARGETS: Array[StringName] = [&"footman", &"archer"]
 ## 震屏感知半径（米）：只有玩家镜头附近的战斗才震屏，远处打翻天也不晃
 const SHAKE_LISTEN_RADIUS: float = 28.0
 ## 命中火花的高度偏移（单位胸口位置，别在脚底板冒火花）
@@ -29,6 +34,9 @@ const HIT_VFX_HEIGHT: float = 0.95
 ## 阵营升级等级存放在 RtsFaction 的 meta 上（不污染 Lead 的阵营类）
 const META_ATK_UP: StringName = &"sled_atk_up_level"
 const META_ARM_UP: StringName = &"sled_arm_up_level"
+## 伐木场两项研究（木材携带 / 修理消耗）
+const META_WOOD_HAUL: StringName = &"sled_wood_haul_level"
+const META_REPAIR_TECH: StringName = &"sled_repair_tech_level"
 
 ## 暴击/普通命中的特效色
 const COLOR_CRIT: Color = Color(1.0, 0.45, 0.15)
@@ -104,6 +112,12 @@ static func compute(base: float, spread: float, attack_type: int,
 # ===========================================================================
 # 升级（阵营级）
 # ===========================================================================
+#
+# 口径（2026-10-31 用户指定）：铁匠铺的研究是**平铺 +1 点**，只作用于步兵 / 弩手，
+# 不再乘在伤害公式末端。所以：
+#   · 真实结算 → `attack_bonus()` / `armor_bonus()`（扁平数值，走加法）
+#   · `attack_mult()` / `armor_mult()` 只是给 AI 估算战斗力用的"名义倍率"，
+#     它不会进入 resolve_hit 的伤害，避免"AI 觉得很强、实际打不出"的错觉。
 
 ## 给阵营升一级攻击（铁匠铺 attack_up）
 static func add_attack_upgrade(faction: RtsFaction) -> void:
@@ -117,6 +131,20 @@ static func add_armor_upgrade(faction: RtsFaction) -> void:
 	if faction == null:
 		return
 	faction.set_meta(META_ARM_UP, armor_up_level(faction) + 1)
+
+
+## 给阵营记一级木材搬运研究（伐木场 wood_haul）
+static func add_wood_haul_upgrade(faction: RtsFaction) -> void:
+	if faction == null:
+		return
+	faction.set_meta(META_WOOD_HAUL, wood_haul_level(faction) + 1)
+
+
+## 给阵营记一级修缮研究（伐木场 repair_tech）
+static func add_repair_tech_upgrade(faction: RtsFaction) -> void:
+	if faction == null:
+		return
+	faction.set_meta(META_REPAIR_TECH, repair_tech_level(faction) + 1)
 
 
 ## 当前攻击升级级数
@@ -133,17 +161,46 @@ static func armor_up_level(faction: RtsFaction) -> int:
 	return int(faction.get_meta(META_ARM_UP))
 
 
-## 攻击倍率（对**已存在**与**未来**单位同时生效：读的是阵营级字段，不是改 def）
+## 木材搬运研究级数（0 = 未研究）
+static func wood_haul_level(faction: RtsFaction) -> int:
+	if faction == null or not faction.has_meta(META_WOOD_HAUL):
+		return 0
+	return int(faction.get_meta(META_WOOD_HAUL))
+
+
+## 修缮研究级数
+static func repair_tech_level(faction: RtsFaction) -> int:
+	if faction == null or not faction.has_meta(META_REPAIR_TECH):
+		return 0
+	return int(faction.get_meta(META_REPAIR_TECH))
+
+
+## 某个兵种吃到的**攻击加成点数**（只认步兵 / 弩手；其余兵种恒 0）
+static func attack_bonus(faction: RtsFaction, def: UnitDef) -> float:
+	if def == null or not UPGRADE_TARGETS.has(def.id):
+		return 0.0
+	return FLAT_PER_LEVEL * float(attack_up_level(faction))
+
+
+## 某个兵种吃到的**防御加成点数**（加在 armor 上，走原有的护甲减免公式）
+static func armor_bonus(faction: RtsFaction, def: UnitDef) -> float:
+	if def == null or not UPGRADE_TARGETS.has(def.id):
+		return 0.0
+	return FLAT_PER_LEVEL * float(armor_up_level(faction))
+
+
+## 攻击"名义倍率"——**只给 AI 战斗力估算用**，不参与真实伤害。
+## 取 步兵基础 15 点 / +1 ≈ +6.7%；只是个估算系数，别拿来当游戏规则。
 static func attack_mult(faction: RtsFaction) -> float:
-	return 1.0 + UPGRADE_PER_LEVEL * float(attack_up_level(faction))
+	return 1.0 + 0.067 * float(attack_up_level(faction))
 
 
-## 护甲倍率
+## 护甲"名义倍率"——同样只给 AI 估算用（步兵基础护甲 5 / +1 = +20%）
 static func armor_mult(faction: RtsFaction) -> float:
-	return 1.0 + UPGRADE_PER_LEVEL * float(armor_up_level(faction))
+	return 1.0 + 0.20 * float(armor_up_level(faction))
 
 
-## 目标的**有效护甲值**（基础护甲 × 阵营升级倍率）
+## 目标的**有效护甲值**（基础护甲 + 阵营升级平铺加成）
 static func effective_armor(target: Node3D) -> float:
 	if target == null or not is_instance_valid(target):
 		return 0.0
@@ -151,7 +208,21 @@ static func effective_armor(target: Node3D) -> float:
 	if d == null:
 		return 0.0
 	var fac: RtsFaction = target.faction
-	return d.armor * armor_mult(fac)
+	return d.armor + armor_bonus(fac, d)
+
+
+## 木材搬运加成（0.0 = 没研究；0.5 = +50%）
+static func wood_haul_bonus(faction: RtsFaction) -> float:
+	if wood_haul_level(faction) <= 0:
+		return 0.0
+	return 0.5
+
+
+## 修理木材消耗倍率（1.0 = 原价；0.5 = 减半）
+static func repair_cost_mult(faction: RtsFaction) -> float:
+	if repair_tech_level(faction) <= 0:
+		return 1.0
+	return 0.5
 
 
 ## 某条研究当前的等级（0 = 还没研究过；未知 id 也返回 0）
@@ -161,6 +232,10 @@ static func research_level(faction: RtsFaction, id: StringName) -> int:
 			return attack_up_level(faction)
 		RESEARCH_ARMOR:
 			return armor_up_level(faction)
+		RESEARCH_WOOD_HAUL:
+			return wood_haul_level(faction)
+		RESEARCH_REPAIR:
+			return repair_tech_level(faction)
 		_:
 			return 0
 
@@ -174,27 +249,36 @@ static func research_maxed(faction: RtsFaction, id: StringName) -> bool:
 
 
 # ===========================================================================
-# 铁匠铺研究（研究 id 由 UnitDef.researches 声明）
+# 研究（研究 id 由 UnitDef.researches 声明）
 # ===========================================================================
 
-## 研究 id：攻击
+## 研究 id：攻击（铁匠铺）
 const RESEARCH_ATTACK: StringName = &"attack_up"
-## 研究 id：护甲
+## 研究 id：护甲（铁匠铺）
 const RESEARCH_ARMOR: StringName = &"armor_up"
+## 研究 id：木材搬运（伐木场）
+const RESEARCH_WOOD_HAUL: StringName = &"wood_haul"
+## 研究 id：修缮工艺（伐木场）
+const RESEARCH_REPAIR: StringName = &"repair_tech"
 
 
 ## 这个研究 id 是否被本系统支持
 static func has_research(id: StringName) -> bool:
-	return id == RESEARCH_ATTACK or id == RESEARCH_ARMOR
+	return id == RESEARCH_ATTACK or id == RESEARCH_ARMOR \
+			or id == RESEARCH_WOOD_HAUL or id == RESEARCH_REPAIR
 
 
 ## 研究显示名（提示消息用）
 static func research_name(id: StringName) -> String:
 	match id:
 		RESEARCH_ATTACK:
-			return "武器锻造（攻击 +%d%%）" % int(UPGRADE_PER_LEVEL * 100.0)
+			return "武器锻造（步兵 / 弩手 攻击 +%d）" % int(FLAT_PER_LEVEL)
 		RESEARCH_ARMOR:
-			return "护甲锻造（护甲 +%d%%）" % int(UPGRADE_PER_LEVEL * 100.0)
+			return "护甲锻造（步兵 / 弩手 防御 +%d）" % int(FLAT_PER_LEVEL)
+		RESEARCH_WOOD_HAUL:
+			return "高效搬运（运回木材 +50%）"
+		RESEARCH_REPAIR:
+			return "修缮工艺（修理木材 -50%）"
 		_:
 			return String(id)
 
@@ -208,6 +292,10 @@ static func apply_research(faction: RtsFaction, id: StringName) -> void:
 			add_attack_upgrade(faction)
 		RESEARCH_ARMOR:
 			add_armor_upgrade(faction)
+		RESEARCH_WOOD_HAUL:
+			add_wood_haul_upgrade(faction)
+		RESEARCH_REPAIR:
+			add_repair_tech_upgrade(faction)
 		_:
 			pass
 
@@ -231,10 +319,12 @@ static func resolve_hit(attacker: Node3D, target: Node3D) -> DamageInfo:
 		return null
 	if target.has_method("is_alive") and not bool(target.call("is_alive")):
 		return null
+	# ★ 2026-10-31：铁匠铺改成**平铺 +1**，加在基础伤害上（不是末端倍率）。
+	#   步兵基础 15 → 满级 20；弩手 19 → 24。其它兵种一点不吃（UPGRADE_TARGETS 白名单）。
+	var base: float = ad.attack_damage + attack_bonus(attacker.faction, ad)
 	var info := compute(
-		ad.attack_damage, ad.attack_spread, ad.attack_type,
-		effective_armor(target), td.armor_type,
-		attack_mult(attacker.faction)
+		base, ad.attack_spread, ad.attack_type,
+		effective_armor(target), td.armor_type
 	)
 	_apply(attacker, target, info)
 	return info
@@ -248,10 +338,10 @@ static func make_snapshot(attacker: Node3D) -> Dictionary:
 	var ad: UnitDef = attacker.def
 	if ad == null:
 		return snap
-	snap["damage"] = ad.attack_damage
+	snap["damage"] = ad.attack_damage + attack_bonus(attacker.faction, ad)
 	snap["spread"] = ad.attack_spread
 	snap["attack_type"] = ad.attack_type
-	snap["attack_mult"] = attack_mult(attacker.faction)
+	snap["attack_mult"] = 1.0
 	snap["faction"] = attacker.faction
 	snap["vfx_color"] = _vfx_color(ad.attack_type)
 	return snap

@@ -62,6 +62,9 @@ extends Resource
 @export var height: float = 1.8
 ## 是否资源交汇点（农民往回送资源的地方）
 @export var is_dropoff: bool = false
+## 交汇点接收的资源种类（RtsConst.Harvest）。**空 = 金木全收**（大本营）；
+## 伐木场只收木材 → [RtsConst.Harvest.WOOD]，于是农民背着木头会**优先**去伐木场。
+@export var dropoff_kinds: Array[int] = []
 ## 提供的人口上限
 @export var food_provided: int = 0
 
@@ -119,6 +122,15 @@ func is_harvestable() -> bool:
 ## 能不能打人
 func can_attack() -> bool:
 	return attack_damage > 0.0 and attack_range > 0.0
+
+
+## 这个交汇点收不收某种资源（kind = RtsConst.Harvest）
+func accepts_harvest(kind: int) -> bool:
+	if not is_dropoff:
+		return false
+	if dropoff_kinds.is_empty():
+		return true
+	return dropoff_kinds.has(kind)
 
 
 ## 是不是农民（能采集 / 建造）

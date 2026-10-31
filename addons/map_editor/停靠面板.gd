@@ -62,6 +62,14 @@ var _player_z: SpinBox
 var _player_yaw: SpinBox
 var _player_gold: SpinBox
 var _player_wood: SpinBox
+
+# --- 玩家页 ---
+## 队伍一览（"队伍 1：玩家1、玩家2 ｜ 队伍 2：玩家3"）
+var _team_summary: Label
+## 摆放归属药丸（对象页顶部：先选玩家，再选摆什么）
+var _place_owner_row: HFlowContainer
+var _place_pills: Array[Button] = []
+
 var _wave_list: ItemList
 var _wave_time: SpinBox
 var _wave_diff: OptionButton
@@ -115,6 +123,7 @@ func _build() -> void:
 	_add_tab(_build_terrain_tab(), "地形")
 	_add_tab(_build_object_tab(), "对象")
 	_add_tab(_build_region_tab(), "区域")
+	_add_tab(_build_player_tab(), "玩家")
 	_add_tab(_build_prop_tab(), "属性")
 	_add_tab(_build_validate_tab(), "校验")
 	_add_tab(_build_history_tab(), "历史")
@@ -319,6 +328,20 @@ func _mk_height_tool(text: String, tool_id: int) -> Button:
 # ---------------------------------------------------------------- 对象页
 func _build_object_tab() -> Control:
 	var v := _vbox()
+	# ---------------------------------------------------------------
+	# ① 先选玩家（魔兽式）：先点"玩家 2"，再去下面挑要摆的兵/楼。
+	#    以前顺序是反的（挑完兵再选中改归属），摆一排兵要点 2N 次。
+	# ---------------------------------------------------------------
+	v.add_child(_title("摆放归属（先选玩家）"))
+	# 用 HFlowContainer 而不是 HBox：4 人图 = 中立 + 4 家 = 5 颗药丸，
+	# HBox 不会换行，第 4 颗起会被裁在面板外面（等于"选不到玩家 4"）。
+	_place_owner_row = HFlowContainer.new()
+	_place_owner_row.name = "摆放归属"
+	_place_owner_row.add_theme_constant_override("h_separation", 4)
+	_place_owner_row.add_theme_constant_override("v_separation", 4)
+	v.add_child(_place_owner_row)
+	_hint(_place_owner_row, "选中哪一家，之后在视口里放的**单位和建筑**就归它。装饰/资源永远中立。")
+
 	v.add_child(_title("放置分类"))
 	var cat_row := _hbox()
 	for c in [MapObject.Category.UNIT, MapObject.Category.BUILDING,
@@ -450,49 +473,6 @@ func _build_region_tab() -> Control:
 	v.add_child(rrow)
 
 	v.add_child(HSeparator.new())
-	v.add_child(_title("玩家槽位"))
-	_player_opt = OptionButton.new()
-	v.add_child(_player_opt)
-	var pg := GridContainer.new()
-	pg.columns = 2
-	pg.add_theme_constant_override("h_separation", 8)
-	v.add_child(pg)
-	pg.add_child(_label("阵营"))
-	_player_faction = OptionButton.new()
-	for i in range(FACTION_NAMES.size()):
-		_player_faction.add_item(FACTION_NAMES[i])
-		_player_faction.set_item_metadata(i, FACTION_KEYS[i])
-	_player_faction.tooltip_text = "己方 = 玩家操控；敌方 = 敌方 AI；中立 = 不参战"
-	pg.add_child(_player_faction)
-	pg.add_child(_label("颜色"))
-	_player_color = ColorPickerButton.new()
-	_player_color.custom_minimum_size = Vector2(0, 24)
-	pg.add_child(_player_color)
-	pg.add_child(_label("队伍"))
-	_player_team = _spin(0, 3, 1)
-	# 队伍 = 盟友分组：同队互为盟友，异队互相敌对（阵营决定 AI 行为，队伍决定敌我）
-	_player_team.tooltip_text = "队伍相同的玩家互为盟友；不同队伍互相敌对。"
-	pg.add_child(_player_team)
-	pg.add_child(_label("出生 X"))
-	_player_x = _spin(-256, 256, 1)
-	pg.add_child(_player_x)
-	pg.add_child(_label("出生 Z"))
-	_player_z = _spin(-256, 256, 1)
-	pg.add_child(_player_z)
-	pg.add_child(_label("基地朝向°"))
-	_player_yaw = _spin(-360, 360, 5)
-	pg.add_child(_player_yaw)
-	pg.add_child(_label("初始金币"))
-	_player_gold = _spin(0, 99999, 10)
-	pg.add_child(_player_gold)
-	pg.add_child(_label("初始木材"))
-	_player_wood = _spin(0, 99999, 10)
-	pg.add_child(_player_wood)
-	var frow := _hbox()
-	_add_small_button(frow, "镜头对准该出生点", _focus_player)
-	v.add_child(frow)
-
-	v.add_child(HSeparator.new())
 	v.add_child(_title("波次（只做数值，不做行为树）"))
 	_wave_list = ItemList.new()
 	_wave_list.custom_minimum_size = Vector2(0, 96)
@@ -527,6 +507,93 @@ func _build_region_tab() -> Control:
 	bw.pressed.connect(_apply_wave)
 	v.add_child(bw)
 	return v
+
+
+# ---------------------------------------------------------------- 玩家页
+#
+# 为什么单开一页（玩家原话："队伍系统没有看到，不能在编辑器调整队伍吗？"）：
+# 以前"队伍"这个字段藏在**区域**页的最下面，跟画圈/波次混在一起 ——
+# 找得到的人不用找，找不到的人永远不知道有它。队伍是**玩家**的属性，就该在玩家页。
+func _build_player_tab() -> Control:
+	var v := _vbox()
+	v.add_child(_title("玩家槽位"))
+	_player_opt = OptionButton.new()
+	v.add_child(_player_opt)
+
+	var pg := GridContainer.new()
+	pg.columns = 2
+	pg.add_theme_constant_override("h_separation", 8)
+	v.add_child(pg)
+	pg.add_child(_label("阵营"))
+	_player_faction = OptionButton.new()
+	for i in range(FACTION_NAMES.size()):
+		_player_faction.add_item(FACTION_NAMES[i])
+		_player_faction.set_item_metadata(i, FACTION_KEYS[i])
+	_player_faction.tooltip_text = "己方 = 玩家操控；敌方 = 敌方 AI；中立 = 不参战"
+	pg.add_child(_player_faction)
+
+	pg.add_child(_label("颜色"))
+	_player_color = ColorPickerButton.new()
+	_player_color.custom_minimum_size = Vector2(0, 24)
+	pg.add_child(_player_color)
+
+	pg.add_child(_label("队伍"))
+	_player_team = _spin(1, 4, 1)
+	# 队伍 = 盟友分组：同队互为盟友，异队互相敌对（阵营决定 AI 行为，队伍决定敌我）
+	_player_team.tooltip_text = "队伍相同的玩家互为盟友；不同队伍互相敌对。\n队伍号从 1 起，改完立刻生效于胜负判定。"
+	pg.add_child(_player_team)
+
+	pg.add_child(_label("出生 X"))
+	_player_x = _spin(-256, 256, 1)
+	pg.add_child(_player_x)
+	pg.add_child(_label("出生 Z"))
+	_player_z = _spin(-256, 256, 1)
+	pg.add_child(_player_z)
+	pg.add_child(_label("基地朝向°"))
+	_player_yaw = _spin(-360, 360, 5)
+	pg.add_child(_player_yaw)
+	pg.add_child(_label("初始金币"))
+	_player_gold = _spin(0, 99999, 10)
+	pg.add_child(_player_gold)
+	pg.add_child(_label("初始木材"))
+	_player_wood = _spin(0, 99999, 10)
+	pg.add_child(_player_wood)
+
+	var frow := _hbox()
+	_add_small_button(frow, "镜头对准该出生点", _focus_player)
+	v.add_child(frow)
+
+	v.add_child(HSeparator.new())
+	v.add_child(_title("队伍（盟友分组）"))
+	_team_summary = _label("", true)
+	v.add_child(_team_summary)
+	_hint(_team_summary, "同队伍的玩家互为盟友（不互相攻击、视野共享）；不同队伍互相敌对。")
+
+	var t1 := _hbox()
+	_add_small_button(t1, "各自为战", func() -> void: _team_preset("solo"))
+	t1.add_child(Control.new())
+	_add_small_button(t1, "两队对抗", func() -> void: _team_preset("two"))
+	v.add_child(t1)
+	var t2 := _hbox()
+	_add_small_button(t2, "全部同盟", func() -> void: _team_preset("all"))
+	v.add_child(t2)
+	_hint(t2, "预设只是批量改队伍号，改完仍可逐个槽位微调；都能 Ctrl+Z 撤。")
+	return v
+
+
+## 排队伍预设 → 交回会话（会话负责进撤销栈 + 刷状态栏）
+func _team_preset(kind: String) -> void:
+	if session == null:
+		return
+	session.set_team_layout(kind)
+	_refresh_players()
+	_sync_team_summary()
+
+
+func _sync_team_summary() -> void:
+	if _team_summary == null or session == null:
+		return
+	_team_summary.text = session.team_summary()
 
 
 # ---------------------------------------------------------------- 属性页
@@ -747,6 +814,8 @@ func _sync_all() -> void:
 	_refresh_regions()
 	_refresh_waves()
 	_rebuild_owner_pills()
+	_rebuild_place_pills()
+	_sync_team_summary()
 	_on_selection_changed()
 	_on_validation(session.validation)
 	_refresh_history()
@@ -947,6 +1016,53 @@ func _rebuild_owner_pills() -> void:
 	_sync_owner_pills()
 
 
+## 重建"摆放归属"药丸（对象页顶部）：中立 + 每个玩家槽位，一家一个颜色。
+## 只在换图 / 加删槽位时重建，平时只同步高亮。
+func _rebuild_place_pills() -> void:
+	if session == null or _place_owner_row == null:
+		return
+	for c in _place_owner_row.get_children():
+		_place_owner_row.remove_child(c)
+		c.free()
+	_place_pills.clear()
+	for ch in session.owner_choices():
+		var col: Color = ch["color"]
+		var b := Button.new()
+		b.theme_type_variation = &"EditorOwnerPill"
+		b.toggle_mode = true
+		b.focus_mode = Control.FOCUS_NONE
+		b.text = String(ch["name"])
+		# 定宽 + 不拉伸：4 人图 5 颗药丸要能折成两行，不能一颗吃掉整行
+		b.custom_minimum_size = Vector2(84, 30)
+		b.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+		b.add_theme_color_override("font_color",
+			Color.from_hsv(col.h, clampf(col.s * 1.12, 0.0, 1.0), 1.0))
+		b.add_theme_color_override("font_pressed_color", Color.WHITE)
+		b.add_theme_stylebox_override("pressed", _owner_pill_style(col, true))
+		b.add_theme_stylebox_override("hover", _owner_pill_style(col, false))
+		var id: int = int(ch["id"])
+		b.tooltip_text = "之后摆放的单位 / 建筑归「%s」" % String(ch["name"])
+		b.pressed.connect(func() -> void:
+			if _syncing or session == null:
+				return
+			session.set_place_owner(id)
+			_sync_place_pills())
+		_place_owner_row.add_child(b)
+		_place_pills.append(b)
+		b.set_meta("owner_id", id)
+	_sync_place_pills()
+
+
+## 点亮当前摆放归属（和归属卡一样：选中的那颗按下去）
+func _sync_place_pills() -> void:
+	if session == null:
+		return
+	for b in _place_pills:
+		if b == null or not is_instance_valid(b):
+			continue
+		b.set_pressed_no_signal(int(b.get_meta("owner_id", -99)) == int(session.place_owner))
+
+
 func _owner_pill_style(col: Color, solid: bool) -> StyleBoxFlat:
 	var k: float = 0.44 if solid else 0.26
 	var sb := StyleBoxFlat.new()
@@ -1132,8 +1248,9 @@ func _refresh_players() -> void:
 	for p in session.def.players:
 		if p == null:
 			continue
+		# 队伍号统一按 1 起显示（老地图里可能存着 0，直接显示"队伍 0"会让人以为坏了）
 		_player_opt.add_item("玩家 %d · %s ｜ 队伍 %d" % [p.id + 1,
-			session.faction_tag(p.faction), p.team])
+			session.faction_tag(p.faction), maxi(p.team, 1)])
 		_player_opt.set_item_metadata(_player_opt.item_count - 1, p.id)
 	var sel_idx: int = 0
 	for i in range(_player_opt.item_count):
@@ -1144,6 +1261,7 @@ func _refresh_players() -> void:
 		_player_opt.select(sel_idx)
 	_syncing = false
 	_sync_player_fields()
+	_sync_team_summary()
 
 
 func _sync_player_fields() -> void:
@@ -1157,7 +1275,7 @@ func _sync_player_fields() -> void:
 	var fi: int = FACTION_KEYS.find(p.faction)
 	_player_faction.select(fi if fi >= 0 else 0)
 	_player_color.color = p.color
-	_player_team.value = p.team
+	_player_team.value = maxi(p.team, 1)
 	_player_x.value = p.start_pos.x
 	_player_z.value = p.start_pos.y
 	_player_yaw.value = rad_to_deg(p.start_yaw)

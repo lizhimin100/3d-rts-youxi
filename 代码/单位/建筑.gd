@@ -157,6 +157,17 @@ func can_train(id: StringName) -> bool:
 	return def != null and def.trains.has(id)
 
 
+## 这个交汇点收不收某种资源（RtsConst.Harvest）：大本营金木全收，伐木场只收木材
+func accepts_harvest(kind: int) -> bool:
+	return def != null and def.accepts_harvest(kind)
+
+
+## 这栋楼会不会主动开火（箭塔 = true，哨塔 = false）
+## 判据只有一条：数据层的 attack_damage > 0 且 attack_range > 0（见 UnitDef.can_attack）
+func is_armed() -> bool:
+	return is_constructed and def != null and def.can_attack()
+
+
 # ===========================================================================
 # 建造进度
 # ===========================================================================
@@ -465,6 +476,87 @@ func _tick_research(dt: float) -> void:
 	RtsCombat.apply_research(faction, done)
 	if faction != null and faction.is_player:
 		Game.toast("研究完成：%s" % RtsCombat.research_name(done), Color(0.75, 0.95, 1.0))
+
+
+# ===========================================================================
+# 修理（农民右键己方受损建筑）
+# ===========================================================================
+#
+# 规则（2026-10-31 新增，配伐木场「修缮工艺」）：
+#   · 只有**已完工**且**掉血**的建筑能修；工地走建造流程，不走修理；
+#   · 修理速度 = 最大血量 × REPAIR_HP_PER_SEC / 秒，多个农民叠加；
+#   · 修理**要吃木材**：每修 1 点血耗 REPAIR_WOOD_PER_HP 木（1500 血楼全修 ≈ 30 木），
+#     伐木场研究「修缮工艺」后消耗减半（RtsCombat.repair_cost_mult）；
+#   · 木材不够就**停工**并提示，绝不"免费修好"。
+
+## 每秒修好的血量比例（占最大血量）
+const REPAIR_HP_PER_SEC: float = 0.022
+## 每修 1 点血消耗的木材（未打折）
+const REPAIR_WOOD_PER_HP: float = 0.02
+## 未付清的木材零头（浮点累加，凑够 1 点才扣，避免每帧取整扣钱）
+var _repair_debt: float = 0.0
+## 上次"木材不足"提示的时间（节流，别每帧刷屏）
+var _repair_warn_t: float = -999.0
+## 修理尘土的节流时间戳（毫秒；**独立于受击节流**，两者互不干扰）
+var _repair_fx_ms: int = -10000
+
+
+## 这栋楼现在能不能修（能不能修 ≠ 修不修得起；钱在 repair_step 里算）
+func can_repair() -> bool:
+	if def == null or not is_alive():
+		return false
+	if not is_constructed:
+		return false
+	return hp < def.max_hp - 0.5
+
+
+## 修满还差多少血
+func missing_hp() -> float:
+	if def == null:
+		return 0.0
+	return maxf(def.max_hp - hp, 0.0)
+
+
+## 把整栋楼修满需要多少木材（界面用来显示"修满约需 28 木"，含研究折扣）
+func repair_wood_for_full() -> int:
+	if def == null or faction == null:
+		return 0
+	var rate: float = RtsCombat.repair_cost_mult(faction)
+	return int(ceil(missing_hp() * REPAIR_WOOD_PER_HP * rate))
+
+
+## 农民在建筑旁调这个：推进修理（多个农民同时修会更快）
+func repair_step(dt: float, _worker: Node3D) -> void:
+	if not can_repair() or faction == null:
+		return
+	var gain: float = def.max_hp * REPAIR_HP_PER_SEC * dt
+	gain = minf(gain, missing_hp())
+	if gain <= 0.0:
+		return
+	var rate: float = RtsCombat.repair_cost_mult(faction)
+	_repair_debt += gain * REPAIR_WOOD_PER_HP * rate
+	var pay: int = int(floor(_repair_debt))
+	if pay > 0:
+		if faction.wood < pay:
+			# 木材不够：这一帧不修（不白送血），每 4 秒提示一次
+			if faction.is_player and Game.elapsed - _repair_warn_t > 4.0:
+				_repair_warn_t = Game.elapsed
+				Game.toast("木材不足，无法修理 %s" % def.display_name, Color(1, 0.6, 0.35))
+			return
+		faction.wood -= pay
+		_repair_debt -= float(pay)
+		Game.resources_changed.emit(faction)
+	hp = minf(hp + gain, def.max_hp)
+	# 修理时墙根冒一点尘土：让"有人在修"看得见（不刷屏，靠节流）
+	var now: int = Time.get_ticks_msec()
+	if now - _repair_fx_ms > 620:
+		_repair_fx_ms = now
+		VFXKIT.dust(global_position + Vector3(0.0, 0.6, 0.0), 2, 0.30,
+				Color(0.72, 0.66, 0.52))
+	if hp >= def.max_hp - 0.05:
+		_repair_debt = 0.0
+		if faction.is_player:
+			Game.toast("%s 已修好" % def.display_name, Color(0.72, 1.0, 0.72))
 
 
 # ===========================================================================

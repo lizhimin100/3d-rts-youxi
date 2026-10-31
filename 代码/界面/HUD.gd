@@ -98,6 +98,8 @@ var _sel_h: float = 216.0
 var _sel_left: float = 0.0
 ## 选中卡实际宽度（贴左下、吃满到命令卡左缘）
 var _sel_w: float = 0.0
+## 建筑面板实际宽度（比单位选中卡更宽：要装训练队列 + 研究）
+var _sel_w_bld: float = 0.0
 ## **ECHO 触感回声**：点选圆环 / 右键涟漪（见 触感回声.gd）
 var _echo: RtsEchoFx = null
 ## **GLYPH 光标符文**：按悬停对象换图标（见 光标术.gd）
@@ -440,22 +442,32 @@ func _apply_layout() -> void:
 	_card_h_applied = inner_h
 
 	# 底栏从 2026-10-31 起是**三段**（按玩家给的参考图）：
-	#   左 = 焦点头像 + 名字 + 血条 + 蓝条（选中卡的格式没动）
-	#   中 = 队伍网格（每个选中单位一张小头像 + 短血条 + 蓝条，24 个一页）
+	#   左 = 焦点头像 + 血条（头像正下方）+ 名字/状态
+	#   中 = 队伍网格（顶部一行是焦点数值，单选才显示；下面 24 个一页的队伍清单）
 	#   右 = 命令格（5 列 × 最多 4 行）
 	var left: float = m + BAND_PAD
 	var right: float = _mets.vw - m - BAND_PAD - cw - BAR_GAP
-	var dw: float = clampf(_mets.vw * 0.215, 262.0, 346.0)
+	var dw_unit: float = clampf(_mets.vw * 0.215, 262.0, 346.0)
+	# ★ 选中**单个建筑**时不出中段的队伍清单：
+	#   那块清单里只有那栋楼一格，纯浪费宽度；而建筑面板要装
+	#   "训练队列 + 每格进度条 + 研究 + 集结点"，1080 设计宽下两栏挤不下
+	#   （右列被压成 0 就是玩家报的"训练队列看不见"）。
+	#   所以建筑选中 → 左段直接吃到命令卡左缘（魔兽也是这么排的），面板内部按两栏分。
+	var wide: float = clampf(right - left, 340.0, 760.0)
+	var bld_on: bool = _building_panel != null and is_instance_valid(_building_panel) \
+			and _building_panel.visible
+	var dw: float = wide if bld_on else dw_unit
 	var gx0: float = left + dw + BAR_GAP
 	var gw: float = right - gx0
-	# 屏太窄（< 1100 设计像素）就把中段让给左边的选中卡：宁可少一块清单，
+	# 屏太窄（< 1100 设计像素）就把中段让给左边的面板：宁可少一块清单，
 	# 也不能把选中卡压到"名字被截成两个字"。
-	var grid_on: bool = gw >= 210.0
+	var grid_on: bool = (not bld_on) and gw >= 210.0
 	if not grid_on:
-		dw = clampf(right - left, 340.0, 760.0)
+		dw = wide
 	var w: float = dw
 	_sel_left = left
 	_sel_w = w
+	_sel_w_bld = w
 	if _grid_panel != null:
 		var show_grid: bool = grid_on and _grid_should_show()
 		_grid_panel.visible = show_grid and root.visible
@@ -466,6 +478,7 @@ func _apply_layout() -> void:
 	# **两块面板都摆到同一个位置**：谁可见谁占位。
 	# 只摆 _sel_panel 会出现"切到建筑面板时它是第一次显示、从没被摆过"，
 	# 结果面板停在默认尺寸，训练条和集结点叠成一坨。
+	# 宽度各按自己的档位给（建筑面板更宽），这样切面板不会把底栏挤变形。
 	for pnl in [_dossier, _building_panel]:
 		if pnl == null or not is_instance_valid(pnl):
 			continue
@@ -528,13 +541,14 @@ func _apply_panel_metrics() -> void:
 	if _mets == null:
 		return
 	var sw: float = _sel_w if _sel_w > 1.0 else 432.0
+	var swb: float = _sel_w_bld if _sel_w_bld > 1.0 else sw
 	var bh: float = _band_applied - BAND_PAD * 2.0
 	if bh < 80.0:
 		bh = _mets.band_h
 	if _dossier != null and _dossier.has_method("set_metrics"):
 		_dossier.call("set_metrics", sw, bh, bh, _mets.compact)
 	if _building_panel != null and _building_panel.has_method("set_metrics"):
-		_building_panel.call("set_metrics", sw, bh, bh, _mets.compact)
+		_building_panel.call("set_metrics", swb, bh, bh, _mets.compact)
 
 
 ## 版面工具：直接设 anchor + offset，避免 set_anchors_preset 的隐式行为
@@ -1242,18 +1256,45 @@ func _qa_select_hook() -> void:
 ## 额外的验收钩子（只在命令行带参数时生效）：
 ##   --ui-over=victory|defeat  直接弹结算遮罩（截"胜利/失败"版式用）
 ##   --ui-build-page           选中农民后自动打开建造页（截建造页用）
+##   --qa-train=<id>[,<id>…]    给选中的第一座建筑排训练（截"训练队列 + 进度条"用）
 func _qa_extra_hooks() -> void:
 	var over: String = ""
 	var want_page: bool = false
+	var train: String = ""
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--ui-over="):
 			over = arg.substr(10)
 		elif arg == "--ui-build-page":
 			want_page = true
+		elif arg.begins_with("--qa-train="):
+			train = arg.substr(11)
 	if over != "":
 		_qa_force_over(over)
 	if want_page:
 		_qa_open_build_page()
+	if not train.is_empty():
+		_qa_queue_training(train)
+
+
+## 给当前选中的建筑排训练（验收用）：等选择落定后逐个 queue_train。
+## 会打印真实结果，方便判"队列真的排进去了没有"，而不是只看截图猜。
+func _qa_queue_training(csv: String) -> void:
+	for _i in 30:
+		await get_tree().process_frame
+	var arr := _valid_selection()
+	var b: RtsBuilding = null
+	for u in arr:
+		var bb := u as RtsBuilding
+		if bb != null and bb.is_alive():
+			b = bb
+			break
+	if b == null:
+		print("[QA补] --qa-train 失败：当前没有选中建筑")
+		return
+	for id in csv.split(",", false):
+		var ok: bool = bool(b.call("queue_train", StringName(id.strip_edges())))
+		print("[QA补] 排训练 %s → %s（队列 %d）" % [id, "成功" if ok else "失败", b.train_queue.size()])
+	_apply_layout()
 
 
 func _qa_force_over(kind: String) -> void:
@@ -1297,6 +1338,11 @@ func _qa_select_later(want: String) -> void:
 			picked.append(r)
 	if picked.is_empty():
 		return
+	# --qa-single：只选第一个（验收"单选时的数值行"用；多选会按设计隐藏那行）
+	for arg in OS.get_cmdline_user_args():
+		if arg == "--qa-single":
+			picked = [picked[0]]
+			break
 	var sel := get_parent().get_node_or_null("选择系统")
 	if sel == null:
 		return

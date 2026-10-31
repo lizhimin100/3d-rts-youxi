@@ -57,6 +57,32 @@ var _hurt_gap: float = 0.0
 ## 是否已经构建（避免重复建模型）
 var _built: bool = false
 
+# ---------------------------------------------------------------------------
+# 无骨骼模型的"整体程序动作"（2026-10-31）
+# ---------------------------------------------------------------------------
+#
+# 新步兵是「方块人」：三块网格（unit_body / unit_team / unit_trim）拼出来的静态模型，
+# glb 里既没有 AnimationPlayer 也没有 Body/Torso 关节，ProcAnim 绑不上 —— 不收这个尾，
+# 兵在场上就是一根会滑动的柱子。
+#
+# 这里只做**整体**的三件事（不动网格本体、不新建材质，零 draw call 成本）：
+#   · 走路：上下小幅弹跳 + 前后微倾，相位跟地速走；
+#   · 待机：极慢的呼吸起伏（1.6cm）；
+#   · 攻击：一次 0.16s 的前冲回弹（"撞一下"）。
+# 有骨骼动画的资产完全不受影响（_static_anim 为 false 时整段不跑）。
+const MOTION_BOB := 0.032
+const MOTION_BOB_SPEED := 2.35
+const MOTION_IDLE_AMP := 0.010
+const MOTION_IDLE_SPEED := 1.15
+const MOTION_LEAN := 0.055
+const MOTION_LUNGE := 0.16
+const MOTION_LUNGE_TIME := 0.16
+var _static_anim: bool = false
+var _motion_pivot: Node3D = null
+var _motion_t: float = 0.0
+var _motion_state: String = "idle"
+var _lunge_t: float = 0.0
+
 
 # ===========================================================================
 # 构建
@@ -99,6 +125,15 @@ func build(def: UnitDef, team_color: Color, proc: Dictionary = {}) -> void:
 		_collect_meshes(_model)
 		_add_ground_shadow(def)
 		_nudge_base = _model.position
+		# 方块人（无骨骼单位）挂一层"动作枢轴"：整体弹跳/前冲走枢轴，
+		# 受击顿挫仍然走 _model.position —— 两条 tween/相位互不覆盖。
+		if def.kind == RtsConst.Kind.UNIT and _anim_is_static():
+			_static_anim = true
+			_motion_pivot = Node3D.new()
+			_motion_pivot.name = "动作"
+			add_child(_motion_pivot)
+			remove_child(_model)
+			_motion_pivot.add_child(_model)
 
 	_flash_mat = StandardMaterial3D.new()
 	_flash_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -117,8 +152,16 @@ func build(def: UnitDef, team_color: Color, proc: Dictionary = {}) -> void:
 		_flash_peak = FLASH_PEAK_UNIT
 
 
-## 接触阴影（Decal 贴地）。
-## 为什么必须加：建筑/单位脚下的地形是程序化低模，没有"落地暗角"，
+## 动画器是不是"绑不上"的静态模型（没有骨骼 / 没有 Body/Torso 关节）
+func _anim_is_static() -> bool:
+	if _anim == null:
+		return true
+	if _anim.has_method("已绑定"):
+		return not bool(_anim.call("已绑定"))
+	return false
+
+
+## 接触阴影（Decal 贴地）。## 为什么必须加：建筑/单位脚下的地形是程序化低模，没有"落地暗角"，
 ## 模型再精细也像剪下来贴在图上。Decal 沿 -Y 投影，把柔和暗斑压进地面，
 ## 比在 Blender 里烘一张阴影贴图更吃实时地形高度，也不会随地形起伏悬空。
 const SHADOW_TEX := "res://美术/贴图/接触阴影.png"
@@ -198,10 +241,15 @@ func _collect_meshes(n: Node) -> void:
 ## 切动画。state: idle/move/attack/cast/gather/build/death/hurt
 ## speed_ratio 只对 move 有意义（步频跟速度走）。
 func play(state: String, speed_ratio: float = 1.0) -> void:
-	if _anim == null:
-		return
 	# 受伤动画优先，播完自动回到逻辑状态（由 _process 清缓存后重新推）
 	if _hurt_t > 0.0 and state != "death":
+		return
+	# 无骨骼模型没有 set_state 可调，但"整体程序动作"仍然需要知道当前状态
+	if _static_anim and state != _motion_state:
+		if state == "attack":
+			_lunge_t = MOTION_LUNGE_TIME
+		_motion_state = state
+	if _anim == null:
 		return
 	# idle 之外的状态切换都直接透传；move 要持续更新步频，不能去重
 	if state == _anim_state and state != "move":
@@ -314,8 +362,31 @@ func _process(delta: float) -> void:
 	if _hurt_gap > 0.0:
 		_hurt_gap -= delta
 
+	if _static_anim:
+		_tick_motion(delta)
+
 	if _hurt_t > 0.0:
 		_hurt_t -= delta
 		if _hurt_t <= 0.0 and _anim_state != "death":
 			# 受伤动作播完：清掉状态缓存，让单位逻辑下一帧重新推一次正确动画
 			_anim_state = ""
+
+
+## 无骨骼模型的整体动作：走路弹跳 + 前后微倾 + 攻击前冲。
+## 只改枢轴的 position/rotation，网格与材质一个字节都不碰。
+func _tick_motion(dt: float) -> void:
+	if _motion_pivot == null or not is_instance_valid(_motion_pivot):
+		return
+	var moving: bool = _motion_state == "move"
+	var speed: float = MOTION_BOB_SPEED if moving else MOTION_IDLE_SPEED
+	_motion_t += dt * speed
+	var amp: float = MOTION_BOB if moving else MOTION_IDLE_AMP
+	var bob: float = absf(sin(_motion_t * PI)) * amp
+	var lean: float = MOTION_LEAN if moving else 0.0
+	# 攻击前冲：0.16s 内 sin 半周冲出去再回来，不打断行走相位
+	var lunge: float = 0.0
+	if _lunge_t > 0.0:
+		_lunge_t = maxf(_lunge_t - dt, 0.0)
+		lunge = sin((1.0 - _lunge_t / MOTION_LUNGE_TIME) * PI) * MOTION_LUNGE
+	_motion_pivot.position = Vector3(0.0, bob, -lunge)
+	_motion_pivot.rotation.x = -lean
