@@ -267,8 +267,8 @@ func _build_entries() -> Array:
 				"sub": "%.0f伤 · %.0fm" % [b.def.attack_damage, b.def.attack_range],
 				"disabled": true,
 			})
-		elif b.def.sight_range >= 15.0:
-			# 只给"存在意义就是看"的楼（哨塔 20m）加这一格。
+		elif b.def.sight_range >= 18.0:
+			# 只给"存在意义就是看"的楼（哨塔 20m）加这一格；大本营 15m 也是副产品，不算。
 			# 兵营/农场也有一点视野（12m），但那是副产品，摆一格"视野"只会把
 			# 真正的操作格（训练/研究/集结点）挤出第一屏。
 			out.append({
