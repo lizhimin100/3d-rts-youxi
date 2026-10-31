@@ -16,7 +16,9 @@ extends Resource
 ##   格点 (gx,gz) 的世界坐标 = (-size/2 + gx*cell, -size/2 + gz*cell)。
 
 ## 当前数据版本。加字段就 +1，并在 MapStore._migrate 里补默认值。
-const CURRENT_VERSION: int = 2
+## v3：加入"地块格点表 + 地表叙事 + 远景/边界参数"——主场景那张竞技场图
+##     能被原样提取成文件、再由编辑器打开并回灌到游戏（地图本身不变）。
+const CURRENT_VERSION: int = 3
 ## 高度场每边格子数（固定 128，1 格 ≈ 1.25~2m，与游戏地形细分同量级）
 const DEFAULT_HEIGHT_RES: int = 128
 ## 地表层默认值：255 = 未涂（不生成覆盖层）
@@ -126,6 +128,26 @@ static func biome_key_color(id: String) -> Color:
 ## 其余水潭由 MapLoader 用同样的材质补一片圆盘，视觉一致。
 @export var water: Dictionary = {"enabled": false, "spots": []}
 
+## ── 地块材质（魔兽 3 口径：材质存在共享格点上）──
+## mat_nodes 是 (mat_cells+1)² 个格点的 0（草）/255（泥），一格读它四个角。
+## 主场景竞技场图的土路、营地、矿点就画在这张表上；**不保存它，地图一进编辑器
+## 就变成"全是草地"**（高度对、路没了），所以它必须跟着地图文件走。
+@export var mat_cells: int = 0
+@export var mat_nodes: PackedByteArray = PackedByteArray()
+## 地块一格的边长（米）——目前由 size/mat_cells 推，存下来是为了对齐旧数据
+@export var mat_tile: float = 8.0
+## 是否生成远景山脊（默认程序化图开；竞技场图关，那一圈灰锥会贴到画面边上）
+@export var far_ridges: bool = true
+## 出生平台"严格水平"的半径（米）——编辑器显示/校验用，建关侧由高度场体现
+@export var base_pad: float = 24.0
+## 可走区域离地图边界的距离（米）。竞技场图 16m：外圈林带不参与寻路。
+@export var edge_keep_out: float = 3.0
+## 地表叙事数据（不逐条编辑、但必须原样还原的"地面细节"）：
+##   {"roads": [...], "grass": [...], "rubble": [...], "decor": {...}, "plazas": [...], "rocks": [...]}
+## 这些是纯视觉/合批数据，编辑器不逐条列出；它们跟着地图文件走，保证
+## "编辑器里看到的路/草/碎石/营地道具"进游戏一模一样。
+@export var ground: Dictionary = {}
+
 # ---------------------------------------------------------------------------
 # 内容
 # ---------------------------------------------------------------------------
@@ -202,6 +224,16 @@ func ensure_arrays() -> void:
 		camera_bounds = Rect2(Vector2(-half_size(), -half_size()), Vector2(size, size))
 	if not (water is Dictionary):
 		water = {"enabled": false, "spots": []}
+	# 地块格点表：尺寸对不上就当"没有"（宁可整图草地，也不要读越界）
+	if mat_cells <= 0 or mat_nodes.size() != (mat_cells + 1) * (mat_cells + 1):
+		mat_cells = 0
+		mat_nodes = PackedByteArray()
+	if mat_tile <= 0.0:
+		mat_tile = 8.0
+	if not (ground is Dictionary):
+		ground = {}
+	if edge_keep_out < 0.0:
+		edge_keep_out = 0.0
 
 
 # ===========================================================================
@@ -436,6 +468,13 @@ func clone_def() -> MapDef:
 			d.waves.append(w.clone_wave())
 	d.camera_bounds = camera_bounds
 	d.victory = victory.duplicate(true)
+	d.mat_cells = mat_cells
+	d.mat_nodes = mat_nodes.duplicate()
+	d.mat_tile = mat_tile
+	d.far_ridges = far_ridges
+	d.base_pad = base_pad
+	d.edge_keep_out = edge_keep_out
+	d.ground = ground.duplicate(true)
 	return d
 
 
@@ -484,6 +523,15 @@ func to_dict() -> Dictionary:
 		"camera_bounds": [camera_bounds.position.x, camera_bounds.position.y,
 			camera_bounds.size.x, camera_bounds.size.y],
 		"victory": victory.duplicate(true),
+		"mat_cells": mat_cells,
+		"mat_nodes": Array(mat_nodes),
+		"mat_tile": mat_tile,
+		"far_ridges": far_ridges,
+		"base_pad": base_pad,
+		"edge_keep_out": edge_keep_out,
+		# ground 里全是 Vector2/Vector3/PackedVector2Array，JSON 表达不无损；
+		# 用 var_to_str 原样带上，读到再 str_to_var —— 换机器/换版本都不掉数据。
+		"ground": var_to_str(ground),
 	}
 
 
@@ -556,6 +604,27 @@ static func from_dict(d: Dictionary) -> MapDef:
 	var vic: Variant = d.get("victory", null)
 	if vic is Dictionary:
 		m.victory = (vic as Dictionary).duplicate(true)
+	m.mat_cells = int(d.get("mat_cells", 0))
+	var mn: Variant = d.get("mat_nodes", [])
+	var mnn := PackedByteArray()
+	if mn is Array:
+		mnn.resize((mn as Array).size())
+		for i in range((mn as Array).size()):
+			mnn[i] = int((mn as Array)[i])
+	elif mn is PackedByteArray:
+		mnn = (mn as PackedByteArray).duplicate()
+	m.mat_nodes = mnn
+	m.mat_tile = float(d.get("mat_tile", 8.0))
+	m.far_ridges = bool(d.get("far_ridges", true))
+	m.base_pad = float(d.get("base_pad", 24.0))
+	m.edge_keep_out = float(d.get("edge_keep_out", 3.0))
+	var gv: Variant = d.get("ground", null)
+	if gv is Dictionary:
+		m.ground = (gv as Dictionary).duplicate(true)
+	elif gv is String and not String(gv).is_empty():
+		var parsed: Variant = str_to_var(String(gv))
+		if parsed is Dictionary:
+			m.ground = parsed
 	m.ensure_arrays()
 	return m
 
@@ -563,8 +632,16 @@ static func from_dict(d: Dictionary) -> MapDef:
 # 由程序化地图反推 MapDef（默认地图也能统一出口径）
 # ===========================================================================
 
-## MapGenerator.MapData → MapDef。默认 200m 程序化地图、或者以后任何生成器，
+## MapGenerator.MapData → MapDef。默认程序化地图、竞技场图、或者以后任何生成器，
 ## 都能通过这一个函数变成同一套数据（"一套骨头穿两件衣裳"）。
+##
+## ★ 这里必须把**所有影响画面的数据**都带上，否则"提取到文件再加载回来"会走样：
+##   · 高度场（重采样到 128 格点）—— 地形网格同源；
+##   · 地块格点表 mat_nodes —— 土路/营地/矿点的泥土色块；
+##   · 地表叙事 ground —— 土路网格、草丛、碎石、营地道具、岩石批次；
+##   · 玩家槽位（含队伍/显示色/出生点/初始资源）—— 多队图的 4 个角。
+##   树/金矿进 objects（编辑器可逐条编辑）；岩石留在 ground（走 MultiMesh 合批，
+##   不进编辑器对象列表 —— 几百块石头逐个节点会掉帧）。
 static func from_map_data(data: MapGenerator.MapData, cfg: GameConfig = null) -> MapDef:
 	var m := MapDef.new()
 	if data == null:
@@ -582,34 +659,58 @@ static func from_map_data(data: MapGenerator.MapData, cfg: GameConfig = null) ->
 			m.heightmap[gz * m.row_points() + gx] = data.height_at(wx, wz)
 	if data.pond_radius > 0.0:
 		m.set_water_spot(data.pond_center, data.pond_radius, data.pond_level)
-	for t in data.trees:
-		m.objects.append(MapObject.make(&"tree", MapObject.Category.RESOURCE,
-			Vector3(t.x, m.height_at(t.x, t.y), t.y), 0.0, 1.0, -1))
+	# --- 地块材质（魔兽 3 口径）---
+	m.mat_cells = data.mat_cells
+	m.mat_nodes = data.mat_nodes.duplicate()
+	m.mat_tile = data.mat_tile
+	m.far_ridges = data.far_ridges
+	m.base_pad = data.base_pad
+	# 竞技场图的"外圈林带不参与寻路"是靠 16m 边界内缩实现的，必须跟着地图走
+	m.edge_keep_out = 16.0 if data.base_points.size() > 2 else 3.0
+	# --- 地表叙事（纯视觉、合批）---
+	m.ground = {
+		"roads": data.roads.duplicate(true),
+		"grass": data.grass.duplicate(true),
+		"rubble": data.rubble.duplicate(true),
+		"decor": data.decor.duplicate(true),
+		"plazas": data.plazas.duplicate(true),
+		"rocks": data.rocks.duplicate(true),
+	}
+	# --- 资源：树 / 金矿进对象（编辑器可摆可删）---
+	for i in data.trees.size():
+		var t: Vector2 = data.trees[i]
+		var o := MapObject.make(&"tree", MapObject.Category.RESOURCE,
+			Vector3(t.x, m.height_at(t.x, t.y), t.y), 0.0, 1.0, -1)
+		# 品种/种子/朝向跟着树走：编辑器里长什么样子，进游戏就是什么样子
+		if i < data.trees_proc.size():
+			var proc: Dictionary = data.trees_proc[i]
+			var seed_val: int = int(proc.get("seed", -1))
+			if seed_val >= 0:
+				o.properties["seed"] = seed_val
+			var season: String = String(proc.get("season", ""))
+			if not season.is_empty():
+				o.properties["season"] = season
+			var tid: StringName = StringName(String(proc.get("id", "tree")))
+			if String(tid) != "":
+				o.type_id = tid
+			o.rotation = float(proc.get("yaw", 0.0))
+		m.objects.append(o)
 	for mn in data.mines:
 		m.objects.append(MapObject.make(&"goldmine", MapObject.Category.RESOURCE,
 			Vector3(mn.x, m.height_at(mn.x, mn.y), mn.y), 0.0, 1.0, -1))
-	for r in data.rocks:
-		var p2: Vector2 = r.get("pos", Vector2.ZERO)
-		m.objects.append(MapObject.make(&"岩石", MapObject.Category.DOODAD,
-			Vector3(p2.x, m.height_at(p2.x, p2.y), p2.y),
-			float(r.get("rot", 0.0)), float(r.get("scale", 1.0)), -1))
+	# --- 玩家槽位 ---
 	if cfg != null:
-		var p0 := PlayerSlot.make(0, "player", cfg.player_color, 0, cfg.player_base_pos, cfg.start_gold, cfg.start_wood)
-		var p1 := PlayerSlot.make(1, "enemy", cfg.enemy_color, 1, cfg.enemy_base_pos, cfg.start_gold, cfg.start_wood)
 		var plist: Array[PlayerSlot] = []
-		plist.append(p0)
-		plist.append(p1)
+		var bases: Array = data.base_points
+		if bases.is_empty():
+			bases = [cfg.player_base_pos, cfg.enemy_base_pos]
+		for i in range(bases.size()):
+			var team: int = cfg.team_of_slot(i)
+			var col: Color = cfg.display_color_for_slot(i)
+			var slot := PlayerSlot.make(i, "player" if i == cfg.match_human_slot else "enemy",
+				col, team, bases[i], cfg.start_gold, cfg.start_wood)
+			slot.start_yaw = PI
+			plist.append(slot)
 		m.players = plist
-		# 开局建筑也落成对象，编辑器一打开就能看到基地布局
-		for id in cfg.player_buildings.keys():
-			var off: Vector2 = cfg.player_buildings[id]
-			var wp: Vector2 = cfg.player_base_pos + off
-			m.objects.append(MapObject.make(StringName(id), MapObject.Category.BUILDING,
-				Vector3(wp.x, m.height_at(wp.x, wp.y), wp.y), PI, 1.0, 0))
-		for id in cfg.enemy_buildings.keys():
-			var off2: Vector2 = cfg.enemy_buildings[id]
-			var wp2: Vector2 = cfg.enemy_base_pos + off2
-			m.objects.append(MapObject.make(StringName(id), MapObject.Category.BUILDING,
-				Vector3(wp2.x, m.height_at(wp2.x, wp2.y), wp2.y), PI, 1.0, 1))
 	m.camera_bounds = Rect2(Vector2(-m.half_size(), -m.half_size()), Vector2(m.size, m.size))
 	return m

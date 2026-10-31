@@ -74,12 +74,13 @@ static func build_walkable_mask(m: MapDef) -> PackedByteArray:
 	out.resize(w * w)
 	out.fill(1)
 	var half: float = m.half_size()
-	var limit_tan: float = tan(deg_to_rad(WALK_SLOPE_LIMIT_DEG))
+	# 边界内缩：竞技场图要 16m（外圈林带不进寻路），普通图 3m。
+	var keep_out: float = maxf(m.edge_keep_out, 0.0)
 	for z in range(w):
 		for x in range(w):
 			var i: int = z * w + x
 			var p := Vector2(-half + float(x) + 0.5, -half + float(z) + 0.5)
-			if not m.in_bounds(p, EDGE_KEEP_OUT):
+			if not m.in_bounds(p, keep_out):
 				out[i] = 0
 				continue
 			if m.slope_degrees_at(p.x, p.y, 0.75) > WALK_SLOPE_LIMIT_DEG:
@@ -210,6 +211,23 @@ static func to_map_data(m: MapDef) -> MapGenerator.MapData:
 	d.trees_proc = []
 	d.mines = []
 	d.rocks = []
+	# 地块（魔兽 3 口径）与远景开关：不还原它们，地图会"高度对、路没了、远处多一圈山"
+	d.mat_cells = m.mat_cells
+	d.mat_nodes = m.mat_nodes.duplicate()
+	d.mat_tile = m.mat_tile
+	d.far_ridges = m.far_ridges
+	d.base_pad = m.base_pad
+	# 出生点（槽位顺序）：关卡靠它决定每个阵营的基地位置
+	d.base_points.clear()
+	var pl_sorted: Array = []
+	for p in m.players:
+		if p != null:
+			pl_sorted.append(p)
+	pl_sorted.sort_custom(func(a: PlayerSlot, b: PlayerSlot) -> bool: return a.id < b.id)
+	for p in pl_sorted:
+		d.base_points.append(p.start_pos)
+	# 地表叙事：土路/草丛/碎石/营地杂物/岩石批次，原样搬回 MapData
+	_restore_ground(m, d)
 	# 只有"资源"类别进 MapData（树/金矿/其它资源点）。
 	# 建筑/单位/装饰统一由 spawn_map_objects 逐个实例化 —— 装饰不再塞进 rocks，
 	# 否则关卡会用 MultiMesh 再画一遍，同一个石头出现两次。
@@ -239,12 +257,31 @@ static func to_map_data(m: MapDef) -> MapGenerator.MapData:
 	d.ramps = []
 	d.flat_zones = []
 	d.spawn_safe = []
-	d.grass = []
-	d.rubble = []
-	d.roads = []
-	d.decor = {}
 	d.stats = {"source": "MapDef", "size": m.size, "seed": m.seed}
 	return d
+
+
+## 把 MapDef.ground 里的地表叙事数据搬回 MapData（纯视觉，不影响可走性）。
+static func _restore_ground(m: MapDef, d: MapGenerator.MapData) -> void:
+	if m == null or d == null:
+		return
+	var g: Dictionary = m.ground
+	d.roads = _copy_list(g.get("roads", []))
+	d.grass = _copy_list(g.get("grass", []))
+	d.rubble = _copy_list(g.get("rubble", []))
+	d.rocks = _copy_list(g.get("rocks", []))
+	d.plazas = _copy_list(g.get("plazas", []))
+	var dec: Variant = g.get("decor", null)
+	if dec is Dictionary:
+		d.decor = (dec as Dictionary).duplicate(true)
+	else:
+		d.decor = {}
+
+
+static func _copy_list(v: Variant) -> Array:
+	if v is Array:
+		return (v as Array).duplicate(true)
+	return []
 
 
 # ===========================================================================
@@ -263,6 +300,14 @@ static func apply_to_level(m: MapDef, level: RtsLevel) -> bool:
 	level.build_from_map_def(m)
 	level.spawn_props()
 	spawn_map_objects(m, level)
+	# 地表叙事层（土路 / 草丛 / 碎石 / 营地杂物 / 岩石批次）：MapData 里已经有数据，
+	# 这里交给 RtsGroundDetail 用同一套合批逻辑建出来（和 MapGenerator.build_arena 的
+	# 末尾是同一个入口）。它是"下一帧自己找关卡挂上去"，所以放在这里是安全的。
+	RtsGroundDetail.install(level.map_data)
+	# 老/简易地图（只有地形+资源、没有开局建筑）退回 cfg 的开局布阵，
+	# 否则 --map= 进图会发现"没有大本营、没有兵"。
+	if not _has_building_objects(m):
+		level.spawn_starting_forces()
 	var overlay := build_splat_overlay(m)
 	if overlay != null:
 		level.add_child(overlay)
@@ -272,6 +317,16 @@ static func apply_to_level(m: MapDef, level: RtsLevel) -> bool:
 	else:
 		print("[地图加载] 地表层：无（splatmap 全空或未铺）")
 	return true
+
+
+## 地图里有没有"开局建筑"对象（没有就退回 cfg 的默认布阵）
+static func _has_building_objects(m: MapDef) -> bool:
+	if m == null:
+		return false
+	for o in m.objects:
+		if o != null and int(o.category) == MapObject.Category.BUILDING:
+			return true
+	return false
 
 
 ## 摆放建筑 / 单位 / 装饰（资源已经由 level.spawn_props() 按 MapData 建好了）
@@ -287,11 +342,14 @@ static func spawn_map_objects(m: MapDef, level: RtsLevel) -> void:
 				if d == null:
 					push_warning("[地图加载] 未知类型 id：%s（已跳过）" % String(o.type_id))
 					continue
+				# 归属 = 槽位号。多队图里 2/3 号槽也必须对上自己的阵营
+				# （旧版把 owner>=1 全塞给 Game.enemy_faction —— 4 队图的盟友基地
+				#   会变成敌人的，一进图就互相拆家）。
 				var faction: RtsFaction = null
-				if o.owner == 0:
-					faction = Game.player_faction
-				elif o.owner >= 1:
-					faction = Game.enemy_faction
+				if o.owner >= 0 and o.owner < Game.factions.size():
+					faction = Game.factions[o.owner]
+				elif o.owner >= 0:
+					faction = Game.player_faction if o.owner == 0 else Game.enemy_faction
 				var gx: float = o.position.x
 				var gz: float = o.position.z
 				var yaw: float = o.rotation
@@ -318,6 +376,9 @@ static func spawn_map_objects(m: MapDef, level: RtsLevel) -> void:
 					level.mark_footprint(node)
 					if node.has_method("set_constructed"):
 						node.call("set_constructed", true)
+					# 和 cfg 开局布阵保持同一套表现：建筑插旗（阵营色）
+					if faction != null and level.has_method("add_banners"):
+						level.call("add_banners", node, faction)
 				elif absf(o.scale - 1.0) > 0.001:
 					node.scale = Vector3.ONE * o.scale
 			MapObject.Category.DOODAD:

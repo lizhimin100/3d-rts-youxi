@@ -56,6 +56,8 @@ var _qa_select_id: String = ""
 var _map_path: String = ""
 ## --dump-mapdef=<路径>：把当前程序化地图导出成 MapDef（验证"统一口径"用）
 var _dump_mapdef: String = ""
+## --no-map：无视 bound_map / 默认地图文件，强制程序化竞技场图（QA 对照组）
+var _force_no_map: bool = false
 ## --demo-tree：直接进"树品种演示"小地图（春夏秋冬并排），用来肉眼看树的生成效果
 var _demo_tree: bool = false
 ## 同一件事的**编辑器入口**：在编辑器里勾上这个勾，按 F6/F5 就进演示图。
@@ -295,6 +297,8 @@ func _mount_tests() -> void:
 		_qa_guard.call_deferred()
 	if "--qa-terrain" in args:
 		_qa_terrain.call_deferred()
+	if "--qa-map" in args:
+		_qa_map_fingerprint.call_deferred()
 
 
 ## 每支 AI 阵营一个大脑。
@@ -403,6 +407,55 @@ func _qa_terrain() -> void:
 	print("[QA-地形] 出生平台最大占地高差 = %.4f m（要求 < 0.05；>0.08 就会出现穿模）" % worst)
 
 
+## QA：地图指纹 —— 证明"提取成地图文件再加载回来"和原程序化地图逐项一致。
+## 用法：godot --headless --path . --quit-after 30 -- --qa-map
+##      对照组：同一行再加 --no-map（强制程序化竞技场图）
+func _qa_map_fingerprint() -> void:
+	for _i in 2:
+		await get_tree().process_frame
+	if level == null or level.map_data == null:
+		print("[QA-MAP] 没有关卡")
+		return
+	var md: MapGenerator.MapData = level.map_data
+	var parts: PackedStringArray = []
+	parts.append("size=%.1f res=%d tris=%d" % [md.size, md.resolution,
+		level.terrain.triangle_count() if level.terrain != null else -1])
+	parts.append("heights=%d" % hash(md.heights))
+	var dirt: int = 0
+	for b in md.mat_nodes:
+		if b > 128:
+			dirt += 1
+	parts.append("mat=%d/%d/dirt%d" % [md.mat_cells, hash(md.mat_nodes), dirt])
+	parts.append("trees=%d/%d mines=%d/%d rocks=%d roads=%d grass=%d rubble=%d decor=%d far=%s" % [
+		md.trees.size(), hash(md.trees), md.mines.size(), hash(md.mines),
+		md.rocks.size(), md.roads.size(), md.grass.size(), md.rubble.size(),
+		md.decor_count(), str(md.far_ridges)])
+	print("[QA-MAP] %s" % " ".join(parts))
+	var bl: PackedStringArray = []
+	var ul: PackedStringArray = []
+	for fac in Game.factions:
+		if fac == null:
+			continue
+		for b in fac.buildings:
+			if b == null or not is_instance_valid(b):
+				continue
+			var bd: UnitDef = b.get("def") as UnitDef
+			var bp: Vector3 = (b as Node3D).global_position
+			bl.append("%d:%s@%.1f,%.1f|%.3f" % [fac.slot,
+				String(bd.id) if bd != null else "?", bp.x, bp.z, (b as Node3D).rotation.y])
+		for u in fac.units:
+			if u == null or not is_instance_valid(u):
+				continue
+			var ud: UnitDef = u.get("def") as UnitDef
+			var up: Vector3 = (u as Node3D).global_position
+			ul.append("%d:%s@%.1f,%.1f" % [fac.slot,
+				String(ud.id) if ud != null else "?", up.x, up.z])
+	bl.sort()
+	ul.sort()
+	print("[QA-MAP] buildings=%d hash=%d | units=%d hash=%d" % [
+		bl.size(), hash("|".join(bl)), ul.size(), hash("|".join(ul))])
+
+
 ## QA：给前几个战斗单位分别下 驻守 / 观察 / 路径，并把它们全选中
 ## （用来验收"头顶状态图标"和"选中血条"两条需求）
 func _qa_guard() -> void:
@@ -502,6 +555,9 @@ func _parse_cmdline() -> void:
 			_dump_mapdef = arg.substr(14)
 		elif arg == "--demo-tree":
 			_demo_tree = true
+		elif arg == "--no-map":
+			# 强制走程序化竞技场（验收"地图文件 = 原图"的对照组）
+			_force_no_map = true
 
 
 ## 解析本局要用的地图（优先级从高到低）：
@@ -511,6 +567,9 @@ func _parse_cmdline() -> void:
 ##   4. 兜底：默认地图文件 res://地图/主场景地图.tres（生成工具产出）。
 ##   5. 都没有 → 返回 null，走原来的程序化随机地图。
 func _load_map_arg() -> MapDef:
+	if _force_no_map:
+		print("[主场景] --no-map：强制程序化竞技场图")
+		return null
 	if _demo_tree:
 		var demo: Script = load("res://代码/测试/树品种演示.gd") as Script
 		if demo != null:
@@ -523,11 +582,22 @@ func _load_map_arg() -> MapDef:
 			push_warning("[主场景] 读不到地图：%s（回退到默认地图）" % _map_path)
 		return def
 	if bound_map != null:
+		# 绑定的是"地图文件"，不是"这一份内存对象"：强制重读文件，
+		# 否则编辑器存盘后热重载拿到的还是 ResourceLoader 缓存里的旧 MapDef。
+		var rp: String = String(bound_map.resource_path)
+		if not rp.is_empty() and ResourceLoader.exists(rp):
+			var fresh: MapDef = ResourceLoader.load(rp, "",
+				ResourceLoader.CACHE_MODE_IGNORE) as MapDef
+			if fresh != null:
+				return fresh
 		return bound_map
-	# 兜底：默认地图文件（生成工具 工具/gen_bound_map.gd 产出）
+	# 兜底：默认地图文件（工具/导出主场景地图.gd 产出）
 	var fallback := "res://地图/主场景地图.tres"
 	if ResourceLoader.exists(fallback):
-		var def: MapDef = MapStore.load_any(fallback)
+		var def: MapDef = ResourceLoader.load(fallback, "",
+			ResourceLoader.CACHE_MODE_IGNORE) as MapDef
+		if def == null:
+			def = MapStore.load_any(fallback)
 		if def != null:
 			print("[主场景] 未指定 --map / 未绑定，使用默认地图文件 %s" % fallback)
 			return def
@@ -586,26 +656,98 @@ func _setup_fog() -> void:
 	fog.setup(level.terrain, Game.player_faction, level.world_size)
 
 
-## 把 MapDef 里的初始资源写进阵营（MapDef 图不跑 cfg 的开局流程）
+## 把 MapDef 里的初始资源写进**每一个**阵营（多队图：4 个槽位各吃自己那份）。
+## 旧版只处理 players[0] 和 enemy_slot()：4 队图里盟友和第三家会退回 cfg 的默认值，
+## 编辑器里改它们的钱等于白改。
+##
+## 难度的 bonus_gold 在运行时叠加、不烘进地图文件 —— 同一张图换个难度还能再打。
 func _apply_map_resources(def: MapDef) -> void:
 	if def == null:
 		return
-	if def.players.size() >= 1 and def.players[0] != null and Game.player_faction != null:
-		Game.player_faction.gold = def.players[0].gold()
-		Game.player_faction.wood = def.players[0].wood()
-	var enemy: PlayerSlot = def.enemy_slot()
-	if enemy != null and Game.enemy_faction != null:
-		Game.enemy_faction.gold = enemy.gold()
-		Game.enemy_faction.wood = enemy.wood()
+	var diff: DifficultyDef = Cfg.difficulty(Game.difficulty_index)
+	for p in def.players:
+		if p == null:
+			continue
+		if p.id < 0 or p.id >= Game.factions.size():
+			continue
+		var f: RtsFaction = Game.factions[p.id]
+		if f == null:
+			continue
+		var bonus: int = 0 if f.is_player else diff.bonus_gold
+		f.gold = p.gold() + bonus
+		f.wood = p.wood()
+		Game.resources_changed.emit(f)
 
 
-## 把当前地图导出成 MapDef（只在地图编辑器/命令行需要时执行）
+## 把**当前这一局真实摆在世界里的地图**导出成 MapDef。
+##
+## 分工：
+##   · MapDef.from_map_data 负责地形高度场 / 地块格点表 / 资源（树、金矿）/
+##     地表叙事（土路、草、碎石、营地道具）/ 玩家槽位；
+##   · 这里再补上"运行期才存在"的东西：每个阵营的开局建筑与单位（多队图 4 家全要）。
+## 导出后主场景绑定的就是这份数据：编辑器改它 → 存档 → 运行中的游戏热重载 =
+## 用户要的"通过编辑器改主场景地图，改动实时落实"。
 func _dump_map_def(path: String) -> void:
 	if level == null or level.map_data == null:
 		return
 	var def: MapDef = MapDef.from_map_data(level.map_data, Cfg.game)
+	# 1) 玩家槽位：以运行中的阵营为准（队号 / 显示色 / 出生点都是权威值）
+	def.players.clear()
+	for f in Game.factions:
+		if f == null:
+			continue
+		var c: Vector3 = level.base_center(f)
+		var slot := PlayerSlot.make(f.slot, "player" if f.is_player else "enemy", f.color,
+			f.team, Vector2(c.x, c.z), Cfg.game.start_gold, Cfg.game.start_wood)
+		slot.start_yaw = PI
+		def.players.append(slot)
+	# 2) 对象：保留 from_map_data 里的资源（树/金矿），追加建筑与单位
+	var objs: Array = []
+	for o in def.objects:
+		if o != null:
+			objs.append(o)
+	var nb: int = 0
+	var nu: int = 0
+	for f in Game.factions:
+		if f == null:
+			continue
+		for b in f.buildings:
+			if b == null or not is_instance_valid(b):
+				continue
+			var bd: UnitDef = b.get("def") as UnitDef
+			if bd == null:
+				continue
+			if b.has_method("is_alive") and not bool(b.call("is_alive")):
+				continue
+			var bp: Vector3 = (b as Node3D).global_position
+			objs.append(MapObject.make(bd.id, MapObject.Category.BUILDING,
+				Vector3(bp.x, level.height_at(bp.x, bp.z), bp.z),
+				(b as Node3D).rotation.y, 1.0, f.slot))
+			nb += 1
+		for u in f.units:
+			if u == null or not is_instance_valid(u):
+				continue
+			var ud: UnitDef = u.get("def") as UnitDef
+			if ud == null:
+				continue
+			if u.has_method("is_alive") and not bool(u.call("is_alive")):
+				continue
+			var up: Vector3 = (u as Node3D).global_position
+			objs.append(MapObject.make(ud.id, MapObject.Category.UNIT,
+				Vector3(up.x, level.height_at(up.x, up.z), up.z),
+				(u as Node3D).rotation.y, 1.0, f.slot))
+			nu += 1
+	def.objects.clear()
+	for o in objs:
+		def.objects.append(o)
 	var err: int = MapStore.save_any(def, path)
-	print("[主场景] 导出 MapDef → %s err=%d（%d 个对象）" % [path, err, def.objects.size()])
+	var nr: int = 0
+	for o in def.objects:
+		if o != null and int(o.category) == MapObject.Category.RESOURCE:
+			nr += 1
+	print("[主场景] 导出 MapDef → %s err=%d（槽位 %d / 建筑 %d / 单位 %d / 资源 %d / 地块 %d² / 地面细节 %s）" % [
+		path, err, def.players.size(), nb, nu, nr, def.mat_cells,
+		"有" if not def.ground.is_empty() else "无"])
 
 
 func _update_shot(delta: float) -> void:

@@ -9,9 +9,11 @@
 [ext_resource type="Script" uid="uid://d01gbay5v0twh" path="res://代码/界面/HUD.gd" id="7_hud"]
 [ext_resource type="Script" uid="uid://by1i3f10s0ipq" path="res://代码/ai/简单AI.gd" id="8_ai"]
 [ext_resource type="PackedScene" path="res://美术/特效/暗角.tscn" id="9_vig"]
+[ext_resource type="Resource" path="res://地图/主场景地图.tres" id="10_map"]
 
 [node name="主场景" type="Node3D" unique_id=2108769075]
 script = ExtResource("1_main")
+bound_map = ExtResource("10_map")
 
 [node name="环境" type="WorldEnvironment" parent="." unique_id=1381655757]
 environment = ExtResource("2_env")

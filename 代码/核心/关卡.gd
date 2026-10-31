@@ -99,21 +99,14 @@ func build_from_map_def(def: MapDef) -> void:
 	#   套到 256m 自建图上会直接长在地图里面 —— 表现为"地图上冒出高高突出的尖刺和山"。
 	from_map_def = true
 	var cfg: GameConfig = Cfg.game
-	if not def.players.is_empty() and def.players[0] != null:
-		_base_pos[RtsConst.Faction.PLAYER] = def.players[0].start_pos
-	var enemy: PlayerSlot = def.enemy_slot()
-	if enemy != null:
-		_base_pos[RtsConst.Faction.ENEMY] = enemy.start_pos
 	var data: MapGenerator.MapData = MapLoader.to_map_data(def)
 	if data == null:
 		push_error("[关卡] MapLoader.to_map_data 返回空")
 		return
+	# ★ 出生点只有一个来源：MapDef 的玩家槽位 → MapData.base_points。
+	#   build_from_data 会按槽位顺序把它们灌进 _base_pos（多队图 = 4 个角）。
+	#   旧版只取 players[0] 和 enemy_slot() 两个点，4 队图的后两家会掉回 cfg 坐标。
 	build_from_data(data, cfg)
-	# build_from_data 会用 cfg 的基地坐标覆盖，这里再按 MapDef 纠正一次
-	if not def.players.is_empty() and def.players[0] != null:
-		_base_pos[RtsConst.Faction.PLAYER] = def.players[0].start_pos
-	if enemy != null:
-		_base_pos[RtsConst.Faction.ENEMY] = enemy.start_pos
 
 
 ## 把 MapData 变成场景内容：地形 → 可走性校验 → 寻路 → 远景 → 道具容器
@@ -320,7 +313,8 @@ func _append_cliff_scree() -> void:
 					var ph: float = terrain.height_at(px, pz)
 					if ps < 20.0 and ph < h0 + 0.15 and ph > -7.0:
 						var key: float = _hash01(int(px * 3.0), int(pz * 3.0))
-						if key < 0.62 and not _near_prop_flat(Vector2(px, pz), 2.5):
+						if key < 0.62 and not _near_prop_flat(Vector2(px, pz), 2.5) \
+								and not _scree_already_there(Vector2(px, pz)):
 							map_data.rocks.append({
 								"pos": Vector2(px, pz),
 								"scale": 0.14 + key * 0.26,
@@ -337,6 +331,19 @@ func _near_prop_flat(p: Vector2, extra: float) -> bool:
 		return false
 	for z in map_data.flat_zones:
 		if p.distance_to(z["pos"]) < float(z["radius"]) + extra:
+			return true
+	return false
+
+
+## 这个位置是否已经有岩石（防止重建关时把崖脚碎石又生成一遍）
+## 为什么需要：从地图文件读回来的图，ground.rocks 里已经带着上次生成的碎石，
+## 再跑一遍 _append_cliff_scree 就是双份 —— 同位置两块石头会 z-fighting。
+func _scree_already_there(p: Vector2) -> bool:
+	if map_data == null:
+		return false
+	for r in map_data.rocks:
+		var rp: Vector2 = r.get("pos", Vector2.ZERO)
+		if rp.distance_to(p) < 1.2:
 			return true
 	return false
 
@@ -406,7 +413,11 @@ func _prepare_walkability() -> void:
 		chosen_deg = 0.0
 		chosen_blocked = 0
 		fallback = true
-		push_warning("[关卡] 坡度校验在所有阈值下都不连通，退回 MapData.walkable（坡度过滤未生效）")
+		push_warning("[关卡] 坡度校验在所有阈值下都不连通，退回 MapData.walkable（坡度过滤未生效）不连通目标=%s"
+			% str(last_report.get("failed", [])))
+	elif not (last_report.get("soft_failed", []) as Array).is_empty():
+		print("[关卡] 连通性抽查：%d 个软目标（树）不可达，不影响坡度校验"
+			% (last_report.get("soft_failed", []) as Array).size())
 
 	map_data.walkable = chosen
 	_walk_info = {
@@ -418,6 +429,7 @@ func _prepare_walkability() -> void:
 		"walkable": _count_walkable(chosen),
 		"attempts": attempts,
 		"failed_targets": last_report.get("failed", []),
+		"soft_failed_targets": last_report.get("soft_failed", []),
 	}
 
 
@@ -504,15 +516,28 @@ func _connectivity_report(cand: PackedByteArray, w: int) -> Dictionary:
 	targets.append({"pos": Vector2(cp.x, cp.z), "kind": "mesa"})
 
 	var failed: Array = []
+	var soft_failed: Array = []
 	for td in targets:
 		var tp: Vector2 = td["pos"]
 		var cell: Vector2i = _world_cell(tp, w)
 		var c: Vector2i = _nearest_walkable_in(cand, w, cell)
+		# "基地附近的树"只是资源可达性抽查：树心本身占格，密林里抽到一棵被同伴
+		# 围死的树很常见，它不该判"整张图不连通"（否则 40/46/52/58° 全被否掉，
+		# 坡度校验直接失效）。硬目标（基地/金矿/坡道/中央）才算连通性错误。
+		var soft: bool = String(td["kind"]) == "tree_near_base"
+		var why: String = ""
 		if c.x < 0:
-			failed.append("%s@(%.1f,%.1f):附近无可走格" % [td["kind"], tp.x, tp.y])
+			why = "%s@(%.1f,%.1f):附近无可走格" % [td["kind"], tp.x, tp.y]
 		elif seen[c.y * w + c.x] == 0:
-			failed.append("%s@(%.1f,%.1f):不可达" % [td["kind"], tp.x, tp.y])
-	return {"ok": failed.is_empty(), "failed": failed, "checked": targets.size()}
+			why = "%s@(%.1f,%.1f):不可达" % [td["kind"], tp.x, tp.y]
+		if why.is_empty():
+			continue
+		if soft:
+			soft_failed.append(why)
+		else:
+			failed.append(why)
+	return {"ok": failed.is_empty(), "failed": failed, "soft_failed": soft_failed,
+		"checked": targets.size()}
 
 
 ## 取离基地最近的 n 棵树（只用于连通性抽查，不是"每棵树都必须可达"）
@@ -1094,6 +1119,12 @@ func _cast_shadow(root: Node, on: bool) -> void:
 		_cast_shadow(c, on)
 
 
+
+
+## 对外：给建筑加旗杆 + 旗面（阵营色）。
+## MapLoader 摆开局建筑时也走这里，保证"cfg 布阵"和"地图文件布阵"看起来一样。
+func add_banners(b: Node3D, faction: RtsFaction) -> void:
+	_add_banners(b, faction)
 
 
 ## 给建筑加旗杆 + 旗面（阵营色）。
