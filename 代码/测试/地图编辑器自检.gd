@@ -96,12 +96,17 @@ func _test_spawn_standard() -> void:
 	for cfg in [[128, 2], [160, 2], [192, 3], [256, 4], [384, 4]]:
 		var np: int = int(cfg[1])
 		var m: MapDef = MapLoader.new_map(int(cfg[0]), np, 20261024)
-		var biome_ok: bool = true
-		for v in m.splatmap:
-			if v != MapDef.SPLAT_BIOME:
-				biome_ok = false
-				break
-		_ok(biome_ok, "%d 人图地表没有铺满生态色块" % np)
+		# **新建地图必须自带地块格点表**：地表观感现在来自地形材质的 mat_map（草/泥 8m 硬边），
+		# 这张表空了 = 整图一片草、没有泥路（这正是用户报的那个问题）。
+		var dirt: int = 0
+		for v in m.mat_nodes:
+			if int(v) > 127:
+				dirt += 1
+		_ok(not m.mat_nodes.is_empty(), "%d 人图没有地块格点表（mat_nodes 空）" % np)
+		var ratio: float = float(dirt) / maxf(1.0, float(m.mat_nodes.size()))
+		_ok(ratio > 0.03 and ratio < 0.60,
+			"%d 人图泥地占比 %.0f%%（应在 3%%~60%%：要有泥路，但不能整张图都是沙漠）"
+			% [np, ratio * 100.0])
 		# 和生成器同口径：树环半径随地图尺寸等比
 		var kk: float = clampf(m.half_size() / 100.0, 1.0, 1.2)
 		var tree_ring: float = minf(34.0 * kk, m.half_size() * 0.36)
@@ -152,12 +157,15 @@ func _test_spawn_standard() -> void:
 			_ok(gold_dists.max() - gold_dists.min() <= 1.5,
 				"%d 人图金矿距离不一致（%.1f ~ %.1f）"
 				% [np, gold_dists.min(), gold_dists.max()])
-	print("  · 出生点标配（八建筑 / 金矿定距 / 树 %d~%d 棵 / 生态色块）：OK" % [tmin, tmax])
+	print("  · 出生点标配（八建筑 / 金矿定距 / 树 %d~%d 棵 / 地块格点表）：OK" % [tmin, tmax])
 
 
-## 地表层：**必须是随机色块**（亮度要有明显落差），而且不能慢到卡手
+## 地表覆盖层：**必须是随机色块**（亮度要有明显落差），而且不能慢到卡手。
+## 新建地图默认不再铺这层（改由地块材质 + 生态换色负责），但老地图/手刷仍然走它，
+## 所以这里显式铺一遍 SPLAT_BIOME 来守住"色带不能被改回纯色"。
 func _test_splat_overlay() -> void:
 	var m: MapDef = MapLoader.new_map(160, 2, 20261024)
+	m.splatmap.fill(MapDef.SPLAT_BIOME)
 	var t0: int = Time.get_ticks_msec()
 	var ov: MeshInstance3D = MapLoader.build_splat_overlay(m)
 	var dt: int = Time.get_ticks_msec() - t0

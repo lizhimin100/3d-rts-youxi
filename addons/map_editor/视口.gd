@@ -278,8 +278,11 @@ func _on_def_changed(reason: String) -> void:
 			_dirty_regions = true
 			_dirty_helpers = true
 		"splat":
-			# 只换了生态（色带）：地表层重铺，地形/对象一根汗毛都不动
+			# 换了生态：地表色块重铺 + 地形材质换色参数跟着改（不重建网格）
 			_dirty_splat = true
+			if terrain != null and session != null and session.def != null:
+				terrain.biome = session.def.biome
+				terrain.refresh_biome_tint()
 		_:
 			_dirty_terrain = true
 			_dirty_objects = true
@@ -387,6 +390,18 @@ func rebuild_terrain() -> void:
 	# 笔刷拖动中：放粗精度换帧率（解析求值不受影响，height_at 始终精确）；
 	# 松手后 end_stroke 会发 "terrain" 让这里按精细值重建一次。
 	var tol: float = 0.55 if _painting else RtsTerrain.SURFACE_TOL
+	# ★ 地块数据 + 生态必须和游戏侧一模一样地喂进去（关卡._build_world 也是这两行）。
+	#   以前漏了 → 游戏里地形材质有泥路、编辑器里却是整片草地，同一个 .tres 看着像两张图。
+	terrain.mat_cells = d.mat_cells
+	terrain.mat_nodes = d.mat_nodes
+	terrain.biome = d.biome
+	# 营地地标：地形着色会把基地半径内的地面压暗一点（"踩实的营地"），
+	# 游戏里由 关卡._build_world 从 MapData.base_points 喂进来，这里用槽位坐标对齐。
+	var bases := PackedVector2Array()
+	for p in d.players:
+		if p != null:
+			bases.append(p.start_pos)
+	terrain.base_points = bases
 	terrain.build(float(d.size), d.height_resolution, d.heightmap, false, tol)
 	var spots: Array = d.water_spots()
 	if not spots.is_empty() and bool(d.water.get("enabled", false)):

@@ -85,6 +85,9 @@ var _stroke_open: bool = false
 var _stroke_tool: int = Tool.RAISE
 var _stroke_before_heights: PackedFloat32Array = PackedFloat32Array()
 var _stroke_before_splat: PackedByteArray = PackedByteArray()
+## 地块格点表快照（泥土/草丛笔刷真改的就是这张表 —— 和游戏里同一份数据）
+var _stroke_before_mat: PackedByteArray = PackedByteArray()
+var _stroke_mat_cells: int = 0
 var _stroke_before_water: Dictionary = {}
 var _stroke_flatten_h: float = 0.0
 var _stroke_painted: bool = false
@@ -395,6 +398,8 @@ func begin_stroke(world_pos: Vector3) -> void:
 		_stroke_before_heights = def.heightmap.duplicate()
 	if tool in [Tool.PAINT_GRASS, Tool.PAINT_DIRT, Tool.PAINT_ROCK, Tool.PAINT_SAND, Tool.ERASE_SPLAT]:
 		_stroke_before_splat = def.splatmap.duplicate()
+		_stroke_before_mat = def.mat_nodes.duplicate()
+		_stroke_mat_cells = def.mat_cells
 	if tool == Tool.WATER:
 		_stroke_before_water = def.water.duplicate(true)
 
@@ -439,6 +444,13 @@ func end_stroke() -> void:
 			Tool.PAINT_SAND, Tool.ERASE_SPLAT]:
 		pairs.append({"prop": "splatmap", "before": _stroke_before_splat,
 			"after": def.splatmap.duplicate()})
+		# 地块格点表（泥土/草丛笔刷真改的那张表）也进撤销，否则"刷了泥路又撤销"会半截
+		if def.mat_nodes != _stroke_before_mat:
+			if def.mat_cells != _stroke_mat_cells:
+				pairs.append({"prop": "mat_cells", "before": _stroke_mat_cells,
+					"after": def.mat_cells})
+			pairs.append({"prop": "mat_nodes", "before": _stroke_before_mat,
+				"after": def.mat_nodes.duplicate()})
 	else:
 		pairs.append({"prop": "heightmap", "before": _stroke_before_heights,
 			"after": def.heightmap.duplicate()})
@@ -504,7 +516,63 @@ func _raise_max_height_clamp() -> void:
 			def.heightmap[i] = -40.0
 
 
+## 地表笔刷：**泥土 / 草丛直接改地块格点表**（8m，草=0 泥=255）。
+##
+## 为什么不能只画一层彩色覆盖网格：游戏里的地面观感来自地形材质的 mat_map（图集硬边 + 8m 格），
+## 覆盖层画的 1m 色块在游戏里对应不到任何地块，于是就变成"编辑器里有泥、游戏里没泥"。
+## 现在两边的数据是同一条：这里改 mat_nodes，编辑器材质和游戏材质读到的是同一张表。
+## 岩石/沙地在地块体系里没有对应材质，仍旧走覆盖层贴花。
 func _apply_splat_brush(center: Vector3, value: int) -> void:
+	match value:
+		MapDef.SPLAT_DIRT:
+			_apply_mat_brush(center, 255)
+		MapDef.SPLAT_GRASS:
+			_apply_mat_brush(center, 0)
+		MapDef.SPLAT_NONE:
+			# 橡皮擦：先擦回草地（地块），再把覆盖层贴花一起清掉
+			_apply_mat_brush(center, 0)
+			_apply_decal_brush(center, MapDef.SPLAT_NONE)
+		_:
+			_apply_decal_brush(center, value)
+
+
+## 地块格点刷：写 def.mat_nodes（和 主场景 的地块完全同一套数据）
+func _apply_mat_brush(center: Vector3, node_value: int) -> void:
+	_ensure_mat_grid()
+	if def.mat_cells <= 0 or def.mat_nodes.is_empty():
+		return
+	var r: float = maxf(0.5, brush_radius)
+	var n: int = def.mat_cells + 1
+	var step: float = float(def.size) / float(def.mat_cells)
+	var half: float = def.half_size()
+	var i0: int = clampi(floori((center.x - r + half) / step), 0, n - 1)
+	var i1: int = clampi(ceili((center.x + r + half) / step), 0, n - 1)
+	var j0: int = clampi(floori((center.z - r + half) / step), 0, n - 1)
+	var j1: int = clampi(ceili((center.z + r + half) / step), 0, n - 1)
+	for j in range(j0, j1 + 1):
+		for i in range(i0, i1 + 1):
+			var p := Vector2(-half + float(i) * step, -half + float(j) * step)
+			var w: float = _brush_weight(p, Vector2(center.x, center.z), r)
+			if w < 0.35:
+				continue
+			def.mat_nodes[j * n + i] = node_value
+	# 同一片区域里旧的"泥土/草丛/生态"覆盖色块要清掉，否则会有两层地面打架
+	_clear_splat_in(center, r, [MapDef.SPLAT_DIRT, MapDef.SPLAT_GRASS, MapDef.SPLAT_BIOME])
+
+
+## 老地图可能没有地块表（mat_cells = 0）：第一次刷就地建成 8m 格，全草。
+func _ensure_mat_grid() -> void:
+	if def.mat_cells > 0 and def.mat_nodes.size() == (def.mat_cells + 1) * (def.mat_cells + 1):
+		return
+	var cells: int = maxi(4, int(round(float(def.size) / 8.0)))
+	def.mat_cells = cells
+	def.mat_tile = float(def.size) / float(cells)
+	def.mat_nodes.resize((cells + 1) * (cells + 1))
+	def.mat_nodes.fill(0)
+
+
+## 覆盖层贴花刷（岩石 / 沙地）
+func _apply_decal_brush(center: Vector3, value: int) -> void:
 	var r: float = maxf(0.5, brush_radius)
 	var c: float = def.cell_size()
 	var half: float = def.half_size()
@@ -520,6 +588,26 @@ func _apply_splat_brush(center: Vector3, value: int) -> void:
 			if w < 0.35:
 				continue
 			def.splatmap[gz * res + gx] = value
+
+
+## 只清掉指定值的地表色块（不碰岩石/沙地贴花）
+func _clear_splat_in(center: Vector3, r: float, kinds: Array) -> void:
+	if def.splatmap.is_empty():
+		return
+	var c: float = def.cell_size()
+	var half: float = def.half_size()
+	var res: int = def.height_resolution
+	var gx0: int = clampi(floori((center.x - r + half) / c), 0, res - 1)
+	var gx1: int = clampi(ceili((center.x + r + half) / c), 0, res - 1)
+	var gz0: int = clampi(floori((center.z - r + half) / c), 0, res - 1)
+	var gz1: int = clampi(ceili((center.z + r + half) / c), 0, res - 1)
+	for gz in range(gz0, gz1 + 1):
+		for gx in range(gx0, gx1 + 1):
+			var i: int = gz * res + gx
+			if i < 0 or i >= def.splatmap.size():
+				continue
+			if kinds.has(int(def.splatmap[i])):
+				def.splatmap[i] = MapDef.SPLAT_NONE
 
 
 ## 水面笔刷：挖一个碗 + 放一片水。一次点击一笔（不跟手连续挖，免得越描越深）

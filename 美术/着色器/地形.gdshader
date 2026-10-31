@@ -61,6 +61,12 @@ uniform float dry_strength : hint_range(0.0, 1.0) = 0.85;
 uniform vec4 mat_a_tint : source_color = vec4(0.62, 0.80, 0.50, 1.0);
 uniform vec4 mat_b_tint : source_color = vec4(0.86, 0.74, 0.62, 1.0);
 uniform float albedo_gain : hint_range(0.3, 1.6) = 0.96;
+/// 生态换色：**只动地块，不动崖壁**。
+/// 乘一个色偏没法把"绿草"变"黄沙"（乘只会变暗不变色相），所以走"亮度保留 + 色相替换"：
+/// 取地块颜色的亮度当细节噪声，乘生态基色，再按 biome_mix 混回去。
+/// 默认 mix=0（温带）→ 完全不影响现有观感。
+uniform vec4 biome_color : source_color = vec4(0.55, 0.72, 0.46, 1.0);
+uniform float biome_mix : hint_range(0.0, 1.0) = 0.0;
 /// 图集法线（Sobel 自遮罩）：给出地块交界的 8mm 台阶与地面碎点的微起伏。
 /// 只用很小一档（0.35）—— 这是"补质感"，不是"加噪声"。
 uniform sampler2D atlas_n : filter_linear_mipmap, repeat_disable, hint_default_black;
@@ -180,6 +186,13 @@ void fragment() {
     // 顶点色只做乘法染色（1.0 附近），不承担配色
     vec3 tint = mix(vec3(1.0), v_col.rgb, tint_strength);
     vec3 albedo = tile_col * tint * albedo_gain;
+
+    // ── 生态换色（雪原/荒原/火山/沼泽）：只换色相，保留地块自身的明暗细节 ──
+    if (biome_mix > 0.002) {
+        float lum = dot(albedo, vec3(0.2126, 0.7152, 0.0722));
+        vec3 bio = biome_color.rgb * (0.35 + lum * 1.55);
+        albedo = mix(albedo, bio, biome_mix);
+    }
 
     // ── 崖壁：不走地块，三平面取岩石细节 ─────────────────────────────────
     float cliff = smoothstep(0.82, 0.46, upness);

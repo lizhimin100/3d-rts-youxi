@@ -138,6 +138,8 @@ func _build_world(cfg: GameConfig) -> void:
 	# 地块格点表：魔兽 3 口径（材质存在共享格点上，一格读四个角）
 	terrain.mat_cells = map_data.mat_cells
 	terrain.mat_nodes = map_data.mat_nodes
+	# 生态：和编辑器共用同一份换色参数，改生态不用重出贴图
+	terrain.biome = map_data.biome
 	# 远景山脊：自建地图一律不要（半径是给 200m 默认图写死的），
 	# 竞技场图自己也会把 map_data.far_ridges 置 false。
 	var want_ridges: bool = (not from_map_def) and bool(map_data.get("far_ridges"))

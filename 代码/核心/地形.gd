@@ -44,6 +44,9 @@ var base_points: PackedVector2Array = PackedVector2Array()
 ## 由关卡在 build() 之前写入（见 地图生成._paint_tiles）。
 var mat_nodes: PackedByteArray = PackedByteArray()
 var mat_cells: int = 0
+## 生态 id（temperate/arid/snow/volcanic/swamp）：决定地形材质的 biome 换色参数。
+## 和地块材质走同一条主线 —— 编辑器与游戏都从这里取色，不再各自画一套。
+var biome: String = "temperate"
 ## 运行时生成的 R8 贴图（shader 里 texelFetch 逐格点取值）
 var mat_map: ImageTexture = null
 
@@ -856,8 +859,11 @@ func _make_material() -> Material:
 	if ResourceLoader.exists(path):
 		var m := load(path) as Material
 		if m != null:
-			_apply_material_landmarks(m)
-			return m
+			# **必须 duplicate**：地形要按地图写 mat_map / biome 换色参数，
+			# 直接改共享资源会把上一张图的参数带到下一张（编辑器与游戏同时存在时更明显）。
+			var own := m.duplicate(true)
+			_apply_material_landmarks(own)
+			return own
 	var std := StandardMaterial3D.new()
 	std.vertex_color_use_as_albedo = true
 	std.vertex_color_is_srgb = true
@@ -896,6 +902,10 @@ func _apply_material_landmarks(m: Material) -> void:
 	sm.set_shader_parameter("tile_m", TILE_M)
 	sm.set_shader_parameter("map_half", size * 0.5)
 	sm.set_shader_parameter("mat_cells", maxi(mat_cells, 1))
+	# 生态换色：和游戏里同一张地图、同一组参数 —— 编辑器看到的颜色就是游戏里看到的颜色
+	var bt: Array = MapDef.biome_tint(biome)
+	sm.set_shader_parameter("biome_color", bt[0])
+	sm.set_shader_parameter("biome_mix", bt[1])
 	var slots := {
 		"atlas_rgba": ATLAS_PATH,
 		"atlas_n": ATLAS_N_PATH,
@@ -911,6 +921,28 @@ func _apply_material_landmarks(m: Material) -> void:
 		var t := load(path) as Texture2D
 		if t != null:
 			sm.set_shader_parameter(key, t)
+
+
+## 只刷地块贴图（不重建网格）：编辑器拖地表格点笔刷时逐帧调，重建整张网格会卡。
+func refresh_mat_map() -> void:
+	_build_mat_map()
+	if _mesh_instance == null:
+		return
+	var sm := _mesh_instance.material_override as ShaderMaterial
+	if sm != null:
+		sm.set_shader_parameter("mat_map", mat_map)
+
+
+## 只刷生态换色参数（不重建网格）：编辑器换生态色带时用，改两个 uniform 就够。
+func refresh_biome_tint() -> void:
+	if _mesh_instance == null:
+		return
+	var sm := _mesh_instance.material_override as ShaderMaterial
+	if sm == null:
+		return
+	var bt: Array = MapDef.biome_tint(biome)
+	sm.set_shader_parameter("biome_color", bt[0])
+	sm.set_shader_parameter("biome_mix", bt[1])
 
 
 ## 生成 mat_map：R8、(mat_cells+1)² 个格点，1 texel = 1 个格点 = 8m。

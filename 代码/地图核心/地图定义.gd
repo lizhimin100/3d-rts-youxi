@@ -104,6 +104,31 @@ static func biome_key_color(id: String) -> Color:
 	var pal: Array = biome_palette(id)
 	return pal[mini(1, pal.size() - 1)]
 
+
+## 生态 → 地形材质换色（`地形.gdshader` 的 biome_color / biome_mix）。
+##
+## 以前"生态"只作用于 1m 的地表色块覆盖层，和地块材质（8m、草/泥、图集硬边）是两套东西，
+## 于是编辑器里看是"一片绿"、主场景地图看是"有泥路"，两边对不上。
+## 现在生态直接进**地块材质**这一条主线：编辑器与游戏共用同一份材质、同一张 mat_map、
+## 同一组 biome_color/biome_mix，看起来就是同一张图。
+##
+## 温带 mix = 0：默认观感一个像素都不变（存量地图零风险）。
+const BIOME_TINT: Dictionary = {
+	"temperate": [Color(0.55, 0.72, 0.46), 0.00],
+	"arid": [Color(0.74, 0.61, 0.38), 0.62],
+	"snow": [Color(0.86, 0.90, 0.95), 0.72],
+	"volcanic": [Color(0.30, 0.23, 0.21), 0.66],
+	"swamp": [Color(0.26, 0.34, 0.22), 0.55],
+}
+
+
+## 生态换色参数：[基色, 混合量 0~1]
+static func biome_tint(id: String) -> Array:
+	var raw: Variant = BIOME_TINT.get(id, BIOME_TINT["temperate"])
+	if raw is Array and (raw as Array).size() >= 2:
+		return [(raw as Array)[0] as Color, float((raw as Array)[1])]
+	return [Color(0.55, 0.72, 0.46), 0.0]
+
 # ---------------------------------------------------------------------------
 # 基础信息
 # ---------------------------------------------------------------------------

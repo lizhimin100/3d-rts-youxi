@@ -117,12 +117,25 @@ func _shot_to(path: String) -> void:
 	if DisplayServer.get_name() != "headless":
 		DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_ALWAYS_ON_TOP, true)
 		DisplayServer.window_move_to_foreground()
+	# 切到「地图编辑器」主屏再截 —— 否则截到的是打开着的脚本编辑器（切屏要留几帧才生效）
+	get_editor_interface().set_main_screen_editor(_get_plugin_name())
+	for _i in range(5):
+		await get_tree().process_frame
 	_open_dock()
 	if "--map-editor-shot-demo" in OS.get_cmdline_user_args():
 		_session.new_map(160, 2, 20261024)
 		await get_tree().process_frame
 		if _session.dock != null:
 			_session.dock.show_tab("地形")
+	# QA：--map-editor-shot-map=<tres> 直接开一张真实地图
+	# （用来验收"主场景地图放进编辑器能不能看见泥路"）
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--map-editor-shot-map="):
+			var mp: String = a.get_slice("=", 1)
+			var ok_open: bool = _session.open_path(mp)
+			print("[地图编辑器] QA 打开 %s → %s" % [mp, "成功" if ok_open else "失败"])
+			await get_tree().process_frame
+			await get_tree().process_frame
 	# QA：--map-editor-shot-tab=对象 / 装饰 / 历史 ...
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--map-editor-shot-tab=") and _session.dock != null:
@@ -181,7 +194,6 @@ func _shot_to(path: String) -> void:
 	get_editor_interface().set_main_screen_editor(_get_plugin_name())
 	for _i in range(10):
 		await get_tree().process_frame
-	# 相机 QA 一律放在最后：上面的 reset_camera 会把镜头拉回原位
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--map-editor-shot-focus-player=") and _session.def != null:
 			var pi: int = int(a.get_slice("=", 1)) - 1
@@ -191,6 +203,8 @@ func _shot_to(path: String) -> void:
 					_session.def.height_at(pp.start_pos.x, pp.start_pos.y), pp.start_pos.y))
 	_open_dock()
 	await get_tree().process_frame
+	# 编辑器恢复上次布局时会晚一拍把主屏切回脚本编辑器，所以**截图前再切一次**
+	get_editor_interface().set_main_screen_editor(_get_plugin_name())
 	for _i in range(30):
 		await get_tree().process_frame
 	var vp: Viewport = get_viewport()

@@ -263,6 +263,7 @@ static func to_map_data(m: MapDef) -> MapGenerator.MapData:
 	d.mat_cells = m.mat_cells
 	d.mat_nodes = m.mat_nodes.duplicate()
 	d.mat_tile = m.mat_tile
+	d.biome = m.biome
 	d.far_ridges = m.far_ridges
 	d.base_pad = m.base_pad
 	# 出生点（槽位顺序）：关卡靠它决定每个阵营的基地位置
@@ -716,9 +717,10 @@ static func new_map(p_size: int, player_count: int, p_seed: int, blank: bool = f
 	m.height_resolution = MapDef.DEFAULT_HEIGHT_RES
 	m.ensure_arrays()
 	m.water = {"enabled": false, "spots": []}
-	# **全图铺「生态底色」**：从这一步起，地表就是随机色块拼的，而不是一块纯色。
-	# 用独立值 SPLAT_BIOME（不是 SPLAT_GRASS），老地图/手刷行为完全不受影响。
-	m.splatmap.fill(MapDef.SPLAT_BIOME)
+	# ★ 不再全图铺「生态底色」覆盖层。
+	#   地表观感现在由**地块材质**（8m 草/泥 + 图集硬边）和生态换色（biome_color/mix）负责，
+	#   和主场景地图、和游戏内是同一套。全图铺覆盖层会把下面的泥路整片盖住，
+	#   于是"新建的图看着全是草地、没有泥路"。老地图里已有的 SPLAT_BIOME 数据仍然正常渲染。
 
 	if flat:
 		m.heightmap.fill(0.0)
@@ -793,6 +795,9 @@ static func new_map(p_size: int, player_count: int, p_seed: int, blank: bool = f
 		_flatten_area(m, mp, 7.0, 5.0)
 		m.objects.append(MapObject.make(&"goldmine", MapObject.Category.RESOURCE,
 			Vector3(mp.x, m.height_at(mp.x, mp.y), mp.y), 0.0, 1.0, -1))
+
+	# --- 地块：营地/矿点/连接营地的土路写进 8m 格点表（和主场景地图同一个数据结构）---
+	_paint_mat_tiles(m)
 
 	# --- 区域：每个玩家的出生区（带归属颜色） + 进攻区 ---
 	for i in range(m.players.size()):
@@ -872,6 +877,68 @@ static func _spawn_teams(n_players: int) -> Array[int]:
 		_:
 			out = [0, 1]
 	return out
+
+
+## 地块格点表：营地 / 金矿 / 连接营地的土路 → 0（草）/255（泥）。
+##
+## **和主场景地图同一个数据结构**（MapDef.mat_nodes，1 texel = 1 格点 = 8m），
+## 所以编辑器里刷出来的颜色、游戏里跑出来的颜色、主场景地图的颜色是同一套材质算出来的。
+## 阈值 0.5 就是硬边，过渡形状交给图集的 16 个过渡格 —— 和魔兽 3 一样，
+## 这里不做抗锯齿（做了就是"糊成一团"）。
+static func _paint_mat_tiles(m: MapDef) -> void:
+	if m == null:
+		return
+	var cells: int = maxi(4, int(round(float(m.size) / 8.0)))
+	m.mat_cells = cells
+	m.mat_tile = float(m.size) / float(cells)
+	var n: int = cells + 1
+	m.mat_nodes.resize(n * n)
+	m.mat_nodes.fill(0)
+	var half: float = m.half_size()
+	var step: float = float(m.size) / float(cells)
+	# 营地按**方位角**排环序，路才是一圈圈连着的，不会交叉成蜘蛛网
+	var bases: Array[Vector2] = []
+	for s in m.players:
+		if s != null:
+			bases.append(s.start_pos)
+	if bases.size() >= 3:
+		bases.sort_custom(func(a: Vector2, b: Vector2) -> bool:
+			return atan2(a.y, a.x) < atan2(b.y, b.x))
+	var roads: Array = []
+	if bases.size() >= 2:
+		for i in range(bases.size()):
+			roads.append([bases[i], bases[(i + 1) % bases.size()]])
+	var mines: Array[Vector2] = []
+	for o in m.objects:
+		if o != null and int(o.category) == MapObject.Category.RESOURCE:
+			mines.append(Vector2(o.position.x, o.position.z))
+	for j in range(n):
+		for i in range(n):
+			var p := Vector2(-half + float(i) * step, -half + float(j) * step)
+			var dirt: float = 0.0
+			for b in bases:
+				dirt = maxf(dirt, 1.0 - _sstep(9.0, 16.0, p.distance_to(b)))
+			for mp in mines:
+				dirt = maxf(dirt, 1.0 - _sstep(3.0, 7.0, p.distance_to(mp)))
+			for seg in roads:
+				dirt = maxf(dirt, 1.0 - _sstep(3.4, 5.8, _seg_dist(p, seg[0], seg[1])))
+			m.mat_nodes[j * n + i] = 255 if dirt > 0.5 else 0
+
+
+## 平滑阶梯（和生成器同一口径：edge0 之外 0、edge1 之内 1）
+static func _sstep(edge0: float, edge1: float, x: float) -> float:
+	var t: float = clampf((x - edge0) / maxf(edge1 - edge0, 0.0001), 0.0, 1.0)
+	return t * t * (3.0 - 2.0 * t)
+
+
+## 点到线段的距离（土路宽度靠它定）
+static func _seg_dist(p: Vector2, a: Vector2, b: Vector2) -> float:
+	var ab: Vector2 = b - a
+	var l2: float = ab.length_squared()
+	if l2 < 0.0001:
+		return p.distance_to(a)
+	var t: float = clampf((p - a).dot(ab) / l2, 0.0, 1.0)
+	return p.distance_to(a + ab * t)
 
 
 ## 生成后自净：把被同伴围死、从玩家 0 走不到的树去掉。

@@ -41,6 +41,8 @@ const POND_RADIUS: float = 7.0            ## 峡谷水潭半径
 class MapData:
 	var size: float = 200.0
 	var resolution: int = 128
+	## 生态 id：决定地形材质的 biome 换色（编辑器/游戏共用同一份，别各画一套）
+	var biome: String = "temperate"
 	## (resolution+1)^2 的高度场
 	var heights: PackedFloat32Array = PackedFloat32Array()
 	## size×size 的可走性（1=可走），索引 z * size + x
