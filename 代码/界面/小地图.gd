@@ -25,13 +25,23 @@ const MASK_COLOR := Color(0.035, 0.041, 0.052, 0.96)
 ## 圆形裁剪用的 canvas_item 着色器。
 ## 为什么不用"画四个角盖住"：底盘和遮罩同色，盖了等于没盖，仍旧是一块方板；
 ## 只有 discard 才是真的圆 —— 圆外透明，直接透出战场。
+##
+## ★ **判圆用 VERTEX（控件本地像素坐标），不能用 UV**。
+##   UV 的含义取决于"画的是什么"：`draw_rect` / `draw_line` / `draw_circle` 的 UV 是 0，
+##   `draw_texture_rect` 的 UV 是**贴图坐标**（0~1 铺在目标矩形上，不是控件坐标）。
+##   用 UV 判圆的结果是：
+##     · 纯色矩形/线（底盘、土路、网格、金矿方块）全部 UV=0 → 一律被 discard（画了但看不见）；
+##     · 地表贴图和迷雾贴图铺在 `_map_rect()`（四周缩进 7px）上，UV 0~1 只覆盖
+##       size-14 的宽度，于是"裁出来的圆"半径 ≈ 105px，比真正该填满的 112px 小一圈 ——
+##       **圆盘边缘露出一圈没被迷雾覆盖的地图**（用户："迷雾没有把地图全覆盖"）。
+##   换成 VERTEX 之后，所有绘制（矩形/线/多边形/贴图）的判圆口径完全一致。
 const CIRCLE_SHADER := """
 shader_type canvas_item;
 uniform vec2 size_px = vec2(240.0, 240.0);
 uniform vec2 center_px = vec2(120.0, 120.0);
 uniform float radius_px = 116.0;
 void fragment() {
-	vec2 p = UV * size_px - center_px;
+	vec2 p = VERTEX - center_px;
 	if (length(p) > radius_px) {
 		discard;
 	}
@@ -309,7 +319,9 @@ func _draw() -> void:
 	# --- 战争迷雾遮罩（地形 + 资源都吃这层压黑/压暗，雾中敌人由下面的单位循环跳过）---
 	if _fog_node == null or not is_instance_valid(_fog_node):
 		_fog_node = get_tree().get_first_node_in_group("fog_system")
-	if _fog_node != null:
+	# ★ 迷雾**关掉时不能画这层贴图**：贴图里未探索格 alpha=1，照画就是"整张小地图全黑"。
+	#   `--no-fog` / 设置菜单关掉迷雾之后，小地图必须能看全图（这就是"关雾却全黑"的根因）。
+	if _fog_on():
 		var ft: Variant = _fog_node.get("fog_texture")
 		if ft != null:
 			draw_texture_rect(ft, mr, false)
@@ -344,7 +356,7 @@ func _draw() -> void:
 		# 迷雾口径（和 3D 侧一致）：
 		#   自己 / 盟友永远画；敌方**单位**只在当前可见时画；
 		#   敌方**建筑**只要"探索过"就留一个点 —— 侦察过的房子不该凭空消失。
-		if _fog_node != null and fac != null and pl != null and not pl.is_ally_of(fac):
+		if _fog_on() and fac != null and pl != null and not pl.is_ally_of(fac):
 			if n is RtsBuilding:
 				if not _fog_explored(n.global_position):
 					continue
@@ -676,9 +688,18 @@ func _dot_rank(f: RtsFaction) -> int:
 	return 0
 
 
-## 迷雾可见（没有迷雾节点时一律可见）
-func _fog_visible(p: Vector3) -> bool:
+## 迷雾是否**真的在生效**（节点存在 ≠ 开着：--no-fog / 设置菜单都能关）
+func _fog_on() -> bool:
 	if _fog_node == null or not is_instance_valid(_fog_node):
+		return false
+	if _fog_node.has_method("is_enabled"):
+		return bool(_fog_node.call("is_enabled"))
+	return true
+
+
+## 迷雾可见（没有迷雾节点 / 迷雾关掉时一律可见）
+func _fog_visible(p: Vector3) -> bool:
+	if not _fog_on():
 		return true
 	if _fog_node.has_method("is_world_visible_pos"):
 		return bool(_fog_node.call("is_world_visible_pos", p))
@@ -687,7 +708,7 @@ func _fog_visible(p: Vector3) -> bool:
 
 ## 迷雾已探索（曾经看见过）
 func _fog_explored(p: Vector3) -> bool:
-	if _fog_node == null or not is_instance_valid(_fog_node):
+	if not _fog_on():
 		return true
 	if _fog_node.has_method("is_world_explored_pos"):
 		return bool(_fog_node.call("is_world_explored_pos", p))
