@@ -1,24 +1,25 @@
 class_name RtsDossierPanel
 extends PanelContainer
-## **选中卡（魔兽式信息段）** —— 底栏左段，和右边的命令卡**等高同底**。
+## **选中卡（魔兽式信息段）** —— 底栏最左段，只剩"这张脸 + 这条命"。
 ##
-## 2026-10-31 二次重做（按玩家给的参考图逐条改）：
-##   ┌──────────┬─────────────────────────┐
-##   │          │ 步兵   ×4  ●             │
-##   │  3D头像  │ 采集木料 · 可建造/修理    │
-##   │  ▓▓▓血条 │                         │
-##   │  ▓▓法力  │                         │
-##   └──────────┴─────────────────────────┘
+## 2026-10-31 三次重做（玩家口径："不仅删玩家文字，队色圆点、步兵这些也要删掉，
+## 把血条蓝条和头像放大、更显眼"）：
+##   ┌──────────────┐
+##   │              │
+##   │   3D 头像    │   104²
+##   │              │
+##   ├──────────────┤
+##   │ ▓▓▓ 740/740  │   22 高，带数字与分段刻线
+##   │ ▓▓▓▓ 法力    │   10 高（没法力整条收起）
+##   └──────────────┘
 ##
-## 参考图上四条批注，逐条落地：
-##   ① "这个玩家文本去掉"      → 阵营名文字删掉，只留一个 9px 队色圆点（不占字宽）；
-##   ② "这个放到中间面板"      → **三项数值整行搬去底栏中段的「队伍网格」顶部**，
-##                              见 选择网格.gd 的 _stats_strip()；
-##   ③ "多个单位就隐藏这个信息" → 中间面板只在**单选**时显示那行数值；
-##   ④ "这个血条放在头像下面"   → 血条/法力条改为头像正下方的同宽细条（不再是右边一长条跑道）。
+## 于是这块的职责只剩一句话：**这是谁、它还活着吗**。
+##   · 名字 / 队色圆点 / 数量角标全部不在这里 —— 名字去中段标题行（单选时），
+##     数量去中段标题行（多选时显示"队伍 N"），队色看头像本身；
+##   · 数值（攻/防/速）在中段放大了显示，这里不再重复；
+##   · 条宽 = 头像宽，一眼就是"这个人的血量"，也不会在宽屏下拉成跑道。
 ##
-## 于是这块的职责收窄成一句话：**这是谁、有几只、现在在干什么**。
-## 数值对比留在中段（那里和队伍清单挨着，改选谁数值就跟着换）。
+## 高度由 HUD 统一灌入（= 底栏内高），面板自己只报 content_height()。
 
 const Spec := preload("res://代码/界面/界面规格.gd")
 
@@ -27,24 +28,17 @@ const Spec := preload("res://代码/界面/界面规格.gd")
 # ===========================================================================
 
 const PAD := 8.0
-## 头像边长（魔兽式：够大，一眼认脸）
-const PORTRAIT_PX := 88.0
-## 头像下面那条血条 / 法力条的高度
-const BAR_HP := 13.0
-const BAR_AB := 6.0
-## 同队小头像边长 / 最多几个
-const SQUAD_PX := 40.0
-const SQUAD_MAX := 12
-## 中段「队伍网格」已经承担了队伍清单，这里的小头像列常关。
-const SHOW_SQUAD := false
+## 头像边长：2026-10-31 从 88 放大到 104（底栏被撑高到 ~166，有地方放）
+const PORTRAIT_PX := 104.0
+## 血条 / 法力条高度（血条带数字，字号 FS_BODY-2）
+const BAR_HP := 22.0
+const BAR_AB := 10.0
 ## 头像渲染探测延迟（秒）
 const PROBE_DELAY := 0.45
-## 信息列的宽度：**固定档**，不跟着面板拉伸。
-const INFO_W := 300.0
 
 
 # ===========================================================================
-# 内嵌控件：血条 / 技能条
+# 内嵌控件：血条 / 法力条
 # ===========================================================================
 #
 # 魔兽的血条是"深槽 + 硬边填充 + 分段刻线"，不是渐变胶囊。
@@ -54,11 +48,11 @@ const INFO_W := 300.0
 class MiniBar extends Control:
 	var ratio: float = 0.0
 	var fill: Color = Color(0.42, 0.86, 0.48)
-	## 分段数（0 = 不画刻线；血条 10 / 技能条 0）
+	## 分段数（0 = 不画刻线；血条 10 / 法力条 0）
 	var ticks: int = 10
 	## 条内文字（血条显示 "740 / 740"）
 	var caption: String = ""
-	var _font_size: int = 12
+	var _font_size: int = 14
 
 	func _ready() -> void:
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -113,29 +107,16 @@ class MiniBar extends Control:
 var _accent: Color = Color(0.85, 0.71, 0.36)
 var _mono: Font = null
 var _built: bool = false
-var _compact: bool = false
-var _panel_w: float = 560.0
-var _h: float = 116.0
+var _panel_w: float = 136.0
+var _h: float = 158.0
 
-## 三项数值已经搬到中段「队伍网格」，这里不再持有（见 选择网格.gd）
 ## 头像
 var _portrait: RtsPortraitStage = null
 var _fallback: Panel = null
 var _fallback_icon: TextureRect = null
-## 血条 / 技能条
+## 血条 / 法力条
 var _hp: MiniBar = null
 var _ab: MiniBar = null
-## 名字 / 数量 / 队色点 / 状态行
-var _name: Label = null
-var _count_chip: PanelContainer = null
-var _count: Label = null
-var _fac_dot: Panel = null
-var _sub: Label = null
-## 信息列（限宽用）
-var _info: VBoxContainer = null
-## 同队小头像
-var _squad: GridContainer = null
-var _squad_order: Array[int] = []
 
 ## 空态
 var _empty_mode: bool = false
@@ -145,7 +126,7 @@ var _probe_t: float = -1.0
 var _probe_on: bool = false
 ## 镀铬件签名
 var _chrome_sig: String = ""
-var _root: HBoxContainer = null
+var _root: VBoxContainer = null
 
 
 # ===========================================================================
@@ -168,52 +149,32 @@ func ensure_built() -> void:
 	add_theme_stylebox_override("panel", Spec.segment_style(
 			Color(0.088, 0.096, 0.114, 0.92), 8, 8.0, 0.14))
 
-	_root = HBoxContainer.new()
-	_root.name = "横排"
-	_root.add_theme_constant_override("separation", 10)
+	_root = VBoxContainer.new()
+	_root.name = "头像列"
+	_root.add_theme_constant_override("separation", 3)
 	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_root)
 
 	_build_portrait(_root)
-	_build_info(_root)
-	# 弹性留白：把"同队小头像"推到段的最右侧（紧挨命令卡）。
-	# 这样底栏拉宽时，宽出来的部分是**头像列在往右撑**，而不是中间空一块。
-	var spacer := Control.new()
-	spacer.name = "留白"
-	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_root.add_child(spacer)
-	_build_squad(_root)
 	_show_empty()
 
 
-## 左：头像（压边金框）+ **头像正下方的血条 / 法力条** + 静态兜底
-##
-## 参考图批注"这个血条放在头像下面"：以前血条在右边信息列里铺满，底栏一拉宽
-## 就变成一条 400px 的跑道，和头像之间隔着一大块空白。现在条宽 = 头像宽，
-## 一眼就是"这个人的血量"，也顺手把信息列的高度让出来给状态行。
+## 头像（压边金框）+ **正下方的血条 / 法力条**
 func _build_portrait(parent: Node) -> void:
-	var col := VBoxContainer.new()
-	col.name = "头像列"
-	col.add_theme_constant_override("separation", 3)
-	col.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	col.custom_minimum_size = Vector2(PORTRAIT_PX, 0.0)
-	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	parent.add_child(col)
-
 	var stack := Control.new()
 	stack.name = "头像位"
 	stack.custom_minimum_size = Vector2(PORTRAIT_PX, PORTRAIT_PX)
+	stack.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	col.add_child(stack)
+	parent.add_child(stack)
 
-	# 外框：深底 + 1px 亮边 + 下沿阴影（bevel），头像"镶"在里面
+	# 外框：深底 + 2px 亮边 + 下沿阴影（bevel），头像"镶"在里面
 	var frame := Panel.new()
 	frame.name = "头像框"
 	frame.set_anchors_preset(Control.PRESET_FULL_RECT)
 	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var fsb := Spec.bevel_style(Color(0.045, 0.050, 0.062, 0.98), Color(0, 0, 0, 0), 7, 0.0, 0.0, 0.26)
-	fsb.border_color = Color(_accent.r, _accent.g, _accent.b, 0.55)
+	fsb.border_color = Color(_accent.r, _accent.g, _accent.b, 0.62)
 	fsb.set_border_width_all(2)
 	frame.add_theme_stylebox_override("panel", fsb)
 	stack.add_child(frame)
@@ -247,144 +208,54 @@ func _build_portrait(parent: Node) -> void:
 	_fallback_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_fallback_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_fallback_icon.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_fallback_icon.offset_left = 18.0
-	_fallback_icon.offset_top = 18.0
-	_fallback_icon.offset_right = -18.0
-	_fallback_icon.offset_bottom = -18.0
+	_fallback_icon.offset_left = 14.0
+	_fallback_icon.offset_top = 14.0
+	_fallback_icon.offset_right = -14.0
+	_fallback_icon.offset_bottom = -14.0
 	_fallback_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_fallback.add_child(_fallback_icon)
 
-	# --- 头像正下方：血条（带数字）+ 法力条 ---
+	# 血条（带头像同宽 + 数字 + 刻线）与法力条
 	_hp = MiniBar.new()
 	_hp.name = "血条"
 	_hp.ticks = 10
-	_hp._font_size = Spec.FS_CAPTION - 2
+	_hp._font_size = Spec.FS_BODY - 2
 	_hp.custom_minimum_size = Vector2(PORTRAIT_PX, BAR_HP)
-	col.add_child(_hp)
+	_hp.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	parent.add_child(_hp)
 
 	_ab = MiniBar.new()
 	_ab.name = "技能条"
 	_ab.ticks = 0
+	_ab._font_size = Spec.FS_CAPTION - 2
 	_ab.custom_minimum_size = Vector2(PORTRAIT_PX, BAR_AB)
+	_ab.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_ab.fill = Color(0.36, 0.66, 0.98)
-	col.add_child(_ab)
-
-
-## 中：名字行（名字 + ×N + 队色圆点）→ 状态行
-func _build_info(parent: Node) -> void:
-	var col := VBoxContainer.new()
-	col.name = "信息列"
-	col.add_theme_constant_override("separation", 4)
-	col.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	col.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	col.custom_minimum_size = Vector2(INFO_W, 0.0)
-	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	parent.add_child(col)
-	_info = col
-
-	# --- 行1：名字 + 数量 + 队色点 ---
-	var title := HBoxContainer.new()
-	title.add_theme_constant_override("separation", 7)
-	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	col.add_child(title)
-
-	_name = Spec.label("未选中", Spec.FS_TITLE, Spec.text_main())
-	_name.name = "名称"
-	_name.clip_text = true
-	_name.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	# clip_text 会把最小宽压成 0，HBox 里会被后面的 grow 挤没；给名字留 88px
-	_name.custom_minimum_size = Vector2(88.0, 0.0)
-	title.add_child(_name)
-
-	# 数量角标紧贴名字（"步兵 ×4" 是一个整体词）
-	_count_chip = PanelContainer.new()
-	_count_chip.name = "数量角标"
-	_count_chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_count_chip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	_count_chip.visible = false
-	_count_chip.add_theme_stylebox_override("panel",
-			Spec.inset_style(Color(_accent.r, _accent.g, _accent.b, 0.18), 9,
-					Color(_accent.r, _accent.g, _accent.b, 0.62), 8.0, 0.0))
-	title.add_child(_count_chip)
-
-	_count = Spec.label("×1", Spec.FS_CAPTION,
-			Color(minf(_accent.r + 0.12, 1.0), minf(_accent.g + 0.12, 1.0), minf(_accent.b + 0.12, 1.0)))
-	_count.add_theme_font_override("font", _mono)
-	_count_chip.add_child(_count)
-
-	# ★ 参考图批注①"这个玩家文本去掉"：阵营**名称文字**删了，只留这颗 9px 队色圆点。
-	#   点比字省 40px 宽，还不占一行；需要知道"这是哪一家"时看颜色就够了
-	#   （颜色与队伍面板、小地图、命令卡是同一套 Cfg.display_color_for_slot）。
-	_fac_dot = Panel.new()
-	_fac_dot.custom_minimum_size = Vector2(9.0, 9.0)
-	_fac_dot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	_fac_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_fac_dot.tooltip_text = "队伍色"
-	title.add_child(_fac_dot)
-
-	var grow := Control.new()
-	grow.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	grow.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	title.add_child(grow)
-
-	# --- 行2：状态行（在干什么 / 建造进度 / 兵种标签）---
-	_sub = Spec.label("", Spec.FS_CAPTION, Spec.text_dim())
-	_sub.clip_text = true
-	_sub.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	_sub.custom_minimum_size = Vector2(0.0, 0.0)
-	_sub.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	col.add_child(_sub)
-
-
-## 右：同队单位小头像（多选时铺开；单选时整块收起）
-func _build_squad(parent: Node) -> void:
-	_squad = GridContainer.new()
-	_squad.name = "同队"
-	_squad.columns = 6
-	_squad.add_theme_constant_override("h_separation", 3)
-	_squad.add_theme_constant_override("v_separation", 3)
-	_squad.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	_squad.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_squad.visible = false
-	parent.add_child(_squad)
+	parent.add_child(_ab)
 
 
 # ===========================================================================
 # 对外
 # ===========================================================================
 
-func set_metrics(w: float, h_single: float, _h_multi: float, compact: bool) -> void:
+func set_metrics(w: float, h_single: float, _h_multi: float, _compact: bool) -> void:
 	ensure_built()
 	_panel_w = w
 	_h = h_single
-	_compact = compact
 	# 不 reset_size：位置和高度由 HUD 统一摆（reset_size 会把 HUD 的 offset 覆盖掉）
 	custom_minimum_size = Vector2(_panel_w, _h)
-	_apply_width_policy()
 
 
 ## 内容需要的高度（HUD 用它决定底栏该多高）。
 ## 注意**不能**用 custom_minimum_size：那是 HUD 自己灌进来的，会自我循环越涨越高。
 func content_height() -> float:
 	ensure_built()
-	var need: float = _root.get_combined_minimum_size().y + 8.0 * 2.0 + 8.0
-	return clampf(need, 104.0, 150.0)
+	var need: float = _root.get_combined_minimum_size().y + PAD * 2.0 + 8.0
+	return clampf(need, 120.0, 190.0)
 
 
 func desired_height() -> float:
 	return maxf(content_height(), _h)
-
-
-## 窄面板（1024 档）藏掉小头像列，把宽度全留给血条
-func _apply_width_policy() -> void:
-	if _squad == null or _info == null:
-		return
-	var narrow: bool = _panel_w < 700.0
-	_squad.set_meta("blocked", narrow)
-	_squad.visible = _squad.visible and not narrow
-	# 信息列宽：宽屏吃 INFO_W，窄屏按面板 55% 收（别再挤出面板）
-	var w: float = INFO_W if not narrow else clampf(_panel_w * 0.52, 150.0, INFO_W)
-	_info.custom_minimum_size = Vector2(w, 0.0)
 
 
 func refresh(units: Array) -> void:
@@ -406,24 +277,19 @@ func refresh(units: Array) -> void:
 	var def: UnitDef = primary.get("def") as UnitDef
 	var n: int = arr.size()
 
-	# --- 镀铬件（名称/阵营/数量）：语义没变就一个字节都不写 ---
-	var sig := "%d|%s|%d" % [primary.get_instance_id(),
-			String(def.id) if def != null else "?", n]
+	# --- 头像：语义没变就不动（避免每 0.12s 换贴图抖一下）---
+	var sig := "%d|%s" % [primary.get_instance_id(), String(def.id) if def != null else "?"]
 	if sig != _chrome_sig:
 		_chrome_sig = sig
-		_name.text = def.display_name if def != null else "未知目标"
-		_count_chip.visible = n > 1
-		_count.text = "×%d" % n
-		_fill_faction(primary)
 		# ★ 建筑头像用**美术资产里的建筑图标**（Blender 从 <建筑>.glb 渲的 256² PNG），
-		#   不再开一个 SubViewport 实时渲整栋楼：图标一眼能认，还省一次离屏渲染。
+		#   不在界面里开 SubViewport 实时渲整栋楼：图标一眼能认，还省一次离屏渲染。
 		var is_bld: bool = def != null and def.is_building()
 		var btex: Texture2D = Spec.building_icon(def.id) if is_bld else null
 		if is_bld:
 			if btex != null:
 				_fallback_icon.texture = btex
 				_fallback_icon.modulate = Color(1, 1, 1, 1)
-				_set_fallback_pad(6.0)
+				_set_fallback_pad(4.0)
 			else:
 				_fallback_icon.texture = Spec.icon_tex(_icon_for(def))
 				_fallback_icon.modulate = _team_color(primary, def)
@@ -438,18 +304,14 @@ func refresh(units: Array) -> void:
 			_show_portrait(true)
 			_probe_on = true
 			_probe_t = 0.0
-		_sync_squad(arr)
 
-	# ★ 参考图批注②：三项数值（⚔/🛡/👟）**不在这块显示**了 ——
-	#   搬到中段「队伍网格」顶部（选择网格.gd 的 _stats_strip），多选时那边自动隐藏。
 	var max_hp: float = def.max_hp if def != null and def.max_hp > 0.0 else 1.0
 	var hp: float = 100.0
 	if primary.get("hp") != null:
 		hp = float(primary.get("hp"))
 	var ratio: float = clampf(hp / max_hp, 0.0, 1.0)
 	_hp.feed(ratio, _hp_color(ratio), "%d / %d" % [int(round(hp)), int(round(max_hp))])
-	# 蓝条 = **法力**（参考图上的第二条）。没有法力上限的单位**整条收起** ——
-	# 这正是"没蓝条就不显示"。有法力的单位再在上面叠一层技能冷却的暗条。
+	# 蓝条 = **法力**。没有法力上限的单位**整条收起**（"没蓝条就不显示"）。
 	var has_m: bool = bool(primary.call("has_mana")) if primary.has_method("has_mana") else false
 	if _ab.visible != has_m:
 		_ab.visible = has_m
@@ -457,137 +319,7 @@ func refresh(units: Array) -> void:
 		var mmax: float = float(primary.call("max_mana"))
 		var mcur: float = float(primary.get("mana"))
 		var mr: float = clampf(mcur / maxf(mmax, 1.0), 0.0, 1.0)
-		_ab.feed(mr, Color(0.36, 0.66, 0.98), "%d / %d 法力" % [int(round(mcur)), int(round(mmax))])
-
-	# 状态行：**"这是谁、在干什么"** —— 建造进度 / 采集 / 战斗 / 待命。
-	# 参考图要求的"数值搬到中间"，空出来的这一行正好用行为状态填上：
-	# 农民在砍树还是站着发呆，一眼就能看出来。
-	_set_text(_sub, _status_line(primary, def, n))
-
-
-## 状态行文案：把"它在干什么"翻译成一句人话。
-## 为什么要这一行：数值搬去中段后，信息列只剩一个名字会显得空；
-## 而"农民在砍树 / 兵在往哪走 / 这楼还在盖"本来就是选中时要回答的第一个问题。
-func _status_line(primary: Node3D, def: UnitDef, n: int) -> String:
-	if def == null:
-		return ""
-	if def.is_building():
-		var prog: Variant = primary.get("progress")
-		if prog != null and float(prog) < 0.999:
-			return "建造中 %d%%" % int(round(float(prog) * 100.0))
-		if primary.has_method("is_researching") and bool(primary.call("is_researching")):
-			return "研究中 %d%%" % int(round(clampf(float(primary.call("research_progress")), 0.0, 1.0) * 100.0))
-		var q: Variant = primary.get("train_queue")
-		if q is Array and not (q as Array).is_empty():
-			return "训练中 · 队列 %d" % (q as Array).size()
-		if def.can_attack():
-			return "警戒中 · 自动射击"
-		return "待命"
-	if n > 1:
-		return "已选 %d 个 · 状态见中段清单" % n
-	if def.is_worker():
-		return "农民 · 可采集 / 建造 / 修理"
-	var st: Variant = primary.get("state")
-	if st == null:
-		return ""
-	match int(st):
-		RtsConst.State.MOVE:
-			return "行军中"
-		RtsConst.State.ATTACK:
-			return "交战中"
-		RtsConst.State.GATHER:
-			return "采集中"
-		RtsConst.State.BUILD:
-			return "施工中"
-		RtsConst.State.CAST:
-			return "施法中"
-		RtsConst.State.RETURN:
-			return "运送资源中"
-		RtsConst.State.IDLE:
-			# 待机时再看一眼警戒姿态：驻守/观察是玩家自己下的令，写出来更清楚
-			var gm: Variant = primary.get("guard_mode")
-			if gm != null:
-				match int(gm):
-					1:
-						return "驻守待命"
-					2:
-						return "原地观察"
-					3:
-						return "路径巡逻"
-			return "待命"
-	return ""
-
-
-## 多选小头像：按选中顺序铺，最多 SQUAD_MAX 个；同兵种共用同一张图标
-func _sync_squad(arr: Array) -> void:
-	if _squad == null:
-		return
-	if not SHOW_SQUAD:
-		_squad.visible = false
-		return
-	var ids: Array[int] = []
-	for i in mini(arr.size(), SQUAD_MAX):
-		ids.append(arr[i].get_instance_id())
-	if ids == _squad_order:
-		return
-	_squad_order = ids
-	for c in _squad.get_children():
-		_squad.remove_child(c)
-		c.queue_free()
-	var blocked: bool = bool(_squad.get_meta("blocked", false))
-	_squad.visible = arr.size() > 1 and not blocked
-	if not _squad.visible:
-		return
-	for i in mini(arr.size(), SQUAD_MAX):
-		var u := arr[i] as Node3D
-		if u == null:
-			continue
-		var d: UnitDef = u.get("def") as UnitDef
-		var team: Color = _team_color(u, d)
-		var cell := Panel.new()
-		cell.custom_minimum_size = Vector2(SQUAD_PX, SQUAD_PX)
-		cell.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		var sb := Spec.bevel_style(Color(0.058, 0.066, 0.082, 0.96), Color(0, 0, 0, 0), 4,
-				0.0, 0.0, 0.07)
-		sb.border_color = Color(team.r, team.g, team.b, 0.32)
-		cell.add_theme_stylebox_override("panel", sb)
-		_squad.add_child(cell)
-
-		# 底边一条**血条**（不是纯色条）：多选时 12 个小格里谁残血一眼看得出
-		var bar_bg := ColorRect.new()
-		bar_bg.color = Color(0.02, 0.024, 0.03, 0.92)
-		bar_bg.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-		bar_bg.offset_top = -5.0
-		bar_bg.offset_left = 4.0
-		bar_bg.offset_right = -4.0
-		bar_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		cell.add_child(bar_bg)
-
-		var hp: float = 1.0
-		var hp_max: float = d.max_hp if d != null else 1.0
-		if u.get("hp") != null:
-			hp = clampf(float(u.get("hp")) / maxf(hp_max, 0.001), 0.0, 1.0)
-		var bar := ColorRect.new()
-		bar.color = _hp_color(hp)
-		bar.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-		bar.offset_top = -4.0
-		bar.offset_left = 4.0
-		bar.offset_right = -(4.0 + (1.0 - hp) * (SQUAD_PX - 8.0))
-		bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		cell.add_child(bar)
-
-		var icon := TextureRect.new()
-		icon.texture = Spec.icon_tex(_icon_for(d))
-		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		icon.set_anchors_preset(Control.PRESET_FULL_RECT)
-		icon.offset_left = 7.0
-		icon.offset_top = 5.0
-		icon.offset_right = -7.0
-		icon.offset_bottom = -9.0
-		icon.modulate = team.lerp(Color(1.0, 0.99, 0.95), 0.62)
-		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		cell.add_child(icon)
+		_ab.feed(mr, Color(0.36, 0.66, 0.98), "%d / %d" % [int(round(mcur)), int(round(mmax))])
 
 
 func _show_empty() -> void:
@@ -597,31 +329,16 @@ func _show_empty() -> void:
 	_empty_mode = true
 	_chrome_sig = ""
 	_probe_on = false
-	if _squad != null:
-		_squad.visible = false
-		_squad_order.clear()
 	_show_portrait(false)
 	_fallback.visible = true
 	_fallback_icon.texture = Spec.icon_tex("flag")
-	_fallback_icon.modulate = Color(1, 1, 1, 1)
+	_fallback_icon.modulate = Color(1, 1, 1, 0.55)
 	_set_fallback_pad(18.0)
 	_refresh_empty()
 
 
 func _refresh_empty() -> void:
-	var pl: RtsFaction = null
-	var foe: RtsFaction = null
-	if Game != null:
-		pl = Game.player_faction
-		foe = Game.enemy_faction
-	_set_text(_name, "战场")
-	# 空态：这块不再显示三项数值（它们只属于"选中的那一个"），
-	# 改成一句"我方 / 敌方"的兵力对比放在状态行。
-	var mine: int = pl.units.size() if pl != null else 0
-	var theirs: int = foe.units.size() if foe != null else 0
-	var bld: int = pl.buildings.size() if pl != null else 0
-	_set_text(_sub, "我方 %d 兵 · %d 建筑　|　敌方 %d 兵" % [mine, bld, theirs])
-	_hp.feed(0.0, Color(0.42, 0.86, 0.48), "")
+	_hp.feed(0.0, Color(0.32, 0.42, 0.36), "")
 	_ab.feed(0.0, Color(0.36, 0.66, 0.98))
 
 
@@ -629,10 +346,6 @@ func _process(dt: float) -> void:
 	if not _built or not visible:
 		return
 	if _empty_mode:
-		_empty_tick += dt
-		if _empty_tick >= 1.0:
-			_empty_tick = 0.0
-			_refresh_empty()
 		return
 	if _probe_on:
 		_probe_t += dt
@@ -669,18 +382,6 @@ func _show_portrait(on: bool) -> void:
 # 取值
 # ===========================================================================
 
-func _ability_ratio(u: Node3D, def: UnitDef) -> float:
-	if def == null:
-		return 0.0
-	if def.abilities.is_empty():
-		return 1.0
-	var total: float = maxf(def.ability_cooldown, 0.1)
-	var cd: Variant = u.get("_ability_cd")
-	if cd == null:
-		return 0.0
-	return clampf(1.0 - float(cd) / total, 0.0, 1.0)
-
-
 func _hp_color(r: float) -> Color:
 	if r <= 0.30:
 		return Color(0.94, 0.34, 0.28)
@@ -696,19 +397,6 @@ func _team_color(target: Node3D, def: UnitDef) -> Color:
 	if def != null and def.is_harvestable():
 		return Spec.gold()
 	return Color(0.72, 0.76, 0.82)
-
-
-func _fill_faction(target: Node3D) -> void:
-	var fac: RtsFaction = target.get("faction") as RtsFaction
-	var col: Color = _team_color(target, target.get("def") as UnitDef)
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = col
-	sb.set_corner_radius_all(5)
-	sb.border_color = Color(0.0, 0.0, 0.0, 0.45)
-	sb.set_border_width_all(1)
-	_fac_dot.add_theme_stylebox_override("panel", sb)
-	_fac_dot.visible = true
-	_fac_dot.tooltip_text = fac.display_name if fac != null else "中立"
 
 
 ## 兵种 → 图标名（兜底盾牌，绝不退回文字）
@@ -731,14 +419,3 @@ func _icon_for(def: UnitDef) -> String:
 		"tree":
 			return "flag"
 	return "shield"
-
-
-func _fmt(v: float) -> String:
-	if absf(v - roundf(v)) < 0.05:
-		return "%d" % int(roundf(v))
-	return "%.1f" % v
-
-
-func _set_text(lb: Label, txt: String) -> void:
-	if lb != null and lb.text != txt:
-		lb.text = txt

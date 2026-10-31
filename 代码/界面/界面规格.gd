@@ -722,9 +722,36 @@ static func building_icon(id: StringName) -> Texture2D:
 	return tex
 
 
+## 单位图标（Blender 从单位 glb 渲出来的 256² 透明底 PNG，魔兽那种"一张脸"）。
+## 由 `工具/渲染单位图标.py` 生成：`美术/图标/单位/<id>.png`。
+##
+## 为什么要它：中段队伍清单以前用线描的刀/弓/法杖 SVG，远看全是"一个符号"，
+## 分不出农民和步兵；魔兽的队列格是**单位头像**，一眼认人。
+const UNIT_ICON_DIR := "res://美术/图标/单位/"
+
+
+## 单位图标：按单位 id（footman / archer / ...）取；没有返回 null，
+## 调用方自己退回 `icon_tex(线描图标)`（老资产/新兵种没渲图时不至于空白）。
+static func unit_icon(id: StringName) -> Texture2D:
+	var key := String(id)
+	if key.is_empty():
+		return null
+	var ck := "@单位/" + key
+	if _icon_cache.has(ck):
+		return _icon_cache[ck] as Texture2D
+	var path := UNIT_ICON_DIR + key + ".png"
+	var tex: Texture2D = null
+	if ResourceLoader.exists(path):
+		tex = load(path) as Texture2D
+	# 缺图不刷 warning：单位种类会随内容增加，没渲图时静默退回 SVG 就够了
+	_icon_cache[ck] = tex
+	return tex
+
+
 static func icon_tex(name: String) -> Texture2D:
 	if name.is_empty():
 		return null
+
 	if _icon_cache.has(name):
 		return _icon_cache[name] as Texture2D
 	var path := ICON_DIR + name + ".svg"

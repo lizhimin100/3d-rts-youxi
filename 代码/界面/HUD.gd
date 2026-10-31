@@ -346,13 +346,17 @@ const BAR_GAP := 10.0
 const BAND_PAD := 6.0
 
 
-## 底栏当前该有多高：取两块内容里更高的那个，夹在 [band_h, band_max_h]
+## 底栏当前该有多高：取三块内容里最高的那个，夹在 [band_h, band_max_h]
 func _band_h() -> float:
 	if _mets == null:
 		return 156.0
 	var want: float = _mets.band_h
 	if _sel_panel != null and is_instance_valid(_sel_panel) and _sel_panel.visible:
 		want = maxf(want, _sel_content_h())
+	# 建筑面板现在在中段（不再是左段的替身），它的内容高度也要算进来
+	if _building_panel != null and is_instance_valid(_building_panel) and _building_panel.visible:
+		if _building_panel.has_method("content_height"):
+			want = maxf(want, float(_building_panel.call("content_height")))
 	if _card_panel != null and _card_panel.visible:
 		want = maxf(want, _card_height())
 	if _sel_grid != null and _grid_panel != null and _grid_panel.visible:
@@ -442,48 +446,45 @@ func _apply_layout() -> void:
 	_card_h_applied = inner_h
 
 	# 底栏从 2026-10-31 起是**三段**（按玩家给的参考图）：
-	#   左 = 焦点头像 + 血条（头像正下方）+ 名字/状态
-	#   中 = 队伍网格（顶部一行是焦点数值，单选才显示；下面 24 个一页的队伍清单）
-	#   右 = 命令格（5 列 × 最多 4 行）
+	#   左 = 大头像 + 血条/法力条（头像正下方，104px 宽）
+	#   中 = 单选 → 大号数值；多选 → 队伍清单；**建筑 → 训练队列/属性**
+	#   右 = 命令格（5 列 × 最多 4 行，训练/研究/集结点都在这儿）
 	var left: float = m + BAND_PAD
 	var right: float = _mets.vw - m - BAND_PAD - cw - BAR_GAP
-	var dw_unit: float = clampf(_mets.vw * 0.215, 262.0, 346.0)
-	# ★ 选中**单个建筑**时不出中段的队伍清单：
-	#   那块清单里只有那栋楼一格，纯浪费宽度；而建筑面板要装
-	#   "训练队列 + 每格进度条 + 研究 + 集结点"，1080 设计宽下两栏挤不下
-	#   （右列被压成 0 就是玩家报的"训练队列看不见"）。
-	#   所以建筑选中 → 左段直接吃到命令卡左缘（魔兽也是这么排的），面板内部按两栏分。
+	# 左段只放一张 104px 头像 + 两条：148 足够（以前 262~346 是为了塞名字和数值）
+	var dw: float = clampf(148.0, 132.0, 176.0)
 	var wide: float = clampf(right - left, 340.0, 760.0)
 	var bld_on: bool = _building_panel != null and is_instance_valid(_building_panel) \
 			and _building_panel.visible
-	var dw: float = wide if bld_on else dw_unit
 	var gx0: float = left + dw + BAR_GAP
 	var gw: float = right - gx0
-	# 屏太窄（< 1100 设计像素）就把中段让给左边的面板：宁可少一块清单，
-	# 也不能把选中卡压到"名字被截成两个字"。
-	var grid_on: bool = (not bld_on) and gw >= 210.0
-	if not grid_on:
+	# 中段放不下（超窄屏）就把中段让给左卡：宁可少一块信息，也别把三段挤成一团
+	var mid_on: bool = gw >= 240.0
+	if not mid_on:
 		dw = wide
+		gw = 0.0
 	var w: float = dw
 	_sel_left = left
 	_sel_w = w
-	_sel_w_bld = w
+	_sel_w_bld = gw if gw > 1.0 else wide
+	# 中段：建筑选中 → 建筑面板（队列/属性）；否则 → 队伍网格
 	if _grid_panel != null:
-		var show_grid: bool = grid_on and _grid_should_show()
+		var show_grid: bool = (not bld_on) and mid_on and _grid_should_show()
 		_grid_panel.visible = show_grid and root.visible
 		if show_grid:
 			_sel_grid.call("set_metrics", gw - 12.0, inner_h - 12.0, _mets.compact)
 			_place(_grid_panel, 0.0, 1.0, 0.0, 1.0,
 					gx0, -(m + BAND_PAD + inner_h), gx0 + gw, -(m + BAND_PAD))
-	# **两块面板都摆到同一个位置**：谁可见谁占位。
-	# 只摆 _sel_panel 会出现"切到建筑面板时它是第一次显示、从没被摆过"，
-	# 结果面板停在默认尺寸，训练条和集结点叠成一坨。
-	# 宽度各按自己的档位给（建筑面板更宽），这样切面板不会把底栏挤变形。
-	for pnl in [_dossier, _building_panel]:
-		if pnl == null or not is_instance_valid(pnl):
-			continue
-		_place(pnl, 0.0, 1.0, 0.0, 1.0,
+	# 左段：选中卡（单位 / 建筑共用一个；建筑用 PNG 图标当头像）
+	if _dossier != null and is_instance_valid(_dossier):
+		_place(_dossier, 0.0, 1.0, 0.0, 1.0,
 				left, -(m + BAND_PAD + inner_h), left + w, -(m + BAND_PAD))
+	# 中段（建筑）：**和队伍网格抢同一个位置**，谁可见谁占位。
+	# 必须无条件摆一次（哪怕这次不可见），否则它第一次显示时还停在默认尺寸。
+	if _building_panel != null and is_instance_valid(_building_panel):
+		var bwidth: float = gw if mid_on else wide
+		_place(_building_panel, 0.0, 1.0, 0.0, 1.0,
+				gx0, -(m + BAND_PAD + inner_h), gx0 + bwidth, -(m + BAND_PAD))
 
 	# 底板：整条（从左缘一直铺到命令卡右缘；命令卡收起时只铺选中卡那一段）
 	if _band_plate != null:
@@ -1441,8 +1442,9 @@ func _set_label(lb: Label, txt: String) -> void:
 		lb.text = txt
 
 
-## 选中信息：**单个建筑**走建筑面板，其余（单位 / 多选 / 空）交给 BASALT 档案板。
-## 两块面板共用贴底位置，靠 visible 切换；高度变了才重摆，避免每 0.12s 抖一下。
+## 选中信息：**左段永远是选中卡**（单位 / 建筑同一张：头像 + 血条 + 法力条），
+## **中段按类型换**：单位 → 数值/队伍清单，建筑 → 训练队列与属性。
+## 三段同高，靠 visible 切换；高度变了才重摆，避免每 0.12s 抖一下。
 func _refresh_selection() -> void:
 	var arr := _valid_selection()
 	# 队伍网格 + 头顶界面：**先喂数据再判显隐**（网格的显隐取决于它有没有内容）
@@ -1461,8 +1463,10 @@ func _refresh_selection() -> void:
 			sole_building = b
 
 	if sole_building != null:
+		# 建筑也用同一张选中卡（头像换成本建筑的渲图），中段换建筑面板
 		if _dossier != null:
-			_dossier.visible = false
+			_dossier.visible = true
+			_dossier.refresh(arr)
 		if _building_panel != null:
 			_building_panel.visible = true
 			_building_panel.call("refresh", sole_building)

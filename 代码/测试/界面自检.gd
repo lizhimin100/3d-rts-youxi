@@ -99,10 +99,10 @@ func _run() -> void:
 		float(st2.get("remaining", 99.0)) < float(st.get("remaining", 0.0)) - 0.1,
 		"%s → %s" % [str(st.get("remaining")), str(st2.get("remaining"))])
 
-	_ok("建筑面板是独立实现（有自己的训练区/集结点区）",
-		panel.has_method("_build_training") and panel.has_method("_build_rally")
-		and panel.has_method("_build_construction"),
-		"_build_training + _build_rally + _build_construction")
+	_ok("建筑中段面板是独立实现（训练队列 / 研究 / 建造进度 / 属性）",
+		panel.has_method("_build_training") and panel.has_method("_build_research")
+		and panel.has_method("_build_construction") and panel.has_method("_build_stats"),
+		"_build_training + _build_research + _build_construction + _build_stats")
 
 	house2.free()
 	panel.queue_free()
