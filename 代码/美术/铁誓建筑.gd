@@ -61,9 +61,12 @@ static func apply(root: Node3D, team_color: Color) -> int:
 	var base := _base_name(root)
 	if base.is_empty():
 		return 0
-	var orm := _tex(base + "_orm.png")
+	# ★ 大小写先试对的那个：磁盘上是 `_ORM.png`（大写）。
+	#   先请求 `_orm.png` 在 Windows 上能"侥幸"命中，但会刷一条
+	#   `Case mismatch opening requested file` 警告（而且导出到大小写敏感平台会真的找不到）。
+	var orm := _tex(base + "_ORM.png")
 	if orm == null:
-		orm = _tex(base + "_ORM.png")
+		orm = _tex(base + "_orm.png")
 	var changed := 0
 	for mi in _collect(root):
 		if mi.mesh == null:
@@ -144,7 +147,9 @@ static func _orm_of(bm: BaseMaterial3D, base: String) -> Texture2D:
 		return bm.metallic_texture
 	if bm.roughness_texture != null:
 		return bm.roughness_texture
-	return _tex(base + "_orm.png")
+	# 同上：磁盘上是 `_ORM.png`，先按正确大小写找
+	var t := _tex(base + "_ORM.png")
+	return t if t != null else _tex(base + "_orm.png")
 
 
 static func _make(kind: String, base: String, team_color: Color, src: Material,

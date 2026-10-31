@@ -546,19 +546,26 @@ func _apply_mat_brush(center: Vector3, node_value: int) -> void:
 	var n: int = def.mat_cells + 1
 	var step: float = float(def.size) / float(def.mat_cells)
 	var half: float = def.half_size()
-	var i0: int = clampi(floori((center.x - r + half) / step), 0, n - 1)
-	var i1: int = clampi(ceili((center.x + r + half) / step), 0, n - 1)
-	var j0: int = clampi(floori((center.z - r + half) / step), 0, n - 1)
-	var j1: int = clampi(ceili((center.z + r + half) / step), 0, n - 1)
+	# ★ **格点中心可能在笔刷圈外**：地块是 8m 一格、笔刷默认半径只有 10m，
+	#   而格点间距 8m —— 圈里可能一个格点都没有（最坏情况离最近格点 5.7m）。
+	#   只按 `dist <= r` 判定就会出现"点了/拖了半天一点反应都没有"，
+	#   也就是用户说的"编辑器无法刷地形"。
+	#   所以判定半径外扩半格（0.72×step 刚好覆盖"格点落在格子里"的极值），
+	#   语义变成"笔刷圈碰到的格子都算"：任何一次点击至少改到最近的格点。
+	var rr: float = r + step * 0.72
+	var i0: int = clampi(floori((center.x - rr + half) / step), 0, n - 1)
+	var i1: int = clampi(ceili((center.x + rr + half) / step), 0, n - 1)
+	var j0: int = clampi(floori((center.z - rr + half) / step), 0, n - 1)
+	var j1: int = clampi(ceili((center.z + rr + half) / step), 0, n - 1)
 	for j in range(j0, j1 + 1):
 		for i in range(i0, i1 + 1):
 			var p := Vector2(-half + float(i) * step, -half + float(j) * step)
-			var w: float = _brush_weight(p, Vector2(center.x, center.z), r)
+			var w: float = _brush_weight(p, Vector2(center.x, center.z), rr)
 			if w < 0.35:
 				continue
 			def.mat_nodes[j * n + i] = node_value
 	# 同一片区域里旧的"泥土/草丛/生态"覆盖色块要清掉，否则会有两层地面打架
-	_clear_splat_in(center, r, [MapDef.SPLAT_DIRT, MapDef.SPLAT_GRASS, MapDef.SPLAT_BIOME])
+	_clear_splat_in(center, rr, [MapDef.SPLAT_DIRT, MapDef.SPLAT_GRASS, MapDef.SPLAT_BIOME])
 
 
 ## 老地图可能没有地块表（mat_cells = 0）：第一次刷就地建成 8m 格，全草。

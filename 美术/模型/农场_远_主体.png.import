@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cmxyymoprvdyx"
-path="res://.godot/imported/农场_远_主体.png-3ef019ad502a48070360503f9a8c02f3.ctex"
+path.s3tc="res://.godot/imported/农场_远_主体.png-3ef019ad502a48070360503f9a8c02f3.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "c10c77b47f3ea2dea5f8223b86c3bb10"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://美术/模型/农场_远_主体.png"
-dest_files=["res://.godot/imported/农场_远_主体.png-3ef019ad502a48070360503f9a8c02f3.ctex"]
+dest_files=["res://.godot/imported/农场_远_主体.png-3ef019ad502a48070360503f9a8c02f3.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
@@ -40,4 +41,4 @@ process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
-detect_3d/compress_to=1
+detect_3d/compress_to=0

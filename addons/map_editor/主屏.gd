@@ -785,7 +785,12 @@ func _tool_text() -> String:
 func _process(delta: float) -> void:
 	if session == null:
 		return
-	session.autosave_tick(delta)
+	# ★ 必须 has_method 探一下：编辑会话.gd 一旦编译失败（例如存盘写到一半被编辑器读到），
+	#   脚本对象还在但方法全没了，直接调就会**每帧**刷一条
+	#   "Invalid call. Nonexistent function 'autosave_tick'"，而且会一直循环。
+	#   这里退化成"跳过自动保存"，至少不会把输出面板刷爆。
+	if session.has_method("autosave_tick"):
+		session.autosave_tick(delta)
 	_tick += delta
 	if _tick > 0.4:
 		_tick = 0.0

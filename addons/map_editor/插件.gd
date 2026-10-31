@@ -38,6 +38,10 @@ func _enter_tree() -> void:
 	# 验证 EditorUndoRedoManager 那条链是真的通（编辑器里点按钮才会走到这里）。
 	if "--map-editor-selftest" in OS.get_cmdline_user_args():
 		_run_selftest.call_deferred()
+	# 涂抹自检：专门验"地表笔刷/高度笔刷点下去到底改了没有"
+	# godot --editor --path . -- --map-editor-paint-qa
+	if "--map-editor-paint-qa" in OS.get_cmdline_user_args():
+		_run_paint_qa.call_deferred()
 	var args_now: PackedStringArray = OS.get_cmdline_user_args()
 	var want_open: bool = "--map-editor-open" in args_now
 	var want_shot: bool = false
@@ -136,6 +140,36 @@ func _shot_to(path: String) -> void:
 			print("[地图编辑器] QA 打开 %s → %s" % [mp, "成功" if ok_open else "失败"])
 			await get_tree().process_frame
 			await get_tree().process_frame
+	# QA：--map-editor-shot-paint=dirt|raise 在镜头中心刷一笔
+	# 用来肉眼验收"刷地形到底有没有反应"（数据 + 视口两边都要看）
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--map-editor-shot-paint=") and _session.def != null:
+			var kind: String = a.get_slice("=", 1)
+			var d1: MapDef = _session.def
+			var pp := Vector3(0.0, d1.height_at(0.0, 0.0), 0.0)
+			if kind == "dirt":
+				_session.set_tool(5)          # Tool.PAINT_DIRT
+				_session.brush_radius = 10.0  # 用**默认半径**测：这一档最容易被 8m 格点漏掉
+			elif kind == "grass":
+				_session.set_tool(4)          # Tool.PAINT_GRASS
+				_session.brush_radius = 10.0
+			else:
+				_session.set_tool(0)          # Tool.RAISE
+				_session.brush_radius = 16.0
+				_session.brush_strength = 2.4
+			_session.begin_stroke(pp)
+			for _i in range(14):
+				_session.stroke_to(pp, 0.08)
+				await get_tree().process_frame
+			_session.end_stroke()
+			var dirt_n: int = 0
+			for v in d1.mat_nodes:
+				if int(v) > 127:
+					dirt_n += 1
+			print("[地图编辑器] QA 刷 %s：泥格 %d / %d ｜ 高度 %.2f" % [
+				kind, dirt_n, d1.mat_nodes.size(), d1.height_at(0.0, 0.0)])
+			for _i in range(30):
+				await get_tree().process_frame
 	# QA：--map-editor-shot-tab=对象 / 装饰 / 历史 ...
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--map-editor-shot-tab=") and _session.dock != null:
@@ -460,3 +494,120 @@ func _finish_selftest(passes: int, fails: PackedStringArray) -> void:
 			print("  ✘ ", f)
 	await get_tree().process_frame
 	get_tree().quit(0 if fails.is_empty() else 1)
+
+
+## 涂抹自检：地表笔刷（泥土/草丛）与高度笔刷到底改没改数据、视口跟没跟上。
+## 用户报"编辑器无法刷地形"时先跑这个，它会把每一步的数值打出来。
+func _run_paint_qa() -> void:
+	await get_tree().process_frame
+	get_editor_interface().set_main_screen_editor(_get_plugin_name())
+	# 等主屏真的切过去（切屏是异步的，不等就会拍到/测到"视口不可见 → 不重建"）
+	for _i in range(120):
+		await get_tree().process_frame
+		if _main != null and _main.visible:
+			break
+	print("  · 主屏可见：%s ｜ 视口可见：%s" % [
+		str(_main != null and _main.visible),
+		str(_session.viewport != null and _session.viewport.is_visible_in_tree())])
+	_open_dock()
+	_session.new_map(160, 2, 20261024)
+	for _i in range(6):
+		await get_tree().process_frame
+	var d: MapDef = _session.def
+	if d == null:
+		print("[涂抹QA] 没有地图，退出")
+		get_tree().quit(1)
+		return
+	print("========== 涂抹自检 ==========")
+	print("  · 地图：%d m ｜ mat_cells=%d ｜ nodes=%d ｜ splat=%d ｜ biome=%s" % [
+		d.size, d.mat_cells, d.mat_nodes.size(), d.splatmap.size(), d.biome])
+	var terrain: RtsTerrain = _session.viewport.terrain if _session.viewport != null else null
+	print("  · 视口地形：%s ｜ mat_cells=%d ｜ biome=%s ｜ mat_map=%s" % [
+		"有" if terrain != null else "无",
+		terrain.mat_cells if terrain != null else -1,
+		terrain.biome if terrain != null else "?",
+		"有" if terrain != null and terrain.mat_map != null else "无"])
+
+	var probe := Vector3(0.0, d.height_at(0.0, 0.0), 0.0)
+
+	# --- 1) 高度笔刷 ---
+	var h0: float = d.height_at(probe.x, probe.z)
+	_session.tool = 0
+	_session.brush_radius = 12.0
+	_session.brush_strength = 2.0
+	_session.begin_stroke(probe)
+	for i in range(10):
+		_session.stroke_to(probe, 0.08)
+	_session.end_stroke()
+	for _i in range(24):
+		await get_tree().process_frame
+	var vp_h: float = terrain.height_at(probe.x, probe.z) if terrain != null else -999.0
+	print("  · 抬升：%.3f → %.3f m ｜ 视口地形高度 %.3f" % [h0, d.height_at(probe.x, probe.z), vp_h])
+	if terrain != null and absf(vp_h - d.height_at(probe.x, probe.z)) > 0.05:
+		var v = _session.viewport
+		print("    ! 视口没跟上：visible=%s process=%s dirty_terrain=%s painting=%s built=%s" % [
+			str(v.is_visible_in_tree()), str(v.is_processing()), str(v._dirty_terrain),
+			str(v._painting), str(v._built_once)])
+		v.rebuild_terrain()
+		for _i in range(3):
+			await get_tree().process_frame
+		print("    ! 直接调 rebuild_terrain() 后视口高度 %.3f" % terrain.height_at(probe.x, probe.z))
+
+	# --- 2) 泥土笔刷（写 mat_nodes）---
+	# 探针落在一个**当前是草**的格点上：这样"泥格数变化"就是笔刷真干活的证据
+	var grass_pt: Vector3 = _first_grass_point(d)
+	var dirt0: int = _count_dirt(d)
+	_session.tool = 5          # Tool.PAINT_DIRT
+	_session.brush_radius = 10.0   # 默认半径（8m 格点最容易在这里落空）
+	_session.begin_stroke(grass_pt)
+	for i in range(4):
+		_session.stroke_to(grass_pt, 0.08)
+	_session.end_stroke()
+	for _i in range(24):
+		await get_tree().process_frame
+	var dirt1: int = _count_dirt(d)
+	print("  · 泥土笔刷：泥格 %d → %d（共 %d 格，占 %.1f%%）" % [
+		dirt0, dirt1, d.mat_nodes.size(),
+		100.0 * float(dirt1) / maxf(1.0, float(d.mat_nodes.size()))])
+
+	# --- 3) 草丛笔刷（擦回草）---
+	_session.tool = 4          # Tool.PAINT_GRASS
+	_session.begin_stroke(grass_pt)
+	for i in range(4):
+		_session.stroke_to(grass_pt, 0.08)
+	_session.end_stroke()
+	for _i in range(24):
+		await get_tree().process_frame
+	var dirt2: int = _count_dirt(d)
+	print("  · 草丛笔刷：泥格 %d → %d" % [dirt1, dirt2])
+
+	var ok: bool = dirt1 > dirt0 and dirt2 < dirt1
+	print("  · 结论：%s" % ("地表笔刷正常" if ok else "★地表笔刷没生效"))
+	print("========== 涂抹自检结束 ==========")
+	await get_tree().process_frame
+	get_tree().quit(0 if ok else 1)
+
+
+## 找一个"当前是草"的地块格点，返回它的世界坐标（当笔刷落点用）
+func _first_grass_point(d: MapDef) -> Vector3:
+	var n: int = d.mat_cells + 1
+	if n < 2:
+		return Vector3(0.0, d.height_at(0.0, 0.0), 0.0)
+	var step: float = float(d.size) / float(d.mat_cells)
+	var half: float = d.half_size()
+	# 从中心往外螺旋找，命中草地就返回
+	for j in range(n / 2, n):
+		for i in range(n / 2, n):
+			if int(d.mat_nodes[j * n + i]) <= 127:
+				var x: float = -half + float(i) * step
+				var z: float = -half + float(j) * step
+				return Vector3(x, d.height_at(x, z), z)
+	return Vector3(0.0, d.height_at(0.0, 0.0), 0.0)
+
+
+func _count_dirt(d: MapDef) -> int:
+	var n: int = 0
+	for v in d.mat_nodes:
+		if int(v) > 127:
+			n += 1
+	return n
