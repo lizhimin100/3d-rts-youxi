@@ -27,7 +27,7 @@ extends Node
 ##     Sfx.attach(get_tree())        # 主场景启动时调一次（幂等）
 ##     Sfx.play("战斗_命中")          # 2D 短音（按 id 自动选总线）
 ##     Sfx.play_at("战斗_命中", pos)  # 3D 定位音
-##     Sfx.set_bgm("bgm_会战")        # 循环 BGM
+##     Sfx.set_bgm("bgm_战")          # 循环 BGM（战斗曲；平常曲内部自动轮播）
 
 const DIR := "res://音频/"
 const BUS_LAYOUT := "res://音频/default_bus_layout.tres"
@@ -51,25 +51,42 @@ const MUSIC_BUS_DB := -19.0
 const BGM_DB := -1.0           # 音乐在总线基础上再压 1 dB（总线见 default_bus_layout.tres）
 const VOICE_THROTTLE := 5.0    # 应答语音全局 5s 节流
 const DEATH_VOICE_THROTTLE := 8.0
-const COMBAT_HOLD := 25.0      # 最后一次交战后 25s 切回经营 BGM
+const COMBAT_HOLD := 16.0      # 最后一次交战后 16s 自然退回和平 BGM
 
-## BGM 素材：**就用 音频/bgm_经营.wav 与 bgm_会战.wav 这两首原曲**（48kHz 立体声）。
-## 不换素材、不重生成，只把"播放过渡"做好：
-##   · 循环接缝：载入时把尾 0.35s 与头 0.35s 做等功率交叉淡化，再把尾段截掉 ——
-##     数学上循环点两侧的样本是相邻的，不可能再有"咔哒"（原文件接缝实测 2.5× 相邻差）；
-##   · 切歌：等功率（sin/cos）交叉淡化，经营→会战 2.8s、会战→经营 3.6s，
-##     两端再套 smoothstep，听感是"渐变"而不是"淡出再淡入"；
-##   · 起播 / 结算：2.6s 淡入、2.0s 淡出，不再硬起硬停。
-## 老素材（音频/BGM/ 里的 40kHz 版、音频/bgm_战斗.wav）已经删除，理由见 音频/来源.md。
-const BGM_CALM := "bgm_经营"
-const BGM_BATTLE := "bgm_会战"
+## BGM 素材（48kHz 立体声 16bit，全部 音频/ 下）：
+##   bgm_和平_和 / bgm_和平_森 —— **平常**用的两首，轮流播放（每首放完一遍交叉淡化到下一首）
+##   bgm_战   —— **小规模战斗**用的，打起来自然淡入、打完自然淡回原曲原位置
+##   bgm_舒缓 —— 开局序曲（25.8s），放完平滑并入和平轮播
+##
+## 三件事保证"不生硬"：
+##   1. **循环接缝**：载入时把尾 0.35s 与头 0.35s 等功率交叉淡化后截尾，循环点两侧
+##      样本在原文件里就是相邻的，不可能有"咔哒"。
+##   2. **等功率交叉淡化**：两首同时存在、sin/cos 能量互补 + smoothstep 曲线，
+##      不存在"先掉到 -20dB 再涨回来"的断层。
+##   3. **响度对齐**：四个素材的 RMS 差 10dB 之多（战比和平低 10.3dB，直接切会像被捂住），
+##      所以每首先按实测 RMS 归一化到 -23dBFS 再进播放器（见 BGM_TRIM_DB）。
+const BGM_PEACE: Array[String] = ["bgm_和平_和", "bgm_和平_森"]
+const BGM_BATTLE := "bgm_战"
+const BGM_SOFT := "bgm_舒缓"
+## 每首 BGM 的响度补偿（dB）。用整曲 RMS 实测后归一到 0.070（≈ -23.1 dBFS）：
+##   和 -19.14dBFS / 森 -19.47 / 战 -29.48 / 舒缓 -21.51。
+## 重新导入素材后若音量变了，只改这张表（峰值不会顶到 limiter）。
+const BGM_TRIM_DB := {
+	"bgm_和平_和": -3.9,
+	"bgm_和平_森": -3.6,
+	"bgm_战": 6.4,
+	"bgm_舒缓": -1.6,
+}
 ## 循环接缝交叉淡化长度（秒）
 const BGM_LOOP_FIX := 0.35
-## 切歌淡入淡出时长（秒）——比旧版的 1.2s 长一倍以上，耳朵才跟得上
-const BGM_FADE_IN := 2.6
-const BGM_FADE_TO_BATTLE := 2.8
-const BGM_FADE_TO_CALM := 3.6
-const BGM_FADE_OUT := 2.0
+## 淡入淡出时长（秒）
+const BGM_FADE_IN := 3.0           # 起播
+const BGM_FADE_TO_BATTLE := 3.2    # 和平 → 战：慢一点，别"炸"出来
+const BGM_FADE_TO_CALM := 4.2      # 战 → 和平：更慢，收尾
+const BGM_FADE_ROTATE := 4.5       # 和平两首之间轮播
+const BGM_FADE_OUT := 2.2          # 结算
+## 提前多少秒开始轮播下一首（= 淡入淡出时长，保证过渡完整落在曲子里）
+const BGM_ROTATE_LEAD := 4.5
 ## 静音深度（dB）：线性增益到 0 时用 -80 代替 -inf，避免 log(0)
 const BGM_SILENT_DB := -80.0
 
@@ -134,7 +151,13 @@ var _bgm_fading: bool = false
 var _bgm_fade_t: float = 0.0
 var _bgm_fade_dur: float = 1.0          # 本次淡化的总时长
 var _bgm_stopping: bool = false         # true = 淡出到静音（结算），不再起新曲
-var _bgm_out_start_db: float = -1.0     # 淡出方的起始电平（中途改指令时不跳变）
+var _bgm_out_env: float = 0.0           # 淡出方的起始包络（0~1，中途改指令时不跳变）
+var _bgm_cur_env: float = 0.0           # 当前曲的真实包络（战斗回来时按它续接）
+var _bgm_in_env: float = 0.0            # 淡入方的最新包络
+var _bgm_in_id: String = ""             # 淡入方播的是哪首（响度补偿要用）
+var _bgm_out_id: String = ""            # 淡出方播的是哪首
+var _bgm_pending: String = ""           # 换曲途中排队的下一首
+var _bgm_pending_pos: float = 0.0
 var _music_limiter_added: bool = false
 var _cache: Dictionary = {}
 var _next2d: int = 0
@@ -153,6 +176,18 @@ var _last_death_voice: float = -9999.0
 var _last_sel_frame: int = -1
 var _combat_until: float = 0.0
 var _bgm_id: String = ""
+## 和平轮播下标（BGM_PEACE）与"本曲已放多久"（用于提前 BGM_ROTATE_LEAD 秒换下一首）
+var _peace_idx: int = 0
+var _peace_elapsed: float = 0.0
+## 进战斗前记下的和平曲（id / 播放位置 / 已放时长），打完原样续上
+var _peace_saved_id: String = ""
+var _peace_saved_pos: float = 0.0
+var _peace_saved_elapsed: float = 0.0
+var _in_battle: bool = false
+## QA：`--bgm-qa` 脚本化走一遍「序曲 → 和平 → 战斗 → 和平 → 再次战斗」
+var _qa_bgm: bool = false
+var _qa_t: float = 0.0
+var _qa_step: int = 0
 var _hp_check_t: float = 0.0
 
 
@@ -247,6 +282,7 @@ func _setup() -> void:
 	_bgm_b.volume_db = BGM_SILENT_DB
 	add_child(_bgm_b)
 	_bgm_cur = _bgm_a
+	_qa_bgm = OS.get_cmdline_user_args().has("--bgm-qa")
 
 	# --- 接线：把全局信号全接上（不碰 单位.gd / 选择系统 / 指令系统）---
 	Game.selection_changed.connect(_on_selection)
@@ -305,7 +341,7 @@ func _ensure_bus(bus_name: String, db: float) -> void:
 ## 重开一局时复位 BGM（attach 的幂等分支走这里）
 ##
 ## 结算时 _on_over() 会 stop 并把 _bgm_id 清空，而 attach() 因为单例还在会直接返回，
-## 结果是重开后一直没有经营 BGM，要等第一次交战才被 _mark_combat() 拉起来。
+## 结果是重开后一直没有 BGM，要等第一次交战才被拉起来。
 func _resume_after_restart() -> void:
 	if _bgm_cur == null or not is_inside_tree():
 		return
@@ -315,18 +351,27 @@ func _resume_after_restart() -> void:
 	_last_wood = -1
 	_combat_until = 0.0
 	_bgm_stopping = false
+	_in_battle = false
 	_bgm_id = ""
+	_peace_idx = 0
+	_peace_elapsed = 0.0
+	_peace_saved_id = ""
 	_hard_stop_bgm()
-	_set_bgm(BGM_CALM)
-	print("[音效] 重开：BGM 复位 → %s" % BGM_CALM)
+	_play_track(BGM_SOFT, BGM_FADE_IN, 0.0)
+	print("[音效] 重开：BGM 复位 → %s" % BGM_SOFT)
 
 
 ## 起 BGM（必须在入树之后）
 func _start_bgm() -> void:
 	if not is_inside_tree():
 		return
-	_set_bgm(BGM_CALM)
-	# 预解码会战 BGM（48k 立体声 72s ≈ 13MB），避免第一次交战时在主线程上卡一下
+	# 开局先放舒缓序曲（25.8s），放完自动并入和平轮播
+	_peace_idx = 0
+	_peace_elapsed = 0.0
+	_play_track(BGM_SOFT, BGM_FADE_IN, 0.0)
+	# 预解码另外两首（各 75s / 14MB），避免第一次切歌时在主线程卡一下
+	for id in BGM_PEACE:
+		_stream(id)
 	_stream(BGM_BATTLE)
 
 
@@ -514,45 +559,57 @@ func _now() -> float:
 	return float(Time.get_ticks_msec()) / 1000.0
 
 
-## 切 BGM（等功率 crossfade 版）：永远在"当前可闻播放器"之外的那一个上起新曲，
-## 新曲从静音淡入、旧曲淡出。两个播放器交替，绝不硬切。
-##
-## 和旧版的区别（都是"生硬"的来源）：
-##   1. 旧版 1.2s + 按 dB 线性插值 → 中途两首都掉到 -20dB 左右，听起来像"断一下再响"；
-##      现在按**线性增益的 sin/cos 等功率曲线**走，两首能量之和恒定，听感是"混合"；
-##   2. 旧版切歌 = 淡出再淡入，没有"先垫后接"；现在经营→会战 2.8s、会战→经营 3.6s，
-##      两端套 smoothstep，起止更缓；
-##   3. 起播（2.6s 淡入）和结算（2.0s 淡出）也走同一套，不再硬起硬停。
+## 对外切歌入口（保留旧 API）。战斗曲走"进战斗"，其余走普通切歌。
 func _set_bgm(id: String) -> void:
+	if id == BGM_BATTLE:
+		_enter_battle()
+		return
+	_in_battle = false
+	_play_track(id, BGM_FADE_TO_CALM, 0.0)
+
+
+## ★ BGM 切歌的唯一实现：等功率 crossfade，永远在"当前可闻播放器"之外的那一个上起新曲。
+##
+## 三条不变量（保证"不生硬"）：
+##   · 两个播放器交替，**永远只有一路在淡入、一路在淡出**，不存在三路叠在一起；
+##   · 换曲途中又来新请求 → **排队**，等这一轮淡化走完再切（硬切第三路必然出咔哒）；
+##   · 包络是线性增益的 sin/cos（能量互补）+ smoothstep 时间曲线，不会中途掉到 -20dB。
+func _play_track(id: String, fade: float, start_pos: float = 0.0) -> void:
 	var s := _stream(id)
-	if s == null or _bgm_cur == null or _bgm_a == null or _bgm_b == null:
+	if s == null or _bgm_a == null or _bgm_b == null:
 		return
-	# 已经在放了就跳过（避免重复起播造成的"咔哒"）
-	if _bgm_id == id and _bgm_cur.playing and not _bgm_fading:
+	# 同一首正在放（且没在换）：跳过，避免重复起播造成的"咔哒"
+	if _bgm_id == id and _bgm_cur != null and _bgm_cur.playing and not _bgm_fading:
 		return
-	# 正在切换途中又收到新指令：把"正在淡入的那首"扶正为当前曲，从它现在的电平接着淡，
-	# 否则会把它瞬间拉回满音量（听起来像"又断了一下"）。
-	if _bgm_fading and _bgm_in != null and _bgm_in.playing:
-		_bgm_cur = _bgm_in
-		_bgm_in = null
-		_bgm_out = null
-		_bgm_fading = false
+	if _bgm_fading and not _bgm_stopping:
+		if _bgm_id != id:
+			_bgm_pending = id
+			_bgm_pending_pos = start_pos
+		return
 	_bgm_stopping = false
-	var in_p: AudioStreamPlayer = _bgm_a if _bgm_cur != _bgm_a else _bgm_b
+	_bgm_pending = ""
+	var in_p: AudioStreamPlayer = _bgm_b if _bgm_cur == _bgm_a else _bgm_a
 	var out_p: AudioStreamPlayer = _bgm_cur
-	var fade: float = BGM_FADE_TO_BATTLE if id == BGM_BATTLE else BGM_FADE_TO_CALM
-	if not out_p.playing:
+	if out_p == null or not out_p.playing:
+		out_p = null
 		fade = BGM_FADE_IN
 	in_p.stream = s
-	in_p.volume_db = BGM_SILENT_DB
-	in_p.play()
+	_apply_env(in_p, id, 0.0)
+	if start_pos > 0.01:
+		in_p.play(start_pos)
+	else:
+		in_p.play()
 	_bgm_in = in_p
+	_bgm_in_id = id
 	_bgm_out = out_p
-	_bgm_out_start_db = out_p.volume_db if out_p.playing else BGM_SILENT_DB
+	_bgm_out_id = _bgm_id
+	_bgm_out_env = _bgm_cur_env if out_p != null else 0.0
+	_bgm_in_env = 0.0
 	_bgm_id = id
 	_bgm_fade_t = 0.0
 	_bgm_fade_dur = maxf(fade, 0.1)
 	_bgm_fading = true
+	print("[音效] BGM → %s（%.1fs 等功率交叉淡化，入点 %.1fs）" % [id, _bgm_fade_dur, start_pos])
 
 
 ## 每帧推进 crossfade（等功率）。
@@ -565,41 +622,76 @@ func _drive_bgm_fade(delta: float) -> void:
 	var e: float = t * t * (3.0 - 2.0 * t)
 	if _bgm_stopping:
 		if _bgm_out != null:
-			var g_out: float = maxf(db_to_linear(_bgm_out_start_db - BGM_DB), 0.0)
-			_bgm_out.volume_db = _gain_db(g_out * cos(e * PI * 0.5))
+			_apply_env(_bgm_out, _bgm_out_id, _bgm_out_env * cos(e * PI * 0.5))
 		if t >= 1.0:
 			_hard_stop_bgm()
 		return
-	if _bgm_in == null or _bgm_out == null:
-		_bgm_fading = false
-		return
-	_bgm_in.volume_db = _gain_db(sin(e * PI * 0.5))
-	var g_start: float = maxf(db_to_linear(_bgm_out_start_db - BGM_DB), 0.0)
-	_bgm_out.volume_db = _gain_db(g_start * cos(e * PI * 0.5))
+	var in_env: float = sin(e * PI * 0.5)
+	if _bgm_in != null:
+		_apply_env(_bgm_in, _bgm_in_id, in_env)
+		_bgm_in_env = in_env
+	if _bgm_out != null:
+		_apply_env(_bgm_out, _bgm_out_id, _bgm_out_env * cos(e * PI * 0.5))
 	if t >= 1.0:
 		_bgm_fading = false
-		_bgm_out.stop()
-		_bgm_out.stream = null
-		_bgm_cur = _bgm_in
+		if _bgm_out != null:
+			_bgm_out.stop()
+			_bgm_out.stream = null
+			_bgm_out.volume_db = BGM_SILENT_DB
+		if _bgm_in != null:
+			_bgm_cur = _bgm_in
+			_bgm_cur_env = 1.0
+			_apply_env(_bgm_cur, _bgm_in_id, 1.0)
 		_bgm_in = null
 		_bgm_out = null
+		_bgm_in_id = ""
+		_bgm_out_id = ""
+		_bgm_in_env = 0.0
+		_bgm_out_env = 0.0
+		# 从这一刻起才算"这首开始播"——因为轮播是按这个计时提前 LEAD 秒起淡化的
+		if BGM_PEACE.has(_bgm_id):
+			_peace_elapsed = 0.0
+		# 排队的下一首接着淡入
+		if not _bgm_pending.is_empty():
+			var nid: String = _bgm_pending
+			var npos: float = _bgm_pending_pos
+			_bgm_pending = ""
+			_bgm_pending_pos = 0.0
+			var nfade: float = BGM_FADE_TO_BATTLE if nid == BGM_BATTLE else BGM_FADE_TO_CALM
+			_bgm_id = ""
+			_play_track(nid, nfade, npos)
 
 
-## 线性增益 → dB（0 用 -80dB 代替 -inf）
-func _gain_db(g: float) -> float:
-	return BGM_DB + linear_to_db(maxf(g, 0.00001))
+## 把某一路播放器设到指定包络（0~1），并叠加该曲的响度补偿
+func _apply_env(p: AudioStreamPlayer, id: String, env: float) -> void:
+	if p == null:
+		return
+	p.volume_db = BGM_DB + _trim_db(id) + linear_to_db(maxf(env, 0.00001))
+
+
+func _trim_db(id: String) -> float:
+	return float(BGM_TRIM_DB.get(id, 0.0))
+
+
+## 处理好的循环流长度（秒）；同一首只算一次
+func _bgm_len(id: String) -> float:
+	var s := _stream(id)
+	return 0.0 if s == null else float(s.get_length())
 
 
 ## 淡出到静音（结算用）；不重建任何播放器，只把当前曲拉到 0 再停。
 func _bgm_stop_fade(dur: float) -> void:
+	_bgm_pending = ""
 	if _bgm_cur == null or not _bgm_cur.playing:
 		_hard_stop_bgm()
 		return
 	_bgm_stopping = true
 	_bgm_fading = true
 	_bgm_in = null
+	_bgm_in_id = ""
 	_bgm_out = _bgm_cur
-	_bgm_out_start_db = _bgm_cur.volume_db
+	_bgm_out_id = _bgm_id
+	_bgm_out_env = _bgm_cur_env
 	_bgm_id = ""
 	_bgm_fade_t = 0.0
 	_bgm_fade_dur = maxf(dur, 0.1)
@@ -616,13 +708,21 @@ func _hard_stop_bgm() -> void:
 		_bgm_b.stream = null
 		_bgm_b.volume_db = BGM_SILENT_DB
 	_bgm_cur = _bgm_a
+	_bgm_cur_env = 0.0
 	_bgm_in = null
 	_bgm_out = null
+	_bgm_in_id = ""
+	_bgm_out_id = ""
+	_bgm_in_env = 0.0
+	_bgm_out_env = 0.0
+	_bgm_pending = ""
+	_bgm_pending_pos = 0.0
 	_bgm_fading = false
 	_bgm_stopping = false
 	_bgm_fade_t = 0.0
 	_bgm_fade_dur = 0.0
 	_bgm_id = ""
+	_peace_elapsed = 0.0
 
 
 ## Music 总线加一个软 Limiter，压住任何偶然峰值（降噪 / 不刺耳）。每会话只加一次。
@@ -810,28 +910,125 @@ func _on_notify(text: String, _color: Color) -> void:
 
 
 # ===========================================================================
-# BGM 状态机：经营 ↔ 会战
+# BGM 状态机：和平轮播 ↔ 小规模战斗
 # ===========================================================================
 
-## 交战中：切会战 BGM，并把"停战计时"往后推
+## 交战中：切战 BGM，并把"停战计时"往后推。
+##
+## 只要有任何一次命中/死亡就算"打起来了"——小规模摩擦同样进战曲，这是任务要求的
+## "小规模战斗自然过渡"；退回靠 COMBAT_HOLD 的静默时间，不会因为一支箭就来回抖。
 func _mark_combat() -> void:
 	_combat_until = _now() + COMBAT_HOLD
-	if _bgm_id != BGM_BATTLE and Game.phase == RtsConst.Phase.RUNNING:
-		_set_bgm(BGM_BATTLE)
+	if Game.phase != RtsConst.Phase.RUNNING:
+		return
+	if _in_battle or _bgm_id == BGM_BATTLE:
+		return
+	_enter_battle()
 
 
-## 停战 25s 自动回经营 BGM（胜负后不再起）+ 低血看门狗
+## 进战斗：记下和平曲的落点（打完从原地续上，不是重头再来），再淡入战曲
+func _enter_battle() -> void:
+	if _in_battle:
+		return
+	_in_battle = true
+	# 自己兜住停战计时：_enter_battle 也可能被 set_bgm / QA 直接调，不能只靠 _mark_combat 先设好
+	_combat_until = maxf(_combat_until, _now() + COMBAT_HOLD)
+	_peace_saved_id = _bgm_id
+	_peace_saved_elapsed = _peace_elapsed
+	_peace_saved_pos = 0.0
+	if _bgm_cur != null and _bgm_cur.playing and _bgm_id != BGM_BATTLE:
+		var l := _bgm_len(_bgm_id)
+		var p := float(_bgm_cur.get_playback_position())
+		# 贴着循环点就别硬续了，不然刚回去就又要换曲
+		if l > 1.0:
+			p = minf(p, maxf(0.0, l - BGM_ROTATE_LEAD - 1.0))
+		_peace_saved_pos = p
+	print("[音效] 进入战斗（记下和平曲 %s @%.1fs）" % [_peace_saved_id, _peace_saved_pos])
+	_play_track(BGM_BATTLE, BGM_FADE_TO_BATTLE, 0.0)
+
+
+## 出战斗：淡回原来那首和平曲（同曲同位置）
+func _leave_battle() -> void:
+	if not _in_battle:
+		return
+	_in_battle = false
+	var rid: String = _peace_saved_id
+	if rid.is_empty() or rid == BGM_BATTLE or rid == BGM_SOFT:
+		rid = BGM_PEACE[_peace_idx]
+	_peace_idx = BGM_PEACE.find(rid)
+	if _peace_idx < 0:
+		_peace_idx = 0
+	_peace_elapsed = _peace_saved_elapsed
+	_bgm_pending = ""
+	_bgm_id = ""
+	print("[音效] 战斗结束，回到 %s @%.1fs" % [rid, _peace_saved_pos])
+	_play_track(rid, BGM_FADE_TO_CALM, _peace_saved_pos)
+
+
+## 和平期推进：序曲 → 两首和平曲轮流（提前 LEAD 秒起淡化，正好落在循环点上）
+func _tick_bgm(delta: float) -> void:
+	if Game.phase != RtsConst.Phase.RUNNING:
+		return
+	if _in_battle:
+		if _now() >= _combat_until:
+			_leave_battle()
+		return
+	if _bgm_fading or _bgm_id.is_empty() or _bgm_stopping:
+		return
+	_peace_elapsed += delta
+	if _bgm_id == BGM_SOFT:
+		if _peace_elapsed >= _bgm_len(BGM_SOFT) - BGM_ROTATE_LEAD:
+			_peace_elapsed = 0.0
+			_play_track(BGM_PEACE[_peace_idx], BGM_FADE_ROTATE, 0.0)
+		return
+	if not BGM_PEACE.has(_bgm_id):
+		return
+	var l := _bgm_len(_bgm_id)
+	if l > BGM_ROTATE_LEAD * 2.0 and _peace_elapsed >= l - BGM_ROTATE_LEAD:
+		_peace_idx = (_peace_idx + 1) % BGM_PEACE.size()
+		_peace_elapsed = 0.0
+		_play_track(BGM_PEACE[_peace_idx], BGM_FADE_ROTATE, 0.0)
+
+
+## 停战 16s 自动回和平 + 低血看门狗
 func _process(delta: float) -> void:
 	_drive_bgm_fade(delta)
-	if _bgm_id == BGM_BATTLE and Game.phase == RtsConst.Phase.RUNNING:
-		if _now() >= _combat_until:
-			_set_bgm(BGM_CALM)
+	_tick_bgm(delta)
+	if _qa_bgm:
+		_qa_tick_bgm(delta)
 
 	# 低血警报：信号里拿不到血量，只能低频轮询（0.5s 一次，几十个单位，开销可忽略）
 	_hp_check_t += delta
 	if _hp_check_t >= 0.5:
 		_hp_check_t = 0.0
 		_check_low_hp()
+
+
+## BGM 过渡自检：`--bgm-qa` 下按脚本推一遍状态机，把每次切换打进日志。
+## 配合 `--headless --fixed-fps 60 --quit-after 3600` 跑，约 60s 出结果。
+func _qa_tick_bgm(delta: float) -> void:
+	if Game.phase != RtsConst.Phase.RUNNING:
+		return
+	_qa_t += delta
+	if _qa_step == 0 and _qa_t >= 4.0:
+		_qa_step = 1
+		print("[音效 QA] ① 强制进战斗")
+		_enter_battle()
+	elif _qa_step == 1 and _qa_t >= 12.0:
+		_qa_step = 2
+		print("[音效 QA] ② 强制出战斗")
+		_leave_battle()
+	elif _qa_step == 2 and _qa_t >= 20.0:
+		_qa_step = 3
+		print("[音效 QA] ③ 轮播途中强制进战斗（验证排队）")
+		_enter_battle()
+	elif _qa_step == 3 and _qa_t >= 30.0:
+		_qa_step = 4
+		print("[音效 QA] ④ 强制出战斗")
+		_leave_battle()
+	elif _qa_step == 4 and _qa_t >= 34.0:
+		_qa_step = 5
+		print("[音效 QA] 完成：当前 %s，包络 %.2f" % [_bgm_id, _bgm_cur_env])
 
 
 ## 己方最惨单位（含已完工建筑）低于 30% 就响一声；5s 节流由 SPEC 负责
