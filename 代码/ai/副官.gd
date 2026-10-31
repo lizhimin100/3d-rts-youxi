@@ -65,12 +65,27 @@ func _ready() -> void:
 	# 注册进组：HUD 靠组名找人，不依赖"HUD 是不是主场景的直接子节点"
 	add_to_group("adjutant")
 	super._ready()
+	# ★ 副官花的是**玩家的金币**：保留额必须比敌方 AI 高得多，
+	#   否则开局几秒钟副官就把 620 花到 150 上下，玩家连兵营都点不出来。
+	_apply_adjutant_reserve()
 	if Game.order_issued.is_connected(_on_player_order) == false:
 		Game.order_issued.connect(_on_player_order)
 	if "--no-adjutant" in OS.get_cmdline_user_args():
 		enabled = false
 		set_process(false)
 		print("%s 已关闭（--no-adjutant）" % log_prefix)
+
+
+## 副官的保留资金：从 Cfg.game.adjutant_reserve_gold / _wood 取。
+## 480 金 / 140 木 = 玩家随时能自己起"兵营 180+60 + 农场 80+20"。
+func _apply_adjutant_reserve() -> void:
+	var cfg: GameConfig = Cfg.game if Cfg != null else null
+	if cfg == null:
+		return
+	reserve_gold = maxi(reserve_gold, cfg.adjutant_reserve_gold)
+	reserve_wood = maxi(reserve_wood, cfg.adjutant_reserve_wood)
+	_log("保留资金 %d 金 / %d 木（玩家随时能自己造一座兵营 + 农场）"
+		% [reserve_gold, reserve_wood])
 
 
 ## 开关（HUD 按钮调用）：关掉就彻底不动手，玩家的每个单位都归自己
@@ -227,9 +242,12 @@ func _manage_peasants(diff: DifficultyDef) -> void:
 	if townhall.train_count() >= MAX_QUEUE_PEASANT:
 		return
 	# 农民不占人口，但**占金币**：军队快凑齐时先别把最后一点钱砸进农民。
-	# 用统一的 RESERVE_GOLD（150）代替写死的 90 —— 钱少于保留额就先保军队。
+	# 保留额走 reserve_gold（副官口径 480）—— 钱少于它就先保玩家的建造预算。
 	var army: int = _army_units().size()
-	if peasants >= 8 and _faction.gold < RESERVE_GOLD and army < diff.max_army:
+	if peasants >= 8 and _faction.gold < reserve_gold and army < diff.max_army:
+		return
+	# 副官自己的补农也要过同一道闸，否则它会把"留给玩家的钱"一点点磨掉
+	if not _can_spend(&"peasant"):
 		return
 	if townhall.queue_train(&"peasant"):
 		_log("补农民（现有 %d / 上限 %d）" % [peasants, PEASANT_MAX])

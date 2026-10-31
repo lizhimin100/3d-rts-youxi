@@ -71,6 +71,9 @@ var _dlg_team: AcceptDialog = null
 var _dlg_surrender: ConfirmationDialog = null
 var _vol_slider: HSlider = null
 var _adj_check: CheckButton = null
+## 战争迷雾开关（设置面板），以及缓存的迷雾节点
+var _fog_check: CheckButton = null
+var _fog_node: Node = null
 ## 战斗计时（资源条末段）
 var _time_label: Label = null
 
@@ -801,7 +804,40 @@ func _open_settings() -> void:
 					_adjutant.set("enabled", on)
 				_sync_adjutant())
 		vb.add_child(_adj_check)
+		_fog_check = CheckButton.new()
+		_fog_check.text = "战争迷雾"
+		_fog_check.add_theme_font_size_override("font_size", Spec.FS_BODY)
+		_fog_check.add_theme_color_override("font_color", Spec.text_main())
+		_fog_check.toggled.connect(func(on: bool) -> void:
+			var fog := _get_fog()
+			if fog != null and fog.has_method("set_enabled"):
+				fog.call("set_enabled", on))
+		vb.add_child(_fog_check)
+	# 每次打开都同步一次真实状态（迷雾/副官节点都可能比面板晚建）
+	var fog_now := _get_fog()
+	if _adj_check != null:
+		_adj_check.set_pressed_no_signal(_adjutant_on())
+	if _fog_check != null:
+		_fog_check.set_pressed_no_signal(fog_now == null or bool(fog_now.call("is_enabled")))
 	_dlg_settings.popup_centered(Vector2i(340, 0))
+
+
+## 副官当前是否接管（设置面板 / 自检共用；找不到人先补找一次）
+func _adjutant_on() -> bool:
+	_sync_adjutant()
+	if _adjutant == null or not is_instance_valid(_adjutant):
+		return false
+	return _adjutant.get("enabled") == true
+
+
+## 迷雾节点（运行时由 RtsFog 加入 fog_system 组）
+func _get_fog() -> Node:
+	if _fog_node != null and is_instance_valid(_fog_node):
+		return _fog_node
+	var tree := get_tree()
+	if tree != null:
+		_fog_node = tree.get_first_node_in_group("fog_system")
+	return _fog_node
 
 
 func _open_team() -> void:
@@ -814,26 +850,41 @@ func _open_team() -> void:
 	_dlg_team.popup_centered(Vector2i(360, 0))
 
 
+## 队伍面板：本局每个阵营属于哪一队、是敌是友、显示成什么颜色。
+## 多队图下"你 / 盟友 / 敌人"必须一眼分清 —— 这里把**显示色**也写出来，
+## 和模型染色区、小地图点、选中圈是同一份口径（你蓝 / 盟友青 / 敌人红绿）。
 func _team_text() -> String:
 	var lines := PackedStringArray()
 	var pl := Game.player_faction
-	var en := Game.enemy_faction
-	if pl != null:
-		lines.append("你：%s —— 队伍 0" % pl.display_name)
-	if en != null:
-		lines.append("敌方：%s —— 队伍 1（人机）" % en.display_name)
-	var md: Variant = null
-	if Game.level != null:
-		md = Game.level.get("map_def")
-	if md != null:
-		var pls: Variant = md.get("players")
-		if pls is Array and (pls as Array).size() > 2:
-			lines.append("")
-			lines.append("本图共 %d 个玩家槽位：" % (pls as Array).size())
-			for p in (pls as Array):
-				if p != null:
-					lines.append("  玩家 %d —— 队伍 %d" % [int(p.get("id")) + 1, int(p.get("team"))])
+	if pl == null:
+		return "本局还没有阵营。"
+	lines.append("你：%s —— 第 %d 队（%s）" % [pl.display_name, pl.team, _color_name(pl.color)])
+	for f in Game.factions:
+		if f == null or f == pl:
+			continue
+		var tag: String = "盟友" if pl.is_ally_of(f) else "敌人"
+		lines.append("%s：%s —— 第 %d 队（%s）" % [tag, f.display_name, f.team, _color_name(f.color)])
+	lines.append("")
+	lines.append("同队 = 盟友：不能互相攻击，队色同源；盟友显示为青色，和你的蓝分开。")
 	return "\n".join(lines)
+
+
+## 显示色的中文名（队伍面板 / 提示语用）。按色相粗分，够读懂就行。
+func _color_name(c: Color) -> String:
+	var h: float = c.h * 360.0
+	if c.s < 0.18:
+		return "灰白"
+	if h >= 160.0 and h <= 200.0:
+		return "青"
+	if h >= 190.0 and h < 260.0:
+		return "蓝"
+	if h >= 260.0 and h < 330.0:
+		return "紫"
+	if h >= 330.0 or h < 20.0:
+		return "红"
+	if h >= 20.0 and h < 70.0:
+		return "橙黄"
+	return "绿"
 
 
 func _open_surrender() -> void:

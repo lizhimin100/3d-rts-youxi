@@ -144,6 +144,12 @@ func _ready() -> void:
 		(camera.get_node_or_null("相机") as Camera3D).fov if camera != null and camera.get_node_or_null("相机") != null else -1.0,
 		camera.get_script().resource_path if camera != null and camera.get_script() != null else "内置",
 	])
+	# 阵营与显示色（诊断用：同队盟友必须是青色，敌人各自队色）
+	var fc: PackedStringArray = []
+	for f in Game.factions:
+		if f != null:
+			fc.append("%s(槽%d/队%d/%s)" % [f.display_name, f.slot, f.team, f.color.to_html(false)])
+	print("[主场景] 阵营：%s" % " ".join(fc))
 	var 我方单位: int = Game.player_faction.count_units() if Game.player_faction != null else 0
 	var 敌方单位: int = 0
 	if Game.player_faction != null:

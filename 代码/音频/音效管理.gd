@@ -45,19 +45,33 @@ const BUS_VOICE := "Voice"
 
 ## UI 总线的可听度补偿（见文件头"电平约定"）
 const UI_MAKEUP_DB := 6.0
-const BGM_DB := 0.0            # 音乐电平交给 Music 总线（已降到 -14 dB）
+## 音乐总线电平（dB）。旧值 -14 实测偏吵：BGM 是连续音，SFX 是瞬态，
+## 同一峰值下 BGM 听起来明显更响。降到 -19 后 BGM 退到"背景"，不压指令/战斗反馈。
+const MUSIC_BUS_DB := -19.0
+const BGM_DB := -1.0           # 音乐在总线基础上再压 1 dB（总线见 default_bus_layout.tres）
 const VOICE_THROTTLE := 5.0    # 应答语音全局 5s 节流
 const DEATH_VOICE_THROTTLE := 8.0
 const COMBAT_HOLD := 25.0      # 最后一次交战后 25s 切回经营 BGM
 
-## BGM 素材：改用 音频/ 根目录下那对 48kHz、峰值 -4.5 / -3.6 dBFS 的"无缝循环"文件。
-## 老的 BGM/和BGM、BGM/战BGM_90s 是 40kHz、峰值 -1.4 dBFS 且循环有接缝 —— 又吵又硬。
-## 切歌 / 循环都走 _set_bgm 的双播放器 crossfade，不再硬切。
+## BGM 素材：**就用 音频/bgm_经营.wav 与 bgm_会战.wav 这两首原曲**（48kHz 立体声）。
+## 不换素材、不重生成，只把"播放过渡"做好：
+##   · 循环接缝：载入时把尾 0.35s 与头 0.35s 做等功率交叉淡化，再把尾段截掉 ——
+##     数学上循环点两侧的样本是相邻的，不可能再有"咔哒"（原文件接缝实测 2.5× 相邻差）；
+##   · 切歌：等功率（sin/cos）交叉淡化，经营→会战 2.8s、会战→经营 3.6s，
+##     两端再套 smoothstep，听感是"渐变"而不是"淡出再淡入"；
+##   · 起播 / 结算：2.6s 淡入、2.0s 淡出，不再硬起硬停。
+## 老素材（音频/BGM/ 里的 40kHz 版、音频/bgm_战斗.wav）已经删除，理由见 音频/来源.md。
 const BGM_CALM := "bgm_经营"
 const BGM_BATTLE := "bgm_会战"
-## crossfade 时长与静音深度（切歌时一个淡入、一个淡出）
-const BGM_FADE_DUR := 1.2
-const BGM_FADE_DB := 40.0
+## 循环接缝交叉淡化长度（秒）
+const BGM_LOOP_FIX := 0.35
+## 切歌淡入淡出时长（秒）——比旧版的 1.2s 长一倍以上，耳朵才跟得上
+const BGM_FADE_IN := 2.6
+const BGM_FADE_TO_BATTLE := 2.8
+const BGM_FADE_TO_CALM := 3.6
+const BGM_FADE_OUT := 2.0
+## 静音深度（dB）：线性增益到 0 时用 -80 代替 -inf，避免 log(0)
+const BGM_SILENT_DB := -80.0
 
 ## 口令 / 提示语音 id（= 音频/ 下的文件名；由 合成语音_v2.py 生成）
 const VOICE_FORWARD := "指令_前进"
@@ -118,6 +132,9 @@ var _bgm_in: AudioStreamPlayer = null   # 正在淡入的那个（crossfade 期�
 var _bgm_out: AudioStreamPlayer = null  # 正在淡出的那个（crossfade 期间）
 var _bgm_fading: bool = false
 var _bgm_fade_t: float = 0.0
+var _bgm_fade_dur: float = 1.0          # 本次淡化的总时长
+var _bgm_stopping: bool = false         # true = 淡出到静音（结算），不再起新曲
+var _bgm_out_start_db: float = -1.0     # 淡出方的起始电平（中途改指令时不跳变）
 var _music_limiter_added: bool = false
 var _cache: Dictionary = {}
 var _next2d: int = 0
@@ -223,11 +240,11 @@ func _setup() -> void:
 		_pool3d.append(p3)
 	_bgm_a = AudioStreamPlayer.new()
 	_bgm_a.bus = BUS_MUSIC
-	_bgm_a.volume_db = BGM_DB - BGM_FADE_DB
+	_bgm_a.volume_db = BGM_SILENT_DB
 	add_child(_bgm_a)
 	_bgm_b = AudioStreamPlayer.new()
 	_bgm_b.bus = BUS_MUSIC
-	_bgm_b.volume_db = BGM_DB - BGM_FADE_DB
+	_bgm_b.volume_db = BGM_SILENT_DB
 	add_child(_bgm_b)
 	_bgm_cur = _bgm_a
 
@@ -257,7 +274,10 @@ func _setup_buses() -> void:
 	if AudioServer.bus_count > 0 and AudioServer.get_bus_index("Master") < 0:
 		AudioServer.set_bus_name(0, "Master")
 		AudioServer.set_bus_volume_db(0, 0.0)
-	_ensure_bus(BUS_MUSIC, -14.0)
+	_ensure_bus(BUS_MUSIC, MUSIC_BUS_DB)
+	# 电平以代码为准（音频/default_bus_layout.tres 同步改成同一个值）：
+	# 用户反馈 BGM"有点吵"，整体从 -14 dB 降到 -19 dB，再叠加 BGM_DB=-1。
+	AudioServer.set_bus_volume_db(AudioServer.get_bus_index(BUS_MUSIC), MUSIC_BUS_DB)
 	_add_music_limiter()
 	_ensure_bus(BUS_SFX, -6.0)
 	_ensure_bus(BUS_UI, -16.0)
@@ -294,7 +314,9 @@ func _resume_after_restart() -> void:
 	_last_gold = -1
 	_last_wood = -1
 	_combat_until = 0.0
+	_bgm_stopping = false
 	_bgm_id = ""
+	_hard_stop_bgm()
 	_set_bgm(BGM_CALM)
 	print("[音效] 重开：BGM 复位 → %s" % BGM_CALM)
 
@@ -328,8 +350,76 @@ func _stream(id: String) -> AudioStream:
 		s = load(path) as AudioStream
 	if s == null:
 		push_warning("[音效] 缺素材：%s" % path)
+	elif id.begins_with("bgm"):
+		# ★ BGM 只在载入时做一次"无缝循环"处理；之后全部复用缓存。
+		s = _make_seamless_loop(s, id)
 	_cache[id] = s
 	return s
+
+
+## 把一首 BGM 改造成**数学上无缝**的循环。
+##
+## 原理（交叉淡化循环）：
+##   原曲长度 L 帧，取 D = 0.35s；新缓冲 = [混合头 D 帧] + [原曲 D..L-D)，
+##   总长 L-D；混合头[i] = tail[L-D+i] * cos(t·π/2) + head[i] * sin(t·π/2)。
+##   · 新缓冲第 0 帧 = 原曲 L-D 帧 → 它前面正好接原曲 L-D-1（新缓冲的最后一帧）；
+##   · 新缓冲第 D-1 帧 = 原曲 D-1 帧 → 后面正好接原曲 D。
+##   于是循环点两侧的样本是**原文件里相邻的样本**，不会有跳变/咔哒。
+##
+## 为什么必须在运行时做：原曲是 48kHz 立体声 72~80s（13~15MB），
+## 离线改文件会改素材本身；而"接缝"是播放器行为，在播放器这层修最合适。
+## 非 16-bit PCM（将来换 ogg 之类）就退化成普通整段循环，不报错。
+func _make_seamless_loop(src: AudioStream, id: String) -> AudioStream:
+	var w := src as AudioStreamWAV
+	if w == null:
+		return src
+	if w.format != AudioStreamWAV.FORMAT_16_BITS:
+		w.loop_mode = AudioStreamWAV.LOOP_FORWARD
+		w.loop_begin = 0
+		w.loop_end = int(round(w.get_length() * float(w.mix_rate)))
+		return w
+	var ch: int = 2 if w.stereo else 1
+	var bpf: int = 2 * ch
+	# ★ 这句看似多余，其实救命：w.data 是**属性**，每次访问都可能把 13MB 的
+	#   PackedByteArray 复制一份；循环里写 w.data.decode_s16() 就是 3 万次 13MB 拷贝
+	#   （实测直接把进程卡死）。先取到局部变量（Packed 数组赋值是写时复制，不搬家）。
+	var data: PackedByteArray = w.data
+	var frames: int = data.size() / bpf
+	var d: int = int(BGM_LOOP_FIX * float(w.mix_rate))
+	if frames < d * 4 or d < 64:
+		w.loop_mode = AudioStreamWAV.LOOP_FORWARD
+		w.loop_begin = 0
+		w.loop_end = frames
+		return w
+	var head := PackedByteArray()
+	head.resize(d * bpf)
+	var tail_base: int = (frames - d) * bpf
+	for i in range(d):
+		var t: float = float(i) / float(d - 1)
+		var w_in: float = sin(t * PI * 0.5)
+		var w_out: float = cos(t * PI * 0.5)
+		var to: int = tail_base + i * bpf
+		var ho: int = i * bpf
+		var dst: int = i * bpf
+		for c in range(ch):
+			var a: float = float(data.decode_s16(to + c * 2))
+			var b: float = float(data.decode_s16(ho + c * 2))
+			head.encode_s16(dst + c * 2,
+				clampi(int(round(a * w_out + b * w_in)), -32768, 32767))
+	var mid: PackedByteArray = data.slice(d * bpf, (frames - d) * bpf)
+	var merged: PackedByteArray = head + mid
+	var out := AudioStreamWAV.new()
+	out.format = w.format
+	out.mix_rate = w.mix_rate
+	out.stereo = w.stereo
+	out.data = merged
+	out.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	out.loop_begin = 0
+	out.loop_end = frames - d
+	print("[音效] BGM %s 无缝循环：原 %.2fs → %.2fs（接缝交叉淡化 %.2fs）" % [
+		id, float(frames) / float(w.mix_rate), float(frames - d) / float(w.mix_rate),
+		BGM_LOOP_FIX])
+	return out
 
 
 func _spec_of(id: String) -> Dictionary:
@@ -424,8 +514,15 @@ func _now() -> float:
 	return float(Time.get_ticks_msec()) / 1000.0
 
 
-## 切 BGM（crossfade 版）：永远在"当前可闻播放器"之外的那一个上起新曲，
-## 新曲从静音淡入、旧曲淡出，时长 BGM_FADE_DUR。两个播放器交替，绝不硬切。
+## 切 BGM（等功率 crossfade 版）：永远在"当前可闻播放器"之外的那一个上起新曲，
+## 新曲从静音淡入、旧曲淡出。两个播放器交替，绝不硬切。
+##
+## 和旧版的区别（都是"生硬"的来源）：
+##   1. 旧版 1.2s + 按 dB 线性插值 → 中途两首都掉到 -20dB 左右，听起来像"断一下再响"；
+##      现在按**线性增益的 sin/cos 等功率曲线**走，两首能量之和恒定，听感是"混合"；
+##   2. 旧版切歌 = 淡出再淡入，没有"先垫后接"；现在经营→会战 2.8s、会战→经营 3.6s，
+##      两端套 smoothstep，起止更缓；
+##   3. 起播（2.6s 淡入）和结算（2.0s 淡出）也走同一套，不再硬起硬停。
 func _set_bgm(id: String) -> void:
 	var s := _stream(id)
 	if s == null or _bgm_cur == null or _bgm_a == null or _bgm_b == null:
@@ -433,31 +530,52 @@ func _set_bgm(id: String) -> void:
 	# 已经在放了就跳过（避免重复起播造成的"咔哒"）
 	if _bgm_id == id and _bgm_cur.playing and not _bgm_fading:
 		return
-	if s is AudioStreamWAV:
-		var w := s as AudioStreamWAV
-		w.loop_mode = AudioStreamWAV.LOOP_FORWARD
-		w.loop_begin = 0
-		w.loop_end = int(round(w.get_length() * float(w.mix_rate)))
+	# 正在切换途中又收到新指令：把"正在淡入的那首"扶正为当前曲，从它现在的电平接着淡，
+	# 否则会把它瞬间拉回满音量（听起来像"又断了一下"）。
+	if _bgm_fading and _bgm_in != null and _bgm_in.playing:
+		_bgm_cur = _bgm_in
+		_bgm_in = null
+		_bgm_out = null
+		_bgm_fading = false
+	_bgm_stopping = false
 	var in_p: AudioStreamPlayer = _bgm_a if _bgm_cur != _bgm_a else _bgm_b
 	var out_p: AudioStreamPlayer = _bgm_cur
+	var fade: float = BGM_FADE_TO_BATTLE if id == BGM_BATTLE else BGM_FADE_TO_CALM
+	if not out_p.playing:
+		fade = BGM_FADE_IN
 	in_p.stream = s
-	in_p.volume_db = BGM_DB - BGM_FADE_DB
+	in_p.volume_db = BGM_SILENT_DB
 	in_p.play()
 	_bgm_in = in_p
 	_bgm_out = out_p
+	_bgm_out_start_db = out_p.volume_db if out_p.playing else BGM_SILENT_DB
 	_bgm_id = id
 	_bgm_fade_t = 0.0
+	_bgm_fade_dur = maxf(fade, 0.1)
 	_bgm_fading = true
 
 
-## 每帧推进 crossfade；t 从 0→1，in 从静音→BGM_DB，out 从 BGM_DB→静音，完成后停掉旧曲。
+## 每帧推进 crossfade（等功率）。
 func _drive_bgm_fade(delta: float) -> void:
-	if not _bgm_fading or _bgm_in == null or _bgm_out == null:
+	if not _bgm_fading:
 		return
 	_bgm_fade_t += delta
-	var t := clampf(_bgm_fade_t / BGM_FADE_DUR, 0.0, 1.0)
-	_bgm_in.volume_db = lerp(BGM_DB - BGM_FADE_DB, BGM_DB, t)
-	_bgm_out.volume_db = lerp(BGM_DB, BGM_DB - BGM_FADE_DB, t)
+	var t: float = clampf(_bgm_fade_t / maxf(_bgm_fade_dur, 0.01), 0.0, 1.0)
+	# smoothstep 让两头更缓、中段更匀（线性 t 在耳朵里是"前半快、后半拖"）
+	var e: float = t * t * (3.0 - 2.0 * t)
+	if _bgm_stopping:
+		if _bgm_out != null:
+			var g_out: float = maxf(db_to_linear(_bgm_out_start_db - BGM_DB), 0.0)
+			_bgm_out.volume_db = _gain_db(g_out * cos(e * PI * 0.5))
+		if t >= 1.0:
+			_hard_stop_bgm()
+		return
+	if _bgm_in == null or _bgm_out == null:
+		_bgm_fading = false
+		return
+	_bgm_in.volume_db = _gain_db(sin(e * PI * 0.5))
+	var g_start: float = maxf(db_to_linear(_bgm_out_start_db - BGM_DB), 0.0)
+	_bgm_out.volume_db = _gain_db(g_start * cos(e * PI * 0.5))
 	if t >= 1.0:
 		_bgm_fading = false
 		_bgm_out.stop()
@@ -465,6 +583,46 @@ func _drive_bgm_fade(delta: float) -> void:
 		_bgm_cur = _bgm_in
 		_bgm_in = null
 		_bgm_out = null
+
+
+## 线性增益 → dB（0 用 -80dB 代替 -inf）
+func _gain_db(g: float) -> float:
+	return BGM_DB + linear_to_db(maxf(g, 0.00001))
+
+
+## 淡出到静音（结算用）；不重建任何播放器，只把当前曲拉到 0 再停。
+func _bgm_stop_fade(dur: float) -> void:
+	if _bgm_cur == null or not _bgm_cur.playing:
+		_hard_stop_bgm()
+		return
+	_bgm_stopping = true
+	_bgm_fading = true
+	_bgm_in = null
+	_bgm_out = _bgm_cur
+	_bgm_out_start_db = _bgm_cur.volume_db
+	_bgm_id = ""
+	_bgm_fade_t = 0.0
+	_bgm_fade_dur = maxf(dur, 0.1)
+
+
+## 立刻停掉两路 BGM 并复位状态（淡出结束时调用 / 退出时兜底）
+func _hard_stop_bgm() -> void:
+	if _bgm_a != null:
+		_bgm_a.stop()
+		_bgm_a.stream = null
+		_bgm_a.volume_db = BGM_SILENT_DB
+	if _bgm_b != null:
+		_bgm_b.stop()
+		_bgm_b.stream = null
+		_bgm_b.volume_db = BGM_SILENT_DB
+	_bgm_cur = _bgm_a
+	_bgm_in = null
+	_bgm_out = null
+	_bgm_fading = false
+	_bgm_stopping = false
+	_bgm_fade_t = 0.0
+	_bgm_fade_dur = 0.0
+	_bgm_id = ""
 
 
 ## Music 总线加一个软 Limiter，压住任何偶然峰值（降噪 / 不刺耳）。每会话只加一次。
@@ -478,6 +636,13 @@ func _add_music_limiter() -> void:
 	lim.threshold_db = -2.0
 	lim.ceiling_db = -4.0
 	AudioServer.add_bus_effect(idx, lim)
+	# 再挂一条很轻的高频衰减：BGM 是程序合成的，镲片/泛音偏亮，
+	# 高频收 1.5~7 dB 之后"吵"的那部分（刺耳的沙沙声）明显退后，旋律一点不受影响。
+	var eq := AudioEffectEQ10.new()
+	eq.set_band_gain_db(7, -1.5)   # 4 kHz
+	eq.set_band_gain_db(8, -4.0)   # 8 kHz
+	eq.set_band_gain_db(9, -7.0)   # 16 kHz
+	AudioServer.add_bus_effect(idx, eq)
 	_music_limiter_added = true
 
 
@@ -627,17 +792,8 @@ func _on_order(_units: Array, order: int, target_pos: Vector3, _target: Node3D) 
 
 
 func _on_over(victory: bool) -> void:
-	_bgm_fading = false
-	if _bgm_a != null:
-		_bgm_a.stop()
-		_bgm_a.stream = null
-	if _bgm_b != null:
-		_bgm_b.stop()
-		_bgm_b.stream = null
-	_bgm_cur = _bgm_a
-	_bgm_in = null
-	_bgm_out = null
-	_bgm_id = ""
+	# 不再硬停：2s 淡出，结算音效盖在上面 —— "一场仗打完"应该是收尾，不是被掐断
+	_bgm_stop_fade(BGM_FADE_OUT)
 	_play2d("结算_胜利" if victory else "结算_失败", 0.0, 0.0)
 
 

@@ -875,6 +875,8 @@ func _pickables() -> Array:
 			continue
 		if n3 is RtsUnit and not (n3 as RtsUnit).is_alive():
 			continue
+		if not n3.visible:
+			continue    # 迷雾里的敌人：看不见就不能右键下令
 		out.append(n3)
 	var lv := Game.level as RtsLevel
 	if lv != null:

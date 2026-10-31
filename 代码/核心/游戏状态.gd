@@ -100,7 +100,10 @@ func _process(delta: float) -> void:
 ##   · 每个槽位属于哪个队 = Cfg.game.match_team_of_slot（默认 [1,1,2,3]）；
 ##     **同队 = 盟友**，互相不能打，共用一个队色；
 ##   · 队色不再是"蓝/红"两色写死，而是 match_team_colors 里的一套（蓝/红/绿/紫…）；
-##   · 队色落到模型上走的是资产自带的染色区（建筑的 team / team_trim、
+##   · **显示色**（faction.color）≠ 队色：你 = 队色（蓝）、盟友 = 青、
+##     敌人 = 各自队色。判据仍是 team（is_ally_of），颜色只影响"长什么样"。
+##     （用户口径：同队同色分不出"我的 / 盟友的"，盟友必须能一眼认出来是青色。）
+##   · 显示色落到模型上走的是资产自带的染色区（建筑的 team / team_trim、
 ##     单位的 M_<zone>_team），所以"按模型染色区变队色"是天然成立的。
 func setup_factions() -> void:
 	var cfg: GameConfig = Cfg.game
@@ -113,7 +116,7 @@ func setup_factions() -> void:
 		var team: int = cfg.team_of_slot(i)
 		var human: bool = i == human_slot
 		var wealth: int = cfg.start_gold + (0 if human else diff.bonus_gold)
-		f.setup(i, human, cfg.slot_name(i, team), cfg.team_color(team),
+		f.setup(i, human, cfg.slot_name(i, team), cfg.display_color_for_slot(i),
 			wealth, cfg.start_wood)
 		f.team = team
 		f.slot = i

@@ -5,12 +5,17 @@ extends Node
 ## 为什么不用外部图片：图标是**代码画出来的**（`Image` + 手工光栅化），
 ## 这样没有资源依赖、没有导入设置、换色只改一行常量，也不会有人往工程里塞盗来的素材。
 ##
-## 五种形态（全部 32×32，带 1px 深色描边，保证在草地/雪地/夜空上都读得出来）：
+## 六种形态（全部 32×32，带 1px 深色描边，保证在草地/雪地/夜空上都读得出来）：
 ##   · 默认     白箭头                      —— 地面 / 界面 / 中立空物
 ##   · 己方单位 绿箭头 + 十字徽标            —— 可以指挥的东西
+##   · 盟友单位 **青箭头 + 盾形徽标**         —— 同队 AI：能并肩、不能打
 ##   · 敌方单位 红剑（斜刃 + 横向护手 + 金柄） —— 右键就是打
 ##   · 可采集物 黄镐（弯头 + 木柄）           —— 只有**选中的是农民**时才亮
 ##   · 己方建筑 铁锤（斜置锤头）             —— 只有**选中的是农民**时才亮
+##
+## ★ 敌我判据只有一条：Game.is_ally_of_player(faction)（同队 = 盟友）。
+##   旧版写的是 faction == Game.player_faction，于是**盟友全部落进"敌方"分支** ——
+##   鼠标一放到盟友身上就变红剑，玩家以为要打自己人（用户报的"盟友身上显示攻击图标"）。
 ##
 ## 性能纪律：
 ##   · 拾取是纯数学（射线 × 竖直胶囊），**不碰物理引擎**，也不为了光标去开物理层；
@@ -24,13 +29,14 @@ const SWITCH_MS := 60
 ## 图标边长
 const ICON := 32
 
-## 五种图标索引
+## 六种图标索引
 enum Shape {
 	ARROW = 0,
-	ALLY = 1,
+	ALLY = 1,       ## 自己的
 	ENEMY = 2,
 	PICK = 3,
 	HAMMER = 4,
+	TEAMMATE = 5,   ## 同队盟友（青）
 }
 
 ## 生成的贴图（建一次，全程复用）
@@ -81,10 +87,11 @@ func _probe() -> void:
 	if cam == null:
 		print("[光标自检] 没有相机，跳过")
 		return
-	var names := ["默认箭头", "己方绿箭头", "敌方红剑", "黄色镐", "铁锤"]
+	var names := ["默认箭头", "己方绿箭头", "敌方红剑", "黄色镐", "铁锤", "盟友青箭头"]
 	print("[光标自检] ---- 开始 ----")
 	_has_worker = false
 	_probe_group(cam, names, _group_player(), 2, false)
+	_probe_group(cam, names, _group_ally(), 2, false)
 	_probe_group(cam, names, _group_enemy(), 2, false)
 	_probe_group(cam, names, _group_own_buildings(), 1, false)
 	_probe_group(cam, names, _group_harvest(), 2, false)
@@ -123,6 +130,7 @@ func _group_own_buildings() -> Array:
 	return out
 
 
+## 全部**敌对**单位（不含盟友 —— 旧版把盟友也塞进来，自检才会"验不出"这个 bug）
 func _group_enemy() -> Array:
 	var out: Array = []
 	var pl := Game.player_faction
@@ -132,7 +140,22 @@ func _group_enemy() -> Array:
 		var r := u as RtsUnit
 		if r == null or not r.is_alive():
 			continue
-		if r.faction != null and r.faction != pl:
+		if r.faction != null and pl != null and pl.is_enemy_of(r.faction):
+			out.append(r)
+	return out
+
+
+## 全部盟友单位（同队、不是自己）
+func _group_ally() -> Array:
+	var out: Array = []
+	var pl := Game.player_faction
+	for u in Game.all_units():
+		if u == null or not is_instance_valid(u):
+			continue
+		var r := u as RtsUnit
+		if r == null or not r.is_alive():
+			continue
+		if r.faction != null and r.faction != pl and pl != null and pl.is_ally_of(r.faction):
 			out.append(r)
 	return out
 
@@ -235,12 +258,18 @@ func _shape_for(target: Node3D) -> int:
 		return Shape.PICK if _has_worker else Shape.ARROW
 	var fac: RtsFaction = target.get("faction") as RtsFaction
 	var mine: bool = fac != null and fac == Game.player_faction
+	# 敌我判据走 Game.is_ally_of_player（同队 = 盟友），不是"和我同一个阵营"
+	var mate: bool = fac != null and not mine and Game.is_ally_of_player(fac)
 	if target is RtsBuilding:
 		if mine:
 			return Shape.HAMMER if _has_worker else Shape.ALLY
+		if mate:
+			return Shape.TEAMMATE
 		return Shape.ENEMY
 	if mine:
 		return Shape.ALLY
+	if mate:
+		return Shape.TEAMMATE
 	if fac != null:
 		return Shape.ENEMY
 	return Shape.ARROW
@@ -256,6 +285,8 @@ func _pick(ro: Vector3, rd: Vector3) -> Node3D:
 			continue
 		if n is RtsUnit and not (n as RtsUnit).is_alive():
 			continue
+		if not n.visible:
+			continue    # 迷雾里藏起来的敌人：光标不该"凭空变红剑"
 		var hit := _test_capsule(n, ro, rd)
 		if hit < 0.0:
 			continue
@@ -270,6 +301,8 @@ func _pick(ro: Vector3, rd: Vector3) -> Node3D:
 			continue
 		if bool(h.call("is_depleted")):
 			continue
+		if not hd.visible:
+			continue    # 没探索过的资源不参与拾取
 		var hit2 := _test_capsule(hd, ro, rd)
 		if hit2 < 0.0:
 			continue
@@ -363,6 +396,7 @@ func _build_icons() -> void:
 	_tex.append(ImageTexture.create_from_image(_icon_enemy()))
 	_tex.append(ImageTexture.create_from_image(_icon_pick()))
 	_tex.append(ImageTexture.create_from_image(_icon_hammer()))
+	_tex.append(ImageTexture.create_from_image(_icon_teammate()))
 
 
 ## 调试：把五张图标拼成一张对照表存到工程里，方便人眼看
@@ -370,9 +404,9 @@ func _dump_icons() -> void:
 	var dir := OS.get_executable_path().get_base_dir()
 	var out_dir := OS.get_user_data_dir().path_join("debug")
 	DirAccess.make_dir_recursive_absolute(out_dir)
-	var sheet := Image.create(ICON * 6, ICON, false, Image.FORMAT_RGBA8)
+	var sheet := Image.create(ICON * 7, ICON, false, Image.FORMAT_RGBA8)
 	sheet.fill(Color(0.16, 0.17, 0.20, 1.0))
-	var names := ["箭头", "己方", "敌方", "采集", "建造"]
+	var names := ["箭头", "己方", "敌方", "采集", "建造", "盟友"]
 	for i in _tex.size():
 		var img := _tex[i].get_image()
 		if img == null:
@@ -414,6 +448,37 @@ func _icon_ally() -> Image:
 	_line(img, Vector2(cx, cy - 4.0), Vector2(cx, cy + 4.0), 2.0, Color(0.02, 0.10, 0.04))
 	_line(img, Vector2(cx - 3.0, cy), Vector2(cx + 3.0, cy), 1.2, cross)
 	_line(img, Vector2(cx, cy - 3.0), Vector2(cx, cy + 3.0), 1.2, cross)
+	return img
+
+
+# --- 盟友：青箭头 + 盾徽（能并肩、不能打） ---
+## 颜色口径和 小地图 / 选中圈 / 头顶血条 完全一致：盟友 = 青。
+## 盾形徽标是"友军"语义，十字徽标（己方）才是"可指挥"。
+func _icon_teammate() -> Image:
+	var img := _new_img()
+	var body := Color(0.34, 0.96, 0.94)
+	var pts := PackedVector2Array([
+		Vector2(4.0, 2.0), Vector2(4.0, 22.0), Vector2(8.2, 17.8),
+		Vector2(11.0, 24.0), Vector2(14.6, 22.2), Vector2(11.8, 15.6),
+		Vector2(18.2, 15.6),
+	])
+	_outline_poly(img, pts, body)
+	var cx: float = 24.2
+	var cy: float = 22.4
+	var shield := PackedVector2Array([
+		Vector2(cx - 5.0, cy - 5.4), Vector2(cx + 5.0, cy - 5.4),
+		Vector2(cx + 5.0, cy + 0.4), Vector2(cx, cy + 5.8),
+		Vector2(cx - 5.0, cy + 0.4),
+	])
+	var dark := PackedVector2Array()
+	for p in shield:
+		dark.append(p + Vector2(0.9, 0.0))
+	_fill_poly(img, dark, Color(0.02, 0.10, 0.12, 0.95))
+	_fill_poly(img, shield, Color(0.08, 0.38, 0.42, 0.96))
+	var inner := PackedVector2Array()
+	for p in shield:
+		inner.append((p - Vector2(cx, cy)) * 0.70 + Vector2(cx, cy))
+	_fill_poly(img, inner, Color(0.46, 0.98, 0.96, 0.98))
 	return img
 
 

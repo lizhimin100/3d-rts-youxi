@@ -366,6 +366,9 @@ func _pick(ray_o: Vector3, ray_d: Vector3) -> Node3D:
 	var best: Node3D = null
 	var best_t: float = INF
 	for n in _selectable_units():
+		# 迷雾里被藏起来的敌人不许点选（否则"看不见也能选中"，等于免费开图）
+		if not n.visible:
+			continue
 		var r: float = _select_radius(n)
 		var bottom: float = minf(r, 0.45)
 		var a: Vector3 = n.global_position + Vector3.UP * bottom
@@ -486,7 +489,11 @@ func _sync_rings() -> void:
 ##   3. 自己画一段贴地环形三角带（保证美术没到位也能看出选中了谁）
 func _make_ring(u: Node3D) -> Node3D:
 	var radius: float = maxf(_select_radius(u) * 1.35, 0.6)
-	var color: Color = Cfg.game.player_color if Cfg.game != null else Color(0.3, 0.62, 1.0)
+	# 选中圈颜色跟着**阵营显示色**走：自己的蓝、盟友的青、敌人的红/绿。
+	# 以前整圈一律用玩家蓝 —— 选中盟友时圈子和自己一模一样，"选中了谁"读不出来。
+	var fac := u.get("faction") as RtsFaction
+	var color: Color = fac.color if fac != null else (
+		Cfg.game.player_color if Cfg.game != null else Color(0.3, 0.62, 1.0))
 	var ring: Node3D = ArtKit.vfx_ring(u, radius, color)
 	if ring == null:
 		ring = _ring_from_scene(radius, color)

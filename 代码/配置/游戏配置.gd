@@ -65,6 +65,18 @@ extends Resource
 ## 单位重叠时的分离推力
 @export var separation_strength: float = 1.8
 
+## --- AI / 副官的"保留资金"（任何一笔开销之后，余额不得低于它）---
+## 敌方 AI：留一点"能补农民/能插箭塔"的机动钱就够（它是对手，不是管家）。
+@export var ai_reserve_gold: int = 150
+@export var ai_reserve_wood: int = 40
+## **副官**：它花的是**玩家的金币**，必须给人类留出一份"我自己造点什么"的预算。
+## 兵营 180 金 + 60 木、农场 80 金 + 20 木、箭塔 110 金 + 60 木 ——
+## 480 金 / 140 木 = 开局哪怕副官已经动过手，玩家仍能自己起一座兵营 + 一座农场。
+## 旧值 150 的实测后果：开局 5 秒金币就从 620 掉到 155，玩家连兵营都点不出来
+## （用户原话"余钱留的有点少了，我想建个建筑都不能做到"）。
+@export var adjutant_reserve_gold: int = 480
+@export var adjutant_reserve_wood: int = 140
+
 # ---------------------------------------------------------------------------
 # 战斗
 # ---------------------------------------------------------------------------
@@ -234,6 +246,14 @@ extends Resource
 	Color(0.98, 0.78, 0.24),   # 5 金
 	Color(0.24, 0.82, 0.80),   # 6 青
 ]
+## **盟友色（青）**：和你同队、但不是你本人的阵营（副官 AI）一律用这个颜色。
+##
+## 为什么队色不能再"同队同色"：队色是队伍属性，同队同色在纸面上很干净，
+## 但进了游戏就是"一圈蓝点里分不出哪个是我的兵、哪个是盟友的兵" ——
+## 玩家原话"同一队的显示很模糊、地图上一片红，看不出哪个是盟友"。
+## 所以显示层拆成三档：**你 = 队色（蓝）/ 盟友 = 青 / 敌人 = 各自队色（红、绿…）**。
+## 队（team）仍然是逻辑上的唯一判据（is_ally_of / is_enemy_of），这里只改"长什么样"。
+@export var ally_color: Color = Color(0.18, 0.90, 0.90)
 
 
 ## 某槽位属于哪个队（越界按 1 队算）
@@ -248,6 +268,17 @@ func team_color(team: int) -> Color:
 	if match_team_colors.is_empty():
 		return Color(0.30, 0.62, 1.00)
 	return match_team_colors[posmod(team - 1, match_team_colors.size())]
+
+
+## **某个槽位的显示色**（不是队色）：你 = 队色 / 盟友 = 青 / 敌人 = 各自队色。
+## 全项目只从这里取"这个阵营长得什么颜色"（模型染色区 / 小地图点 / 选中圈 / 血条）。
+func display_color_for_slot(slot: int) -> Color:
+	var team: int = team_of_slot(slot)
+	if slot == match_human_slot:
+		return team_color(team)
+	if team == team_of_slot(match_human_slot):
+		return ally_color
+	return team_color(team)
 
 
 ## 槽位显示名（"玩家" / "AI·2队"）

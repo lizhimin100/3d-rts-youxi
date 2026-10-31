@@ -213,6 +213,13 @@ static func enemy_color() -> Color:
 	return c.enemy_color if c != null else Color(1.0, 0.32, 0.26)
 
 
+## 盟友色（青）：和你同队的 AI。图例 / 小地图 / 提示都用这一份，
+## 别再各自写死一个绿色 —— 颜色口径不统一，玩家永远分不清"盟友 / 敌人"。
+static func ally_color() -> Color:
+	var c := cfg_game()
+	return c.ally_color if c != null else Color(0.18, 0.90, 0.90)
+
+
 ## 主文字 / 副文字 / 弱文字（60~70% 明度，任务书 §3.2 的层级要求）
 static func text_main() -> Color:
 	return Color(0.95, 0.94, 0.89)

@@ -547,8 +547,16 @@ func order_move(pos: Vector3) -> void:
 
 
 ## 攻击指定目标
+##
+## ★ 右键点到**同队（盟友/自己人）**时，不是"开火"，而是退化成"走到那儿"。
+##   以前这里不做敌我判定：光标在盟友身上显示红剑（已修），右键还会真的打友军 ——
+##   队友 AI 的兵被玩家亲手打死，玩家只会觉得"这游戏在坑我"。
 func order_attack(t: Node3D) -> void:
 	if _dying or t == null:
+		return
+	var tf: RtsFaction = t.get("faction") as RtsFaction
+	if tf != null and (faction == null or not faction.is_enemy_of(tf)):
+		order_move(t.global_position)
 		return
 	order = RtsConst.Order.ATTACK
 	target = t

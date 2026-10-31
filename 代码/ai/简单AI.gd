@@ -55,7 +55,15 @@ var push_ratio: float = 0.82
 ## 保留资金：任何一笔开销之后，金币都必须 ≥ 这个值，避免 AI 把家底掏空到"零机动"。
 ## 以前 AI 有多少花多少（can_afford 一过就掏），玩家一压家它连个农民都补不出来。
 ## 150 是"够补 1 个农民 + 留点找零"的缓冲，不写死在每处花销点、统一走 _can_spend。
+##
+## ★ 这两个常量只是**默认值**：真正的数值来自 Cfg.game.ai_reserve_gold / adjutant_*，
+##   由 _apply_reserve_from_cfg() 在 _ready 时灌进实例变量。副官（玩家侧 AI）走的是
+##   另一套高得多的预算 —— 它花的是玩家的钱，不能把玩家掏空。
 const RESERVE_GOLD: int = 150
+const RESERVE_WOOD: int = 40
+## 实例上的保留额（子类 / 配置可以覆盖）
+var reserve_gold: int = RESERVE_GOLD
+var reserve_wood: int = RESERVE_WOOD
 
 ## **外部注入的指挥阵营**：副官用它指挥玩家阵营；敌方 AI 不传，走 Game.enemy_faction。
 ## 这样"一套大脑"能同时驱动人机和副官，行为不会分叉成两套怪东西。
@@ -102,8 +110,18 @@ func _ready() -> void:
 				_faction = f
 				break
 	_make_subsystems()
+	_apply_reserve_from_cfg()
 	if _faction != null:
 		_init_wave_clock()
+
+
+## 从 Cfg 取"保留资金"（敌方 AI 一套 / 副官另一套，见 游戏配置 的注释）
+func _apply_reserve_from_cfg() -> void:
+	var cfg: GameConfig = Cfg.game if Cfg != null else null
+	if cfg == null:
+		return
+	reserve_gold = maxi(0, cfg.ai_reserve_gold)
+	reserve_wood = maxi(0, cfg.ai_reserve_wood)
 
 ## 建子系统。分出来一个函数是因为副官/测试可能会在 ready 之外重建。
 func _make_subsystems() -> void:
@@ -354,6 +372,9 @@ func _manage_peasants(diff: DifficultyDef) -> void:
 	# 60 秒只出 2 个兵，比"贪经济"亏得更狠）。
 	if peasants >= _army_units().size() + VILLAGER_ARMY_GAP:
 		return
+	# 同样要过"保留资金"闸：否则农民会把 AI（尤其副官）的钱一点点磨到零
+	if not _can_spend(&"peasant"):
+		return
 	var townhall: RtsBuilding = _first_building(&"townhall")
 	if townhall == null:
 		return
@@ -440,7 +461,8 @@ func _can_spend(id: StringName) -> bool:
 	var d: UnitDef = Cfg.unit(id)
 	if d == null:
 		return false
-	return _faction.gold - d.gold_cost >= RESERVE_GOLD
+	# 金与木各留一份底：只有金币闸的话，木头会被一口气花光、下一座房子永远差 20 木
+	return _faction.gold - d.gold_cost >= reserve_gold 		and _faction.wood - d.wood_cost >= reserve_wood
 
 
 ## 人口不够就补农场
@@ -674,7 +696,7 @@ func _maybe_build_barracks(diff: DifficultyDef) -> void:
 	# 必须留足"新兵营一完工就能立刻出一个兵"的钱。
 	# 不然产能是建出来了，但没钱排队 → 空转的兵营反而拖慢军队成型（实测踩过）。
 	var reserve: int = _cheapest_army_gold(diff) * MAX_QUEUE_ARMY
-	if _faction.gold < bd.gold_cost + reserve:
+	if _faction.gold < bd.gold_cost + reserve + reserve_gold:
 		return
 	var builder: RtsUnit = _pick_builder()
 	if builder == null:

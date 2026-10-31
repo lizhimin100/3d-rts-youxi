@@ -37,8 +37,15 @@ void fragment() {
 	}
 }
 """
-## 视野框淡填充
-const VIEW_FILL := Color(1.0, 1.0, 1.0, 0.055)
+## 视野框淡填充 / 描边色。
+## 旧版填充 alpha 0.055 + 1.2px 白线 —— 在花花绿绿的小地图上等于不存在；
+## 但如果反过来画成"粗白框 + 12% 白底"，它又会压过营地、金矿、单位，成为最抢眼的东西
+## （用户："梯形 UI 太大、太抢眼了"）。所以取中间值：**只有一圈细线 + 很淡的填充**，
+## 找得到、但不抢戏。
+const VIEW_FILL := Color(0.90, 0.98, 1.0, 0.040)
+const VIEW_LINE := Color(0.90, 0.98, 1.0, 0.52)
+## 取景框角标长度（像素）：只做"方向提示"，不做相框
+const VIEW_TICK := 4.0
 
 ## 世界边长（没关卡时从 Cfg 取）
 var world_size: float = 116.0
@@ -149,6 +156,7 @@ func _build_legend() -> void:
 	_legend_bg.add_child(_legend)
 	var items: Array = [
 		[Spec.player_color(), "我方"],
+		[Spec.ally_color(), "盟友"],
 		[Spec.enemy_color(), "敌军"],
 		[Spec.gold(), "金矿"],
 		[Color(0.34, 0.56, 0.30), "树林"],
@@ -320,8 +328,10 @@ func _draw() -> void:
 			print("[MM] %s world=%s map=%s ws=%.0f mr=%s" % [String(n3.name),
 				str(n3.global_position), str(_world_to_map(n3.global_position)),
 				world_size, str(mr)])
-	var pl_color: Color = Spec.player_color()
-	var en_color: Color = Spec.enemy_color()
+	# 迷雾节点可能比小地图晚建（RtsFog 在关卡 _ready 里挂），每帧补找一次
+	if _fog_node == null or not is_instance_valid(_fog_node):
+		_fog_node = get_tree().get_first_node_in_group("fog_system")
+	var dots: Array = []
 	for u in Game.all_units():
 		if u == null or not is_instance_valid(u):
 			continue
@@ -330,16 +340,28 @@ func _draw() -> void:
 			continue
 		if n is RtsUnit and not (n as RtsUnit).is_alive():
 			continue
-		# 战争迷雾：敌方（非盟友）单位/建筑在雾中不可见则不画
 		var fac: RtsFaction = n.get("faction")
-		if _fog_node != null and fac != null and fac != pl and not pl.is_ally_of(fac):
-			if not _fog_node.is_world_visible(n.global_position.x, n.global_position.z):
+		# 迷雾口径（和 3D 侧一致）：
+		#   自己 / 盟友永远画；敌方**单位**只在当前可见时画；
+		#   敌方**建筑**只要"探索过"就留一个点 —— 侦察过的房子不该凭空消失。
+		if _fog_node != null and fac != null and pl != null and not pl.is_ally_of(fac):
+			if n is RtsBuilding:
+				if not _fog_explored(n.global_position):
+					continue
+			elif not _fog_visible(n.global_position):
 				continue
-		var col := pl_color
-		if n is RtsUnit:
-			var f: RtsFaction = (n as RtsUnit).faction
-			if f != null and f != pl:
-				col = en_color
+		# 点色 = 阵营**显示色**：你蓝 / 盟友青 / 敌人各自队色。
+		# 旧版只有"我方蓝 / 其它一律红"，于是整张图一片红、盟友和敌人一个样。
+		var col: Color = Color(0.80, 0.82, 0.78)
+		if fac != null:
+			col = fac.color
+		dots.append([n, fac, col])
+	# 画序：敌人 → 盟友 → 自己，自己的点永远压在最上面
+	dots.sort_custom(func(a: Array, b: Array) -> bool:
+		return _dot_rank(a[1]) < _dot_rank(b[1]))
+	for e in dots:
+		var n: Node3D = e[0]
+		var col: Color = e[2]
 		var p: Vector2 = _world_to_map(n.global_position)
 		var half: float = 2.6 if n is RtsBuilding else 1.7
 		# 每个点先铺一圈 1px 黑影：亮底/暗底上都咬得住
@@ -352,13 +374,9 @@ func _draw() -> void:
 					Vector2((half + 1.8) * 2.0, (half + 1.8) * 2.0)),
 					Color(1.0, 1.0, 1.0, 0.92), false, 1.0)
 
-	# --- 当前视野框 ---
-	var view_poly := _view_polygon()
-	if view_poly.size() >= 3:
-		draw_colored_polygon(view_poly, VIEW_FILL)
-		var closed := view_poly.duplicate()
-		closed.append(view_poly[0])
-		draw_polyline(closed, Color(1.0, 1.0, 1.0, 0.62), 1.2)
+	# --- 当前视野框（玩家视角的梯形）---
+	_draw_view_box();
+
 
 	# --- 底图内框（把地形和边框分开）---
 	draw_rect(mr, Color(acc.r, acc.g, acc.b, 0.34), false, 1.0)
@@ -483,10 +501,13 @@ func _height_color(h: float) -> Color:
 ## 视野框：把屏幕四角打到地面，再映射到小地图（四点组成的梯形）
 func _view_polygon() -> PackedVector2Array:
 	var out := PackedVector2Array()
-	var cam := get_viewport().get_camera_3d() if get_viewport() != null else null
+	var vp := get_viewport()
+	var cam := vp.get_camera_3d() if vp != null else null
 	if cam == null:
 		return out
-	var vsize: Vector2 = get_viewport().get_visible_rect().size
+	var vsize: Vector2 = vp.get_visible_rect().size
+	if vsize.x < 8.0 or vsize.y < 8.0:
+		return out
 	var corners: Array = [
 		Vector2(0.0, 0.0), Vector2(vsize.x, 0.0),
 		Vector2(vsize.x, vsize.y), Vector2(0.0, vsize.y),
@@ -500,16 +521,177 @@ func _view_polygon() -> PackedVector2Array:
 			var ro: Vector3 = cam.project_ray_origin(c)
 			var rd: Vector3 = cam.project_ray_normal(c)
 			if absf(rd.y) < 0.0001:
-				return PackedVector2Array()
+				return _view_fallback_rect(cam)
 			var t: float = (0.0 - ro.y) / rd.y
 			if t < 0.0:
-				return PackedVector2Array()
+				return _view_fallback_rect(cam)
 			w = ro + rd * t
 		# ★ 用**不裁剪**的映射：镜头看到地图外时，四角本来就该落在圆盘外面。
 		#   旧版在这里 clamp 到 [0,1]，梯形会被压成一块贴边的白色大方块 ——
 		#   玩家说的"小地图对不上"，一半是它。
 		out.append(_world_to_map_raw(w))
+	# 退化保护：四个角挤成一团（相机贴地/朝天上）时，用镜头距离估一个框，
+	# 也好过"什么都没有"。
+	if out.size() == 4:
+		var aabb := Rect2(out[0], Vector2.ZERO)
+		for i in range(1, 4):
+			aabb = aabb.expand(out[i])
+		if aabb.size.x < 8.0 or aabb.size.y < 8.0:
+			return _view_fallback_rect(cam)
 	return out
+
+
+## 兜底取景框：以镜头注视点为中心、按当前缩放估一块矩形。
+## 这不是"假数据"—— 它保证任何相机姿态下玩家都能看到"我现在大概在看哪"。
+func _view_fallback_rect(cam: Camera3D) -> PackedVector2Array:
+	var node := cam.get_parent()
+	var ctr := Vector3.ZERO
+	var dist := 26.0
+	if node != null:
+		if node.has_method("focus_point"):
+			var fp: Variant = node.call("focus_point")
+			if fp is Vector3:
+				ctr = fp
+		if node.has_method("distance"):
+			dist = maxf(float(node.call("distance")), 8.0)
+	var pc := _world_to_map(ctr)
+	var mr := _map_rect()
+	var hw: float = clampf(dist * 1.35 / maxf(world_size, 1.0) * mr.size.x,
+		10.0, mr.size.x * 0.62)
+	var hh: float = hw * 0.58
+	return PackedVector2Array([
+		pc + Vector2(-hw, -hh), pc + Vector2(hw, -hh),
+		pc + Vector2(hw, hh), pc + Vector2(-hw, hh),
+	])
+
+
+## 画视野框：填充 + 暗描边 + 亮描边 + 四角角标 + 镜头朝向箭头。
+## **小地图上必须能一眼找到"玩家视角"**，所以它不是装饰，是主信息之一。
+## ★ 圆盘裁剪 shader 的坑（这次才查出来）：
+##   控件挂的 canvas_item 着色器用 UV 算"圆内/圆外"，而 draw_colored_polygon /
+##   draw_polyline / draw_line / draw_circle **不带 UV**（顶点 UV = 0），
+##   于是这些图元全被判成"圆外"、整批 discard —— 旧版视野梯形就是这么消失的：
+##   代码一直在画，只是从来没显示出来（玩家报"小地图看不到玩家视角在哪"）。
+##   结论：在这个控件里画任何**非矩形**图元，都必须显式给 UV = 像素/控件尺寸。
+func _canvas_uv(points: PackedVector2Array) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	if size.x < 1.0 or size.y < 1.0:
+		return out
+	for p in points:
+		out.append(p / size)
+	return out
+
+
+## 带 UV 的实心多边形（圆盘裁剪下唯一能活下来的填充图元）
+func _fill_poly_uv(points: PackedVector2Array, color: Color) -> void:
+	if points.size() < 3:
+		return
+	draw_colored_polygon(points, color, _canvas_uv(points))
+
+
+## 带 UV 的粗线（用四边形拼；draw_line 没有 UV，会被 discard）
+func _thick_line_uv(a: Vector2, b: Vector2, width: float, color: Color) -> void:
+	var d := b - a
+	if d.length_squared() < 0.0001:
+		return
+	var n := d.normalized().orthogonal() * (width * 0.5)
+	_fill_poly_uv(PackedVector2Array([a + n, b + n, b - n, a - n]), color)
+
+
+## 带 UV 的圆点
+func _dot_uv(center: Vector2, radius: float, color: Color, segs: int = 12) -> void:
+	var pts := PackedVector2Array()
+	for i in segs:
+		var a: float = TAU * float(i) / float(segs)
+		pts.append(center + Vector2(cos(a), sin(a)) * radius)
+	_fill_poly_uv(pts, color)
+
+
+## 画视野框：填充 + 暗描边 + 亮描边 + 四角角标 + 镜头朝向箭头。
+## **小地图上必须能一眼找到"玩家视角"**，所以它不是装饰，是主信息之一。
+func _draw_view_box() -> void:
+	var poly := _view_polygon()
+	if OS.has_environment("MM_DEBUG"):
+		print("[MM-VIEW] pts=%d poly=%s" % [poly.size(), str(poly)])
+	if poly.size() < 3:
+		return
+	# 1) 很淡的填充：能看出"镜头盖住了哪一块"，但不会压过单位点
+	_fill_poly_uv(poly, VIEW_FILL)
+	# 2) 描边：2.6px 暗底（只在亮地面上负责分离）+ 1.2px 亮线
+	for i in poly.size():
+		var j: int = (i + 1) % poly.size()
+		_thick_line_uv(poly[i], poly[j], 2.6, Color(0.02, 0.03, 0.05, 0.30))
+	for i2 in poly.size():
+		var j2: int = (i2 + 1) % poly.size()
+		_thick_line_uv(poly[i2], poly[j2], 1.2, VIEW_LINE)
+	# 3) 四角角标：4px 小折角，只当方向提示
+	var ctr := Vector2.ZERO
+	for c in poly:
+		ctr += c
+	ctr /= float(poly.size())
+	for c2 in poly:
+		var d: Vector2 = c2 - ctr
+		if d.length() > 0.01:
+			d = d.normalized()
+		var side := d.orthogonal() * 2.2
+		_thick_line_uv(c2 - d * VIEW_TICK + side, c2, 1.2, VIEW_LINE)
+		_thick_line_uv(c2 - d * VIEW_TICK - side, c2, 1.2, VIEW_LINE)
+	# 4) 镜头位置 + 朝向箭头（"玩家到底在看哪一边"）
+	var vp := get_viewport()
+	var cam := vp.get_camera_3d() if vp != null else null
+	if cam == null:
+		return
+	var node := cam.get_parent()
+	if node == null:
+		return
+	var focus := Vector3.ZERO
+	var yaw := 0.0
+	if node.has_method("focus_point"):
+		var fp: Variant = node.call("focus_point")
+		if fp is Vector3:
+			focus = fp
+	if node.has_method("yaw_degrees"):
+		yaw = deg_to_rad(float(node.call("yaw_degrees")))
+	var pc := _world_to_map(focus)
+	# 镜头看向 -Z 旋转 yaw 后的方向，映射到小地图（+x 右 / +z 下）
+	var dir := Vector2(-sin(yaw), -cos(yaw))
+	var side2 := dir.orthogonal()
+	# 箭头只做"朝向"的极小提示（7px），不再画大三角 + 黑底
+	var tip := pc + dir * 7.0
+	var a := pc + side2 * 2.8 - dir * 1.0
+	var b := pc - side2 * 2.8 - dir * 1.0
+	_fill_poly_uv(PackedVector2Array([tip, a, b]), Color(0.90, 0.98, 1.0, 0.62))
+	_dot_uv(pc, 1.2, Color(0.02, 0.03, 0.05, 0.45))
+
+
+## 小地图点画序：敌人 0 / 盟友 1 / 自己 2（自己的点永远压在最上面）
+func _dot_rank(f: RtsFaction) -> int:
+	var pl := Game.player_faction
+	if f == null or pl == null:
+		return 0
+	if f == pl:
+		return 2
+	if pl.is_ally_of(f):
+		return 1
+	return 0
+
+
+## 迷雾可见（没有迷雾节点时一律可见）
+func _fog_visible(p: Vector3) -> bool:
+	if _fog_node == null or not is_instance_valid(_fog_node):
+		return true
+	if _fog_node.has_method("is_world_visible_pos"):
+		return bool(_fog_node.call("is_world_visible_pos", p))
+	return true
+
+
+## 迷雾已探索（曾经看见过）
+func _fog_explored(p: Vector3) -> bool:
+	if _fog_node == null or not is_instance_valid(_fog_node):
+		return true
+	if _fog_node.has_method("is_world_explored_pos"):
+		return bool(_fog_node.call("is_world_explored_pos", p))
+	return true
 
 
 # ===========================================================================
