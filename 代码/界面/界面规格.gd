@@ -695,8 +695,31 @@ static func rule(alpha: float = 0.45) -> ColorRect:
 # 找不到时才退回文字（并且会打一条日志，方便发现漏配）。
 
 const ICON_DIR := "res://美术/图标/"
+## 建筑图标（Blender 从 `美术/模型/<建筑>.glb` 渲出来的 256² 透明底 PNG）。
+## 由 `工具/渲染建筑图标.py` 生成，一座建筑一张，和单位那套 SVG 图标分开放。
+const BUILDING_ICON_DIR := "res://美术/图标/建筑/"
 static var _icon_cache: Dictionary = {}
 static var _icon_miss: Array[String] = []
+
+
+## 建筑图标：按建筑 id（townhall / barracks / ...）直接取。
+## 找不到返回 null，调用方自己退回通用 SVG（`icon_tex("house")`）。
+static func building_icon(id: StringName) -> Texture2D:
+	var key := String(id)
+	if key.is_empty():
+		return null
+	var ck := "@建筑/" + key
+	if _icon_cache.has(ck):
+		return _icon_cache[ck] as Texture2D
+	var path := BUILDING_ICON_DIR + key + ".png"
+	var tex: Texture2D = null
+	if ResourceLoader.exists(path):
+		tex = load(path) as Texture2D
+	if tex == null and not _icon_miss.has(ck):
+		_icon_miss.append(ck)
+		push_warning("[界面规格] 缺建筑图标：" + path)
+	_icon_cache[ck] = tex
+	return tex
 
 
 static func icon_tex(name: String) -> Texture2D:

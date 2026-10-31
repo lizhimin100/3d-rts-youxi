@@ -447,7 +447,7 @@ func _build_entry(bid: StringName) -> Dictionary:
 	var ok: bool = d != null and Game.can_afford(Game.player_faction, bid)
 	return {
 		"label": d.display_name if d != null else String(bid),
-		"hint": "建造 %s：%d金 %d木，占地 %d×%d（放置时 R 转向）" % [
+		"hint": "建造 %s：%d金 %d木，占地 %d×%d（朝向统一，不需要转向）" % [
 			d.display_name if d != null else "建筑",
 			d.gold_cost if d != null else 0,
 			d.wood_cost if d != null else 0,
@@ -535,18 +535,24 @@ func _make_button(e: Dictionary) -> Button:
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	btn.add_child(row)
 
-	# --- 图标（22：再大会把四字名挤成省略号）---
+	# --- 图标（建筑渲图给 32：22 太小，看不清是哪座楼；线条图标仍 22）---
 	var tex: Texture2D = _icon_tex(String(e.get("icon", "")))
 	if tex != null:
+		var is_bld: bool = String(e.get("icon", "")).begins_with("建筑/")
 		var tr := TextureRect.new()
 		tr.name = "图标"
 		tr.texture = tex
 		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		tr.custom_minimum_size = Vector2(22.0, 22.0)
+		var isz: float = 32.0 if is_bld else 22.0
+		tr.custom_minimum_size = Vector2(isz, isz)
 		tr.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		tr.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		tr.modulate = Color(col.r, col.g, col.b, 0.98)
+		# 建筑渲图本身带颜色：保持原色（禁用时的整体压暗由 _refresh 里统一做）
+		if is_bld:
+			tr.modulate = Color(1, 1, 1, 1)
+		else:
+			tr.modulate = Color(col.r, col.g, col.b, 0.98)
 		tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		row.add_child(tr)
 
@@ -714,7 +720,9 @@ func _has_worker() -> bool:
 # 图标（美术/图标/*.svg，64px 矢量，按按钮主色着色）
 # ===========================================================================
 
-## 图标纹理缓存：同一个 SVG 只 load 一次
+## 图标纹理缓存：同一个图标只 load 一次
+## 支持两种资源：SVG 线条图标（`美术/图标/*.svg`）与建筑渲图（`美术/图标/建筑/*.png`），
+## 建筑名写成 `建筑/<id>`，例如 `建筑/barracks`。
 static var _icon_cache: Dictionary = {}
 
 const ICON_DIR := "res://美术/图标/"
@@ -724,10 +732,12 @@ static func _icon_tex(name: String) -> Texture2D:
 		return null
 	if _icon_cache.has(name):
 		return _icon_cache[name] as Texture2D
-	var path := ICON_DIR + name + ".svg"
+	# 先找 PNG（建筑渲图 `建筑/<id>.png`），再退回 SVG 线条图标
 	var tex: Texture2D = null
-	if ResourceLoader.exists(path):
-		tex = load(path) as Texture2D
+	if ResourceLoader.exists(ICON_DIR + name + ".png"):
+		tex = load(ICON_DIR + name + ".png") as Texture2D
+	elif ResourceLoader.exists(ICON_DIR + name + ".svg"):
+		tex = load(ICON_DIR + name + ".svg") as Texture2D
 	_icon_cache[name] = tex
 	return tex
 
@@ -748,8 +758,12 @@ static func _icon_for_unit(id: StringName) -> String:
 	return ""
 
 
-## 建筑 → 图标
+## 建筑 → 图标：**用美术资产里的建筑渲图**（`美术/图标/建筑/<id>.png`），
+## 一座楼一张，建造栏和信息面板头像共用；渲染不出来才退回通用 SVG。
 static func _icon_for_building(id: StringName) -> String:
+	if Spec.building_icon(id) != null:
+		return "建筑/" + String(id)
+	# 兜底（新增建筑但还没渲图标时）：
 	match id:
 		&"farm":
 			return "house"

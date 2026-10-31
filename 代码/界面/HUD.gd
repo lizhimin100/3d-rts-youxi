@@ -1266,11 +1266,17 @@ func _qa_force_over(kind: String) -> void:
 func _qa_open_build_page() -> void:
 	for _i in 12:
 		await get_tree().process_frame
+	# 自己选一批农民再开建造页：单靠 --select-id 会和主场景那份 QA 抢选择，
+	# 截图经常拍成"步兵 + 常用页"（建造页要求选中里真的有农民）。
+	if _valid_selection().is_empty():
+		await _qa_select_later("peasant")
+		for _i in 3:
+			await get_tree().process_frame
 	if _card == null:
 		return
 	_card.enter_build_page()
 	_refresh_card(true)
-	print("[QA补] 命令卡切到建造页")
+	print("[QA补] 命令卡切到建造页（选择 %d 个）" % _valid_selection().size())
 
 
 func _qa_select_later(want: String) -> void:

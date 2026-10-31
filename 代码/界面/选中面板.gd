@@ -467,12 +467,29 @@ func refresh(units: Array) -> void:
 		_count_chip.visible = n > 1
 		_count.text = "×%d" % n
 		_fill_faction(primary)
-		_fallback_icon.texture = Spec.icon_tex(_icon_for(def))
-		_fallback_icon.modulate = _team_color(primary, def)
-		_portrait.show_target(primary, n)
-		_show_portrait(true)
-		_probe_on = true
-		_probe_t = 0.0
+		# ★ 建筑头像用**美术资产里的建筑图标**（Blender 从 <建筑>.glb 渲的 256² PNG），
+		#   不再开一个 SubViewport 实时渲整栋楼：图标一眼能认，还省一次离屏渲染。
+		var is_bld: bool = def != null and def.is_building()
+		var btex: Texture2D = Spec.building_icon(def.id) if is_bld else null
+		if is_bld:
+			if btex != null:
+				_fallback_icon.texture = btex
+				_fallback_icon.modulate = Color(1, 1, 1, 1)
+				_set_fallback_pad(6.0)
+			else:
+				_fallback_icon.texture = Spec.icon_tex(_icon_for(def))
+				_fallback_icon.modulate = _team_color(primary, def)
+				_set_fallback_pad(18.0)
+			_show_portrait(false)
+			_probe_on = false
+		else:
+			_fallback_icon.texture = Spec.icon_tex(_icon_for(def))
+			_fallback_icon.modulate = _team_color(primary, def)
+			_set_fallback_pad(18.0)
+			_portrait.show_target(primary, n)
+			_show_portrait(true)
+			_probe_on = true
+			_probe_t = 0.0
 		_sync_squad(arr)
 
 	_set_text(_val[0], _fmt(def.attack_damage if def != null else 0.0))
@@ -590,6 +607,8 @@ func _show_empty() -> void:
 	_show_portrait(false)
 	_fallback.visible = true
 	_fallback_icon.texture = Spec.icon_tex("flag")
+	_fallback_icon.modulate = Color(1, 1, 1, 1)
+	_set_fallback_pad(18.0)
 	_refresh_empty()
 
 
@@ -627,6 +646,16 @@ func _process(dt: float) -> void:
 # ===========================================================================
 # 头像
 # ===========================================================================
+
+## 头像兜底层的内边距：建筑渲图自带留白，铺满更好看；线条图标要留 18px 才不顶框
+func _set_fallback_pad(pad: float) -> void:
+	if _fallback_icon == null:
+		return
+	_fallback_icon.offset_left = pad
+	_fallback_icon.offset_top = pad
+	_fallback_icon.offset_right = -pad
+	_fallback_icon.offset_bottom = -pad
+
 
 func _show_portrait(on: bool) -> void:
 	if _portrait != null:

@@ -39,6 +39,8 @@ const PANEL_W := 512.0
 ## 2026-10-23：150 → 126。面板从"屏幕中央下方"搬到"左下角"后，高度必须收，
 ## 否则选中兵营时它还是会顶到屏幕中线。
 const H_MIN := 126.0
+## 建筑头像边长：底栏总高 136、面板高 ~88，52 是"看得清又不多占宽"的档位
+const PIC := 52.0
 ## 训练队列最多显示几项（与指令系统的训练上限一致）
 const QUEUE_MAX := 5
 ## 面板内边距（8 的倍数；压到 8 是为了把高度让给"按钮 ≥64"）
@@ -155,6 +157,8 @@ var _queue_icons: Array[TextureRect] = []
 var _rally_box: VBoxContainer = null
 var _rally_btn: Button = null
 var _rally_label: Label = null
+## 建筑头像（美术资产渲图，`美术/图标/建筑/<id>.png`）
+var _pic: TextureRect = null
 
 var _research_box: VBoxContainer = null
 var _research_btns: HBoxContainer = null
@@ -245,14 +249,44 @@ func ensure_built() -> void:
 
 	var row := HBoxContainer.new()
 	row.name = "两列"
-	row.add_theme_constant_override("separation", 14)
+	row.add_theme_constant_override("separation", 10)
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(row)
+
+	# --- 左：**建筑头像** ---
+	# 图标来自美术资产：`工具/渲染建筑图标.py` 把 美术/模型/<建筑>.glb 渲成 256² 透明底 PNG
+	# （美术/图标/建筑/<id>.png）。以前建筑面板"无头像"，选一座楼只有一行字，
+	# 一眼分不清是大本营还是兵营；现在和单位面板一样有门面。
+	var pic_box := Panel.new()
+	pic_box.name = "建筑头像框"
+	pic_box.custom_minimum_size = Vector2(PIC, PIC)
+	pic_box.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	pic_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var psb := StyleBoxFlat.new()
+	psb.bg_color = Color(0.055, 0.062, 0.074, 0.98)
+	psb.set_corner_radius_all(6)
+	psb.border_color = Color(_warm.r, _warm.g, _warm.b, 0.55)
+	psb.set_border_width_all(2)
+	pic_box.add_theme_stylebox_override("panel", psb)
+	row.add_child(pic_box)
+
+	_pic = TextureRect.new()
+	_pic.name = "建筑头像"
+	_pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_pic.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_pic.offset_left = 3.0
+	_pic.offset_top = 3.0
+	_pic.offset_right = -3.0
+	_pic.offset_bottom = -3.0
+	_pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pic_box.add_child(_pic)
 
 	var vb := VBoxContainer.new()
 	vb.name = "纵"
 	vb.add_theme_constant_override("separation", 2)
-	vb.custom_minimum_size = Vector2(400.0, 0.0)
+	# 让出头像那一列（PIC + 间距）—— 不减就会把整条底栏挤宽，把队伍网格顶出屏幕
+	vb.custom_minimum_size = Vector2(maxf(200.0, 400.0 - PIC - 10.0), 0.0)
 	vb.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	vb.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(vb)
@@ -554,6 +588,16 @@ func refresh(target: RtsBuilding) -> void:
 		return
 	var d: UnitDef = target.def
 	var def_id: StringName = d.id if d != null else &""
+	# 头像先换（不随内容重建，避免每次刷新都 load 贴图）
+	if _pic != null:
+		var bt: Texture2D = Spec.building_icon(def_id)
+		if bt != null:
+			if _pic.texture != bt:
+				_pic.texture = bt
+				_pic.modulate = Color(1, 1, 1, 1)
+		elif _pic.texture == null:
+			_pic.texture = Spec.icon_tex("house")
+			_pic.modulate = Color(0.92, 0.88, 0.72, 0.92)
 	if def_id != _built_def:
 		_built_def = def_id
 		_rebuild_entries(d)
