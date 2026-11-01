@@ -34,7 +34,9 @@ enum Pending {
 ## 编队间距（米）
 const FORMATION_SPACING := 1.9
 ## 训练队列上限
-const TRAIN_QUEUE_MAX := 5
+## 2026-11-01：5 → 10。玩家要求底栏队列"最多显示 7 个，再多翻页"，
+## 上限还是 5 的话那段分页逻辑永远走不到（7 格永远排不满）。
+const TRAIN_QUEUE_MAX := 10
 
 ## 当前等待状态
 var pending: int = Pending.NONE

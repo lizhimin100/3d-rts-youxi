@@ -105,10 +105,14 @@ var _echo: RtsEchoFx = null
 ## **GLYPH 光标符文**：按悬停对象换图标（见 光标术.gd）
 var _glyph: RtsGlyphCursor = null
 
-## 底栏底板（一整条）：把选中卡和命令卡锁成同一条带，见 band_style()
-var _band_plate: Panel = null
+## 底栏底板（一整条奇幻石金板，见 浮雕底板.gd）
+var _band_plate: RtsOrnatePlate = null
+## 可弹出式说明文本层（见 说明气泡.gd）
+var _tips: RtsTipLayer = null
 ## 上一次用的底栏高度（内容变化时用来发现"该重摆了"）
 var _band_applied: float = 0.0
+## 上一次中段的实际宽度（用来发现"内容变宽/变窄了，该重摆"）
+var _mid_w_applied: float = 0.0
 ## 整层 HUD 是否显示（F9 切换；录视频时收起）
 var _hud_on: bool = true
 ## 隐藏 HUD 后那条 2 秒淡出的提示（挂在 CanvasLayer 上，不在 root 里，
@@ -191,6 +195,7 @@ func _ready() -> void:
 	_sync_root_size()
 
 	_build_band_plate()
+	_build_tip_layer()
 	_build_stats()
 	_build_toasts()
 	_build_minimap()
@@ -281,6 +286,10 @@ func _process(delta: float) -> void:
 	# 否则右下角会裁掉半行字，或者选中卡比命令卡矮一截（就是"一边低一边高"）。
 	if absf(_band_h() - _band_applied) > 1.0:
 		_apply_layout()
+	# 中段宽度也会变（队伍数量 / 建筑开始训练），同样按"差多少就重摆"处理。
+	# 不比对的话：选中 4 个兵时中段 285 宽，框选 8 个后仍然 285，格子被挤成一团。
+	elif absf(_mid_want() - _mid_w_applied) > 8.0:
+		_apply_layout()
 
 
 ## 把界面根节点铺满视口。
@@ -344,6 +353,19 @@ func _recompute_metrics() -> void:
 const BAR_GAP := 10.0
 ## 底板比段底外扩的厚度（上下左右各 6px）
 const BAND_PAD := 6.0
+## 底栏内容距底板左右边缘的呼吸位（"三块向中间靠拢"就是靠这个值）
+const BAND_EDGE := 42.0
+
+
+## 中段此刻"想要多宽"（队伍网格 / 建筑面板各自报，取当前可见的那个）。
+## 只用于发现"宽度变了要重摆"，不参与布局计算。
+func _mid_want() -> float:
+	if _building_panel != null and is_instance_valid(_building_panel) \
+			and _building_panel.visible and _building_panel.has_method("content_width"):
+		return float(_building_panel.call("content_width"))
+	if _grid_panel != null and _grid_panel.visible and _sel_grid != null:
+		return float(_sel_grid.call("content_width"))
+	return 0.0
 
 
 ## 底栏当前该有多高：取三块内容里最高的那个，夹在 [band_h, band_max_h]
@@ -386,10 +408,12 @@ func _grid_should_show() -> bool:
 	if bool(_sel_grid.call("is_empty")):
 		return false
 	var m: float = _mets.margin
-	var left: float = m + BAND_PAD
-	var right: float = _mets.vw - m - BAND_PAD - _mets.card_w - BAR_GAP
-	var dw: float = clampf(_mets.vw * 0.215, 262.0, 346.0)
-	return (right - (left + dw + BAR_GAP)) >= 210.0
+	var left: float = m + BAND_PAD + BAND_EDGE
+	var right: float = _mets.vw - m - BAND_PAD - BAND_EDGE - _mets.card_w - BAR_GAP
+	var dw: float = 216.0
+	if _dossier != null and _dossier.has_method("content_width"):
+		dw = clampf(float(_dossier.call("content_width")), 196.0, 320.0)
+	return (right - (left + dw + BAR_GAP)) >= 230.0
 
 
 ## 底栏此刻该不该出现：两段都空（没选中）时整条收起，屏幕干干净净
@@ -405,6 +429,8 @@ func _apply_layout() -> void:
 	if _mets == null or root == null:
 		return
 	var m: float = _mets.margin
+	# 段底 stylebox 的内边距（recess_style pad=8 → 上下共 16）
+	const CARD_PAD := 16.0
 
 	# 资源条：顶部**居中**（左上让给圆形小地图）
 	if _stats_panel != null:
@@ -436,9 +462,8 @@ func _apply_layout() -> void:
 
 	var inner_h: float = bh - BAND_PAD * 2.0
 	var cw: float = _mets.card_w
-	# 段底 stylebox 的内边距（segment_style pad=8），面板的最小高度 =
-	# 内容最小高度 + 上下 8 → 命令卡自己要**先减掉**这 16，否则整条会高出底板。
-	const CARD_PAD := 16.0
+	# 段底 stylebox 的内边距 8 → 面板最小高度 = 内容 + 16，
+	# 命令卡自己要**先减掉**这 16，否则整条会高出底板。
 	if _card_panel != null:
 		if _card != null:
 			_card.custom_minimum_size = Vector2(0.0, inner_h - CARD_PAD)
@@ -446,17 +471,21 @@ func _apply_layout() -> void:
 				or absf(_card_panel.custom_minimum_size.y - inner_h) > 0.5:
 			_card_panel.custom_minimum_size = Vector2(cw, inner_h)
 		_place(_card_panel, 1.0, 1.0, 1.0, 1.0,
-				-(m + BAND_PAD + cw), -(m + BAND_PAD + inner_h), -(m + BAND_PAD), -(m + BAND_PAD))
+				-(m + BAND_PAD + BAND_EDGE + cw), -(m + BAND_PAD + inner_h),
+				-(m + BAND_PAD + BAND_EDGE), -(m + BAND_PAD))
 	_card_h_applied = inner_h
 
-	# 底栏从 2026-10-31 起是**三段**（按玩家给的参考图）：
-	#   左 = 大头像 + 血条/法力条（头像正下方，104px 宽）
-	#   中 = 单选 → 大号数值；多选 → 队伍清单；**建筑 → 训练队列/属性**
-	#   右 = 命令格（5 列 × 最多 4 行，训练/研究/集结点都在这儿）
-	var left: float = m + BAND_PAD
-	var right: float = _mets.vw - m - BAND_PAD - cw - BAR_GAP
-	# 左段只放一张 104px 头像 + 两条：148 足够（以前 262~346 是为了塞名字和数值）
-	var dw: float = clampf(148.0, 132.0, 176.0)
+	# 底栏三段（2026-11-01 玩家口径："三块都变大、向中间靠拢、中间别被填满"）：
+	#   左 = 大头像 + 生命/法力（x/x 文字，不是进度条）
+	#   中 = 名字 + 竖排数值（宽度**按内容**给，不再一路铺到命令卡）
+	#   右 = 命令格（5 列 × 最多 4 行）
+	# ★ 两侧都往里收 BAND_EDGE：玩家要的是"向中间靠拢"，屏幕上左右各留一条呼吸位。
+	#   中段宽度 = min(可用宽, 面板想要的宽)，所以三块之间不会互相顶死。
+	var left: float = m + BAND_PAD + BAND_EDGE
+	var right: float = _mets.vw - m - BAND_PAD - BAND_EDGE - cw - BAR_GAP
+	# 左段宽度**问面板自己**（头像多大就多宽），不再写死 178
+	var dw: float = clampf(float(_dossier.call("content_width")) if _dossier != null else 216.0,
+			196.0, 320.0)
 	var wide: float = clampf(right - left, 340.0, 760.0)
 	var bld_on: bool = _building_panel != null and is_instance_valid(_building_panel) \
 			and _building_panel.visible
@@ -470,15 +499,26 @@ func _apply_layout() -> void:
 	var w: float = dw
 	_sel_left = left
 	_sel_w = w
-	_sel_w_bld = gw if gw > 1.0 else wide
+	# 中段想要多宽：面板自己说了算（内容多宽就多宽），最多到可用宽
+	var mid_w: float = gw
+	if mid_on and not bld_on and _sel_grid != null and _sel_grid.has_method("content_width"):
+		mid_w = clampf(float(_sel_grid.call("content_width")), 240.0, gw)
+	elif mid_on and bld_on and _building_panel != null \
+			and _building_panel.has_method("content_width"):
+		mid_w = clampf(float(_building_panel.call("content_width")), 260.0, gw)
+	# ★ 建筑面板的**最小宽度**必须和中段实际宽度一致：
+	#   以前这里写的是 gw（"整条可用宽"），于是 content_width 算得再准，
+	#   set_metrics 又把 custom_minimum_size 撑回 gw，面板照样横到命令卡边上。
+	_sel_w_bld = (mid_w if mid_on else wide)
+	_mid_w_applied = _sel_w_bld if mid_on else 0.0
 	# 中段：建筑选中 → 建筑面板（队列/属性）；否则 → 队伍网格
 	if _grid_panel != null:
 		var show_grid: bool = (not bld_on) and mid_on and _grid_should_show()
 		_grid_panel.visible = show_grid and root.visible
 		if show_grid:
-			_sel_grid.call("set_metrics", gw - 12.0, inner_h - 12.0, _mets.compact)
+			_sel_grid.call("set_metrics", mid_w - 12.0, inner_h - 12.0, _mets.compact)
 			_place(_grid_panel, 0.0, 1.0, 0.0, 1.0,
-					gx0, -(m + BAND_PAD + inner_h), gx0 + gw, -(m + BAND_PAD))
+					gx0, -(m + BAND_PAD + inner_h), gx0 + mid_w, -(m + BAND_PAD))
 	# 左段：选中卡（单位 / 建筑共用一个；建筑用 PNG 图标当头像）
 	if _dossier != null and is_instance_valid(_dossier):
 		_place(_dossier, 0.0, 1.0, 0.0, 1.0,
@@ -486,22 +526,37 @@ func _apply_layout() -> void:
 	# 中段（建筑）：**和队伍网格抢同一个位置**，谁可见谁占位。
 	# 必须无条件摆一次（哪怕这次不可见），否则它第一次显示时还停在默认尺寸。
 	if _building_panel != null and is_instance_valid(_building_panel):
-		var bwidth: float = gw if mid_on else wide
+		var bwidth: float = mid_w if mid_on else wide
 		_place(_building_panel, 0.0, 1.0, 0.0, 1.0,
 				gx0, -(m + BAND_PAD + inner_h), gx0 + bwidth, -(m + BAND_PAD))
 
-	# 底板：整条（从左缘一直铺到命令卡右缘；命令卡收起时只铺选中卡那一段）
+	# 底板：2026-11-01 第五版 —— **整条底栏重新长出一块奇幻石金板**。
+	#   玩家口径："下方一整个 UI 也换一个背景，换一个更具奇幻风格、
+	#   符合建筑和单位风格的 UI 背景。"
+	#   三块内容（左卡 / 中段 / 命令卡）全部坐在这块板上：
+	#   左卡自己的 stylebox 仍然是空的（大头像浮在石面上），
+	#   中段与命令卡只留一圈很淡的凹槽，层次才读得出来。
 	if _band_plate != null:
-		var on: bool = _band_visible()
-		_band_plate.visible = on and root.visible
-		if on:
-			var plate_right: float = _mets.vw - m
-			if _card_panel == null or not _card_panel.visible:
-				plate_right = left + w + BAND_PAD
-			_place(_band_plate, 0.0, 1.0, 0.0, 1.0,
-					left - BAND_PAD, -(m + bh), plate_right, -m)
+		_band_plate.visible = _band_visible() and root.visible
+		_place(_band_plate, 0.0, 1.0, 1.0, 1.0,
+				m + BAND_PAD, -(m + BAND_PAD + inner_h),
+				-(m + BAND_PAD), -(m + BAND_PAD))
+		# 纹章摆在"中段右缘 → 命令卡左缘"这块空白区的正中：
+		# 玩家要求"中间别被 UI 填满"，那块空就必须是**有纹章的空白**，
+		# 而不是一块看起来像没加载出来的黑区。
+		var mid_right: float = gx0
+		if bld_on:
+			mid_right = gx0 + (mid_w if mid_on else wide)
+		elif _grid_panel != null and _grid_panel.visible:
+			mid_right = gx0 + mid_w
+		var card_left: float = _mets.vw - m - BAND_PAD - BAND_EDGE - cw
+		_band_plate.medallion_x = maxf((mid_right + card_left) * 0.5 - (m + BAND_PAD), -1.0)
 
 	_place_toasts()
+	# 气泡层铺满整个 root：**必须显式摆**，光靠 full-rect 锚点在这套
+	# "root 尺寸由 offset 反算"的结构里量到的是 (0,0)，气泡会挤在左上角。
+	if _tips != null:
+		_place(_tips, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0)
 	# **先**把尺寸灌进两块面板，**再**摆位置。
 	# 反过来会被 set_metrics 里的 reset_size 覆盖，面板缩回最小高度、位置也乱。
 	_apply_panel_metrics()
@@ -509,8 +564,10 @@ func _apply_layout() -> void:
 	_apply_theme_scale()
 	if OS.has_environment("UI_DEBUG"):
 		print("[BAND] vw=%.0f band=%.0f sel=(%.0f..%.0f) card=(%.0f..%.0f) h=%.0f tile=%.0f cardw=%.0f" % [
-			_mets.vw, bh, left, left + w, _mets.vw - m - BAND_PAD - cw, _mets.vw - m - BAND_PAD,
+			_mets.vw, bh, left, left + w, _mets.vw - m - BAND_PAD - BAND_EDGE - cw,
+			_mets.vw - m - BAND_PAD - BAND_EDGE,
 			inner_h, _mets.tile, cw])
+
 
 
 ## 命令卡当前实际高度（行数自适应：1 行 / 2 行 / 3 行）
@@ -624,6 +681,34 @@ func _build_stats() -> void:
 	_time_label = _stat_pill(hb, "时间", Color(0.80, 0.86, 0.96), false, "clock")
 
 
+## 资源条上一枚胶囊的说明（金币 / 木材 / 人口 / 时间）
+func _resource_tip(title: String) -> Dictionary:
+	var pl := Game.player_faction
+	match title:
+		"金币":
+			var g: int = pl.gold if pl != null else 0
+			return {"icon": "coin", "icon_color": Spec.gold(), "title": "金币 %d" % g,
+				"tag": "主资源", "body": "训练、建造、研究都要花金币。\n由农民在金矿上采集，送回大本营或伐木场结算。",
+				"foot": ""}
+		"木材":
+			var w: int = pl.wood if pl != null else 0
+			return {"icon": "wood", "icon_color": Spec.wood(), "title": "木材 %d" % w,
+				"tag": "主资源", "body": "造农场 / 兵营 / 箭塔和大部分科技都要木材。\n伐木场是木材专用交汇点，背木头的农民优先去那里。",
+				"foot": ""}
+		"人口":
+			var used: int = pl.food_used() if pl != null else 0
+			var cap: int = pl.food_cap() if pl != null else 0
+			return {"icon": "pop", "icon_color": Spec.food(), "title": "人口 %d / %d" % [used, cap],
+				"tag": "上限", "body": "每个单位都占人口，每座农场 +8 上限。\n人口满了就训练不出新兵（按钮会变灰）。",
+				"foot": "空闲 %d" % maxi(cap - used, 0)}
+		"时间":
+			var secs: int = maxi(0, int(Game.elapsed)) if Game != null else 0
+			return {"icon": "clock", "icon_color": Color(0.80, 0.86, 0.96),
+				"title": "本局 %02d:%02d" % [secs / 60, secs % 60], "tag": "计时",
+				"body": "从开局算起的真实时间（暂停也会走）。", "foot": ""}
+	return {}
+
+
 ## 一枚资源胶囊：[图标][小字标题][大数字][可选微条]，等宽伸展
 ##
 ## 图标替掉了原来的 8×8 色点：色点只能表达"这是另一种资源"，
@@ -631,8 +716,10 @@ func _build_stats() -> void:
 func _stat_pill(parent: Node, title: String, color: Color, with_bar: bool,
 		icon_name: String = "") -> Label:
 	var pill := PanelContainer.new()
-	pill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# PASS（不是 IGNORE）：IGNORE 收不到 mouse_entered，说明气泡永远弹不出来
+	pill.mouse_filter = Control.MOUSE_FILTER_PASS
 	pill.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	RtsTipLayer.bind(self, pill, func() -> Dictionary: return _resource_tip(title))
 	pill.add_theme_stylebox_override("panel",
 			Spec.inset_style(Color(0.078, 0.088, 0.110, 0.94), 6,
 					Color(color.r, color.g, color.b, 0.30), 12.0, 5.0))
@@ -975,8 +1062,9 @@ func _build_selection_grid() -> void:
 	_grid_panel = PanelContainer.new()
 	_grid_panel.name = "队伍网格底座"
 	_grid_panel.mouse_filter = Control.MOUSE_FILTER_PASS
-	_grid_panel.add_theme_stylebox_override("panel", Spec.segment_style(
-			Color(0.078, 0.086, 0.104, 0.90), 8, 8.0, 0.10))
+	# 中段只是石板上的一道**浅凹槽**：底色几乎透明（石板自己会透出来），
+	# 只留一圈极淡的金线把"这一块是单位信息"框住。
+	_grid_panel.add_theme_stylebox_override("panel", Spec.recess_style(0.34))
 	_grid_panel.visible = false
 	root.add_child(_grid_panel)
 
@@ -995,15 +1083,25 @@ func _build_overhead() -> void:
 	move_child(_overhead, 0)
 
 
-## 底栏底板：一整条深石色带（必须**最早**加入 root —— 兄弟节点按顺序绘制，
-## 晚加就会盖住两块面板）。
+## 底栏底板：一整条**奇幻石金板**（RtsOrnatePlate 自绘：石面 + 金色内嵌线 +
+## 四角铆钉 + 顶心徽记），必须**最早**加入 root —— 兄弟节点按顺序绘制，
+## 晚加就会盖住两块面板。
 func _build_band_plate() -> void:
-	_band_plate = Panel.new()
+	_band_plate = RtsOrnatePlate.new()
 	_band_plate.name = "底栏底板"
+	_band_plate.kind = RtsOrnatePlate.Kind.BAND
 	_band_plate.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_band_plate.add_theme_stylebox_override("panel", Spec.band_style())
 	_band_plate.visible = false
 	root.add_child(_band_plate)
+
+
+## 说明气泡层：挂在 root 上（跟着 1/zoom 反拉伸走，字号才和面板正文一致），
+## z_index 200 → 永远压在所有面板之上。必须在**建面板之前**建好：
+## 面板 `_ready` 里就要 `RtsTipLayer.bind()`，找不到层就只能退回引擎 tooltip。
+func _build_tip_layer() -> void:
+	_tips = RtsTipLayer.new()
+	_tips.name = "说明气泡"
+	root.add_child(_tips)
 
 
 ## 右下命令卡
@@ -1011,9 +1109,8 @@ func _build_card() -> void:
 	_card_panel = PanelContainer.new()
 	_card_panel.name = "命令卡底座"
 	_card_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	# 段底：比底板浅一档、圆角更小、无投影 —— 读起来是"底板上的一个凹槽"
-	_card_panel.add_theme_stylebox_override("panel", Spec.segment_style(
-			Color(0.088, 0.096, 0.114, 0.92), 8, 8.0, 0.14))
+	# 和中段同一套凹槽：石板上的另一块"挖进去的区域"
+	_card_panel.add_theme_stylebox_override("panel", Spec.recess_style(0.42))
 	root.add_child(_card_panel)
 
 	_card = RtsCommandCard.new()
@@ -1078,6 +1175,8 @@ func set_hud_visible(on: bool, announce: bool = true) -> void:
 	_hud_on = on
 	if root != null:
 		root.visible = on
+	if not on and _tips != null:
+		_tips.dismiss()
 	if _overhead != null and is_instance_valid(_overhead):
 		_overhead.visible = on
 	# 收起界面时，等待落点的胶囊和结算遮罩也跟着走（它们是 root 的子节点，
@@ -1266,6 +1365,8 @@ func _qa_extra_hooks() -> void:
 	var over: String = ""
 	var want_page: bool = false
 	var train: String = ""
+	var queue: String = ""
+	var hover: String = ""
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--ui-over="):
 			over = arg.substr(10)
@@ -1273,12 +1374,76 @@ func _qa_extra_hooks() -> void:
 			want_page = true
 		elif arg.begins_with("--qa-train="):
 			train = arg.substr(11)
+		elif arg.begins_with("--qa-queue="):
+			queue = arg.substr(11)
+		elif arg.begins_with("--qa-hover="):
+			hover = arg.substr(11)
 	if over != "":
 		_qa_force_over(over)
 	if want_page:
 		_qa_open_build_page()
 	if not train.is_empty():
 		_qa_queue_training(train)
+	if not queue.is_empty():
+		_qa_fill_queue(queue)
+	if not hover.is_empty():
+		_qa_hover(hover)
+
+
+## --qa-queue=<id,id,…>：**不走花钱流程**，直接往训练队列里塞（截 L 型队列 / 翻页用）
+func _qa_fill_queue(csv: String) -> void:
+	for _i in 30:
+		await get_tree().process_frame
+	var b: RtsBuilding = null
+	for u in _valid_selection():
+		var bb := u as RtsBuilding
+		if bb != null and bb.is_alive():
+			b = bb
+			break
+	if b == null:
+		print("[QA补] --qa-queue 失败：当前没有选中建筑")
+		return
+	b.train_queue.clear()
+	for id in csv.split(",", false):
+		b.train_queue.append(StringName(id.strip_edges()))
+	print("[QA补] 队列塞入 %d 个（%s）" % [b.train_queue.size(), csv])
+	_apply_layout()
+
+
+## --qa-hover=<节点名>：把说明气泡强制弹在某个控件上（截"可弹出式文本"用）。
+## 真人用鼠标悬停，截图脚本没有鼠标 —— 只能直接叫醒气泡层。
+func _qa_hover(node_name: String) -> void:
+	# 等 48 帧：比 --qa-queue / --qa-train 的 30 帧更晚，
+	# 否则队列格还没显示，按名字根本找不到（隐藏节点会被跳过）。
+	for _i in 48:
+		await get_tree().process_frame
+	var c := _find_named(root, node_name)
+	if c == null:
+		print("[QA补] --qa-hover 没找到控件：%s" % node_name)
+		return
+	if _tips == null:
+		print("[QA补] --qa-hover 失败：没有气泡层")
+		return
+	var ctl := c as Control
+	_tips._enter(ctl)
+	_tips._delay = 0.0
+	print("[QA补] 说明气泡弹出：%s" % node_name)
+
+
+## 按名字找控件：**只找可见的**。
+## 单位面板和建筑面板都有叫「数值0」的行，按树的顺序会先撞上隐藏的那一份，
+## 于是"悬停弹窗"看起来永远不出现（其实是弹在了一个不可见的节点上）。
+func _find_named(n: Node, want: String) -> Node:
+	var ctl := n as Control
+	if ctl != null and not ctl.visible:
+		return null
+	if String(n.name) == want:
+		return n
+	for c in n.get_children():
+		var hit := _find_named(c, want)
+		if hit != null:
+			return hit
+	return null
 
 
 ## 给当前选中的建筑排训练（验收用）：等选择落定后逐个 queue_train。
@@ -1344,9 +1509,17 @@ func _qa_select_later(want: String) -> void:
 	if picked.is_empty():
 		return
 	# --qa-single：只选第一个（验收"单选时的数值行"用；多选会按设计隐藏那行）
+	# --qa-all   ：把己方**所有**活着的单位都选上（验收多选清单 / 翻页 / 格子宽度）
 	for arg in OS.get_cmdline_user_args():
 		if arg == "--qa-single":
 			picked = [picked[0]]
+			break
+		if arg == "--qa-all":
+			picked.clear()
+			for u in Game.all_units():
+				var r2 := u as RtsUnit
+				if r2 != null and r2.is_alive() and r2.faction == pl and not r2.def.is_building():
+					picked.append(r2)
 			break
 	var sel := get_parent().get_node_or_null("选择系统")
 	if sel == null:
@@ -1611,6 +1784,9 @@ func _on_resources_changed(_faction: RtsFaction) -> void:
 
 func _on_selection_changed(units: Array) -> void:
 	_selection = units.duplicate()
+	# 选择一变就把气泡收掉：否则屏幕上会挂着"上一支部队"的说明
+	if _tips != null:
+		_tips.dismiss()
 	_refresh_selection()
 	_refresh_card(true)
 
@@ -1641,8 +1817,16 @@ func _on_notify(text: String, color: Color) -> void:
 	stripe.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(stripe)
 
-	# 提示条字号 24（≥22）：战场上晃一眼就能读到
+	# 提示条字号 24（≥22）：战场上晃一眼就能读到。
+	# ★ 必须开自动折行：长句（"资源不足：神秘圣地需要 180 金"）会让 Label 的
+	#   最小宽度顶到 1200+，整条提示冲出屏幕（UI_AUDIT 抓到的越界就是这个）。
 	var lb := Spec.label(text, Spec.FS_TITLE, color, HORIZONTAL_ALIGNMENT_CENTER)
+	# 短句就让它按内容宽（一条紧凑的胶囊）；长句才给固定宽度 + 折行，
+	# 否则"神秘圣地需要 180 金 90 木"这种会把整条提示顶出屏幕。
+	if text.length() > 22:
+		lb.custom_minimum_size = Vector2(540.0, 0.0)
+		lb.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		lb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(lb)
 
 	while _toast_box.get_child_count() > TOAST_MAX:

@@ -1,56 +1,56 @@
 class_name RtsSelectionGrid
 extends PanelContainer
-## **底栏中段**：单选时是"数值面板"，多选时是"队伍清单"。
+## **底栏中段（单位）**：单选时是"大铭牌 + 竖排数值"，多选时是"队伍清单"。
 ##
-## 2026-10-31 三次改版（玩家口径原话）：
-##   · "中间的面板，单个单位就不需要显示图标（而且图标也不对，图标应该是类似
-##      魔兽争霸那种单位图标），只显示攻击、防御、移动等信息，且这些信息要放大、更显眼"；
-##   · 图标换成 **Blender 渲出来的单位头像 PNG**（`美术/图标/单位/<id>.png`），
-##     和建筑图标同一套做法，不再是线描的刀/弓/靴。
+## 2026-11-01 第五次改版（玩家口径原话）：
+##   "中间的铭牌字体更大、更突出显眼些，下面的攻击、护甲和移动在铭牌后下方
+##    竖着排列，把中间的位置空出来，好让两边不要被UI填满。"
 ##
-## 所以这块现在有两种形态：
-##   ┌────────────────────────────────────────────┐
-##   │ 步兵                              1 / 1 页 │  ← 单选：名字 + 页码
-##   │ ┌──────────┬──────────┬──────────┐         │
-##   │ │ ⚔   15   │ 🛡   5    │ 👟  4.6  │         │  ← 大号数值（28px）
-##   │ └──────────┴──────────┴──────────┘         │
-##   └────────────────────────────────────────────┘
-##   ┌────────────────────────────────────────────┐
-##   │ 队伍 8                            1 / 1 页 │  ← 多选：队伍清单
-##   │ [头像][头像][头像][头像][头像][头像] …      │  ← 魔兽式单位图标
-##   └────────────────────────────────────────────┘
+##   ┌──────────────────────┐
+##   │ ◆ 步 兵      近战     │  ← 铭牌：34px、象牙白、5px 黑边 + 左菱形引子
+##   │ ═══════●═══════════  │  ← 金线（中间带菱形）
+##   │  ⚔   15    攻击      │  ┐
+##   │  🛡    5    护甲      │  ├ 三行**竖排**（RtsStatColumn，和建筑面板同一套）
+##   │  👟  4.6    移速      │  ┘
+##   └──────────────────────┘
+##            ↑ 面板按内容收窄（~250px），右边大片战场留白
+##
+##   ┌───────────────────────────┐
+##   │ ◆ 步兵 ×8         ‹ 1/2 › │  ← 多选：队伍清单 + 页码
+##   │ [脸][脸][脸][脸]           │     每格 = 头像 + 血量数字（**没有进度条**）
+##   └───────────────────────────┘
 ##
 ## 只读 Game 的选择集合，**不发起任何玩法行为**（点格子只是转给选择系统）。
 
 const Spec := preload("res://代码/界面/界面规格.gd")
+const Deco := preload("res://代码/界面/装饰.gd")
+const Lex := preload("res://代码/界面/词条.gd")
 
-## 列数 × 行数 = 一页 24 个（参考图的上限）。
-const COLS: int = 12
+## 多选清单：最多几列 × 几行（一页 16 个）
+const MAX_COLS: int = 8
 const ROWS: int = 2
-const PAGE_SIZE: int = 24
-## 数值铭牌高度（大号：图标 26 + 数字 28px）
-## 数值铭牌高度：28px 数字 + 12px 中文小标（"攻击 / 护甲 / 移速"）。
-## 光有图标 + 数字，第一次玩的人得靠猜；加一行小标就一眼读得懂，
-## 数字本身仍然是 28px —— 显眼和好读不冲突。
-const STAT_H: float = 72.0
-## 标题行高度
-const HEAD_H: float = 26.0
+const PAGE_SIZE: int = MAX_COLS * ROWS
+## 格子尺寸
+const CELL_W: float = 62.0
+const CELL_H: float = 64.0
+## 铭牌行高（34px 字 + 呼吸位）
+const HEAD_H: float = 48.0
 
 var _title: Label = null
+var _bullet: Control = null
+var _tag: Label = null
+var _rule: Control = null
+var _page_box: HBoxContainer = null
+var _page_prev: Button = null
+var _page_next: Button = null
 var _page_label: Label = null
 var _grid: GridContainer = null
+var _grid_wrap: HBoxContainer = null
 var _empty: Label = null
 var _root: VBoxContainer = null
-## 数值（单选）
-var _stats_box: HBoxContainer = null
-var _stat_chips: Array[PanelContainer] = []
-var _stat_icons: Array[Control] = []
-var _stat_vals: Array[Label] = []
-## 数字下面的中文小标（攻击 / 护甲 / 移速 …）
-var _stat_caps: Array[Label] = []
-var _stats_sig: String = ""
+## 竖排数值（与建筑面板共用同一个控件类）
+var _stats: RtsStatColumn = null
 
-## 当前页面里的格子
 var _cells: Array = []
 var _units: Array = []
 var _page: int = 0
@@ -58,43 +58,18 @@ var _sig: String = ""
 var _built: bool = false
 var selection_system: Node = null
 var _accent: Color = Color(0.85, 0.71, 0.36)
-var _cell_w: float = 46.0
-var _cell_h: float = 54.0
-
-## 一条 4px 的短血条/蓝条（自绘，比 Panel + ColorRect 省节点）
-class SelBar extends Control:
-	var ratio: float = 1.0
-	var fill: Color = Color(0.85, 0.30, 0.26)
-	var warn: bool = false
-
-	func _ready() -> void:
-		mouse_filter = Control.MOUSE_FILTER_IGNORE
-		custom_minimum_size = Vector2(0.0, 4.0)
-
-	func set_ratio(r: float, is_warn: bool = false) -> void:
-		var v: float = clampf(r, 0.0, 1.0)
-		if absf(v - ratio) < 0.004 and is_warn == warn:
-			return
-		ratio = v
-		warn = is_warn
-		queue_redraw()
-
-	func _draw() -> void:
-		var r := Rect2(Vector2.ZERO, size)
-		if r.size.x < 2.0 or r.size.y < 2.0:
-			return
-		draw_rect(r, Color(0.0, 0.0, 0.0, 0.72), true)
-		var col: Color = Color(1.0, 0.55, 0.30) if warn else fill
-		var w: float = maxf((r.size.x - 1.0) * ratio, 0.0)
-		if w > 0.3:
-			draw_rect(Rect2(0.5, 0.5, w, r.size.y - 1.0), col, true)
+var _cell_w: float = CELL_W
+var _cell_h: float = CELL_H
+var _box_w: float = 250.0
+var _box_h: float = 190.0
 
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_PASS
-	var sb := Spec.panel_style()
-	sb.content_margin_left = 8.0
-	sb.content_margin_right = 8.0
+	# 段底由 HUD 的画框负责（一整条奇幻底板），这里只留内边距
+	var sb := StyleBoxEmpty.new()
+	sb.content_margin_left = 10.0
+	sb.content_margin_right = 10.0
 	sb.content_margin_top = 6.0
 	sb.content_margin_bottom = 6.0
 	add_theme_stylebox_override("panel", sb)
@@ -108,107 +83,129 @@ func ensure_built() -> void:
 	_accent = Spec.accent()
 	_root = VBoxContainer.new()
 	_root.name = "列"
-	_root.add_theme_constant_override("separation", 4)
+	_root.add_theme_constant_override("separation", 2)
 	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_root)
 
-	# --- 标题行：名字（单选）/ 队伍数（多选） + 页码 ---
+	# --- 铭牌行：菱形 + 名字 + 定位小标 + 页码 ---
 	var head := HBoxContainer.new()
-	head.add_theme_constant_override("separation", 8)
+	head.name = "铭牌"
+	head.add_theme_constant_override("separation", 9)
 	head.custom_minimum_size = Vector2(0.0, HEAD_H)
 	head.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(head)
 
-	_title = Spec.label("未选中", Spec.FS_TITLE, Spec.text_main())
+	_bullet = Deco.Diamond.new()
+	_bullet.custom_minimum_size = Vector2(11.0, 11.0)
+	_bullet.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_bullet.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	head.add_child(_bullet)
+
+	_title = Spec.label("未选中", Spec.FS_HERO_BIG, Color(1.0, 0.94, 0.76))
+	_title.name = "名字"
 	_title.clip_text = true
 	_title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	_title.custom_minimum_size = Vector2(72.0, 0.0)
 	# ★ clip_text + 固定最小宽 ⇒ HBox 只给它 72px，"步兵 ×4" 会被截成"步兵"。
-	#   让它自己吃满剩余宽度（弹性留白那格就多余了，删掉），页标靠右。
+	#   让它自己吃满剩余宽度（页标靠右）。
 	_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# 铭牌要"更突出"：5px 黑边压在任何地表上都读得清，不必再铺深色底
+	_title.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.90))
+	_title.add_theme_constant_override("outline_size", 6)
 	head.add_child(_title)
 
-	_page_label = Spec.label("", Spec.FS_BODY, Spec.text_dim())
-	_page_label.mouse_filter = Control.MOUSE_FILTER_STOP
-	_page_label.tooltip_text = "点它 / 在网格上滚滚轮：翻页（一页 24 个）"
-	_page_label.gui_input.connect(_on_page_label_input)
-	head.add_child(_page_label)
+	_tag = Spec.label("", Spec.FS_BODY, Color(0.80, 0.74, 0.58))
+	_tag.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_tag.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.85))
+	_tag.add_theme_constant_override("outline_size", 3)
+	head.add_child(_tag)
 
-	# --- 数值行（只有单选时出现，大号） ---
-	_build_stats(_root)
+	_build_page_box(head)
+
+	# --- 铭牌下沿那条金线（中间带菱形 = 这一版的"铭牌感"）---
+	_rule = Deco.Rule.new()
+	_rule.name = "金线"
+	_rule.gem = true
+	_rule.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(_rule)
+
+	# --- 竖排数值（单选时出现）---
+	_stats = RtsStatColumn.new()
+	_stats.name = "数值"
+	_stats.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_stats.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_root.add_child(_stats)
+
+	# --- 多选清单 ---
+	_grid_wrap = HBoxContainer.new()
+	_grid_wrap.name = "网格位"
+	_grid_wrap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_grid_wrap.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_root.add_child(_grid_wrap)
 
 	_grid = GridContainer.new()
 	_grid.name = "网格"
-	_grid.columns = COLS
-	_grid.add_theme_constant_override("h_separation", 3)
-	_grid.add_theme_constant_override("v_separation", 3)
+	_grid.columns = MAX_COLS
+	_grid.add_theme_constant_override("h_separation", 6)
+	_grid.add_theme_constant_override("v_separation", 4)
 	_grid.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_root.add_child(_grid)
+	_grid.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_grid_wrap.add_child(_grid)
 
 	_empty = Spec.label("框选或点选单位后，这里列出队伍", Spec.FS_BODY, Spec.text_dim())
 	_empty.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_root.add_child(_empty)
 
 
-## 三块大号数值铭牌（攻击 / 防御 / 移动；建筑则是 攻击 / 射程 / 视野）
-func _build_stats(parent: Node) -> void:
-	_stats_box = HBoxContainer.new()
-	_stats_box.name = "数值"
-	_stats_box.add_theme_constant_override("separation", 8)
-	# 竖向撑满（底栏比内容高时，铭牌吃掉多余高度）
-	_stats_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_stats_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_stats_box.visible = false
-	parent.add_child(_stats_box)
+## 页码块："‹ 1 / 2 ›"（多于 16 个才出现；点箭头或滚轮翻页）
+func _build_page_box(parent: Node) -> void:
+	_page_box = HBoxContainer.new()
+	_page_box.name = "页码"
+	_page_box.add_theme_constant_override("separation", 2)
+	_page_box.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_page_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(_page_box)
 
-	for i in 3:
-		# ★ 必须是 PanelContainer：Panel 不参与"按子节点算最小尺寸"，
-		#   放进 HBox 后宽度恒为 0（第一版就是这么把数值行整行藏没的）。
-		var chip := PanelContainer.new()
-		chip.name = "数值%d" % i
-		chip.custom_minimum_size = Vector2(120.0, STAT_H)
-		chip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		chip.size_flags_vertical = Control.SIZE_EXPAND_FILL
-		chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		chip.add_theme_stylebox_override("panel",
-				Spec.bevel_style(Color(0.070, 0.078, 0.096, 0.96), Color(0, 0, 0, 0), 5,
-						10.0, 0.0, 0.10))
-		_stats_box.add_child(chip)
-		_stat_chips.append(chip)
+	_page_prev = _nav_button("‹")
+	_page_prev.pressed.connect(func() -> void: page_shift(-1))
+	_page_box.add_child(_page_prev)
 
-		var row := HBoxContainer.new()
-		row.name = "行"
-		row.add_theme_constant_override("separation", 8)
-		row.alignment = BoxContainer.ALIGNMENT_CENTER
-		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		chip.add_child(row)
+	_page_label = Spec.label("", Spec.FS_BODY, Spec.text_dim())
+	_page_label.name = "页数"
+	_page_label.custom_minimum_size = Vector2(46.0, 0.0)
+	_page_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_page_label.mouse_filter = Control.MOUSE_FILTER_STOP
+	_page_label.gui_input.connect(_on_page_label_input)
+	_page_box.add_child(_page_label)
 
-		# 图标 26px：数值 28px 时，图标比它小一点才不抢视线
-		var ic := Spec.icon("sword", 26.0, Color(0.98, 0.62, 0.42))
-		ic.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		row.add_child(ic)
-		_stat_icons.append(ic)
+	_page_next = _nav_button("›")
+	_page_next.pressed.connect(func() -> void: page_shift(1))
+	_page_box.add_child(_page_next)
 
-		# 数字 + 小标竖排：数字照旧 28px，下面一行 "攻击 / 护甲 / 移速"
-		var col := VBoxContainer.new()
-		col.name = "数字列"
-		col.add_theme_constant_override("separation", -2)
-		col.alignment = BoxContainer.ALIGNMENT_CENTER
-		col.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		row.add_child(col)
+	RtsTipLayer.bind(self, _page_label, func() -> Dictionary:
+		return {"icon": "clock", "icon_color": Spec.accent(), "title": "翻页",
+				"tag": "队伍清单", "body": "一页最多 %d 个。点页码、点两侧箭头、或在清单上滚滚轮都能翻页。" % PAGE_SIZE,
+				"foot": ""})
 
-		var v := Spec.label("-", Spec.FS_HERO, Color(0.96, 0.92, 0.79))
-		v.add_theme_font_override("font", Spec.mono_font())
-		v.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		col.add_child(v)
-		_stat_vals.append(v)
 
-		var cap := Spec.label("", Spec.FS_CAPTION, Spec.text_dim())
-		cap.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		cap.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		col.add_child(cap)
-		_stat_caps.append(cap)
+func _nav_button(txt: String) -> Button:
+	var b := Button.new()
+	b.text = txt
+	b.focus_mode = Control.FOCUS_NONE
+	b.custom_minimum_size = Vector2(26.0, 26.0)
+	b.add_theme_font_size_override("font_size", Spec.FS_VALUE)
+	b.add_theme_color_override("font_color", Color(0.92, 0.86, 0.70))
+	b.add_theme_stylebox_override("normal",
+			Spec.button_style(Color(0.10, 0.11, 0.13, 0.92),
+					Color(_accent.r, _accent.g, _accent.b, 0.38), null, 4, 2.0, 0.0))
+	b.add_theme_stylebox_override("hover",
+			Spec.button_style(Color(0.18, 0.19, 0.22, 0.96),
+					_accent, null, 4, 2.0, 0.0))
+	b.add_theme_stylebox_override("pressed",
+			Spec.button_style(Color(0.24, 0.20, 0.10, 0.96),
+					_accent, null, 4, 2.0, 0.0))
+	return b
 
 
 # ===========================================================================
@@ -219,9 +216,15 @@ func _build_stats(parent: Node) -> void:
 func set_metrics(w: float, h: float, _compact: bool = false) -> void:
 	if w < 60.0:
 		return
-	var inner: float = w - 16.0 - float(COLS - 1) * 3.0
-	_cell_w = clampf(inner / float(COLS), 30.0, 62.0)
-	_cell_h = clampf(_cell_w * 1.26, 38.0, 76.0)
+	_box_w = w
+	_box_h = h
+	var cols: int = _cols()
+	var inner: float = w - 20.0 - float(cols - 1) * 6.0
+	_cell_w = clampf(inner / float(cols), 46.0, CELL_W)
+	# 高度给的是"两行格子 + 铭牌"，抠掉铭牌与金线后对半
+	var avail: float = maxf(h - HEAD_H - 6.0 - 24.0, 80.0)
+	_cell_h = clampf(avail * 0.5, 52.0, CELL_H + 8.0)
+	_stats.set_row_height(clampf((h - HEAD_H - 10.0) / 3.0 - 4.0, 40.0, 62.0))
 	custom_minimum_size = Vector2(w, maxf(h, _cell_h))
 	for rec in _cells:
 		var btn: Button = rec["btn"]
@@ -236,10 +239,29 @@ func is_empty() -> bool:
 
 ## 内容需要多高（HUD 用它决定底栏高度）
 func content_height() -> float:
+	var head: float = HEAD_H + 10.0
 	if _units.size() == 1:
-		return HEAD_H + 4.0 + STAT_H + 16.0
-	var rows: int = maxi(1, mini(ROWS, ceili(float(_units.size()) / float(COLS))))
-	return HEAD_H + 4.0 + float(rows) * (_cell_h + 3.0) + 14.0
+		return head + 3.0 * 52.0 + 14.0
+	var rows: int = maxi(1, mini(ROWS, ceili(float(_units.size()) / float(_cols()))))
+	return head + float(rows) * (_cell_h + 4.0) + 12.0
+
+
+## 内容想要多宽（HUD 据此给中段定宽，**不再一路铺到命令卡**）
+func content_width() -> float:
+	if _units.size() == 1:
+		var want: float = 250.0
+		if _title != null:
+			want = maxf(want, _title.get_combined_minimum_size().x + 90.0)
+		return clampf(want, 236.0, 340.0)
+	if _units.is_empty():
+		return 250.0
+	return clampf(float(_cols()) * (_cell_w + 6.0) + 22.0, 236.0, 620.0)
+
+
+func _cols() -> int:
+	if _units.size() <= 1:
+		return 1
+	return clampi(_units.size(), 1, MAX_COLS)
 
 
 # ===========================================================================
@@ -258,16 +280,14 @@ func refresh(units: Array) -> void:
 	for u in valid:
 		sig += "|%d" % u.get_instance_id()
 	if sig == _sig:
-		_sync_bars()
-		_sync_stats()
+		_sync_hp()
 		return
 	_sig = sig
 	_units = valid
 	var pages: int = maxi(1, ceili(float(_units.size()) / float(PAGE_SIZE)))
 	_page = clampi(_page, 0, pages - 1)
 	_rebuild()
-	_sync_bars()
-	_sync_stats()
+	_sync_hp()
 
 
 func _rebuild() -> void:
@@ -281,15 +301,23 @@ func _rebuild() -> void:
 	var single: bool = _units.size() == 1
 	_empty.visible = _units.is_empty()
 	# 单选：不出清单，只出数值；多选：出清单
-	_grid.visible = not _units.is_empty() and not single
-	_page_label.visible = pages > 1
+	_grid_wrap.visible = not _units.is_empty() and not single
+	_stats.visible = single
+	_rule.visible = not _units.is_empty()
+	_bullet.visible = not _units.is_empty()
+	_page_box.visible = pages > 1
 	_page_label.text = "%d / %d" % [_page + 1, pages]
+	_grid.columns = maxi(_cols(), 1)
 	if _units.is_empty():
 		_title.text = "未选中"
+		_tag.text = ""
+		_stats.clear()
 		return
 	if single:
 		var d: UnitDef = (_units[0] as Node3D).def
 		_title.text = d.display_name if d != null else "单位"
+		_tag.text = Lex.kind_name(d)
+		_feed_single(_units[0] as Node3D, d)
 		return
 	var same_id: StringName = &""
 	var same: bool = true
@@ -306,33 +334,39 @@ func _rebuild() -> void:
 		var d0: UnitDef = Cfg.unit(same_id) if Cfg.game != null else null
 		nm2 = d0.display_name if d0 != null else String(same_id)
 	_title.text = ("%s ×%d" % [nm2, _units.size()]) if nm2 != "" else "部队 %d" % _units.size()
+	_tag.text = "混合编队" if nm2 == "" else ""
 	var from: int = _page * PAGE_SIZE
 	var to: int = mini(_units.size(), from + PAGE_SIZE)
 	for i in range(from, to):
-		_grid.add_child(_make_cell(_units[i]))
+		_grid.add_child(_make_cell(_units[i], i))
 
 
-func _make_cell(u: Node3D) -> Button:
+## 单选：三行竖排数值 + 每行一条弹窗
+func _feed_single(u: Node3D, d: UnitDef) -> void:
+	_stats.feed(_stats_of(d))
+	_stats.set_row_height(clampf((_box_h - HEAD_H - 10.0) / 3.0 - 4.0, 40.0, 62.0))
+
+
+func _make_cell(u: Node3D, idx: int) -> Button:
 	var btn := Button.new()
 	btn.name = "格_%d" % u.get_instance_id()
 	btn.custom_minimum_size = Vector2(_cell_w, _cell_h)
 	btn.focus_mode = Control.FOCUS_NONE
 	btn.flat = true
 	var d: UnitDef = u.def
-	btn.tooltip_text = "%s  %d/%d" % [
-		d.display_name if d != null else "单位",
-		int(u.get("hp")), int(d.max_hp) if d != null else 100]
 	btn.add_theme_stylebox_override("normal",
-			Spec.inset_style(Color(0.075, 0.084, 0.100, 0.96), 4,
+			Spec.inset_style(Color(0.075, 0.084, 0.100, 0.96), 5,
 				Color(_accent.r, _accent.g, _accent.b, 0.30), 0, 0))
 	btn.add_theme_stylebox_override("hover",
-			Spec.inset_style(Color(0.120, 0.132, 0.156, 0.98), 4,
+			Spec.inset_style(Color(0.130, 0.140, 0.164, 0.98), 5,
 				_accent, 0, 0))
 	btn.add_theme_stylebox_override("pressed",
-			Spec.inset_style(Color(0.060, 0.068, 0.084, 0.98), 4,
+			Spec.inset_style(Color(0.060, 0.068, 0.084, 0.98), 5,
 				_accent, 0, 0))
 	var captured: Node3D = u
 	btn.pressed.connect(func() -> void: _pick(captured))
+	var cell_idx: int = idx
+	RtsTipLayer.bind(self, btn, func() -> Dictionary: return Lex.cell(captured, cell_idx))
 
 	# ★ 图标：优先用 **Blender 渲的单位头像 PNG**（魔兽那种"一张脸"），
 	#   没有渲图才退回线描 SVG（刀/弓/法杖）—— 后者远看只是一个符号，认不出兵种。
@@ -341,13 +375,14 @@ func _make_cell(u: Node3D) -> Button:
 	icon.name = "头像"
 	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	if unit_png != null:
 		icon.texture = unit_png
 		icon.set_anchors_preset(Control.PRESET_FULL_RECT)
 		icon.offset_left = 2.0
 		icon.offset_top = 2.0
 		icon.offset_right = -2.0
-		icon.offset_bottom = -12.0
+		icon.offset_bottom = -18.0
 		icon.modulate = Color(1, 1, 1, 1)
 	else:
 		var inset: float = maxf(_cell_w * 0.20, 4.0)
@@ -356,94 +391,57 @@ func _make_cell(u: Node3D) -> Button:
 		icon.offset_left = inset
 		icon.offset_top = maxf(inset * 0.5, 2.0)
 		icon.offset_right = -inset
-		icon.offset_bottom = -maxf(_cell_h * 0.26, 12.0)
+		icon.offset_bottom = -maxf(_cell_h * 0.30, 16.0)
 		icon.modulate = _tint_of(u)
-	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	btn.add_child(icon)
 
-	var hp := SelBar.new()
-	hp.name = "血条"
-	hp.fill = Color(0.80, 0.26, 0.22)
+	# 血量：**数字，不是进度条**（玩家口径："单位上面有进度条"）
+	var hp := Label.new()
+	hp.name = "血量"
+	hp.text = ""
+	hp.add_theme_font_size_override("font_size", Spec.FS_BODY)
+	hp.add_theme_font_override("font", Spec.mono_font())
+	hp.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hp.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	hp.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.92))
+	hp.add_theme_constant_override("outline_size", 3)
+	hp.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hp.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-	hp.offset_left = 3.0
-	hp.offset_right = -3.0
-	hp.offset_top = -11.0
-	hp.offset_bottom = -7.0
+	hp.offset_left = 1.0
+	hp.offset_right = -1.0
+	hp.offset_top = -17.0
+	hp.offset_bottom = -1.0
 	btn.add_child(hp)
 
-	var mp := SelBar.new()
-	mp.name = "蓝条"
-	mp.fill = Color(0.34, 0.62, 0.98)
-	mp.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-	mp.offset_left = 3.0
-	mp.offset_right = -3.0
-	mp.offset_top = -6.0
-	mp.offset_bottom = -3.0
-	mp.visible = bool(u.call("has_mana")) if u.has_method("has_mana") else false
-	btn.add_child(mp)
-
-	_cells.append({"btn": btn, "bar_hp": hp, "bar_mp": mp, "icon": icon, "unit": u})
+	_cells.append({"btn": btn, "hp": hp, "icon": icon, "unit": u})
 	return btn
 
 
-## 血条 / 蓝条就地刷新（不重建格子，省节点）
-func _sync_bars() -> void:
+## 血数字就地刷新（不重建格子，省节点）
+func _sync_hp() -> void:
 	for rec in _cells:
 		var u: Node3D = rec.get("unit", null)
-		var hp: SelBar = rec.get("bar_hp", null)
-		var mp: SelBar = rec.get("bar_mp", null)
+		var hp: Label = rec.get("hp", null)
 		if u == null or not is_instance_valid(u) or hp == null:
 			continue
 		var d: UnitDef = u.def
-		var total: float = d.max_hp if d != null else 1.0
+		var total: float = d.max_hp if d != null and d.max_hp > 0.0 else 1.0
 		var cur: float = float(u.get("hp"))
-		var r: float = cur / maxf(total, 1.0)
-		hp.set_ratio(r, r < 0.3)
-		if mp != null:
-			var has_m: bool = bool(u.call("has_mana")) if u.has_method("has_mana") else false
-			if mp.visible != has_m:
-				mp.visible = has_m
-			if has_m:
-				var mmax: float = float(u.call("max_mana"))
-				var mcur: float = float(u.get("mana"))
-				mp.set_ratio(mcur / maxf(mmax, 1.0))
+		var r: float = clampf(cur / total, 0.0, 1.0)
+		var txt: String = "%d" % int(round(cur))
+		if hp.text != txt:
+			hp.text = txt
+		var col: Color = Color(0.86, 0.90, 0.84)
+		if r <= 0.30:
+			col = Color(1.0, 0.48, 0.40)
+		elif r <= 0.60:
+			col = Color(1.0, 0.82, 0.44)
+		hp.add_theme_color_override("font_color", col)
 
 
-## 焦点单位的数值。**只有单选时显示**（玩家口径："多个单位就隐藏这个信息"）。
-func _sync_stats() -> void:
-	if _stats_box == null:
-		return
-	if _units.size() != 1:
-		if _stats_box.visible:
-			_stats_box.visible = false
-			_stats_sig = ""
-		return
-	var u := _units[0] as Node3D
-	var d: UnitDef = u.def if u != null else null
-	var sig: String = String(d.id) if d != null else "?"
-	if sig == _stats_sig and _stats_box.visible:
-		return
-	_stats_sig = sig
-	var stats: Array = _stats_of(d)
-	_stats_box.visible = not stats.is_empty()
-	for i in _stat_chips.size():
-		if i >= stats.size():
-			_stat_chips[i].visible = false
-			continue
-		var s: Dictionary = stats[i]
-		_stat_chips[i].visible = true
-		_stat_chips[i].tooltip_text = String(s.get("tip", ""))
-		var col: Color = s.get("color", Color(0.9, 0.88, 0.8))
-		Spec.set_icon(_stat_icons[i], String(s.get("icon", "sword")), col)
-		_stat_vals[i].text = String(s.get("text", "-"))
-		_stat_vals[i].add_theme_color_override("font_color", col.lerp(Color(1, 1, 1), 0.55))
-		if i < _stat_caps.size():
-			_stat_caps[i].text = String(s.get("name", ""))
-
-
-## 兵种/建筑 → 三项数值。
-## 单位：攻击 / 防御 / 速度；
-## **能攻击的建筑：攻击 / 射程 / 视野**；不能攻击的建筑：视野 / 护甲 /（人口或耗时）。
+## 兵种/建筑 → 三项数值 + 三项弹窗。
+## 单位：攻击 / 护甲 / 移速；
+## **能攻击的建筑：攻击 / 射程 / 视野**；不能攻击的建筑：护甲 / 视野 /（人口或耗时）。
 func _stats_of(d: UnitDef) -> Array:
 	if d == null:
 		return []
@@ -451,42 +449,42 @@ func _stats_of(d: UnitDef) -> Array:
 		if d.can_attack():
 			return [
 				{"icon": "sword", "name": "攻击", "color": Color(0.98, 0.62, 0.42),
-					"text": _fmt(d.attack_damage), "tip": "攻击力（每 %.1fs 一发）" % d.attack_cooldown},
+					"text": _fmt(d.attack_damage), "tip": Lex.stat(d, "attack")},
 				{"icon": "bow", "name": "射程", "color": Color(0.86, 0.80, 0.52),
-					"text": "%dm" % int(round(d.attack_range)), "tip": "射程"},
+					"text": "%dm" % int(round(d.attack_range)), "tip": Lex.stat(d, "range")},
 				{"icon": "eye", "name": "视野", "color": Color(0.66, 0.86, 0.92),
-					"text": "%dm" % int(round(d.sight_range)), "tip": "视野"},
+					"text": "%dm" % int(round(d.sight_range)), "tip": Lex.stat(d, "sight")},
 			]
 		var out: Array = [
 			{"icon": "shield", "name": "护甲", "color": Color(0.62, 0.78, 0.98),
-				"text": _fmt(d.armor), "tip": "护甲"},
+				"text": _fmt(d.armor), "tip": Lex.stat(d, "armor")},
 			{"icon": "eye", "name": "视野", "color": Color(0.66, 0.86, 0.92),
-				"text": "%dm" % int(round(d.sight_range)), "tip": "视野（无攻击，只负责看）"},
+				"text": "%dm" % int(round(d.sight_range)), "tip": Lex.stat(d, "sight")},
 		]
 		if d.food_provided > 0:
 			out.append({"icon": "house", "name": "人口", "color": Color(0.80, 0.88, 0.66),
-				"text": "+%d" % d.food_provided, "tip": "提供人口上限"})
+				"text": "+%d" % d.food_provided, "tip": Lex.stat(d, "pop")})
 		elif d.detect_radius > 0.0:
 			out.append({"icon": "eye", "name": "预警", "color": Color(0.98, 0.78, 0.52),
-				"text": "%dm" % int(round(d.detect_radius)), "tip": "敌人进入这个范围会报点"})
+				"text": "%dm" % int(round(d.detect_radius)), "tip": Lex.stat(d, "detect")})
 		elif not d.researches.is_empty():
 			out.append({"icon": "upgrade", "name": "可研究", "color": Color(0.86, 0.78, 1.0),
-				"text": "%d 项" % d.researches.size(), "tip": "这栋楼能研究 %d 项科技" % d.researches.size()})
+				"text": "%d 项" % d.researches.size(), "tip": Lex.stat(d, "researchable")})
 		elif not d.trains.is_empty():
 			out.append({"icon": "gear", "name": "可训练", "color": Color(0.80, 0.80, 0.76),
-				"text": "%d 种" % d.trains.size(), "tip": "这栋楼能训练 %d 种单位" % d.trains.size()})
+				"text": "%d 种" % d.trains.size(), "tip": Lex.stat(d, "trainable")})
 		else:
 			out.append({"icon": "gear", "name": "建造", "color": Color(0.80, 0.80, 0.76),
-				"text": "%ds" % int(round(d.train_time)), "tip": "建造耗时"})
+				"text": "%ds" % int(round(d.train_time)), "tip": Lex.stat(d, "train_time")})
 		return out
 	return [
 		{"icon": "sword", "name": "攻击", "color": Color(0.98, 0.62, 0.42),
 			"text": _fmt(d.attack_damage) if d.attack_damage > 0.0 else "—",
-			"tip": "攻击力" if d.attack_damage > 0.0 else "没有攻击能力"},
+			"tip": Lex.stat(d, "attack")},
 		{"icon": "shield", "name": "护甲", "color": Color(0.62, 0.78, 0.98),
-			"text": _fmt(d.armor), "tip": "护甲"},
+			"text": _fmt(d.armor), "tip": Lex.stat(d, "armor")},
 		{"icon": "move", "name": "移速", "color": Color(0.72, 0.88, 0.56),
-			"text": _fmt(d.move_speed), "tip": "移动速度（米/秒）"},
+			"text": _fmt(d.move_speed), "tip": Lex.stat(d, "speed")},
 	]
 
 
@@ -496,6 +494,7 @@ func _fmt(v: float) -> String:
 	return "%.1f" % v
 
 
+## 点铭牌也能看到说明（"这支部队是什么"）
 func _pick(u: Node3D) -> void:
 	if selection_system != null and selection_system.has_method("select_units"):
 		selection_system.call("select_units", [u])
@@ -556,7 +555,7 @@ func _on_page_label_input(event: InputEvent) -> void:
 		accept_event()
 
 
-## 翻页（滚轮 / 点页码）
+## 翻页（滚轮 / 点页码 / 点箭头）
 func page_shift(delta: int) -> void:
 	var pages: int = maxi(1, ceili(float(_units.size()) / float(PAGE_SIZE)))
 	if pages <= 1:

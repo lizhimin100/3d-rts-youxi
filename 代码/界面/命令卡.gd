@@ -16,6 +16,7 @@ extends Control
 ## 文字/颜色/字号统一走 界面规格.gd，不在这里自己发明。
 
 const Spec := preload("res://代码/界面/界面规格.gd")
+const Lex := preload("res://代码/界面/词条.gd")
 
 ## 网格列数。2026-10-31 按玩家给的参考图改成 **5 列 × 最多 4 行**，
 ## 而且第一行/第二行的顺序被钉死：移动 驻守 攻击 路径 观察 / 停止 —— 
@@ -547,15 +548,57 @@ func _stop_entry() -> Dictionary:
 # 图标 **不许省**：只有文字的格子远看是四块灰砖，只有图标的格子远看是四个方块，
 # 两样都得有。
 
+## 一格指令的说明文本：标题 + 快捷键 + 说明 + **当下的**状态（禁用原因/造价）
+## `state` 是每 0.12s 刷新的回调，所以"资源不足"这类理由永远是此刻的。
+func _tip_of(e: Dictionary) -> Dictionary:
+	var sub: String = String(e.get("sub", ""))
+	var sub_col: Color = e.get("sub_color", Spec.text_dim())
+	var disabled: bool = false
+	var st: Variant = e.get("state", null)
+	if st is Callable:
+		var fn: Callable = st
+		if fn.is_valid():
+			var d: Dictionary = fn.call()
+			if d.has("sub"):
+				sub = String(d.get("sub", ""))
+				sub_col = d.get("sub_color", sub_col)
+			disabled = bool(d.get("disabled", false))
+	var body: String = String(e.get("hint", ""))
+	if not sub.is_empty():
+		body += "\n" + sub
+	if disabled:
+		body += "\n[color=#e08878]现在按不了：条件不满足。[/color]"
+	var icon: String = String(e.get("icon", "gear"))
+	if icon.begins_with("建筑/"):
+		icon = "house"
+	var hot: String = String(e.get("hotkey", ""))
+	if not hot.is_empty():
+		hot = "[%s]" % hot
+	return {
+		"icon": icon,
+		"icon_color": e.get("color", Spec.text_main()),
+		"title": String(e.get("label", "")),
+		"tag": hot,
+		"body": body,
+		"foot": "点一下执行" if not disabled else "",
+	}
+
+
 func _make_button(e: Dictionary) -> Button:
 	var btn := Button.new()
 	btn.focus_mode = Control.FOCUS_NONE
+	# 名字带上指令名：验收脚本（--qa-hover=指令_攻击）和调试都要找得到它
+	btn.name = "指令_" + String(e.get("label", "?"))
 	btn.mouse_filter = Control.MOUSE_FILTER_STOP
 	btn.custom_minimum_size = Vector2(_tile, _btn_h())
 	# 4 列等分：EXPAND_FILL 让每格吃掉 1/4 宽度，格子边界永远对齐
 	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	btn.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	btn.tooltip_text = String(e.get("hint", ""))
+	# 说明文本走**自己的气泡层**（带标题/副标/富文本），不用引擎 tooltip：
+	# 引擎那套不吃 root 的 1/zoom 反拉伸，小窗上字号会和面板打架。
+	# 这里留一个空 tooltip_text，避免两套气泡同时弹。
+	btn.tooltip_text = ""
+	RtsTipLayer.bind(self, btn, func() -> Dictionary: return _tip_of(e))
 	btn.text = ""
 
 	var col: Color = e.get("color", Spec.text_main())

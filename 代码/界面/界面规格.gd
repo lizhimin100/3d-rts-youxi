@@ -27,6 +27,9 @@ const FS_SUB := 16
 const FS_VALUE := 18
 const FS_TITLE := 24
 const FS_HERO := 28
+## 底部中段的**铭牌**字号（2026-11-01 玩家要求"再突出显眼些"）：
+## 34 是这一套里的"标题级"上限，比战场上的单位名（24）明显大一档。
+const FS_HERO_BIG := 34
 
 ## 提示消息淡出（秒）
 const TOAST_FADE := 0.55
@@ -98,10 +101,10 @@ static func metrics(vp: Vector2) -> Metrics:
 		m.stats_w = 596.0
 		m.stats_h = 64.0
 		m.minimap = 208.0
-		m.tile = 112.0
-		m.card_btn_h = 62.0
-		m.band_h = 168.0
-		m.band_max_h = 214.0
+		m.tile = 118.0
+		m.card_btn_h = 66.0
+		m.band_h = 246.0
+		m.band_max_h = 300.0
 		m.panel_w = 368.0
 		m.panel_h_single = 176.0
 	elif m.vw >= 1440.0:
@@ -110,10 +113,10 @@ static func metrics(vp: Vector2) -> Metrics:
 		m.stats_w = 560.0
 		m.stats_h = 62.0
 		m.minimap = 196.0
-		m.tile = 106.0
-		m.card_btn_h = 58.0
-		m.band_h = 162.0
-		m.band_max_h = 206.0
+		m.tile = 112.0
+		m.card_btn_h = 62.0
+		m.band_h = 236.0
+		m.band_max_h = 292.0
 		m.panel_w = 356.0
 		m.panel_h_single = 172.0
 	elif m.vw >= 1280.0:
@@ -122,10 +125,10 @@ static func metrics(vp: Vector2) -> Metrics:
 		m.stats_w = 520.0
 		m.stats_h = 60.0
 		m.minimap = 184.0
-		m.tile = 98.0
-		m.card_btn_h = 54.0
-		m.band_h = 156.0
-		m.band_max_h = 198.0
+		m.tile = 104.0
+		m.card_btn_h = 58.0
+		m.band_h = 218.0
+		m.band_max_h = 272.0
 		m.panel_w = 344.0
 		m.panel_h_single = 166.0
 	else:
@@ -134,10 +137,10 @@ static func metrics(vp: Vector2) -> Metrics:
 		m.stats_w = 456.0
 		m.stats_h = 56.0
 		m.minimap = 168.0
-		m.tile = 88.0
-		m.card_btn_h = 50.0
-		m.band_h = 148.0
-		m.band_max_h = 186.0
+		m.tile = 94.0
+		m.card_btn_h = 52.0
+		m.band_h = 202.0
+		m.band_max_h = 252.0
 		m.panel_w = 330.0
 		m.panel_h_single = 158.0
 		m.compact = true
@@ -154,8 +157,8 @@ static func metrics(vp: Vector2) -> Metrics:
 	m.minimap = minf(m.minimap, maxf(m.vh * 0.24, 150.0))
 	m.panel_h_single = minf(m.panel_h_single, m.vh * 0.22)
 	m.panel_h_multi = m.panel_h_single
-	# 底栏上下限也跟着屏高收：1024×600 上不许吃掉 1/4 屏
-	m.band_max_h = minf(m.band_max_h, maxf(m.vh * 0.30, 132.0))
+	# 底栏上下限也跟着屏高收：1024×600 上不许吃掉 1/3 屏
+	m.band_max_h = minf(m.band_max_h, maxf(m.vh * 0.32, 150.0))
 	m.band_h = minf(m.band_h, m.band_max_h)
 	return m
 
@@ -384,6 +387,26 @@ static func band_style(alpha: float = 0.96) -> StyleBoxFlat:
 	sb.shadow_color = Color(0.0, 0.0, 0.0, 0.42)
 	sb.shadow_size = 8
 	sb.shadow_offset = Vector2(0.0, 3.0)
+	return sb
+
+
+## **凹槽段底**（2026-11-01 起底栏用）：坐进奇幻石金板里的一道"挖下去的区域"。
+##
+## 和 segment_style 的区别：底色几乎透明（石板自己的石纹要透出来），
+## 只靠一圈金线 + 顶部一道暗边表达"这是凹进去的"。
+## `alpha` 是底的厚度（0.30 很轻、0.45 明显），别超过 0.6 —— 超了就又变成"黑方块"。
+static func recess_style(alpha: float = 0.36, radius: int = 9, pad: float = 8.0) -> StyleBoxFlat:
+	var a := accent()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.030, 0.034, 0.046, clampf(alpha, 0.0, 0.8))
+	sb.border_color = Color(a.r, a.g, a.b, 0.32)
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(radius)
+	sb.corner_detail = 10
+	sb.content_margin_left = pad
+	sb.content_margin_right = pad
+	sb.content_margin_top = pad
+	sb.content_margin_bottom = pad
 	return sb
 
 
