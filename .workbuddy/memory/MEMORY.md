@@ -205,11 +205,49 @@
   ★ 装饰里的「营火」是另一回事（纯视觉、不发光、不能拆）。
 - **建筑改造**：`代码/系统/建筑改造.gd` 原地换型号（clear_footprint → unregister →
   spawn 新建筑 → mark_footprint → 血量按比例）。哨塔→箭塔只补差价（40 金/15 木）。
-- **野怪撒点**：目标 8 座（`WANT_LAIRS`）；自动撒点 = 9m 网格 + 最远点采样
-  （圆环法在 224m 岛 + 四角基地上只能撒 4 座）。**编辑器摆的中立地牢优先收编**，
-  有几座算几座、不再补足到 8 座。
+- **野怪：只由编辑器摆放（2026-11-01 最终口径）**。代码自动撒营地 / 定时补怪 /
+  入夜扑家 / 地牢（`dungeon`）**全部删除**，别再加回来。`代码/系统/野怪.gd`
+  现在只干两件事：建 `Game.neutral_faction`（team 0）+ 收编漏网的无阵营野怪。
+  编辑器里摆 `gnoll_warrior` / `gnoll_scout` 并把「摆放归属」选**中立**即可
+  （它们在 `MapAssets.NEUTRAL_OK` 白名单里）；地图加载器会把 `owner=-1` 的
+  单位/建筑落到中立阵营。未来要做的「可配置营地 + 小地图图标」规格见
+  `文档/野怪营地.md`（**本轮不实现**）。
 - **单位同伴避让**：`RtsUnit._unit_ahead()`（`_steer` 调用）**只避让停着的同伴**；
   收尾 2.2m 关闭。两个都在走的人互相绕会左右横跳（寻路自检 ③ 抓到过）。
 - **类缓存铁律**：能用 `preload` 常量 + `Node` 类型的地方**不要写 class_name 当类型**；
   编辑器插件里新增成员**必须先写 var**（漏了 → 整条脚本编译失败 → `autosave_tick` 刷屏）。
 - 文档：`文档/界面说明.md` / `文档/编辑器资产同步.md` / `文档/开发交接.md`。
+
+---
+
+## 13. 2026-11-01 深夜：资产瘦身 + 性能实测（新增）
+
+- **资产（美术 153MB → 100.7MB）**
+  * 删 `美术/模型/v7_自然` `v7_单位` 的 19 个 GLB：逐字节等于根目录同名文件，
+    且目录带 `.gdignore`（Godot 不导入）→ 纯冗余 35MB。`.md` 与 `.gdignore` 保留。
+  * 删 `美术/贴图/地形/材质/草裂纹` `泥裂纹`：`地形.gd` 的 `ATLAS_PATH` 写死 `草泥`，
+    另外两个从未加载 → 16.25MB。删 `美术/模型/地块/`（无引用，1.07MB）。
+  * ⚠ **模型侧材质族贴图（`<模型>_<族>_albedo/normal.png`，28MB）不是冗余**。
+    曾误删，运行时报 `Resource file not found` —— 铁誓建筑按
+    `<模型名>_<族>.png` 拼路径取 ORM/自发光。**判断资产死活不能只靠 grep 代码**，
+    必须删完立刻 `--headless --import` + 跑一帧验证。
+  * 铁誓建筑真正要的是 `<模型>_主体.png` / `_ORM.png` / `_自发光.png`（每个 ~5KB）。
+
+- **性能实测口径（`--perf-long`，PERF2 行）**
+  * 80~90 单位时：`unit` ≈ 450~780 ms/s（相当于 60fps 下 7~13ms/帧），
+    `u.order` 占 70%+，其次 `u.ground` ~90ms/s、`u.sep` ~40ms/s、`fog` ~19ms/s。
+  * 把 `_update_order` 拆细后（探针会打 `o.acq/o.gather/o.amove/o.atk/o.goto/o.sgoal`）：
+    **`_go_to` 是最大单点**（约 200~490 ms/s），其中 `standable_near` 几乎不花时间，
+    A* 也只占 2~50 ms/s —— 说明贵在 `_go_to`/`_request_path` 的 GDScript 开销本身，
+    **不是**寻路算法。下一个该动的是它（例如把"目标没变就早退"提到更前面、
+    合并 `move_target`/`_goal` 的双写、给 `_request_path` 加更硬的节流）。
+  * 已做的优化（都有实测依据，别回退）：
+    - `Game.unit_hash()` 每帧只建一次，分离与索敌共用；
+      `find_nearest_enemy` 改成**先哈希圈人再判敌我**（原先全量扫敌人）。
+    - `_snap_ground` 站着不动时跳过 4 次坡度采样。
+    - `_nearest_dropoff` 缓存 0.5s。
+    - `RtsWorld.take_path_budget()` 每帧最多 6 条 A*，削平帧尖峰。
+    - `Game.all_units()` / `all_harvestables()` 不再 `.duplicate()`（只读约定）。
+
+- **提交与远端**：`origin = https://github.com/lizhimin100/3d-rts-youxi.git`，
+  分支 `master`，`.workbuddy/` 已纳入版本库（不再 gitignore）。

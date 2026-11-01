@@ -20,8 +20,6 @@ Godot/
 # 显卡驱动崩溃日志（本机被驱动创建，不属于工程）
 NVIDIA Corporation/
 
-# 助手/代理的工作目录（会话记忆、任务状态），不属于游戏工程
-.workbuddy/
 
 # 根目录探针截图的孤儿 .import（源 png 已删）
 /_检查_*.png.import
