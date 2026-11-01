@@ -559,20 +559,25 @@ func _apply_layout() -> void:
 	#   信息面板与命令卡只留一圈很淡的凹槽。
 	if _band_plate != null:
 		_band_plate.visible = _band_visible() and root.visible
-		_place(_band_plate, 0.0, 1.0, 1.0, 1.0,
-				m + BAND_PAD, -(m + BAND_PAD + inner_h),
-				-(m + BAND_PAD), -(m + BAND_PAD))
-		# 纹章只画在**真正空出来的那段**（紧凑形态在左边、展开形态基本没有空段），
-		# 空段太窄就整枚收掉 —— 半枚纹章比没有纹章更难看。
-		var gap_x0: float = plate_x0 + BAND_EDGE * 0.5
+		# ★ 2026-11-01 第七版（玩家口径）：**紧凑形态下底板从信息面板左缘起**。
+		#   以前底板永远铺满整屏宽，紧凑形态时中段被推到右边，于是左边留下
+		#   一大块"什么都没有的石板 + 一枚纹章"——玩家原话："左边就不要再有多余的空白面板"。
+		#   现在底板跟着内容走：紧凑 = 只包住 [信息面板][头像][命令卡]；展开 = 铺满。
+		var plate_left: float = m + BAND_PAD
+		if compact:
+			plate_left = clampf(rect_mid.position.x - BAND_EDGE, m + BAND_PAD,
+					_mets.vw - m - BAND_PAD - 240.0)
+		# 走 `_place_smooth`：形态切换时底板要和三块内容一起滑过去，
+		# 直接给矩形会出现"面板在滑、底板已经跳到位"的割裂感。
+		_place_smooth(_band_plate, Rect2(plate_left, top_y,
+				_mets.vw - m - BAND_PAD - plate_left, inner_h), animate)
+		# 纹章只画在**真正空出来的那段**；紧凑形态没有空段，整枚收掉。
+		var gap_x0: float = plate_left + BAND_EDGE * 0.5
 		var gap_x1: float = rect_mid.position.x
-		if not compact:
-			gap_x0 = plate_x0
-			gap_x1 = content_x0
 		var gap_w: float = gap_x1 - gap_x0
-		_band_plate.show_medallion = gap_w >= 260.0
+		_band_plate.show_medallion = (not compact) and gap_w >= 260.0
 		if _band_plate.show_medallion:
-			_band_plate.medallion_x = (gap_x0 + gap_x1) * 0.5 - plate_x0
+			_band_plate.medallion_x = (gap_x0 + gap_x1) * 0.5 - plate_left
 
 	_place_toasts()
 	# 气泡层铺满整个 root：**必须显式摆**，光靠 full-rect 锚点在这套
@@ -1779,6 +1784,8 @@ func _refresh_card(force: bool) -> void:
 	if force or sig != _card_sig:
 		_card_sig = sig
 		_card.command_system = _command_system()
+		if _building_panel != null and is_instance_valid(_building_panel):
+			_building_panel.set("command_system", _command_system())
 		_card.refresh(_valid_selection())
 		# 命令卡行数随内容变（兵营 4 条 = 1 行 / 农民建造页 9 条 = 3 行），
 		# 卡高变了就得重摆 —— 否则右下角会留一条黑边或顶出屏幕。
@@ -1815,8 +1822,11 @@ func _card_signature() -> String:
 		var b := u as RtsBuilding
 		if b != null:
 			q = b.train_queue.size()
-			# 研究状态也进签名：研究完成/满级时命令卡必须重建，否则按钮一直停在旧等级
-			r = "%s:%d" % [String(b.current_research()), int(clampf(b.research_progress(), 0.0, 1.0) * 10.0)]
+			# 研究状态也进签名：研究开始/结束/满级时命令卡必须重建。
+			# ★ **不要把进度塞进签名**：以前写 `id:进度0~10`，研究一次就把整张卡
+			#   重建十次（按钮全销毁重建），悬停状态和气泡跟着闪 —— 进度交给
+			#   `sync_states` 的 state 回调每 0.12s 就地刷就够了。
+			r = String(b.current_research())
 		parts.append("%s:%d:%s" % [id, q, r])
 	parts.append("page:%s" % (str(_card.is_build_page()) if _card != null else "0"))
 	parts.append("cmd:%s" % str(_command_system() != null))

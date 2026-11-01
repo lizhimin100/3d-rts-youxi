@@ -55,7 +55,7 @@ class Metrics extends RefCounted:
 	## 小地图底部图例条高度
 	var legend_h: float = 34.0
 	## 命令卡格子边长（触屏 ≥76）
-	var tile: float = 80.0
+	var tile: float = 114.0
 	## 命令卡底座（由格子数反算，见 metrics()）
 	var card_w: float = 358.0
 	var card_h: float = 323.0
@@ -67,8 +67,11 @@ class Metrics extends RefCounted:
 	## 这是下限；内容更高时由 HUD 按 band_max_h 往上带。
 	var band_h: float = 152.0
 	var band_max_h: float = 214.0
-	## 命令卡列数。2026-10-31 按玩家参考图改成 **5 列**（第一行 5 格、最多 4 行）
-	var card_cols: int = 5
+	## 命令卡列数。2026-11-01 第七版：**5 列 → 4 列**。
+	## 玩家原话："效果要和魔兽争霸那种操作面板一样，不要现在这种平平无奇、还很挤的感觉"。
+	## 5 列时每格只有 112px 宽，图标 + 中文名 + 副行挤成一团；收成 4 列后
+	## 单格 142px（底座总宽不变），字号/内边距全部松一档 —— 魔兽的 3×4 也是靠"少列"才透气。
+	var card_cols: int = 4
 	var card_btn_h: float = 56.0
 	## 小屏标记（<1280 宽）：字号不变，靠缩尺寸/换行扛
 	var compact: bool = false
@@ -101,7 +104,7 @@ static func metrics(vp: Vector2) -> Metrics:
 		m.stats_w = 596.0
 		m.stats_h = 64.0
 		m.minimap = 208.0
-		m.tile = 118.0
+		m.tile = 144.0
 		m.card_btn_h = 66.0
 		m.band_h = 246.0
 		m.band_max_h = 300.0
@@ -113,7 +116,7 @@ static func metrics(vp: Vector2) -> Metrics:
 		m.stats_w = 560.0
 		m.stats_h = 62.0
 		m.minimap = 196.0
-		m.tile = 112.0
+		m.tile = 137.0
 		m.card_btn_h = 62.0
 		m.band_h = 236.0
 		m.band_max_h = 292.0
@@ -125,7 +128,7 @@ static func metrics(vp: Vector2) -> Metrics:
 		m.stats_w = 520.0
 		m.stats_h = 60.0
 		m.minimap = 184.0
-		m.tile = 104.0
+		m.tile = 126.0
 		m.card_btn_h = 58.0
 		m.band_h = 218.0
 		m.band_max_h = 272.0
@@ -137,7 +140,7 @@ static func metrics(vp: Vector2) -> Metrics:
 		m.stats_w = 456.0
 		m.stats_h = 56.0
 		m.minimap = 168.0
-		m.tile = 94.0
+		m.tile = 114.0
 		m.card_btn_h = 52.0
 		m.band_h = 202.0
 		m.band_max_h = 252.0

@@ -144,16 +144,48 @@ func request_train(unit_id: StringName) -> void:
 	_toast("开始训练 %s" % d.display_name, _accent())
 
 
-## 取消训练队列里的最后一个（命令卡"取消训练"用）
+## 取消**当前**训练（命令卡"取消"用）。2026-11-01 玩家口径：
+## "在右边操控面板点击取消则是取消当前训练和科研" —— 所以退的是**队首**（正在造的那个），
+## 不是队尾。要退指定的某一条，去中段队列里点那一格（RtsBuilding.cancel_train_at）。
+## 没有训练在排队时，顺手取消当前研究。
 func request_cancel_train() -> void:
 	var b := _primary_building()
-	if b == null or b.train_queue.is_empty():
+	if b == null:
 		return
-	var id: StringName = b.train_queue.pop_back()
-	var d: UnitDef = Cfg.unit(id)
-	if d != null:
-		Game.add_resource(Game.player_faction, d.gold_cost, d.wood_cost)
-		_toast("已取消 %s" % d.display_name, _accent())
+	if b.train_queue.is_empty():
+		if b.is_researching():
+			var rn: String = RtsCombat.research_name(b.current_research())
+			if b.cancel_research():
+				_toast("已取消研究：%s" % rn, _accent())
+			return
+		return
+	var id: StringName = b.train_queue[0]
+	if b.cancel_train_at(0):
+		var d: UnitDef = Cfg.unit(id)
+		_toast("已取消 %s（退还资源）" % (d.display_name if d != null else String(id)), _accent())
+
+
+## 取消当前研究（建筑面板/命令卡共用）
+func request_cancel_research() -> void:
+	var b := _primary_building()
+	if b == null or not b.is_researching():
+		return
+	var rn: String = RtsCombat.research_name(b.current_research())
+	if b.cancel_research():
+		_toast("已取消研究：%s（退还资源）" % rn, _accent())
+
+
+## 取消队列里指定的一项（建筑面板点格子走这里，保证提示/退款口径一致）
+func request_cancel_train_at(idx: int) -> void:
+	var b := _primary_building()
+	if b == null:
+		return
+	if idx < 0 or idx >= b.train_queue.size():
+		return
+	var id: StringName = b.train_queue[idx]
+	if b.cancel_train_at(idx):
+		var d: UnitDef = Cfg.unit(id)
+		_toast("已取消 %s（退还资源）" % (d.display_name if d != null else String(id)), _accent())
 
 
 ## 研究一项铁匠铺升级（命令卡调用）：花费/上限全部读 Cfg 的研究定义。

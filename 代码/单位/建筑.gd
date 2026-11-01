@@ -255,6 +255,35 @@ func cancel_train() -> void:
 		Game.add_resource(faction, d.gold_cost, d.wood_cost)
 
 
+## 取消队列里**指定的一项**（2026-11-01：玩家点队列格直接退这一条）。
+## 退款按该条目的原价全额；退的是队首时把进度归零（当前训练作废）。
+func cancel_train_at(i: int) -> bool:
+	if i < 0 or i >= train_queue.size():
+		return false
+	var id: StringName = train_queue[i]
+	train_queue.remove_at(i)
+	if i == 0:
+		train_progress = 0.0
+	var d: UnitDef = Cfg.unit(id)
+	if d != null and faction != null:
+		Game.add_resource(faction, d.gold_cost, d.wood_cost)
+	return true
+
+
+## 取消当前研究（全额退款）。没有研究在进行时返回 false。
+func cancel_research() -> bool:
+	if _research_id == &"":
+		return false
+	var rd: ResearchDef = Cfg.research(_research_id)
+	_research_id = &""
+	_research_t = 0.0
+	if rd != null and faction != null:
+		faction.gold += rd.gold_cost
+		faction.wood += rd.wood_cost
+		Game.resources_changed.emit(faction)
+	return true
+
+
 ## 队列推进
 func _tick_train(dt: float) -> void:
 	if train_queue.is_empty():

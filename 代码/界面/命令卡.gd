@@ -17,15 +17,19 @@ extends Control
 
 const Spec := preload("res://代码/界面/界面规格.gd")
 const Lex := preload("res://代码/界面/词条.gd")
+const Frame := preload("res://代码/界面/按钮框.gd")
 
-## 网格列数。2026-10-31 按玩家给的参考图改成 **5 列 × 最多 4 行**，
-## 而且第一行/第二行的顺序被钉死：移动 驻守 攻击 路径 观察 / 停止 —— 
-## 那是"拇指够得着的一圈"的肌肉记忆，不要为了多塞一格去动它。
-const COLS := 5
+## 网格列数。2026-11-01 第七版：**5 列 → 4 列**。
+## 5 列时单格只有 112px，图标 + 中文名 + 副行挤成一坨（玩家："还很挤的感觉"）；
+## 4 列后单格 142px（底座总宽不变），图标放大、行距放松，
+## 才是魔兽那种"一格一件事"的操作面板。
+const COLS := 4
 ## 最多几行（超出的指令不再显示）
 const MAX_ROWS := 4
 ## 训练队列最多画几格
 const QUEUE_PIPS := 5
+## 训练队列上限（与 指令系统.TRAIN_QUEUE_MAX / 建筑面板.QUEUE_MAX 同口径）
+const QUEUE_MAX := 10
 ## 命令条按钮高度（HUD 会按分辨率覆盖）
 const BTN_H := 56.0
 
@@ -75,8 +79,8 @@ func _ready() -> void:
 	_grid.name = "指令格"
 	_grid.columns = COLS
 	_grid.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_grid.add_theme_constant_override("h_separation", 8)
-	_grid.add_theme_constant_override("v_separation", 8)
+	_grid.add_theme_constant_override("h_separation", 10)
+	_grid.add_theme_constant_override("v_separation", 10)
 	_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_grid.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_wrap.add_child(_grid)
@@ -121,7 +125,7 @@ func _btn_h() -> float:
 
 func desired_height() -> float:
 	var rows: int = _rows()
-	return float(rows) * _btn_h() + float(rows - 1) * 8.0 + 20.0
+	return float(rows) * _btn_h() + float(rows - 1) * 10.0 + 22.0
 
 
 func refresh(units: Array) -> void:
@@ -243,14 +247,19 @@ func _build_entries() -> Array:
 				"sub": "点地面",
 				"action": func(): _call("request_set_rally"),
 			})
-		if not b.train_queue.is_empty():
+		# 取消：**当前**训练 / 研究（玩家 2026-11-01 口径）。
+		# 想退队列里的某一条，直接点中段队列那一格（建筑面板里）。
+		var researching: bool = false
+		if b.has_method("is_researching"):
+			researching = bool(b.is_researching())
+		if not b.train_queue.is_empty() or researching:
 			out.append({
-				"label": "取消训练",
-				"hint": "退掉队列里的最后一个并退款",
+				"label": "取消",
+				"hint": "取消**当前**正在训练的单位（或正在研究的项目），全额退款。\n要退队列里的某一条，直接点中段那一格。",
 				"color": Color(0.95, 0.62, 0.35),
 				"glyph": "退",
 				"icon": "cancel",
-				"sub": "退最后一格",
+				"sub": "退当前那条",
 				"action": func(): _call("request_cancel_train"),
 			})
 		# ★ 能攻击的建筑（箭塔）：**操作面板也要把攻/射程/视野写出来**。
@@ -389,7 +398,9 @@ func _train_entry(b: RtsBuilding, id: StringName) -> Dictionary:
 	var label: String = d.display_name if d != null else String(id)
 	var cost: String = _cost_text(d)
 	var ok: bool = d != null and Game.can_afford(Game.player_faction, id)
-	var full: bool = b.train_queue.size() >= 5
+	# ★ 队列上限只有一处口径（指令系统.TRAIN_QUEUE_MAX = 10）。
+	#   这里以前写死 5，于是"面板说队列 6/10，命令卡却已经禁用了"——玩家只会觉得是 bug。
+	var full: bool = b.train_queue.size() >= QUEUE_MAX
 	return {
 		"label": label,
 		"hint": "%s  花费 %s  人口 %d  训练 %.0fs" % [
@@ -402,7 +413,7 @@ func _train_entry(b: RtsBuilding, id: StringName) -> Dictionary:
 		"disabled": (not ok) or full or (not b.is_constructed),
 		"state": func() -> Dictionary:
 			var afford: bool = d != null and Game.can_afford(Game.player_faction, id)
-			var q_full: bool = b.train_queue.size() >= 5
+			var q_full: bool = b.train_queue.size() >= QUEUE_MAX
 			var built: bool = b.is_constructed
 			var sub: String = cost
 			var col: Color = Spec.text_dim()
@@ -604,18 +615,27 @@ func _make_button(e: Dictionary) -> Button:
 	var col: Color = e.get("color", Spec.text_main())
 	btn.set_meta("col", col)
 
+	# --- 石金外框（自绘）：压在 stylebox 之上、内容之下 ---
+	# 顺序很重要：先加框 → 再加内容行，后者才画在前面。
+	var frame := Frame.new()
+	frame.name = "石金框"
+	frame.set_anchors_preset(Control.PRESET_FULL_RECT)
+	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	frame.tint = col
+	btn.add_child(frame)
+
 	var row := HBoxContainer.new()
 	row.name = "行"
 	row.set_anchors_preset(Control.PRESET_FULL_RECT)
-	row.offset_left = 9.0
-	row.offset_right = -6.0
-	row.offset_top = 4.0
-	row.offset_bottom = -4.0
-	row.add_theme_constant_override("separation", 6)
+	row.offset_left = 14.0
+	row.offset_right = -8.0
+	row.offset_top = 6.0
+	row.offset_bottom = -6.0
+	row.add_theme_constant_override("separation", 9)
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	btn.add_child(row)
 
-	# --- 图标（建筑渲图给 32：22 太小，看不清是哪座楼；线条图标仍 22）---
+	# --- 图标（建筑渲图给 36：一格 142px 宽，够放；线条图标 28）---
 	var tex: Texture2D = _icon_tex(String(e.get("icon", "")))
 	if tex != null:
 		var is_bld: bool = String(e.get("icon", "")).begins_with("建筑/")
@@ -624,7 +644,7 @@ func _make_button(e: Dictionary) -> Button:
 		tr.texture = tex
 		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		var isz: float = 32.0 if is_bld else 22.0
+		var isz: float = 38.0 if is_bld else 28.0
 		tr.custom_minimum_size = Vector2(isz, isz)
 		tr.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		tr.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -645,7 +665,7 @@ func _make_button(e: Dictionary) -> Button:
 	col_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(col_box)
 
-	var lb := Spec.label(String(e.get("label", "?")), Spec.FS_BODY, Spec.text_main())
+	var lb := Spec.label(String(e.get("label", "?")), Spec.FS_SUB, Spec.text_main())
 	lb.name = "名称"
 	lb.clip_text = true
 	lb.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
@@ -668,20 +688,34 @@ func _make_button(e: Dictionary) -> Button:
 		key.name = "键位"
 		key.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		key.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-		key.offset_left = -22.0
-		key.offset_top = 3.0
-		key.offset_right = -3.0
-		key.offset_bottom = 19.0
+		key.offset_left = -24.0
+		key.offset_top = 4.0
+		key.offset_right = -5.0
+		key.offset_bottom = 21.0
 		key.add_theme_stylebox_override("panel",
 				Spec.inset_style(Color(0.02, 0.02, 0.025, 0.72), 3,
-						Color(col.r, col.g, col.b, 0.50), 3.0, 0.0))
+						Color(col.r, col.g, col.b, 0.55), 3.0, 0.0))
 		var kl := Spec.label(hk, Spec.FS_CAPTION, col.lerp(Color(1, 1, 1), 0.40),
 				HORIZONTAL_ALIGNMENT_CENTER)
 		kl.add_theme_font_override("font", Spec.mono_font())
 		key.add_child(kl)
 		btn.add_child(key)
-		# 给右上角让出 22px：文字列右侧再收一点，避免和角标叠字
-		row.offset_right = -24.0
+		# 给右上角让出 26px：文字列右侧再收一点，避免和角标叠字
+		row.offset_right = -26.0
+
+	# 悬停/按下由框自己回答：引擎的 stylebox 四态只用来接事件，不画东西
+	btn.mouse_entered.connect(func() -> void:
+		if not btn.disabled:
+			frame.look = Frame.Look.HOVER)
+	btn.mouse_exited.connect(func() -> void:
+		if not btn.disabled:
+			frame.look = Frame.Look.NORMAL)
+	btn.button_down.connect(func() -> void:
+		if not btn.disabled:
+			frame.look = Frame.Look.PRESSED)
+	btn.button_up.connect(func() -> void:
+		if not btn.disabled:
+			frame.look = Frame.Look.HOVER)
 
 	_style_button(btn, e, bool(e.get("disabled", cmd_missing())))
 
@@ -691,35 +725,24 @@ func _make_button(e: Dictionary) -> Button:
 	return btn
 
 
-## 按钮四态：深石色铭牌 + 分类色压边。
-##   normal  —— 本色描边只到 0.42，安静地当"一格"
-##   hover   —— 描边拉满 + 底提亮（手指/鼠标明确知道压在哪）
-##   pressed —— 暖色实底（"按下去了"的机械感）
-##   disabled—— 灰底细边，文字压到 0.5 明度，但**仍然读得清为什么不能点**（副行写原因）
+## 按钮四态：**石金外框自己画**（见 按钮框.gd），这里只做三件事：
+##   1. 把引擎的四个 stylebox 全部换成"空"（否则会在框里再铺一层深灰方块）；
+##   2. 把状态转告给框（悬停/按下/禁用）；
+##   3. 按分类色给名称上色（禁用时压到 0.52 明度，但**仍然读得清为什么不能点**）。
 func _style_button(btn: Button, e: Dictionary, disabled: bool) -> void:
 	var col: Color = btn.get_meta("col", Spec.text_main())
-	var sb_n := Spec.bevel_style(Color(0.118, 0.126, 0.150, 0.97), Color(0, 0, 0, 0), 6, 0.0, 0.0, 0.10)
-	sb_n.border_color = Color(col.r, col.g, col.b, 0.42)
-	sb_n.border_width_left = 3
-	btn.add_theme_stylebox_override("normal", sb_n)
-
-	var sb_h := Spec.bevel_style(Color(0.196, 0.208, 0.244, 0.99), Color(0, 0, 0, 0), 6, 0.0, 0.0, 0.16)
-	sb_h.border_color = Color(col.r, col.g, col.b, 0.95)
-	sb_h.border_width_left = 3
-	btn.add_theme_stylebox_override("hover", sb_h)
-
-	var sb_p := Spec.bevel_style(Color(0.320, 0.262, 0.150, 0.99), Color(0, 0, 0, 0), 6, 0.0, 0.0, 0.20)
-	sb_p.border_color = col
-	sb_p.border_width_left = 3
-	btn.add_theme_stylebox_override("pressed", sb_p)
-
-	var sb_d := Spec.bevel_style(Color(0.078, 0.082, 0.092, 0.94), Color(0, 0, 0, 0), 6, 0.0, 0.0, 0.05)
-	sb_d.border_color = Color(0.34, 0.34, 0.34, 0.22)
-	btn.add_theme_stylebox_override("disabled", sb_d)
-
+	var empty := StyleBoxEmpty.new()
+	for st in ["normal", "hover", "pressed", "disabled"]:
+		btn.add_theme_stylebox_override(st, empty)
 	btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	btn.add_theme_color_override("font_color", Spec.text_main())
 	btn.add_theme_color_override("font_disabled_color", Color(0.50, 0.50, 0.48))
+
+	var frame := btn.find_child("石金框", false, false) as RtsButtonFrame
+	if frame != null:
+		frame.tint = col
+		frame.look = Frame.Look.DISABLED if disabled else Frame.Look.NORMAL
+
 	var nm := btn.find_child("名称", true, false) as Label
 	if nm != null:
 		nm.add_theme_color_override("font_color",
