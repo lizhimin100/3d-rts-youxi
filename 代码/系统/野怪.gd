@@ -23,13 +23,23 @@ extends Node
 ## 常规刷新间隔（秒）
 const SPAWN_INTERVAL := 42.0
 ## 每座地牢平时的存活上限
-const PER_LAIR_CAP := 6
+const PER_LAIR_CAP := 5
 ## 入夜时每座地牢一次放出的数量
-const NIGHT_WAVE := 5
+## ★ 2026-11-01 从 5 降到 3：地牢数量从 4 涨到 8 之后，5×8=40 只一次性扑家
+##   直接把三家人机全推平（玩家还没反应过来就"胜利"了）。3×8=24 只才是"压力"。
+const NIGHT_WAVE := 3
+## 开局每座地牢的守家小队（魔兽的 creep camp 也是 2~4 只一站）
+const GUARDS := 3
 ## 地牢离任意基地的最小距离（米）：太近了开局就被玩家推掉
-const MIN_BASE_DIST := 42.0
+const MIN_BASE_DIST := 34.0
+## 两座地牢之间的最小间距（米）：太挤就变成"一窝"，失去"到处都有"的感觉
+const MIN_LAIR_GAP := 26.0
 ## 野怪游荡半径（米）
 const WANDER_RADIUS := 13.0
+## **目标地牢数量**（玩家口径 2026-11-01："和魔兽争霸一样到处都有，七到八处"）。
+## 只在"地图上没有编辑器摆的地牢"时才自动撒这么多。
+const WANT_LAIRS := 8
+
 
 var faction: RtsFaction = null
 ## [{ "node": Node3D, "units": Array, "t": float }]
@@ -41,13 +51,20 @@ var _level: Node3D = null
 
 
 ## 主场景在关卡建好之后调用。`day` 可以是 null（没有日夜系统也能跑常规刷新）。
+##
+## ★ **地牢从哪来**（2026-11-01 玩家口径："地牢我来在编辑器放置"）：
+##   1. 先收编**地图里已经有**的地牢（编辑器放的，归属中立 owner=-1）；
+##   2. 一座都没有 → 才按 WANT_LAIRS（8 座）自动撒到全图。
+##   两条路的结果都写进同一份 `_lairs`，后面的刷怪/夜袭逻辑完全不区分来源。
 func setup(level: Node3D, day: Node = null) -> void:
 	_level = level
 	_day = day
 	if Cfg == null or Cfg.unit(&"dungeon") == null:
 		return
 	_make_faction()
-	_place_lairs()
+	_adopt_editor_lairs()
+	if _lairs.is_empty():
+		_place_lairs()
 	if _day != null and _day.has_signal("night_started"):
 		_day.connect("night_started", _on_night)
 	if _day != null and _day.has_signal("day_started"):
@@ -81,7 +98,58 @@ func _base_of(f: RtsFaction) -> Vector3:
 	return RtsWorld.base_center(f)
 
 
-## 在地图上找几处"离所有基地都远"的空地摆地牢
+## **收编编辑器摆好的地牢**（玩家口径："地牢我来在编辑器放置"）。
+##
+## 判定只有一条：`UnitDef.id == "dungeon"` 且**归属中立**（编辑器里 owner = -1）。
+## 收编动作 = 把 faction 从 null 换成中立野怪阵营 + 登记进该阵营的 buildings，
+## 否则它是个"没有阵营的死建筑"：单位索敌打不到它、小地图不显示、夜袭也不认它。
+func _adopt_editor_lairs() -> void:
+	for n in Game.all_units():
+		if n == null or not is_instance_valid(n):
+			continue
+		var b := n as RtsBuilding
+		if b == null or b.def == null or String(b.def.id) != "dungeon":
+			continue
+		if not b.is_alive():
+			continue
+		if b.faction != null and b.faction != faction:
+			# 有人把地牢摆成了自己家建筑：不当巢穴，但**要说一声**，
+			# 否则玩家会问"我摆的地牢为什么不刷怪"。
+			print("[野怪] 跳过归属「%s」的地牢 @ (%.0f, %.0f)"
+				% [b.faction.display_name, b.global_position.x, b.global_position.z])
+			continue
+		if b.faction == null:
+			b.faction = faction
+			if not faction.buildings.has(b):
+				faction.buildings.append(b)
+		_register_lair(b)
+		print("[野怪] 收编编辑器地牢 %d @ (%.0f, %.0f)" % [_lairs.size(),
+				b.global_position.x, b.global_position.z])
+
+
+## 把一座地牢登记成巢穴：补占地/完工状态、起名、发守家小队。
+## 自动撒点和编辑器收编共用这一段，保证两条路的表现完全一致。
+func _register_lair(b: Node3D) -> void:
+	if b == null:
+		return
+	if _level != null and _level.has_method("mark_footprint"):
+		_level.call("mark_footprint", b)
+	if b.has_method("set_constructed"):
+		b.call("set_constructed", true)
+	b.name = "地牢_%d" % (_lairs.size() + 1)
+	_lairs.append({"node": b, "units": [], "t": randf_range(2.0, SPAWN_INTERVAL)})
+	for i in GUARDS:
+		_spawn_one(_lairs.size() - 1, false)
+
+
+## 在地图上撒 WANT_LAIRS 座"离所有基地都远"的巢穴（没有编辑器地牢时的兜底）。
+##
+## 算法：**可行点网格 + 最远点采样**（确定性，不掷骰子）。
+##   ① 以地图中心为原点铺 9m 网格，滤掉"贴基地 / 出岛 / 放不下 5×5"的点；
+##   ② 第一个点取"离所有基地最远"的候选，之后每次取"离已选点最远"的候选。
+## 为什么不用"几个圆环按角度摆"（前一版）：地图是 224m 的岛、四家基地在对角线上，
+## 圆环半径一大，整圈点就都落进基地的 34m 圈里，最多只撒出 4 座。
+## 最远点采样与基地/地形的具体分布无关，**要几座都能均匀铺满**。
 func _place_lairs() -> void:
 	var size: float = float(Cfg.game.map_size)
 	var bases: Array = []
@@ -99,43 +167,91 @@ func _place_lairs() -> void:
 		center += b as Vector2
 	if not bases.is_empty():
 		center /= float(bases.size())
-	var ring_max: float = 1.0
-	for b in bases:
-		ring_max = maxf(ring_max, (b as Vector2).distance_to(center))
-	var want: int = 4
-	# 环半径 = 基地到中心距离 × 0.78~0.95：落在**可行走岛内**，
-	# 又不会贴着玩家家。★ 别取 1.35 倍 —— 那已经出了岛（地图是 224×224，
-	# 但真正能走的地块只有中间一小片），地牢会掉进虚空里。
-	var ring: float = clampf(ring_max * 0.62, 24.0, size * 0.40)
-	for i in want * 3:
-		if _lairs.size() >= want:
+
+	# ① 候选点网格（同时算好"离最近基地多远"，后面选第一个点要用）
+	var cands: Array[Vector2] = []
+	var cand_d: Array[float] = []
+	var half: float = size * 0.5 - 26.0
+	var fp: Vector2i = Cfg.unit(&"dungeon").footprint
+	const GRID_STEP := 9.0
+	var gx: float = -half
+	while gx <= half:
+		var gz: float = -half
+		while gz <= half:
+			var p := Vector2(center.x + gx, center.y + gz)
+			var db: float = _min_base_dist(p, bases)
+			if db >= MIN_BASE_DIST and _lair_spot_ok(p, fp):
+				cands.append(p)
+				cand_d.append(db)
+			gz += GRID_STEP
+		gx += GRID_STEP
+	if cands.is_empty():
+		push_warning("[野怪] 找不到可放地牢的空地（一座地牢都没生成）")
+		return
+
+	# ② 最远点采样
+	var first: int = 0
+	for i in cands.size():
+		if cand_d[i] > cand_d[first]:
+			first = i
+	var picked: Array[Vector2] = [cands[first]]
+	while picked.size() < WANT_LAIRS:
+		var best: int = -1
+		var best_d: float = -1.0
+		for i in cands.size():
+			var p: Vector2 = cands[i]
+			var d: float = INF
+			for q in picked:
+				d = minf(d, p.distance_to(q))
+			if d > best_d:
+				best_d = d
+				best = i
+		if best < 0 or best_d < MIN_LAIR_GAP:
 			break
-		var ang: float = TAU * float(i) / float(want * 3)
-		var p := center + Vector2(cos(ang), sin(ang)) * ring
-		# 越界保护（留 24m 边距给地图边界墙）
-		var half: float = size * 0.5 - 24.0
-		if absf(p.x - center.x) > half or absf(p.y - center.y) > half:
-			continue
-		# 必须在可行走区内：地形岛边缘以外是虚空，摆在那里既看不见也走不到
-		var probe: Vector3 = RtsWorld.walkable_pos(Vector3(p.x, 0.0, p.y))
-		if Vector2(probe.x, probe.z).distance_to(p) > 7.0:
-			continue
-		var ok: bool = true
-		for b in bases:
-			if (b as Vector2).distance_to(p) < MIN_BASE_DIST:
-				ok = false
-				break
-		if not ok:
-			continue
-		# 也别和自己已经摆下的地牢挨太近
-		for l in _lairs:
-			var n: Node3D = l["node"]
-			if Vector2(n.global_position.x, n.global_position.z).distance_to(p) < 46.0:
-				ok = false
-				break
-		if not ok:
-			continue
-		_spawn_lair(p)
+		picked.append(cands[best])
+
+	# ③ 落位（_try_lair_at 再做一次终检，含与已有建筑/资源的关系）
+	for p in picked:
+		if _lairs.size() >= WANT_LAIRS:
+			break
+		_try_lair_at(p, center, bases, size)
+
+
+## 到最近基地的（平面）距离
+func _min_base_dist(p: Vector2, bases: Array) -> float:
+	var d: float = INF
+	for b in bases:
+		d = minf(d, (b as Vector2).distance_to(p))
+	return d
+
+
+## 这个点能不能放下一座地牢（只看地形/寻路/已有建筑，不管基地距离和地牢间距）
+func _lair_spot_ok(p: Vector2, fp: Vector2i) -> bool:
+	# 必须在可行走区内：地形岛边缘以外是虚空，摆在那里既看不见也走不到
+	var probe: Vector3 = RtsWorld.walkable_pos(Vector3(p.x, 0.0, p.y))
+	if Vector2(probe.x, probe.z).distance_to(p) > 6.0:
+		return false
+	# 5×5 占地必须全都可走（walkable_pos 只保证中心点）
+	return 建筑网格.can_place(Vector3(p.x, 0.0, p.y), fp)
+
+
+## 在 p 处试着摆一座地牢；合格就摆下并返回 true。
+func _try_lair_at(p: Vector2, center: Vector2, bases: Array, size: float) -> bool:
+	# 越界保护（留 24m 边距给地图边界墙）
+	var half: float = size * 0.5 - 24.0
+	if absf(p.x - center.x) > half or absf(p.y - center.y) > half:
+		return false
+	if not _lair_spot_ok(p, Cfg.unit(&"dungeon").footprint):
+		return false
+	for b in bases:
+		if (b as Vector2).distance_to(p) < MIN_BASE_DIST:
+			return false
+	for l in _lairs:
+		var n: Node3D = l["node"]
+		if Vector2(n.global_position.x, n.global_position.z).distance_to(p) < MIN_LAIR_GAP:
+			return false
+	_spawn_lair(p)
+	return true
 
 
 func _spawn_lair(p2: Vector2) -> void:
@@ -146,16 +262,8 @@ func _spawn_lair(p2: Vector2) -> void:
 	if b == null:
 		return
 	b.rotation = Vector3(0.0, 建筑网格.snap_yaw(建筑网格.default_yaw()), 0.0)
-	if _level != null and _level.has_method("mark_footprint"):
-		_level.call("mark_footprint", b)
-	if b.has_method("set_constructed"):
-		b.call("set_constructed", true)
-	b.name = "地牢_%d" % (_lairs.size() + 1)
-	_lairs.append({"node": b, "units": [], "t": randf_range(2.0, SPAWN_INTERVAL)})
-	print("[野怪] 地牢 %d @ (%.0f, %.0f)" % [_lairs.size(), pos.x, pos.z])
-	# 开局先放一小队守家
-	for i in 3:
-		_spawn_one(_lairs.size() - 1, false)
+	_register_lair(b)
+	print("[野怪] 自动撒地牢 %d @ (%.0f, %.0f)" % [_lairs.size(), pos.x, pos.z])
 
 
 ## 刷一只：战士 2 : 斥候 1

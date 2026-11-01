@@ -78,6 +78,8 @@ var _force_no_map: bool = false
 var _qa_reveal: bool = false
 ## --qa-night：立刻入夜并放一波野怪（验收用）
 var _qa_night: bool = false
+## --qa-hour=<0~24>：把时钟拨到指定小时、**不**放夜袭（拍黄昏/破晓用）
+var _qa_hour: float = -1.0
 ## --demo-tree：直接进"树品种演示"小地图（春夏秋冬并排），用来肉眼看树的生成效果
 var _demo_tree: bool = false
 ## 同一件事的**编辑器入口**：在编辑器里勾上这个勾，按 F6/F5 就进演示图。
@@ -159,6 +161,13 @@ func _ready() -> void:
 		day_night.call("debug_set_hour", 20.2)
 		var n: int = int(creeps.call("debug_night_wave"))
 		print("[QA] 夜袭：一次放出 %d 只，场上野怪 %d 只" % [n, int(creeps.call("alive_count"))])
+	# QA：--qa-hour=18.5 只拨表、不放怪（黄昏/破晓的亮度就靠它拍）
+	if _qa_hour >= 0.0 and day_night != null:
+		day_night.call("debug_set_hour", _qa_hour)
+		print("[QA] 时钟 → %.1f 时（白昼程度 %.2f）" % [
+			_qa_hour, float(day_night.call("light_level"))])
+	# QA：--qa-spawn=<id>[,<id>…] 在玩家基地旁直接生成（验收新单位/建筑能不能跑起来）
+	_qa_spawn_stuff()
 
 	# 4.96 副官（玩家侧脚本 AI）：替玩家补农民/派采集/盖农场兵营，玩家下令即接管。
 	#      只碰农民，不碰任何战斗单位；`--no-adjutant` 可关。
@@ -415,6 +424,43 @@ func _mount_script(path: String, node_name: String) -> Node:
 	return n
 
 
+## QA：--qa-spawn=<id>[,<id>…]
+##
+## 在玩家基地外圈直接生成指定单位/建筑（建筑自动完工 + 标占地）。
+## 用途：每加一个新兵种/新建筑，截图验收"它在游戏里长什么样、能不能站住"，
+## 而不用真的等农民去盖 —— 也顺便验证"新 id 在 Cfg 里有没有登记"。
+func _qa_spawn_stuff() -> void:
+	var want: String = ""
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--qa-spawn="):
+			want = arg.substr(11)
+			break
+	if want.is_empty() or level == null:
+		return
+	var base: Vector3 = RtsWorld.base_center(Game.player_faction)
+	var ids: PackedStringArray = want.split(",", false)
+	for i in ids.size():
+		var id := StringName(ids[i].strip_edges())
+		var d: UnitDef = Cfg.unit(id)
+		if d == null:
+			print("[QA] --qa-spawn：Cfg 里没有这个 id → %s" % String(id))
+			continue
+		var ang: float = TAU * float(i) / float(maxi(ids.size(), 1)) + 0.4
+		var p := base + Vector3(cos(ang) * 11.0, 0.0, sin(ang) * 11.0)
+		if d.is_building():
+			p = 建筑网格.snap_point(p, d.footprint)
+		p = RtsWorld.snap_y(RtsWorld.walkable_pos(p))
+		var n: Node3D = Game.spawn_unit(Game.player_faction, id, p, level)
+		if n == null:
+			continue
+		if d.is_building():
+			n.rotation.y = 建筑网格.snap_yaw(建筑网格.default_yaw())
+			level.mark_footprint(n)
+			if n.has_method("set_constructed"):
+				n.call("set_constructed", true)
+		print("[QA] --qa-spawn：%s @ (%.0f, %.0f)" % [id, p.x, p.z])
+
+
 ## QA：地形体检 —— 出生点是否严格水平、建筑占地高差是否为 0、可走性如何。
 ## 这三条正是玩家报的"莫名凸起 / 单位建筑穿模"的判据，用数字回答，不靠截图猜。
 func _qa_terrain() -> void:
@@ -608,6 +654,10 @@ func _parse_cmdline() -> void:
 		elif arg == "--qa-night":
 			# 验收：立刻入夜 + 放一波野怪
 			_qa_night = true
+		elif arg.begins_with("--qa-hour="):
+			# 验收：把时钟拨到指定小时（**不**放夜袭）。黄昏/破晓的过渡就靠它拍，
+			# 例：--qa-hour=18.5（黄昏中段） / --qa-hour=23（深夜）
+			_qa_hour = float(arg.substr(10))
 		elif arg == "--qa-reveal":
 			# 验收：关掉战争迷雾（否则"地牢在哪"永远拍不到）
 			_qa_reveal = true

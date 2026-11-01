@@ -481,6 +481,117 @@ func _sync_rings() -> void:
 		var ring := _make_ring(u)
 		if ring != null:
 			_rings[u] = ring
+	_sync_range_rings()
+
+
+# ===========================================================================
+# 攻击范围圈
+# ===========================================================================
+## 攻击范围圈：unit → Node3D（挂在单位身上的贴地圆环，跟随移动，无需每帧更新）
+var _range_rings: Dictionary = {}
+## 攻击范围圈的线宽（米）。0.22 在 44m 的默认视距下正好"看得见又不吵"
+const RANGE_RING_WIDTH := 0.22
+## 贴在离地多高（米）：0.12 能压住地形又不和选中圈（0.06）打架
+const RANGE_RING_LIFT := 0.12
+
+
+## **该给谁画攻击圈**（唯一判据）。
+##
+## 玩家口径（2026-11-01）：
+##   · 单个单位/建筑选中 → 画；
+##   · 同一种（同一个 UnitDef）多选 → 每个都画；
+##   · **混合选中不画** —— 步兵 1.4m + 弓手 8m + 箭塔 13m 叠在一起，
+##     只会糊成一坨光圈，反而看不清任何一个的真实射程。
+##   · 不能攻击的（农民/农场/哨塔）不画。
+func _range_targets() -> Array:
+	var out: Array = []
+	if selected.is_empty():
+		return out
+	var first_id: StringName = &""
+	for u in selected:
+		var n := u as RtsUnit
+		# 选到资源/装饰也算"混合"：它们没有攻击范围，混进来就整组不画。
+		if n == null or n.def == null:
+			return []
+		if not n.def.can_attack():
+			return []
+		if first_id == &"":
+			first_id = n.def.id
+		elif n.def.id != first_id:
+			return []
+		out.append(n)
+	return out
+
+
+## 攻击范围圈的多退少补。圈挂在单位节点下，单位一动圈跟着动（零每帧开销）。
+func _sync_range_rings() -> void:
+	var want: Array = _range_targets()
+	var keep: Dictionary = {}
+	for u in want:
+		keep[u] = true
+	for key in _range_rings.keys():
+		if key == null or not is_instance_valid(key) or not keep.has(key):
+			var old: Node = _range_rings.get(key, null)
+			if old != null and is_instance_valid(old):
+				old.queue_free()
+			_range_rings.erase(key)
+	for u in want:
+		if _range_rings.has(u):
+			continue
+		var ring := _make_range_ring(u)
+		if ring != null:
+			_range_rings[u] = ring
+
+
+## 造一个贴地的攻击范围圆环。
+##
+## 只画"圈"不画"盘"：盘会盖住地表明暗（RTS 里选区高亮是另一种信息，别混）。
+## 材质：unshaded + alpha + 双面，颜色取阵营色提亮一档 ——
+## 和选中圈（实心渐隐环）在观感上要能区分：这个是**细亮线**，不是光圈。
+func _make_range_ring(u: RtsUnit) -> Node3D:
+	if u == null or not is_instance_valid(u) or u.def == null:
+		return null
+	var r: float = u.def.attack_range
+	if r <= 0.0:
+		return null
+	var color: Color = u.faction.color if u.faction != null else (
+		Cfg.game.player_color if Cfg.game != null else Color(0.3, 0.62, 1.0))
+	# 提亮 + 降饱和：纯阵营色叠在草地上会发闷
+	color = color.lerp(Color(1.0, 0.98, 0.92), 0.35)
+
+	var im := ImmediateMesh.new()
+	im.surface_begin(Mesh.PRIMITIVE_TRIANGLE_STRIP)
+	var segs: int = 72
+	for i in range(segs + 1):
+		var ang: float = TAU * float(i) / float(segs)
+		var dir := Vector3(cos(ang), 0.0, sin(ang))
+		im.surface_set_color(Color(color.r, color.g, color.b, 0.62))
+		im.surface_add_vertex(dir * r)
+		im.surface_set_color(Color(color.r, color.g, color.b, 0.40))
+		im.surface_add_vertex(dir * (r - RANGE_RING_WIDTH))
+	im.surface_end()
+
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.vertex_color_use_as_albedo = true
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	# 不写深度：塔/树/山坡挡住的那段范围也看得见 —— 玩家要的是"打得到多远"，
+	# 不是一个被地形裁掉一半的弧。
+	mat.no_depth_test = true
+	mat.render_priority = 2
+	mat.albedo_color = Color.WHITE
+
+	var mi := MeshInstance3D.new()
+	mi.name = "攻击范围"
+	mi.mesh = im
+	mi.material_override = mat
+	mi.position = Vector3(0.0, RANGE_RING_LIFT, 0.0)
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
+	# 建筑很高：圆环挂在**脚底**（本地原点就是建筑基座中心）
+	u.add_child(mi)
+	return mi
 
 
 ## 生成一个选中圈：三级兜底

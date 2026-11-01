@@ -205,10 +205,12 @@ func can_enter_build_page() -> bool:
 
 
 ## 建造页里列出的建筑 id（顺序即按钮顺序；界面与自检共用这一份）
-## 8 条 = 5 列网格的 1.6 行，正好一屏放得下，不用翻页。
+## 9 条 = 5 列网格的 1.8 行，正好一屏放得下，不用翻页。
+## ★ 新增建筑一定要加到这里，否则农民建不了它（编辑器能摆、玩家点不出来）。
+##   2026-11-01 新增 `campfire`（营火）：夜里照明用，玩家口径明确要求农民能造。
 func build_page_ids() -> Array:
 	return [&"farm", &"barracks", &"tower", &"watchtower",
-		&"blacksmith", &"sanctum", &"workshop", &"lumbercamp"]
+		&"blacksmith", &"sanctum", &"workshop", &"lumbercamp", &"campfire"]
 
 
 # ===========================================================================

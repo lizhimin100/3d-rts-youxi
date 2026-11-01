@@ -35,18 +35,50 @@ static func build(o: MapObject) -> Node3D:
 			root.scale = Vector3.ONE * maxf(0.05, o.scale)
 			return root
 	var inst: Node3D = null
-	if not path.is_empty():
+	if path.begins_with("combo:"):
+		inst = _组合预览(path, o)
+	elif not path.is_empty():
 		inst = _instance(path)
 	if inst != null:
 		root.add_child(inst)
-		# 自然物统一材质：GLB 的 albedo 是灰度噪声，不上这一层树/草/岩石在编辑器里
-		# 全是同一个灰白（跟游戏内也要一致）。@tool 下不走 class_name 直呼，
-		# 用 load() 取脚本再调静态方法 —— class_name 在编辑器首次加载时可能还没注册。
-		_套自然材质(inst)
+		# 组合件（地牢…）内部已经按自然材质拼好了，**不要**再套一遍：
+		# 再套会把营火那盏灯的位置也当成普通网格处理，颜色会发灰。
+		if not path.begins_with("combo:"):
+			# 自然物统一材质：GLB 的 albedo 是灰度噪声，不上这一层树/草/岩石在编辑器里
+			# 全是同一个灰白（跟游戏内也要一致）。@tool 下不走 class_name 直呼，
+			# 用 load() 取脚本再调静态方法 —— class_name 在编辑器首次加载时可能还没注册。
+			_套自然材质(inst)
 	else:
 		root.add_child(_placeholder(o))
 	root.scale = Vector3.ONE * maxf(0.02, model_scale * maxf(0.05, o.scale))
 	return root
+
+
+## **组合件预览**（`model_path` 以 `combo:` 开头的建筑，例如 `combo:dungeon`）。
+##
+## 为什么必须单独处理：这类"模型"根本不是一条 glb 路径，`ResourceLoader.exists("combo:dungeon")`
+## 永远为 false → 预览工厂退回棕色占位方块。玩家在编辑器里摆地牢时看到的是一块木箱，
+## 于是"编辑器能不能正常摆放地牢"这件事看起来就是坏的（其实数据是对的）。
+## 这里直接调游戏里那套拼装函数（代码/美术/组合件.gd），**编辑器所见 = 进图所见**。
+##
+## ⚠ 只用 load() 取脚本再 call 静态方法：@tool 首次加载时 class_name 可能还没注册。
+static var _组合件脚本: Script = null
+
+static func _组合预览(path: String, o: MapObject) -> Node3D:
+	if _组合件脚本 == null:
+		_组合件脚本 = load("res://代码/美术/组合件.gd") as Script
+	if _组合件脚本 == null:
+		return null
+	if _单位表脚本 == null:
+		_单位表脚本 = load("res://代码/配置/单位表.gd") as Script
+	var d: UnitDef = null
+	if _单位表脚本 != null:
+		var table: Dictionary = _单位表脚本.call("build_units")
+		d = table.get(o.type_id, null) as UnitDef
+	if d == null:
+		return null
+	var n: Variant = _组合件脚本.call("build", path.substr(6), d)
+	return n as Node3D
 
 
 static var _自然脚本: Script = null

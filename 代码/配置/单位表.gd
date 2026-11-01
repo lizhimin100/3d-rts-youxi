@@ -511,6 +511,32 @@ static func build_units() -> Dictionary:
 	dungeon.train_time = 1.0
 	out[&"dungeon"] = dungeon
 
+	# ---- 营火：**给玩家/人机用的"夜间照明点"**（2026-11-01 玩家口径）----
+	# "农民有意识的建造哨塔扩大视野……并会建造营火，在夜晚能看清（让火在晚上能照明）"
+	# 它是一座建筑而不是装饰：要有血量、能被拆、能进建造栏、能上小地图 ——
+	# 装饰（Doodad）那套是纯视觉，AI 没法"建造"它，玩家也没法点。
+	# 数值刻意很轻：20 木、8 秒、1×1 格，不占人口、不加护甲，纯粹当灯用。
+	var campfire := UnitDef.new()
+	campfire.id = &"campfire"
+	campfire.display_name = "营火"
+	campfire.kind = RtsConst.Kind.BUILDING
+	# `combo:` = 由 代码/美术/营火外观.gd 现场拼（营火.glb + 一盏会呼吸的 OmniLight）
+	campfire.model_path = "combo:campfire"
+	campfire.anim_set = RtsConst.AnimSet.CIVIC_BUILDING
+	campfire.max_hp = 260.0
+	campfire.armor = 0.0
+	campfire.armor_type = RtsConst.ArmorType.LIGHT
+	campfire.footprint = Vector2i(1, 1)
+	campfire.height = 1.4
+	# 视野给一点：火堆旁边总是看得见东西的（也让哨兵塔之外多一个"点"）
+	campfire.sight_range = 8.0
+	campfire.body_radius = 0.45
+	campfire.selection_radius = 1.1
+	campfire.gold_cost = 0
+	campfire.wood_cost = 20
+	campfire.train_time = 8.0
+	out[&"campfire"] = campfire
+
 	# =======================================================================
 	# 金矿 / 树木 —— 可采集物
 	# =======================================================================

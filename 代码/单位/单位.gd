@@ -1584,7 +1584,15 @@ func _pathfinder() -> GridPathfinder:
 
 
 ## 面向某点转向（原地不动）
+##
+## ★ **建筑一律不转身**（2026-11-01 玩家报的"箭塔攻击时会移动朝向"）：
+##   建筑的朝向是"盖的时候定的"（`建筑网格.DEFAULT_YAW`，占地是 1m 网格上的矩形），
+##   开火时转一下身体，占地和视觉立刻错位 —— 看起来就是"塔在原地扭"。
+##   塔的"朝向表现"交给投射物 / 箭塔模型自带的瞄准件，不靠整栋楼转。
+##   所以这里第一句就挡掉非移动单位（is_mobile() = kind == UNIT）。
 func _face_pos(pos: Vector3, dt: float) -> void:
+	if not is_mobile():
+		return
 	var dx: float = pos.x - global_position.x
 	var dz: float = pos.z - global_position.z
 	if absf(dx) < 0.0001 and absf(dz) < 0.0001:

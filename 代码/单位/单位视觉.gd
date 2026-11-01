@@ -8,11 +8,10 @@ extends Node3D
 ##
 ## 注意：美术资产可能还没到位 —— ArtKit 会自动退化成占位盒，这里不需要判空。
 
-## 组合件（`combo:` 前缀）的外观构造器。
-## ★ 用 preload 常量而不是直接写 `RtsDungeonVisual.build(...)`：后者依赖全局类缓存
-##   （.godot/global_script_class_cache.cfg），新脚本没跑 --import 时会报
-##   "Could not find type"，整条脚本编译失败。preload 只认文件路径，永远能编译。
-const DUNGEON_VISUAL := preload("res://代码/美术/地牢外观.gd")
+## 组合件外观注册表（见 代码/美术/组合件.gd）。用 load() 取，不写 class_name：
+## ① 避免全局类缓存（.godot/global_script_class_cache.cfg）失效导致编译失败；
+## ② 组合件不止一种（`combo:dungeon` / `combo:campfire`），key → 脚本的映射只在那一处维护。
+var _combo_registry: Script = null
 
 ## 命中反馈时长（秒）。建筑比单位更短：整栋楼亮一下太久会显得迟钝。
 const FLASH_TIME_UNIT: float = 0.10
@@ -137,11 +136,11 @@ func build(def: UnitDef, team_color: Color, proc: Dictionary = {}) -> void:
 	# ★ 程序化树：不吃 glb、不套阵营色、不挂骨骼动画。
 	#   三档 LOD 直接由 树库 造好（每档一个 MeshInstance3D，靠 visibility_range 切）。
 	var 程序化树: bool = def.kind == RtsConst.Kind.HARVESTABLE and TreeLibrary.is_tree(def.id)
-	# 组合件（`combo:` 前缀，例如地牢 = 岩石 + 帐篷 + 营火拼出来的巢穴）：
-	# 不走单个 glb，由 代码/美术/地牢外观.gd 现场拼，材质全是"自然_"那套。
+	# 组合件（`combo:` 前缀，例如地牢 = 岩石+帐篷+营火拼的巢穴、营火 = 柴堆 + 一盏暖光）：
+	# 不走单个 glb，由 `代码/美术/<key>外观.gd` 现场拼，材质全是"自然_"那套。
 	var 组合件: bool = String(def.model_path).begins_with("combo:")
 	if 组合件:
-		_model = DUNGEON_VISUAL.build(def)
+		_model = _build_combo(def)
 	elif 程序化树:
 		_model = TreeLibrary.build_visual(def, proc)
 	else:
@@ -265,6 +264,20 @@ func _collect_meshes(n: Node) -> void:
 		_meshes.append(mi)
 	for c in n.get_children():
 		_collect_meshes(c)
+
+
+## 造组合件外观：`combo:<key>` → 交给 `代码/美术/组合件.gd`（key → 中文外观脚本的映射表）。
+## 找不到脚本就返回 null（上层退回占位盒，不报错、不白屏）。
+func _build_combo(def: UnitDef) -> Node3D:
+	var key: String = String(def.model_path).substr(6)
+	if key.is_empty():
+		return null
+	if _combo_registry == null:
+		_combo_registry = load("res://代码/美术/组合件.gd")
+	if _combo_registry == null:
+		return null
+	var n: Variant = _combo_registry.call("build", key, def)
+	return n as Node3D
 
 
 # ===========================================================================
