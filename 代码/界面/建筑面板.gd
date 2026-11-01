@@ -17,13 +17,14 @@ extends PanelContainer
 ##      │  ⚔  15/1.4s 攻击      │
 ##      └──────────────────────┘
 ##
-##   ② 有活干 → 左进度 + 右 L 型队列
-##      ┌────────────────────────────────────────────┐
-##      │ ◆ 兵营              训练中                 │
-##      │ ══════●══════════════════════════════════  │
-##      │ 训练 步兵　剩余 8.4s        [x][x][x][x]    │
-##      │ ▓▓▓▓▓▓▓▓░░░░░░  45%        [x][x][x] ◀1/2▶ │
-##      └────────────────────────────────────────────┘
+##   ② 有活干 → **上面一条当前训练，下面 L 型队列**（玩家给的骨架）
+##      ┌──────────────────────────────────────────────┐
+##      │ ◆ 兵营                训练中                 │
+##      │ ══════●════════════════════════════════════  │
+##      │ [脸] 训练·步兵 ▓▓▓▓▓▓░░░ 45%    剩余 8.4s    │
+##      │ [x][x][x][x]                                 │
+##      │ [x][x][x]              队列 9/10   ◀ 1/2 ▶   │
+##      └──────────────────────────────────────────────┘
 ##
 ## 三条纪律：
 ##   1. 进度条由本面板自己 `_process` 每帧刷（HUD 的 0.12s 节流会让秒数一跳一跳）；
@@ -41,13 +42,17 @@ const QUEUE_MAX := 10
 ## L 型队列：**上排 4 格、下排 3 格**（右下角故意空一格才是 L），一页 7 个
 const L_COLS := 4
 const L_SLOTS := 7
-## 队列格尺寸
-const CHIP_W := 68.0
-const CHIP_H := 66.0
+## 队列格尺寸（L 型：上排 4 格 + 下排 3 格）
+const CHIP_W := 64.0
+const CHIP_H := 56.0
+const CHIP_GAP := 6.0
+## 当前训练那条的高度（图标 + 名字 + 大条 + 剩余秒）
+const TRAIN_ROW_H := 30.0
+const TRAIN_ICON := 28.0
 ## 当前训练条高度
-const BAR_H := 26.0
+const BAR_H := 16.0
 ## 铭牌行高（34px 字）
-const HEAD_H := 44.0
+const HEAD_H := 42.0
 
 
 # ===========================================================================
@@ -126,6 +131,8 @@ var _rule: Control = null
 
 # --- 训练 ---
 var _train_box: VBoxContainer = null
+## 当前训练单位的头像（"正在造谁"一眼可见）
+var _cur_icon: TextureRect = null
 var _train_cap: Label = null
 var _queue_count: Label = null
 var _rest_label: Label = null
@@ -227,7 +234,10 @@ func set_metrics(w: float, h_single: float, _h_multi: float, compact: bool) -> v
 	_compact = compact
 	custom_minimum_size = Vector2(_panel_w, maxf(H_MIN, h_single))
 	if _stats != null:
-		_stats.set_row_height(clampf((h_single - HEAD_H - 12.0) / 3.0 - 4.0, 40.0, 58.0))
+		# 面板内高 = 传入高度 - stylebox 上下留白（8+8）
+		# 再扣掉 牌头 44 + 金线 11 + 三处 2px 间隙，剩下的三行平分
+		var inner: float = maxf(h_single - 16.0, 120.0)
+		_stats.set_row_height(clampf((inner - HEAD_H - 11.0 - 6.0) / 3.0 - 3.0, 34.0, 58.0))
 
 
 # ---------------------------------------------------------------------------
@@ -314,77 +324,77 @@ func _build_construction(parent: Node) -> void:
 func _build_training(parent: Node) -> void:
 	_train_box = VBoxContainer.new()
 	_train_box.name = "训练区"
-	_train_box.add_theme_constant_override("separation", 4)
+	_train_box.add_theme_constant_override("separation", 2)
+	# 让训练区吃掉底栏多出来的高度：真正固定的是队列格，富裕的空间给"当前训练"那一行
+	_train_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_train_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	parent.add_child(_train_box)
 
-	var body := HBoxContainer.new()
-	body.name = "训练体"
-	body.add_theme_constant_override("separation", 14)
-	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_train_box.add_child(body)
+	# --- 第一行：当前训练（图标 + 名字 + 大进度条 + 剩余秒数）---
+	#    玩家给的骨架：「[图标] ▓▓▓▓▓▓ 多少秒」，队列在它**下面**。
+	var row := HBoxContainer.new()
+	row.name = "当前训练"
+	row.add_theme_constant_override("separation", 10)
+	row.custom_minimum_size = Vector2(0.0, TRAIN_ROW_H)
+	row.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_train_box.add_child(row)
 
-	# --- 左：进度 ---
-	var left := VBoxContainer.new()
-	left.name = "进度列"
-	left.add_theme_constant_override("separation", 5)
-	left.custom_minimum_size = Vector2(196.0, 0.0)
-	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	left.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	left.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	body.add_child(left)
+	_cur_icon = TextureRect.new()
+	_cur_icon.name = "当前单位"
+	_cur_icon.custom_minimum_size = Vector2(TRAIN_ICON, TRAIN_ICON)
+	_cur_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_cur_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_cur_icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_cur_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(_cur_icon)
 
-	var head := HBoxContainer.new()
-	head.add_theme_constant_override("separation", 8)
-	head.custom_minimum_size = Vector2(0.0, 24.0)
-	head.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	left.add_child(head)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 2)
+	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	col.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(col)
 
-	_train_cap = Spec.label("训练", Spec.FS_VALUE, Color(_warm.r, _warm.g, _warm.b, 0.98))
-	head.add_child(_train_cap)
-
-	_queue_count = Spec.label("0 / %d" % QUEUE_MAX, Spec.FS_BODY, Color(0.80, 0.74, 0.62))
-	_queue_count.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_queue_count.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	head.add_child(_queue_count)
+	_train_cap = Spec.label("训练", Spec.FS_CAPTION, Color(_warm.r, _warm.g, _warm.b, 0.98))
+	_train_cap.name = "训练标题"
+	col.add_child(_train_cap)
 
 	_train_bar = Bar.new()
 	_train_bar.name = "训练进度"
 	_train_bar.custom_minimum_size = Vector2(0.0, BAR_H)
-	_train_bar._fs = Spec.FS_VALUE
+	_train_bar._fs = Spec.FS_BODY
 	_train_bar.fill = Color(0.44, 0.76, 0.98)
-	left.add_child(_train_bar)
+	col.add_child(_train_bar)
 
-	_rest_label = Spec.label("待训练", Spec.FS_BODY, Color(0.90, 0.88, 0.80))
+	_rest_label = Spec.label("待训练", Spec.FS_VALUE, Color(0.90, 0.88, 0.80))
+	_rest_label.name = "剩余"
 	_rest_label.add_theme_font_override("font", _mono)
-	left.add_child(_rest_label)
+	_rest_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_rest_label.custom_minimum_size = Vector2(96.0, 0.0)
+	_rest_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	row.add_child(_rest_label)
 
 	# 进度条的说明（悬停时才生成，所以"剩余几秒"永远是当下的）
 	RtsTipLayer.bind(self, _train_bar, func() -> Dictionary: return _train_bar_tip())
+	RtsTipLayer.bind(self, _train_cap, func() -> Dictionary: return _train_bar_tip())
 
-	# --- 右：L 型队列（上 4 + 下 3）---
-	var right := VBoxContainer.new()
-	right.name = "队列列"
-	right.add_theme_constant_override("separation", 3)
-	right.size_flags_horizontal = Control.SIZE_SHRINK_END
-	right.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	right.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	body.add_child(right)
-
+	# --- 第二/三行：L 型队列（上 4 + 下 3），一页 7 个 ---
 	_queue_top = HBoxContainer.new()
 	_queue_top.name = "上排"
-	_queue_top.add_theme_constant_override("separation", 6)
+	_queue_top.add_theme_constant_override("separation", CHIP_GAP)
+	_queue_top.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_queue_top.mouse_filter = Control.MOUSE_FILTER_PASS
 	_queue_top.gui_input.connect(_on_queue_input)
-	right.add_child(_queue_top)
+	_train_box.add_child(_queue_top)
 
 	_queue_bot = HBoxContainer.new()
 	_queue_bot.name = "下排"
-	_queue_bot.add_theme_constant_override("separation", 6)
+	_queue_bot.add_theme_constant_override("separation", CHIP_GAP)
+	_queue_bot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_queue_bot.mouse_filter = Control.MOUSE_FILTER_PASS
 	_queue_bot.gui_input.connect(_on_queue_input)
-	right.add_child(_queue_bot)
+	_train_box.add_child(_queue_bot)
 
 	for i in L_SLOTS:
 		var chip := PanelContainer.new()
@@ -402,7 +412,7 @@ func _build_training(parent: Node) -> void:
 		chip.add_child(vb)
 		var ico := TextureRect.new()
 		ico.name = "头像"
-		ico.custom_minimum_size = Vector2(CHIP_W - 10.0, CHIP_H - 14.0)
+		ico.custom_minimum_size = Vector2(CHIP_W - 8.0, CHIP_H - 12.0)
 		ico.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		ico.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		ico.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
@@ -410,7 +420,7 @@ func _build_training(parent: Node) -> void:
 		vb.add_child(ico)
 		var bar := Bar.new()
 		bar.name = "进度"
-		bar.custom_minimum_size = Vector2(0.0, 5.0)
+		bar.custom_minimum_size = Vector2(0.0, 4.0)
 		bar.fill = Color(0.44, 0.76, 0.98)
 		vb.add_child(bar)
 		# 上排 4 格 / 下排 3 格 —— 这就是"L"
@@ -424,19 +434,48 @@ func _build_training(parent: Node) -> void:
 		var idx: int = i
 		RtsTipLayer.bind(self, chip, func() -> Dictionary: return _chip_tip(idx))
 
-	# 页码行（队列 > 7 才出现）：贴在**下排**右边，正好填进 L 的空角
-	_queue_page = Spec.label("", Spec.FS_BODY, Color(0.90, 0.84, 0.70))
-	_queue_page.custom_minimum_size = Vector2(CHIP_W * 1.2, 26.0)
+	# 下排右端：队列计数 + 页码（超过 7 个才出现），正好补上 L 缺的那一角
+	var tail := HBoxContainer.new()
+	tail.name = "队列尾巴"
+	tail.add_theme_constant_override("separation", 10)
+	tail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	tail.alignment = BoxContainer.ALIGNMENT_END
+	tail.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_queue_bot.add_child(tail)
+
+	_queue_count = Spec.label("0 / %d" % QUEUE_MAX, Spec.FS_BODY, Color(0.80, 0.74, 0.62))
+	_queue_count.name = "队列计数"
+	_queue_count.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	tail.add_child(_queue_count)
+
+	_queue_page = Spec.label("", Spec.FS_VALUE, Color(0.92, 0.86, 0.70))
+	_queue_page.name = "队列页码"
+	_queue_page.custom_minimum_size = Vector2(CHIP_W * 1.4, 28.0)
 	_queue_page.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_queue_page.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_queue_page.mouse_filter = Control.MOUSE_FILTER_STOP
 	_queue_page.gui_input.connect(_on_queue_input)
 	_queue_page.visible = false
-	_queue_bot.add_child(_queue_page)
+	tail.add_child(_queue_page)
+
+	# 底部留 8px 呼吸位：训练行是 EXPAND 的，会把余量全部吃光，
+	# 没有这个占位的话第二排队列格会**正好压在面板内沿**上（看着像被裁了）。
+	var bottom_air := Control.new()
+	bottom_air.name = "底部留白"
+	bottom_air.custom_minimum_size = Vector2(0.0, 4.0)
+	bottom_air.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_train_box.add_child(bottom_air)
 	RtsTipLayer.bind(self, _queue_page, func() -> Dictionary:
 		return {"icon": "clock", "icon_color": _warm, "title": "队列翻页",
-				"tag": "一页 7 个", "body": "队列最多 %d 个，一页只摆 7 个（4 + 3 的 L 形）。\n点这里或在下排滚滚轮翻页。" % QUEUE_MAX,
+				"tag": "一页 7 个",
+				"body": "队列最多 %d 个，一页只摆 7 个（4 + 3 的 L 形）。\n点这里或在下排滚滚轮翻页。" % QUEUE_MAX,
 				"foot": ""})
+
+
+## 面板是不是"展开"形态（训练 / 研究 / 建造进度占着中段）。
+## HUD 用它决定头像贴哪边：展开时头像回最左边，紧凑时头像贴命令卡。
+func is_expanded() -> bool:
+	return _train_box.visible or _research_box.visible or _build_box.visible
 
 
 func _chip_style(hover: bool) -> StyleBoxFlat:
@@ -535,23 +574,17 @@ func desired_height() -> float:
 	return maxf(get_combined_minimum_size().y, H_MIN)
 
 
-## 中段想要多宽（HUD 拿它定宽度：内容多宽就多宽，别铺到命令卡）
+## 中段想要多宽。**只有"属性视图"用得上**：训练视图下 HUD 会把中段一路铺到命令卡左缘
+## （玩家口径："中间展开的面板要贴合，不要露出这部分背景"）。
 func content_width() -> float:
 	ensure_built()
-	# 属性视图只有三行竖排 → 和单位面板一样窄
-	var stats_w: float = 268.0
-	# 训练视图 = 左进度 196 + 间隔 14 + L 队列（4 格 + 3 缝）+ 内边距
-	var train_w: float = 196.0 + 14.0 + float(L_COLS) * CHIP_W \
-			+ float(L_COLS - 1) * 6.0 + 26.0
-	if _train_box != null and _train_box.visible:
-		return maxf(train_w, stats_w)
-	return maxf(stats_w, 268.0)
+	return 268.0
 
 
+## 内容需要多高 —— **常数**（和 选择网格 同一个 224）。
+## 行高/格高都是按底栏内高反推的，把它算回内容高就会自激，越涨越高。
 func content_height() -> float:
-	ensure_built()
-	var need: float = _root.get_combined_minimum_size().y + 14.0
-	return clampf(need, 128.0, 232.0)
+	return 224.0
 
 
 ## 刷新（HUD 每 0.12s 会调一次；换建筑类型时才重建内容）
@@ -702,11 +735,11 @@ func _sync_training() -> void:
 	var cur: StringName = _target.current_training()
 	if cur == &"":
 		_train_bar.feed(0.0, Color(0.30, 0.42, 0.52), "")
-		_train_bar.visible = false
 		_rest_label.text = "待训练"
 		_train_cap.text = "训练"
+		if _cur_icon != null:
+			_cur_icon.texture = null
 	else:
-		_train_bar.visible = true
 		var p: float = clampf(_target.train_progress, 0.0, 1.0)
 		var ud: UnitDef = _def_of_id(cur)
 		var total: float = ud.train_time if ud != null else 0.0
@@ -715,6 +748,9 @@ func _sync_training() -> void:
 		_train_cap.text = "训练 · %s" % nm
 		_train_bar.feed(p, Color(0.44, 0.76, 0.98), "%d%%" % int(round(p * 100.0)))
 		_rest_label.text = "剩余 %.1fs" % rest
+		if _cur_icon != null:
+			_cur_icon.texture = Spec.unit_icon(cur) if Spec.unit_icon(cur) != null \
+					else Spec.icon_tex(_unit_icon(cur))
 
 	# 队列格：L 型，一页 7 格；队首那格带真实进度
 	var pages: int = maxi(1, ceili(float(queue_n) / float(L_SLOTS)))

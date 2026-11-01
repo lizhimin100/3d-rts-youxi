@@ -37,6 +37,12 @@ var crest: bool = true:
 		crest = v
 		queue_redraw()
 
+## 中央纹章要不要画（空白区太窄就整枚收掉：半枚纹章比没有更难看好）
+var show_medallion: bool = true:
+	set(v):
+		show_medallion = v
+		queue_redraw()
+
 ## 中央纹章的横坐标（HUD 会把它挪到"中段与命令卡之间的空白区"正中）。
 ## <= 0 表示不指定，用自己的中点。
 var medallion_x: float = -1.0:
@@ -96,8 +102,9 @@ func _draw() -> void:
 	# --- 3.5 石砌缝（错缝排列的砌块）+ 中央纹章 ---
 	if kind == Kind.BAND:
 		_draw_masonry(r, rad)
-		_draw_medallion(Vector2(medallion_x if medallion_x > 0.0 else w * 0.5, h * 0.5),
-				minf(h * 0.40, 58.0), a)
+		if show_medallion:
+			_draw_medallion(Vector2(medallion_x if medallion_x > 0.0 else w * 0.5, h * 0.5),
+					minf(h * 0.40, 58.0), a)
 
 	# --- 4. 内嵌金线（两层：外圈亮、内圈淡）---
 	var in1 := r.grow(-3.5)

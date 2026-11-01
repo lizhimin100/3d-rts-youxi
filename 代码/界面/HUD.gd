@@ -113,6 +113,16 @@ var _tips: RtsTipLayer = null
 var _band_applied: float = 0.0
 ## 上一次中段的实际宽度（用来发现"内容变宽/变窄了，该重摆"）
 var _mid_w_applied: float = 0.0
+## 中段左缘（切换形态时用来判断"要不要重摆"）
+var _mid_left_applied: float = 0.0
+## 上一次是不是"单选紧凑"形态（只有它翻转时才播滑动动画）
+var _compact_mode: bool = false
+## 首帧还没摆完之前不要播动画（否则开局三块会从 (0,0) 滑进来）
+var _booted: bool = false
+## 补间表：控件 → Tween
+var _slide_tw: Dictionary = {}
+## 底栏补间时长（秒）：0.22 够丝滑又不拖沓
+const SLIDE_DUR := 0.22
 ## 整层 HUD 是否显示（F9 切换；录视频时收起）
 var _hud_on: bool = true
 ## 隐藏 HUD 后那条 2 秒淡出的提示（挂在 CanvasLayer 上，不在 root 里，
@@ -284,7 +294,10 @@ func _process(delta: float) -> void:
 	# 底栏高度要等控件重排后才算准（命令卡行数变了尤其明显）。
 	# 每 0.12s 比对一次"该多高 vs 现在多高"，差 1px 就重摆 ——
 	# 否则右下角会裁掉半行字，或者选中卡比命令卡矮一截（就是"一边低一边高"）。
-	if absf(_band_h() - _band_applied) > 1.0:
+	if _compact_bottom() != _compact_mode:
+		# 单选 ⇄ 多选 / 建筑开训：形态变了要重摆（这一步会播 0.22s 的滑动动画）
+		_apply_layout()
+	elif absf(_band_h() - _band_applied) > 1.0:
 		_apply_layout()
 	# 中段宽度也会变（队伍数量 / 建筑开始训练），同样按"差多少就重摆"处理。
 	# 不比对的话：选中 4 个兵时中段 285 宽，框选 8 个后仍然 285，格子被挤成一团。
@@ -357,9 +370,12 @@ const BAND_PAD := 6.0
 const BAND_EDGE := 42.0
 
 
-## 中段此刻"想要多宽"（队伍网格 / 建筑面板各自报，取当前可见的那个）。
-## 只用于发现"宽度变了要重摆"，不参与布局计算。
+## 中段此刻"想要多宽"。
+## **只有紧凑形态才跟内容走**：展开形态下中段是"一路贴到命令卡"的，
+## 拿内容宽去比会永远不等 → 每 0.12s 重摆一次（抖动）。
 func _mid_want() -> float:
+	if not _compact_mode:
+		return -1.0
 	if _building_panel != null and is_instance_valid(_building_panel) \
 			and _building_panel.visible and _building_panel.has_method("content_width"):
 		return float(_building_panel.call("content_width"))
@@ -401,19 +417,16 @@ func _sel_content_h() -> float:
 	return float(_sel_panel.call("desired_height"))
 
 
-## 中段（队伍网格）该不该出现：有选中 + 屏够宽
+## 中段（队伍网格）该不该出现：有单位、且没有选中建筑（建筑有自己的面板）。
+## 宽度够不够由 `_apply_layout` 兜底（不够就不显），这里只回答"内容上该不该有"。
 func _grid_should_show() -> bool:
-	if _mets == null or _sel_grid == null or _grid_panel == null:
+	if _sel_grid == null or _grid_panel == null:
 		return false
 	if bool(_sel_grid.call("is_empty")):
 		return false
-	var m: float = _mets.margin
-	var left: float = m + BAND_PAD + BAND_EDGE
-	var right: float = _mets.vw - m - BAND_PAD - BAND_EDGE - _mets.card_w - BAR_GAP
-	var dw: float = 216.0
-	if _dossier != null and _dossier.has_method("content_width"):
-		dw = clampf(float(_dossier.call("content_width")), 196.0, 320.0)
-	return (right - (left + dw + BAR_GAP)) >= 230.0
+	if _building_panel != null and is_instance_valid(_building_panel) and _building_panel.visible:
+		return false
+	return true
 
 
 ## 底栏此刻该不该出现：两段都空（没选中）时整条收起，屏幕干干净净
@@ -429,8 +442,6 @@ func _apply_layout() -> void:
 	if _mets == null or root == null:
 		return
 	var m: float = _mets.margin
-	# 段底 stylebox 的内边距（recess_style pad=8 → 上下共 16）
-	const CARD_PAD := 16.0
 
 	# 资源条：顶部**居中**（左上让给圆形小地图）
 	if _stats_panel != null:
@@ -452,7 +463,7 @@ func _apply_layout() -> void:
 				m, m + _mets.minimap + 48.0,
 				m + _mets.minimap, m + _mets.minimap + 82.0)
 
-	# --- 底栏：一条带子，两段等高 ---
+	# --- 底栏：一条带子，三块内容 ---
 	var bh: float = _band_h()
 	_band_applied = bh
 	if _card != null and _card.has_method("set_tile"):
@@ -464,6 +475,7 @@ func _apply_layout() -> void:
 	var cw: float = _mets.card_w
 	# 段底 stylebox 的内边距 8 → 面板最小高度 = 内容 + 16，
 	# 命令卡自己要**先减掉**这 16，否则整条会高出底板。
+	const CARD_PAD := 16.0
 	if _card_panel != null:
 		if _card != null:
 			_card.custom_minimum_size = Vector2(0.0, inner_h - CARD_PAD)
@@ -475,103 +487,165 @@ func _apply_layout() -> void:
 				-(m + BAND_PAD + BAND_EDGE), -(m + BAND_PAD))
 	_card_h_applied = inner_h
 
-	# 底栏三段（2026-11-01 玩家口径："三块都变大、向中间靠拢、中间别被填满"）：
-	#   左 = 大头像 + 生命/法力（x/x 文字，不是进度条）
-	#   中 = 名字 + 竖排数值（宽度**按内容**给，不再一路铺到命令卡）
-	#   右 = 命令格（5 列 × 最多 4 行）
-	# ★ 两侧都往里收 BAND_EDGE：玩家要的是"向中间靠拢"，屏幕上左右各留一条呼吸位。
-	#   中段宽度 = min(可用宽, 面板想要的宽)，所以三块之间不会互相顶死。
-	var left: float = m + BAND_PAD + BAND_EDGE
-	var right: float = _mets.vw - m - BAND_PAD - BAND_EDGE - cw - BAR_GAP
-	# 左段宽度**问面板自己**（头像多大就多宽），不再写死 178
+	# ---------------------------------------------------------------------
+	# 三块内容的目标矩形（2026-11-01 第六版，玩家口径）
+	#
+	#   ① 单选、且没有展开内容：
+	#        [信息面板][头像 + 生命/法力][命令卡]      ← 三块**贴着命令卡**，左边全空出来
+	#   ② 多选 / 建筑在训练·研究中：
+	#        [头像 + 生命/法力][信息面板 → 一路贴到命令卡][命令卡]
+	#      头像从右边**丝滑地**滑回最左，信息面板同时展开到命令卡左缘（不留背景缝）
+	#
+	# 所有坐标都是"设计像素"（root 的尺寸就是设计尺寸），所以可以直接写绝对矩形，
+	# 再交给 `_place_smooth` 补间 —— 锚点那套 offset 反算没法做动画。
+	# ---------------------------------------------------------------------
+	var compact: bool = _compact_bottom()
+	var animate: bool = _booted and compact != _compact_mode
+	_compact_mode = compact
+
+	var plate_x0: float = m + BAND_PAD
+	var content_x0: float = plate_x0 + BAND_EDGE
+	var card_left: float = _mets.vw - m - BAND_PAD - BAND_EDGE - cw
+	var top_y: float = _mets.vh - m - BAND_PAD - inner_h
 	var dw: float = clampf(float(_dossier.call("content_width")) if _dossier != null else 216.0,
 			196.0, 320.0)
-	var wide: float = clampf(right - left, 340.0, 760.0)
 	var bld_on: bool = _building_panel != null and is_instance_valid(_building_panel) \
 			and _building_panel.visible
-	var gx0: float = left + dw + BAR_GAP
-	var gw: float = right - gx0
-	# 中段放不下（超窄屏）就把中段让给左卡：宁可少一块信息，也别把三段挤成一团
-	var mid_on: bool = gw >= 240.0
-	if not mid_on:
-		dw = wide
-		gw = 0.0
-	var w: float = dw
-	_sel_left = left
-	_sel_w = w
-	# 中段想要多宽：面板自己说了算（内容多宽就多宽），最多到可用宽
-	var mid_w: float = gw
-	if mid_on and not bld_on and _sel_grid != null and _sel_grid.has_method("content_width"):
-		mid_w = clampf(float(_sel_grid.call("content_width")), 240.0, gw)
-	elif mid_on and bld_on and _building_panel != null \
-			and _building_panel.has_method("content_width"):
-		mid_w = clampf(float(_building_panel.call("content_width")), 260.0, gw)
-	# ★ 建筑面板的**最小宽度**必须和中段实际宽度一致：
-	#   以前这里写的是 gw（"整条可用宽"），于是 content_width 算得再准，
-	#   set_metrics 又把 custom_minimum_size 撑回 gw，面板照样横到命令卡边上。
-	_sel_w_bld = (mid_w if mid_on else wide)
-	_mid_w_applied = _sel_w_bld if mid_on else 0.0
-	# 中段：建筑选中 → 建筑面板（队列/属性）；否则 → 队伍网格
+
+	# 中段"内容自己想多宽"（只决定紧凑形态下的宽度；展开形态一律铺到命令卡）
+	var mid_content: float = 268.0
+	if bld_on:
+		mid_content = float(_building_panel.call("content_width"))
+	elif _sel_grid != null:
+		mid_content = float(_sel_grid.call("content_width"))
+
+	var rect_dos: Rect2
+	var rect_mid: Rect2
+	if compact:
+		var room: float = maxf(card_left - BAR_GAP * 2.0 - dw - content_x0, 200.0)
+		var mid_w: float = clampf(mid_content, 232.0, room)
+		rect_dos = Rect2(card_left - BAR_GAP - dw, top_y, dw, inner_h)
+		rect_mid = Rect2(rect_dos.position.x - BAR_GAP - mid_w, top_y, mid_w, inner_h)
+	else:
+		rect_dos = Rect2(content_x0, top_y, dw, inner_h)
+		var mx: float = rect_dos.end.x + BAR_GAP
+		rect_mid = Rect2(mx, top_y, maxf(card_left - BAR_GAP - mx, 200.0), inner_h)
+
+	_sel_left = rect_dos.position.x
+	_sel_w = rect_dos.size.x
+	_sel_w_bld = rect_mid.size.x
+	_mid_w_applied = rect_mid.size.x if compact else 0.0
+	_mid_left_applied = rect_mid.position.x
+
+	# 中段：建筑选中 → 建筑面板（队列/研究/属性）；否则 → 队伍网格
 	if _grid_panel != null:
-		var show_grid: bool = (not bld_on) and mid_on and _grid_should_show()
+		var show_grid: bool = (not bld_on) and rect_mid.size.x >= 200.0 \
+				and not bool(_sel_grid.call("is_empty"))
 		_grid_panel.visible = show_grid and root.visible
 		if show_grid:
-			_sel_grid.call("set_metrics", mid_w - 12.0, inner_h - 12.0, _mets.compact)
-			_place(_grid_panel, 0.0, 1.0, 0.0, 1.0,
-					gx0, -(m + BAND_PAD + inner_h), gx0 + mid_w, -(m + BAND_PAD))
-	# 左段：选中卡（单位 / 建筑共用一个；建筑用 PNG 图标当头像）
+			_sel_grid.call("set_metrics", rect_mid.size.x - 12.0, inner_h - 12.0, _mets.compact)
 	if _dossier != null and is_instance_valid(_dossier):
-		_place(_dossier, 0.0, 1.0, 0.0, 1.0,
-				left, -(m + BAND_PAD + inner_h), left + w, -(m + BAND_PAD))
-	# 中段（建筑）：**和队伍网格抢同一个位置**，谁可见谁占位。
-	# 必须无条件摆一次（哪怕这次不可见），否则它第一次显示时还停在默认尺寸。
+		_dossier.call("set_metrics", rect_dos.size.x, inner_h, inner_h, _mets.compact)
 	if _building_panel != null and is_instance_valid(_building_panel):
-		var bwidth: float = mid_w if mid_on else wide
-		_place(_building_panel, 0.0, 1.0, 0.0, 1.0,
-				gx0, -(m + BAND_PAD + inner_h), gx0 + bwidth, -(m + BAND_PAD))
+		_building_panel.call("set_metrics", rect_mid.size.x, inner_h, inner_h, _mets.compact)
 
-	# 底板：2026-11-01 第五版 —— **整条底栏重新长出一块奇幻石金板**。
-	#   玩家口径："下方一整个 UI 也换一个背景，换一个更具奇幻风格、
-	#   符合建筑和单位风格的 UI 背景。"
-	#   三块内容（左卡 / 中段 / 命令卡）全部坐在这块板上：
-	#   左卡自己的 stylebox 仍然是空的（大头像浮在石面上），
-	#   中段与命令卡只留一圈很淡的凹槽，层次才读得出来。
+	# 摆位：三块都走补间（切换形态时只有这里会真的动起来）
+	_place_smooth(_dossier, rect_dos, animate)
+	_place_smooth(_grid_panel, rect_mid, animate)
+	_place_smooth(_building_panel, rect_mid, animate)
+
+	# 底板：2026-11-01 第五版 —— **整条底栏长出一块奇幻石金板**。
+	#   三块内容全部坐在这块板上：左卡 stylebox 仍是空的（大头像浮在石面上），
+	#   信息面板与命令卡只留一圈很淡的凹槽。
 	if _band_plate != null:
 		_band_plate.visible = _band_visible() and root.visible
 		_place(_band_plate, 0.0, 1.0, 1.0, 1.0,
 				m + BAND_PAD, -(m + BAND_PAD + inner_h),
 				-(m + BAND_PAD), -(m + BAND_PAD))
-		# 纹章摆在"中段右缘 → 命令卡左缘"这块空白区的正中：
-		# 玩家要求"中间别被 UI 填满"，那块空就必须是**有纹章的空白**，
-		# 而不是一块看起来像没加载出来的黑区。
-		var mid_right: float = gx0
-		if bld_on:
-			mid_right = gx0 + (mid_w if mid_on else wide)
-		elif _grid_panel != null and _grid_panel.visible:
-			mid_right = gx0 + mid_w
-		var card_left: float = _mets.vw - m - BAND_PAD - BAND_EDGE - cw
-		_band_plate.medallion_x = maxf((mid_right + card_left) * 0.5 - (m + BAND_PAD), -1.0)
+		# 纹章只画在**真正空出来的那段**（紧凑形态在左边、展开形态基本没有空段），
+		# 空段太窄就整枚收掉 —— 半枚纹章比没有纹章更难看。
+		var gap_x0: float = plate_x0 + BAND_EDGE * 0.5
+		var gap_x1: float = rect_mid.position.x
+		if not compact:
+			gap_x0 = plate_x0
+			gap_x1 = content_x0
+		var gap_w: float = gap_x1 - gap_x0
+		_band_plate.show_medallion = gap_w >= 260.0
+		if _band_plate.show_medallion:
+			_band_plate.medallion_x = (gap_x0 + gap_x1) * 0.5 - plate_x0
 
 	_place_toasts()
 	# 气泡层铺满整个 root：**必须显式摆**，光靠 full-rect 锚点在这套
 	# "root 尺寸由 offset 反算"的结构里量到的是 (0,0)，气泡会挤在左上角。
 	if _tips != null:
 		_place(_tips, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0)
-	# **先**把尺寸灌进两块面板，**再**摆位置。
-	# 反过来会被 set_metrics 里的 reset_size 覆盖，面板缩回最小高度、位置也乱。
-	_apply_panel_metrics()
 	_place_pending_label()
 	_apply_theme_scale()
+	_booted = true
 	if OS.has_environment("UI_DEBUG"):
-		print("[BAND] vw=%.0f band=%.0f sel=(%.0f..%.0f) card=(%.0f..%.0f) h=%.0f tile=%.0f cardw=%.0f" % [
-			_mets.vw, bh, left, left + w, _mets.vw - m - BAND_PAD - BAND_EDGE - cw,
-			_mets.vw - m - BAND_PAD - BAND_EDGE,
-			inner_h, _mets.tile, cw])
+		print("[BAND] vw=%.0f band=%.0f compact=%s dos=(%.0f..%.0f) mid=(%.0f..%.0f) card=(%.0f..%.0f)" % [
+			_mets.vw, bh, str(compact), rect_dos.position.x, rect_dos.end.x,
+			rect_mid.position.x, rect_mid.end.x, card_left, card_left + cw])
 
 
+## 底栏是否处于"单选紧凑"形态：单选 + 没有展开内容（建筑训练/研究时不算）。
+## 玩家口径：单选时头像贴命令卡、信息面板贴头像左边；一多选就把头像滑回最左边。
+func _compact_bottom() -> bool:
+	var arr: Array = _valid_selection()
+	if arr.size() != 1:
+		return false
+	if _building_panel != null and is_instance_valid(_building_panel) and _building_panel.visible:
+		if _building_panel.has_method("is_expanded"):
+			return not bool(_building_panel.call("is_expanded"))
+	return true
 
-## 命令卡当前实际高度（行数自适应：1 行 / 2 行 / 3 行）
-## 取 PanelContainer 的**实测最小尺寸**（含底座内边距），不再自己拿公式对——
+
+## 绝对摆放（锚点全 0 → position/size 就是设计坐标），可选补间。
+## **只给底栏三块用**：其他控件（小地图/资源条/提示）不需要动画。
+##
+## 这里有两件事必须一起做对：
+##   1. 目标变了 → 补间（0.22s）；
+##   2. 目标没变但**实际几何被改过**（容器/最小尺寸会偷偷把 size 撑大）→ 直接拉回目标。
+##      少了第 2 条，面板会一直停在"上一次更大的那一帧"，下沿直接掉出屏幕。
+func _place_smooth(c: Control, r: Rect2, animate: bool) -> void:
+	if c == null or not is_instance_valid(c):
+		return
+	# 锚点转成左上角绝对定位（只在第一次真正改变，之后是零成本判断）
+	if not (is_zero_approx(c.anchor_left) and is_zero_approx(c.anchor_top) \
+			and is_zero_approx(c.anchor_right) and is_zero_approx(c.anchor_bottom)):
+		c.anchor_left = 0.0
+		c.anchor_top = 0.0
+		c.anchor_right = 0.0
+		c.anchor_bottom = 0.0
+	# ★ 默认值**不能传 null**：Godot 只在默认值非 null 时才吞掉"没有这个 meta"，
+	#   传 null 会直接打一条 ERROR（每帧一条，日志瞬间被刷满）。
+	var prev: Variant = c.get_meta("rect_target", Rect2(-99999.0, -99999.0, 0.0, 0.0))
+	var same_target: bool = prev is Rect2 and (prev as Rect2).is_equal_approx(r)
+	var tw: Variant = _slide_tw.get(c, null)
+	var running: bool = tw is Tween and (tw as Tween).is_valid() and (tw as Tween).is_running()
+	if same_target and running:
+		return
+	c.set_meta("rect_target", r)
+	var geo_ok: bool = c.position.is_equal_approx(r.position) \
+			and c.size.is_equal_approx(r.size)
+	if same_target and geo_ok and not animate:
+		return
+	if running:
+		(tw as Tween).kill()
+	_slide_tw[c] = null
+	if not animate or not c.is_inside_tree() or not c.visible:
+		c.position = r.position.round()
+		c.size = r.size.round()
+		return
+	var t := create_tween()
+	t.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	t.tween_property(c, "position", r.position, SLIDE_DUR)
+	t.parallel().tween_property(c, "size", r.size, SLIDE_DUR)
+	_slide_tw[c] = t
+
+
+## 命令卡当前实际高度（行数自适应：1 行 / 2 行 / 3 行）。
+## 取 PanelContainer 的**实测最小尺寸**（含底座内边距），不再自己拿公式对 ——
 ## 公式少算 2px 就会在右下角裁掉半行字。
 func _card_height() -> float:
 	if _card_panel != null:
@@ -595,22 +669,6 @@ func _apply_theme_scale() -> void:
 	th.default_font_size = maxi(18, int(round(float(Spec.FS_VALUE) * _zoom)))
 	th.set_font_size("font_size", "TooltipLabel", maxi(16, int(round(float(Spec.FS_SUB) * _zoom))))
 	th.set_font_size("font_size", "Button", maxi(18, int(round(float(Spec.FS_VALUE) * _zoom))))
-
-
-## 把响应式尺寸同步给两块选中面板（宽度 / 高度档位 / 小屏标记）
-## 高度一律用**底栏内高**：两块面板必须一样高，这是"不要一边低一边高"的物理保证。
-func _apply_panel_metrics() -> void:
-	if _mets == null:
-		return
-	var sw: float = _sel_w if _sel_w > 1.0 else 432.0
-	var swb: float = _sel_w_bld if _sel_w_bld > 1.0 else sw
-	var bh: float = _band_applied - BAND_PAD * 2.0
-	if bh < 80.0:
-		bh = _mets.band_h
-	if _dossier != null and _dossier.has_method("set_metrics"):
-		_dossier.call("set_metrics", sw, bh, bh, _mets.compact)
-	if _building_panel != null and _building_panel.has_method("set_metrics"):
-		_building_panel.call("set_metrics", swb, bh, bh, _mets.compact)
 
 
 ## 版面工具：直接设 anchor + offset，避免 set_anchors_preset 的隐式行为
@@ -1639,12 +1697,13 @@ func _refresh_selection() -> void:
 	var arr := _valid_selection()
 	# 队伍网格 + 头顶界面：**先喂数据再判显隐**（网格的显隐取决于它有没有内容）
 	var grid_was: bool = _grid_panel != null and _grid_panel.visible
+	var grid_rebuilt: bool = false
 	if _sel_grid != null:
-		_sel_grid.call("refresh", arr)
+		grid_rebuilt = bool(_sel_grid.call("refresh", arr))
 	if _overhead != null:
 		_overhead.zoom = _zoom
 		_overhead.call("set_selection", arr)
-	if _grid_panel != null and _grid_should_show() != grid_was:
+	if _grid_panel != null and (_grid_should_show() != grid_was or grid_rebuilt):
 		_apply_layout()
 	var sole_building: RtsBuilding = null
 	if arr.size() == 1:
@@ -1802,6 +1861,10 @@ func _on_selection_changed(units: Array) -> void:
 		_tips.dismiss()
 	_refresh_selection()
 	_refresh_card(true)
+	# 形态翻转（单选 ⇄ 多选）要**当帧**就开始滑，不能等 8Hz 那一跳 ——
+	# 等的话头像会先僵 0.12s 再动，看起来像卡了一下。
+	if _compact_bottom() != _compact_mode:
+		_apply_layout()
 
 
 ## 顶部提示：3 秒后淡出，最多留 3 条；一条一枚深底胶囊（读得清，不糊在战场上）

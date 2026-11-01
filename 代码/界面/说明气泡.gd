@@ -189,7 +189,7 @@ func _enter(c: Control) -> void:
 	_target = c
 	# ★ 不能用 `as Callable`：Callable 是内建值类型，`as` 转不出来会变成空 Callable，
 	#   于是气泡永远"点得亮、弹不出来"。只能 get_meta + is 判断。
-	var m: Variant = c.get_meta("tip_maker", null)
+	var m: Variant = c.get_meta("tip_maker", 0)
 	_maker = m if m is Callable else Callable()
 	_delay = DELAY
 	if _showing:
@@ -283,7 +283,8 @@ func _fill(d: Dictionary) -> void:
 
 ## 把标题左边那格换成一张贴图（单位头像）；传 null 就恢复成线描图标
 func _set_tex(t: Texture2D) -> void:
-	var cur: Texture2D = _icon_box.get_meta("tex", null)
+	var raw: Variant = _icon_box.get_meta("tex", 0)
+	var cur: Texture2D = raw if raw is Texture2D else null
 	if cur == t:
 		return
 	_icon_box.set_meta("tex", t)

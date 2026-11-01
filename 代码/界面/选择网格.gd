@@ -36,6 +36,33 @@ const CELL_H: float = 64.0
 ## 铭牌行高（34px 字 + 呼吸位）
 const HEAD_H: float = 48.0
 
+## 队伍格里那条 4px 的细进度（血 / 蓝）。自绘，比 Panel + ColorRect 省节点。
+class MiniBar extends Control:
+	var ratio: float = 1.0
+	var fill: Color = Color(0.78, 0.26, 0.22)
+	var _shown: float = -1.0
+
+	func _ready() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func set_ratio(r: float) -> void:
+		var v: float = clampf(r, 0.0, 1.0)
+		if absf(v - _shown) < 0.004:
+			return
+		_shown = v
+		ratio = v
+		queue_redraw()
+
+	func _draw() -> void:
+		var r := Rect2(Vector2.ZERO, size)
+		if r.size.x < 3.0 or r.size.y < 2.0:
+			return
+		draw_rect(r, Color(0.0, 0.0, 0.0, 0.62), true)
+		var w: float = maxf((r.size.x - 1.0) * ratio, 0.0)
+		if w > 0.3:
+			draw_rect(Rect2(0.5, 0.5, w, r.size.y - 1.0), fill, true)
+
+
 var _title: Label = null
 var _bullet: Control = null
 var _tag: Label = null
@@ -58,8 +85,6 @@ var _sig: String = ""
 var _built: bool = false
 var selection_system: Node = null
 var _accent: Color = Color(0.85, 0.71, 0.36)
-var _cell_w: float = CELL_W
-var _cell_h: float = CELL_H
 var _box_w: float = 250.0
 var _box_h: float = 190.0
 
@@ -140,6 +165,7 @@ func ensure_built() -> void:
 	# --- 多选清单 ---
 	_grid_wrap = HBoxContainer.new()
 	_grid_wrap.name = "网格位"
+	_grid_wrap.alignment = BoxContainer.ALIGNMENT_CENTER
 	_grid_wrap.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_grid_wrap.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_root.add_child(_grid_wrap)
@@ -150,7 +176,9 @@ func ensure_built() -> void:
 	_grid.add_theme_constant_override("h_separation", 6)
 	_grid.add_theme_constant_override("v_separation", 4)
 	_grid.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_grid.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	# 网格自己**铺满**可用区域，格子再在里面均分 —— 不再靠外部算尺寸
+	_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_grid.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_grid_wrap.add_child(_grid)
 
 	_empty = Spec.label("框选或点选单位后，这里列出队伍", Spec.FS_BODY, Spec.text_dim())
@@ -218,28 +246,17 @@ func set_metrics(w: float, h: float, _compact: bool = false) -> void:
 		return
 	_box_w = w
 	_box_h = h
-	var cs: Vector2 = _cell_size()
-	_cell_h = cs.y
-	# 面板给的宽度可能比"理想格宽"还窄（多列 / 小屏）：这时才把格子压下去。
-	# ★ 反过来（先按窄面板算格宽、再拿格宽去算面板宽）会形成"越算越窄"的循环，
-	#   1920 下就变成 53×72 的瘦条 —— 这是上一版的坑。
-	var per: float = (w - 20.0 - float(maxi(_cols(), 1) - 1) * 6.0) / float(maxi(_cols(), 1))
-	_cell_w = minf(cs.x, maxf(per, 40.0))
-	_stats.set_row_height(clampf((h - HEAD_H - 10.0) / 3.0 - 4.0, 40.0, 62.0))
-	custom_minimum_size = Vector2(w, maxf(h, _cell_h))
-	for rec in _cells:
-		var btn: Button = rec["btn"]
-		if btn != null and is_instance_valid(btn):
-			btn.custom_minimum_size = Vector2(_cell_w, _cell_h)
-
-
-## 队伍格尺寸：**跟着底栏高度长**（1920 下底栏 246，格子写死 62×64 会显得又小又瘦），
-## 再按可用宽度收一收（多列 / 小屏）。
-func _cell_size() -> Vector2:
-	var avail_h: float = maxf(_box_h - HEAD_H - 6.0 - 24.0, 80.0)
-	var ch: float = clampf(avail_h * 0.5, 52.0, CELL_H + 16.0)
-	var cw: float = clampf(ch * 0.94, 46.0, CELL_W + 14.0)
-	return Vector2(cw, ch)
+	# 面板内高 = 传入高度 - stylebox 上下留白（6+6）
+	# 再扣掉：牌头 48 + 金线 11 + 两处 2px 间隙 = 63
+	var inner: float = maxf(h - 12.0, 120.0)
+	var body: float = inner - HEAD_H - 11.0 - 4.0
+	if _units.size() == 1:
+		_stats.set_row_height(clampf(body / 3.0 - 3.0, 36.0, 60.0))
+	# ★ 队伍格**不在这里算尺寸**：格子的最小尺寸固定成一个很小的值，
+	#   由 GridContainer + EXPAND_FILL 把它们拉满可用区域。
+	#   以前按"可用高 ÷ 行数"反推格高，格子再把最小高顶回 VBox，
+	#   形成 内容→最小尺寸→面板→内容 的自激，第二排直接掉出底栏。
+	custom_minimum_size = Vector2(w, h)
 
 
 ## 网格是不是空的（HUD 拿它决定中段要不要出现）
@@ -247,13 +264,12 @@ func is_empty() -> bool:
 	return _units.is_empty()
 
 
-## 内容需要多高（HUD 用它决定底栏高度）
+## 内容需要多高 —— **常数**。
+## 面板里的行高/格高都是由"底栏内高"反推的，再把它算回内容高就会自激
+## （内容更高 → 底栏更高 → 格子更高 → 内容更高，一路上涨到上限）。
+const CONTENT_H := 224.0
 func content_height() -> float:
-	var head: float = HEAD_H + 10.0
-	if _units.size() == 1:
-		return head + 3.0 * 52.0 + 14.0
-	var rows: int = maxi(1, mini(ROWS, ceili(float(_units.size()) / float(_cols()))))
-	return head + float(rows) * (_cell_h + 4.0) + 12.0
+	return CONTENT_H
 
 
 ## 内容想要多宽（HUD 据此给中段定宽，**不再一路铺到命令卡**）
@@ -263,10 +279,8 @@ func content_width() -> float:
 		if _title != null:
 			want = maxf(want, _title.get_combined_minimum_size().x + 90.0)
 		return clampf(want, 236.0, 340.0)
-	if _units.is_empty():
-		return 250.0
-	var cs: Vector2 = _cell_size()
-	return clampf(float(_cols()) * (cs.x + 6.0) + 22.0, 236.0, 660.0)
+	# 多选时中段是"一路贴到命令卡"的，这里给个下限值就行
+	return 250.0
 
 
 func _cols() -> int:
@@ -279,7 +293,10 @@ func _cols() -> int:
 # 刷新
 # ===========================================================================
 
-func refresh(units: Array) -> void:
+## 返回 true 表示"内容结构变了、重建过"——HUD 收到 true 必须重摆一次：
+## 格子尺寸是按 set_metrics 里的高度算的，重建时若还用着上一次的尺寸，
+## 网格会撑到面板外面（第二排直接掉出底栏）。
+func refresh(units: Array) -> bool:
 	var valid: Array = []
 	for u in units:
 		if u == null or not is_instance_valid(u):
@@ -292,13 +309,14 @@ func refresh(units: Array) -> void:
 		sig += "|%d" % u.get_instance_id()
 	if sig == _sig:
 		_sync_hp()
-		return
+		return false
 	_sig = sig
 	_units = valid
 	var pages: int = maxi(1, ceili(float(_units.size()) / float(PAGE_SIZE)))
 	_page = clampi(_page, 0, pages - 1)
 	_rebuild()
 	_sync_hp()
+	return true
 
 
 func _rebuild() -> void:
@@ -345,7 +363,8 @@ func _rebuild() -> void:
 		var d0: UnitDef = Cfg.unit(same_id) if Cfg.game != null else null
 		nm2 = d0.display_name if d0 != null else String(same_id)
 	_title.text = ("%s ×%d" % [nm2, _units.size()]) if nm2 != "" else "部队 %d" % _units.size()
-	_tag.text = "混合编队" if nm2 == "" else ""
+	# 玩家口径：**不要"混合编队"这四个字**（挤在铭牌右端，纯噪音）
+	_tag.text = ""
 	var from: int = _page * PAGE_SIZE
 	var to: int = mini(_units.size(), from + PAGE_SIZE)
 	for i in range(from, to):
@@ -361,9 +380,13 @@ func _feed_single(u: Node3D, d: UnitDef) -> void:
 func _make_cell(u: Node3D, idx: int) -> Button:
 	var btn := Button.new()
 	btn.name = "格_%d" % u.get_instance_id()
-	btn.custom_minimum_size = Vector2(_cell_w, _cell_h)
+	btn.custom_minimum_size = Vector2(CELL_W, CELL_H)
+	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	btn.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	btn.focus_mode = Control.FOCUS_NONE
-	btn.flat = true
+	# ★ 不能 flat：flat 会把 normal/hover/pressed 三张 stylebox 全吃掉，
+	#   格子就变成"浮在面板上的图标+数字"，完全读不出"格"。
+	btn.flat = false
 	var d: UnitDef = u.def
 	btn.add_theme_stylebox_override("normal",
 			Spec.inset_style(Color(0.075, 0.084, 0.100, 0.96), 5,
@@ -381,36 +404,37 @@ func _make_cell(u: Node3D, idx: int) -> Button:
 
 	# ★ 图标：优先用 **Blender 渲的单位头像 PNG**（魔兽那种"一张脸"），
 	#   没有渲图才退回线描 SVG（刀/弓/法杖）—— 后者远看只是一个符号，认不出兵种。
+	#   下半截留给「x / x」+ 血条 + 蓝条（玩家口径：数字和两条进度都要）。
+	const FOOT_H := 30.0
 	var unit_png: Texture2D = Spec.unit_icon(d.id) if d != null else null
 	var icon := TextureRect.new()
 	icon.name = "头像"
 	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	icon.set_anchors_preset(Control.PRESET_FULL_RECT)
 	if unit_png != null:
 		icon.texture = unit_png
-		icon.set_anchors_preset(Control.PRESET_FULL_RECT)
 		icon.offset_left = 2.0
 		icon.offset_top = 2.0
 		icon.offset_right = -2.0
-		icon.offset_bottom = -18.0
+		icon.offset_bottom = -FOOT_H
 		icon.modulate = Color(1, 1, 1, 1)
 	else:
-		var inset: float = maxf(_cell_w * 0.20, 4.0)
+		var inset: float = maxf(CELL_W * 0.20, 4.0)
 		icon.texture = Spec.icon_tex(_icon_for(d))
-		icon.set_anchors_preset(Control.PRESET_FULL_RECT)
 		icon.offset_left = inset
 		icon.offset_top = maxf(inset * 0.5, 2.0)
 		icon.offset_right = -inset
-		icon.offset_bottom = -maxf(_cell_h * 0.30, 16.0)
+		icon.offset_bottom = -FOOT_H - 2.0
 		icon.modulate = _tint_of(u)
 	btn.add_child(icon)
 
-	# 血量：**数字，不是进度条**（玩家口径："单位上面有进度条"）
+	# 血量文字：**x / x**（不是单个数），一行读完不用心算
 	var hp := Label.new()
 	hp.name = "血量"
 	hp.text = ""
-	hp.add_theme_font_size_override("font_size", Spec.FS_BODY)
+	hp.add_theme_font_size_override("font_size", Spec.FS_CAPTION)
 	hp.add_theme_font_override("font", Spec.mono_font())
 	hp.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hp.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -420,15 +444,38 @@ func _make_cell(u: Node3D, idx: int) -> Button:
 	hp.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
 	hp.offset_left = 1.0
 	hp.offset_right = -1.0
-	hp.offset_top = -17.0
-	hp.offset_bottom = -1.0
+	hp.offset_top = -FOOT_H
+	hp.offset_bottom = -FOOT_H + 14.0
 	btn.add_child(hp)
 
-	_cells.append({"btn": btn, "hp": hp, "icon": icon, "unit": u})
+	# 两条细进度：血（红/黄随比例）+ 蓝（有法力才出现）
+	var bar_hp := MiniBar.new()
+	bar_hp.name = "血条"
+	bar_hp.fill = Color(0.78, 0.26, 0.22)
+	bar_hp.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	bar_hp.offset_left = 3.0
+	bar_hp.offset_right = -3.0
+	bar_hp.offset_top = -14.0
+	bar_hp.offset_bottom = -10.0
+	btn.add_child(bar_hp)
+
+	var bar_mp := MiniBar.new()
+	bar_mp.name = "蓝条"
+	bar_mp.fill = Color(0.34, 0.62, 0.98)
+	bar_mp.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	bar_mp.offset_left = 3.0
+	bar_mp.offset_right = -3.0
+	bar_mp.offset_top = -8.0
+	bar_mp.offset_bottom = -4.0
+	bar_mp.visible = bool(u.call("has_mana")) if u.has_method("has_mana") else false
+	btn.add_child(bar_mp)
+
+	_cells.append({"btn": btn, "hp": hp, "icon": icon, "unit": u,
+			"bar_hp": bar_hp, "bar_mp": bar_mp})
 	return btn
 
 
-## 血数字就地刷新（不重建格子，省节点）
+## 血量数字 + 血条/蓝条就地刷新（不重建格子，省节点）
 func _sync_hp() -> void:
 	for rec in _cells:
 		var u: Node3D = rec.get("unit", null)
@@ -439,15 +486,29 @@ func _sync_hp() -> void:
 		var total: float = d.max_hp if d != null and d.max_hp > 0.0 else 1.0
 		var cur: float = float(u.get("hp"))
 		var r: float = clampf(cur / total, 0.0, 1.0)
-		var txt: String = "%d" % int(round(cur))
+		var txt: String = "%d/%d" % [int(round(cur)), int(round(total))]
 		if hp.text != txt:
 			hp.text = txt
-		var col: Color = Color(0.86, 0.90, 0.84)
+		var col: Color = Color(0.90, 0.92, 0.86)
 		if r <= 0.30:
-			col = Color(1.0, 0.48, 0.40)
+			col = Color(1.0, 0.52, 0.44)
 		elif r <= 0.60:
-			col = Color(1.0, 0.82, 0.44)
+			col = Color(1.0, 0.84, 0.46)
 		hp.add_theme_color_override("font_color", col)
+		var bh: MiniBar = rec.get("bar_hp", null)
+		if bh != null:
+			bh.fill = Color(0.80, 0.26, 0.22) if r <= 0.3 else \
+					(Color(0.92, 0.68, 0.24) if r <= 0.6 else Color(0.44, 0.80, 0.40))
+			bh.set_ratio(r)
+		var bm: MiniBar = rec.get("bar_mp", null)
+		if bm != null:
+			var has_m: bool = bool(u.call("has_mana")) if u.has_method("has_mana") else false
+			if bm.visible != has_m:
+				bm.visible = has_m
+			if has_m:
+				var mmax: float = float(u.call("max_mana"))
+				var mcur: float = float(u.get("mana"))
+				bm.set_ratio(mcur / maxf(mmax, 1.0))
 
 
 ## 兵种/建筑 → 三项数值 + 三项弹窗。
