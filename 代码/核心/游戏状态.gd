@@ -64,6 +64,21 @@ var neutral_faction: RtsFaction = null
 ## 关卡（由 主场景 挂上）
 var level: Node3D = null
 
+## **日夜系统**（由 主场景 在 4.98 挂上；没有它就是白天）。
+## ★ 这是"现在是不是夜里"的**唯一全局出口**：AI / 副官 / 界面 / 营火都读这里，
+##   不要再各自去 `get_parent().get("day_night")` 或者 get_node("../日夜") —— 那是
+##   "谁挂谁知道"的写法，换层级就静默失效（踩过：营火白天不灭、AI 夜里出门）。
+var day_night: Node = null
+
+
+## 现在是不是夜里（没有日夜系统 = 永远白天）
+func is_night() -> bool:
+	if day_night == null or not is_instance_valid(day_night):
+		return false
+	if not day_night.has_method("is_night"):
+		return false
+	return bool(day_night.call("is_night"))
+
 ## **控制权登记表**（谁有权给单位下令）。由 _ready 建好，全项目共用一份：
 ## 玩家下过令的单位在"命令组"生命周期内不许副官/人机碰（见 代码/ai/控制权.gd）。
 var control = null
@@ -213,6 +228,7 @@ func reset() -> void:
 	enemy_faction = null
 	neutral_faction = null
 	level = null
+	day_night = null
 	phase = RtsConst.Phase.PREPARE
 	elapsed = 0.0
 	if control != null:

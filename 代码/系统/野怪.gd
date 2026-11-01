@@ -71,6 +71,11 @@ func setup(level: Node3D, day: Node = null) -> void:
 		_day.connect("day_started", _on_day)
 	print("[野怪] 就绪：%d 座地牢 / 中立阵营「%s」" % [_lairs.size(),
 			faction.display_name if faction != null else "-"])
+	# 编辑器摆的地牢**有几座就算几座**（不会再自动补到 8 座 —— 那是玩家在设计地图）。
+	# 太少的话提醒一句，别让人以为"野怪系统没生效"。
+	if _lairs.size() < 4:
+		print("[野怪] 提示：地图上只有 %d 座地牢，建议 7~8 座（见 文档/编辑器资产同步.md）"
+			% _lairs.size())
 
 
 ## 中立阵营：team 0，对任何队伍都敌对，但没有大本营

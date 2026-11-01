@@ -439,10 +439,40 @@ func _band_visible() -> bool:
 	return sel_on or card_on or grid_on
 
 
+## 把底栏的所有部件收起来（唯一出口，别在各处零散地写 visible = false）。
+##
+## 覆盖：左卡（档案板）/ 中段（队伍网格）/ 中段（建筑面板）/ 命令卡 / 石金底板。
+## 注意 `_sel_panel` 只是"当前算作左卡"的引用（单位是档案板、建筑是建筑面板），
+## 所以这里按**具体控件**收，而不是按 `_sel_panel` 收 —— 否则会漏掉另一半。
+func _hide_band_parts() -> void:
+	if _dossier != null and is_instance_valid(_dossier):
+		_dossier.visible = false
+	if _grid_panel != null:
+		_grid_panel.visible = false
+	if _building_panel != null and is_instance_valid(_building_panel):
+		_building_panel.visible = false
+	if _card_panel != null:
+		_card_panel.visible = false
+	if _band_plate != null:
+		_band_plate.visible = false
+	_sel_panel = null
+
+
 ## 把四块 HUD 钉到四角（窗口变化 / 面板高度变化时都要重摆）
 func _apply_layout() -> void:
 	if _mets == null or root == null:
 		return
+	# ★★ **没选中就整条底栏收起**（玩家口径，2026-11-01 再次确认）。
+	#
+	# 为什么要在这里再挡一道：`_refresh_selection` / `_refresh_card` 各自都会按需
+	# 隐藏自己那块面板，但它们是**分两次、在不同时机**跑的（信号一次、8Hz 轮询一次）。
+	# 中间任何一步被打断（选中对象死亡、面板重建、命令卡换页），就会留下
+	# "某一块还 visible、底板已经没了/或反过来"的中间态 —— 玩家看到的就是
+	# "没选中，屏幕下面还挂着一条 UI"。
+	# 这里把"空选中"当成唯一判据做硬短路：不管上面谁留了尾巴，一律收干净。
+	# ★ 只收底栏这一条带的三块 + 底板，**不要动**资源条/小地图/提示（它们永远在）。
+	if _valid_selection().is_empty():
+		_hide_band_parts()
 	var m: float = _mets.margin
 
 	# 资源条：顶部**居中**（左上让给圆形小地图）
@@ -1430,6 +1460,53 @@ const QA_NAME_MAP := {
 	"农场": "farm", "箭塔": "tower", "金矿": "goldmine", "树": "tree",
 }
 
+
+## `--qa-band-check`：底栏显隐的**回归测试**（无头也能跑，看数字不看截图）。
+##
+## 验两件事（玩家口径"没选中单位就不显示下面的UI"）：
+##   ① 选中己方部队 → 底栏必须出现（底板 + 至少一块内容）；
+##   ② 清空选择 → 底栏必须**整条消失**（底板、左卡、中段、命令卡全不可见）。
+## 输出一行 `[QA-BAND] 结果：PASS/FAIL`，方便脚本 grep。
+func _qa_band_check() -> void:
+	await get_tree().create_timer(1.0).timeout
+	var sel := get_parent().get_node_or_null("选择系统")
+	if sel == null or not sel.has_method("select_units"):
+		print("[QA-BAND] 结果：SKIP（找不到选择系统）")
+		return
+	var picked: Array = []
+	for u in Game.all_units():
+		var r := u as RtsUnit
+		if r == null or not r.is_alive() or r.faction != Game.player_faction:
+			continue
+		if r.def != null and not r.def.is_building():
+			picked.append(r)
+		if picked.size() >= 3:
+			break
+	sel.call("select_units", picked)
+	for _i in 3:
+		await get_tree().process_frame
+	var on_ok: bool = _band_plate != null and _band_plate.visible \
+			and _sel_panel != null and _sel_panel.visible
+	print("[QA-BAND] 选中 %d 个 → 底栏可见=%s 底板=%s 左卡=%s 命令卡=%s" % [
+		picked.size(), str(_band_visible()), str(_band_plate != null and _band_plate.visible),
+		str(_sel_panel != null and _sel_panel.visible), str(_card_panel != null and _card_panel.visible)])
+	sel.call("select_units", [])
+	for _i in 3:
+		await get_tree().process_frame
+	var off_ok: bool = (_band_plate == null or not _band_plate.visible) \
+			and (_dossier == null or not _dossier.visible) \
+			and (_grid_panel == null or not _grid_panel.visible) \
+			and (_building_panel == null or not _building_panel.visible) \
+			and (_card_panel == null or not _card_panel.visible)
+	print("[QA-BAND] 清空后 → 底栏可见=%s 底板=%s 左卡=%s 中段=%s 建筑面板=%s 命令卡=%s" % [
+		str(_band_visible()),
+		str(_band_plate != null and _band_plate.visible),
+		str(_dossier != null and _dossier.visible),
+		str(_grid_panel != null and _grid_panel.visible),
+		str(_building_panel != null and _building_panel.visible),
+		str(_card_panel != null and _card_panel.visible)])
+	print("[QA-BAND] 结果：%s" % ("PASS" if on_ok and off_ok else "FAIL"))
+
 ## --select-id=<英文 id 或 中文名>：自动选中该类型的全部己方对象（**含建筑**）。
 ##
 ## 为什么要在这里补一条：主场景自带的 _qa_select 只遍历 faction.units，
@@ -1467,6 +1544,9 @@ func _qa_extra_hooks() -> void:
 			queue = arg.substr(11)
 		elif arg.begins_with("--qa-hover="):
 			hover = arg.substr(11)
+		elif arg == "--qa-band-check":
+			# 底栏显隐回归测试（见 _qa_band_check）
+			_qa_band_check()
 	if over != "":
 		_qa_force_over(over)
 	if want_page:

@@ -68,6 +68,9 @@ func _ready() -> void:
 	# ★ 副官花的是**玩家的金币**：保留额必须比敌方 AI 高得多，
 	#   否则开局几秒钟副官就把 620 花到 150 上下，玩家连兵营都点不出来。
 	_apply_adjutant_reserve()
+	# 清野怪的门槛比人机更高：它动的是**玩家的兵**，4 个兵去打营地会打空家底。
+	# （父类默认 4；副官要 5，且调度器还会剔除玩家正在微操的那批，见 控制权.gd）
+	creep_clear_min_army = 5
 	if Game.order_issued.is_connected(_on_player_order) == false:
 		Game.order_issued.connect(_on_player_order)
 	if "--no-adjutant" in OS.get_cmdline_user_args():

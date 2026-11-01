@@ -248,6 +248,8 @@ var _phase_t: float = 0.0
 ## 巡逻状态：A/B 两个端点 + 当前该去哪一端
 var _patrol_active: bool = false
 ## 卡死检测：计时 / 上次采样位置 / 连续卡住次数
+## 当前这一步要不要做"同伴避让"（收尾 2.2m 内关掉，见 _update_move）
+var _avoid_ok: bool = true
 var _stuck_t: float = 0.0
 var _stuck_pos: Vector3 = Vector3.ZERO
 var _stuck_count: int = 0
@@ -1460,6 +1462,9 @@ func _update_move(dt: float) -> void:
 		return
 
 	var dir := Vector3(dx / dist, 0.0, dz / dist)
+	# 收尾 2.2m 内**关掉同伴避让**：最后一步必须直着走到落点，
+	# 否则绕人的一点点侧移会让它停在离目标 1.6m 的地方（寻路自检 ③ 抓到过）。
+	_avoid_ok = dist > 2.2
 
 	# --- 1. 扫掠 + 贴墙滑动：拿到这一帧真正能走的方向 ---
 	var step: float = _speed * dt
@@ -2156,6 +2161,11 @@ func _clear_radius() -> float:
 
 ## 这一帧"真正能走的方向"：前方向能站就走；不能就沿墙切线滑动（带方向记忆）。
 ## 只做局部几何查询，不重算 A*；与寻路网格共用同一套 is_standable。
+##
+## ★ 2026-11-01 追加**同伴避让**（玩家口径"单位相互卡位"）：
+##   寻路网格里单位不是障碍，十个人走同一个门洞时算出来的路一模一样，谁也不让谁，
+##   结果就是挤成一坨、外圈的人被顶住不动。现在"前方有停着/慢吞吞的同伴"也算受阻，
+##   同样走切线滑动 —— 队伍会自然分成两列绕过去，而不是互相顶。
 func _steer(dir: Vector3, probe: float) -> Vector3:
 	var pf: GridPathfinder = _pathfinder()
 	if pf == null:
@@ -2163,18 +2173,73 @@ func _steer(dir: Vector3, probe: float) -> Vector3:
 	var r: float = _clear_radius()
 	var p: float = maxf(probe, PROBE_MIN)
 	var ahead: Vector3 = global_position + dir * p
-	if pf.is_standable(ahead, r):
+	var wall_ok: bool = pf.is_standable(ahead, r)
+	var unit_ok: bool = not _unit_ahead(dir, p)
+	if wall_ok and unit_ok:
 		return dir
-	# 先试上次滑动的方向（对称障碍前不会左右横跳），再试另一边
+	# 先试上次滑动的方向（对称障碍前不会左右横跳），再试另一边。
+	# 注意两条判据都要过：网格能站 **且** 前方没有同伴挡着。
+	#
+	# ★ 退路很重要：如果"墙能过、只是有人"，就走第一条能过墙的方向（人挤一挤让开），
+	#   **不能**因为同伴挡着就返回 ZERO —— 那会让单位在人群里彻底停摆（寻路自检 ③ 抓到过）。
 	var first: int = 1 if _slide_side >= 0 else -1
+	var wall_only: Vector3 = Vector3.ZERO
 	for sgn in [first, -first]:
 		for angle in SLIDE_ANGLES:
 			var cand: Vector3 = dir.rotated(Vector3.UP, float(angle) * float(sgn))
 			var cp: Vector3 = global_position + cand * p
-			if pf.is_standable(cp, r) and pf.line_of_sight(global_position, cp, r):
+			if not (pf.is_standable(cp, r) and pf.line_of_sight(global_position, cp, r)):
+				continue
+			if not _unit_ahead(cand, p):
 				_slide_side = sgn
 				return cand
+			if wall_only == Vector3.ZERO:
+				wall_only = cand
+	if wall_only != Vector3.ZERO:
+		return wall_only
+	# 绕不开：只是"人挡着"就照直走（分离/推挤会把让开），真的被墙围住才停。
+	if wall_ok and not unit_ok:
+		return dir
 	return Vector3.ZERO
+
+
+## 前方一个身位内有没有**同伴挡路**（软避让，只回答"要不要绕"，不负责推人）。
+##
+## 三点克制，避免"整队人互相横跳"：
+##   ① 只认**会动的同类**：建筑/金矿本来就是障碍，由寻路网格管；
+##   ② 只看**前方**（点在前进方向上的投影 > 0），身后的人不算；
+##   ③ **同向同速的人不算挡路** —— 否则一列行军会左右乱扭。
+func _unit_ahead(dir: Vector3, probe: float) -> bool:
+	if def == null or not is_mobile() or not _avoid_ok:
+		return false
+	var hash: SpatialHash = _shared_hash()
+	if hash == null:
+		return false
+	var my_r: float = get_radius()
+	var look: float = maxf(probe, PROBE_MIN) + my_r
+	var probe_p: Vector3 = global_position + dir * look
+	for o in hash.query(probe_p, look + 1.4):
+		if o == self or o == null or not is_instance_valid(o):
+			continue
+		var other := o as RtsUnit
+		if other == null or other.def == null or not other.is_alive():
+			continue
+		if not other.is_mobile():
+			continue
+		var to: Vector3 = other.global_position - global_position
+		to.y = 0.0
+		if to.dot(dir) <= 0.05:
+			continue
+		# ★ 只避让**停着的**同伴。
+		#   两个都在走的人不要互相绕：那会变成"你让我我让你"的左右横跳，
+		#   而且会把队形带歪（寻路自检 ③ 里 W1 就因为这点侧移停在离目标 1.5m 处）。
+		#   真正需要绕的场景是"撞上一堆正在干活/待命的人"——那才是玩家说的卡位。
+		if other._moving:
+			continue
+		var need: float = my_r + other.def.body_radius + 0.20
+		if to.length_squared() <= need * need:
+			return true
+	return false
 
 
 ## 被建筑/分离推挤塞进不可走格时：**逐帧**往最近可站立点推，绝不瞬移。

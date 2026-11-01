@@ -50,6 +50,8 @@ const DEFENSE_RADIUS: float = 18.0
 const RETREAT_HP: float = 0.32
 ## 巡逻间隔（秒）
 const PATROL_INTERVAL: float = 9.0
+## 派兵清野怪的最低兵力（副官会调高：它动的是玩家的兵）
+var creep_clear_min_army: int = 4
 ## 一波里"出击"的比例（其余留守）。副官会覆盖成 0.70（更稳）。
 var push_ratio: float = 0.82
 ## 保留资金：任何一笔开销之后，金币都必须 ≥ 这个值，避免 AI 把家底掏空到"零机动"。
@@ -196,10 +198,18 @@ func _think_once(diff: DifficultyDef) -> void:
 	_manage_research(diff)
 
 	# --- ⑥ 军事 ---
+	# ★ 2026-11-01 昼夜分流（玩家口径）：
+	#   白天 → 出门打敌对玩家 + **清野怪营地**；夜里 → 守家、营火、农民采木。
+	#   分流的唯一判据是 `Game.is_night()`（别在这里自己算小时）。
 	_manage_retreat()
 	_manage_defense(diff)
-	_manage_patrol(diff)
-	_manage_waves(diff)
+	if Game.is_night():
+		_manage_night(diff)
+	else:
+		_manage_patrol(diff)
+		_manage_creep_clear(diff)
+		_manage_waves(diff)
+	_manage_upkeep(diff)
 
 	# --- ⑦ 反愚蠢审计（最后跑，救火命令优先）---
 	_sanity.update(ctx)
@@ -281,11 +291,13 @@ func _combat_units(include_workers: bool) -> Array:
 
 ## 对面的战斗单位（"能看见" = 全图，本项目没有战争迷雾）。
 ## 多队图：**所有敌对阵营一起算**（同队的是盟友，一颗都不能算进来）。
+## ★ **不含中立野怪**（见 `_war_foes()`）—— 8 座地牢几十只豺狼人算进"敌军"，
+##   AI 会以为对面永远兵力碾压自己，整局蹲在家里不出门（实测兵比 0.23 / 需要 1.59）。
 func _enemy_army() -> Array:
 	var out: Array = []
 	if _faction == null:
 		return out
-	for foe in Game.enemies_of(_faction):
+	for foe in _war_foes():
 		for u in foe.units:
 			if u == null or not is_instance_valid(u):
 				continue
@@ -408,6 +420,8 @@ func _assign_workers(_diff: DifficultyDef) -> void:
 	var want_gold: int = int(round(float(total) * share))
 	var base: Vector3 = RtsWorld.base_center(_faction)
 	var radius: float = Cfg.game.map_size * 0.75
+	# 木材的"收货点"每 tick 只算一次（伐木场优先，其次大本营）
+	var wood_drop: Vector3 = _wood_dropoff()
 
 	for w in idle:
 		var kind: int = RtsConst.Harvest.GOLD
@@ -415,8 +429,15 @@ func _assign_workers(_diff: DifficultyDef) -> void:
 			kind = RtsConst.Harvest.WOOD
 		elif on_gold >= want_gold:
 			kind = RtsConst.Harvest.WOOD
-		var node: Node3D = Game.find_nearest_harvestable(
-				w.global_position, kind, base, radius)
+		# 夜里：闲着的人一律去砍木头（玩家口径"夜晚……农民采集木头"）。
+		# 夜里金矿不是瓶颈，木头才是（塔、营火、修理全吃木）。
+		if Game.is_night() and on_wood < total:
+			kind = RtsConst.Harvest.WOOD
+		var node: Node3D = null
+		if kind == RtsConst.Harvest.WOOD:
+			node = _nearest_wood(w, wood_drop)
+		else:
+			node = Game.find_nearest_harvestable(w.global_position, kind, base, radius)
 		if node == null and kind == RtsConst.Harvest.WOOD:
 			kind = RtsConst.Harvest.GOLD
 			node = Game.find_nearest_harvestable(w.global_position, kind, base, radius)
@@ -427,6 +448,60 @@ func _assign_workers(_diff: DifficultyDef) -> void:
 			on_gold += 1
 		else:
 			on_wood += 1
+
+
+## **砍哪棵树**：优先"离伐木场/基地最近"的，其次才是"离农民最近"的。
+##
+## 玩家口径（2026-11-01）："要优先采集伐木场最近或基地最近的木头"。
+## 判据 = 树到收货点的距离 × 1.0 + 树到农民的距离 × 0.35：
+##   · 权重 1.0 —— 每一趟往返都要走的路，是真正的时间成本；
+##   · 权重 0.35 —— 农民多走两步过去无所谓，多背 10m 回家才是浪费。
+## 这就是"先把家门口的树砍光"的自然行为，而不是随机撒到林子里。
+func _nearest_wood(w: RtsUnit, drop: Vector3) -> Node3D:
+	if w == null or not is_instance_valid(w):
+		return null
+	var best: Node3D = null
+	var best_s: float = INF
+	for h in Game.all_harvestables():
+		if h == null or not is_instance_valid(h):
+			continue
+		if not h.is_alive():
+			continue
+		var hd: UnitDef = h.def
+		if hd == null or hd.harvest_kind != RtsConst.Harvest.WOOD:
+			continue
+		var s: float = h.global_position.distance_to(drop) \
+				+ h.global_position.distance_to(w.global_position) * 0.35
+		if s < best_s:
+			best_s = s
+			best = h
+	return best
+
+
+## 木材的收货点：最近的、收木材的己方交汇点。
+## 伐木场是"专收木材"的，给 8m 的等效折扣 —— 否则大本营常常更近，
+## 伐木场就白造了（它存在的意义就是把送货路程缩短）。
+func _wood_dropoff() -> Vector3:
+	var home: Vector3 = RtsWorld.base_center(_faction)
+	var best: Vector3 = home
+	var best_d: float = INF
+	if _faction == null:
+		return best
+	for b in _faction.buildings:
+		if b == null or not is_instance_valid(b) or not b.is_alive() or b.def == null:
+			continue
+		var rb := b as RtsBuilding
+		if rb != null and not rb.is_constructed:
+			continue
+		if not b.def.accepts_harvest(RtsConst.Harvest.WOOD):
+			continue
+		var d: float = b.global_position.distance_to(home)
+		if b.def.id == &"lumbercamp":
+			d -= 8.0
+		if d < best_d:
+			best_d = d
+			best = b.global_position
+	return best
 
 ## 金木人力分配比例：**从兵种与建筑成本推导**，不用拍脑袋常数
 func _gold_share(diff: DifficultyDef) -> float:
@@ -587,8 +662,10 @@ func _manage_army(diff: DifficultyDef) -> void:
 	_maybe_build_barracks(diff)
 	# 有产能了就要有"家门口的钉子"：每两座兵营配一座箭塔（上限 2）
 	_maybe_build_tower()
-	# 新建筑：哨塔（视野+预警，顺手也能射）/ 神秘圣地（法师）/ 蒸汽车坊（重步兵）
-	_maybe_build_one(&"watchtower", 1, "defense")
+	# 新建筑：神秘圣地（法师）/ 蒸汽车坊（重步兵）。
+	# ★ 哨塔不在这里造 —— 它的"造几座 / 造在哪 / 什么时候升级成箭塔"统一由
+	#   `_manage_upkeep()` → `_maybe_build_watchtower()` 管（朝敌方外圈选点、留够视野）。
+	#   两处都造会互相打架：这里造一座，upkeep 又按自己的目标数再补一座。
 	_maybe_build_one(&"sanctum", 1, "tech")
 	_maybe_build_one(&"workshop", 1, "tech")
 	for b in _faction.buildings:
@@ -937,6 +1014,275 @@ func _manage_waves(diff: DifficultyDef) -> void:
 	_log("第 %d 波：%d 出击 / %d 留守 → %s（下一波 +%.0fs）" % [
 		_wave_index, push_n, army.size() - push_n, _foe_name(), interval])
 
+# ===========================================================================
+# 昼夜行为（2026-11-01 玩家口径）
+#   白天：出门打敌对玩家 + 清野怪营地
+#   夜里：守家（不主动出门）、造营火、农民采木
+# ===========================================================================
+
+## 夜间收队的间隔（秒）
+const NIGHT_RECALL_INTERVAL := 6.0
+## 清野怪的间隔（秒）：不要太频繁，否则部队一直在野区转圈
+const CREEP_CLEAR_INTERVAL := 40.0
+## 派出清野的兵力比例
+const CREEP_CLEAR_RATIO := 0.4
+## 野怪营地被判定为"值得打"的最大距离（米，从我的基地算）
+const CREEP_CLEAR_RANGE := 95.0
+## 开局多久之内不去招惹野怪（秒）：刚开局 3 个兵去打 4 只豺狼人 = 送经验
+const CREEP_CLEAR_AFTER := 45.0
+## 哨塔目标座数：随时间长大（1 → 3），但封顶 3
+const WATCHTOWER_MAX := 3
+## 箭塔（含升级来的）总上限：给"升级→补哨塔"的循环封顶
+const MAX_ARROW_TOWERS := 4
+## 每隔多少秒允许再想要一座哨塔
+const WATCHTOWER_GROW_SEC := 95.0
+## 营火上限定
+const CAMPFIRE_MAX := 2
+
+var _night_cd: float = 0.0
+var _creep_cd: float = 0.0
+var _upgrade_cd: float = 0.0
+## 改造脚本（preload 常量，不依赖全局类缓存）
+const REFIT := preload("res://代码/系统/建筑改造.gd")
+
+
+## **夜里**：把散在外面的兵收回基地内圈，蹲在防御圈上等它们撞上来。
+##
+## 为什么不是"全体 hold"：hold 会把兵钉在原地，敌人绕后打农场它们不动。
+## 这里用 `attack_move` 到基地外圈的一个点 —— 路上遇到敌人自动交战，
+## 到了之后原地警戒，本质就是"在家门口巡逻"。
+func _manage_night(_diff: DifficultyDef) -> void:
+	if _faction == null:
+		return
+	if _night_cd > 0.0:
+		_night_cd -= float(_diff.think_interval * think_scale)
+		return
+	_night_cd = NIGHT_RECALL_INTERVAL
+	var home: Vector3 = RtsWorld.base_center(_faction)
+	var moved: int = 0
+	for u in _army_units():
+		if u == null or not is_instance_valid(u):
+			continue
+		# 已经在家里圈内就别折腾它（不然每 6 秒重下一次命令，兵一直原地踏步）
+		if u.global_position.distance_to(home) <= DEFENSE_RADIUS + 6.0:
+			continue
+		var ang: float = randf() * TAU
+		var p: Vector3 = home + Vector3(cos(ang), 0.0, sin(ang)) * (DEFENSE_RADIUS * 0.8)
+		_sched.attack_move([u], p, "night")
+		moved += 1
+	if moved > 0:
+		_log("入夜收队：%d 兵回防（基地 %.0fm 圈）" % [moved, DEFENSE_RADIUS])
+
+
+## **白天清野**：派一支小队去最近的野怪营地练手。
+##
+## 三条硬条件（缺一条都不派）：
+##   ① 家里没被打（base_threat == 0）；
+##   ② 兵力 ≥ 3（1~2 个兵去打营地等于送经验）；
+##   ③ 营地离基地 ≤ CREEP_CLEAR_RANGE（太远就成了"全军远征"，正面战场就空了）。
+func _manage_creep_clear(_diff: DifficultyDef) -> void:
+	if _faction == null:
+		return
+	if _creep_cd > 0.0:
+		_creep_cd -= float(_diff.think_interval * think_scale)
+		return
+	if float(metrics.get("base_threat", 0.0)) > 0.0:
+		return
+	var camp: Vector3 = _nearest_creep_camp()
+	if camp == Vector3.INF:
+		return
+	if Game.elapsed < CREEP_CLEAR_AFTER:
+		return
+	var army: Array = _army_units()
+	# 兵力门槛：副官会用更高的值（那是玩家的兵，不能拿去白白送死）
+	if army.size() < creep_clear_min_army:
+		return
+	_creep_cd = CREEP_CLEAR_INTERVAL
+	var n: int = clampi(int(ceil(float(army.size()) * CREEP_CLEAR_RATIO)), 3, army.size())
+	var targets: Array = _scatter_targets(army.slice(0, n), camp)
+	for i in range(n):
+		_sched.attack_move([army[i]], targets[i], "creep")
+	_log("清野：%d 兵 → 营地 (%.0f, %.0f)" % [n, camp.x, camp.z])
+
+
+## 最近的野怪营地：优先**地牢**（拆了就不再刷怪），没有地牢就找最近的野怪。
+## 返回 Vector3.INF = 附近没有值得打的野怪。
+func _nearest_creep_camp() -> Vector3:
+	var neutral: RtsFaction = Game.neutral_faction
+	if neutral == null:
+		return Vector3.INF
+	var home: Vector3 = RtsWorld.base_center(_faction)
+	var best: Vector3 = Vector3.INF
+	var best_d: float = CREEP_CLEAR_RANGE
+	for b in neutral.buildings:
+		if b == null or not is_instance_valid(b) or not b.is_alive():
+			continue
+		var d: float = b.global_position.distance_to(home)
+		if d < best_d:
+			best_d = d
+			best = b.global_position
+	if best != Vector3.INF:
+		return best
+	for u in neutral.units:
+		if u == null or not is_instance_valid(u) or not u.is_alive():
+			continue
+		var d2: float = u.global_position.distance_to(home)
+		if d2 < best_d:
+			best_d = d2
+			best = u.global_position
+	return best
+
+
+## **日常 upkeep**：哨塔（扩视野）→ 多余哨塔升级箭塔 → 营火（夜里照明）。
+##
+## 顺序是有讲究的：先有哨塔才谈得上"升级多余的那几座"；
+## 营火放最后 —— 它是纯功能性的照明，不能跟"能打的塔"抢资源。
+func _manage_upkeep(diff: DifficultyDef) -> void:
+	_maybe_build_watchtower(diff)
+	_maybe_upgrade_tower()
+	_maybe_build_campfire()
+
+
+## 哨塔：**朝敌方方向**推到基地外圈，目的是"提前看见有人来"。
+## 目标座数随时间长大（1 → 3），这样前期不浪费钱，后期基地有预警圈。
+func _maybe_build_watchtower(diff: DifficultyDef) -> void:
+	if _faction == null:
+		return
+	# 目标**哨塔**数（只数哨塔，不数箭塔）：升级掉一座哨塔之后这里会空出名额，
+	# 于是 AI 会再补一座 —— 这正是玩家描述的"造哨塔扩视野、多出来的转成箭塔"。
+	var want: int = clampi(1 + int(Game.elapsed / WATCHTOWER_GROW_SEC), 1, WATCHTOWER_MAX)
+	var have: int = _faction.count_buildings(&"watchtower")
+	# 总防御建筑上限：防止"升级→补哨塔→再升级"无限循环把钱烧光
+	if have >= want or _faction.count_buildings(&"tower") >= MAX_ARROW_TOWERS:
+		return
+	for b in _faction.buildings:
+		if b == null or not is_instance_valid(b) or b.def == null:
+			continue
+		if b.def.id != &"watchtower":
+			continue
+		var rb: RtsBuilding = b as RtsBuilding
+		if rb != null and not rb.is_constructed:
+			return
+	var d: UnitDef = Cfg.unit(&"watchtower")
+	if d == null or not _can_spend(&"watchtower"):
+		return
+	var builder: RtsUnit = _pick_builder()
+	if builder == null:
+		return
+	var spot: Vector3 = _frontier_spot(d.footprint, 24.0, 34.0)
+	if spot == Vector3.INF:
+		spot = _find_build_spot(d.footprint)
+	if spot == Vector3.INF:
+		return
+	if _sched.build(builder, d, spot, _build_yaw_at(spot), "defense") != null:
+		_log("造哨塔扩视野（已有 %d / 目标 %d）" % [have, want])
+
+
+## "朝敌方的外圈"选点：从基地沿"我方→最近敌人"方向走 24~34m，找第一个可建点。
+## 找不到就退到通用的 `_find_build_spot`（环形搜索）。
+func _frontier_spot(footprint: Vector2i, r_min: float, r_max: float) -> Vector3:
+	if _faction == null:
+		return Vector3.INF
+	var home: Vector3 = RtsWorld.base_center(_faction)
+	var dir := Vector3.FORWARD
+	var foe: RtsFaction = _foe_faction()
+	if foe != null:
+		var to: Vector3 = RtsWorld.base_center(foe) - home
+		to.y = 0.0
+		if to.length() > 1.0:
+			dir = to.normalized()
+	var r: float = r_min
+	while r <= r_max:
+		for sgn in [0.0, 0.5, -0.5]:
+			var ang: float = atan2(dir.x, dir.z) + float(sgn)
+			var raw := Vector3(home.x + sin(ang) * r, 0.0, home.z + cos(ang) * r)
+			var p: Vector3 = 建筑网格.snap_point(raw, footprint)
+			if 建筑网格.can_place(p, footprint) and _has_room(p, footprint):
+				return p
+		r += 3.0
+	return Vector3.INF
+
+
+## **多余哨塔 → 箭塔**（玩家口径："多余哨塔升级箭塔加强防御"）。
+##
+## 判定"多余"：哨塔数 > 当前想要的数量（want 见 _maybe_build_watchtower）。
+## 也就是"该有的预警点已经够了，剩下的全转成火力"。
+## 夜里更积极：夜幕期守家靠的就是塔。
+func _maybe_upgrade_tower() -> void:
+	if _faction == null:
+		return
+	if _upgrade_cd > 0.0:
+		_upgrade_cd -= 1.0
+		return
+	# 要**留几座哨塔**当眼睛：至少 1 座，随时间抬到 2 座。
+	# 只有"超过这个数"的哨塔才算多余，才转成箭塔 —— 否则开局唯一那座一升级，
+	# 基地就彻底没有 20m 视野了（玩家口径："造哨塔扩大视野"）。
+	var prefer: int = clampi(1 + int(Game.elapsed / (WATCHTOWER_GROW_SEC * 2.0)), 1, 2)
+	if Game.is_night():
+		# 夜里守家靠火力，但仍然至少留 1 座哨塔（预警 26m 是夜里最值钱的东西）
+		prefer = maxi(1, prefer - 1)
+	var towers: Array = []
+	for b in _faction.buildings:
+		if b == null or not is_instance_valid(b) or b.def == null:
+			continue
+		if b.def.id != &"watchtower":
+			continue
+		var rb: RtsBuilding = b as RtsBuilding
+		if rb == null or not rb.is_constructed or not rb.is_alive():
+			continue
+		towers.append(rb)
+	if towers.size() <= prefer:
+		return
+	if _faction.count_buildings(&"tower") >= MAX_ARROW_TOWERS:
+		return
+	var old_id: StringName = &"watchtower"
+	var new_id: StringName = &"tower"
+	if not REFIT.can_pay(_faction, old_id, new_id):
+		return
+	# 挑"最靠外"的那座升级（越靠前越先挨打，最需要火力）
+	var pick: RtsBuilding = towers[0]
+	var home: Vector3 = RtsWorld.base_center(_faction)
+	for t in towers:
+		if t.global_position.distance_to(home) > pick.global_position.distance_to(home):
+			pick = t
+	if not REFIT.pay(_faction, old_id, new_id):
+		return
+	var n: Node3D = REFIT.replace(pick, new_id, true)
+	_upgrade_cd = 12.0
+	if n != null:
+		_log("哨塔升级箭塔 @ (%.0f, %.0f)（哨塔 %d 座，目标 %d）" % [
+			pick.global_position.x, pick.global_position.z, towers.size(), prefer])
+
+
+## 营火：**只在夜里考虑**，最多 CAMPFIRE_MAX 座，摆在基地朝敌方的一侧。
+## 玩家口径："并会建造营火，在夜晚能看清（让火在晚上能照明）"。
+func _maybe_build_campfire() -> void:
+	if _faction == null or not Game.is_night():
+		return
+	if _faction.count_buildings(&"campfire") >= CAMPFIRE_MAX:
+		return
+	for b in _faction.buildings:
+		if b == null or not is_instance_valid(b) or b.def == null:
+			continue
+		if b.def.id == &"campfire":
+			var rb: RtsBuilding = b as RtsBuilding
+			if rb != null and not rb.is_constructed:
+				return
+	var d: UnitDef = Cfg.unit(&"campfire")
+	if d == null or not _can_spend(&"campfire"):
+		return
+	var builder: RtsUnit = _pick_builder()
+	if builder == null:
+		return
+	var spot: Vector3 = _frontier_spot(d.footprint, 10.0, 16.0)
+	if spot == Vector3.INF:
+		spot = _find_build_spot(d.footprint)
+	if spot == Vector3.INF:
+		return
+	if _sched.build(builder, d, spot, _build_yaw_at(spot), "night") != null:
+		_log("夜里点营火（已有 %d 座）" % _faction.count_buildings(&"campfire"))
+
+
 ## 把一队人散到一个圆盘上（黄金角螺旋，间距约 2m）。
 ## 为什么用螺旋而不是方阵：方阵要么朝向不对、要么在野外根本放不下；
 ## 螺旋只依赖"到目标的距离"，任何地形都能落下，而且天然不重叠。
@@ -977,14 +1323,12 @@ func _push_target() -> Vector3:
 # 查询辅助
 # ===========================================================================
 
-## 我打的那一家：**最近的、还有大本营的敌对阵营**。
+## 我打的那一家：**最近的、还有大本营的敌对阵营**（同样不含野怪）。
 ## （多队图里"敌人"可能有 2~3 个；全量目标选择见 _all_foes()。）
 func _foe_faction() -> RtsFaction:
 	if _faction == null:
 		return null
-	var pool: Array = Game.living_enemies_of(_faction)
-	if pool.is_empty():
-		pool = Game.enemies_of(_faction)
+	var pool: Array = _war_foes()
 	if pool.is_empty():
 		return null
 	var mine: Vector3 = RtsWorld.base_center(_faction)
@@ -998,7 +1342,27 @@ func _foe_faction() -> RtsFaction:
 	return best
 
 
-## 全部敌对阵营（一波兵打过去时要挑目标用）
+## **会"打过来"的敌对阵营** —— 战略层口径，**剔除中立野怪**。
+##
+## 为什么必须分开：野怪有 8 座地牢、每座 5 只，数量上远超任何一家玩家。
+## 把它们算进"敌方军力/最想打的那一家"，AI 就会：
+##   ① 永远觉得兵力不占优（`allow_attack` 永远 false）→ 整局不出门；
+##   ② 把推进目标定成最近的地牢（`_push_target` 找"敌方建筑"）→ 全军去打野。
+## 但**战术层**（索敌 `_acquire`、回防 `_threat_units`）仍然把野怪当敌人 ——
+## 夜里它们真的会来拆家，那时候必须开枪。
+func _war_foes() -> Array:
+	var out: Array = []
+	for f in _all_foes():
+		if f == null:
+			continue
+		# team 0 = 中立敌对（野怪）。1 队是盟友，压根不在 enemies_of 里。
+		if int(f.team) == 0:
+			continue
+		out.append(f)
+	return out
+
+
+## 全部敌对阵营（含中立野怪；一波兵打过去时要挑目标用）
 func _all_foes() -> Array:
 	if _faction == null:
 		return []

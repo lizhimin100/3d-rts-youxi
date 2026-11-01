@@ -53,7 +53,12 @@ func _run() -> void:
 	var lv0: int = RtsCombat.attack_up_level(pf)
 	bs.call("_tick_research", 999.0)
 	_check(RtsCombat.attack_up_level(pf) == lv0 + 1, "研究完成后等级 +1")
-	_check(is_equal_approx(RtsCombat.attack_mult(pf), 1.15), "攻击倍率变成 1.15")
+	# ★ 口径变了（2026-11-01）：铁匠铺现在是**平铺 +1 伤害/级**（最高 5 级），
+	#   `attack_mult` 只剩"给 AI 估算战力"用（1.0 + 0.067 × 等级），
+	#   不再是旧版的"每级 ×1.15"。断言跟着口径走，别再写死 1.15。
+	var want_mult: float = 1.0 + 0.067 * float(lv0 + 1)
+	_check(is_equal_approx(RtsCombat.attack_mult(pf), want_mult),
+			"攻击倍率随等级上升（%.3f → %.3f）" % [1.0 + 0.067 * float(lv0), want_mult])
 	_check(not bs.is_researching(), "研究结束后不再占着研究位")
 
 	# --- 3. 满级封顶 ---
@@ -145,7 +150,63 @@ func _run() -> void:
 	Game.unregister(site)
 	site.queue_free()
 
+	# --- 7. 哨塔 → 箭塔（建筑改造）：只补差价、血量比例继承、占地不残留 ---
+	_check_upgrade(pf)
+
 	_finish()
+
+
+## 哨塔升级箭塔：这是 2026-11-01 新增的玩家/AI 共用能力，
+## 失败方式很隐蔽（占地没清 → 新塔被判"不能建"；血量归满 → 变成回血挂）。
+## 所以按"钱 / 型号 / 血量 / 坐标"四条分别断言。
+func _check_upgrade(pf: RtsFaction) -> void:
+	const REFIT := preload("res://代码/系统/建筑改造.gd")
+	var wd: UnitDef = Cfg.unit(&"watchtower")
+	var td: UnitDef = Cfg.unit(&"tower")
+	_check(wd != null and td != null, "哨塔/箭塔定义都存在")
+	if wd == null or td == null:
+		return
+	var parent: Node = get_parent()
+	if parent == null:
+		return
+	var home: Vector3 = RtsWorld.base_center(pf)
+	var bt: RtsBuilding = RtsBuilding.new()
+	bt.name = "自检哨塔"
+	parent.add_child(bt)
+	bt.global_position = RtsWorld.snap_y(home + Vector3(14.0, 0.0, 14.0))
+	bt.setup(pf, wd)
+	bt.set_constructed(true)
+	Game.register(bt)
+	if Game.level != null and Game.level.has_method("mark_footprint"):
+		Game.level.call("mark_footprint", bt)
+	# 打掉 40% 血：升级后必须还是 60%，不能偷偷回满
+	bt.hp = wd.max_hp * 0.6
+	var gold0: int = pf.gold
+	var wood0: int = pf.wood
+	var cost: Vector2i = REFIT.upgrade_cost(&"watchtower", &"tower")
+	_check(cost == Vector2i(maxi(0, td.gold_cost - wd.gold_cost),
+			maxi(0, td.wood_cost - wd.wood_cost)), "升级只补差价 %d金 %d木" % [cost.x, cost.y])
+	_check(REFIT.pay(pf, &"watchtower", &"tower"), "付得起升级费")
+	_check(pf.gold == gold0 - cost.x and pf.wood == wood0 - cost.y, "升级费当场扣掉")
+	var old_pos: Vector3 = bt.global_position
+	var n: Node3D = REFIT.replace(bt, &"tower", true)
+	_check(n != null, "改造返回了新建筑")
+	if n == null:
+		return
+	var nb := n as RtsBuilding
+	_check(nb != null and nb.def != null and nb.def.id == &"tower", "新建筑是箭塔")
+	_check(nb != null and nb.is_constructed, "新建筑直接是完工状态")
+	_check(is_equal_approx(n.global_position.x, old_pos.x)
+			and is_equal_approx(n.global_position.z, old_pos.z), "新塔在原地")
+	_check(nb != null and absf(nb.hp - td.max_hp * 0.6) <= 1.0,
+			"血量按比例继承（%.0f / %.0f）" % [nb.hp if nb != null else -1.0, td.max_hp])
+	# 占地：把新塔也拆掉后，原地必须能重新建 —— 说明旧塔的占用格子真的清了，
+	# 没有留下"看不见的禁建区"（旧实现忘了 clear_footprint 就是这么坏的）。
+	Game.unregister(n)
+	if Game.level != null and Game.level.has_method("clear_footprint"):
+		Game.level.call("clear_footprint", n)
+	n.queue_free()
+	_check(建筑网格.can_place(old_pos, td.footprint), "改造后占地可完整回收（不残留）")
 
 
 ## 找某阵营的第一座指定建筑

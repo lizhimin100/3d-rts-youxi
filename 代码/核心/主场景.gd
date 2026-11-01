@@ -153,6 +153,8 @@ func _ready() -> void:
 	day_night = _mount_script("res://代码/系统/日夜.gd", "日夜")
 	if day_night != null:
 		day_night.call("setup", 主光节点, 补光节点, 环境节点)
+		# 注册到全局（AI / 副官 / 营火读 Game.is_night()）：这是"夜里"的唯一出口
+		Game.day_night = day_night
 	creeps = _mount_script("res://代码/系统/野怪.gd", "野怪")
 	if creeps != null:
 		creeps.call("setup", level, day_night)

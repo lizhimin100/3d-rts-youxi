@@ -18,6 +18,8 @@ extends Control
 const Spec := preload("res://代码/界面/界面规格.gd")
 const Lex := preload("res://代码/界面/词条.gd")
 const Frame := preload("res://代码/界面/按钮框.gd")
+## 建筑改造（哨塔→箭塔）：和 指令系统 / AI 共用同一份价格与实现
+const UPGRADE := preload("res://代码/系统/建筑改造.gd")
 
 ## 网格列数。2026-11-01 第七版：**5 列 → 4 列**。
 ## 5 列时单格只有 112px，图标 + 中文名 + 副行挤成一坨（玩家："还很挤的感觉"）；
@@ -292,6 +294,25 @@ func _build_entries() -> Array:
 				"icon": "eye",
 				"sub": "%.0fm · 无攻击" % b.def.sight_range,
 				"disabled": true,
+			})
+		# **哨塔 → 箭塔**（玩家口径 2026-11-01："多余哨塔升级箭塔加强防御"）。
+		# 做成可点按钮（不是信息格）：花不花这笔钱是玩家的决定。
+		# 价格/实现都走 代码/系统/建筑改造.gd —— 和 AI 自动升级完全同一套口径。
+		if b.def.id == &"watchtower":
+			var uc: Vector2i = UPGRADE.upgrade_cost(&"watchtower", &"tower")
+			out.append({
+				"label": "升级",
+				"hint": "把这座哨塔改造成箭塔（只补差价 %d 金 / %d 木）。\n改造后：%.0f 伤害 · %.0fm 射程；视野从 %.0fm 降到 12m。\n血量按当前比例继承，不能当回血手段。" % [
+					uc.x, uc.y,
+					float(Cfg.unit(&"tower").attack_damage if Cfg.unit(&"tower") != null else 0.0),
+					float(Cfg.unit(&"tower").attack_range if Cfg.unit(&"tower") != null else 0.0),
+					b.def.sight_range],
+				"color": Color(0.96, 0.72, 0.42),
+				"glyph": "升",
+				"icon": "upgrade",
+				"sub": "%d金 %d木" % [uc.x, uc.y],
+				"hotkey": "",
+				"action": func(): _call("request_upgrade_tower"),
 			})
 		out.append(_stop_entry())
 		return out
@@ -888,4 +909,6 @@ static func _icon_for_building(id: StringName) -> String:
 			return "gear"
 		&"lumbercamp":
 			return "wood"
+		&"campfire":
+			return "fire"
 	return "house"

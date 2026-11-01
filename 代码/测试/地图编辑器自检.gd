@@ -29,6 +29,7 @@ func _ready() -> void:
 	_test_validate_water_spawn()
 	_test_validate_unreachable_mine()
 	_test_validate_overlap()
+	_test_asset_catalog()
 	_cleanup()
 	print("------------------------------------")
 	if _fails.is_empty():
@@ -332,6 +333,60 @@ func _test_validate_overlap() -> void:
 	_ok(_has_error(v, "重叠"), "玩家重叠没有被报出来（errors=%s）"
 		% str(v.get("errors", PackedStringArray())))
 	print("  · 玩家重叠：OK")
+
+
+# ===========================================================================
+# 资产目录（玩家口径：新增单位/建筑必须能在编辑器摆放）
+# ===========================================================================
+
+## 验三件事：
+##   ① 每个"游戏里会出现"的 id（含野怪/地牢/营火）都在编辑器的资产清单里；
+##   ② 每个建筑都有可用图标（png 或 fallback svg），否则命令卡上是空白格；
+##   ③ 组合件（`combo:`）在编辑器里的预览**不是占位方块** —— 玩家摆地牢时
+##      看到的必须是一个营地，而不是一只棕色木箱。
+func _test_asset_catalog() -> void:
+	var ids: Dictionary = {}
+	for a in MapAssets.all_assets():
+		ids[String(a["id"])] = true
+	# 这批是"必须能被地图作者摆出来"的最小集合（新加东西就往这里补一行）
+	var must: Array[String] = [
+		"footman", "archer", "peasant", "mage", "steam_guard",
+		"gnoll_warrior", "gnoll_scout", "dungeon", "campfire",
+		"townhall", "barracks", "farm", "tower", "watchtower",
+		"blacksmith", "sanctum", "workshop", "lumbercamp",
+		"goldmine", "tree",
+	]
+	var missing: PackedStringArray = PackedStringArray()
+	for id in must:
+		if not ids.has(id):
+			missing.append(id)
+	_ok(missing.is_empty(), "资产目录缺少：%s" % ", ".join(missing))
+
+	# 建筑图标：命令卡/信息面板靠 Spec.building_icon(id)，没有 png 时要有 fallback
+	var no_icon: PackedStringArray = PackedStringArray()
+	for id in must:
+		var d: UnitDef = Cfg.unit(StringName(id))
+		if d == null or not d.is_building():
+			continue
+		var has_png: bool = ResourceLoader.exists("res://美术/图标/建筑/%s.png" % id)
+		# 静态函数直接点调用（Script 对象没有 .call 语义）
+		var fb: String = RtsCommandCard._icon_for_building(StringName(id))
+		if not has_png and fb.is_empty():
+			no_icon.append(id)
+	_ok(no_icon.is_empty(), "建筑缺少图标且没有兜底：%s" % ", ".join(no_icon))
+
+	# 组合件预览：根节点下必须有真正的"模型"子节点，不能落到占位方块
+	for id in ["dungeon", "campfire"]:
+		var o: MapObject = MapObject.make(StringName(id), MapObject.Category.BUILDING,
+				Vector3.ZERO)
+		var n: Node3D = MapPreviewFactory.build(o)
+		if n == null:
+			_ok(false, "组合件预览为空：%s" % id)
+			continue
+		var model: Node = n.get_child(0) if n.get_child_count() > 0 else null
+		var is_box: bool = model is MeshInstance3D and (model as MeshInstance3D).mesh is BoxMesh
+		_ok(model != null and not is_box, "组合件预览退回了占位方块：%s" % id)
+		n.queue_free()
 
 
 # ===========================================================================

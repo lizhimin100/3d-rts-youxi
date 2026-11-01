@@ -31,6 +31,16 @@
 - `--quit-after` / `--resolution` 是**引擎参数**，必须放在 `--` **之前**，否则游戏一直跑不退出。
 - 新增 `class_name` 的脚本后先跑 `godot --headless --path . --import`，
   否则 `.godot/global_script_class_cache.cfg` 是旧的，别的脚本会报 "Could not find type"。
+- **★ 更稳的做法：能不用类名当类型就不用**。本工程因为这个错白干过两次
+  （`主场景.gd` 的 `RtsDayNight` / `RtsCreeps`）。规矩：
+  * 只通过 `.call("…")` 调用的对象 → 类型写 `Node`，脚本用 `const XXX := preload(...)` 拿着；
+  * 要调静态方法（`RtsDungeonVisual.build()`）→ 也改成 `preload` 常量再 `.call()`；
+  * 真的必须写类名（`extends SimpleAI`、`as RtsBuilding`）→ 加完**立刻** `--import`。
+  * 详见 `文档/开发交接.md` §1。
+- **编辑器插件脚本（`addons/map_editor/*.gd`）里新增成员必须先写 `var`**。
+  漏一个未声明变量 → 整个 `编辑会话.gd` 编译失败 → `主屏._process` 每帧刷
+  `Nonexistent function 'autosave_tick'`，拖动/笔刷全废。**排查时往上找第一条 Parse Error，
+  别从报错行开始读**（报错行只是受害者）。详见 `文档/开发交接.md` §2。
 
 ## 三、改完怎么验（都在工程根目录跑）
 
@@ -55,5 +65,10 @@ $g = 'E:/Program Files (x86)/Steam/steamapps/common/Godot Engine/godot.cmd'
 
 ## 五、项目知识去哪看
 
-`.workbuddy/memory/MEMORY.md` —— 唯一的长期总结（材质口径 / 地形 / UI / 地图编辑器 / 踩过的坑）。
-改完东西有新结论，**直接改那一个文件**，不要新建分轮总结。
+- `文档/界面说明.md` —— **界面唯一说明书**：怎么做、怎么操作、样式规范、
+  以及"当前生效的全部 UI 要求"清单。
+  ⚠️ 里面第一条就是玩家的硬要求：**没被点名的界面地方一律不要动**。
+- `文档/编辑器资产同步.md` —— 新增单位/建筑怎么同步进地图编辑器（能摆、能设、长得对）。
+- `文档/开发交接.md` —— 会让人白干一天的坑（类缓存 / 编辑器脚本编译失败 / 已知常红自检项）。
+- `.workbuddy/memory/MEMORY.md` —— 长期总结（材质口径 / 地形 / UI / 地图编辑器 / 踩过的坑）。
+  改完东西有新结论，**直接改那一个文件**，不要新建分轮总结。
