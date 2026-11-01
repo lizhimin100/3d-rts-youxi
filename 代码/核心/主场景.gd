@@ -25,6 +25,10 @@ extends Node3D
 @onready var 环境节点: WorldEnvironment = get_node_or_null("环境") as WorldEnvironment
 @onready var 主光节点: DirectionalLight3D = get_node_or_null("主光") as DirectionalLight3D
 @onready var 补光节点: DirectionalLight3D = get_node_or_null("补光") as DirectionalLight3D
+## 日夜循环（4.98 挂上；HUD 的时间胶囊读它）
+var day_night: RtsDayNight = null
+## 中立野怪（地牢 / 豺狼人 / 夜袭）
+var creeps: RtsCreeps = null
 @onready var level: RtsLevel = get_node_or_null("关卡") as RtsLevel
 @onready var camera: Node3D = get_node_or_null("镜头") as Node3D
 @onready var selection_system: Node = get_node_or_null("选择系统")
@@ -58,6 +62,10 @@ var _map_path: String = ""
 var _dump_mapdef: String = ""
 ## --no-map：无视 bound_map / 默认地图文件，强制程序化竞技场图（QA 对照组）
 var _force_no_map: bool = false
+## --qa-reveal：关迷雾（验收用）
+var _qa_reveal: bool = false
+## --qa-night：立刻入夜并放一波野怪（验收用）
+var _qa_night: bool = false
 ## --demo-tree：直接进"树品种演示"小地图（春夏秋冬并排），用来肉眼看树的生成效果
 var _demo_tree: bool = false
 ## 同一件事的**编辑器入口**：在编辑器里勾上这个勾，按 F6/F5 就进演示图。
@@ -123,6 +131,20 @@ func _ready() -> void:
 
 	# 4.97 每支 AI 阵营一个大脑（多队图：敌人可能有 2~3 个）
 	_mount_ai_brains()
+
+	# 4.98 **日夜**（只改两盏灯 + 背景能量）与**中立野怪**（地牢/豺狼人/夜袭）。
+	#      顺序不能反：野怪要在 setup 里接日夜的 night_started 信号。
+	day_night = _mount_script("res://代码/系统/日夜.gd", "日夜") as RtsDayNight
+	if day_night != null:
+		day_night.call("setup", 主光节点, 补光节点, 环境节点)
+	creeps = _mount_script("res://代码/系统/野怪.gd", "野怪") as RtsCreeps
+	if creeps != null:
+		creeps.call("setup", level, day_night)
+	# QA：--qa-night 直接把时钟拨到入夜并放一波（验收"夜里野怪总攻"用）
+	if _qa_night and day_night != null:
+		day_night.call("debug_set_hour", 20.2)
+		var n: int = int(creeps.call("debug_night_wave"))
+		print("[QA] 夜袭：一次放出 %d 只，场上野怪 %d 只" % [n, int(creeps.call("alive_count"))])
 
 	# 4.96 副官（玩家侧脚本 AI）：替玩家补农民/派采集/盖农场兵营，玩家下令即接管。
 	#      只碰农民，不碰任何战斗单位；`--no-adjutant` 可关。
@@ -569,6 +591,12 @@ func _parse_cmdline() -> void:
 			_dump_mapdef = arg.substr(14)
 		elif arg == "--demo-tree":
 			_demo_tree = true
+		elif arg == "--qa-night":
+			# 验收：立刻入夜 + 放一波野怪
+			_qa_night = true
+		elif arg == "--qa-reveal":
+			# 验收：关掉战争迷雾（否则"地牢在哪"永远拍不到）
+			_qa_reveal = true
 		elif arg == "--no-map":
 			# 强制走程序化竞技场（验收"地图文件 = 原图"的对照组）
 			_force_no_map = true
@@ -668,6 +696,9 @@ func _setup_fog() -> void:
 		return
 	level.add_child(fog)
 	fog.setup(level.terrain, Game.player_faction, level.world_size)
+	# QA：--qa-reveal 关迷雾（验收截图/野怪体检时看全图用，正常游玩不要开）
+	if _qa_reveal and fog.has_method("set_enabled"):
+		fog.call("set_enabled", false)
 
 
 ## 把 MapDef 里的初始资源写进**每一个**阵营（多队图：4 个槽位各吃自己那份）。

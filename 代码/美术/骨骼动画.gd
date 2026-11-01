@@ -19,7 +19,7 @@ const NAME_MAP := {
 }
 
 ## 循环播放的动作
-const LOOPING: Array[StringName] = [&"idle", &"walk", &"wave"]
+const LOOPING: Array[StringName] = [&"idle", &"walk", &"wave", &"carry_gold", &"carry_wood"]
 
 ## 缺动作时的降级链（第一个存在的就用）
 const FALLBACK := {
@@ -32,6 +32,9 @@ const FALLBACK := {
 	&"hurt": [&"hurt", &"idle"],
 	&"death": [&"death", &"hurt", &"idle"],
 	&"idle": [&"idle", &"walk"],
+	# 搬运动作：方块人_农民独有；别的兵没有就退回走路（背东西的样子不变形）
+	&"carry_gold": [&"carry_gold", &"walk"],
+	&"carry_wood": [&"carry_wood", &"walk"],
 }
 
 ## 单次动作（播完自动回 idle）；death 例外：停在最后一帧
@@ -97,9 +100,17 @@ func set_state(state: String, speed_ratio: float = 1.0) -> void:
 	if want == &"":
 		return
 	var is_loop := LOOPING.has(want)
-	# 单次动作没播完就别被循环动作打断（否则攻击永远只出头两帧）
+	# 单次动作没播完就别被循环动作打断（否则攻击永远只出头两帧）。
+	# ★ 但也不能"整段播完才放行"：attack 0.9s 比很多单位的反应窗口还长，
+	#   玩家点一下移动，兵要站满 0.9 秒才开始走 —— 手感上是"指令不跟手"。
+	#   现在放行阈值 = 55%：出手（伤害结算）在前摇里早完成了，剩下的是收势。
 	if _one_shot != &"" and _ap.is_playing() and _ap.current_animation == String(_one_shot) and is_loop:
-		return
+		var cur_len: float = 0.0
+		var cur_anim := _ap.get_animation(String(_one_shot))
+		if cur_anim != null:
+			cur_len = cur_anim.length
+		if cur_len <= 0.001 or _ap.current_animation_position < cur_len * 0.55:
+			return
 	if want == _current and is_loop:
 		# 上限 3.0：walk 按真实地速播放（4.6m/s / 2.0m/s 步幅 ≈ 2.3x）
 		_speed = clampf(speed_ratio, 0.2, 3.0)

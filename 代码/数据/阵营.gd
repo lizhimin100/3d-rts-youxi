@@ -174,6 +174,13 @@ func has_townhall() -> bool:
 	return count_buildings(&"townhall") > 0
 
 
+## 还有没有任何活着的兵力/建筑（野怪阵营用：全清完就不再算"敌人"）
+func has_forces() -> bool:
+	if count_units() > 0:
+		return true
+	return count_buildings() > 0
+
+
 ## 玩家阵营的调试字符串
 func debug_string() -> String:
 	return "[%s] 金=%d 木=%d 人口=%d/%d 单位=%d 建筑=%d" % [

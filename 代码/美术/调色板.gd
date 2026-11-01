@@ -53,6 +53,11 @@ extends Resource
 	"canvas": Color(0.706, 0.647, 0.541),       # 帐篷布（布麻偏亮）
 	"canvas_dark": Color(0.478, 0.412, 0.318),  # 帐篷布暗（门帘 / 背光面）
 	"cavity": Color(0.086, 0.090, 0.098),       # 洞窟 / 内腔（矿洞、树洞、骨架内部）
+	# --- 中立野怪（2026-11-01）---
+	# 豺狼人模型的材质名是 `M_tribe`（换色位）。**这个键必须存在**：
+	# MatKit 查不到 zone 就掉 `fallback`（灰），整只野怪会变成一坨水泥色。
+	"tribe": Color(0.549, 0.227, 0.165),        # #8C3A2A 豺狼人皮甲（土红棕）
+	"eye": Color(1.0, 0.792, 0.267),            # #FFCA44 兽瞳（自发光，夜里会亮）
 	"grass_dark": Color(0.259, 0.365, 0.161),   # 草根暗（草丛底部）
 }
 
@@ -68,6 +73,7 @@ extends Resource
 	"leaf_olive": 0.88, "leaf_light": 0.86, "leaf_deep": 0.90, "bark_dark": 0.93,
 	"rock": 0.90, "rock_dark": 0.92, "canvas": 0.95, "canvas_dark": 0.95,
 	"cavity": 0.98, "grass_dark": 0.95,
+	"tribe": 0.88, "eye": 0.30,
 }
 
 ## zone → 金属度

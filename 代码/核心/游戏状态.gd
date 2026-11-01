@@ -57,6 +57,10 @@ var player_faction: RtsFaction = null
 var enemy_faction: RtsFaction = null
 ## **本局全部阵营**（多队图：每个出生点一个）。下标 = 槽位号。
 var factions: Array[RtsFaction] = []
+## **中立敌对阵营**（野怪，team 0）。故意**不放进 `factions`**：
+##   · 它没有大本营，放进 factions 会让"胜负判定 / 开局布阵 / AI 接管"全部误伤；
+##   · 但它必须能被 `enemies_of()` 看到，否则单位永远索不到野怪（见下面的 append）。
+var neutral_faction: RtsFaction = null
 ## 关卡（由 主场景 挂上）
 var level: Node3D = null
 
@@ -163,6 +167,9 @@ func enemies_of(f: RtsFaction) -> Array:
 	for o in factions:
 		if o != null and f.is_enemy_of(o):
 			out.append(o)
+	# 野怪（中立敌对）：只要还活着就算敌人 —— 玩家的兵/箭塔才会自动还手
+	if neutral_faction != null and neutral_faction != f and neutral_faction.has_forces():
+		out.append(neutral_faction)
 	return out
 
 
@@ -204,6 +211,7 @@ func reset() -> void:
 	factions.clear()
 	player_faction = null
 	enemy_faction = null
+	neutral_faction = null
 	level = null
 	phase = RtsConst.Phase.PREPARE
 	elapsed = 0.0

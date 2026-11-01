@@ -658,10 +658,10 @@ func _tick_warning(_dt: float) -> void:
 
 
 ## 没建完的房子不许索敌
-func _acquire(dt: float) -> void:
+func _acquire(dt: float, radius_scale: float = 1.0) -> void:
 	if not is_constructed:
 		return
-	super._acquire(dt)
+	super._acquire(dt, radius_scale)
 
 
 func _update_attack(dt: float) -> void:

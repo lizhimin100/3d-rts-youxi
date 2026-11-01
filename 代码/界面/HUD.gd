@@ -131,6 +131,8 @@ var _hide_hint: Label = null
 
 ## 命令卡（_card_h_applied 记录"上一次用于摆位的高度"，用来发现行数变化）
 var _card_h_applied: float = 0.0
+## 上一次显示的"是否夜晚"（只在翻转时改一次颜色）
+var _night_shown: bool = false
 var _card: RtsCommandCard = null
 var _card_panel: PanelContainer = null
 var _card_sig: String = ""
@@ -766,6 +768,17 @@ func _resource_tip(title: String) -> Dictionary:
 				"foot": "空闲 %d" % maxi(cap - used, 0)}
 		"时间":
 			var secs: int = maxi(0, int(Game.elapsed)) if Game != null else 0
+			var dn := _day_night()
+			if dn != null:
+				var night: bool = bool(dn.call("is_night"))
+				var left: float = float(dn.call("seconds_to_turn"))
+				return {"icon": "clock",
+					"icon_color": Color(0.60, 0.70, 1.0) if night else Color(1.0, 0.86, 0.50),
+					"title": "第 %d 天 %s" % [1 + int(Game.elapsed / 210.0), String(dn.call("clock_text"))],
+					"tag": "夜晚" if night else "白天",
+					"body": "昼夜循环 3.5 分钟一轮。%s\n[b]夜里豺狼人会从地牢里成批涌出，进攻所有玩家[/b]。" % (
+						"距离天亮还有 %.0f 秒。" % left if night else "距离天黑还有 %.0f 秒。" % left),
+					"foot": "本局 %02d:%02d" % [secs / 60, secs % 60]}
 			return {"icon": "clock", "icon_color": Color(0.80, 0.86, 0.96),
 				"title": "本局 %02d:%02d" % [secs / 60, secs % 60], "tag": "计时",
 				"body": "从开局算起的真实时间（暂停也会走）。", "foot": ""}
@@ -1674,8 +1687,19 @@ func _refresh_stats() -> void:
 	_set_label(_gold_label, "%d" % pl.gold)
 	_set_label(_wood_label, "%d" % pl.wood)
 	if _time_label != null:
-		var secs: int = maxi(0, int(Game.elapsed))
-		_set_label(_time_label, "%02d:%02d" % [secs / 60, secs % 60])
+		# 有时日系统就显示"游戏内时刻 + ☀/☾"（玩家要知道还有多久天黑），
+		# 没有就退回原来的"本局计时"。
+		var dn2 := _day_night()
+		if dn2 != null:
+			_set_label(_time_label, String(dn2.call("clock_text")))
+			var night2: bool = bool(dn2.call("is_night"))
+			if night2 != _night_shown:
+				_night_shown = night2
+				_time_label.add_theme_color_override("font_color",
+						Color(0.66, 0.76, 1.0) if night2 else Spec.text_main())
+		else:
+			var secs: int = maxi(0, int(Game.elapsed))
+			_set_label(_time_label, "%02d:%02d" % [secs / 60, secs % 60])
 	var used: int = pl.food_used()
 	var cap: int = pl.food_cap()
 	_set_label(_food_label, "%d/%d" % [used, cap])
@@ -1854,6 +1878,17 @@ func _command_system() -> Node:
 	if parent == null:
 		return null
 	return parent.get("command_system") as Node
+
+
+## 日夜系统（主场景在 4.98 挂上；拿不到就返回 null，界面退回"本局计时"）
+func _day_night() -> Node:
+	var parent := get_parent()
+	if parent == null:
+		return null
+	var n: Variant = parent.get("day_night")
+	if n is Node and is_instance_valid(n as Node):
+		return n as Node
+	return null
 
 
 # ===========================================================================

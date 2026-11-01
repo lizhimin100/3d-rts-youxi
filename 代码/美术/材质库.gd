@@ -190,6 +190,9 @@ static func _emission_for(zone: String) -> Color:
 	if zone == "ore":
 		# 金矿的金块：一点暖金自发光，矿洞在阴影里也"值钱"
 		return Color(1.0, 0.70, 0.20)
+	if zone == "eye":
+		# 野怪的兽瞳：夜里"两点黄光"，是玩家最先看到的东西
+		return Color(1.0, 0.80, 0.30)
 	return Color(0, 0, 0)
 
 
@@ -200,6 +203,8 @@ static func _emission_energy(zone: String) -> float:
 		return 2.0
 	if zone == "ore":
 		return 0.8
+	if zone == "eye":
+		return 1.4
 	return 0.0
 
 

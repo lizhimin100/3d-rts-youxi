@@ -61,6 +61,12 @@ static func apply(root: Node3D, team_color: Color) -> int:
 	var base := _base_name(root)
 	if base.is_empty():
 		return 0
+	# ★ 2026-11-01：**只有带 team / team_trim 面**的模型才归这一层管（铁誓建筑 + 方块人）。
+	#   野怪（豺狼人）也有一颗 `主体`，但它的阵营/换色位走的是 `M_tribe`（MatKit 那条路）。
+	#   以前这里只要有 `主体` 就 return > 0，于是 ArtKit 直接跳过 MatKit，
+	#   `M_tribe` 永远保持 glb 原色 —— 玩家报的"野怪换色位不生效"就是这个。
+	if not _has_team_surfaces(root):
+		return 0
 	# ★ 大小写先试对的那个：磁盘上是 `_ORM.png`（大写）。
 	#   先请求 `_orm.png` 在 Windows 上能"侥幸"命中，但会刷一条
 	#   `Case mismatch opening requested file` 警告（而且导出到大小写敏感平台会真的找不到）。
@@ -348,6 +354,23 @@ static func _glow_material(base: String) -> Material:
 	m.set_shader_parameter("spec", GLOW_SPECULAR)
 	_glow_mat_cache[base] = m
 	return m
+
+
+## 这套模型里有没有 team / team_trim 面（= 是不是"这一层"的资产）
+static func _has_team_surfaces(root: Node) -> bool:
+	for mi in _collect(root):
+		if mi.mesh == null:
+			continue
+		for i in mi.mesh.get_surface_count():
+			var src: Material = mi.get_surface_override_material(i)
+			if src == null:
+				src = mi.mesh.surface_get_material(i)
+			if src == null:
+				continue
+			var nm := String(src.resource_name)
+			if nm == "team" or nm == "team_trim":
+				return true
+	return false
 
 
 static func _collect(root: Node) -> Array[MeshInstance3D]:

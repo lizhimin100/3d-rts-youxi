@@ -221,6 +221,8 @@ var _attack_cd: float = 0.0
 var _windup_t: float = 0.0
 var _swinging: bool = false
 var _think_t: float = 0.0
+## 新指令下达后的"免索敌"宽限期（秒）。见 order_move 的注释。
+var _acquire_grace: float = 0.0
 
 var _slow_mult: float = 1.0
 var _slow_t: float = 0.0
@@ -429,6 +431,17 @@ func take_damage(amount: float, _type: int, from: Node3D) -> void:
 		hp = 0.0
 		_die()
 		return
+	# ★ 挨打立刻还手（2026-11-01）：清掉"刚下过移动令"的免索敌宽限，
+	#   并把攻击者锁成目标 —— 但只在**够得着**的时候锁，
+	#   否则撤退中的兵会被一次流弹拽回去追人（手感比"不还手"更差）。
+	if from != null and is_instance_valid(from):
+		var tf: RtsFaction = from.get("faction") as RtsFaction
+		if tf != null and faction != null and faction.is_enemy_of(tf):
+			_acquire_grace = 0.0
+			var reach: float = _attack_reach(from) * 1.5
+			if _flat_dist(from.global_position) <= reach:
+				if target == null or not is_instance_valid(target) or not target.is_alive():
+					target = from
 	# 农民挨打就往基地跑，别站那儿送死
 	if def != null and RtsWorld.is_worker_def(def):
 		_flee(from)
@@ -542,10 +555,37 @@ func order_move(pos: Vector3) -> void:
 	target = null
 	_flee_t = 0.0
 	_move_interrupted = false
+	_cancel_swing()
 	_patrol_active = false
 	guard_mode = Guard.NONE
 	_order_goal = Vector3(pos.x, 0.0, pos.z)
 	_go_to(pos, true)
+
+
+## 新指令打断当前挥砍：**必须同步清 `_swinging` / `_windup_t` / 攻击状态**。
+##
+## 玩家原话（2026-11-01）："单位在攻击时，如果下达新的指令，如移动，
+## 单位会刚移动一下就被之前的攻击命令牵扯回去、继续攻击。"
+##
+## 三个原因叠在一起：
+##   ① `order_move` 只把 target 置空，**没清 `_swinging`** ——
+##      `_settle_state()` 看到"还在前摇"就继续把 state 顶成 ATTACK，
+##      下一帧 `_release_attack()` 照旧结算旧目标；
+##   ② 移动分支里的 `_acquire(dt)` 用满额索敌半径（步兵 11m）——
+##      刚转身走两步就重新锁回同一个敌人，然后 `_stop_moving()` 站住继续打；
+##   ③ 没有任何"刚下过令"的记忆，玩家点得再快也压不过索敌。
+##
+## 现在的口径：清挥砍 + 0.9 秒免索敌；移动途中索敌半径收到 45%；
+## 挨打时仍然立刻还手（take_damage 里会清掉宽限并锁定攻击者）。
+const ORDER_GRACE := 0.9
+
+
+func _cancel_swing() -> void:
+	_swinging = false
+	_windup_t = 0.0
+	_acquire_grace = ORDER_GRACE
+	if state == RtsConst.State.ATTACK:
+		state = RtsConst.State.IDLE
 
 
 ## 攻击指定目标
@@ -578,6 +618,7 @@ func order_attack_move(pos: Vector3) -> void:
 	_patrol_active = false
 	guard_mode = Guard.NONE
 	_order_goal = Vector3(pos.x, 0.0, pos.z)
+	_cancel_swing()
 	_go_to(pos, true)
 
 
@@ -900,6 +941,8 @@ func _process(delta: float) -> void:
 ## 各种计时器
 func _tick_timers(dt: float) -> void:
 	_attack_cd = maxf(_attack_cd - dt, 0.0)
+	if _acquire_grace > 0.0:
+		_acquire_grace = maxf(_acquire_grace - dt, 0.0)
 	_ability_cd = maxf(_ability_cd - dt, 0.0)
 	if _slow_t > 0.0:
 		_slow_t -= dt
@@ -942,7 +985,9 @@ func _update_order(dt: float) -> void:
 		RtsConst.Order.MOVE:
 			# 行军途中也索敌：路过被打不能装没看见（魔兽手感），
 			# 打完 / 敌人跑出射程就继续走完原指令。
-			_acquire(dt)
+			# ★ 半径只给 45%：满额 11m 会让"撤退"变成"走两步又折回去打"，
+			#   玩家感受就是"指令不跟手、被旧攻击牵扯"。
+			_acquire(dt, 0.45)
 			if _moving:
 				state = RtsConst.State.MOVE
 			elif _move_interrupted:
@@ -1708,8 +1753,11 @@ func _may_pursue() -> bool:
 ## ⚠ 待机/警戒**只认射程内的敌人**：老代码对任何指令都用 acquire_range（步兵 11m、
 ##   攻击距离 1.35m），待机会锁一个够不着的目标；而 `_acquire` 开头"已有目标就返回"
 ##   又让它再也不索敌 —— 结果就是站在那儿对着 9m 外的敌人发呆。
-func _acquire(dt: float) -> void:
+func _acquire(dt: float, radius_scale: float = 1.0) -> void:
 	if def == null or def.acquire_range <= 0.0:
+		return
+	# 刚下过移动令：这段时间内不主动索敌（挨打会还手，见 take_damage）
+	if _acquire_grace > 0.0:
 		return
 	if target != null and is_instance_valid(target) and target.is_alive():
 		return
@@ -1718,7 +1766,7 @@ func _acquire(dt: float) -> void:
 		return
 	_think_t = THINK_SLICE
 	var pursue: bool = _may_pursue()
-	var radius: float = def.acquire_range if pursue else def.attack_range
+	var radius: float = (def.acquire_range if pursue else def.attack_range) * radius_scale
 	if radius <= 0.0:
 		return
 	var cand: Node3D = Game.find_nearest_enemy(global_position, faction, radius)
@@ -2047,7 +2095,12 @@ func _update_anim() -> void:
 		ratio = clampf(_speed / ms, 0.15, 1.6)
 	match state:
 		RtsConst.State.MOVE, RtsConst.State.RETURN:
-			visual.play("move", ratio)
+			# 背着资源走路时用「搬运」动作（方块人_农民有 carry_gold / carry_wood 两段）；
+			# 没有这两段动画的单位会自动落到 walk（见 SkeletonAnim 的降级链）。
+			if _carry > 0:
+				visual.play("carry_wood" if _carry_kind == RtsConst.Harvest.WOOD else "carry_gold", ratio)
+			else:
+				visual.play("move", ratio)
 		RtsConst.State.ATTACK:
 			visual.play("attack", 1.0)
 		RtsConst.State.GATHER:

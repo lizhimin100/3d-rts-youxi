@@ -83,6 +83,27 @@ var _motion_t: float = 0.0
 var _motion_state: String = "idle"
 var _lunge_t: float = 0.0
 
+# ---------------------------------------------------------------------------
+# 走路步频（2026-11-01 修"蠕动/小碎步"）
+# ---------------------------------------------------------------------------
+#
+# 玩家原话："步兵的移动动作有些怪，移动起来像蠕动、慢慢挪动、小碎步"。
+#
+# 病根不是动画本身，是**播放速度**：`RtsUnit._update_anim()` 传进来的是
+# `_speed / _max_speed()`（0~1 的比例），于是 walk 永远用 1.0 倍速播 ——
+# 而这几只兵的实际移速是 4.3~4.6 m/s，动画步幅只够走 1.9 m/s，
+# 脚在原地小碎步、身子在滑 —— 看起来就是"蠕动"。
+#
+# 正确口径：**按真实位移速度换算步频**。`ANIM_WALK_MPS` 是"这套 walk 动画
+# 1.0 倍速时对应的地面速度"，实测（1.1s 一个双步循环、步幅约 1.05m）取 1.9。
+# 上限 2.6：再快腿会抖成马赛克；4.6m/s 的兵 = 2.42 倍，脚下还剩约 5% 滑步，
+# 观感上已经是"跑"而不是"挪"。
+const ANIM_WALK_MPS := 1.9
+const ANIM_WALK_SCALE_MAX := 2.6
+const ANIM_WALK_SCALE_MIN := 0.55
+## 当前单位的定义（算步频要用 move_speed）
+var _def: UnitDef = null
+
 
 # ===========================================================================
 # 构建
@@ -95,6 +116,7 @@ func build(def: UnitDef, team_color: Color, proc: Dictionary = {}) -> void:
 	if _built or def == null:
 		return
 	_built = true
+	_def = def
 
 	# 占位尺寸：让美术没到位时的盒子比例别太离谱
 	var fallback := Vector3(0.8, 1.7, 0.6)
@@ -109,7 +131,12 @@ func build(def: UnitDef, team_color: Color, proc: Dictionary = {}) -> void:
 	# ★ 程序化树：不吃 glb、不套阵营色、不挂骨骼动画。
 	#   三档 LOD 直接由 树库 造好（每档一个 MeshInstance3D，靠 visibility_range 切）。
 	var 程序化树: bool = def.kind == RtsConst.Kind.HARVESTABLE and TreeLibrary.is_tree(def.id)
-	if 程序化树:
+	# 组合件（`combo:` 前缀，例如地牢 = 岩石 + 帐篷 + 营火拼出来的巢穴）：
+	# 不走单个 glb，由 代码/美术/地牢外观.gd 现场拼，材质全是"自然_"那套。
+	var 组合件: bool = String(def.model_path).begins_with("combo:")
+	if 组合件:
+		_model = RtsDungeonVisual.build(def)
+	elif 程序化树:
 		_model = TreeLibrary.build_visual(def, proc)
 	else:
 		_model = ArtKit.build_model(def.model_path, def.model_scale, fallback)
@@ -119,7 +146,7 @@ func build(def: UnitDef, team_color: Color, proc: Dictionary = {}) -> void:
 			# 只抬 6cm：资产包自带 0.55m 石台，6cm 足够离开地形又不显悬空；
 			# 不再加"黑色大石台"（实测比建筑还抢眼）。
 			_model.position.y = BUILDING_LIFT
-		if not 程序化树:
+		if not 程序化树 and not 组合件:
 			ArtKit.apply_team_color(_model, team_color)
 			_anim = ArtKit.attach_anim(_model)
 		_collect_meshes(_model)
@@ -239,7 +266,8 @@ func _collect_meshes(n: Node) -> void:
 # ===========================================================================
 
 ## 切动画。state: idle/move/attack/cast/gather/build/death/hurt
-## speed_ratio 只对 move 有意义（步频跟速度走）。
+## speed_ratio 只对 move 有意义：**传进来的是 0~1 的速度比例**（`_speed / _max_speed()`），
+## 这里换算成"动画该放多快"，见 ANIM_WALK_MPS 那段注释。
 func play(state: String, speed_ratio: float = 1.0) -> void:
 	# 受伤动画优先，播完自动回到逻辑状态（由 _process 清缓存后重新推）
 	if _hurt_t > 0.0 and state != "death":
@@ -252,11 +280,17 @@ func play(state: String, speed_ratio: float = 1.0) -> void:
 	if _anim == null:
 		return
 	# idle 之外的状态切换都直接透传；move 要持续更新步频，不能去重
-	if state == _anim_state and state != "move":
+	var loco: bool = state == "move" or state == "run" or state.begins_with("carry_")
+	if state == _anim_state and not loco:
 		return
 	_anim_state = state
-	# 上限放宽到 3.0：walk 要按真实地速加速，4.6m/s 的步兵需要 ~2.3x 步频才不打滑
-	ArtKit.set_anim(_anim, state, clampf(speed_ratio, 0.15, 3.0))
+	var scale: float = clampf(speed_ratio, 0.15, 3.0)
+	if loco:
+		# 0~1 的比例 × 实际最高移速 = 此刻真实地速（m/s），再除以动画步速
+		var top: float = _def.move_speed if _def != null else ANIM_WALK_MPS
+		var mps: float = maxf(top * clampf(speed_ratio, 0.0, 1.6), 0.15)
+		scale = clampf(mps / ANIM_WALK_MPS, ANIM_WALK_SCALE_MIN, ANIM_WALK_SCALE_MAX)
+	ArtKit.set_anim(_anim, state, scale)
 
 
 ## 命中反馈：暖光脉冲 + 方向性顿挫 + 受伤动作（受伤动作限流，脉冲每次都打）

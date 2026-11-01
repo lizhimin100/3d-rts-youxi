@@ -24,7 +24,8 @@ static func build_units() -> Dictionary:
 	peasant.id = &"peasant"
 	peasant.display_name = "农民"
 	peasant.kind = RtsConst.Kind.UNIT
-	peasant.model_path = MODEL_DIR + "农民.glb"
+	# 2026-11-01：农民换成「方块人」v2（带骨骼 + 9 段动作：walk/idle/attack/carry_gold/carry_wood/hurt/death…）
+	peasant.model_path = MODEL_DIR + "方块人/方块人_农民.glb"
 	peasant.anim_set = RtsConst.AnimSet.WORKER
 	peasant.max_hp = 230.0
 	peasant.armor = 0.0
@@ -91,7 +92,8 @@ static func build_units() -> Dictionary:
 	archer.id = &"archer"
 	archer.display_name = "弓箭手"
 	archer.kind = RtsConst.Kind.UNIT
-	archer.model_path = MODEL_DIR + "弓箭手.glb"
+	# 2026-11-01：弩手（archer）换成「方块人_弩兵」（shoot/reload/idle_b 三段远程动作齐全）
+	archer.model_path = MODEL_DIR + "方块人/方块人_弩兵.glb"
 	archer.anim_set = RtsConst.AnimSet.ARCHER
 	archer.max_hp = 310.0
 	archer.armor = 2.0
@@ -431,6 +433,83 @@ static func build_units() -> Dictionary:
 	steam_guard.train_time = 26.0
 	steam_guard.height = 1.98
 	out[&"steam_guard"] = steam_guard
+
+	# =======================================================================
+	# 中立野怪（2026-11-01）—— 豺狼人 + 地牢
+	# =======================================================================
+	# 它们属于**中立敌对阵营**（team 0，见 代码/系统/野怪.gd）：
+	# 对任何玩家/盟友都敌对，但没有大本营 → 不参与胜负判定。
+	# 材质走 M_tribe 换色位（调色板里的 tribe），所以这里不需要 model_scale。
+	var gnoll_warrior := UnitDef.new()
+	gnoll_warrior.id = &"gnoll_warrior"
+	gnoll_warrior.display_name = "豺狼人战士"
+	gnoll_warrior.kind = RtsConst.Kind.UNIT
+	gnoll_warrior.model_path = MODEL_DIR + "野怪/豺狼人战士.glb"
+	gnoll_warrior.anim_set = RtsConst.AnimSet.MELEE
+	gnoll_warrior.max_hp = 340.0
+	gnoll_warrior.armor = 2.0
+	gnoll_warrior.armor_type = RtsConst.ArmorType.LIGHT
+	gnoll_warrior.attack_damage = 15.0
+	gnoll_warrior.attack_spread = 2.0
+	gnoll_warrior.attack_cooldown = 1.5
+	gnoll_warrior.attack_range = 1.4
+	gnoll_warrior.attack_type = RtsConst.DamageType.NORMAL
+	gnoll_warrior.move_speed = 4.1
+	gnoll_warrior.turn_speed = 8.0
+	gnoll_warrior.body_radius = 0.55
+	gnoll_warrior.selection_radius = 0.9
+	gnoll_warrior.sight_range = 10.0
+	gnoll_warrior.acquire_range = 9.0
+	gnoll_warrior.height = 1.98
+	out[&"gnoll_warrior"] = gnoll_warrior
+
+	# 斥候：更快、更脆、远程投掷（用箭矢逻辑，短射程）
+	var gnoll_scout := UnitDef.new()
+	gnoll_scout.id = &"gnoll_scout"
+	gnoll_scout.display_name = "豺狼人斥候"
+	gnoll_scout.kind = RtsConst.Kind.UNIT
+	gnoll_scout.model_path = MODEL_DIR + "野怪/豺狼人斥候.glb"
+	gnoll_scout.anim_set = RtsConst.AnimSet.ARCHER
+	gnoll_scout.max_hp = 240.0
+	gnoll_scout.armor = 1.0
+	gnoll_scout.armor_type = RtsConst.ArmorType.LIGHT
+	gnoll_scout.attack_damage = 11.0
+	gnoll_scout.attack_spread = 3.0
+	gnoll_scout.attack_cooldown = 1.3
+	gnoll_scout.attack_range = 8.0
+	gnoll_scout.attack_type = RtsConst.DamageType.PIERCE
+	gnoll_scout.projectile = RtsConst.Projectile.ARROW
+	gnoll_scout.projectile_speed = 22.0
+	gnoll_scout.move_speed = 4.8
+	gnoll_scout.turn_speed = 11.0
+	gnoll_scout.body_radius = 0.48
+	gnoll_scout.selection_radius = 0.8
+	gnoll_scout.sight_range = 13.0
+	gnoll_scout.acquire_range = 11.0
+	gnoll_scout.height = 1.86
+	out[&"gnoll_scout"] = gnoll_scout
+
+	# 地牢：野怪的"巢穴"。**不能训练、不能采集、不产人口**，
+	# 唯一的作用是`代码/系统/野怪.gd`挂在它身上定时刷怪（夜里刷一大波）。
+	# 拆掉它 = 这一片不再出怪，所以它是一处"可选目标"，不参与胜负。
+	var dungeon := UnitDef.new()
+	dungeon.id = &"dungeon"
+	dungeon.display_name = "地牢"
+	dungeon.kind = RtsConst.Kind.BUILDING
+	dungeon.model_path = "combo:dungeon"
+	dungeon.anim_set = RtsConst.AnimSet.CIVIC_BUILDING
+	dungeon.max_hp = 1500.0
+	dungeon.armor = 5.0
+	dungeon.armor_type = RtsConst.ArmorType.FORTIFIED
+	dungeon.footprint = Vector2i(5, 5)
+	dungeon.height = 3.0
+	dungeon.sight_range = 14.0
+	dungeon.body_radius = 2.6
+	dungeon.selection_radius = 3.4
+	dungeon.gold_cost = 0
+	dungeon.wood_cost = 0
+	dungeon.train_time = 1.0
+	out[&"dungeon"] = dungeon
 
 	# =======================================================================
 	# 金矿 / 树木 —— 可采集物
