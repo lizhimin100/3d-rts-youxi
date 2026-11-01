@@ -26,9 +26,21 @@ extends Node3D
 @onready var 主光节点: DirectionalLight3D = get_node_or_null("主光") as DirectionalLight3D
 @onready var 补光节点: DirectionalLight3D = get_node_or_null("补光") as DirectionalLight3D
 ## 日夜循环（4.98 挂上；HUD 的时间胶囊读它）
-var day_night: RtsDayNight = null
-## 中立野怪（地牢 / 豺狼人 / 夜袭）
-var creeps: RtsCreeps = null
+##
+## ★★ 类型写成 `Node` 而不是 `RtsDayNight` —— **这是刻意的，别改回去**。
+##   `var x: RtsDayNight` 这种写法要用到**全局类缓存**（.godot/global_script_class_cache.cfg）。
+##   新加一个带 `class_name` 的脚本后，如果没先跑 `godot --headless --path . --import`，
+##   或者缓存正好被重建/被旧编辑器读到，这里就会报：
+##     Parse Error: Could not find type "RtsDayNight" in the current scope.
+##   一旦本脚本编译失败，整个主场景就白屏 —— 这个错已经复发过两次。
+##   现在改成"Node + preload 常量取脚本"，编译期只依赖文件路径，缓存坏不坏都能跑。
+##   同理见下面的 creeps（RtsCreeps）。
+const DAY_NIGHT_SCRIPT := preload("res://代码/系统/日夜.gd")
+const CREEPS_SCRIPT := preload("res://代码/系统/野怪.gd")
+## 实际类型 = DAY_NIGHT_SCRIPT（日夜.gd）。只在这里挂一次，别处一律用 `.call("…")`。
+var day_night: Node = null
+## 中立野怪（地牢 / 豺狼人 / 夜袭）。实际类型 = CREEPS_SCRIPT（野怪.gd）。
+var creeps: Node = null
 @onready var level: RtsLevel = get_node_or_null("关卡") as RtsLevel
 @onready var camera: Node3D = get_node_or_null("镜头") as Node3D
 @onready var selection_system: Node = get_node_or_null("选择系统")
@@ -134,10 +146,12 @@ func _ready() -> void:
 
 	# 4.98 **日夜**（只改两盏灯 + 背景能量）与**中立野怪**（地牢/豺狼人/夜袭）。
 	#      顺序不能反：野怪要在 setup 里接日夜的 night_started 信号。
-	day_night = _mount_script("res://代码/系统/日夜.gd", "日夜") as RtsDayNight
+	# ★ 这里**不要**写 `as RtsDayNight` / `as RtsCreeps`：同上，别碰全局类缓存。
+	#   变量已经按 Node 接收，实际对象就是那两个脚本的实例，`.call` 一切正常。
+	day_night = _mount_script("res://代码/系统/日夜.gd", "日夜")
 	if day_night != null:
 		day_night.call("setup", 主光节点, 补光节点, 环境节点)
-	creeps = _mount_script("res://代码/系统/野怪.gd", "野怪") as RtsCreeps
+	creeps = _mount_script("res://代码/系统/野怪.gd", "野怪")
 	if creeps != null:
 		creeps.call("setup", level, day_night)
 	# QA：--qa-night 直接把时钟拨到入夜并放一波（验收"夜里野怪总攻"用）

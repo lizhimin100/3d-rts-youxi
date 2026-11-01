@@ -104,6 +104,14 @@ var _drag_before: Array = []
 var _drag_open: bool = false
 ## 拖动起点位置：松手时判断"到底动没动"（只点一下不该产生撤销记录）
 var _drag_before_pos: Array[Vector3] = []
+## 按下鼠标那一刻**射线打在地面上的点** —— 拖动的唯一原点。
+##
+## ⚠ 这个成员**必须在这里声明**。曾经只在 `begin_drag()`/`drag_selection_by()` 里
+##   直接赋值使用（忘记声明），于是整个 编辑会话.gd 编译失败 →
+##   `主屏._process` 每帧刷 "Nonexistent function 'autosave_tick'"，
+##   编辑器里所有拖动/笔刷全部失灵。**新增成员一定先写 var**。
+##   Vector3.INF = "没有在拖"，见 `drag_selection_by()`。
+var _drag_grab_g: Vector3 = Vector3.INF
 var _autosave_clock: float = 0.0
 var _history_busy: bool = false
 ## 连续跳转历史时先压住逐步刷新，最后统一刷一次
@@ -545,6 +553,26 @@ func _apply_splat_brush(center: Vector3, value: int) -> void:
 			_apply_decal_brush(center, value)
 
 
+## 地块格点刷的**等效半径**：笔刷圈"碰到"的格子都算（格子中心落在外扩半格以内）。
+## 这是唯一出口 —— 预览圈画的就是这个值，玩家看到多大就刷多大。
+## 以前写 `step * 0.72` + 权重 0.35，10m 的笔刷实际能糊出 31m 直径，
+## 玩家原话"刷地形有时感觉刷的太大"就是这个偏差。
+func mat_brush_radius() -> float:
+	var step: float = 8.0
+	if def != null and def.mat_cells > 0:
+		step = float(def.size) / float(def.mat_cells)
+	return maxf(0.5, brush_radius) + step * 0.5
+
+
+## 光标该画多大：材质/地块笔刷用等效半径（预览 = 结果），其它工具就是笔刷半径
+func cursor_radius() -> float:
+	match tool:
+		Tool.PAINT_GRASS, Tool.PAINT_DIRT, Tool.ERASE_SPLAT:
+			return mat_brush_radius()
+		_:
+			return brush_radius
+
+
 ## 地块格点刷：写 def.mat_nodes（和 主场景 的地块完全同一套数据）
 func _apply_mat_brush(center: Vector3, node_value: int) -> void:
 	_ensure_mat_grid()
@@ -560,7 +588,7 @@ func _apply_mat_brush(center: Vector3, node_value: int) -> void:
 	#   也就是用户说的"编辑器无法刷地形"。
 	#   所以判定半径外扩半格（0.72×step 刚好覆盖"格点落在格子里"的极值），
 	#   语义变成"笔刷圈碰到的格子都算"：任何一次点击至少改到最近的格点。
-	var rr: float = r + step * 0.72
+	var rr: float = mat_brush_radius()
 	var i0: int = clampi(floori((center.x - rr + half) / step), 0, n - 1)
 	var i1: int = clampi(ceili((center.x + rr + half) / step), 0, n - 1)
 	var j0: int = clampi(floori((center.z - rr + half) / step), 0, n - 1)
@@ -569,7 +597,7 @@ func _apply_mat_brush(center: Vector3, node_value: int) -> void:
 		for i in range(i0, i1 + 1):
 			var p := Vector2(-half + float(i) * step, -half + float(j) * step)
 			var w: float = _brush_weight(p, Vector2(center.x, center.z), rr)
-			if w < 0.35:
+			if w < 0.5:
 				continue
 			def.mat_nodes[j * n + i] = node_value
 	# 同一片区域里旧的"泥土/草丛/生态"覆盖色块要清掉，否则会有两层地面打架
@@ -989,15 +1017,51 @@ func delete_selection() -> void:
 	selection_changed.emit()
 
 
-## 拖动前记一份快照（视口里拖拽开始/结束调用）
-func begin_drag() -> void:
+## 拖动前记一份快照（视口里拖拽开始/结束调用）。
+## `grab_g` 是按下鼠标那一刻**射线打在地面上的点** —— 拖动全程都用它当原点，
+## 见 `drag_selection_by()` 的注释（这是"移动跟不跟手"的根）。
+func begin_drag(grab_g: Vector3 = Vector3.INF) -> void:
 	if def == null or _drag_open:
 		return
 	_drag_before = _snapshot_objects()
 	_drag_before_pos.clear()
 	for o in selection:
 		_drag_before_pos.append(o.position if o != null else Vector3.ZERO)
+	_drag_grab_g = grab_g
 	_drag_open = true
+
+
+## 拖动：**绝对位移** = 当前鼠标地面点 − 按下时的地面点，作用在"按下时的位置"上。
+##
+## 为什么不是"每帧把 delta 累加到当前位置"（老实现）：
+##   ① 开了网格吸附时每个 delta 都被 roundf 过一次，0.3m 的移动被放大成 0.5m，
+##      按住拖 10 帧就漂出去 2 米 —— 手感就是"物体不跟着鼠标走、越拖越跑"；
+##   ② 累加误差还会让"点一下不拖"也产生位移。
+## 现在全程用同一个原点算绝对位置，鼠标在哪物体就在哪（吸附只发生在落点上）。
+func drag_selection_by(g: Vector3, y_of: Callable = Callable()) -> void:
+	if def == null or selection.is_empty() or not _drag_open:
+		return
+	if _drag_grab_g == Vector3.INF or g == Vector3.INF:
+		return
+	var delta: Vector3 = g - _drag_grab_g
+	# 按住 Shift 时**不吸附**（微调）；平时按 1m 格/建筑占地格吸附
+	var do_snap: bool = snap_grid and not Input.is_key_pressed(KEY_SHIFT)
+	for i in range(selection.size()):
+		var o: MapObject = selection[i]
+		if o == null:
+			continue
+		var base: Vector3 = _drag_before_pos[i] if i < _drag_before_pos.size() else o.position
+		var np: Vector3 = base + delta
+		if int(o.category) == MapObject.Category.BUILDING:
+			# 建筑必须压 1m 寻路格（占地 = 整数格），和游戏内建造同一套口径
+			np = snap_building_pos(np, building_footprint(o.type_id))
+		else:
+			if do_snap:
+				np.x = roundf(np.x)
+				np.z = roundf(np.z)
+			np.y = def.height_at(np.x, np.z)
+		o.position = np
+	def_changed.emit("objects_move")
 
 
 func end_drag() -> void:

@@ -961,9 +961,10 @@ func _update_brush_cursor() -> void:
 	var col := Color(1.0, 0.95, 0.4, 0.9)
 	match int(session.mode):
 		MODE_TERRAIN:
-			_circle_lines(st, Vector2(_ground.x, _ground.z), session.brush_radius, 40)
+			var cr: float = session.cursor_radius()
+			_circle_lines(st, Vector2(_ground.x, _ground.z), cr, 40)
 			if session.brush_square:
-				var r: float = session.brush_radius
+				var r: float = cr
 				var corners: Array[Vector2] = [
 					Vector2(_ground.x - r, _ground.z - r), Vector2(_ground.x + r, _ground.z - r),
 					Vector2(_ground.x + r, _ground.z + r), Vector2(_ground.x - r, _ground.z + r),
@@ -1172,7 +1173,7 @@ func _on_left_down(pos: Vector2) -> void:
 			_reveal_object_dock()
 			_dragging = true
 			_drag_last = g
-			session.begin_drag()
+			session.begin_drag(g)
 			return
 		# 空地：框选（g == INF 表示点到天空，什么都不做）
 		if g != Vector3.INF:
@@ -1203,7 +1204,7 @@ func _on_left_down(pos: Vector2) -> void:
 				_reveal_object_dock()
 				_dragging = true
 				_drag_last = g
-				session.begin_drag()
+				session.begin_drag(g)
 			else:
 				if session.mode == MODE_OBJECT and session.asset_id != &"":
 					session.add_object(session.asset_id, session.asset_category, g)
@@ -1358,28 +1359,11 @@ func _finish_polygon() -> void:
 
 
 ## 拖拽移动：多选时整组平移，贴地不穿模
+## 拖动：**交给会话按"绝对位移"算**（见 编辑会话.drag_selection_by 的注释）。
+## 视口只负责把当前鼠标地面点递进去 —— 绝不在这里累加 delta。
 func _drag_selection(g: Vector3) -> void:
-	var delta: Vector3 = g - _drag_last
-	if delta.length_squared() < 0.000001:
-		return
-	if session.snap_grid:
-		delta.x = roundf(delta.x * 2.0) * 0.5
-		delta.z = roundf(delta.z * 2.0) * 0.5
-	for o in session.selection:
-		if o == null:
-			continue
-		var np: Vector3 = o.position + delta
-		if int(o.category) == MapObject.Category.BUILDING:
-			# 建筑无论"网格吸附"开关如何都必须压 1m 寻路格
-			np = session.snap_building_pos(np, session.building_footprint(o.type_id))
-		else:
-			if session.snap_grid:
-				np.x = roundf(np.x)
-				np.z = roundf(np.z)
-			np.y = session.def.height_at(np.x, np.z)
-		o.position = np
 	_drag_last = g
-	session.def_changed.emit("objects_move")
+	session.drag_selection_by(g)
 
 
 func _set_box(a: Vector2, b: Vector2, on: bool) -> void:
