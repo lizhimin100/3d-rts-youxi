@@ -1036,8 +1036,21 @@ func _sync_adjutant() -> void:
 	_adj_btn.text = "副官 · 开" if on else "副官 · 关"
 	_adj_btn.add_theme_color_override("font_color",
 		Color(0.66, 0.90, 0.58) if on else Color(0.72, 0.70, 0.66))
-	_adj_btn.tooltip_text = ("副官正在替你补农民、派采集、盖房、带兵推进。\n点一下关掉。"
-		if on else "副官已关闭，全部单位归你手动操作。\n点一下重新开启。")
+	# 说明走自己的气泡层（和底栏一致）；引擎 tooltip 只留空串免得两套同时弹
+	_adj_btn.tooltip_text = ""
+	if not bool(_adj_btn.get_meta("tip_on", false)):
+		_adj_btn.set_meta("tip_on", true)
+		RtsTipLayer.bind(self, _adj_btn, func() -> Dictionary:
+			var is_on: bool = _adjutant != null and _adjutant.get("enabled") == true
+			return {
+				"icon": "flag",
+				"icon_color": Color(0.66, 0.90, 0.58) if is_on else Color(0.72, 0.70, 0.66),
+				"title": "副官 · " + ("开" if is_on else "关"),
+				"tag": "AI 托管",
+				"body": ("副官正在替你：补农民、派采集、盖房、带兵推进。\n它不会花光你的钱 —— 总留 480 金 / 140 木给你自己指挥。"
+						if is_on else "副官已关闭，全部单位归你手动操作。\n点一下重新开启。"),
+				"foot": "点一下" + ("关掉" if is_on else "开启"),
+			})
 
 
 ## 底栏的**选中段**：左边紧贴屏幕左缘（不再被小地图挤开），

@@ -218,18 +218,28 @@ func set_metrics(w: float, h: float, _compact: bool = false) -> void:
 		return
 	_box_w = w
 	_box_h = h
-	var cols: int = _cols()
-	var inner: float = w - 20.0 - float(cols - 1) * 6.0
-	_cell_w = clampf(inner / float(cols), 46.0, CELL_W)
-	# 高度给的是"两行格子 + 铭牌"，抠掉铭牌与金线后对半
-	var avail: float = maxf(h - HEAD_H - 6.0 - 24.0, 80.0)
-	_cell_h = clampf(avail * 0.5, 52.0, CELL_H + 8.0)
+	var cs: Vector2 = _cell_size()
+	_cell_h = cs.y
+	# 面板给的宽度可能比"理想格宽"还窄（多列 / 小屏）：这时才把格子压下去。
+	# ★ 反过来（先按窄面板算格宽、再拿格宽去算面板宽）会形成"越算越窄"的循环，
+	#   1920 下就变成 53×72 的瘦条 —— 这是上一版的坑。
+	var per: float = (w - 20.0 - float(maxi(_cols(), 1) - 1) * 6.0) / float(maxi(_cols(), 1))
+	_cell_w = minf(cs.x, maxf(per, 40.0))
 	_stats.set_row_height(clampf((h - HEAD_H - 10.0) / 3.0 - 4.0, 40.0, 62.0))
 	custom_minimum_size = Vector2(w, maxf(h, _cell_h))
 	for rec in _cells:
 		var btn: Button = rec["btn"]
 		if btn != null and is_instance_valid(btn):
 			btn.custom_minimum_size = Vector2(_cell_w, _cell_h)
+
+
+## 队伍格尺寸：**跟着底栏高度长**（1920 下底栏 246，格子写死 62×64 会显得又小又瘦），
+## 再按可用宽度收一收（多列 / 小屏）。
+func _cell_size() -> Vector2:
+	var avail_h: float = maxf(_box_h - HEAD_H - 6.0 - 24.0, 80.0)
+	var ch: float = clampf(avail_h * 0.5, 52.0, CELL_H + 16.0)
+	var cw: float = clampf(ch * 0.94, 46.0, CELL_W + 14.0)
+	return Vector2(cw, ch)
 
 
 ## 网格是不是空的（HUD 拿它决定中段要不要出现）
@@ -255,7 +265,8 @@ func content_width() -> float:
 		return clampf(want, 236.0, 340.0)
 	if _units.is_empty():
 		return 250.0
-	return clampf(float(_cols()) * (_cell_w + 6.0) + 22.0, 236.0, 620.0)
+	var cs: Vector2 = _cell_size()
+	return clampf(float(_cols()) * (cs.x + 6.0) + 22.0, 236.0, 660.0)
 
 
 func _cols() -> int:
