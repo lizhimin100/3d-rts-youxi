@@ -346,7 +346,10 @@ func _build_object_tab() -> Control:
 	var cat_row := _hbox()
 	for c in [MapObject.Category.UNIT, MapObject.Category.BUILDING,
 			MapObject.Category.DOODAD, MapObject.Category.RESOURCE]:
-		var b := Spec.editor_button(MapAssets.category_name(c))
+		# 按钮上带数量：玩家一眼知道"单位 7 / 建筑 11"，
+		# 不会因为列表只露出 6 行就以为"野怪不在里面"（2026-11-01 反馈）。
+		var b := Spec.editor_button("%s %d" % [
+			MapAssets.category_name(c), MapAssets.category_count(c)])
 		b.toggle_mode = true
 		b.focus_mode = Control.FOCUS_NONE
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -378,7 +381,9 @@ func _build_object_tab() -> Control:
 
 	_asset_list = ItemList.new()
 	# 列表别吃掉半屏：底下「选中对象 / 归属」必须留在第一屏里，不然又得滚
-	_asset_list.custom_minimum_size = Vector2(0, 150)
+	# 150 → 210：足够露出 8~9 行（单位 7 项能一屏看完，建筑 11 项只差两行）
+	_asset_list.custom_minimum_size = Vector2(0, 210)
+	_asset_list.auto_height = false
 	_asset_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	v.add_child(_asset_list)
 
@@ -916,7 +921,7 @@ func _populate_assets() -> void:
 		if cat == MapObject.Category.DOODAD:
 			_empty_hint.text = "装饰只收自然物（树/草/岩石/营地道具/残迹），单位和建筑请切自己的层。"
 		else:
-			_empty_hint.text = "这个分类没有匹配项。"
+			_empty_hint.text = "这个分类没有匹配项（试试清空搜索框，或换一个分类）。"
 
 
 func _on_asset_selected(index: int) -> void:
@@ -941,9 +946,11 @@ func _refresh_obj_count() -> void:
 	if session == null or session.def == null:
 		_obj_count.text = ""
 		return
-	_obj_count.text = "全图 %d 个对象 ｜ 本类 %d 个" % [
+	# 左边是"图里已经摆了几个"，右边是"这一类能摆几种" —— 两个数字都有人要查
+	_obj_count.text = "全图 %d 个 ｜ 本类已摆 %d ｜ 可选 %d 种" % [
 		session.def.objects.size(),
-		session.def.objects_of(int(session.asset_category)).size()]
+		session.def.objects_of(int(session.asset_category)).size(),
+		MapAssets.category_count(int(session.asset_category))]
 
 
 # --- 归属卡 ---

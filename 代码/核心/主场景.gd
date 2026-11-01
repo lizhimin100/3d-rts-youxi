@@ -39,7 +39,7 @@ const DAY_NIGHT_SCRIPT := preload("res://代码/系统/日夜.gd")
 const CREEPS_SCRIPT := preload("res://代码/系统/野怪.gd")
 ## 实际类型 = DAY_NIGHT_SCRIPT（日夜.gd）。只在这里挂一次，别处一律用 `.call("…")`。
 var day_night: Node = null
-## 中立野怪（地牢 / 豺狼人 / 夜袭）。实际类型 = CREEPS_SCRIPT（野怪.gd）。
+## 中立野怪（豺狼人 / 夜袭）。实际类型 = CREEPS_SCRIPT（野怪.gd）。
 var creeps: Node = null
 @onready var level: RtsLevel = get_node_or_null("关卡") as RtsLevel
 @onready var camera: Node3D = get_node_or_null("镜头") as Node3D
@@ -109,6 +109,13 @@ func _ready() -> void:
 
 	# 3) 关卡：地图数据 → 地形 → 寻路 → 道具 → 开局部队
 	#    有 --map= 就走 MapDef（编辑器 Test Map）；否则保持原来的程序化流程，一行不变。
+	#
+	# ★ 野怪中立阵营**必须在地图对象落地之前**建好：地图里 owner = -1 的野怪
+	#   要挂到它身上（见 地图加载器.spawn_map_objects）。所以这一步提前到 3) 之前。
+	#   仍然用 `.call()` 而不是 `as RtsCreeps`：别碰全局类缓存（见 文档/开发交接.md §1）。
+	creeps = _mount_script("res://代码/系统/野怪.gd", "野怪")
+	if creeps != null:
+		creeps.call("ensure_faction")
 	if level != null:
 		Game.level = level
 		var map_def: MapDef = _load_map_arg()
@@ -146,8 +153,9 @@ func _ready() -> void:
 	# 4.97 每支 AI 阵营一个大脑（多队图：敌人可能有 2~3 个）
 	_mount_ai_brains()
 
-	# 4.98 **日夜**（只改两盏灯 + 背景能量）与**中立野怪**（地牢/豺狼人/夜袭）。
-	#      顺序不能反：野怪要在 setup 里接日夜的 night_started 信号。
+	# 4.98 **日夜**（只改两盏灯 + 背景能量）。
+	#      ★ 野怪已经在 3) 之前建好中立阵营了；这里只做收尾（收编兜底 + 打印数量）。
+	#      夜袭/自动刷怪已按玩家要求**整块删除** —— 野怪只由编辑器摆放。
 	# ★ 这里**不要**写 `as RtsDayNight` / `as RtsCreeps`：同上，别碰全局类缓存。
 	#   变量已经按 Node 接收，实际对象就是那两个脚本的实例，`.call` 一切正常。
 	day_night = _mount_script("res://代码/系统/日夜.gd", "日夜")
@@ -155,14 +163,12 @@ func _ready() -> void:
 		day_night.call("setup", 主光节点, 补光节点, 环境节点)
 		# 注册到全局（AI / 副官 / 营火读 Game.is_night()）：这是"夜里"的唯一出口
 		Game.day_night = day_night
-	creeps = _mount_script("res://代码/系统/野怪.gd", "野怪")
 	if creeps != null:
 		creeps.call("setup", level, day_night)
-	# QA：--qa-night 直接把时钟拨到入夜并放一波（验收"夜里野怪总攻"用）
+	# QA：--qa-night 把时钟直接拨到入夜（只影响亮度/营火，不再放怪）
 	if _qa_night and day_night != null:
 		day_night.call("debug_set_hour", 20.2)
-		var n: int = int(creeps.call("debug_night_wave"))
-		print("[QA] 夜袭：一次放出 %d 只，场上野怪 %d 只" % [n, int(creeps.call("alive_count"))])
+		print("[QA] 时钟 → 20.2 时（夜里，野怪由编辑器摆放决定数量）")
 	# QA：--qa-hour=18.5 只拨表、不放怪（黄昏/破晓的亮度就靠它拍）
 	if _qa_hour >= 0.0 and day_night != null:
 		day_night.call("debug_set_hour", _qa_hour)
@@ -324,6 +330,11 @@ func _mount_tests() -> void:
 		_mount_script("res://代码/测试/边缘滚动自检.gd", "边缘滚动自检")
 	if "--perf" in args:
 		_perf_probe.call_deferred()
+	# 长跑采样（每 N 秒一行 PERF2）：看"内存会不会一路涨"，`--perf` 只看冷启动那一下
+	for a in args:
+		if a == "--perf-long" or a.begins_with("--perf-long="):
+			_mount_script("res://代码/测试/性能探针.gd", "性能探针")
+			break
 	if "--gather-test" in args:
 		_mount_script("res://代码/测试/采集自检.gd", "采集自检")
 	if "--feel-test" in args:
@@ -661,7 +672,7 @@ func _parse_cmdline() -> void:
 			# 例：--qa-hour=18.5（黄昏中段） / --qa-hour=23（深夜）
 			_qa_hour = float(arg.substr(10))
 		elif arg == "--qa-reveal":
-			# 验收：关掉战争迷雾（否则"地牢在哪"永远拍不到）
+			# 验收：关掉战争迷雾（否则"野怪在哪"永远拍不到）
 			_qa_reveal = true
 		elif arg == "--no-map":
 			# 强制走程序化竞技场（验收"地图文件 = 原图"的对照组）

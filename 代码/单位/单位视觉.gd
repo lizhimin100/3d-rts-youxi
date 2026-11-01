@@ -10,7 +10,7 @@ extends Node3D
 
 ## 组合件外观注册表（见 代码/美术/组合件.gd）。用 load() 取，不写 class_name：
 ## ① 避免全局类缓存（.godot/global_script_class_cache.cfg）失效导致编译失败；
-## ② 组合件不止一种（`combo:dungeon` / `combo:campfire`），key → 脚本的映射只在那一处维护。
+## ② 组合件（`combo:<key>`），key → 脚本的映射只在 组合件.gd 那一处维护。
 var _combo_registry: Script = null
 
 ## 命中反馈时长（秒）。建筑比单位更短：整栋楼亮一下太久会显得迟钝。
@@ -136,7 +136,7 @@ func build(def: UnitDef, team_color: Color, proc: Dictionary = {}) -> void:
 	# ★ 程序化树：不吃 glb、不套阵营色、不挂骨骼动画。
 	#   三档 LOD 直接由 树库 造好（每档一个 MeshInstance3D，靠 visibility_range 切）。
 	var 程序化树: bool = def.kind == RtsConst.Kind.HARVESTABLE and TreeLibrary.is_tree(def.id)
-	# 组合件（`combo:` 前缀，例如地牢 = 岩石+帐篷+营火拼的巢穴、营火 = 柴堆 + 一盏暖光）：
+	# 组合件（`combo:` 前缀，例如营火 = 柴堆 + 一盏会呼吸的暖光）：
 	# 不走单个 glb，由 `代码/美术/<key>外观.gd` 现场拼，材质全是"自然_"那套。
 	var 组合件: bool = String(def.model_path).begins_with("combo:")
 	if 组合件:

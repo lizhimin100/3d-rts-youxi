@@ -272,7 +272,16 @@ func _audit_node(n: Node, out: PackedStringArray, screen: Rect2) -> void:
 		_audit_node(cc, out, screen)
 
 
+## 性能计时（探针读它）
+static var dbg_usec: int = 0
+
 func _process(delta: float) -> void:
+	var _t0: int = Time.get_ticks_usec()
+	_process_inner(delta)
+	RtsHud.dbg_usec += Time.get_ticks_usec() - _t0
+
+
+func _process_inner(delta: float) -> void:
 	var vp := get_viewport()
 	var vp_size: Vector2 = vp.get_visible_rect().size if vp != null else Vector2(1600.0, 900.0)
 	var z: float = 1.0
@@ -806,7 +815,7 @@ func _resource_tip(title: String) -> Dictionary:
 					"icon_color": Color(0.60, 0.70, 1.0) if night else Color(1.0, 0.86, 0.50),
 					"title": "第 %d 天 %s" % [1 + int(Game.elapsed / 210.0), String(dn.call("clock_text"))],
 					"tag": "夜晚" if night else "白天",
-					"body": "昼夜循环 3.5 分钟一轮。%s\n[b]夜里豺狼人会从地牢里成批涌出，进攻所有玩家[/b]。" % (
+					"body": "昼夜循环 3.5 分钟一轮。%s\n夜里视野变差，营火与哨塔的照明更有价值。" % (
 						"距离天亮还有 %.0f 秒。" % left if night else "距离天黑还有 %.0f 秒。" % left),
 					"foot": "本局 %02d:%02d" % [secs / 60, secs % 60]}
 			return {"icon": "clock", "icon_color": Color(0.80, 0.86, 0.96),

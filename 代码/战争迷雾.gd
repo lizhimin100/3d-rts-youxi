@@ -124,9 +124,19 @@ func is_enabled() -> bool:
 # 每帧
 # ===========================================================================
 
+## 性能计时（探针读它）
+static var dbg_usec: int = 0
+
 func _process(delta: float) -> void:
 	if not _built:
 		return
+	var _t0: int = Time.get_ticks_usec()
+	_process_inner(delta)
+	RtsFog.dbg_usec += Time.get_ticks_usec() - _t0
+
+
+func _process_inner(delta: float) -> void:
+
 	if _overlay == null or not is_instance_valid(_overlay):
 		_ensure_overlay()
 	if _overlay != null:

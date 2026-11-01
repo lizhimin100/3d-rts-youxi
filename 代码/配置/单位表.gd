@@ -435,7 +435,7 @@ static func build_units() -> Dictionary:
 	out[&"steam_guard"] = steam_guard
 
 	# =======================================================================
-	# 中立野怪（2026-11-01）—— 豺狼人 + 地牢
+	# 中立野怪（2026-11-01）—— 豺狼人（战士 / 斥候）
 	# =======================================================================
 	# 它们属于**中立敌对阵营**（team 0，见 代码/系统/野怪.gd）：
 	# 对任何玩家/盟友都敌对，但没有大本营 → 不参与胜负判定。
@@ -489,27 +489,11 @@ static func build_units() -> Dictionary:
 	gnoll_scout.height = 1.86
 	out[&"gnoll_scout"] = gnoll_scout
 
-	# 地牢：野怪的"巢穴"。**不能训练、不能采集、不产人口**，
-	# 唯一的作用是`代码/系统/野怪.gd`挂在它身上定时刷怪（夜里刷一大波）。
-	# 拆掉它 = 这一片不再出怪，所以它是一处"可选目标"，不参与胜负。
-	var dungeon := UnitDef.new()
-	dungeon.id = &"dungeon"
-	dungeon.display_name = "地牢"
-	dungeon.kind = RtsConst.Kind.BUILDING
-	dungeon.model_path = "combo:dungeon"
-	dungeon.anim_set = RtsConst.AnimSet.CIVIC_BUILDING
-	dungeon.max_hp = 1500.0
-	dungeon.armor = 5.0
-	dungeon.armor_type = RtsConst.ArmorType.FORTIFIED
-	dungeon.footprint = Vector2i(5, 5)
-	dungeon.height = 3.0
-	dungeon.sight_range = 14.0
-	dungeon.body_radius = 2.6
-	dungeon.selection_radius = 3.4
-	dungeon.gold_cost = 0
-	dungeon.wood_cost = 0
-	dungeon.train_time = 1.0
-	out[&"dungeon"] = dungeon
+	# ★ 2026-11-01：**地牢（dungeon）已整体删除** ——玩家口径"地牢删除即可，
+	#   相关功能不用，到时直接用上"。野怪的刷怪点改成 `代码/系统/野怪.gd` 里
+	#   一批纯坐标营地（`_camps`），不再需要一座 5×5 占地、1500 血的建筑。
+	#   想加回来：照着 `campfire` 那样写一个 UnitDef，再把
+	#   `野怪.gd` 的 `camp_positions()` 接到它身上即可。
 
 	# ---- 营火：**给玩家/人机用的"夜间照明点"**（2026-11-01 玩家口径）----
 	# "农民有意识的建造哨塔扩大视野……并会建造营火，在夜晚能看清（让火在晚上能照明）"

@@ -75,8 +75,41 @@ static func all_assets() -> Array:
 		})
 		seen[n] = true
 	_scan_dir(DOODAD_DIR, out, seen)
+	# 最后一步：把"新加的东西 / 玩家正在找的东西"排到各自分类的最前面。
+	# 为什么需要：列表一屏只露 9 行，建筑有 11 项 —— 营火正好是最后一个，
+	# 玩家滚都不会滚，直接判定"编辑器里没有它"（2026-11-01 真实反馈）。
+	out = _pin_first(out)
 	_cache = out
 	return out
+
+
+## 置顶名单：**同一个分类内**这些 id 排最前（其余保持原顺序）。
+## 只影响编辑器列表的显示顺序，不影响任何数据/存盘。
+##
+## 2026-11-01：野怪置顶是玩家明确要的（"编辑器里能正确看到野怪即可"）。
+## 地牢（dungeon）已删除，玩家说他以后自己放 —— 见 单位表.gd 里那段说明。
+const PIN_FIRST: Array[String] = [
+	"gnoll_warrior", "gnoll_scout",              # 野怪（最容易"以为列表里没有"的两条）
+	"campfire",                                  # 夜间照明
+]
+
+
+static func _pin_first(list: Array) -> Array:
+	var picked: Array = []
+	var rest: Array = []
+	for a in list:
+		if PIN_FIRST.has(String(a.get("id", ""))):
+			picked.append(a)
+		else:
+			rest.append(a)
+	# 按 PIN_FIRST 的顺序排，而不是原始遍历顺序（保证"豺狼人战士"永远第一个）
+	var ordered: Array = []
+	for id in PIN_FIRST:
+		for a in picked:
+			if String(a.get("id", "")) == id:
+				ordered.append(a)
+	ordered.append_array(rest)
+	return ordered
 
 
 ## 一个自然物到底从哪加载：根目录优先（可 load），v7_自然 兜底（若哪天去掉 .gdignore）
@@ -164,13 +197,42 @@ static func doodad_group(id: String) -> String:
 	return String(DOODAD_GROUPS.get(id, "杂物"))
 
 
-## 卡片里显示用：「草丛 · 植被」；非装饰只返回名字
+## 野怪 id（编辑器列表里要给它们打「野怪」标，否则玩家以为列表里没有野怪）
+const CREEP_IDS: Array[String] = ["gnoll_warrior", "gnoll_scout"]
+## 需要在列表里额外解释一句的 id（玩家最容易搞混的那几个）
+const ID_TAGS: Dictionary = {
+	"campfire": "夜间照明",
+	"营火": "仅装饰·不发光",
+}
+
+
+## 卡片里显示用：「草丛 · 植被」「豺狼人战士 · 野怪」「营火 · 夜间照明」。
+##
+## 为什么要打标（2026-11-01 玩家反馈"编辑器里没有看到野怪模型"）：
+##   资产其实都在列表里，但列表只显示名字 —— 玩家看到「豺狼人战士」
+##   以为那是别的游戏的词条，或者压根没滚到那一行。加一个后缀就等于"分类说明"，
+##   一眼能认出"这是野怪"。
 static func list_label(a: Dictionary) -> String:
 	var nm: String = String(a.get("name", a.get("id", "?")))
+	var sid: String = String(a.get("id", ""))
 	var g: String = String(a.get("group", ""))
+	var tag: String = String(ID_TAGS.get(sid, ""))
+	if tag.is_empty() and CREEP_IDS.has(sid):
+		tag = "野怪"
+	if not tag.is_empty():
+		return "%s · %s" % [nm, tag]
 	if int(a.get("category", -1)) == MapObject.Category.DOODAD and not g.is_empty():
 		return "%s · %s" % [nm, g]
 	return nm
+
+
+## 某个分类在列表里显示的名字（带数量），例如「单位 · 7」。给类目按钮/计数行用。
+static func category_count(cat: int) -> int:
+	var n: int = 0
+	for a in all_assets():
+		if int(a["category"]) == cat:
+			n += 1
+	return n
 
 
 static func of_category(cat: int) -> Array:
@@ -179,6 +241,25 @@ static func of_category(cat: int) -> Array:
 		if int(a["category"]) == cat:
 			out.append(a)
 	return out
+
+
+## **允许"中立"归属的 id 白名单**。
+##
+## 单位/建筑默认必须有阵营 —— `编辑会话.add_object()` 会把"中立"回落到槽位 0，
+## 因为一座没有阵营的房子谁也打不到、也不参战，等于坏数据。
+##
+## 但**野怪必须是中立的**：玩家口径 2026-11-01
+## "野怪我自己在编辑器里摆" —— 摆下来的豺狼人如果被染成玩家 1 的兵，
+## 那它就成了玩家的免费军队（开局白送几个兵）。所以野怪 id 在这里放行，
+## 进图后由 `地图加载器` + `野怪.gd` 落到中立阵营上。
+##
+## ⚠ 地牢（dungeon）已按玩家要求删除；以后自己做的巢穴若也要中立，把 id 加进来。
+const NEUTRAL_OK: Array[String] = ["gnoll_warrior", "gnoll_scout"]
+
+
+## 这个类型能不能以"中立"身份放下
+static func allows_neutral(id: StringName) -> bool:
+	return NEUTRAL_OK.has(String(id))
 
 
 static func find(id: StringName) -> Dictionary:

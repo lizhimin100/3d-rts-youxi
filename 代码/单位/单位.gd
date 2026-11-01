@@ -112,10 +112,8 @@ const CROWD_NEIGHBOR: float = 1.08
 enum GatherPhase { SEEK = 0, TO_NODE = 1, HARVEST = 2, TO_DROP = 3 }
 
 # ===========================================================================
-# 共享空间哈希（全单位共用一份，每帧重建一次，避免 O(n²)）
+# 共享空间哈希（全单位共用一份，见 Game.unit_hash()）
 # ===========================================================================
-static var _sep_hash: SpatialHash = null
-static var _sep_frame: int = -1
 
 
 # ===========================================================================
@@ -240,6 +238,10 @@ var _cast_return_order: int = RtsConst.Order.NONE
 var _gather_node: Node3D = null
 var _gather_phase: int = GatherPhase.SEEK
 var _gather_t: float = 0.0
+## 交汇点缓存（见 _nearest_dropoff）：选中谁 + 那次查的是什么资源 + 还剩多久重查
+var _dropoff_cache: Node3D = null
+var _dropoff_cache_kind: int = -1
+var _dropoff_scan_cd: float = 0.0
 var _carry: int = 0
 ## 累计卸货次数（自检用）
 var _deposit_count: int = 0
@@ -904,9 +906,24 @@ func _start_ability_cooldown(t: float) -> void:
 # 每帧主循环
 # ===========================================================================
 
+## 性能计时（`--perf-long` 的探针读它）：所有单位的 `_process` 总共花了多少微秒。
+## 为什么按"类静态"累计而不是每个单位打日志：100 个单位各打一行会把日志刷爆，
+## 而"单位逻辑一共占了多少 CPU"才是要回答的问题。
+static var dbg_usec: int = 0
+static var dbg_order: int = 0
+static var dbg_move: int = 0
+static var dbg_sep: int = 0
+static var dbg_ground: int = 0
+
 func _process(delta: float) -> void:
 	if def == null:
 		return
+	var _t0: int = Time.get_ticks_usec()
+	_process_inner(delta)
+	RtsUnit.dbg_usec += Time.get_ticks_usec() - _t0
+
+
+func _process_inner(delta: float) -> void:
 
 	# 卡帧保护：单帧最多推进 100ms（再大就会穿墙）。
 	# ⚠ 这个上限不能太小：验收器用 Engine.time_scale=5 加速，
@@ -927,17 +944,24 @@ func _process(delta: float) -> void:
 		_update_anim()
 		return
 
+	# ---- 分项计时（只给 性能探针 读；每帧多 6 次 ticks_usec，可忽略）----
+	var _q0: int = Time.get_ticks_usec()
 	_update_order(dt)
+	RtsUnit.dbg_order += Time.get_ticks_usec() - _q0
+	_q0 = Time.get_ticks_usec()
 	_update_move(dt)
 	_update_attack(dt)
 	_update_auto_cast(dt)
-	# 状态归约：前面各分支自己写 state，这里做唯一出口（见 _settle_state）
 	_settle_state()
-
+	RtsUnit.dbg_move += Time.get_ticks_usec() - _q0
+	_q0 = Time.get_ticks_usec()
 	_update_separation(dt)
 	_update_wall_pushout(dt)
+	RtsUnit.dbg_sep += Time.get_ticks_usec() - _q0
+	_q0 = Time.get_ticks_usec()
 	_snap_ground(dt)
 	_update_anim()
+	RtsUnit.dbg_ground += Time.get_ticks_usec() - _q0
 
 
 ## 各种计时器
@@ -961,6 +985,8 @@ func _tick_timers(dt: float) -> void:
 	# 法力自然回复（只有 max_mana > 0 的单位会走进来）
 	if has_mana() and mana < max_mana():
 		mana = minf(max_mana(), mana + def.mana_regen * dt)
+	if _dropoff_scan_cd > 0.0:
+		_dropoff_scan_cd -= dt
 	_tick_extra(dt)
 
 
@@ -1342,6 +1368,12 @@ func _request_path() -> void:
 	if _repath_cd > 0.0:
 		_need_repath = true
 		return
+	# ★ 每帧算路的配额（见 RtsWorld.take_path_budget）。
+	#   预算用完就不消耗冷却、把请求挂起，下一帧 _tick_timers 自然重试 ——
+	#   这样"十几个单位同一帧各自算路"不会把某一帧撑爆。
+	if not RtsWorld.take_path_budget():
+		_need_repath = true
+		return
 	_need_repath = false
 	_repath_cd = REPATH_INTERVAL
 	dbg_repath_count += 1
@@ -1691,6 +1723,19 @@ func _snap_ground(dt: float) -> void:
 	# 1) 高度追随（限速，避免地形台阶造成"弹跳"）
 	var y: float = move_toward(global_position.y, h, GROUND_FOLLOW_SPEED * maxf(dt, 0.0001))
 	global_position.y = y
+
+	# ★ 站着不动时**跳过坡面采样**（2026-11-01 性能优化）。
+	#
+	# 坡面这一趟要 4 次 `RtsWorld.height_at()`，而 RTS 里绝大多数单位大半时间都在
+	# 站着（采集/待命/守家）。人没动、朝向也没变，坡面解析结果就是同一组数 ——
+	# 重算纯属白烧。实测 `_snap_ground` 原本吃 137ms/秒（`u.ground`），
+	# 其中 4/5 是这四次采样。
+	#
+	# 判据：既没在走（`_moving`）也没有残留速度（`_speed`）。停下来那一刻
+	# `_tilt` 已经收敛到坡面角度，冻结它正好等于"停在坡上就保持那个倾角"。
+	if not _moving and _speed < 0.02:
+		rotation = Vector3(_tilt.x, _yaw, _tilt.y)
+		return
 
 	# 2) 四点采样算坡面（采样臂长 0.7m，约一个身位）
 	var arm: float = 0.7
@@ -2042,8 +2087,19 @@ func _gather_multiplier() -> float:
 ##   · 背木头时候选 = 大本营 + 活着的伐木场，谁近去谁；
 ##   · 背金子时伐木场根本不在候选里（它 dropoff_kinds 只有 WOOD）。
 func _nearest_dropoff(kind: int = -1) -> Node3D:
-	var list: Array = RtsWorld.dropoffs(faction)
 	var want: int = kind if kind >= 0 else _carry_kind
+	# ★ 缓存 0.5s（2026-11-01 性能优化）。
+	#
+	# 老实现每次都是：RtsWorld.dropoffs()（**新建一张候选表**）→ 逐个
+	# `has_method()` + `call("accepts_harvest")`（两次动态派发）→ 比距离。
+	# 而 TO_DROP 阶段是**每帧**调一次 —— 几十个农民同时背东西回家时，
+	# 每秒上千次动态派发 + 上千次数组分配。
+	# 交汇点不会在半秒内搬家，缓存完全安全；只在"缓存失效/换了资源种类"时重算。
+	if _dropoff_cache != null and is_instance_valid(_dropoff_cache) \
+			and _dropoff_cache.is_alive() and _dropoff_cache_kind == want \
+			and _dropoff_scan_cd > 0.0:
+		return _dropoff_cache
+	var list: Array = RtsWorld.dropoffs(faction)
 	var best: Node3D = null
 	var best_d: float = INF
 	for d in list:
@@ -2058,6 +2114,9 @@ func _nearest_dropoff(kind: int = -1) -> Node3D:
 		if dist < best_d:
 			best_d = dist
 			best = d
+	_dropoff_cache = best
+	_dropoff_cache_kind = want
+	_dropoff_scan_cd = 0.5
 	return best
 
 
@@ -2126,25 +2185,12 @@ func _update_anim() -> void:
 			visual.play("idle", 1.0)
 
 
-## 共享空间哈希：每帧重建一次（只收活着的单位与建筑）
+## 共享空间哈希：**直接复用 Game.unit_hash()**（每帧只重建一次，全工程一份）。
+##
+## 2026-11-01：以前这里自己又建了一份（同样从 Game.all_units() 桶化一遍），
+## 和索敌用的那份完全重复 —— 每帧白桶化 130+ 个单位。现在只认 Game 那一份。
 static func _shared_hash() -> SpatialHash:
-	var frame: int = Engine.get_process_frames()
-	if _sep_hash == null:
-		_sep_hash = SpatialHash.new(4.0)
-	if _sep_frame == frame:
-		return _sep_hash
-	_sep_frame = frame
-	var list: Array = []
-	for u in Game.all_units():
-		if u == null or not is_instance_valid(u):
-			continue
-		if not u is RtsUnit:
-			continue
-		if not u.is_alive():
-			continue
-		list.append(u)
-	_sep_hash.rebuild(list)
-	return _sep_hash
+	return Game.unit_hash()
 
 
 ## 单位分离：一重叠就互相推开，别挤成一坨

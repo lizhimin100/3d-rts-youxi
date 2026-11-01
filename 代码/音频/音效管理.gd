@@ -381,14 +381,26 @@ func _start_bgm() -> void:
 
 ## 取（并缓存）音频流
 ##
-## ① 先按源文件读：AudioStreamWAV.load_from_file() 不依赖 .import，
-##    这样新增 WAV 不需要跑 --import；
-## ② 再退回资源加载（老素材已导入时更省事）。
+## ★ BGM 优先 **OGG**（2026-11-01 优化）：
+##   6 首 WAV 合计 74MB，`AudioStreamWAV` 是整段 PCM 常驻内存，启动时还要为
+##   "无缝循环"复制一遍 13MB 缓冲 —— 光 BGM 就吃掉 70MB+ 静态内存。
+##   现在 OGG 只有 5.6MB，而且**接缝已经在离线阶段接好**（工具/音频/压缩BGM到OGG.py
+##   用的是同一套等功率交叉淡化），运行时只要 `loop = true`，解码器流式读盘。
+##   WAV 那条路原样保留：素材缺失/没转过的项目照样能跑。
 func _stream(id: String) -> AudioStream:
 	if _cache.has(id):
 		return _cache[id]
-	var path := DIR + id + ".wav"
 	var s: AudioStream = null
+	if id.begins_with("bgm"):
+		var opath: String = DIR + id + ".ogg"
+		if FileAccess.file_exists(opath):
+			var ogg := AudioStreamOggVorbis.load_from_file(opath) as AudioStreamOggVorbis
+			if ogg != null:
+				ogg.loop = true
+				s = ogg
+				_cache[id] = s
+				return s
+	var path := DIR + id + ".wav"
 	if FileAccess.file_exists(path):
 		s = AudioStreamWAV.load_from_file(path)
 	if s == null and ResourceLoader.exists(path):

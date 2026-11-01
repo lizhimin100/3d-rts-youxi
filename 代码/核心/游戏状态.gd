@@ -283,14 +283,50 @@ func unregister(unit: Node) -> void:
 		fac.buildings.erase(unit)
 
 
-## 全部存活单位（返回副本，避免外部误改）
+## 全部存活单位。
+##
+## ⚠ **返回的是内部数组本身，不是副本 —— 调用方只许遍历，不许增删改。**
+##
+## 为什么去掉 `.duplicate()`（2026-11-01 性能排查）：
+##   这个函数被 战争迷雾 / 头顶血条 / 小地图 / HUD / 选择 / 分离 / 索敌 等
+##   十几处**每帧**调用，每次都要复制 130+ 个元素并加一遍引用计数。
+##   全工程 30 个调用点没有一个会改返回值，为它们每人复制一份纯属白烧 CPU + GC。
 func all_units() -> Array:
-	return _units.duplicate()
+	return _units
 
 
-## 全部可采集物
+## 全部可采集物（同上：只读，别改返回值）
 func all_harvestables() -> Array:
-	return _harvestables.duplicate()
+	return _harvestables
+
+
+## **全单位空间哈希**（每帧最多重建一次，全工程共用一份）。
+##
+## 谁在用：
+##   · `RtsUnit._shared_hash()` —— 单位分离（互相推开）
+##   · `find_nearest_enemy()`   —— 索敌
+## 以前这两条路各建一份，等于每帧把 130 个单位桶化两遍。
+## 现在只留这里一份：`Engine.get_process_frames()` 当版本号，同帧直接复用。
+var _unit_hash: SpatialHash = null
+var _unit_hash_frame: int = -1
+
+
+func unit_hash() -> SpatialHash:
+	var f: int = Engine.get_process_frames()
+	if _unit_hash == null:
+		_unit_hash = SpatialHash.new(4.0)
+	elif _unit_hash_frame == f:
+		return _unit_hash
+	_unit_hash_frame = f
+	_unit_hash.clear()
+	for u in _units:
+		if u == null or not is_instance_valid(u):
+			continue
+		# 死掉的先不收（墓碑/正在播死亡动画的还在 _units 里）
+		if u is RtsUnit and not u.is_alive():
+			continue
+		_unit_hash.insert(u.global_position, u)
+	return _unit_hash
 
 
 ## 某阵营的全部单位
@@ -323,24 +359,41 @@ func enemy_of(faction: RtsFaction) -> RtsFaction:
 
 
 ## 从某点找最近的敌人（**扫全部敌对阵营**；半径限制；没有返回 null）
+##
+## ★ 2026-11-01 性能重写 —— 这是"20~40fps"的头号主犯。
+##   老实现：对每个敌对阵营 `append_array` 造一个 pool 数组，再把**全部敌人**
+##   逐个 `is_instance_valid() / is_alive() / global_position` 看一遍。
+##   137 个单位、每人每 0.3s 索敌一次 → 每秒 6 万次三元访问 + 上千次数组分配，
+##   实测单这一项 ≈120ms/秒。
+##   现在：先用**空间哈希**圈出半径内的候选（4m 一格，11m 半径 ≈ 49 格，
+##   候选取 10~30 个，而不是 137 个），敌我判定放到内层 —— 同阵营的候选
+##   一眼就跳过，连距离都不算。
+##   语义完全不变：返回半径内最近的敌人（含中立野怪，口径同 enemies_of）。
 func find_nearest_enemy(from: Vector3, faction: RtsFaction, radius: float) -> Node3D:
-	if faction == null:
+	if faction == null or radius <= 0.0:
 		return null
 	var best: Node3D = null
 	var best_d: float = radius * radius
-	for foe in enemies_of(faction):
-		var pool: Array = []
-		pool.append_array(foe.units)
-		pool.append_array(foe.buildings)
-		for u in pool:
-			if u == null or not is_instance_valid(u):
-				continue
-			if not u.is_alive():
-				continue
-			var d: float = from.distance_squared_to(u.global_position)
-			if d < best_d:
-				best_d = d
-				best = u
+	for u in unit_hash().query(from, radius):
+		if u == null or not is_instance_valid(u):
+			continue
+		if not (u is RtsUnit):
+			continue
+		var other: RtsUnit = u
+		var of: RtsFaction = other.faction
+		if of == null or of == faction:
+			continue
+		# 敌我判定：不同队伍就是敌人。中立野怪（team 0）单独放行 ——
+		# 它**已经出现在哈希里**就说明还活着，所以不必再问 has_forces()
+		# （那个函数要遍历整个阵营，放进这个每秒几百次的循环里会白烧 CPU）。
+		if not faction.is_enemy_of(of) and of != neutral_faction:
+			continue
+		if not other.is_alive():
+			continue
+		var d: float = from.distance_squared_to(other.global_position)
+		if d < best_d:
+			best_d = d
+			best = other
 	return best
 
 

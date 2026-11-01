@@ -140,6 +140,36 @@ func _shot_to(path: String) -> void:
 			print("[地图编辑器] QA 打开 %s → %s" % [mp, "成功" if ok_open else "失败"])
 			await get_tree().process_frame
 			await get_tree().process_frame
+	# QA：--map-editor-shot-zoo 新建一张图，把"新加的单位/建筑"各摆一个
+	# （验收口径：编辑器里能不能看见它们、长得对不对 —— 野怪/营火都在这一排里）
+	if "--map-editor-shot-zoo" in OS.get_cmdline_user_args():
+		_session.new_map(160, 2, 20261024)
+		if _session.dock != null:
+			_session.dock.show_tab("对象")
+		await get_tree().process_frame
+		_session.place_owner = -1
+		var zoo: Array = [
+			[&"gnoll_warrior", 0, Vector2(-13.0, -2.0)],
+			[&"gnoll_scout", 0, Vector2(-8.0, -2.0)],
+			[&"footman", 0, Vector2(-13.0, 4.0)],
+			[&"archer", 0, Vector2(-8.0, 4.0)],
+			[&"campfire", 1, Vector2(-1.0, 0.0)],
+			[&"watchtower", 1, Vector2(7.0, 6.0)],
+		]
+		for z in zoo:
+			var zid: StringName = z[0]
+			var zcat: int = int(z[1])
+			var zp: Vector2 = z[2]
+			var zy: float = _session.def.height_at(zp.x, zp.y) if _session.def != null else 0.0
+			_session.add_object(zid, zcat, Vector3(zp.x, zy, zp.y))
+			# ⚠ 这里**不能**调 Cfg.unit()：编辑器里 Cfg 是占位实例（配置入口.gd 不是 @tool），
+			#   一调就 "Attempt to call a method on a placeholder instance"，整个截图流程卡死。
+			#   要模型路径就问 MapAssets（@tool，静态）。
+			var zinfo: Dictionary = MapAssets.find(zid)
+			print("[地图编辑器] QA zoo：%s（模型 %s）" % [String(zid),
+				String(zinfo.get("model", "?"))])
+		await get_tree().process_frame
+		await get_tree().process_frame
 	# QA：--map-editor-shot-paint=dirt|raise 在镜头中心刷一笔
 	# 用来肉眼验收"刷地形到底有没有反应"（数据 + 视口两边都要看）
 	for a in OS.get_cmdline_user_args():
@@ -170,6 +200,19 @@ func _shot_to(path: String) -> void:
 				kind, dirt_n, d1.mat_nodes.size(), d1.height_at(0.0, 0.0)])
 			for _i in range(30):
 				await get_tree().process_frame
+	# QA：--map-editor-shot-cat=unit|build|doodad|res 切放置分类
+	# （ASCII 参数：中文参数在 Windows 命令行里会被代码页搞坏，验收时不可靠）
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--map-editor-shot-cat="):
+			match a.get_slice("=", 1):
+				"unit":
+					_session.set_category(MapObject.Category.UNIT)
+				"build":
+					_session.set_category(MapObject.Category.BUILDING)
+				"doodad":
+					_session.set_category(MapObject.Category.DOODAD)
+				"res":
+					_session.set_category(MapObject.Category.RESOURCE)
 	# QA：--map-editor-shot-tab=对象 / 装饰 / 历史 ...
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--map-editor-shot-tab=") and _session.dock != null:
@@ -228,6 +271,19 @@ func _shot_to(path: String) -> void:
 	get_editor_interface().set_main_screen_editor(_get_plugin_name())
 	for _i in range(10):
 		await get_tree().process_frame
+	# QA：--map-editor-shot-cam=<x>,<z>,<距离> 把编辑器镜头压到指定位置
+	# （必须在 reset_camera() 之后执行，否则会被复位覆盖 —— 这就是第一次拍特写失败的原因）
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--map-editor-shot-cam=") and _session.def != null \
+				and _session.viewport != null:
+			var parts: PackedStringArray = a.get_slice("=", 1).split(",")
+			var cx: float = float(parts[0]) if parts.size() > 0 else 0.0
+			var cz: float = float(parts[1]) if parts.size() > 1 else 0.0
+			var cd: float = float(parts[2]) if parts.size() > 2 else 30.0
+			_session.viewport.focus_on(Vector3(cx, _session.def.height_at(cx, cz), cz))
+			# zoom_by 是"相对倍率"，先复位再算：dist 目标 / 当前
+			var cur: float = float(_session.def.size) * 0.95
+			_session.viewport.zoom_by(clampf(cd / maxf(cur, 1.0), 0.02, 4.0))
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--map-editor-shot-focus-player=") and _session.def != null:
 			var pi: int = int(a.get_slice("=", 1)) - 1
@@ -480,6 +536,25 @@ func _run_selftest() -> void:
 		print("  · 摆放归属：资源保持中立（owner=-1）")
 	else:
 		fails.append("资源被染上归属了（owner=%s）" % (str(doodad_obj.owner) if doodad_obj != null else "null"))
+	# 中立白名单（MapAssets.allows_neutral）：**野怪必须能中立放下**，
+	# 普通兵/建筑必须不能（否则中立步兵那种没有阵营的坏数据会进地图文件）。
+	# 2026-11-01 玩家口径："野怪我自己在编辑器里摆" —— 摆下来必须还是野怪，
+	# 不能被染成"玩家 1 的免费军队"。
+	_session.set_place_owner(-1)
+	if MapAssets.allows_neutral(&"gnoll_warrior") and not MapAssets.allows_neutral(&"footman"):
+		passes += 1
+		print("  · 摆放归属：野怪可中立 / 普通兵不可中立")
+	else:
+		fails.append("中立白名单不对（野怪应放行、普通兵应拦下）")
+	# 真的摆一只，确认 owner 保持 -1（add_object 的夹取逻辑别把它改回 0）
+	var creep_obj: MapObject = _session.add_object(&"gnoll_warrior",
+		MapObject.Category.UNIT, Vector3(near_spawn.x + 6.0, 0.0, near_spawn.y + 6.0))
+	if creep_obj != null and creep_obj.owner == -1:
+		passes += 1
+		print("  · 摆放归属：摆下来的野怪 owner=-1（进图归中立阵营）")
+	else:
+		fails.append("野怪被染上归属了（owner=%s，应为 -1）" % (
+			str(creep_obj.owner) if creep_obj != null else "null"))
 	_session.delete_selection()
 	_session.set_place_owner(0)
 

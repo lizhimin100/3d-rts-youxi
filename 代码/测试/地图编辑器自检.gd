@@ -340,10 +340,13 @@ func _test_validate_overlap() -> void:
 # ===========================================================================
 
 ## 验三件事：
-##   ① 每个"游戏里会出现"的 id（含野怪/地牢/营火）都在编辑器的资产清单里；
+##   ① 每个"游戏里会出现"的 id（含**野怪**/营火）都在编辑器的资产清单里；
 ##   ② 每个建筑都有可用图标（png 或 fallback svg），否则命令卡上是空白格；
-##   ③ 组合件（`combo:`）在编辑器里的预览**不是占位方块** —— 玩家摆地牢时
-##      看到的必须是一个营地，而不是一只棕色木箱。
+##   ③ 组合件（`combo:`）在编辑器里的预览**不是占位方块** —— 玩家摆营火时
+##      看到的必须是一个柴堆 + 火，而不是一只棕色木箱。
+##
+## ⚠ 2026-11-01：`dungeon` 按玩家要求删除（"地牢删除即可，到时我亲自放置"），
+##   所以这里不再断言它存在。玩家以后自己做地牢时，记得把 id 补回 must 列表。
 func _test_asset_catalog() -> void:
 	var ids: Dictionary = {}
 	for a in MapAssets.all_assets():
@@ -351,7 +354,7 @@ func _test_asset_catalog() -> void:
 	# 这批是"必须能被地图作者摆出来"的最小集合（新加东西就往这里补一行）
 	var must: Array[String] = [
 		"footman", "archer", "peasant", "mage", "steam_guard",
-		"gnoll_warrior", "gnoll_scout", "dungeon", "campfire",
+		"gnoll_warrior", "gnoll_scout", "campfire",
 		"townhall", "barracks", "farm", "tower", "watchtower",
 		"blacksmith", "sanctum", "workshop", "lumbercamp",
 		"goldmine", "tree",
@@ -376,7 +379,7 @@ func _test_asset_catalog() -> void:
 	_ok(no_icon.is_empty(), "建筑缺少图标且没有兜底：%s" % ", ".join(no_icon))
 
 	# 组合件预览：根节点下必须有真正的"模型"子节点，不能落到占位方块
-	for id in ["dungeon", "campfire"]:
+	for id in ["campfire"]:
 		var o: MapObject = MapObject.make(StringName(id), MapObject.Category.BUILDING,
 				Vector3.ZERO)
 		var n: Node3D = MapPreviewFactory.build(o)

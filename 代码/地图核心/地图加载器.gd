@@ -399,6 +399,13 @@ static func spawn_map_objects(m: MapDef, level: RtsLevel) -> void:
 					faction = Game.factions[o.owner]
 				elif o.owner >= 0:
 					faction = Game.player_faction if o.owner == 0 else Game.enemy_faction
+				else:
+					# ★ owner = -1（中立）：**单位和建筑也能是中立**。
+					#   玩家口径 2026-11-01："野怪我自己在编辑器里摆" ——
+					#   所以中立单位必须落到中立阵营上，否则它是"没有阵营的死单位"：
+					#   打不到人、不还手、小地图不显示、AI 也不认它是敌人。
+					#   （资源/装饰走别的分支，不受这里影响。）
+					faction = Game.neutral_faction
 				var gx: float = o.position.x
 				var gz: float = o.position.z
 				var yaw: float = o.rotation

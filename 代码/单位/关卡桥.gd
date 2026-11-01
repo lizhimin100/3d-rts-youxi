@@ -36,10 +36,34 @@ static func has_level() -> bool:
 ## 地形高度现在已经是"看得见的那张三角面"（见 地形.height_at），
 ## 但脚/底座如果正好等于地形高度，两者就共面 —— 深度精度一抖就闪成一片
 ## （玩家看到的"金矿/建筑/单位被地形穿模"多半就是这种共面）。抬高 3cm 就够了。
-static func height_at(x: float, z: float) -> float:
+## ★ 缓存的"地形求值器"（2026-11-01 性能优化）
+##
+## 原来每次 `height_at()` 都要：`level()`（读 Game.level）→ `has_method()` →
+## `.call()`（Variant 装箱 + 动态派发）→ 地形里算双三次片。
+## 而单位每帧要调 5 次（1 次贴地 + 4 次算坡度），95 个单位 × 60 帧 = 2.8 万次/秒 ——
+## 实测 `_snap_ground` 吃掉 140ms/秒（占全部单位逻辑的 45%）。
+## 现在把地形节点缓存下来、直接调它的方法，省掉前两步。
+static var _terrain: Node3D = null
+static var _terrain_owner: Node3D = null
+
+static func _terrain_node() -> Node3D:
 	var lv: Node3D = level()
-	if lv != null and lv.has_method("height_at"):
-		return float(lv.call("height_at", x, z)) + GROUND_LIFT
+	if lv == null:
+		_terrain = null
+		_terrain_owner = null
+		return null
+	# 关卡换了（重开局/换图）就重新取——只在 is_instance_valid 失效时才走这条路
+	if _terrain == null or not is_instance_valid(_terrain) or _terrain_owner != lv:
+		_terrain_owner = lv
+		var t: Variant = lv.get("terrain")
+		_terrain = t as Node3D if t is Node3D else null
+	return _terrain
+
+
+static func height_at(x: float, z: float) -> float:
+	var t: Node3D = _terrain_node()
+	if t != null:
+		return float(t.height_at(x, z)) + GROUND_LIFT
 	return GROUND_LIFT
 
 
@@ -74,7 +98,46 @@ static func pathfinder() -> GridPathfinder:
 
 
 ## 取一条路径（**已带地形高度**）。不可达返回空数组。
+## 性能计数（`--perf-long` 的探针读它）：这一局一共算了几次路、花了多少微秒。
+## 为什么放在这里：`find_path` 是**全项目唯一的寻路入口**，A* 的开销只有在这里量得准。
+static var dbg_path_calls: int = 0
+static var dbg_path_usec: int = 0
+
+## **每帧最多算几条路** —— 帧时间平滑的关键。
+##
+## 为什么要有预算（2026-11-01 性能排查的实测结论）：
+##   A* 单次 0.4~2.3ms（160×160 图 + 贴地加密）。十几个农民/野怪如果在**同一帧**
+##   各自要一次路，这一帧就凭空多花 10~25ms —— 玩家感受到的就是
+##   "平时 40fps，打着打着突然卡一下"。perf 长跑里 `path_ms_per_s` 峰值 224ms
+##   而平均只有 40ms，说的就是这种突发。
+##   给每帧一个预算，超出的顺延到下一帧：单位最多多等 1~2 帧（≈33ms），
+##   肉眼完全看不出来，但最坏帧时间被削平了。
+const PATH_BUDGET_PER_FRAME: int = 6
+static var _budget_frame: int = -1
+static var _budget_left: int = 0
+
+
+## 本帧还能不能算一条路。返回 false 表示"预算用完，下一帧再来"。
+static func take_path_budget() -> bool:
+	var f: int = Engine.get_process_frames()
+	if f != _budget_frame:
+		_budget_frame = f
+		_budget_left = PATH_BUDGET_PER_FRAME
+	if _budget_left <= 0:
+		return false
+	_budget_left -= 1
+	return true
+
+
 static func find_path(from: Vector3, to: Vector3) -> PackedVector3Array:
+	var t0: int = Time.get_ticks_usec()
+	dbg_path_calls += 1
+	var r: PackedVector3Array = _find_path_impl(from, to)
+	dbg_path_usec += Time.get_ticks_usec() - t0
+	return r
+
+
+static func _find_path_impl(from: Vector3, to: Vector3) -> PackedVector3Array:
 	var lv: Node3D = level()
 	if lv != null and lv.has_method("find_path"):
 		var out: Variant = lv.call("find_path", from, to)

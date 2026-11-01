@@ -977,10 +977,17 @@ func add_object(type_id: StringName, category: int, world_pos: Vector3) -> MapOb
 	# 单位 / 建筑**必须**有归属（加载器要按 owner 找阵营）；下拉里选了"中立"也回落到槽位 0，
 	# 只在状态栏提示一句，别让"中立步兵"这种没有阵营的怪东西进地图文件。
 	# 同时按当前地图的槽位数夹一下：换图后 place_owner 可能还停在上一张图的"玩家 4"。
+	#
+	# ★ **例外机制保留、名单当前为空**（`MapAssets.allows_neutral()`）：
+	#   白名单里的 id 允许以"中立"身份放下。以前只有 `dungeon` 在里面，
+	#   2026-11-01 地牢删除后名单清空 —— 玩家以后自己做地牢时把它加进去即可。
 	var own: int = -1
 	if category == MapObject.Category.UNIT or category == MapObject.Category.BUILDING:
 		var max_slot: int = maxi(0, (def.players.size() if def != null else 1) - 1)
-		own = clampi(place_owner, 0, max_slot)
+		if place_owner < 0 and MapAssets.allows_neutral(type_id):
+			own = -1
+		else:
+			own = clampi(place_owner, 0, max_slot)
 	var obj := MapObject.make(type_id, category, pos, yaw, 1.0, own)
 	if category == MapObject.Category.DOODAD:
 		var info: Dictionary = _asset_info(type_id)

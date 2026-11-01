@@ -41,7 +41,7 @@ static func build(o: MapObject) -> Node3D:
 		inst = _instance(path)
 	if inst != null:
 		root.add_child(inst)
-		# 组合件（地牢…）内部已经按自然材质拼好了，**不要**再套一遍：
+		# 组合件（营火…）内部已经按自然材质拼好了，**不要**再套一遍：
 		# 再套会把营火那盏灯的位置也当成普通网格处理，颜色会发灰。
 		if not path.begins_with("combo:"):
 			# 自然物统一材质：GLB 的 albedo 是灰度噪声，不上这一层树/草/岩石在编辑器里
@@ -54,11 +54,11 @@ static func build(o: MapObject) -> Node3D:
 	return root
 
 
-## **组合件预览**（`model_path` 以 `combo:` 开头的建筑，例如 `combo:dungeon`）。
+## **组合件预览**（`model_path` 以 `combo:` 开头的建筑，例如 `combo:campfire`）。
 ##
-## 为什么必须单独处理：这类"模型"根本不是一条 glb 路径，`ResourceLoader.exists("combo:dungeon")`
-## 永远为 false → 预览工厂退回棕色占位方块。玩家在编辑器里摆地牢时看到的是一块木箱，
-## 于是"编辑器能不能正常摆放地牢"这件事看起来就是坏的（其实数据是对的）。
+## 为什么必须单独处理：这类"模型"根本不是一条 glb 路径，`ResourceLoader.exists("combo:campfire")`
+## 永远为 false → 预览工厂退回棕色占位方块。玩家在编辑器里摆营火时看到的是一块木箱，
+## 于是"编辑器能不能正常摆放它"这件事看起来就是坏的（其实数据是对的）。
 ## 这里直接调游戏里那套拼装函数（代码/美术/组合件.gd），**编辑器所见 = 进图所见**。
 ##
 ## ⚠ 只用 load() 取脚本再 call 静态方法：@tool 首次加载时 class_name 可能还没注册。

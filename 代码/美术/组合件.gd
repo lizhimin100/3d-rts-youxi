@@ -2,9 +2,9 @@ extends RefCounted
 ## **组合件注册表** —— `UnitDef.model_path = "combo:<key>"` 时，key 对应哪个外观脚本。
 ##
 ## 为什么要这张表（而不是拿 key 直接拼路径）：
-##   key 是**英文 id**（`dungeon` / `campfire`，和 UnitDef.id / 地图对象 type_id 一致），
-##   而外观脚本是**中文文件名**（`地牢外观.gd` / `营火外观.gd`）。两者对不上，
-##   于是"combo:dungeon" 会去找 `dungeon外观.gd` —— 找不到，退回占位方块。
+##   key 是**英文 id**（`campfire`，和 UnitDef.id / 地图对象 type_id 一致），
+##   而外观脚本是**中文文件名**（`营火外观.gd`）。两者对不上，
+##   于是"combo:campfire" 会去找 `campfire外观.gd` —— 找不到，退回占位方块。
 ##
 ## 唯一入口：`script_for(key)`。游戏（单位视觉.gd）和地图编辑器（预览工厂.gd）
 ## 都走这里，保证"编辑器所见 = 进图所见"。
@@ -13,10 +13,12 @@ extends RefCounted
 ##   ① 美术/模型 里拼好部件；
 ##   ② 写 `代码/美术/<中文>外观.gd`，提供 `static func build(def: UnitDef) -> Node3D`；
 ##   ③ 在这里加一行 key → 中文名。
+##
+## ⚠ 2026-11-01：`dungeon` 已删除（玩家口径"地牢删除即可，到时我亲自放置"）。
+##   想加回来只要**两件事**：写 `代码/美术/地牢外观.gd` + 在这里加 `&"dungeon": "地牢"`。
 
 ## key → 外观脚本目录下的中文名前缀
 const ALIAS: Dictionary = {
-	&"dungeon": "地牢",
 	&"campfire": "营火",
 }
 

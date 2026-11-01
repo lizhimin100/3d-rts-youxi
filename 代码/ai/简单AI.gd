@@ -143,7 +143,16 @@ func _init_wave_clock() -> void:
 	_next_wave_at = diff.first_wave_delay
 	_wave_index = 0
 
+## 性能计时（探针读它）
+static var dbg_usec: int = 0
+
 func _process(delta: float) -> void:
+	var _t0: int = Time.get_ticks_usec()
+	_process_inner(delta)
+	SimpleAI.dbg_usec += Time.get_ticks_usec() - _t0
+
+
+func _process_inner(delta: float) -> void:
 	if Game.phase != RtsConst.Phase.RUNNING:
 		return
 	if _faction == null or not is_instance_valid(_faction):
@@ -292,7 +301,7 @@ func _combat_units(include_workers: bool) -> Array:
 ## 对面的战斗单位（"能看见" = 全图，本项目没有战争迷雾）。
 ##
 ## ★ 两条口径（2026-11-01 修，之前 AI 整局不出门就是这两条一起造成的）：
-##   ① **不含中立野怪**（见 `_war_foes()`）：8 座地牢几十只豺狼人算进"敌军"，
+##   ① **不含中立野怪**（见 `_war_foes()`）：8 片营地几十只豺狼人算进"敌军"，
 ##      兵比从 1.09 掉到 0.23，AI 永远觉得打不过；
 ##   ② **只比"最强的那个对手"**，不是把三家加起来：
 ##      四队图里每家只占全场 1/4，把其余三家求和，任何一家都不可能超过 1.0，
@@ -1111,7 +1120,7 @@ func _manage_creep_clear(_diff: DifficultyDef) -> void:
 	_log("清野：%d 兵 → 营地 (%.0f, %.0f)" % [n, camp.x, camp.z])
 
 
-## 最近的野怪营地：优先**地牢**（拆了就不再刷怪），没有地牢就找最近的野怪。
+## 最近的野怪营地：优先营地里的建筑（如果有），没有就找最近的野怪本身。
 ## 返回 Vector3.INF = 附近没有值得打的野怪。
 func _nearest_creep_camp() -> Vector3:
 	var neutral: RtsFaction = Game.neutral_faction
@@ -1373,10 +1382,10 @@ func _strongest_foe() -> RtsFaction:
 
 ## **会"打过来"的敌对阵营** —— 战略层口径，**剔除中立野怪**。
 ##
-## 为什么必须分开：野怪有 8 座地牢、每座 5 只，数量上远超任何一家玩家。
+## 为什么必须分开：野怪有 8 片营地、每片 5 只，数量上远超任何一家玩家。
 ## 把它们算进"敌方军力/最想打的那一家"，AI 就会：
 ##   ① 永远觉得兵力不占优（`allow_attack` 永远 false）→ 整局不出门；
-##   ② 把推进目标定成最近的地牢（`_push_target` 找"敌方建筑"）→ 全军去打野。
+##   ② 把推进目标定成最近的野怪（`_push_target` 找"敌方建筑"）→ 全军去打野。
 ## 但**战术层**（索敌 `_acquire`、回防 `_threat_units`）仍然把野怪当敌人 ——
 ## 夜里它们真的会来拆家，那时候必须开枪。
 func _war_foes() -> Array:
