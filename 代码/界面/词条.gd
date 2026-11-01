@@ -86,7 +86,9 @@ static func mitigation_pct(armor: float) -> int:
 	return int(round(RtsCombat.armor_mitigation(armor) * 100.0))
 
 
-## 克制表：只列**不是 1.00** 的那几项，否则四行全是 ×1.00 等于没说
+## 克制表：**分成「克制 / 被克」两行**。
+## why 不合并成一行：中文在 RichTextLabel 里可以在任意两字之间折行，
+## "重甲 ×0.85"会被拆成"重"换行"甲 ×0.85"（看着像错字）。一行只放两项就再也不会断。
 static func counter_line(attack_type: int) -> String:
 	var cfg: GameConfig = Cfg.game
 	if cfg == null:
@@ -97,15 +99,17 @@ static func counter_line(attack_type: int) -> String:
 	for i in 4:
 		var m: float = cfg.damage_multiplier(attack_type, i)
 		if m > 1.02:
-			good.append("[color=#8fe08a]%s ×%.2f[/color]" % [names[i], m])
+			good.append("[color=#8fe08a]%s\u00A0×%.2f[/color]" % [names[i], m])
 		elif m < 0.98:
-			bad.append("[color=#e08a7a]%s ×%.2f[/color]" % [names[i], m])
-	var parts: Array[String] = []
-	parts.append_array(good)
-	parts.append_array(bad)
-	if parts.is_empty():
+			bad.append("[color=#e08a7a]%s\u00A0×%.2f[/color]" % [names[i], m])
+	var lines: Array[String] = []
+	if not good.is_empty():
+		lines.append("克制：" + " · ".join(good))
+	if not bad.is_empty():
+		lines.append("被克：" + " · ".join(bad))
+	if lines.is_empty():
 		return "对所有护甲类型都是 ×1.00，不挑对手。"
-	return "克制：" + " · ".join(parts)
+	return "\n".join(lines)
 
 
 ## 秒伤（不含暴击）：伤害 / 间隔
@@ -243,17 +247,19 @@ static func stat(d: UnitDef, key: String, u: Node3D = null) -> Dictionary:
 						"tag": "攻击",
 						"body": "这个单位不会主动攻击。它能做的只有移动、采集或建造。",
 						"foot": ""}
-			var body: String = "%s，每 [b]%s 秒[/b] 一次，单次 [b]%s[/b] 点。" % [
-					dmg_how(d.attack_type), fmt(d.attack_cooldown), fmt(d.attack_damage)]
+			# 一行一个信息点：中文会在任意两字之间折行，句子写太长就会出现
+			# "单次 19 / 点。"这种只剩两个字的孤行。
+			var body: String = "每 [b]%s 秒[/b] 一发 · 单次 [b]%s[/b] 点" % [
+					fmt(d.attack_cooldown), fmt(d.attack_damage)]
 			if d.attack_spread > 0.0:
-				body += "\n伤害有 ±%s 的浮动。" % fmt(d.attack_spread)
-			body += "\n秒伤约 [b]%s[/b]（未计暴击）。" % fmt(dps(d))
+				body += "（±%s 浮动）" % fmt(d.attack_spread)
+			body += "\n秒伤约 [b]%s[/b]（未计暴击）" % fmt(dps(d))
 			body += "\n" + counter_line(d.attack_type)
 			return {
 				"icon": "sword", "icon_color": Color(0.98, 0.62, 0.42),
 				"title": "%s攻击 · %s" % [dmg_name(d.attack_type), fmt(d.attack_damage)],
 				"tag": "伤害类型",
-				"body": body,
+				"body": "%s\n%s" % [dmg_how(d.attack_type), body],
 				"foot": "" if d.attack_range <= 0.0 else "射程 %s 米（超出就打不到）" % fmt(d.attack_range),
 			}
 		"armor":
