@@ -385,7 +385,7 @@ func _build_training(parent: Node) -> void:
 	_queue_top.add_theme_constant_override("separation", CHIP_GAP)
 	_queue_top.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_queue_top.mouse_filter = Control.MOUSE_FILTER_PASS
-	_queue_top.gui_input.connect(_on_queue_input)
+	_queue_top.gui_input.connect(_on_queue_wheel)
 	_train_box.add_child(_queue_top)
 
 	_queue_bot = HBoxContainer.new()
@@ -393,7 +393,7 @@ func _build_training(parent: Node) -> void:
 	_queue_bot.add_theme_constant_override("separation", CHIP_GAP)
 	_queue_bot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_queue_bot.mouse_filter = Control.MOUSE_FILTER_PASS
-	_queue_bot.gui_input.connect(_on_queue_input)
+	_queue_bot.gui_input.connect(_on_queue_wheel)
 	_train_box.add_child(_queue_bot)
 
 	for i in L_SLOTS:
@@ -454,7 +454,7 @@ func _build_training(parent: Node) -> void:
 	_queue_page.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_queue_page.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_queue_page.mouse_filter = Control.MOUSE_FILTER_STOP
-	_queue_page.gui_input.connect(_on_queue_input)
+	_queue_page.gui_input.connect(_on_page_click)
 	_queue_page.visible = false
 	tail.add_child(_queue_page)
 
@@ -499,8 +499,9 @@ func _chip_tip(i: int) -> Dictionary:
 			_target.train_progress, idx == 0)
 
 
-## 队列翻页（点页码 / 滚轮）
-func _on_queue_input(ev: InputEvent) -> void:
+## 队列**只认滚轮**。以前左键也翻页 —— 点格子（哪怕点到格子之间的缝）就会跳到下一页，
+## 玩家完全没想翻页的时候页面自己变了。左键翻页只留给页码那块。
+func _on_queue_wheel(ev: InputEvent) -> void:
 	if not (ev is InputEventMouseButton):
 		return
 	var mb := ev as InputEventMouseButton
@@ -509,12 +510,24 @@ func _on_queue_input(ev: InputEvent) -> void:
 	if mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 		_queue_page_index += 1
 		_sync_queue_page()
+		accept_event()
 	elif mb.button_index == MOUSE_BUTTON_WHEEL_UP:
 		_queue_page_index = maxi(_queue_page_index - 1, 0)
 		_sync_queue_page()
-	elif mb.button_index == MOUSE_BUTTON_LEFT:
-		_queue_page_index += 1
-		_sync_queue_page()
+		accept_event()
+
+
+## 点页码：下一页（点到最后回到第一页）
+func _on_page_click(ev: InputEvent) -> void:
+	if not (ev is InputEventMouseButton):
+		return
+	var mb := ev as InputEventMouseButton
+	if not mb.pressed or mb.button_index != MOUSE_BUTTON_LEFT:
+		return
+	var pages: int = maxi(1, ceili(float(_target.train_queue.size()) / float(L_SLOTS))) \
+			if _target != null and is_instance_valid(_target) else 1
+	_queue_page_index = (_queue_page_index + 1) % pages
+	_sync_queue_page()
 	accept_event()
 
 
