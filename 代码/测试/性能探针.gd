@@ -50,6 +50,13 @@ func _process(delta: float) -> void:
 		"ai": SimpleAI.dbg_usec,
 		"fog": RtsFog.dbg_usec,
 		"hud": RtsHud.dbg_usec,
+		# u.order 的子项：把"这一大块到底谁在吃"拆开
+		"o.acq": RtsUnit.dbg_acquire,
+		"o.gather": RtsUnit.dbg_gather,
+		"o.atk": RtsUnit.dbg_atk,
+		"o.amove": RtsUnit.dbg_amove,
+		"o.goto": RtsUnit.dbg_goto,
+		"o.sgoal": RtsUnit.dbg_sgoal,
 	}
 	var sys_ms := {}
 	for k in sys.keys():
@@ -82,4 +89,24 @@ func _process(delta: float) -> void:
 		# 各子系统"每秒吃掉多少毫秒 CPU"：unit=全部单位逻辑 / ai=四个大脑 / fog / hud
 		"sys": sys_ms,
 	}
+	# 指令分布普查：每拍重算一次，看"到底有多少单位在做贵的事"
+	var hist: Dictionary = {}
+	var mobile: int = 0
+	var idle: int = 0
+	for u in Game.all_units():
+		if u == null or not is_instance_valid(u) or not u is RtsUnit:
+			continue
+		var ru: RtsUnit = u
+		if not ru.is_alive():
+			continue
+		var k: String = str(int(ru.order))
+		hist[k] = int(hist.get(k, 0)) + 1
+		if ru.is_mobile():
+			mobile += 1
+		if int(ru.order) == RtsConst.Order.NONE:
+			idle += 1
+	m["goto_n"] = RtsUnit.dbg_goto_n
+	m["hist"] = hist
+	m["mobile"] = mobile
+	m["idle"] = idle
 	print("PERF2 " + JSON.stringify(m))

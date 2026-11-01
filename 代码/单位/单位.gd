@@ -914,6 +914,28 @@ static var dbg_order: int = 0
 static var dbg_move: int = 0
 static var dbg_sep: int = 0
 static var dbg_ground: int = 0
+## `_update_order` 的子项（用来回答"这 500ms/秒到底花在哪"）：
+##   acquire = 自动索敌（Game.find_nearest_enemy）
+##   gather  = 采集状态机
+##   combat  = 攻击/攻击移动指令
+##   patrol  = 巡逻往返检查
+static var dbg_acquire: int = 0
+static var dbg_gather: int = 0
+static var dbg_combat: int = 0
+static var dbg_atk: int = 0
+static var dbg_amove: int = 0
+static var dbg_goto: int = 0
+static var dbg_sgoal: int = 0
+static var dbg_goto_n: int = 0
+## 指令分布普查（每次采样清零重算）：key = order 枚举值，value = 单位数
+static var dbg_order_hist: Dictionary = {}
+
+
+## 带计时的索敌（`_update_order` 里的调用点统一走它）
+func _acquire_timed(dt: float, radius_scale: float = 1.0) -> void:
+	var t0: int = Time.get_ticks_usec()
+	_acquire(dt, radius_scale)
+	RtsUnit.dbg_acquire += Time.get_ticks_usec() - t0
 
 func _process(delta: float) -> void:
 	if def == null:
@@ -1015,7 +1037,7 @@ func _update_order(dt: float) -> void:
 			# 打完 / 敌人跑出射程就继续走完原指令。
 			# ★ 半径只给 45%：满额 11m 会让"撤退"变成"走两步又折回去打"，
 			#   玩家感受就是"指令不跟手、被旧攻击牵扯"。
-			_acquire(dt, 0.45)
+			_acquire_timed(dt, 0.45)
 			if _moving:
 				state = RtsConst.State.MOVE
 			elif _move_interrupted:
@@ -1029,11 +1051,17 @@ func _update_order(dt: float) -> void:
 				order = RtsConst.Order.NONE
 				state = RtsConst.State.IDLE
 		RtsConst.Order.ATTACK_MOVE:
+			var _a0: int = Time.get_ticks_usec()
 			_order_attack_move(dt)
+			RtsUnit.dbg_amove += Time.get_ticks_usec() - _a0
 		RtsConst.Order.ATTACK:
+			var _k0: int = Time.get_ticks_usec()
 			_order_attack(dt)
+			RtsUnit.dbg_atk += Time.get_ticks_usec() - _k0
 		RtsConst.Order.GATHER:
+			var _g0: int = Time.get_ticks_usec()
 			_order_gather(dt)
+			RtsUnit.dbg_gather += Time.get_ticks_usec() - _g0
 		RtsConst.Order.BUILD:
 			_order_build_tick(dt)
 		RtsConst.Order.REPAIR:
@@ -1042,12 +1070,12 @@ func _update_order(dt: float) -> void:
 			_order_return_res_tick(dt)
 		RtsConst.Order.HOLD:
 			state = RtsConst.State.IDLE
-			_acquire(dt)
+			_acquire_timed(dt)
 		_:
 			# 待机：挨打时自己还手（不主动跑出去找架打）
 			if target == null or not is_instance_valid(target) or not target.is_alive():
 				target = null
-			_acquire(dt)
+			_acquire_timed(dt)
 
 
 ## **状态归约（每帧唯一出口）**：把前面各分支零散写的 `state` 收一次口。
@@ -1318,6 +1346,13 @@ func _resume_after_flee() -> void:
 ##      60Hz 反复起停：速度曲线锯齿、动画 walk/idle 闪、每 0.25s 白算一次全量 A*。
 ##   ③ 被挤开才重启：分离/推挤把单位挤离目标超过半个身位才重新走。
 func _go_to(pos: Vector3, force: bool = false) -> void:
+	RtsUnit.dbg_goto_n += 1
+	var _t_go: int = Time.get_ticks_usec()
+	_go_to_impl(pos, force)
+	RtsUnit.dbg_goto += Time.get_ticks_usec() - _t_go
+
+
+func _go_to_impl(pos: Vector3, force: bool = false) -> void:
 	var want := Vector3(pos.x, 0.0, pos.z)
 	move_target = pos
 	var need_new: bool = force or not _goal_valid or want.distance_to(_goal_req) > GOAL_CHANGE_EPS
@@ -1355,11 +1390,13 @@ func _standable_goal(want: Vector3) -> Vector3:
 	var pf := _pathfinder()
 	if pf == null:
 		return want
+	var _t_sg: int = Time.get_ticks_usec()
 	var r: float = get_radius() * CLEAR_SAFETY
 	# 落点必须留出 GOAL_MARGIN 的余量：站定后还要被同伴推、被分离挤，
 	# 净空刚好 0.5 的落点一推就掉进阻挡判据，然后和 wall_pushout 对拉。
 	if pf.is_standable(want, r + GridPathfinder.GOAL_MARGIN):
 		return want
+	RtsUnit.dbg_sgoal += Time.get_ticks_usec() - _t_sg
 	return pf.standable_near(want, global_position, r, GridPathfinder.GOAL_MARGIN)
 
 
