@@ -290,14 +290,20 @@ func _combat_units(include_workers: bool) -> Array:
 	return out
 
 ## 对面的战斗单位（"能看见" = 全图，本项目没有战争迷雾）。
-## 多队图：**所有敌对阵营一起算**（同队的是盟友，一颗都不能算进来）。
-## ★ **不含中立野怪**（见 `_war_foes()`）—— 8 座地牢几十只豺狼人算进"敌军"，
-##   AI 会以为对面永远兵力碾压自己，整局蹲在家里不出门（实测兵比 0.23 / 需要 1.59）。
+##
+## ★ 两条口径（2026-11-01 修，之前 AI 整局不出门就是这两条一起造成的）：
+##   ① **不含中立野怪**（见 `_war_foes()`）：8 座地牢几十只豺狼人算进"敌军"，
+##      兵比从 1.09 掉到 0.23，AI 永远觉得打不过；
+##   ② **只比"最强的那个对手"**，不是把三家加起来：
+##      四队图里每家只占全场 1/4，把其余三家求和，任何一家都不可能超过 1.0，
+##      于是三家 AI 谁也不出门。RTS 里"能不能打出去"问的是"我 vs 最能打的那家"。
 func _enemy_army() -> Array:
 	var out: Array = []
 	if _faction == null:
 		return out
-	for foe in _war_foes():
+	for foe in [_strongest_foe()]:
+		if foe == null:
+			continue
 		for u in foe.units:
 			if u == null or not is_instance_valid(u):
 				continue
@@ -1338,6 +1344,29 @@ func _foe_faction() -> RtsFaction:
 		var d: float = mine.distance_squared_to(RtsWorld.base_center(f))
 		if d < best_d:
 			best_d = d
+			best = f
+	return best
+
+
+## 最能打的那个敌对阵营（按"活着的战斗单位数"排）。
+## 战略层的对手口径：不打野怪、也不把三家求和（理由见 `_enemy_army()`）。
+func _strongest_foe() -> RtsFaction:
+	var best: RtsFaction = null
+	var best_n: int = -1
+	for f in _war_foes():
+		if f == null:
+			continue
+		var n: int = 0
+		for u in f.units:
+			if u == null or not is_instance_valid(u):
+				continue
+			if not u.is_alive() or u.def == null:
+				continue
+			if u.def.kind != RtsConst.Kind.UNIT or RtsWorld.is_worker_def(u.def):
+				continue
+			n += 1
+		if n > best_n:
+			best_n = n
 			best = f
 	return best
 
