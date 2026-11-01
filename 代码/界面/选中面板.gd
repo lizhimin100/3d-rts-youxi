@@ -93,11 +93,16 @@ class MiniBar extends Control:
 			if f != null:
 				var fs: float = float(_font_size)
 				var tw: float = f.get_string_size(caption, HORIZONTAL_ALIGNMENT_LEFT, -1, _font_size).x
+				# ★ 亮绿/亮红的条身上，白字 + 3px 黑边会糊成一团（黑边把笔画吃掉了）。
+				#   现在先铺一条半透明暗底带，再用 2px 黑边 —— 满血绿底上也清清楚楚。
+				var pad_x: float = 6.0
+				draw_rect(Rect2((rr.size.x - tw) * 0.5 - pad_x, 2.0, tw + pad_x * 2.0,
+						rr.size.y - 4.0), Color(0.0, 0.0, 0.0, 0.42), true)
 				var pos := Vector2((rr.size.x - tw) * 0.5, rr.size.y * 0.5 + fs * 0.36)
-				draw_string_outline(f, pos, caption, HORIZONTAL_ALIGNMENT_LEFT, -1, _font_size, 3,
-						Color(0.0, 0.0, 0.0, 0.85))
+				draw_string_outline(f, pos, caption, HORIZONTAL_ALIGNMENT_LEFT, -1, _font_size, 2,
+						Color(0.0, 0.0, 0.0, 0.90))
 				draw_string(f, pos, caption, HORIZONTAL_ALIGNMENT_LEFT, -1, _font_size,
-						Color(0.98, 0.97, 0.93))
+						Color(1.0, 1.0, 1.0))
 
 
 # ===========================================================================

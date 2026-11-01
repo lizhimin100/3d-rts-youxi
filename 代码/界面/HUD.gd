@@ -351,16 +351,20 @@ func _band_h() -> float:
 	if _mets == null:
 		return 156.0
 	var want: float = _mets.band_h
+	# ★ 面板拿到的实高是 band - BAND_PAD*2（_place 里的上下留白），
+	#   所以内容高要**先补回这条缝**再比，否则"内容 166 / 实高 154"，
+	#   队列小牌会被裁掉下沿（训练视图踩过）。
+	var pad2: float = BAND_PAD * 2.0
 	if _sel_panel != null and is_instance_valid(_sel_panel) and _sel_panel.visible:
-		want = maxf(want, _sel_content_h())
+		want = maxf(want, _sel_content_h() + pad2)
 	# 建筑面板现在在中段（不再是左段的替身），它的内容高度也要算进来
 	if _building_panel != null and is_instance_valid(_building_panel) and _building_panel.visible:
 		if _building_panel.has_method("content_height"):
-			want = maxf(want, float(_building_panel.call("content_height")))
+			want = maxf(want, float(_building_panel.call("content_height")) + pad2)
 	if _card_panel != null and _card_panel.visible:
 		want = maxf(want, _card_height())
 	if _sel_grid != null and _grid_panel != null and _grid_panel.visible:
-		want = maxf(want, float(_sel_grid.call("content_height")))
+		want = maxf(want, float(_sel_grid.call("content_height")) + pad2)
 	return clampf(want, _mets.band_h, _mets.band_max_h)
 
 

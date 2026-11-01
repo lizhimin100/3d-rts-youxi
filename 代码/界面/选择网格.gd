@@ -29,7 +29,10 @@ const COLS: int = 12
 const ROWS: int = 2
 const PAGE_SIZE: int = 24
 ## 数值铭牌高度（大号：图标 26 + 数字 28px）
-const STAT_H: float = 52.0
+## 数值铭牌高度：28px 数字 + 12px 中文小标（"攻击 / 护甲 / 移速"）。
+## 光有图标 + 数字，第一次玩的人得靠猜；加一行小标就一眼读得懂，
+## 数字本身仍然是 28px —— 显眼和好读不冲突。
+const STAT_H: float = 72.0
 ## 标题行高度
 const HEAD_H: float = 26.0
 
@@ -43,6 +46,8 @@ var _stats_box: HBoxContainer = null
 var _stat_chips: Array[PanelContainer] = []
 var _stat_icons: Array[Control] = []
 var _stat_vals: Array[Label] = []
+## 数字下面的中文小标（攻击 / 护甲 / 移速 …）
+var _stat_caps: Array[Label] = []
 var _stats_sig: String = ""
 
 ## 当前页面里的格子
@@ -118,12 +123,10 @@ func ensure_built() -> void:
 	_title.clip_text = true
 	_title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	_title.custom_minimum_size = Vector2(72.0, 0.0)
+	# ★ clip_text + 固定最小宽 ⇒ HBox 只给它 72px，"步兵 ×4" 会被截成"步兵"。
+	#   让它自己吃满剩余宽度（弹性留白那格就多余了，删掉），页标靠右。
+	_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(_title)
-
-	var grow := Control.new()
-	grow.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	grow.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	head.add_child(grow)
 
 	_page_label = Spec.label("", Spec.FS_BODY, Spec.text_dim())
 	_page_label.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -152,7 +155,8 @@ func _build_stats(parent: Node) -> void:
 	_stats_box = HBoxContainer.new()
 	_stats_box.name = "数值"
 	_stats_box.add_theme_constant_override("separation", 8)
-	_stats_box.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	# 竖向撑满（底栏比内容高时，铭牌吃掉多余高度）
+	_stats_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_stats_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_stats_box.visible = false
 	parent.add_child(_stats_box)
@@ -164,6 +168,7 @@ func _build_stats(parent: Node) -> void:
 		chip.name = "数值%d" % i
 		chip.custom_minimum_size = Vector2(120.0, STAT_H)
 		chip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		chip.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		chip.add_theme_stylebox_override("panel",
 				Spec.bevel_style(Color(0.070, 0.078, 0.096, 0.96), Color(0, 0, 0, 0), 5,
@@ -185,11 +190,25 @@ func _build_stats(parent: Node) -> void:
 		row.add_child(ic)
 		_stat_icons.append(ic)
 
+		# 数字 + 小标竖排：数字照旧 28px，下面一行 "攻击 / 护甲 / 移速"
+		var col := VBoxContainer.new()
+		col.name = "数字列"
+		col.add_theme_constant_override("separation", -2)
+		col.alignment = BoxContainer.ALIGNMENT_CENTER
+		col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(col)
+
 		var v := Spec.label("-", Spec.FS_HERO, Color(0.96, 0.92, 0.79))
 		v.add_theme_font_override("font", Spec.mono_font())
 		v.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		row.add_child(v)
+		col.add_child(v)
 		_stat_vals.append(v)
+
+		var cap := Spec.label("", Spec.FS_CAPTION, Spec.text_dim())
+		cap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		cap.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		col.add_child(cap)
+		_stat_caps.append(cap)
 
 
 # ===========================================================================
@@ -272,7 +291,21 @@ func _rebuild() -> void:
 		var d: UnitDef = (_units[0] as Node3D).def
 		_title.text = d.display_name if d != null else "单位"
 		return
-	_title.text = "队伍 %d" % _units.size()
+	var same_id: StringName = &""
+	var same: bool = true
+	for u in _units:
+		var ud: UnitDef = (u as Node3D).def if u is Node3D else null
+		var uid: StringName = ud.id if ud != null else &""
+		if same_id == &"":
+			same_id = uid
+		elif uid != same_id:
+			same = false
+			break
+	var nm2: String = ""
+	if same and same_id != &"":
+		var d0: UnitDef = Cfg.unit(same_id) if Cfg.game != null else null
+		nm2 = d0.display_name if d0 != null else String(same_id)
+	_title.text = ("%s ×%d" % [nm2, _units.size()]) if nm2 != "" else "部队 %d" % _units.size()
 	var from: int = _page * PAGE_SIZE
 	var to: int = mini(_units.size(), from + PAGE_SIZE)
 	for i in range(from, to):
@@ -404,6 +437,8 @@ func _sync_stats() -> void:
 		Spec.set_icon(_stat_icons[i], String(s.get("icon", "sword")), col)
 		_stat_vals[i].text = String(s.get("text", "-"))
 		_stat_vals[i].add_theme_color_override("font_color", col.lerp(Color(1, 1, 1), 0.55))
+		if i < _stat_caps.size():
+			_stat_caps[i].text = String(s.get("name", ""))
 
 
 ## 兵种/建筑 → 三项数值。
@@ -415,33 +450,42 @@ func _stats_of(d: UnitDef) -> Array:
 	if d.is_building():
 		if d.can_attack():
 			return [
-				{"icon": "sword", "color": Color(0.98, 0.62, 0.42),
+				{"icon": "sword", "name": "攻击", "color": Color(0.98, 0.62, 0.42),
 					"text": _fmt(d.attack_damage), "tip": "攻击力（每 %.1fs 一发）" % d.attack_cooldown},
-				{"icon": "bow", "color": Color(0.86, 0.80, 0.52),
+				{"icon": "bow", "name": "射程", "color": Color(0.86, 0.80, 0.52),
 					"text": "%dm" % int(round(d.attack_range)), "tip": "射程"},
-				{"icon": "eye", "color": Color(0.66, 0.86, 0.92),
+				{"icon": "eye", "name": "视野", "color": Color(0.66, 0.86, 0.92),
 					"text": "%dm" % int(round(d.sight_range)), "tip": "视野"},
 			]
 		var out: Array = [
-			{"icon": "eye", "color": Color(0.66, 0.86, 0.92),
-				"text": "%dm" % int(round(d.sight_range)), "tip": "视野（无攻击，只负责看）"},
-			{"icon": "shield", "color": Color(0.62, 0.78, 0.98),
+			{"icon": "shield", "name": "护甲", "color": Color(0.62, 0.78, 0.98),
 				"text": _fmt(d.armor), "tip": "护甲"},
+			{"icon": "eye", "name": "视野", "color": Color(0.66, 0.86, 0.92),
+				"text": "%dm" % int(round(d.sight_range)), "tip": "视野（无攻击，只负责看）"},
 		]
 		if d.food_provided > 0:
-			out.append({"icon": "house", "color": Color(0.80, 0.88, 0.66),
+			out.append({"icon": "house", "name": "人口", "color": Color(0.80, 0.88, 0.66),
 				"text": "+%d" % d.food_provided, "tip": "提供人口上限"})
+		elif d.detect_radius > 0.0:
+			out.append({"icon": "eye", "name": "预警", "color": Color(0.98, 0.78, 0.52),
+				"text": "%dm" % int(round(d.detect_radius)), "tip": "敌人进入这个范围会报点"})
+		elif not d.researches.is_empty():
+			out.append({"icon": "upgrade", "name": "可研究", "color": Color(0.86, 0.78, 1.0),
+				"text": "%d 项" % d.researches.size(), "tip": "这栋楼能研究 %d 项科技" % d.researches.size()})
+		elif not d.trains.is_empty():
+			out.append({"icon": "gear", "name": "可训练", "color": Color(0.80, 0.80, 0.76),
+				"text": "%d 种" % d.trains.size(), "tip": "这栋楼能训练 %d 种单位" % d.trains.size()})
 		else:
-			out.append({"icon": "gear", "color": Color(0.80, 0.80, 0.76),
+			out.append({"icon": "gear", "name": "建造", "color": Color(0.80, 0.80, 0.76),
 				"text": "%ds" % int(round(d.train_time)), "tip": "建造耗时"})
 		return out
 	return [
-		{"icon": "sword", "color": Color(0.98, 0.62, 0.42),
+		{"icon": "sword", "name": "攻击", "color": Color(0.98, 0.62, 0.42),
 			"text": _fmt(d.attack_damage) if d.attack_damage > 0.0 else "—",
 			"tip": "攻击力" if d.attack_damage > 0.0 else "没有攻击能力"},
-		{"icon": "shield", "color": Color(0.62, 0.78, 0.98),
+		{"icon": "shield", "name": "护甲", "color": Color(0.62, 0.78, 0.98),
 			"text": _fmt(d.armor), "tip": "护甲"},
-		{"icon": "move", "color": Color(0.72, 0.88, 0.56),
+		{"icon": "move", "name": "移速", "color": Color(0.72, 0.88, 0.56),
 			"text": _fmt(d.move_speed), "tip": "移动速度（米/秒）"},
 	]
 

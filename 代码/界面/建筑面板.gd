@@ -26,7 +26,7 @@ const QUEUE_MAX := 5
 ## 当前训练条高度
 const BAR_H := 26.0
 ## 队列格高度（图标 + 自己那条进度）
-const CHIP_H := 40.0
+const CHIP_H := 46.0
 
 
 # ===========================================================================
@@ -98,6 +98,11 @@ var _compact: bool = false
 
 var _root: VBoxContainer = null
 
+# --- 标题（建筑名 + 状态尾巴）---
+var _head_row: HBoxContainer = null
+var _name_label: Label = null
+var _head_hint: Label = null
+
 # --- 训练 ---
 var _train_box: VBoxContainer = null
 var _train_cap: Label = null
@@ -122,6 +127,8 @@ var _build_bar: Bar = null
 # --- 属性（不产兵的楼）---
 var _stats_box: HBoxContainer = null
 var _stat_labels: Array[Label] = []
+## 数字下面的中文小标（护甲 / 视野 / 人口 …）
+var _stat_caps: Array[Label] = []
 var _stat_icons: Array[Control] = []
 var _stats_sig: String = ""
 
@@ -182,6 +189,7 @@ func ensure_built() -> void:
 	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_root)
 
+	_build_head(_root)
 	_build_construction(_root)
 	_build_training(_root)
 	_build_research(_root)
@@ -195,6 +203,37 @@ func set_metrics(w: float, h_single: float, _h_multi: float, compact: bool) -> v
 	_compact = compact
 	# 高度下限用调用方给的实测值，**不要** reset_size()（会把 HUD 摆好的 offset 覆盖）
 	custom_minimum_size = Vector2(_panel_w, maxf(H_MIN, h_single))
+
+
+# ---------------------------------------------------------------------------
+# 标题行：**这栋楼叫什么**
+#
+# 单位面板的标题行写"步兵"，建筑面板以前没有这一行 ——
+# 三点几秒的队列在眼前刷，玩家却不知道自己在看哪栋楼（尤其图标小的时候）。
+# 右边那个小字是状态尾巴（"待训练 / 队列 2/5 / 建造中 40%"）。
+# ---------------------------------------------------------------------------
+func _build_head(parent: Node) -> void:
+	_head_row = HBoxContainer.new()
+	_head_row.name = "标题"
+	_head_row.add_theme_constant_override("separation", 8)
+	_head_row.custom_minimum_size = Vector2(0.0, 26.0)
+	_head_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(_head_row)
+
+	_name_label = Spec.label("建筑", Spec.FS_TITLE, Spec.text_main())
+	_name_label.clip_text = true
+	# ★ clip_text=true 会把最小宽度压成 0 —— 必须给一个下限，
+	#   否则 HBox 里的弹性留白把名字挤成 0 宽（第一版就是这样"名字看不见"）。
+	_name_label.custom_minimum_size = Vector2(84.0, 0.0)
+	# 同上：clip_text 会把宽度压到最小宽，"神秘圣地" 这种四字名会被截掉最后一个字。
+	_name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_head_row.add_child(_name_label)
+
+	_head_hint = Spec.label("", Spec.FS_BODY, Spec.text_dim())
+	_head_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_head_row.add_child(_head_hint)
 
 
 # ---------------------------------------------------------------------------
@@ -267,7 +306,7 @@ func _build_training(parent: Node) -> void:
 		chip.visible = false
 		# 定宽不拉伸：只排 1~2 个兵时，EXPAND 会把两格拉成两条长跑道；
 		# 固定 68 宽 + 末尾留白，5 格时仍然是"一排小牌"的观感。
-		chip.custom_minimum_size = Vector2(68.0, CHIP_H)
+		chip.custom_minimum_size = Vector2(76.0, CHIP_H)
 		chip.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 		chip.add_theme_stylebox_override("panel",
 				Spec.inset_style(Color(0.135, 0.118, 0.094, 0.96), 4,
@@ -278,7 +317,7 @@ func _build_training(parent: Node) -> void:
 		chip.add_child(vb)
 		var ico := TextureRect.new()
 		ico.name = "头像"
-		ico.custom_minimum_size = Vector2(22.0, 22.0)
+		ico.custom_minimum_size = Vector2(26.0, 26.0)
 		ico.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		ico.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		ico.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
@@ -327,7 +366,8 @@ func _build_stats(parent: Node) -> void:
 	_stats_box = HBoxContainer.new()
 	_stats_box.name = "属性"
 	_stats_box.add_theme_constant_override("separation", 8)
-	_stats_box.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	# 竖向撑满：底栏比内容高，让铭牌吃掉多余高度，别在下面留一条空带
+	_stats_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_stats_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	parent.add_child(_stats_box)
 
@@ -336,6 +376,7 @@ func _build_stats(parent: Node) -> void:
 		chip.name = "属性%d" % i
 		chip.custom_minimum_size = Vector2(120.0, 52.0)
 		chip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		chip.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		chip.add_theme_stylebox_override("panel",
 				Spec.bevel_style(Color(0.070, 0.078, 0.096, 0.96), Color(0, 0, 0, 0), 5,
@@ -354,11 +395,24 @@ func _build_stats(parent: Node) -> void:
 		row.add_child(ic)
 		_stat_icons.append(ic)
 
+		# 数字 + 中文小标（"护甲 / 视野 / 人口"）——和单位那三块同一种铭牌
+		var colv := VBoxContainer.new()
+		colv.add_theme_constant_override("separation", -2)
+		colv.alignment = BoxContainer.ALIGNMENT_CENTER
+		colv.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(colv)
+
 		var v := Spec.label("-", Spec.FS_HERO, Color(0.96, 0.92, 0.79))
 		v.add_theme_font_override("font", _mono)
 		v.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		row.add_child(v)
+		colv.add_child(v)
 		_stat_labels.append(v)
+
+		var cap := Spec.label("", Spec.FS_CAPTION, Spec.text_dim())
+		cap.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		cap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		colv.add_child(cap)
+		_stat_caps.append(cap)
 
 
 # ===========================================================================
@@ -372,7 +426,10 @@ func desired_height() -> float:
 
 func content_height() -> float:
 	ensure_built()
-	var need: float = _root.get_combined_minimum_size().y + 16.0 + 4.0
+	# +24 = 段底 stylebox 上下各 8 + 一点余量。
+	# 以前只加 20，训练视图（标题 26 + 训练行 22 + 大条 26 + 队列牌 46 + 间距）刚好差 2px，
+	# 结果队列小牌的下沿被面板裁掉一条 —— 看着像"卡在边线上"。
+	var need: float = _root.get_combined_minimum_size().y + 24.0
 	return clampf(need, 118.0, 200.0)
 
 
@@ -432,13 +489,15 @@ func _process(_delta: float) -> void:
 # ===========================================================================
 
 func _rebuild_entries(d: UnitDef) -> void:
-	var can_train: bool = d != null and not d.trains.is_empty()
 	var can_research: bool = d != null and not d.researches.is_empty()
-	_train_box.visible = can_train
 	_research_box.visible = can_research
-	# 属性块：**这栋楼不产兵时**才显示（护甲/视野/人口）——玩家口径：
-	# "没有训练单位就显示建筑护甲"。能产兵的楼中间留给队列，护甲去命令卡看。
-	_stats_box.visible = not can_train and d != null
+	_head_row.visible = true
+	_name_label.text = d.display_name if d != null else "建筑"
+	# 训练区 / 属性块的显隐**每帧按队列状态**决定，见 _sync_mode()：
+	#   有活干 = 队列非空或在训练 → 队列视图；
+	#   闲着（或这栋楼根本不产兵）→ 三个大数值（护甲/视野/人口），
+	#   照玩家口径："没有训练单位就显示建筑护甲"。
+	_sync_mode()
 	_stats_sig = ""
 
 
@@ -451,10 +510,53 @@ func _sync_all() -> void:
 		_show_idle()
 		return
 	var d: UnitDef = _target.def
+	_sync_head()
+	_sync_mode()
 	_sync_construction(d)
 	_sync_training()
 	_sync_research()
 	_sync_stats(d)
+
+
+## 标题右上角的状态尾巴：一句"现在在干什么"
+func _sync_head() -> void:
+	if _head_row == null:
+		return
+	var researching: bool = false
+	if _target.has_method("is_researching"):
+		researching = bool(_target.call("is_researching"))
+	var txt: String = "闲置"
+	if not _target.is_constructed:
+		txt = "建造中 %d%%" % int(round(clampf(_target.progress, 0.0, 1.0) * 100.0))
+	elif researching:
+		txt = "研究中"
+	else:
+		if not _target.train_queue.is_empty():
+			txt = "训练中"
+	if _head_hint.text != txt:
+		_head_hint.text = txt
+
+
+## 中段到底摆什么：队列视图 / 数值视图。
+## 玩家口径原话："训练队列和训练进度条等信息放到中间（没有训练单位就显示建筑护甲）"。
+func _sync_mode() -> void:
+	var d: UnitDef = _target.def if _target != null and is_instance_valid(_target) else null
+	var can_train: bool = d != null and not d.trains.is_empty()
+	var busy: bool = false
+	if can_train and _target != null:
+		busy = not _target.train_queue.is_empty() or _target.current_training() != &""
+	if _train_box.visible != (can_train and busy):
+		_train_box.visible = can_train and busy
+	if _stats_box.visible != (d != null and not (can_train and busy)):
+		_stats_box.visible = d != null and not (can_train and busy)
+	# 研究区只在**真的在研究中**出现（带进度条）。
+	# 空闲时那一行"武器锻造 0/5"和右边命令卡上的按钮完全重复，
+	# 摆在中间只会把"名字 + 数值"挤下去 —— 中段是信息栏，不是第二张命令卡。
+	var researching: bool = false
+	if _target != null and _target.has_method("is_researching"):
+		researching = bool(_target.call("is_researching"))
+	if _research_box.visible != researching:
+		_research_box.visible = researching
 
 
 func _sync_construction(d: UnitDef) -> void:
@@ -463,7 +565,8 @@ func _sync_construction(d: UnitDef) -> void:
 	if not constructing:
 		return
 	var p: float = clampf(_target.progress, 0.0, 1.0)
-	var total: float = float(d.get("build_time")) if d != null and d.get("build_time") != null else 0.0
+	# ★ 建造时长就是 def.train_time（RtsBuilding 里同口径），UnitDef 没有 build_time 字段
+	var total: float = maxf(d.train_time, 0.5) if d != null else 0.0
 	var rest: float = maxf(1.0 - p, 0.0) * total
 	_build_cap.text = "建造中 %d%%　·　剩余 %.0fs" % [int(round(p * 100.0)), rest] if total > 0.0 \
 			else "建造中 %d%%" % int(round(p * 100.0))
@@ -550,25 +653,40 @@ func _sync_stats(d: UnitDef) -> void:
 		_stat_labels[i].text = String(s.get("text", "-"))
 		_stat_labels[i].add_theme_color_override("font_color",
 				(s.get("color", Color(0.9, 0.88, 0.8)) as Color).lerp(Color(1, 1, 1), 0.55))
+		if i < _stat_caps.size():
+			_stat_caps[i].text = String(s.get("name", ""))
 
 
-## 建筑属性三项：护甲 / 视野 /（人口 或 建造耗时）
+## 建筑属性三项：护甲 / 视野 /（人口 → 攻击 → 可研究 → 可训练 → 建造耗时）
+##
+## 第三格以前写死"建造耗时"，一栋早就盖好的兵营还在报 "25s"，
+## 等于占着最显眼的位置说废话。现在按"这栋楼到底能干什么"往下滑。
 func _stats_of(d: UnitDef) -> Array:
 	var out: Array = [
-		{"icon": "shield", "color": Color(0.62, 0.78, 0.98),
+		{"icon": "shield", "name": "护甲", "color": Color(0.62, 0.78, 0.98),
 			"text": _num(d.armor), "tip": "护甲"},
-		{"icon": "eye", "color": Color(0.66, 0.86, 0.92),
+		{"icon": "eye", "name": "视野", "color": Color(0.66, 0.86, 0.92),
 			"text": "%dm" % int(round(d.sight_range)), "tip": "视野"},
 	]
 	if d.food_provided > 0:
-		out.append({"icon": "house", "color": Color(0.80, 0.88, 0.66),
+		out.append({"icon": "house", "name": "人口", "color": Color(0.80, 0.88, 0.66),
 			"text": "+%d" % d.food_provided, "tip": "提供人口上限"})
 	elif d.can_attack():
-		out.append({"icon": "sword", "color": Color(0.98, 0.62, 0.42),
+		out.append({"icon": "sword", "name": "攻击", "color": Color(0.98, 0.62, 0.42),
 			"text": "%s / %.1fs" % [_num(d.attack_damage), d.attack_cooldown],
 			"tip": "攻击力 / 射击间隔"})
+	elif d.detect_radius > 0.0:
+		# 哨塔：不能打，但敌人一进这个圈就报点
+		out.append({"icon": "eye", "name": "预警", "color": Color(0.98, 0.78, 0.52),
+			"text": "%dm" % int(round(d.detect_radius)), "tip": "敌人进入这个范围会报点"})
+	elif not d.researches.is_empty():
+		out.append({"icon": "upgrade", "name": "可研究", "color": Color(0.86, 0.78, 1.0),
+			"text": "%d 项" % d.researches.size(), "tip": "这栋楼能研究 %d 项科技" % d.researches.size()})
+	elif not d.trains.is_empty():
+		out.append({"icon": "gear", "name": "可训练", "color": Color(0.80, 0.80, 0.76),
+			"text": "%d 种" % d.trains.size(), "tip": "这栋楼能训练 %d 种单位" % d.trains.size()})
 	else:
-		out.append({"icon": "gear", "color": Color(0.80, 0.80, 0.76),
+		out.append({"icon": "gear", "name": "建造", "color": Color(0.80, 0.80, 0.76),
 			"text": "%ds" % int(round(d.train_time)), "tip": "建造耗时"})
 	return out
 
@@ -582,6 +700,7 @@ func _num(v: float) -> String:
 func _show_idle() -> void:
 	if not _built:
 		return
+	_head_row.visible = false
 	_build_box.visible = false
 	_train_box.visible = false
 	_research_box.visible = false
