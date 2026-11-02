@@ -45,7 +45,7 @@
 ## 三、改完怎么验（都在工程根目录跑）
 
 ```powershell
-$g = 'E:/Program Files (x86)/Steam/steamapps/common/Godot Engine/godot.cmd'
+$g = 'D:/youxi/anzhuang/steamapps/common/Godot Engine/godot.windows.opt.tools.64.exe'
 & $g --headless --path . --quit-after 200 -- --qa-terrain          # 地形/出生点体检
 & $g --headless --path . --script 代码/测试/界面自检.gd             # UI 8 项
 & $g --headless --path . --script 代码/测试/建造自检.gd             # 建造 23 项

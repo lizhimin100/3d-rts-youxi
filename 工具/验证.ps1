@@ -18,9 +18,9 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
-$godot = 'E:\Program Files (x86)\Steam\steamapps\common\Godot Engine\godot.cmd'
+$godot = 'D:\youxi\anzhuang\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe'
 if (-not (Test-Path $godot)) {
-    $found = Get-ChildItem 'C:\Program Files','D:\','E:\' -Filter 'godot*.exe' -Recurse -Depth 4 -ErrorAction SilentlyContinue |
+    $found = Get-ChildItem 'C:\Program Files','D:\','E:\' -Filter 'godot*.exe' -Recurse -Depth 6 -ErrorAction SilentlyContinue |
         Select-Object -First 1
     if ($found) { $godot = $found.FullName } else { Write-Error "找不到 Godot 可执行文件"; exit 1 }
 }
