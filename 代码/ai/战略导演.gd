@@ -15,6 +15,8 @@ extends RefCounted
 
 ## 计划最短停留时间（秒）；优先级 >= 90 的除外
 const PLAN_MIN_SECONDS: float = 8.0
+## 战略权重开关（A/B/C，见 代码/配置/AI战略权重.gd）。默认 A = 现状。
+const AIW := preload("res://代码/配置/AI战略权重.gd")
 ## 出击需要的战力比基准（越难的 AI 越敢打）
 const ATTACK_RATIO_BASE: float = 1.35
 ## "家底够了就敢打"的阈值：总战力到这个数就不再看兵力比（只要求不落后）。
@@ -36,6 +38,10 @@ var _changes: int = 0
 var skill: float = 1.0
 ## 最近一次算出的指标（调试 / 自检读它）
 var metrics: Dictionary = {}
+## C 模式用的"距上次成功出击过了多久"（由 简单AI 每 tick 灌进来）
+var _locked_sec: float = 0.0
+## 本次算出的门槛（报告/日志读它；A/B 下等于 _attack_ratio_needed 的原始值）
+var _ratio_need: float = 0.0
 
 
 func setup(plans: Array, difficulty_index: int) -> void:
@@ -51,6 +57,7 @@ func setup(plans: Array, difficulty_index: int) -> void:
 ##   faction / army / enemy_army / workers / idle_workers / threat_units /
 ##   under_attack / now / combat
 func update(ctx: Dictionary) -> Dictionary:
+	_locked_sec = float(ctx.get("attack_locked_sec", 0.0))
 	var m: Dictionary = build_metrics(ctx)
 	metrics = m
 	var chosen: Dictionary = _select(m, float(ctx.get("now", 0.0)))
@@ -72,6 +79,9 @@ func update(ctx: Dictionary) -> Dictionary:
 		"research": bool(params.get("research", false)),
 		"allow_attack": _compute_allow_attack(m, aggr),
 		"attack_ratio_needed": _attack_ratio_needed(),
+		# 归因用：这一 tick 用的是哪个分母口径 / 已经多久没打出去
+		"ratio_mode": AIW.mode(),
+		"attack_locked_sec": _locked_sec,
 		"base_threat": threat,
 		"army_ratio": float(m["army_ratio"]),
 		"metrics": m,
@@ -95,7 +105,12 @@ func build_metrics(ctx: Dictionary) -> Dictionary:
 	var ratio: float = UNKNOWN_RATIO
 	var my_value: float = 0.0
 	if combat != null:
-		ratio = combat.ratio(army, enemy_army)
+		# 门下槛的分母可以和"选兵画像"用不同的队列：B 模式换分母时，
+		# 兵种克制画像仍取最强的那家（否则生产决策一起变，A/B 不可归因）。
+		var ratio_army: Array = ctx.get("ratio_enemy_army", enemy_army)
+		if ratio_army == null:
+			ratio_army = enemy_army
+		ratio = combat.ratio(army, ratio_army)
 		if ratio < 0.0:
 			ratio = CLEARED_RATIO if army.size() >= 3 else UNKNOWN_RATIO
 		my_value = combat.army_value(army, combat.profile(enemy_army))
@@ -226,7 +241,9 @@ func _test(c: Dictionary, m: Dictionary) -> bool:
 # ===========================================================================
 
 func _attack_ratio_needed() -> float:
-	return clampf(ATTACK_RATIO_BASE / maxf(skill, 0.1), 1.05, 1.9)
+	var base: float = clampf(ATTACK_RATIO_BASE / maxf(skill, 0.1), 1.05, 1.9)
+	_ratio_need = AIW.apply_decay(base, _locked_sec)
+	return _ratio_need
 
 
 ## 能不能主动出击。两个"可以打"的理由，任一成立即可：

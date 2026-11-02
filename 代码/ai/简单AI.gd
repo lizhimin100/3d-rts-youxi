@@ -19,6 +19,8 @@ extends Node
 
 ## 日志前缀（只在关键决策打印，不刷屏）
 const LOG_PREFIX: String = "[AI]"
+## 战略权重开关（分母取法 A/B/C）。默认 A = 现状；bench 用 --ratio-mode 覆盖。
+const AIW := preload("res://代码/配置/AI战略权重.gd")
 ## 大本营最多排几个农民（农民便宜，排两个不心疼）
 const MAX_QUEUE_PEASANT: int = 2
 ## 兵营最多排几个兵。
@@ -83,6 +85,9 @@ var _patrol_cd: float = 0.0
 var _next_wave_at: float = 0.0
 ## 已发起波数
 var _wave_index: int = 0
+## 上次成功出击的时刻（秒，Game.elapsed 口径）。C 模式的衰减时钟用它，
+## 也是"上一次真的打出去是什么时候"的唯一依据（不另存一份状态）。
+var _last_attack_t: float = 0.0
 ## 回防冷却
 var _defend_cd: float = 0.0
 ## 是否已初始化（打印过一次开局日志）
@@ -142,6 +147,7 @@ func _init_wave_clock() -> void:
 	var diff: DifficultyDef = Cfg.difficulty(Game.difficulty_index)
 	_next_wave_at = diff.first_wave_delay
 	_wave_index = 0
+	_last_attack_t = 0.0   # C 模式时钟：从开局算"已经多久没打出去"
 
 ## 性能计时（探针读它）
 static var dbg_usec: int = 0
@@ -248,6 +254,12 @@ func _build_ctx(diff: DifficultyDef, now: float) -> Dictionary:
 		"dt": maxf(diff.think_interval * think_scale, 0.1),
 		"army": army,
 		"enemy_army": enemy_army,
+		# 出击门槛的**分母专用**敌军队列（A/B/C 开关只改这一条，不改选兵/战术）。
+		# 单独一个键是为了让 B 模式换分母时，兵种克制画像仍看"最强的那家"——
+		# 否则 A/B 两组的生产决策会一起变，数字没法归因到"门槛"上。
+		"ratio_enemy_army": _ratio_foe_army(),
+		# 距上次成功出击过了多久（C 模式的衰减时钟）
+		"attack_locked_sec": maxf(0.0, now - _last_attack_t),
 		"workers": workers,
 		"idle_workers": idle,
 		"threat_units": _threat_units(),
@@ -307,22 +319,57 @@ func _combat_units(include_workers: bool) -> Array:
 ##      四队图里每家只占全场 1/4，把其余三家求和，任何一家都不可能超过 1.0，
 ##      于是三家 AI 谁也不出门。RTS 里"能不能打出去"问的是"我 vs 最能打的那家"。
 func _enemy_army() -> Array:
+	return _combat_units_of(_strongest_foe())
+
+
+## 某阵营的"能打的人"（不含农民、不含建筑）。
+## 抽出来是因为 _enemy_army / _strongest_foe / _ratio_foe_army 三处**必须同一把尺**，
+## 否则"最强的那家"和"门槛的分母"会指向不同的队伍，A/B 对照就不可信了。
+func _combat_units_of(f: RtsFaction) -> Array:
 	var out: Array = []
-	if _faction == null:
+	if f == null:
 		return out
-	for foe in [_strongest_foe()]:
-		if foe == null:
+	for u in f.units:
+		if u == null or not is_instance_valid(u):
 			continue
-		for u in foe.units:
-			if u == null or not is_instance_valid(u):
-				continue
-			if not u.is_alive() or u.def == null:
-				continue
-			if u.def.kind != RtsConst.Kind.UNIT:
-				continue
-			if RtsWorld.is_worker_def(u.def):
-				continue
-			out.append(u)
+		if not u.is_alive() or u.def == null:
+			continue
+		if u.def.kind != RtsConst.Kind.UNIT:
+			continue
+		if RtsWorld.is_worker_def(u.def):
+			continue
+		out.append(u)
+	return out
+
+
+## **出击门槛的分母**（A/B/C 开关的唯一落点）。
+##   A 最强 —— 现状；C 也用最强，区别只在阈值（见 战略导演._attack_ratio_needed）
+##   B 次强 —— 次强的人数 ≥ 最强 × SECOND_GATE 才换分母，否则退回最强
+##
+## ★ 只改"跟谁比"，不改兵种/战术。B 换分母时 `_enemy_army()` 仍然给最强的那家，
+##   所以选兵用的克制画像不受影响（A/B 的差异才能干净地归因到"出击门槛"）。
+func _ratio_foe_army() -> Array:
+	if _faction == null:
+		return []
+	var ranked: Array = _ranked_war_foes()
+	if ranked.is_empty():
+		return []
+	if AIW.mode() == AIW.MODE_SECOND and ranked.size() >= 2:
+		var top_n: int = int(ranked[0]["n"])
+		var second_n: int = int(ranked[1]["n"])
+		if top_n > 0 and float(second_n) >= float(top_n) * AIW.SECOND_GATE:
+			return _combat_units_of(ranked[1]["faction"])
+	return _combat_units_of(ranked[0]["faction"])
+
+
+## 敌对阵营按"活着的战斗单位数"降序（口径与 _strongest_foe 完全一致）
+func _ranked_war_foes() -> Array:
+	var out: Array = []
+	for f in _war_foes():
+		if f == null:
+			continue
+		out.append({"faction": f, "n": _combat_units_of(f).size()})
+	out.sort_custom(func(a, b): return int(a["n"]) > int(b["n"]))
 	return out
 
 ## 压在我方建筑 DEFENSE_RADIUS 内的敌方战斗单位（跨全部敌对阵营）
@@ -1022,6 +1069,9 @@ func _manage_waves(diff: DifficultyDef) -> void:
 			_sched.move([u], home + Vector3(cos(ang) * 16.0, 0.0, sin(ang) * 16.0), "wave")
 
 	_wave_index += 1
+	# C 模式的衰减时钟在这里归零：**真的打出去了**才算"成功出击"。
+	# 只是拿到许可但没出兵（兵力不足/骰子没过）不归零，否则门槛会被反复重置成 1.59。
+	_last_attack_t = Game.elapsed
 	var interval: float = maxf(
 		diff.wave_interval - diff.wave_interval_decay * float(_wave_index),
 		diff.wave_interval_min)
@@ -1365,15 +1415,7 @@ func _strongest_foe() -> RtsFaction:
 	for f in _war_foes():
 		if f == null:
 			continue
-		var n: int = 0
-		for u in f.units:
-			if u == null or not is_instance_valid(u):
-				continue
-			if not u.is_alive() or u.def == null:
-				continue
-			if u.def.kind != RtsConst.Kind.UNIT or RtsWorld.is_worker_def(u.def):
-				continue
-			n += 1
+		var n: int = _combat_units_of(f).size()
 		if n > best_n:
 			best_n = n
 			best = f
