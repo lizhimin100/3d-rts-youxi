@@ -345,6 +345,11 @@ func _mount_tests() -> void:
 		_mount_script("res://代码/测试/升级自检.gd", "升级自检")
 	if "--adjutant-test" in args:
 		_mount_script("res://代码/测试/副官自检.gd", "副官自检")
+	# AI 基准（固定条件真实对局 + 情况文本 dump）：只读量测，不改 AI 行为
+	for a in args:
+		if a == "--ai-bench" or a.begins_with("--ai-bench"):
+			_mount_script("res://代码/测试/AI基准.gd", "AI基准")
+			break
 	if "--walk-test" in args:
 		_mount_script("res://代码/测试/走姿验收.gd", "走姿验收")
 	if "--map-editor-test" in args:

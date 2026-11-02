@@ -1,0 +1,587 @@
+extends Node
+## **AI 基准（--ai-bench）**：固定条件跑一局**真实对局**，采集 P0 指标 + 情况文本 dump。
+##
+## 定位（本轮纪律）：
+##   · 这是**量测工具**，不是 AI 的一部分 —— 只读状态、订全局信号，不改任何 AI 行为文件；
+##   · 情况文本（--dump-situations）由引擎在对局中现场生成，**禁止**人工编写/润色；
+##   · 复用 AUTOTEST 的输出口径：结尾打印一行 `AI-BENCH {json}`，方便脚本 grep。
+##
+## 用法（全部参数走 `--` 之后的 user args，与主场景 _parse_cmdline 同一口径）：
+##   godot --headless --fixed-fps 60 --path . --quit-after 20000 -- \
+##       --ai-bench --seed=1 --minutes=8 --speed=8 \
+##       --map=res://地图/主场景地图.tres \
+##       [--dump-situations=res://_qa/situations_1.jsonl]
+##
+## 输出：
+##   _qa/bench_<seed>.json   完整指标（P0）+ 事件时间线 + 确定性签名
+##   _qa/situations_<seed>.jsonl  情况文本（周期快照 + 关键决策前后各一条）
+##   stdout: `AI-BENCH {json}`（人读摘要）+ `AI-BENCH-SIGNATURE <串>`（同 seed 复跑比对用）
+##
+## P1 指标（编队完整率/集结时间/占点/目标出视野行为…）依赖任务层/情报层，本轮**不可采**，
+## 在 JSON 里固定写 `"P1": "不可采：无任务层与情报层（见 4.2 诊断）"`。
+
+## 采样步长（游戏秒）：单位级状态轮询的粒度
+const SAMPLE_STEP: float = 0.25
+## 情况文本周期快照间隔（游戏秒）
+const SITUATION_EVERY: float = 5.0
+
+# --- 参数 ---
+var seed_val: int = 1
+var minutes: float = 8.0
+var speed: float = 8.0
+var map_path: String = ""
+var dump_path: String = ""
+
+# --- 状态 ---
+var _acc: float = 0.0            # 采样累计
+var _sit_acc: float = 0.0        # 情况文本累计
+var _done: bool = false
+var _t0_msec: int = 0
+
+## 每个 AI 脑一份的观测（faction 名 → Dictionary）
+var _brains: Array = []          # [{node, faction, prev_think, prev_wave, prev_plan, prev_defend_cd, prev_allow}]
+## 全体阵营的累计指标（faction 名 → Dictionary）
+var _stats: Dictionary = {}
+## 事件时间线（关键决策逐条）
+var _events: Array = []
+## 每个阵营最近一次决策（写进情况文本 recent_decision）
+var _recent: Dictionary = {}
+## 撤退代理：unit 实例 id → 上次血量比例（识别"重伤事件"）
+var _wounded_seen: Dictionary = {}
+## 确定性签名采样（每 30 游戏秒压一行）
+var _sig_lines: Array = []
+var _file_bench: String = ""
+var _file_sit: String = ""
+
+
+func _ready() -> void:
+	var args := OS.get_cmdline_user_args()
+	for a in args:
+		if a.begins_with("--seed="):
+			seed_val = int(a.substr(7))
+		elif a.begins_with("--minutes="):
+			minutes = float(a.substr(10))
+		elif a.begins_with("--speed="):
+			speed = maxf(float(a.substr(8)), 0.1)
+		elif a.begins_with("--map="):
+			map_path = a.substr(6)
+		elif a.begins_with("--dump-situations="):
+			dump_path = a.substr(18)
+	# ★ 确定性：对局开始前固定全局 RNG。地图是固定 .tres、帧率定死 60，
+	#   AI 的随机（波次骰/巡逻/加权选兵）全部来自这里的种子。
+	seed(seed_val)
+	Engine.time_scale = speed
+	_t0_msec = Time.get_ticks_usec() / 1000
+
+	Game.combat_hit.connect(_on_hit)
+	Game.unit_died.connect(_on_death)
+	_collect_brains()
+	for f in Game.factions:
+		if f == null:
+			continue
+		_stats[f.display_name] = _new_faction_stats(f)
+
+	if not dump_path.is_empty():
+		_file_sit = _abs(dump_path)
+		DirAccess.make_dir_recursive_absolute(_file_sit.get_base_dir())
+		var fa := FileAccess.open(_file_sit, FileAccess.WRITE)
+		if fa != null:
+			fa.close()
+			print("[AI基准] 情况文本 → %s" % _file_sit)
+		else:
+			print("[AI基准] 打不开情况文本输出：%s" % _file_sit)
+	print("[AI基准] 开始：seed=%d minutes=%.1f speed=%.1f 地图=%s 耗时上限(墙钟)=%.0fs"
+		% [seed_val, minutes, speed, map_path if not map_path.is_empty() else "(默认)", minutes * 60.0 * 8.0])
+
+
+func _process(delta: float) -> void:
+	if _done:
+		return
+	if Game.phase == RtsConst.Phase.VICTORY or Game.phase == RtsConst.Phase.DEFEAT:
+		_finish("对局结束：phase=%d" % Game.phase)
+		return
+	if Game.elapsed >= minutes * 60.0:
+		_finish("到达时限 %.0f 游戏秒" % (minutes * 60.0))
+		return
+
+	_watch_brains()          # 逐帧：思考边界 / 波次 / 拒绝 / 回防 / 计划切换
+	_acc += delta
+	while _acc >= SAMPLE_STEP:
+		_acc -= SAMPLE_STEP
+		_sample_units(SAMPLE_STEP)
+	_sit_acc += delta
+	while _sit_acc >= SITUATION_EVERY:
+		_sit_acc -= SITUATION_EVERY
+		_dump_situations(false)
+	_sig_sample()
+
+
+# ===========================================================================
+# 脑观测
+# ===========================================================================
+
+func _collect_brains() -> void:
+	var seen := {}
+	var nodes: Array = get_tree().get_nodes_in_group("ai_brain")
+	nodes.append_array(get_tree().get_nodes_in_group("adjutant"))
+	for n in nodes:
+		if n == null or not is_instance_valid(n) or seen.has(n.get_instance_id()):
+			continue
+		seen[n.get_instance_id()] = true
+		var f = n.get("command_faction")
+		if f == null:
+			f = n.get("_faction")
+		if f == null:
+			continue
+		_brains.append({
+			"node": n, "faction": f,
+			"prev_think": -1.0, "prev_wave": -1,
+			"prev_plan": "", "prev_defend_cd": 0.0, "prev_allow": false,
+			"primed": false,
+		})
+
+
+## 逐帧盯每个脑的公开字段：只在**状态跳变**处立案，不额外扫场景。
+func _watch_brains() -> void:
+	for b in _brains:
+		var n = b["node"]
+		if n == null or not is_instance_valid(n):
+			continue
+		# 首次观察：只同步基线，不立案（否则开局状态会被误报成事件）
+		if not bool(b["primed"]):
+			b["primed"] = true
+			b["prev_think"] = float(n.get("_think"))
+			b["prev_wave"] = int(n.get("_wave_index"))
+			b["prev_defend_cd"] = float(n.get("_defend_cd"))
+			var p0: Dictionary = n.get("posture")
+			b["prev_plan"] = String(p0.get("plan_id", ""))
+			b["prev_allow"] = bool(p0.get("allow_attack", false))
+			continue
+		var fac: String = String(b["faction"].display_name)
+		var think: float = float(n.get("_think"))
+		var wave: int = int(n.get("_wave_index"))
+		var defend_cd: float = float(n.get("_defend_cd"))
+		var posture: Dictionary = n.get("posture")
+		var plan: String = String(posture.get("plan_id", ""))
+		var allow: bool = bool(posture.get("allow_attack", false))
+		var st: Dictionary = {}
+		var sched = n.get("_sched")
+		if sched != null and is_instance_valid(sched):
+			st = sched.call("stats")
+
+		# ① 思考边界：_think 被重置（跳回正间隔）= 刚完成一次思考 → 结算调度统计
+		if think > b["prev_think"] and b["prev_think"] >= 0.0:
+			_on_think(b, fac, st, posture)
+		b["prev_think"] = think
+
+		# ② 波次真的打出去了（目标坐标现场问脑的只读函数 _push_target()）
+		if wave > int(b["prev_wave"]):
+			var tgt: String = ""
+			if n.has_method("_push_target"):
+				tgt = str(n.call("_push_target"))
+			_event(fac, "wave_issued", {
+				"wave_index": wave,
+				"target": tgt,
+			}, "波次推进")
+			var st2: Dictionary = _stats.get(fac, {})
+			if int(st2.get("first_wave_t", -1)) < 0:
+				st2["first_wave_t"] = Game.elapsed
+			st2["wave_count"] = int(st2.get("wave_count", 0)) + 1
+			b["prev_wave"] = wave
+		elif wave < int(b["prev_wave"]):
+			b["prev_wave"] = wave    # 重开/阵营变更兜底
+
+		# ③ 计划切换
+		if plan != String(b["prev_plan"]) and not plan.is_empty():
+			if not String(b["prev_plan"]).is_empty():
+				_event(fac, "plan_switch", {
+					"from": String(b["prev_plan"]), "to": plan,
+					"army_ratio": float(posture.get("army_ratio", 0.0)),
+					"base_threat": float(posture.get("base_threat", 0.0)),
+				}, "计划切换 → %s" % plan)
+			b["prev_plan"] = plan
+
+		# ④ 回防触发：_defend_cd 从低位跳到 DEFEND_REISSUE
+		var reissue: float = 4.0
+		if n.get("DEFEND_REISSUE") != null:
+			reissue = float(n.get("DEFEND_REISSUE"))
+		if b["prev_defend_cd"] < 0.5 and defend_cd >= reissue * 0.9:
+			var threat_n: int = 0
+			var m: Dictionary = n.get("metrics")
+			if m != null:
+				threat_n = int(float(m.get("base_threat", 0.0)))
+			_event(fac, "defense_triggered", {"threat_units": threat_n}, "回防触发")
+			var st3: Dictionary = _stats.get(fac, {})
+			st3["defense_count"] = int(st3.get("defense_count", 0)) + 1
+			if int(st3.get("first_defense_t", -1)) < 0:
+				st3["first_defense_t"] = Game.elapsed
+			_recent[fac] = {"name": "defense_triggered", "t": Game.elapsed,
+				"detail": {"threat_units": threat_n}}
+		b["prev_defend_cd"] = defend_cd
+		b["prev_allow"] = allow
+
+
+## 一次思考刚发生：结算调度统计 + 出击拒绝判定
+func _on_think(b: Dictionary, fac: String, st: Dictionary, posture: Dictionary) -> void:
+	var s: Dictionary = _stats.get(fac, {})
+	s["think_count"] = int(s.get("think_count", 0)) + 1
+	s["cmd_sent"] = int(s.get("cmd_sent", 0)) + int(st.get("sent", 0))
+	s["cmd_skipped"] = int(s.get("cmd_skipped", 0)) + int(st.get("skipped", 0))
+	s["cmd_throttled"] = int(s.get("cmd_throttled", 0)) + int(st.get("throttled", 0))
+	s["cmd_filtered_player"] = int(s.get("cmd_filtered_player", 0)) + int(st.get("filtered_player", 0))
+	s["cmd_stuck_locked"] = int(s.get("cmd_stuck_locked", 0)) + int(st.get("stuck_locked", 0))
+	# 出击拒绝：波次到期却没拿到许可（每个思考至多记一次）
+	var n = b["node"]
+	var next_at: float = float(n.get("_next_wave_at"))
+	if Game.elapsed >= next_at and not bool(posture.get("allow_attack", false)):
+		s["attack_rejected"] = int(s.get("attack_rejected", 0)) + 1
+		var reason: String = String(n.call("_block_reason"))
+		var key: String = reason.substr(0, 24)
+		var dist: Dictionary = s.get("reject_reasons", {})
+		dist[key] = int(dist.get(key, 0)) + 1
+		s["reject_reasons"] = dist
+		if int(s.get("last_reject_log_t", -999)) < Game.elapsed - 20.0:
+			_event(fac, "attack_rejected", {"reason": reason}, "暂不出击")
+			s["last_reject_log_t"] = Game.elapsed
+
+
+# ===========================================================================
+# 单位级采样（每 SAMPLE_STEP 一次）
+# ===========================================================================
+
+func _new_faction_stats(f: RtsFaction) -> Dictionary:
+	return {
+		"faction": f.display_name, "is_player": f.is_player, "team": f.team,
+		"gold_income": 0, "wood_income": 0,
+		"idle_unit_seconds": 0.0, "stuck_unit_seconds": 0.0, "stuck_max_units": 0,
+		"prod_idle_seconds": 0.0, "broke_seconds": 0.0, "broke_episodes": 0, "_was_broke": false,
+		"damage_dealt": 0.0, "damage_taken": 0.0,
+		"units_lost": 0, "buildings_lost": 0,
+		"wounded_episodes": 0, "_wounded_alive_units": 0,
+		"first_wave_t": -1, "wave_count": 0,
+		"attack_rejected": 0, "reject_reasons": {}, "last_reject_log_t": -999.0,
+		"defense_count": 0, "first_defense_t": -1,
+		"first_base_damage_t": -1, "base_damage_taken": 0.0,
+		"think_count": 0,
+		"cmd_sent": 0, "cmd_skipped": 0, "cmd_throttled": 0,
+		"cmd_filtered_player": 0, "cmd_stuck_locked": 0,
+		"prev_gold": f.gold, "prev_wood": f.wood, "prev_bldg_hp": 0.0,
+	}
+
+
+func _sample_units(step: float) -> void:
+	for f in Game.factions:
+		if f == null or not _stats.has(f.display_name):
+			continue
+		var s: Dictionary = _stats[f.display_name]
+		# 资源收入（只累计正向跳变 = 采集交付 / 研究返还不存在）
+		var dg: int = f.gold - int(s["prev_gold"])
+		var dw: int = f.wood - int(s["prev_wood"])
+		if dg > 0:
+			s["gold_income"] = int(s["gold_income"]) + dg
+		if dw > 0:
+			s["wood_income"] = int(s["wood_income"]) + dw
+		s["prev_gold"] = f.gold
+		s["prev_wood"] = f.wood
+
+		var idle_n: int = 0
+		var stuck_n: int = 0
+		var wounded_n: int = 0
+		var army_n: int = 0
+		var home: Vector3 = RtsWorld.base_center(f)
+		for u in f.units:
+			if u == null or not is_instance_valid(u) or not u.is_alive():
+				continue
+			if bool(u.call("is_idle_like")):
+				idle_n += 1
+			if int(u.get("_stuck_count")) >= 2:
+				stuck_n += 1
+			var d: UnitDef = u.def
+			if d == null or RtsWorld.is_worker_def(d):
+				continue
+			if d.kind != RtsConst.Kind.UNIT:
+				continue
+			army_n += 1
+			# 撤退代理：重伤事件（血量比例 <32%，与 SimpleAI.RETRAIN_HP 口径一致的重伤线）
+			if d.max_hp > 0.0:
+				var frac: float = u.hp / d.max_hp
+				var uid: int = u.get_instance_id()
+				var seen_frac: float = float(_wounded_seen.get(uid, 1.0))
+				if frac <= 0.32 and seen_frac > 0.32:
+					wounded_n += 1
+				_wounded_seen[uid] = frac
+		s["idle_unit_seconds"] = float(s["idle_unit_seconds"]) + step * float(idle_n)
+		s["stuck_unit_seconds"] = float(s["stuck_unit_seconds"]) + step * float(stuck_n)
+		s["stuck_max_units"] = maxi(int(s["stuck_max_units"]), stuck_n)
+		s["_wounded_alive_units"] = wounded_n
+		if wounded_n > 0:
+			s["wounded_episodes"] = int(s["wounded_episodes"]) + wounded_n
+		s["army_n_last"] = army_n
+		s["idle_n_last"] = idle_n
+
+		# 生产队列空档：有已完工产能建筑但队列全空，且钱够最便宜的兵
+		var prod_empty: bool = true
+		var prod_any: bool = false
+		for b in f.buildings:
+			if b == null or not is_instance_valid(b) or not b.is_alive():
+				continue
+			if not b.has_method("queue_train"):
+				continue
+			if not bool(b.get("is_constructed")):
+				continue
+			prod_any = true
+			if int(b.call("train_count")) > 0:
+				prod_empty = false
+				break
+		if prod_any and prod_empty and f.gold >= 130:
+			s["prod_idle_seconds"] = float(s["prod_idle_seconds"]) + step
+		# 资源断档：钱袋见底且队列空（episode 计数）
+		var broke: bool = f.gold < 75 and f.wood < 20 and prod_empty
+		if broke and not bool(s["_was_broke"]):
+			s["broke_episodes"] = int(s["broke_episodes"]) + 1
+		if broke:
+			s["broke_seconds"] = float(s["broke_seconds"]) + step
+		s["_was_broke"] = broke
+
+		# 基地受损：建筑总血量下降
+		var hp_sum: float = 0.0
+		for b in f.buildings:
+			if b == null or not is_instance_valid(b) or not b.is_alive() or b.def == null:
+				continue
+			hp_sum += b.hp
+		var prev_hp: float = float(s["prev_bldg_hp"])
+		if prev_hp > 0.0 and hp_sum < prev_hp:
+			s["base_damage_taken"] = float(s["base_damage_taken"]) + (prev_hp - hp_sum)
+			if int(s["first_base_damage_t"]) < 0:
+				s["first_base_damage_t"] = Game.elapsed
+		s["prev_bldg_hp"] = hp_sum
+
+
+func _on_hit(attacker: Node3D, target: Node3D, damage: float, _crit: bool) -> void:
+	if attacker == null or target == null or not is_instance_valid(attacker) or not is_instance_valid(target):
+		return
+	var af = attacker.get("faction")
+	var tf = target.get("faction")
+	if af != null and _stats.has(String(af.display_name)):
+		_stats[String(af.display_name)]["damage_dealt"] = float(_stats[String(af.display_name)]["damage_dealt"]) + damage
+	if tf != null and _stats.has(String(tf.display_name)):
+		_stats[String(tf.display_name)]["damage_taken"] = float(_stats[String(tf.display_name)]["damage_taken"]) + damage
+
+
+func _on_death(u: Node3D) -> void:
+	if u == null or not is_instance_valid(u):
+		return
+	var f = u.get("faction")
+	if f == null or not _stats.has(String(f.display_name)):
+		return
+	var s: Dictionary = _stats[String(f.display_name)]
+	if u is RtsBuilding:
+		s["buildings_lost"] = int(s["buildings_lost"]) + 1
+	else:
+		s["units_lost"] = int(s["units_lost"]) + 1
+
+
+# ===========================================================================
+# 情况文本（引擎现场生成，禁止人工润色）
+# ===========================================================================
+
+func _situation(f_or_null, tag: String, extra: Dictionary) -> Dictionary:
+	var f: RtsFaction = f_or_null
+	var out := {
+		"t": snappedf(Game.elapsed, 0.01),
+		"phase": Game.phase,
+		"tag": tag,
+	}
+	if f == null:
+		return out
+	var s: Dictionary = _stats.get(f.display_name, {})
+	var army: int = int(s.get("army_n_last", 0))
+	var workers := 0
+	for u in f.units:
+		if u != null and is_instance_valid(u) and u.is_alive() and RtsWorld.is_worker_def(u.def):
+			workers += 1
+	out["faction"] = f.display_name
+	out["team"] = f.team
+	out["own_summary"] = {
+		"units": f.count_units(), "army": army, "workers": workers,
+		"buildings": f.count_buildings(),
+		"gold": f.gold, "wood": f.wood,
+		"food_used": f.food_used(), "food_cap": f.food_cap(),
+	}
+	# 指标与姿态：直接读 AI 脑的公开字段（本阵营的脑）
+	for b in _brains:
+		if b["faction"] == f:
+			var n = b["node"]
+			if n != null and is_instance_valid(n):
+				var m: Dictionary = n.get("metrics")
+				out["metrics"] = {
+					"army_count": m.get("army_count", -1),
+					"army_ratio": m.get("army_ratio", -1),
+					"army_food": m.get("army_food", -1),
+					"my_army_value": m.get("my_army_value", -1),
+					"workers": m.get("workers", -1),
+					"idle_workers": m.get("idle_workers", -1),
+					"base_threat": m.get("base_threat", -1),
+					"gold_float": m.get("gold_float", -1),
+					"enemy_static_defense": m.get("enemy_static_defense", -1),
+				}
+				var p: Dictionary = n.get("posture")
+				out["posture"] = {
+					"plan_id": p.get("plan_id", ""), "stance": p.get("stance", ""),
+					"aggression": p.get("aggression", -1),
+					"allow_attack": p.get("allow_attack", false),
+					"attack_ratio_needed": p.get("attack_ratio_needed", -1),
+				}
+			break
+	# 情报口径：AI 直接读 Game.factions 全量 —— 这里如实标注 omniscient
+	var known: Array = []
+	for foe in Game.enemies_of(f):
+		if foe == null:
+			continue
+		known.append({
+			"name": foe.display_name, "team": foe.team,
+			"units": foe.count_units(), "buildings": foe.count_buildings(),
+			"gold": foe.gold, "wood": foe.wood,
+		})
+	out["known_enemies"] = {"omniscient": true, "factions": known}
+	out["recent_decision"] = _recent.get(f.display_name, {"name": "无"})
+	out["task_state"] = "无任务层（定时器+许可，见诊断 4.2）"
+	if not extra.is_empty():
+		for k in extra.keys():
+			out[k] = extra[k]
+	return out
+
+
+func _dump_situations(is_event: bool, extra: Dictionary = {}, f_override = null) -> void:
+	if _file_sit.is_empty():
+		return
+	var exists := FileAccess.file_exists(_file_sit)
+	var fa := FileAccess.open(_file_sit, FileAccess.READ_WRITE if exists else FileAccess.WRITE)
+	if fa == null:
+		return
+	fa.seek_end()
+	var targets: Array = []
+	if f_override != null:
+		targets.append(f_override)
+	else:
+		for f in Game.factions:
+			if f != null:
+				targets.append(f)
+	for f in targets:
+		var rec: Dictionary = _situation(f, "event" if is_event else "periodic", extra)
+		fa.store_line(JSON.stringify(rec))
+	fa.close()
+
+
+# ===========================================================================
+# 事件 / 签名 / 收尾
+# ===========================================================================
+
+func _event(fac: String, name: String, detail: Dictionary, decision: String) -> void:
+	var e := {"t": snappedf(Game.elapsed, 0.01), "faction": fac, "event": name}
+	for k in detail.keys():
+		e[k] = detail[k]
+	_events.append(e)
+	_recent[fac] = {"name": name, "t": Game.elapsed, "detail": detail}
+	# 关键决策前后各一条情况文本：决策本身这条就是"后"，把前一条靠周期快照覆盖
+	if name == "wave_issued" or name == "defense_triggered" or name == "plan_switch":
+		var f = null
+		for ff in Game.factions:
+			if ff != null and String(ff.display_name) == fac:
+				f = ff
+				break
+		_dump_situations(true, {"decision": decision}, f)
+
+
+func _sig_sample() -> void:
+	var idx: int = int(Game.elapsed / 30.0)
+	if _sig_lines.size() == idx:
+		var row := "%d" % idx
+		for f in Game.factions:
+			if f == null or not _stats.has(f.display_name):
+				continue
+			var s: Dictionary = _stats[f.display_name]
+			row += "|%d,%d,%d,%d" % [f.gold, f.wood, int(s.get("army_n_last", 0)), int(s.get("wave_count", 0))]
+		_sig_lines.append(row)
+
+
+func _abs(p: String) -> String:
+	if p.begins_with("res://"):
+		return ProjectSettings.globalize_path(p)
+	return p
+
+
+func _finish(reason: String) -> void:
+	if _done:
+		return
+	_done = true
+	var wall_sec: float = float(Time.get_ticks_usec() / 1000 - _t0_msec) / 1000.0
+	_dump_situations(false)   # 收尾再补一条周期快照
+
+	# --- 防守响应时间 ---
+	for f in Game.factions:
+		if f == null or not _stats.has(f.display_name):
+			continue
+		var s: Dictionary = _stats[f.display_name]
+		var fbd: float = float(s.get("first_base_damage_t", -1))
+		var fdf: float = float(s.get("first_defense_t", -1))
+		s["defense_response_t"] = (fdf - fbd) if (fbd >= 0.0 and fdf >= 0.0 and fdf >= fbd) else -1
+
+	# 内部记账键不进报告（_开头 / prev_ 开头）
+	var clean: Dictionary = {}
+	for fname in _stats.keys():
+		var s: Dictionary = _stats[fname]
+		var c: Dictionary = {}
+		for k in s.keys():
+			if String(k).begins_with("_") or String(k).begins_with("prev_"):
+				continue
+			c[k] = s[k]
+		clean[fname] = c
+
+	var report := {
+		"seed": seed_val, "minutes": minutes, "speed": speed, "map": map_path,
+		"difficulty": Cfg.game.default_difficulty,
+		"elapsed_game_s": snappedf(Game.elapsed, 0.01),
+		"wall_clock_s": snappedf(wall_sec, 0.1),
+		"end_reason": reason,
+		"phase": Game.phase,
+		"fog": "玩家侧启用（AI 不受迷雾限制，全图读取）",
+		"P1": "不可采：无任务层与情报层（见诊断 4.2）",
+		"factions": clean,
+		"events": _events,
+		"situations_file": _file_sit if not _file_sit.is_empty() else "未启用",
+	}
+	DirAccess.make_dir_recursive_absolute(_abs("res://_qa"))
+	_file_bench = _abs("res://_qa/bench_%d.json" % seed_val)
+	var fa := FileAccess.open(_file_bench, FileAccess.WRITE)
+	if fa != null:
+		fa.store_string(JSON.stringify(report, "  "))
+		fa.close()
+	var summary := {
+		"seed": seed_val, "end": reason, "elapsed": snappedf(Game.elapsed, 0.1),
+		"wall_s": snappedf(wall_sec, 0.1),
+	}
+	for f in Game.factions:
+		if f == null or not _stats.has(f.display_name):
+			continue
+		var s: Dictionary = _stats[f.display_name]
+		summary[f.display_name] = {
+			"金收入": int(s["gold_income"]), "木收入": int(s["wood_income"]),
+			"波次": int(s["wave_count"]), "首波": float(s["first_wave_t"]),
+			"拒击": int(s["attack_rejected"]), "回防": int(s["defense_count"]),
+			"损失": "%d兵/%d建" % [int(s["units_lost"]), int(s["buildings_lost"])],
+			"闲时": snappedf(float(s["idle_unit_seconds"]), 1.0),
+			"卡死峰值": int(s["stuck_max_units"]),
+			"断档": int(s["broke_episodes"]),
+			"重伤": int(s["wounded_episodes"]),
+			"防守响应": float(s.get("defense_response_t", -1)),
+		}
+	print("AI-BENCH %s" % JSON.stringify(summary))
+	# 确定性签名：同 seed 复跑必须一致（外部脚本比对）
+	var sig: String = ""
+	for line in _sig_lines:
+		sig += line + ";"
+	sig += "END|%d" % Game.phase
+	print("AI-BENCH-SIGNATURE %s" % sig.sha256_text())
+	print("[AI基准] 报告 → %s" % _file_bench)
+	get_tree().quit(0)
