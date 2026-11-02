@@ -16,6 +16,8 @@ extends Node3D
 
 ## 锤击最小间隔（秒）——任务书要求 0.7~1.2s 一次
 const STRIKE_INTERVAL: float = 0.9
+## 表现层随机流（锤击方位 / 脚手架散落方向）。玩法随机仍走全局 randf，见 表现随机.gd
+const Fx := preload("res://代码/美术/表现随机.gd")
 ## 脚手架横杆层数与高度比例
 const RAIL_LEVELS: PackedFloat32Array = [0.26, 0.50, 0.74, 0.96]
 
@@ -383,7 +385,7 @@ func strike(at: Vector3 = Vector3.ZERO) -> bool:
 		if side.length_squared() > 0.0001:
 			side = side.normalized()
 	if side == Vector3.ZERO:
-		var ang: float = randf() * TAU
+		var ang: float = Fx.rand() * TAU
 		side = Vector3(cos(ang), 0.0, sin(ang))
 	# 墙根位置：占地边缘 + 当前已建高度
 	var hit := base + side * Vector3(_hx, 0.0, _hz).length() * 0.62
@@ -465,12 +467,12 @@ func _restore_clip() -> void:
 func _collapse_scaffold() -> void:
 	for n in _posts:
 		if is_instance_valid(n):
-			_fall(n, Vector3(randf_range(-0.5, 0.5), 0.0, randf_range(0.5, 1.3)))
+			_fall(n, Vector3(Fx.rand_range(-0.5, 0.5), 0.0, Fx.rand_range(0.5, 1.3)))
 	for n in _rails:
 		if is_instance_valid(n):
-			_fall(n, Vector3(randf_range(-0.8, 0.8), 0.0, randf_range(-0.8, 0.8)), 0.7)
+			_fall(n, Vector3(Fx.rand_range(-0.8, 0.8), 0.0, Fx.rand_range(-0.8, 0.8)), 0.7)
 	if _platform != null and is_instance_valid(_platform):
-		_fall(_platform, Vector3(randf_range(-0.5, 0.5), 0.0, randf_range(-1.0, 1.0)), 1.2)
+		_fall(_platform, Vector3(Fx.rand_range(-0.5, 0.5), 0.0, Fx.rand_range(-1.0, 1.0)), 1.2)
 	if _ladder != null and is_instance_valid(_ladder):
 		_fall(_ladder, Vector3(0.0, 0.0, -1.4), 1.1)
 

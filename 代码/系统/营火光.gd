@@ -21,6 +21,8 @@ const FALLBACK_RATIO := 0.45
 ## 火光抖动幅度（±12%）与频率
 const FLICKER := 0.12
 const FLICKER_HZ := 3.1
+## 表现层随机流（相位错开）。玩法随机仍走全局 randf，见 表现随机.gd
+const Fx := preload("res://代码/美术/表现随机.gd")
 ## 刷新节流（秒）：光照缓变，10Hz 足够，省下每帧的属性写
 const TICK := 0.1
 
@@ -32,7 +34,7 @@ var _phase: float = 0.0
 
 func _ready() -> void:
 	# 每盏灯错开一点相位，一排营火不会"整齐地一起闪"（那看起来像呼吸灯 bug）
-	_phase = randf() * TAU
+	_phase = Fx.rand() * TAU
 	light_color = Color(1.0, 0.62, 0.28)
 	shadow_enabled = false
 	omni_range = 13.5

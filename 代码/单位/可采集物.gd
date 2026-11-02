@@ -14,6 +14,8 @@ const FALL_TIME: float = 0.75
 const SINK_TIME: float = 0.5
 ## 金矿枯竭后的明度系数
 const DEPLETED_DARKEN: float = 0.32
+## 表现层随机流（倒向哪边）。玩法随机仍走全局 randf，见 表现随机.gd
+const Fx := preload("res://代码/美术/表现随机.gd")
 
 var def: UnitDef = null
 var remaining: int = 0
@@ -141,7 +143,7 @@ func _deplete_tree() -> void:
 
 	var tw: Tween = create_tween()
 	# 朝随机一侧倒下去
-	var dir: float = 1.0 if randf() > 0.5 else -1.0
+	var dir: float = 1.0 if Fx.rand() > 0.5 else -1.0
 	tw.tween_property(self, "rotation:z", deg_to_rad(84.0) * dir, FALL_TIME) \
 			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	tw.tween_interval(0.15)

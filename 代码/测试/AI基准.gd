@@ -9,8 +9,11 @@ extends Node
 ## 用法（全部参数走 `--` 之后的 user args，与主场景 _parse_cmdline 同一口径）：
 ##   godot --headless --fixed-fps 60 --path . --quit-after 20000 -- \
 ##       --ai-bench --seed=1 --minutes=8 --speed=8 \
-##       --map=res://地图/主场景地图.tres \
+##       --map=res://地图/主场景地图.tres [--ratio-mode=A|B|C] \
 ##       [--dump-situations=res://_qa/situations_1.jsonl]
+##
+## `--ratio-mode` 只改"出击门槛跟谁比"（A 最强 / B 次强 / C 门槛衰减，默认 A）。
+## 这是 2.2 的死锁试验开关：三组跑同一 seed，其它一切都必须相同。
 ##
 ## 输出：
 ##   _qa/bench_<seed>.json   完整指标（P0）+ 事件时间线 + 确定性签名
@@ -24,6 +27,8 @@ extends Node
 const SAMPLE_STEP: float = 0.25
 ## 情况文本周期快照间隔（游戏秒）
 const SITUATION_EVERY: float = 5.0
+## 战略权重开关（A/B/C）。默认 A，保证"不带参数 = 现状"。
+const AIW := preload("res://代码/配置/AI战略权重.gd")
 
 # --- 参数 ---
 var seed_val: int = 1
@@ -31,6 +36,10 @@ var minutes: float = 8.0
 var speed: float = 8.0
 var map_path: String = ""
 var dump_path: String = ""
+var ratio_mode_arg: String = "A"
+## 输出文件名后缀（`--tag=_4min` → bench_A_1_4min.json）。
+## 用途：同一 seed 要跑多组时长/多组口径时，别让后一组把前一组的证据覆盖掉。
+var tag: String = ""
 
 # --- 状态 ---
 var _acc: float = 0.0            # 采样累计
@@ -67,6 +76,12 @@ func _ready() -> void:
 			map_path = a.substr(6)
 		elif a.begins_with("--dump-situations="):
 			dump_path = a.substr(18)
+		elif a.begins_with("--ratio-mode="):
+			ratio_mode_arg = a.substr(13)
+		elif a.begins_with("--tag="):
+			tag = a.substr(6)
+	# ★ 出击门槛口径必须在**任何 AI 思考之前**定下来（简单AI 每 tick 读它）
+	AIW.set_mode(ratio_mode_arg)
 	# ★ 确定性：对局开始前固定全局 RNG。地图是固定 .tres、帧率定死 60，
 	#   AI 的随机（波次骰/巡逻/加权选兵）全部来自这里的种子。
 	seed(seed_val)
@@ -90,8 +105,9 @@ func _ready() -> void:
 			print("[AI基准] 情况文本 → %s" % _file_sit)
 		else:
 			print("[AI基准] 打不开情况文本输出：%s" % _file_sit)
-	print("[AI基准] 开始：seed=%d minutes=%.1f speed=%.1f 地图=%s 耗时上限(墙钟)=%.0fs"
-		% [seed_val, minutes, speed, map_path if not map_path.is_empty() else "(默认)", minutes * 60.0 * 8.0])
+	print("[AI基准] 开始：seed=%d minutes=%.1f speed=%.1f 地图=%s 口径=%s 耗时上限(墙钟)=%.0fs"
+		% [seed_val, minutes, speed, map_path if not map_path.is_empty() else "(默认)",
+			AIW.describe(), minutes * 60.0 * 8.0])
 
 
 func _process(delta: float) -> void:
@@ -137,6 +153,7 @@ func _collect_brains() -> void:
 			"node": n, "faction": f,
 			"prev_think": -1.0, "prev_wave": -1,
 			"prev_plan": "", "prev_defend_cd": 0.0, "prev_allow": false,
+			"prev_allow_think": false,
 			"primed": false,
 		})
 
@@ -215,6 +232,11 @@ func _watch_brains() -> void:
 			st3["defense_count"] = int(st3.get("defense_count", 0)) + 1
 			if int(st3.get("first_defense_t", -1)) < 0:
 				st3["first_defense_t"] = Game.elapsed
+			# 防守响应口径：只认"建筑真的开始掉血之后"的第一次回防。
+			# 掉血前就回防 = 预判成功，另记 preemptive（见 _finish）。
+			if float(st3.get("first_base_damage_t", -1)) >= 0.0 \
+					and float(st3.get("first_defense_after_damage_t", -1)) < 0.0:
+				st3["first_defense_after_damage_t"] = Game.elapsed
 			_recent[fac] = {"name": "defense_triggered", "t": Game.elapsed,
 				"detail": {"threat_units": threat_n}}
 		b["prev_defend_cd"] = defend_cd
@@ -225,6 +247,20 @@ func _watch_brains() -> void:
 func _on_think(b: Dictionary, fac: String, st: Dictionary, posture: Dictionary) -> void:
 	var s: Dictionary = _stats.get(fac, {})
 	s["think_count"] = int(s.get("think_count", 0)) + 1
+	# 出击许可按**思考**统计（按帧统计会被"许可一直为真"吞掉上升沿）：
+	#   allow_on_think  = 许可开着的思考次数；
+	#   allow_attack_on = 其中 false→true 的上升沿次数（B/C 关心的"门槛真的松开了"）。
+	var allow_now: bool = bool(posture.get("allow_attack", false))
+	if allow_now:
+		s["allow_on_think"] = int(s.get("allow_on_think", 0)) + 1
+		if not bool(b.get("prev_allow_think", false)):
+			s["allow_attack_on"] = int(s.get("allow_attack_on", 0)) + 1
+	b["prev_allow_think"] = allow_now
+	# 门槛区间（C 的衰减曲线要能在数据里看见）
+	var need: float = float(posture.get("attack_ratio_needed", 0.0))
+	if need > 0.0:
+		s["need_min"] = minf(float(s.get("need_min", 99.0)), need)
+		s["need_max"] = maxf(float(s.get("need_max", 0.0)), need)
 	s["cmd_sent"] = int(s.get("cmd_sent", 0)) + int(st.get("sent", 0))
 	s["cmd_skipped"] = int(s.get("cmd_skipped", 0)) + int(st.get("skipped", 0))
 	s["cmd_throttled"] = int(s.get("cmd_throttled", 0)) + int(st.get("throttled", 0))
@@ -260,8 +296,14 @@ func _new_faction_stats(f: RtsFaction) -> Dictionary:
 		"wounded_episodes": 0, "_wounded_alive_units": 0,
 		"first_wave_t": -1, "wave_count": 0,
 		"attack_rejected": 0, "reject_reasons": {}, "last_reject_log_t": -999.0,
+		"allow_attack_on": 0, "allow_on_think": 0, "need_min": 99.0, "need_max": 0.0,
 		"defense_count": 0, "first_defense_t": -1,
 		"first_base_damage_t": -1, "base_damage_taken": 0.0,
+		# 防守响应专用：建筑掉血**之后**的第一次回防 + "打之前就已经在回防"的标记
+		"first_defense_after_damage_t": -1.0, "defense_preemptive": false,
+		# 交叉校验：按"建筑总血量差值"采到的伤害（会漏掉 unregister 那一瞬的终末伤害，
+		# 所以只做对照，不进 base_damage_taken）
+		"base_damage_hp_sample": 0.0, "base_damage_by_death": 0,
 		"think_count": 0,
 		"cmd_sent": 0, "cmd_skipped": 0, "cmd_throttled": 0,
 		"cmd_filtered_player": 0, "cmd_stuck_locked": 0,
@@ -343,7 +385,9 @@ func _sample_units(step: float) -> void:
 			s["broke_seconds"] = float(s["broke_seconds"]) + step
 		s["_was_broke"] = broke
 
-		# 基地受损：建筑总血量下降
+		# 基地受损：**主口径**是 combat_hit 里"目标是建筑"的那一刀（见 _on_hit）——
+		# 它发生在 unregister 之前，不会漏掉"最后一击"。这里的血量差值只做交叉校验，
+		# 并留作兜底立案（脚本直接扣血这类不走 combat_hit 的路径）。
 		var hp_sum: float = 0.0
 		for b in f.buildings:
 			if b == null or not is_instance_valid(b) or not b.is_alive() or b.def == null:
@@ -351,8 +395,8 @@ func _sample_units(step: float) -> void:
 			hp_sum += b.hp
 		var prev_hp: float = float(s["prev_bldg_hp"])
 		if prev_hp > 0.0 and hp_sum < prev_hp:
-			s["base_damage_taken"] = float(s["base_damage_taken"]) + (prev_hp - hp_sum)
-			if int(s["first_base_damage_t"]) < 0:
+			s["base_damage_hp_sample"] = float(s["base_damage_hp_sample"]) + (prev_hp - hp_sum)
+			if float(s["first_base_damage_t"]) < 0.0:
 				s["first_base_damage_t"] = Game.elapsed
 		s["prev_bldg_hp"] = hp_sum
 
@@ -366,6 +410,13 @@ func _on_hit(attacker: Node3D, target: Node3D, damage: float, _crit: bool) -> vo
 		_stats[String(af.display_name)]["damage_dealt"] = float(_stats[String(af.display_name)]["damage_dealt"]) + damage
 	if tf != null and _stats.has(String(tf.display_name)):
 		_stats[String(tf.display_name)]["damage_taken"] = float(_stats[String(tf.display_name)]["damage_taken"]) + damage
+	# 建筑挨打 = 基地受损。这里立案最准：伤害结算时建筑还活着（还没 unregister），
+	# 而 0.25s 一次的血量采样会漏掉"这一刀把人打死"的终末伤害。
+	if target is RtsBuilding and tf != null and _stats.has(String(tf.display_name)):
+		var bs: Dictionary = _stats[String(tf.display_name)]
+		bs["base_damage_taken"] = float(bs["base_damage_taken"]) + damage
+		if float(bs["first_base_damage_t"]) < 0.0:
+			bs["first_base_damage_t"] = Game.elapsed
 
 
 func _on_death(u: Node3D) -> void:
@@ -377,6 +428,11 @@ func _on_death(u: Node3D) -> void:
 	var s: Dictionary = _stats[String(f.display_name)]
 	if u is RtsBuilding:
 		s["buildings_lost"] = int(s["buildings_lost"]) + 1
+		# 兜底：建筑被打死却没在 combat_hit 里立案（理论上不该发生）→ 用死亡时刻补一条，
+		# 并在报告里单独计数，免得"没立案"被误读成"没挨打"。
+		if float(s["first_base_damage_t"]) < 0.0:
+			s["first_base_damage_t"] = Game.elapsed
+			s["base_damage_by_death"] = int(s.get("base_damage_by_death", 0)) + 1
 	else:
 		s["units_lost"] = int(s["units_lost"]) + 1
 
@@ -519,13 +575,25 @@ func _finish(reason: String) -> void:
 	_dump_situations(false)   # 收尾再补一条周期快照
 
 	# --- 防守响应时间 ---
+	# 语义（2026-11-02 修）：从**建筑第一次真的掉血**到**此后第一次回防命令**的间隔。
+	#   · 掉血后确有回防        → ≥0 的秒数；
+	#   · 打之前就已经在回防    → 0，并标 defense_preemptive（威胁圈先行，这是好行为）；
+	#   · 全程没掉血 / 没回防   → -1（不可测，不是 0）。
+	# 旧口径是 first_defense_t - first_base_damage_t：只要 AI 先回防就必出负数 → 永远 -1。
 	for f in Game.factions:
 		if f == null or not _stats.has(f.display_name):
 			continue
 		var s: Dictionary = _stats[f.display_name]
 		var fbd: float = float(s.get("first_base_damage_t", -1))
-		var fdf: float = float(s.get("first_defense_t", -1))
-		s["defense_response_t"] = (fdf - fbd) if (fbd >= 0.0 and fdf >= 0.0 and fdf >= fbd) else -1
+		var fda: float = float(s.get("first_defense_after_damage_t", -1))
+		var resp: float = -1.0
+		if fbd >= 0.0:
+			if fda >= 0.0:
+				resp = maxf(fda - fbd, 0.0)
+			elif int(s.get("defense_count", 0)) > 0:
+				resp = 0.0
+				s["defense_preemptive"] = true
+		s["defense_response_t"] = resp
 
 	# 内部记账键不进报告（_开头 / prev_ 开头）
 	var clean: Dictionary = {}
@@ -541,6 +609,7 @@ func _finish(reason: String) -> void:
 	var report := {
 		"seed": seed_val, "minutes": minutes, "speed": speed, "map": map_path,
 		"difficulty": Cfg.game.default_difficulty,
+		"ratio_mode": AIW.mode(), "ratio_mode_desc": AIW.describe(),
 		"elapsed_game_s": snappedf(Game.elapsed, 0.01),
 		"wall_clock_s": snappedf(wall_sec, 0.1),
 		"end_reason": reason,
@@ -552,13 +621,13 @@ func _finish(reason: String) -> void:
 		"situations_file": _file_sit if not _file_sit.is_empty() else "未启用",
 	}
 	DirAccess.make_dir_recursive_absolute(_abs("res://_qa"))
-	_file_bench = _abs("res://_qa/bench_%d.json" % seed_val)
+	_file_bench = _abs("res://_qa/bench_%s_%d%s.json" % [AIW.mode(), seed_val, tag])
 	var fa := FileAccess.open(_file_bench, FileAccess.WRITE)
 	if fa != null:
 		fa.store_string(JSON.stringify(report, "  "))
 		fa.close()
 	var summary := {
-		"seed": seed_val, "end": reason, "elapsed": snappedf(Game.elapsed, 0.1),
+		"seed": seed_val, "mode": AIW.mode(), "end": reason, "elapsed": snappedf(Game.elapsed, 0.1),
 		"wall_s": snappedf(wall_sec, 0.1),
 	}
 	for f in Game.factions:
@@ -568,13 +637,19 @@ func _finish(reason: String) -> void:
 		summary[f.display_name] = {
 			"金收入": int(s["gold_income"]), "木收入": int(s["wood_income"]),
 			"波次": int(s["wave_count"]), "首波": float(s["first_wave_t"]),
-			"拒击": int(s["attack_rejected"]), "回防": int(s["defense_count"]),
+			"拒击": int(s["attack_rejected"]), "出击许可": int(s.get("allow_attack_on", 0)),
+			"许可开着": int(s.get("allow_on_think", 0)),
+			"门槛": "%.2f~%.2f" % [float(s.get("need_min", 0.0)), float(s.get("need_max", 0.0))],
+			"回防": int(s["defense_count"]),
 			"损失": "%d兵/%d建" % [int(s["units_lost"]), int(s["buildings_lost"])],
 			"闲时": snappedf(float(s["idle_unit_seconds"]), 1.0),
 			"卡死峰值": int(s["stuck_max_units"]),
 			"断档": int(s["broke_episodes"]),
 			"重伤": int(s["wounded_episodes"]),
+			"基地掉血": snappedf(float(s["base_damage_taken"]), 0.1),
+			"首次受击": snappedf(float(s["first_base_damage_t"]), 0.1),
 			"防守响应": float(s.get("defense_response_t", -1)),
+			"预判回防": bool(s.get("defense_preemptive", false)),
 		}
 	print("AI-BENCH %s" % JSON.stringify(summary))
 	# 确定性签名：同 seed 复跑必须一致（外部脚本比对）

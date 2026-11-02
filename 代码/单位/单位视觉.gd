@@ -31,6 +31,8 @@ const FLASH_PEAK_BUILDING: float = 0.0
 ## 受击顿挫距离 / 时长（米 / 秒）
 const HIT_NUDGE: float = 0.075
 const HIT_NUDGE_TIME: float = 0.12
+## 表现层随机流（受击方向的兜底角度）。玩法随机仍走全局 randf，见 表现随机.gd
+const Fx := preload("res://代码/美术/表现随机.gd")
 
 ## 模型根
 var _model: Node3D = null
@@ -367,7 +369,7 @@ func _apply_hit_nudge(from_pos: Vector3) -> void:
 		dir = global_position - from_pos
 		dir.y = 0.0
 	if dir.length_squared() < 0.0001:
-		dir = Vector3(cos(randf() * TAU), 0.0, sin(randf() * TAU))
+		dir = Vector3(cos(Fx.rand() * TAU), 0.0, sin(Fx.rand() * TAU))
 	dir = dir.normalized()
 	var off: Vector3 = dir * HIT_NUDGE
 	_nudge_tween = create_tween()

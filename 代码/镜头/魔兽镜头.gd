@@ -21,6 +21,8 @@ extends Node3D
 # ===========================================================================
 # 状态
 # ===========================================================================
+## 表现层随机流（震屏）。玩法随机仍走全局 randf，见 表现随机.gd
+const Fx := preload("res://代码/美术/表现随机.gd")
 ## 子相机（真正参与渲染的 Camera3D）
 var cam: Camera3D = null
 
@@ -422,7 +424,7 @@ func _apply_pose(cfg: GameConfig, delta: float) -> void:
 	# 抖动：指数衰减，位置与注视点都抖一点，看起来像"被打到"
 	if _shake_amp > 0.0005:
 		var s: float = _shake_amp
-		pos += Vector3(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0) * 0.7, randf_range(-1.0, 1.0)) * s
+		pos += Vector3(Fx.rand_range(-1.0, 1.0), Fx.rand_range(-1.0, 1.0) * 0.7, Fx.rand_range(-1.0, 1.0)) * s
 		_shake_amp = lerpf(_shake_amp, 0.0, 1.0 - exp(-cfg.camera_shake_decay * delta))
 	else:
 		_shake_amp = 0.0

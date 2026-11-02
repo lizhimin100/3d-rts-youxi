@@ -34,6 +34,9 @@ const BUS_LAYOUT := "res://音频/default_bus_layout.tres"
 
 ## 语音映射表（用 preload 而不是全局类名：新脚本还没进 .godot 的 class 缓存时也能工作）
 const VOICE_MAP := preload("res://代码/音频/语音表.gd")
+## 表现层随机流（音高抖动 / 语音挑句）。**不许**用全局 randf：播不播由墙钟节流决定，
+## 一旦从全局流抽签，AI 骰子就会跟着漂（见 代码/美术/表现随机.gd 文件头）。
+const Fx := preload("res://代码/美术/表现随机.gd")
 
 const POOL_2D := 8
 const POOL_3D := 8
@@ -540,7 +543,7 @@ func _play2d(id: String, volume_db: float, jitter: float, bus: String = "") -> v
 	p.stream = s
 	p.bus = out_bus
 	p.volume_db = volume_db + _bus_makeup(out_bus)
-	p.pitch_scale = 1.0 + randf_range(-jitter, jitter)
+	p.pitch_scale = 1.0 + Fx.rand_range(-jitter, jitter)
 	p.play()
 
 
@@ -558,7 +561,7 @@ func _play3d(id: String, pos: Vector3, volume_db: float) -> void:
 	p.bus = String(spec.get("bus", BUS_SFX))
 	p.global_position = pos
 	p.volume_db = volume_db
-	p.pitch_scale = 1.0 + randf_range(-0.05, 0.05)
+	p.pitch_scale = 1.0 + Fx.rand_range(-0.05, 0.05)
 	p.play()
 
 
@@ -803,7 +806,7 @@ func _try_reply_voice(mine: Array) -> void:
 		var lines: PackedStringArray = VOICE_MAP.reply_lines(d.id)
 		if lines.is_empty():
 			continue
-		line = lines[randi() % lines.size()]
+		line = lines[Fx.rand_index(lines.size())]
 		break
 	if line.is_empty():
 		return

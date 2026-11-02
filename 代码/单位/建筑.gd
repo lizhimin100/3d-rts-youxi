@@ -37,6 +37,8 @@ var _last_progress: float = 0.0
 ## preload 在解析期就能解析到，不会因为缓存陈旧把整个文件拖成编译错误。
 const BUILD_SITE := preload("res://代码/单位/工地表现.gd")
 const VFXKIT := preload("res://代码/美术/建造表现.gd")
+## 表现层随机流（受击尘土/裂缝/倒塌方向）。玩法随机（集结点散布）仍走全局 randf。
+const Fx := preload("res://代码/美术/表现随机.gd")
 ## 倒塌用时（秒）：先晃后倒，0.9~1.4 之间最像整栋楼
 const COLLAPSE_TIME: float = 1.35
 ## 废墟停留时间（秒）
@@ -724,9 +726,9 @@ func _damage_fx() -> void:
 	_hit_fx_ms = now
 	var hx: float = float(def.footprint.x) * 0.5 if def != null else 2.0
 	var hz: float = float(def.footprint.y) * 0.5 if def != null else 2.0
-	var ang: float = randf() * TAU
+	var ang: float = Fx.rand() * TAU
 	var at: Vector3 = global_position + Vector3(cos(ang) * hx * 0.9,
-			randf_range(0.45, 1.9), sin(ang) * hz * 0.9)
+			Fx.rand_range(0.45, 1.9), sin(ang) * hz * 0.9)
 	VFXKIT.dust(at, 5, 0.45, Color(0.62, 0.56, 0.46))
 	VFXKIT.chips(at, Color(0.54, 0.52, 0.48), 4)
 	if RtsCombat.is_near_camera(global_position):
@@ -759,26 +761,26 @@ func _add_crack() -> void:
 	var h: float = def.height if def != null else 3.0
 	var mi := MeshInstance3D.new()
 	var bm := BoxMesh.new()
-	var tall: float = randf_range(0.8, 1.7)
+	var tall: float = Fx.rand_range(0.8, 1.7)
 	bm.size = Vector3(0.075, tall, 0.055)
 	mi.mesh = bm
 	var m := StandardMaterial3D.new()
 	m.albedo_color = Color(0.10, 0.09, 0.08)
 	m.roughness = 0.92
 	mi.material_override = m
-	var y: float = randf_range(0.35, maxf(0.6, h * 0.55))
-	match randi() % 4:
+	var y: float = Fx.rand_range(0.35, maxf(0.6, h * 0.55))
+	match Fx.rand_index(4):
 		0:
-			mi.position = Vector3(randf_range(-hx * 0.7, hx * 0.7), y, -hz - 0.02)
+			mi.position = Vector3(Fx.rand_range(-hx * 0.7, hx * 0.7), y, -hz - 0.02)
 		1:
-			mi.position = Vector3(randf_range(-hx * 0.7, hx * 0.7), y, hz + 0.02)
+			mi.position = Vector3(Fx.rand_range(-hx * 0.7, hx * 0.7), y, hz + 0.02)
 		2:
-			mi.position = Vector3(-hx - 0.02, y, randf_range(-hz * 0.7, hz * 0.7))
+			mi.position = Vector3(-hx - 0.02, y, Fx.rand_range(-hz * 0.7, hz * 0.7))
 			mi.rotation.y = PI * 0.5
 		_:
-			mi.position = Vector3(hx + 0.02, y, randf_range(-hz * 0.7, hz * 0.7))
+			mi.position = Vector3(hx + 0.02, y, Fx.rand_range(-hz * 0.7, hz * 0.7))
 			mi.rotation.y = PI * 0.5
-	mi.rotation.z = randf_range(-0.35, 0.35)
+	mi.rotation.z = Fx.rand_range(-0.35, 0.35)
 	_crack_root.add_child(mi)
 	_crack_count += 1
 
@@ -800,9 +802,9 @@ func _begin_collapse() -> void:
 	_collapse_t = 0.0
 	_collapse_y0 = position.y
 	_collapse_yaw0 = rotation.y
-	var sx: float = 1.0 if randf() > 0.5 else -1.0
-	var sz: float = 1.0 if randf() > 0.5 else -1.0
-	_collapse_tilt = Vector3(sx * randf_range(0.22, 0.38), 0.0, sz * randf_range(0.22, 0.38))
+	var sx: float = 1.0 if Fx.rand() > 0.5 else -1.0
+	var sz: float = 1.0 if Fx.rand() > 0.5 else -1.0
+	_collapse_tilt = Vector3(sx * Fx.rand_range(0.22, 0.38), 0.0, sz * Fx.rand_range(0.22, 0.38))
 	var h: float = def.height if def != null else 3.0
 	VFXKIT.debris(global_position + Vector3.UP * h * 0.55, Color(0.48, 0.45, 0.41), 8, 0.22)
 
@@ -831,8 +833,8 @@ func _update_dead(dt: float) -> void:
 			_collapse_dust_t = 0.22
 			var hx: float = float(def.footprint.x) * 0.5 if def != null else 2.0
 			var hz: float = float(def.footprint.y) * 0.5 if def != null else 2.0
-			var edge: Vector3 = global_position + Vector3(randf_range(-hx, hx),
-					randf_range(0.4, 1.6), randf_range(-hz, hz))
+			var edge: Vector3 = global_position + Vector3(Fx.rand_range(-hx, hx),
+					Fx.rand_range(0.4, 1.6), Fx.rand_range(-hz, hz))
 			VFXKIT.dust(edge, 4, 0.6, Color(0.62, 0.56, 0.45))
 	if k >= 1.0:
 		_land_and_ruins()
