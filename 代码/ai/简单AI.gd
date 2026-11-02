@@ -595,6 +595,7 @@ func _gold_share(diff: DifficultyDef) -> float:
 ## 任何一笔开销之后，金币都必须 ≥ RESERVE_GOLD，避免 AI 把家底掏空到"零机动"
 ## —— 玩家一压家，它连个农民/箭塔都补不出来，只能干挨打。
 ##
+## ⚠ 只用于**建筑 / 农民**。军队走 `_can_spend_army()`，见那里的诊断证据。
 func _can_spend(id: StringName) -> bool:
 	if _faction == null:
 		return false
@@ -605,6 +606,27 @@ func _can_spend(id: StringName) -> bool:
 		return false
 	# 金与木各留一份底：只有金币闸的话，木头会被一口气花光、下一座房子永远差 20 木
 	return _faction.gold - d.gold_cost >= reserve_gold 		and _faction.wood - d.wood_cost >= reserve_wood
+
+
+## **军队专用花钱闸：不套用金币保留额**，只要求"付得起 + 木材留底"。
+##
+## 为什么必须分开（2C-1 诊断，2026-11-02，证据 `_qa/prod1.jsonl`）：
+##   `_can_spend` 要求"花完还剩 reserve_gold(150)"，于是最便宜的兵 130 金 →
+##   **真实门槛 280 金**；而 AI·1队 4 分钟内兵营口看到的金币是 142~278，
+##   8 分钟局里峰值 263 —— 永远差 2~17 金够不着。结果：
+##   兵营队列空档 411 s/480 s（86%）、兵力从 t=30 s 起卡在 8 不动。
+##   逐条证据（同一次跑）：`footman:保留金闸(gold 242 < 135+150)`。
+##
+## 保留金的本意是"别把家底掏空到补不出农民"，而**兵本身就是机动战力**；
+## 军队采购不该被"机动资金"闸拦住。金币下限本轮取 0（可调 0~75），
+## 因为 `MAX_QUEUE_ARMY=1` 已经把单次扣款锁在"一个兵"以内。
+func _can_spend_army(id: StringName) -> bool:
+	if _faction == null:
+		return false
+	var d: UnitDef = Cfg.unit(id)
+	if d == null:
+		return false
+	return _faction.gold >= d.gold_cost 		and _faction.wood - d.wood_cost >= reserve_wood
 
 
 ## 人口不够就补农场
@@ -786,7 +808,7 @@ func _pick_army_unit(b: RtsBuilding, diff: DifficultyDef) -> StringName:
 			continue
 		if not b.can_train(id):
 			continue
-		if not _can_spend(id):
+		if not _can_spend_army(id):
 			continue
 		var d: UnitDef = Cfg.unit(id)
 		if d == null:
