@@ -81,6 +81,10 @@ var _faction: RtsFaction = null
 var _think: float = 0.0
 ## 巡逻/撤退节流
 var _patrol_cd: float = 0.0
+## 巡逻轮次（确定性伪随机的"序号"输入，见 _dhash01）
+var _patrol_seq: int = 0
+## 入夜收队轮次（同上）
+var _night_seq: int = 0
 ## 下一波的时间点（秒，Game.elapsed 口径）
 var _next_wave_at: float = 0.0
 ## 已发起波数
@@ -590,6 +594,7 @@ func _gold_share(diff: DifficultyDef) -> float:
 ## 花钱闸：在 Game.can_afford（有多少花多少）之上加一道"保留资金"门槛。
 ## 任何一笔开销之后，金币都必须 ≥ RESERVE_GOLD，避免 AI 把家底掏空到"零机动"
 ## —— 玩家一压家，它连个农民/箭塔都补不出来，只能干挨打。
+##
 func _can_spend(id: StringName) -> bool:
 	if _faction == null:
 		return false
@@ -744,6 +749,7 @@ func _manage_army(diff: DifficultyDef) -> void:
 			army += 1
 			if army >= diff.max_army:
 				return
+
 
 ## 让一座建筑排一个兵。返回真的排上的 id（空串 = 排不上）
 func _queue_one(b: RtsBuilding, diff: DifficultyDef) -> StringName:
@@ -1003,6 +1009,23 @@ func _manage_defense(diff: DifficultyDef) -> void:
 
 ## 巡逻：没有战事时让 1~3 个兵绕着基地转，别全挤在基地里发呆。
 ## 顺手还能"发现自己家门口的敌人"——AI 的反应速度肉眼可见地变快。
+## **确定性伪随机**：按 (标识, 序号) 直接算出 [0,1)，**不消费全局 randf 流**。
+##
+## 为什么要有它（M1 确定性诊断 2026-11-02）：
+##   巡逻/散开/收队的落点只是"让人别挤成一坨"，与胜负无关，但它们每抽一次就移动
+##   全局 RNG 游标一位。于是"某处多抽/少抽一次"会把**后面所有战斗骰子整体平移**，
+##   对跑时表现为"同一帧内 RNG 流差 1 次"，把真正的分叉源藏起来。
+##   把这类"纯散开"的随机从玩法流里摘出去，是**降噪**，不是修根因。
+##
+## 用 `hash(u.name)` 而不是 `get_instance_id()`：前者跨进程稳定（名字带自增序号），
+## 后者是内存地址，换一次运行就变。
+static func _dhash01(a: int, b: int) -> float:
+	var h: int = a * 73856093 ^ b * 19349663 ^ 0x9E3779B9
+	h = (h ^ (h >> 13)) * 1274126177
+	h = h ^ (h >> 16)
+	return float(h & 0x7FFFFFFF) / 2147483648.0
+
+
 func _manage_patrol(_diff: DifficultyDef) -> void:
 	if _patrol_cd > 0.0 or _faction == null:
 		return
@@ -1012,6 +1035,7 @@ func _manage_patrol(_diff: DifficultyDef) -> void:
 	if army.size() < 2:
 		return
 	_patrol_cd = PATROL_INTERVAL
+	_patrol_seq += 1
 	var n: int = clampi(int(ceil(float(army.size()) * 0.25)), 1, 3)
 	var home: Vector3 = RtsWorld.base_center(_faction)
 	var moved: int = 0
@@ -1022,8 +1046,10 @@ func _manage_patrol(_diff: DifficultyDef) -> void:
 			continue
 		if not u.is_idle_like():
 			continue
-		var ang: float = randf() * TAU
-		var r: float = randf_range(16.0, 26.0)
+		# 纯散开：走确定性伪随机，不动全局流（见 _dhash01）
+		var seed_h: int = hash(u.name)
+		var ang: float = _dhash01(seed_h, _patrol_seq) * TAU
+		var r: float = 16.0 + 10.0 * _dhash01(seed_h, _patrol_seq + 7919)
 		_sched.attack_move([u], home + Vector3(cos(ang) * r, 0.0, sin(ang) * r), "patrol")
 		moved += 1
 
@@ -1064,8 +1090,9 @@ func _manage_waves(diff: DifficultyDef) -> void:
 		if i < push_n:
 			_sched.attack_move([u], targets[i], "wave")
 		else:
-			# 留守的人散在基地外圈，别全站在大本营里堵路
-			var ang: float = randf() * TAU
+			# 留守的人散在基地外圈，别全站在大本营里堵路。
+			# 同样是"纯散开" → 确定性伪随机，不消费全局流（见 _dhash01）。
+			var ang: float = _dhash01(hash(u.name), _wave_index * 31 + 11) * TAU
 			_sched.move([u], home + Vector3(cos(ang) * 16.0, 0.0, sin(ang) * 16.0), "wave")
 
 	_wave_index += 1
@@ -1123,6 +1150,7 @@ func _manage_night(_diff: DifficultyDef) -> void:
 		_night_cd -= float(_diff.think_interval * think_scale)
 		return
 	_night_cd = NIGHT_RECALL_INTERVAL
+	_night_seq += 1
 	var home: Vector3 = RtsWorld.base_center(_faction)
 	var moved: int = 0
 	for u in _army_units():
@@ -1131,7 +1159,7 @@ func _manage_night(_diff: DifficultyDef) -> void:
 		# 已经在家里圈内就别折腾它（不然每 6 秒重下一次命令，兵一直原地踏步）
 		if u.global_position.distance_to(home) <= DEFENSE_RADIUS + 6.0:
 			continue
-		var ang: float = randf() * TAU
+		var ang: float = _dhash01(hash(u.name), _night_seq * 37 + 5) * TAU
 		var p: Vector3 = home + Vector3(cos(ang), 0.0, sin(ang)) * (DEFENSE_RADIUS * 0.8)
 		_sched.attack_move([u], p, "night")
 		moved += 1
