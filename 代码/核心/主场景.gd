@@ -665,6 +665,11 @@ func _parse_cmdline() -> void:
 			_qa_cam_yaw = float(arg.substr(10))
 		elif arg.begins_with("--map="):
 			_map_path = arg.substr(6)
+		elif arg.begins_with("--speed="):
+			# ★ 时间的唯一入口：在**任何节点 _process 之前**（主场景 _ready 里）定死。
+			#   以前由 AI基准 在它自己的 _ready 里设，等于"开局第 1 帧之后才生效"，
+			#   首帧时序一差就会让 Game.elapsed 的推进起点差一帧 —— 确定性事故的候选之一。
+			Engine.time_scale = maxf(float(arg.substr(8)), 0.1)
 		elif arg.begins_with("--dump-mapdef="):
 			_dump_mapdef = arg.substr(14)
 		elif arg == "--demo-tree":

@@ -103,17 +103,26 @@ func build_metrics(ctx: Dictionary) -> Dictionary:
 	var now: float = float(ctx.get("now", 0.0))
 
 	var ratio: float = UNKNOWN_RATIO
+	var atk_ratio: float = UNKNOWN_RATIO
 	var my_value: float = 0.0
 	if combat != null:
-		# 门下槛的分母可以和"选兵画像"用不同的队列：B 模式换分母时，
-		# 兵种克制画像仍取最强的那家（否则生产决策一起变，A/B 不可归因）。
-		var ratio_army: Array = ctx.get("ratio_enemy_army", enemy_army)
-		if ratio_army == null:
-			ratio_army = enemy_army
-		ratio = combat.ratio(army, ratio_army)
+		# ★ 两个比值，两个用途（2026-11-02 拆开）：
+		#   plan_ratio   —— 战略计划选择用（all_in / press_advantage 的 when 条件）；
+		#   attack_ratio —— 出击许可用（_compute_allow_attack 的 1.35/skill 门槛）。
+		# 现在两者读同一个源（enemy_army），所以默认行为一字不变；
+		# --ratio-mode=B 只换 attack_ratio 的分母（命中"门槛"而不动计划选择）。
+		# 目的：2C 要"移除出击许可对军力比的依赖"时，只动 attack 这一侧即可。
+		var plan_army: Array = enemy_army
+		var atk_army: Array = ctx.get("ratio_enemy_army", enemy_army)
+		if atk_army == null:
+			atk_army = enemy_army
+		ratio = combat.ratio(army, plan_army)
 		if ratio < 0.0:
 			ratio = CLEARED_RATIO if army.size() >= 3 else UNKNOWN_RATIO
-		my_value = combat.army_value(army, combat.profile(enemy_army))
+		atk_ratio = ratio if atk_army == plan_army else combat.ratio(army, atk_army)
+		if atk_ratio < 0.0:
+			atk_ratio = CLEARED_RATIO if army.size() >= 3 else UNKNOWN_RATIO
+		my_value = combat.army_value(army, combat.profile(plan_army))
 
 	var army_food: float = 0.0
 	for u in army:
@@ -144,7 +153,11 @@ func build_metrics(ctx: Dictionary) -> Dictionary:
 		"idle_workers": float(idle_workers.size()),
 		"army_count": float(army.size()),
 		"army_food": army_food,
+		# army_ratio 是旧键（计划表 when 条件、日志、自检、bench 都在读它）——语义固定为
+		# "计划选择用的那个比值"，永不随 --ratio-mode 变化。
 		"army_ratio": ratio,
+		"plan_ratio": ratio,
+		"attack_ratio": atk_ratio,
 		"my_army_value": my_value,
 		"food_used": used,
 		"food_cap": cap,
@@ -255,7 +268,9 @@ func _compute_allow_attack(m: Dictionary, aggression: float) -> bool:
 		return false
 	if aggression < 0.30:
 		return false
-	var ratio: float = float(m["army_ratio"])
+	# 出击许可只看 attack_ratio（分母可被 --ratio-mode 换掉）；
+	# 计划选择看 army_ratio/plan_ratio。两者默认同源，拆开后互不牵连。
+	var ratio: float = float(m.get("attack_ratio", m.get("army_ratio", 0.0)))
 	var value: float = float(m["my_army_value"])
 	var static_def: float = float(m["enemy_static_defense"])
 	var need_value: float = EAGER_ARMY_VALUE + EAGER_STATIC_DEF_WEIGHT * static_def

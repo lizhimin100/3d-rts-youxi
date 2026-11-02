@@ -85,8 +85,12 @@ func _ready() -> void:
 	# ★ 确定性：对局开始前固定全局 RNG。地图是固定 .tres、帧率定死 60，
 	#   AI 的随机（波次骰/巡逻/加权选兵）全部来自这里的种子。
 	seed(seed_val)
-	Engine.time_scale = speed
+	# ★ 时间缩放由 主场景._parse_cmdline 的 --speed= 在首帧前设好（别在这里设：
+	#   在本节点 _ready 里设，首帧时序一差就会让 Game.elapsed 的起点差一帧）。
 	_t0_msec = Time.get_ticks_usec() / 1000
+	if not is_equal_approx(Engine.time_scale, speed):
+		print("[AI基准] ⚠ time_scale=%.2f 与 --speed=%.2f 不一致（缺 --speed= 参数？）"
+			% [Engine.time_scale, speed])
 
 	Game.combat_hit.connect(_on_hit)
 	Game.unit_died.connect(_on_death)
@@ -130,6 +134,8 @@ func _process(delta: float) -> void:
 		_sit_acc -= SITUATION_EVERY
 		_dump_situations(false)
 	_sig_sample()
+
+
 
 
 # ===========================================================================

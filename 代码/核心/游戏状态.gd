@@ -47,6 +47,8 @@ signal adjutant_hint(payload: Dictionary)
 var phase: int = RtsConst.Phase.PREPARE
 ## 已经进行的秒数（只在 RUNNING 阶段累加）
 var elapsed: float = 0.0
+## 生成序号（节点名用）。必须是确定性的：同 seed 复跑要得到同一串名字。
+var _spawn_seq: int = 0
 ## 难度下标
 var difficulty_index: int = 0
 
@@ -478,7 +480,10 @@ func spawn_unit(faction: RtsFaction, unit_id: StringName, pos: Vector3,
 	else:
 		node = RtsUnit.new()
 
-	node.name = "%s_%d" % [String(unit_id), Time.get_ticks_usec() % 100000]
+	# 名字里的序号用**自增计数器**，不用 Time.get_ticks_usec()：后者是墙钟，
+	# 同 seed 复跑会得到不同的节点名，任何"按名字排序/查重"的地方都会跟着漂。
+	_spawn_seq += 1
+	node.name = "%s_%d" % [String(unit_id), _spawn_seq]
 	node.position = pos
 	parent.add_child(node)
 	# 只有可采集物认 proc（树的品种/种子）；建筑/单位走原来的两参数 setup
