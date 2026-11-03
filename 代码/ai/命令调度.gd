@@ -170,7 +170,8 @@ func gather(units: Array, node: Node3D, label: String = "") -> void:
 	for u in ok:
 		if int(u.order) == RtsConst.Order.GATHER and u.target == null:
 			# 已经在采：只在资源点变了的时候重下（命令点判据在采集里不适用）
-			var cur: Node3D = u.get("_gather_node")
+			# 无类型接住：资源点 free 后是悬空引用，带类型赋值会抛引擎错误（见 单位.gd 同处注释）
+			var cur = u.get("_gather_node")
 			if cur == node:
 				_skipped += 1
 				continue

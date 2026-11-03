@@ -2046,7 +2046,12 @@ func _find_harvestable(kind: int) -> Node3D:
 			continue
 		if not (u is RtsUnit) or not u.is_alive():
 			continue
-		var n: Node3D = u.get("_gather_node")
+		# ★ 不标注 Node3D：这一格存的是**别人的** `_gather_node`，资源点被采空后会 free，
+		#   悬空引用一旦被"带类型的赋值"接住，引擎会每帧抛
+		#   "Trying to assign invalid previously freed instance" 并**中断整个函数**
+		#   （= 这个农民这一帧找不到矿，等于采集逻辑随机失效，同时日志被刷爆）。
+		#   用无类型 var 接住 + is_instance_valid 过滤，行为不变、错误消失。
+		var n = u.get("_gather_node")
 		if n != null and is_instance_valid(n):
 			claimed[n] = int(claimed.get(n, 0)) + 1
 
