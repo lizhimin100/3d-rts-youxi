@@ -129,6 +129,41 @@ func worth_per_cost(def: UnitDef, enemy_profile: Dictionary,
 
 
 # ===========================================================================
+# 成本（C1 口径：只金 + 木）
+# ===========================================================================
+##
+## ★ 为什么单独一组、而且**不用** worth_per_cost：
+##   `worth_per_cost` 的分母是"金 + 木×1.5 + 人口×12 + 建造时间×0.6"，
+##   那是**估值**口径（用来比较"造哪个兵更值"），不是**记账**口径。
+##   波次记录表要回答"这一波花了多少、换掉对面多少"（投入产出比 / 净交换比），
+##   必须用真实的金木支出 —— 见《反馈驱动战略_设计》§3.1 C1：
+##   **只用金 + 木，不含人口，不做金木换算**。
+##
+##   两个函数都是 static 纯函数：不读 Cfg、不读 Game、不碰场景树，
+##   配置回归（配置回归.gd）可以直接用 RefCounted 假单位断言。
+
+## 一个单位的账面成本（C1）：金 + 木。农民/人口/建造时间都不计。
+static func unit_cost(def: UnitDef) -> float:
+	if def == null:
+		return 0.0
+	return float(def.gold_cost) + float(def.wood_cost)
+
+
+## 一支部队的账面成本：按实际派出编制逐兵种求和（C1）。
+## 传入的元素只需要有 `def` 字段（RtsUnit / 配置回归的 FakeUnit 都可以）。
+static func wave_cost(units: Array) -> float:
+	var total: float = 0.0
+	for u in units:
+		if u == null or not is_instance_valid(u):
+			continue
+		var d: UnitDef = u.get("def")
+		if d == null:
+			continue
+		total += unit_cost(d)
+	return total
+
+
+# ===========================================================================
 # 队伍
 # ===========================================================================
 

@@ -296,7 +296,13 @@ func _new_faction_stats(f: RtsFaction) -> Dictionary:
 		"faction": f.display_name, "is_player": f.is_player, "team": f.team,
 		"gold_income": 0, "wood_income": 0,
 		"idle_unit_seconds": 0.0, "stuck_unit_seconds": 0.0, "stuck_max_units": 0,
-		"prod_idle_seconds": 0.0, "broke_seconds": 0.0, "broke_episodes": 0, "_was_broke": false,
+		# prod_idle_seconds = **新口径**（2026-11-03 2C-2：加了 army < max_army，
+		#   只统计"该造却没造"，不再把"已满编"算成空转）；
+		# prod_idle_seconds_legacy = 旧口径（不判满编），保留只为同一跑里做新旧对比。
+		"prod_idle_seconds": 0.0, "prod_idle_seconds_legacy": 0.0,
+		# 该阵营的军队规模上限（一切口径都来自难度档，不写死）
+		"max_army": int(Cfg.difficulty(Game.difficulty_index).max_army),
+		"broke_seconds": 0.0, "broke_episodes": 0, "_was_broke": false,
 		"damage_dealt": 0.0, "damage_taken": 0.0,
 		"units_lost": 0, "buildings_lost": 0,
 		"wounded_episodes": 0, "_wounded_alive_units": 0,
@@ -367,7 +373,11 @@ func _sample_units(step: float) -> void:
 		s["army_n_last"] = army_n
 		s["idle_n_last"] = idle_n
 
-		# 生产队列空档：有已完工产能建筑但队列全空，且钱够最便宜的兵
+		# 生产队列空档：有已完工产能建筑但队列全空，且钱够最便宜的兵。
+		# ★ 2026-11-03 2C-2 口径修正：还要 **army < max_army**。
+		#   旧口径把"已经满编所以不造"也算成空转（2C-1 复盘：改后 65% 采样点处于满编，
+		#   89.2 s 里约 58 s 是"该停"的），修好之后余量会被误读成"还没修好"。
+		#   旧口径数字保留在 prod_idle_seconds_legacy 里，同一跑里可做新旧对比。
 		var prod_empty: bool = true
 		var prod_any: bool = false
 		for b in f.buildings:
@@ -381,8 +391,12 @@ func _sample_units(step: float) -> void:
 			if int(b.call("train_count")) > 0:
 				prod_empty = false
 				break
+		var max_army_i: int = int(s.get("max_army", 0))
+		var under_cap: bool = max_army_i <= 0 or army_n < max_army_i
 		if prod_any and prod_empty and f.gold >= 130:
-			s["prod_idle_seconds"] = float(s["prod_idle_seconds"]) + step
+			s["prod_idle_seconds_legacy"] = float(s["prod_idle_seconds_legacy"]) + step
+			if under_cap:
+				s["prod_idle_seconds"] = float(s["prod_idle_seconds"]) + step
 		# 资源断档：钱袋见底且队列空（episode 计数）
 		var broke: bool = f.gold < 75 and f.wood < 20 and prod_empty
 		if broke and not bool(s["_was_broke"]):
@@ -612,6 +626,34 @@ func _finish(reason: String) -> void:
 			c[k] = s[k]
 		clean[fname] = c
 
+	# --- 波次记录表 / 战略状态机（2C-2）---
+	# 只读 AI 脑上的公开字段，原样落盘；不在这里重算判定（判定由 AI 自己算）。
+	# members/hits 是运行期索引（实例 id），落盘前剔掉，免得报告里全是内存地址。
+	var wave_records: Dictionary = {}
+	for b in _brains:
+		var n = b["node"]
+		if n == null or not is_instance_valid(n):
+			continue
+		var fname2: String = String(b["faction"].display_name)
+		var rows: Array = []
+		var raw = n.get("wave_log")
+		if raw is Array:
+			for r in raw:
+				if not (r is Dictionary):
+					continue
+				var c: Dictionary = (r as Dictionary).duplicate(true)
+				c.erase("members")
+				c.erase("hits")
+				if c.has("target"):
+					c["target"] = str(c["target"])
+				rows.append(c)
+		wave_records[fname2] = {
+			"state": String(n.get("strat_state")),
+			"stats": n.get("strat_stats"),
+			"timeline": n.get("strat_log"),
+			"waves": rows,
+		}
+
 	var report := {
 		"seed": seed_val, "minutes": minutes, "speed": speed, "map": map_path,
 		"difficulty": Cfg.game.default_difficulty,
@@ -623,6 +665,7 @@ func _finish(reason: String) -> void:
 		"fog": "玩家侧启用（AI 不受迷雾限制，全图读取）",
 		"P1": "不可采：无任务层与情报层（见诊断 4.2）",
 		"factions": clean,
+		"wave_records": wave_records,
 		"events": _events,
 		"situations_file": _file_sit if not _file_sit.is_empty() else "未启用",
 	}
@@ -646,6 +689,9 @@ func _finish(reason: String) -> void:
 			"拒击": int(s["attack_rejected"]), "出击许可": int(s.get("allow_attack_on", 0)),
 			"许可开着": int(s.get("allow_on_think", 0)),
 			"门槛": "%.2f~%.2f" % [float(s.get("need_min", 0.0)), float(s.get("need_max", 0.0))],
+			"空转新": snappedf(float(s["prod_idle_seconds"]), 0.1),
+			"空转旧": snappedf(float(s["prod_idle_seconds_legacy"]), 0.1),
+			"兵力": int(s.get("army_n_last", 0)),
 			"回防": int(s["defense_count"]),
 			"损失": "%d兵/%d建" % [int(s["units_lost"]), int(s["buildings_lost"])],
 			"闲时": snappedf(float(s["idle_unit_seconds"]), 1.0),

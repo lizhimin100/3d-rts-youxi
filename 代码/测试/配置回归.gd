@@ -75,6 +75,7 @@ func _run() -> void:
 	_case_counter()
 	_case_edge()
 	_case_attack_gate()
+	_case_wave_cost()
 	_finish(t0)
 
 
@@ -199,24 +200,29 @@ func _case_edge() -> void:
 
 # ===========================================================================
 # F 出击门槛（纯函数：只需要一份伪造的 metrics）
+#
+# 2026-11-03 2C-2 改口径：出击许可**不再读军力比**（设计文档 §3.6）。
+# 断言随之改成"兵比高低都放行、只剩威胁/侵略性两条否决"，
+# 同时保留"门槛数值仍可算"（它现在只进报告，不参与判断）。
 # ===========================================================================
 func _case_attack_gate() -> void:
 	var director = load("res://代码/ai/战略导演.gd").new()
 	director.call("setup", [], 0)     # 难度 0（简单）→ skill 0.85 → 门槛 1.35/0.85
 	var need: float = float(director.call("_attack_ratio_needed"))
-	_record("简单档出击门槛 = 1.59", _near(need, 1.59, 0.01), "need=%.4f" % need)
+	_record("简单档门槛报告值 = 1.59（仅记录，不判断）", _near(need, 1.59, 0.01), "need=%.4f" % need)
 
 	var base := {
-		"base_threat": 0.0, "army_ratio": 1.20, "my_army_value": 500.0,
-		"enemy_static_defense": 100.0, "army_food": 20.0,
+		"base_threat": 0.0, "army_ratio": 0.50, "attack_ratio": 0.50,
+		"my_army_value": 300.0, "enemy_static_defense": 100.0, "army_food": 5.0,
 	}
 	var low: bool = bool(director.call("_compute_allow_attack", base, 0.8))
-	_record("兵比 1.20 < 1.59 → 拒绝", not low, "allow=%s" % str(low))
+	_record("兵比 0.50 < 1.59 → 仍然放行（已移除军力比依赖）", low, "allow=%s" % str(low))
 
 	var high: Dictionary = base.duplicate()
 	high["army_ratio"] = 1.70
+	high["attack_ratio"] = 1.70
 	var ok_hi: bool = bool(director.call("_compute_allow_attack", high, 0.8))
-	_record("兵比 1.70 ≥ 1.59 → 放行", ok_hi, "allow=%s" % str(ok_hi))
+	_record("兵比 1.70 → 放行", ok_hi, "allow=%s" % str(ok_hi))
 
 	var threat: Dictionary = high.duplicate()
 	threat["base_threat"] = 1.0
@@ -226,6 +232,31 @@ func _case_attack_gate() -> void:
 	_record("侵略性 0.20 < 0.30 → 不放行",
 			not bool(director.call("_compute_allow_attack", high, 0.20)),
 			"allow=%s" % str(bool(director.call("_compute_allow_attack", high, 0.20))))
+
+
+# ===========================================================================
+# H 波次成本口径（C1：只金 + 木，不含人口；2C-2 新增）
+# ===========================================================================
+func _case_wave_cost() -> void:
+	var foot: UnitDef = _cfg.unit(&"footman")
+	var arch: UnitDef = _cfg.unit(&"archer")
+	if foot == null or arch == null:
+		_record("unit_cost / wave_cost", false, "找不到 footman / archer")
+		return
+	var c_foot: float = float(_model.call("unit_cost", foot))
+	var expect_foot: float = float(foot.gold_cost) + float(foot.wood_cost)
+	_record("unit_cost(footman) = 金+木（不含人口）", _near(c_foot, expect_foot, 0.0001),
+			"%.1f（金 %d + 木 %d，人口 %d 未计入）"
+				% [c_foot, foot.gold_cost, foot.wood_cost, foot.food_cost])
+
+	var units: Array = [_unit(foot), _unit(foot), _unit(arch)]
+	var c_wave: float = float(_model.call("wave_cost", units))
+	var expect_wave: float = 2.0 * c_foot + float(_model.call("unit_cost", arch))
+	_record("wave_cost(2 步 + 1 弓) = 按编制求和", _near(c_wave, expect_wave, 0.0001),
+			"%.1f（期望 %.1f）" % [c_wave, expect_wave])
+
+	var empty_cost: float = float(_model.call("wave_cost", []))
+	_record("wave_cost(空编制) = 0（不报错）", empty_cost == 0.0, "%.1f" % empty_cost)
 
 
 # ===========================================================================

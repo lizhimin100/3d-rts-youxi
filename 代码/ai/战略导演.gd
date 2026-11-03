@@ -10,20 +10,21 @@ extends RefCounted
 ##   1. **计划是数据**（代码/配置/战略计划.gd），导演只做"算指标 + 选计划"；
 ##   2. **带滞回**：优先级 >= 90 立刻切，其余至少停留 PLAN_MIN_SECONDS，
 ##      否则 army_ratio 在阈值附近抖一下，AI 的战术就会每秒变一次；
-##   3. **"能不能打"不写在计划里**，而是由战力比 + 敌方静态防御 + 是否被压家
-##      算出来（_compute_allow_attack）。写进计划表会变成"某个流派永远不打"。
+##   3. **"能不能打"不写在计划里**：出击许可现在只剩两条否决（家里挨打 / 计划说不打），
+##      军力比从 2026-11-03 起**只记录不判断**（设计文档 §3.6）。写进计划表会变成
+##      "某个流派永远不打"。见 `_compute_allow_attack`。
 
 ## 计划最短停留时间（秒）；优先级 >= 90 的除外
 const PLAN_MIN_SECONDS: float = 8.0
 ## 战略权重开关（A/B/C，见 代码/配置/AI战略权重.gd）。默认 A = 现状。
 const AIW := preload("res://代码/配置/AI战略权重.gd")
-## 出击需要的战力比基准（越难的 AI 越敢打）
+## 出击门槛的**报告值**（越难的 AI 越敢打）。
+## @deprecated 2026-11-03 2C-2：出击许可不再读它；保留计算只为 bench 的"门槛"字段
+## 与 A/B/C 对照的历史连续性（`attack_ratio_needed` 仍进 posture）。
 const ATTACK_RATIO_BASE: float = 1.35
-## "家底够了就敢打"的阈值：总战力到这个数就不再看兵力比（只要求不落后）。
-## 450 ≈ 6~7 个兵（步兵战力约 72、弓箭手约 59），正好是"第一波该出门"的家底；
-## 定 700 的话简单难度要攒到 10 个兵才动，玩家前 3 分钟见不到敌人（实测过）。
+## @deprecated 同上：`_compute_allow_attack` 里"家底够厚"的那条正向条件已随军力比一起移除。
 const EAGER_ARMY_VALUE: float = 450.0
-## 敌方每 1 点静态防御价值，需要多攒多少战力
+## @deprecated 同上
 const EAGER_STATIC_DEF_WEIGHT: float = 1.2
 ## 没有情报（看不到敌人）时假设的兵力比
 const UNKNOWN_RATIO: float = 1.0
@@ -106,12 +107,11 @@ func build_metrics(ctx: Dictionary) -> Dictionary:
 	var atk_ratio: float = UNKNOWN_RATIO
 	var my_value: float = 0.0
 	if combat != null:
-		# ★ 两个比值，两个用途（2026-11-02 拆开）：
+		# ★ 两个比值，两个用途（2026-11-02 拆开，2026-11-03 2C-2 再次降级）：
 		#   plan_ratio   —— 战略计划选择用（all_in / press_advantage 的 when 条件）；
-		#   attack_ratio —— 出击许可用（_compute_allow_attack 的 1.35/skill 门槛）。
-		# 现在两者读同一个源（enemy_army），所以默认行为一字不变；
-		# --ratio-mode=B 只换 attack_ratio 的分母（命中"门槛"而不动计划选择）。
-		# 目的：2C 要"移除出击许可对军力比的依赖"时，只动 attack 这一侧即可。
+		#   attack_ratio —— **只记录，不判断**（出击许可已移除对军力比的依赖，见 §3.6）。
+		# 保留 attack_ratio 是为了报告、A/B/C 历史对照，以及反馈线的波次评估。
+		# --ratio-mode=B 仍然只换 attack_ratio 的分母（命中"报告值"而不动计划选择）。
 		var plan_army: Array = enemy_army
 		var atk_army: Array = ctx.get("ratio_enemy_army", enemy_army)
 		if atk_army == null:
@@ -253,30 +253,35 @@ func _test(c: Dictionary, m: Dictionary) -> bool:
 # 出击许可
 # ===========================================================================
 
+## 出击门槛的数值（**只用于报告 / A/B/C 历史对照，不参与任何判断**）。
 func _attack_ratio_needed() -> float:
 	var base: float = clampf(ATTACK_RATIO_BASE / maxf(skill, 0.1), 1.05, 1.9)
 	_ratio_need = AIW.apply_decay(base, _locked_sec)
 	return _ratio_need
 
 
-## 能不能主动出击。两个"可以打"的理由，任一成立即可：
-##   · 家底够厚（总战力 >= EAGER_ARMY_VALUE + 敌方静态防御的溢价），且不落后；
-##   · 明显占优（战力比达标）且人口兵力够。
-## 两个都要求"家里没在挨打" —— 被拆家还出去打是最蠢的死法。
+## 能不能主动出击（2026-11-03 2C-2 重构）。
+##
+## 设计文档 §3.6「移除出击许可对军力比的依赖」：不再把 `attack_ratio ≥ 1.35/skill`
+## 当作前置条件，"家底够厚 + 不落后"（EAGER_ARMY_VALUE + ratio ≥ 0.95）那条正向条件
+## 也一起移除 —— 它同样在读 `attack_ratio`。
+##
+## 为什么必须移除（2C-1 bench 实测）：4 队 FFA 上四家兵力同时被填满，
+## `army_ratio` 是**相对量**、恒在 1.30 左右，而门槛 1.5882 是**绝对值**写的 ⇒
+## 大家一样强 = 谁都拿不到许可。seed1 4 分钟 55 次拒击，理由全是 `兵比=1.30(需1.59)`，
+## 整局 0 波。这不是"AI 谨慎"，是"相对量 × 绝对阈值"的结构性死锁。
+##
+## 现在只保留两条否决（§3.6「保留但降级」）：
+##   · `base_threat > 0` —— 家里在挨打，先回防，别送；
+##   · `aggression < 0.30` —— 计划明确说"这一轮不打"。
+## `attack_ratio` 仍然算、仍然进 metrics/posture，但**只记录、不判断**，
+## 供报告与反馈线（波次记录表的投入产出比 / 状态机）使用。
 func _compute_allow_attack(m: Dictionary, aggression: float) -> bool:
-	if float(m["base_threat"]) > 0.0:
+	if float(m.get("base_threat", 0.0)) > 0.0:
 		return false
 	if aggression < 0.30:
 		return false
-	# 出击许可只看 attack_ratio（分母可被 --ratio-mode 换掉）；
-	# 计划选择看 army_ratio/plan_ratio。两者默认同源，拆开后互不牵连。
-	var ratio: float = float(m.get("attack_ratio", m.get("army_ratio", 0.0)))
-	var value: float = float(m["my_army_value"])
-	var static_def: float = float(m["enemy_static_defense"])
-	var need_value: float = EAGER_ARMY_VALUE + EAGER_STATIC_DEF_WEIGHT * static_def
-	var eager: bool = value >= need_value and ratio >= 0.95
-	var normal: bool = float(m["army_food"]) >= 10.0 and ratio >= _attack_ratio_needed()
-	return eager or normal
+	return true
 
 
 func debug_string() -> String:

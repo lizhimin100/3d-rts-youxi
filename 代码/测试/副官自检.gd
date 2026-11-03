@@ -65,8 +65,10 @@ func _test_director() -> void:
 	var emg: String = String(d._select(_m({"time": 200.0, "base_threat": 2.0}), 21.0).get("id", ""))
 	_ok("导演：基地被压立即切 emergency_defense", emg == "emergency_defense", emg)
 
+	# 2026-11-03 2C-2：出击许可不再读军力比（设计文档 §3.6），
+	# 所以"兵力落后 → 不许打"这条断言反过来：落后也放行，交给波次记录表去评估。
 	var weak: bool = d._compute_allow_attack(_m({"army_ratio": 0.5, "my_army_value": 300.0}), 0.5)
-	_ok("导演：兵力落后时不给出击许可", not weak)
+	_ok("导演：兵力落后也给出击许可（已移除军力比依赖）", weak)
 	var strong: bool = d._compute_allow_attack(_m({"army_ratio": 1.7, "army_food": 12.0}), 0.5)
 	_ok("导演：占优时给出击许可", strong)
 	var threatened: bool = d._compute_allow_attack(
