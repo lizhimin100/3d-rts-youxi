@@ -251,3 +251,19 @@
 
 - **提交与远端**：`origin = https://github.com/lizhimin100/3d-rts-youxi.git`，
   分支 `master`，`.workbuddy/` 已纳入版本库（不再 gitignore）。
+## 14. 2026-11-03 2C-6：判定层口径与决策层（改之前先读）
+
+- **输出分母 B（默认）**：`output_theory = Σ(dps × 最近 3 s 出过手的成员) × combat_time × coef`。
+  "最近 3 s"的参照时刻是 **`max(recent_attack)`（本波最后一次开火）**，不是 `now`（收尾晚 15 s → 分母恒 0），
+  也不是 `t_last_hit`（含"被打"，20 波 12 波分母 0）。`--output-theory-mode=all` 回旧口径对照。
+- **系数 0.4**（`AI判定模式.DEFAULT_COEF` / `战斗模型.THEORY_OUTPUT_COEF`）；0.3/0.4/0.5 十分钟对照里
+  0.4 的"输出在窗"最多（系数无关 raw 归一 18/49）。**不要再往下调**：中位已 ≈1，上沿 1.3 会成新瓶颈。
+- **修理判据**：`max_hp − hp ≥ 200`（不是比例）。长局能触发，但 `blocked_no_builder` 极高
+  （农民全在采集）→ 真正的闸是工位，不是阈值。
+- **农场预判**：占用 >70% 或 余量 < 60 s 预计训练量×2；不急的农场排在兵营**之前**、急建（余量<4）之后。
+- **兵营**：固定 ≥2 座、军队 >16 加第 3 座（与 `target_army` 脱钩）。队列空转因此从 16~102 s 降到 0~0.5 s。
+- **大本营**：卡有成本（320 金/125 木）、玩家可建（`命令卡.build_page_ids()` 第 10 项），
+  AI 侧 `简单AI.can_build_townhall()` **固定 false**（扩张线下一轮）。
+- **bench 坑**：GDScript 的 `or` 返回 bool，`(x or {}).get()` 必炸；一旦 `_finish` 中断，
+  进程不会退出、也不打 `AI-BENCH`（只会挂满墙钟）。要写成 `x if x is Dictionary else {}`。
+- **长局耗时**：本机 CPU bound，`--speed=8` 不缩短墙钟，10 min 局 ≈ 10 min 墙钟（并行 2 局也不会更快）。
