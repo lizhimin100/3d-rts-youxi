@@ -350,6 +350,9 @@ func _mount_tests() -> void:
 		if a == "--ai-bench" or a.begins_with("--ai-bench"):
 			_mount_script("res://代码/测试/AI基准.gd", "AI基准")
 			break
+	# 农民测试（2C-4 §4.4）：纯经济单变量——关 AI 脑、直接派工、采金/木/建造桶空转
+	if "--peasant-test" in args:
+		_mount_script("res://代码/测试/农民测试.gd", "农民测试")
 	if "--walk-test" in args:
 		_mount_script("res://代码/测试/走姿验收.gd", "走姿验收")
 	if "--map-editor-test" in args:
