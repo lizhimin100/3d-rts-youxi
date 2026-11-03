@@ -901,6 +901,7 @@ func _manage_repair() -> void:
 	var thr: float = AIV.repair_hp_threshold()
 	var best: RtsBuilding = null
 	var best_frac: float = 1.0
+	var wood_blocked: bool = false
 	for b in _faction.buildings:
 		if b == null or not is_instance_valid(b) or not b.is_alive() or b.def == null:
 			continue
@@ -919,15 +920,20 @@ func _manage_repair() -> void:
 			continue
 		# 木材连"修满"都不够 → 派过去也只会站着（repair_step 里木材不足就停工）
 		if int(rb.call("repair_wood_for_full")) > _faction.wood:
+			wood_blocked = true
 			continue
 		var frac: float = float(rb.hp) / maxf(float(rb.def.max_hp), 1.0)
 		if frac < best_frac:
 			best_frac = frac
 			best = rb
 	if best == null:
+		if wood_blocked:
+			repair_stats["blocked_wood"] = int(repair_stats.get("blocked_wood", 0)) + 1
 		return
+	repair_stats["candidates"] = int(repair_stats.get("candidates", 0)) + 1
 	var builder: RtsUnit = _pick_builder()
 	if builder == null:
+		repair_stats["blocked_no_builder"] = int(repair_stats.get("blocked_no_builder", 0)) + 1
 		return
 	if bool(_sched.repair(builder, best, "repair")):
 		_repair_cd = REPAIR_REISSUE
@@ -2203,7 +2209,14 @@ var _research_was_running: bool = false
 var _expand_state: int = 0
 ## 2C-5 P1-4：修理下令节流 + 统计（报告/bench 读 repair_stats）
 var _repair_cd: float = 0.0
-var repair_stats: Dictionary = {"issued": 0, "buildings": {}}
+## 修理遥测（报告/bench 读）：issued 真下令次数；candidates 有候选的 tick 数；
+## blocked_wood 木材不够修满的 tick 数；blocked_no_builder 没空闲农民的 tick 数。
+## 为什么记这几个：默认 70% 阈值在 10~15 min 局里 0 触发时，必须能分清
+## "没人掉到线下" / "掉到了但没钱修" / "有钱但没农民" —— 否则只能猜。
+var repair_stats: Dictionary = {
+	"issued": 0, "buildings": {},
+	"candidates": 0, "blocked_wood": 0, "blocked_no_builder": 0,
+}
 ## P6 的参考高点与连续低波计数
 var _p6_ref_roi: float = -1.0
 var _p6_low_streak: int = 0
