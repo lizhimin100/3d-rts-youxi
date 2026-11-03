@@ -34,8 +34,11 @@ const MAX_QUEUE_ARMY: int = 1
 const VILLAGER_ARMY_GAP: int = 2
 ## 补经济时农民目标的临时增量（2C-2）：支出需求 > 收入时 +2，压力消失自动回落。
 const PEASANT_EMERGENCY_BONUS: int = 2
-## 补经济的农民目标上限（不写进难度档，只是一个安全帽：再多人也没矿可采）
-const PEASANT_EMERGENCY_MAX: int = 10
+## 2C-4 农民软上限（**直接覆盖旧上限 10**，任务书 §4.4）：采金人数到这个数 → 转采木。
+## TODO 初始值待农民测试（§4.4）产出后取下沿标定
+const PEASANT_GOLD_SOFT_CAP: int = 8
+## 总农民上限 = 软上限 + 4（采木/建造用）。TODO 同上
+const PEASANT_TOTAL_CAP: int = PEASANT_GOLD_SOFT_CAP + 4
 ## 采集配比再平衡的最小间隔（秒）。
 ## 不每 tick 重排：来回换采集点会让农民一直在走路，比不换更亏。
 const GATHER_REBALANCE_CD: float = 8.0
@@ -207,6 +210,7 @@ func _process_inner(delta: float) -> void:
 	_defend_cd = maxf(_defend_cd - delta, 0.0)
 	_patrol_cd = maxf(_patrol_cd - delta, 0.0)
 	_gather_cd = maxf(_gather_cd - delta, 0.0)
+	_research_cd = maxf(_research_cd - delta, 0.0)
 	if _think > 0.0:
 		return
 	var interval: float = maxf(diff.think_interval * think_scale, 0.1)
@@ -241,7 +245,7 @@ func _think_once(diff: DifficultyDef) -> void:
 	# --- ③ 经济 ---
 	_manage_peasants(diff)
 	_assign_workers(diff)
-	_manage_food(diff)
+	_manage_food(diff, true)    # 人口余量 <4 → 农场急建（建造农民优先级 #1）
 
 	# --- ④ 生产 / ⑤ 科技 ---
 	_manage_army(diff)
@@ -260,6 +264,9 @@ func _think_once(diff: DifficultyDef) -> void:
 		_manage_creep_clear(diff)
 		_manage_waves(diff)
 	_manage_upkeep(diff)
+	# 2C-4：不急的农场排最后（建造农民优先级 #5）；扩张线接口（最小可用）
+	_manage_food(diff, false)
+	_maybe_expand()
 
 	# --- ⑦ 反愚蠢审计（最后跑，救火命令优先）---
 	_sanity.update(ctx)
@@ -412,8 +419,16 @@ func _model_call(fn: String, args: Array = []):
 
 
 func _role_weights(diff: DifficultyDef) -> Dictionary:
-	var d = _model_call("role_weights_of", [diff])
-	return d if d is Dictionary else {}
+	# 2C-4：选兵配比只认 **承伤 / 输出**（function_weights）；旧 role_weights（frontline/
+	# ranged/caster/siege）从选兵逻辑退役（字段保留只为旧 .tres 兼容）。
+	# 空配置兜底 5:5（与难度档默认一致）。
+	var fw: Dictionary = diff.function_weights if diff != null else {}
+	if fw.is_empty():
+		fw = {&"承伤": 5.0, &"输出": 5.0}
+	var out: Dictionary = {}
+	for k in fw.keys():
+		out[StringName(k)] = float(fw[k])
+	return out
 
 
 func _candidate_ids(diff: DifficultyDef) -> Array:
@@ -568,12 +583,14 @@ func _defend_point() -> Vector3:
 func _manage_peasants(diff: DifficultyDef) -> void:
 	if _faction == null:
 		return
-	var target: int = diff.target_peasants + int(posture.get("worker_bonus", 0))
+	# 2C-4：总农民目标 = 软上限 + 4（PEASANT_TOTAL_CAP 直接覆盖旧上限口径；
+	# diff.target_peasants 退役不再读）。worker_bonus 仍作为计划加成叠加。
+	var target: int = PEASANT_TOTAL_CAP + int(posture.get("worker_bonus", 0))
 	# 2C-2 运营反馈：想造兵但连最便宜的兵都买不起 → 收入是瓶颈，先补人再谈兵。
 	# 只加人，不动任何"必须留 X 金"的闸（那是被明令禁止的）。
 	var starving: bool = _demand_pressure(diff)
 	if starving:
-		target = mini(target + PEASANT_EMERGENCY_BONUS, PEASANT_EMERGENCY_MAX)
+		target = mini(target + PEASANT_EMERGENCY_BONUS, PEASANT_TOTAL_CAP)
 	var peasants: int = _faction.count_units(_worker_id())
 	if peasants >= target:
 		return
@@ -618,7 +635,8 @@ func _assign_workers(_diff: DifficultyDef) -> void:
 
 	var share: float = _gold_share(_diff)
 	var total: int = workers.size()
-	var want_gold: int = int(round(float(total) * share))
+	# 2C-4：采金人数受软上限约束——到 PEASANT_GOLD_SOFT_CAP 就转采木（§4.4）
+	var want_gold: int = mini(int(round(float(total) * share)), PEASANT_GOLD_SOFT_CAP)
 	var base: Vector3 = RtsWorld.base_center(_faction)
 	var radius: float = Cfg.game.map_size * 0.75
 	# 木材的"收货点"每 tick 只算一次（伐木场优先，其次大本营）
@@ -679,7 +697,7 @@ func _rebalance_gatherers(_diff: DifficultyDef, share: float, total: int) -> voi
 				gold_workers.append(w)
 		elif k == RtsConst.Harvest.WOOD and gathering:
 			wood_workers.append(w)
-	var want_gold: int = int(round(float(total) * share))
+	var want_gold: int = mini(int(round(float(total) * share)), PEASANT_GOLD_SOFT_CAP)
 	var kind: int = -1
 	var pool: Array = []
 	if on_gold < want_gold and not wood_workers.is_empty():
@@ -862,10 +880,23 @@ func _can_spend_army(id: StringName) -> bool:
 	return _can_spend(id)
 
 
-## 人口不够就补农场
-func _manage_food(diff: DifficultyDef) -> void:
-	if not _need_farm(diff):
+## 补农场（2C-4 建造农民优先级）：
+##   urgent=true  —— 人口余量 <4 → 农场**急建**（提前防卡人口），排经济段最前；
+##   urgent=false —— 不急的农场排最后（哨塔/防御塔之后）。
+## 修理建筑：优先级列表里占位，但当前引擎没有 AI 修理下令口（REPAIR 枚举在，
+## 命令调度未接）—— TODO，见报告。
+func _manage_food(diff: DifficultyDef, urgent: bool) -> void:
+	if _faction == null:
 		return
+	var headroom: int = _faction.food_cap() - _faction.food_used()
+	if urgent:
+		if headroom >= 4:
+			return
+	else:
+		if headroom < 4:
+			return    # 急的已经由 urgent 通道处理
+		if not _need_farm(diff):
+			return
 	var fid: StringName = _food_building_id()
 	if fid == &"":
 		return
@@ -994,24 +1025,27 @@ func _manage_army(diff: DifficultyDef) -> void:
 		return
 	var army: int = _army_units().size()
 	var producers: Array = _army_producers(diff)
+	# 2C-4 §4.1：低于防守下限 → 补战斗单位（只从训练队列补；不挪用农民——
+	# 本作没有"农民转兵"，天然满足）。训练目标 = max(难度档上限, 防守下限)。
+	var target_army: int = maxi(diff.max_army, _defense_floor())
 	# ① 产能为 0：先解决"有没有兵营"，本 tick 不再谈别的
 	if producers.is_empty():
 		_maybe_build_barracks(diff)
 		return
 	# ② 军队优先：能造几个造几个（不因为"造不满 N 个"就整个 tick 跳过）
-	if army < diff.max_army:
+	if army < target_army:
 		for b in producers:
 			var rb: RtsBuilding = b as RtsBuilding
 			if rb == null or rb.train_count() >= MAX_QUEUE_ARMY:
 				continue
 			if _queue_one(rb, diff) != &"":
 				army += 1
-			if army >= diff.max_army:
+			if army >= target_army:
 				break
 	# ③ 队列都排满了 = 这一 tick 军队该占的钱已经占住，富余的钱才能给建筑。
 	#    队列没排满却没排上，只有一个原因：钱不够 —— 此时建筑一律延后到下一 tick，
 	#    并让 _demand_pressure() 去加经济，而不是把最后那点钱花在房子上。
-	var saturated: bool = army >= diff.max_army or _all_queues_full(producers)
+	var saturated: bool = army >= target_army or _all_queues_full(producers)
 	if saturated:
 		_maybe_build_barracks(diff)
 		_maybe_build_tower()
@@ -1019,8 +1053,8 @@ func _manage_army(diff: DifficultyDef) -> void:
 	if float(metrics.get("base_threat", 0.0)) > 0.0:
 		_maybe_build_tower()
 	# ④ 其余产能建筑：最后。满编之前一律不盖（钱给兵）。
-	#    不写 sanctum/workshop：由"谁能训练 role 权重 > 0 的兵"自动找出来。
-	if army >= diff.max_army:
+	#    不写 sanctum/workshop：由"谁能训练职能权重 > 0 的兵"自动找出来。
+	if army >= target_army:
 		_maybe_build_extra_producers(diff)
 
 
@@ -1093,9 +1127,14 @@ func _pick_army_unit(b: RtsBuilding, diff: DifficultyDef) -> StringName:
 		var d: UnitDef = Cfg.unit(StringName(id))
 		if d == null:
 			continue
-		var role_w: float = float(rw.get(_model_call("role_of", [d]), 0.0))
+		# 2C-4 选兵（§4.5）：单位权重 = 该单位拥有的职能里权重最高的那个（max）；
+		# 候选池 = 职能含 承伤/输出 的战斗单位；辅助/机动/控制本轮不参与。
+		var role_w: float = float(_model_call("def_function_weight", [d, rw]))
 		if role_w <= 0.0:
 			continue
+		if bool(_model_call("def_roles_is_fallback", [d])) and not _fallback_warned.has(d.id):
+			_fallback_warned[d.id] = true
+			_log("⚠ 兵种 %s 未填职能（卡 roles 空），按能力回退参与选兵" % String(d.id))
 		if not b.can_train(StringName(id)):
 			continue
 		if not _can_spend_army(StringName(id)):
@@ -1107,6 +1146,47 @@ func _pick_army_unit(b: RtsBuilding, diff: DifficultyDef) -> StringName:
 	if pool.is_empty():
 		return &""
 	return pool[_weighted_pick(weights)]
+
+## 选兵职能回退警告去重表（每个 id 只警一次，报告口径）
+var _fallback_warned: Dictionary = {}
+
+
+## 当前可派的战斗单位（C4 定义）：idle 且不在巡逻/回防/建造任务中
+##（is_idle_like = order NONE；正在训练的、正在别的任务中的不算）
+func _available_units() -> Array:
+	var out: Array = []
+	for u in _army_units():
+		if u != null and is_instance_valid(u) and bool(u.call("is_idle_like")):
+			out.append(u)
+	return out
+
+
+## 防守下限 = 5 + 2×基地数 + 1×出兵建筑数（任务书 §4.1；其他建筑不计入）
+func _defense_floor() -> int:
+	if _faction == null:
+		return 0
+	var base_id: StringName = _main_base_id()
+	var prod_ids: Array = _producer_ids()
+	var bases: int = 0
+	var producers: int = 0
+	for b in _faction.buildings:
+		if b == null or not is_instance_valid(b) or not b.is_alive() or b.def == null:
+			continue
+		var rb: RtsBuilding = b as RtsBuilding
+		if rb != null and not rb.is_constructed:
+			continue
+		if base_id != &"" and b.def.id == base_id:
+			bases += 1
+		if prod_ids.has(b.def.id):
+			producers += 1
+	return int(_model_call("defense_floor_of", [bases, producers]))
+
+
+## 出兵建筑 id 集（能训练战斗单位的建筑，与 _primary_producer_id 同源）
+func _producer_ids() -> Array:
+	var a = _model_call("production_building_ids", [_role_weights(Cfg.difficulty(Game.difficulty_index))])
+	return a if a is Array else []
+
 
 ## 按权重随机取一个下标（加权抽签：保证多样性，又不会造出明显更差的兵）
 func _weighted_pick(weights: Array) -> int:
@@ -1248,40 +1328,87 @@ func _cheapest_army_gold(diff: DifficultyDef) -> int:
 				cheapest = d.gold_cost
 	return cheapest
 
-## 科技：铁匠铺升级。
-## 旧版 AI **从来不做研究**（全项目只有指令系统里玩家那条路径），
-## 于是"金币堆到 1000 花不出去"成了常态。这里按战略计划的 research 开关决定做不做。
+## 科技：**运营线**（2C-4 §4.3，与战斗并行；删 T13/T14 状态机停靠）。
+##   · 前 5 分钟不科研（只战斗 + 运营）；
+##   · 每 10 s 检查一次（不每 tick）；
+##   · 有研究建筑 + 付得起 + 无正在研究 → 研究（入口在 _sanity_research）；
+##   · 遇 base_threat ≥ 1 跳过本次，10 s 后再看（报告记"因威胁跳过 N 次"）；
+##   · "最晚 7 分钟开始"（RESEARCH_LATEST_SEC）是**决策自维护的约束**，
+##     时间线表（科研时间线）本轮留空 TODO，到点条件不满足就顺延——不是强制兜底。
 func _manage_research(_diff: DifficultyDef) -> void:
-	if not bool(posture.get("research", false)):
+	if Game.elapsed < RESEARCH_NOT_BEFORE_SEC:
+		return
+	if _research_cd > 0.0:
+		return
+	_research_cd = RESEARCH_CHECK_EVERY
+	_research_track_completion()
+	if float(metrics.get("base_threat", 0.0)) >= 1.0:
+		strat_stats["research_skipped_threat"] = int(strat_stats.get("research_skipped_threat", 0)) + 1
 		return
 	_sanity_research()
 
-## 真的去点一项研究。优先补等级低的那一项（攻/防交替，避免极端）。
+
+## 研究完成跟踪：上一检查点在研究、本检查点没人研究 → 完成 +1（运营线日志）
+func _research_track_completion() -> void:
+	if _faction == null:
+		return
+	var running: bool = false
+	for b in _faction.buildings:
+		var rb := b as RtsBuilding
+		if rb != null and rb.is_alive() and rb.is_researching():
+			running = true
+			break
+	if _research_was_running and not running:
+		strat_stats["research_done"] = int(strat_stats.get("research_done", 0)) + 1
+	_research_was_running = running
+
+## 真的去点一项研究（2C-4 默认规则，时间线表留空 TODO）：
+##   · **职能相关科技优先**：attack_up↔输出 / armor_up↔承伤，按当前职能权重
+##     最高的先（权重相同按成本金+木从低到高）；
+##   · 经济类科技（高效搬运/修缮工艺）排其后，同样按成本。
 func _sanity_research() -> bool:
 	if _faction == null:
 		return false
-	var bid: StringName = _research_building_id()
-	if bid == &"":
-		return false
-	var bs: RtsBuilding = _first_building(bid)
-	if bs == null or bs.is_researching():
-		return false
-	var best: StringName = &""
-	var best_level: int = 99
-	for rid in bs.def.researches:
-		if RtsCombat.research_maxed(_faction, rid):
+	var fw: Dictionary = _role_weights(Cfg.difficulty(Game.difficulty_index))
+	var cands: Array = []
+	for b in _faction.buildings:
+		var rb := b as RtsBuilding
+		if rb == null or not rb.is_alive() or not rb.is_constructed or rb.is_researching():
 			continue
-		if String(bs.research_block_reason(rid)) != "":
+		if rb.def.researches.is_empty():
 			continue
-		var lv: int = RtsCombat.research_level(_faction, rid)
-		if lv < best_level:
-			best_level = lv
-			best = rid
-	if best == &"":
+		for rid in rb.def.researches:
+			if RtsCombat.research_maxed(_faction, rid):
+				continue
+			if String(rb.research_block_reason(rid)) != "":
+				continue
+			var rd: ResearchDef = Cfg.research(StringName(rid))
+			var cost: float = float(rd.gold_cost + rd.wood_cost) if rd != null else 999999.0
+			var related: bool = false
+			var w: float = 0.0
+			if rid == &"attack_up":
+				related = true
+				w = float(fw.get(&"输出", 0.0))
+			elif rid == &"armor_up":
+				related = true
+				w = float(fw.get(&"承伤", 0.0))
+			cands.append({"rid": rid, "b": rb, "related": related, "w": w, "cost": cost})
+	if cands.is_empty():
 		return false
-	if bs.research(best):
-		_log("开始研究 %s（等级 %d → %d）" % [String(best), best_level, best_level + 1])
-		return true
+	cands.sort_custom(func(a, b):
+		if bool(a["related"]) != bool(b["related"]):
+			return bool(a["related"])
+		if bool(a["related"]) and not is_equal_approx(float(a["w"]), float(b["w"])):
+			return float(a["w"]) > float(b["w"])
+		return float(a["cost"]) < float(b["cost"]))
+	for c in cands:
+		var rb: RtsBuilding = c["b"]
+		if rb.research(c["rid"]):
+			strat_stats["research_started"] = int(strat_stats.get("research_started", 0)) + 1
+			_research_was_running = true
+			_log("开始研究 %s（运营线；因威胁跳过 %d 次）"
+				% [String(c["rid"]), int(strat_stats.get("research_skipped_threat", 0))])
+			return true
 	return false
 
 ## 给反愚蠢审计用的"排一个兵"入口
@@ -1431,9 +1558,8 @@ const THREAT_WINDOW: float = 60.0
 ## 换 2 次目标（方案 A）或距首次换目标 120 s（方案 C 兜底）→ 攒大波
 const SWITCH_TO_BANK_N: int = 2
 const SWITCH_TO_BANK_SEC: float = 120.0
-## 紧急反击（B2）：本波成员被谁打，2 s 内转打谁；同一次反击 3 s 内不重复下令
-const COUNTER_WINDOW: float = 2.0
-const COUNTER_REISSUE: float = 3.0
+## B2 紧急反击已按 2C-4 删除（任务书 §1/§3.6）：combat_hit 仍记录（输出/承伤照常累计），
+## 但**不再触发换目标**。旧实现单波最多 38 次、均值 12.4 次把部队从目标上拉走（2C-3 报告 §16.10）。
 ## 单波最长存活时间（秒，兜底）：超时强制收尾，防止"永远在途"把状态机钉死。
 ## 90 s 的依据：本图一趟往返 + 一场遭遇战约 60~80 s；超过 90 s 还没回来，
 ## 说明它已经被别的事（回防/巡逻/下一波）接管，这一波的"生命周期"该结算了。
@@ -1538,11 +1664,8 @@ func _open_wave(units: Array, target: Vector3, foe: RtsFaction,
 		"t_last_hit": -1.0,
 		"damage_out": 0.0,
 		"damage_in": 0.0,
-		"last_attacker_id": 0,
-		"last_attacker_t": -1.0,
-		"counter_last_t": -999.0,
-		"counter_issued": 0,
-		"counter_target_id": 0,
+		# 2C-4：有效交战时间逐刀累计（断档 > COMBAT_GAP_SEC 的间隔不计）
+		"combat_time_acc": 0.0,
 		"scout_dwell": 0.0,
 		"t_prev_check": Game.elapsed,
 		"forced_timeout": false,
@@ -1589,15 +1712,14 @@ func _close_wave(rec: Dictionary, now: float, reason: String = "home",
 	rec["survivors"] = survivors
 	rec["wiped"] = survivors == 0
 
-	# --- 四样判据：(a) 战斗时间 ---
-	# 起点 = 首次成为 combat_hit 的 attacker/target；终点 = 最后一次接敌。
-	# ★ 不用 t_return：quiet 收尾会带 15 s 静默缓冲、home 收尾带返程时间，
-	#   那都不是"战斗时间"（规格原话："移动时间不算"）。
+	# --- 四样判据：(a) 有效交战时间（2C-4 用户确认）---
+	# 逐刀累计（相邻两刀间隔 > COMBAT_GAP_SEC 的断档不计），替换旧口径
+	# "最后一次接敌 − 首次接敌"——旧口径把两场交火之间的走路/绕行也算进战斗时间，
+	# 是 2C-3 实测 output_eff 71% < 0.3、"好"永远不可达的主因（2C-3 报告 §16.7）。
+	# t_combat_begin/end 保留为首/末刀时刻，仅供报告对照。
 	var begin: float = float(rec.get("t_combat_begin", -1.0))
 	var last_hit: float = float(rec.get("t_last_hit", -1.0))
-	var combat_time: float = 0.0
-	if begin >= 0.0 and last_hit >= begin:
-		combat_time = last_hit - begin
+	var combat_time: float = float(rec.get("combat_time_acc", 0.0))
 	rec["t_combat_begin"] = begin
 	rec["t_combat_end"] = last_hit if begin >= 0.0 else -1.0
 	rec["combat_time"] = combat_time
@@ -1658,7 +1780,7 @@ func _close_wave(rec: Dictionary, now: float, reason: String = "home",
 			bool(rec.get("forced_timeout", false)),
 			combat_time, theory_time,
 			float(rec["output_eff"]), float(rec["damage_ratio"]),
-			bool(rec["wiped"]),
+			survivors, int(rec.get("strength", 0)),
 		])
 		rec["verdict"] = String(v)
 
@@ -1729,9 +1851,7 @@ func _tick_wave(now: float) -> void:
 			if _goal_reached(rec, alive_units, dt):
 				rec["goal_achieved"] = true
 				rec["t_goal"] = now
-		# B2 紧急反击：本波成员被谁打，就转打谁（不计出口次数）
-		if AIV.is_new():
-			_maybe_counter(rec, alive_units, now)
+		# （2C-4：B2 紧急反击已删除——combat_hit 仍记录，但不触发换目标）
 
 		if alive_units.is_empty():
 			# 全员阵亡：t_return 取最后一次死亡时刻（比"发现的时候"更准）
@@ -1775,27 +1895,6 @@ func _goal_reached(rec: Dictionary, alive_units: Array, dt: float) -> bool:
 	return target == null or not is_instance_valid(target) or not target.is_alive()
 
 
-## B2 紧急反击：本波成员在 COUNTER_WINDOW 内被谁打，就让存活成员转打谁。
-## 不计出口次数（不碰 _switch_count），但这次交战的输出/承伤照常计入本波。
-func _maybe_counter(rec: Dictionary, alive_units: Array, now: float) -> void:
-	if _sched == null or alive_units.is_empty():
-		return
-	var aid: int = int(rec.get("last_attacker_id", 0))
-	if aid == 0:
-		return
-	if now - float(rec.get("last_attacker_t", -999.0)) > COUNTER_WINDOW:
-		return
-	if now - float(rec.get("counter_last_t", -999.0)) < COUNTER_REISSUE:
-		return
-	var foe = instance_from_id(aid)
-	if foe == null or not is_instance_valid(foe) or not foe.is_alive():
-		return
-	_sched.attack(alive_units, foe, "counter")
-	rec["counter_last_t"] = now
-	rec["counter_target_id"] = aid
-	rec["counter_issued"] = int(rec.get("counter_issued", 0)) + 1
-
-
 ## combat_hit：既维护"谁在打我"账本（高威胁目标），也累计本波的实际输出/承伤。
 func _on_combat_hit(attacker: Node3D, target: Node3D, damage: float, _crit: bool) -> void:
 	if attacker == null or target == null:
@@ -1816,9 +1915,13 @@ func _on_combat_hit(attacker: Node3D, target: Node3D, damage: float, _crit: bool
 		var mine_taken: bool = members.has(tid)
 		if not mine_hit and not mine_taken:
 			continue
-		# (a) 战斗时间：首次成为 attacker/target 起算
+		# (a) 战斗时间（2C-4 有效交战口径）：首次成为 attacker/target 起表；
+		# 相邻两刀间隔 > COMBAT_GAP_SEC 视为断档，走路/绕行段不计入。
 		if float(rec["t_combat_begin"]) < 0.0:
 			rec["t_combat_begin"] = now
+		rec["combat_time_acc"] = float(rec.get("combat_time_acc", 0.0)) \
+				+ float(_model_call("hit_gap_contrib",
+					[float(rec["t_last_hit"]), now, AIV.combat_gap_sec()]))
 		rec["t_last_hit"] = now
 		if float(rec["t_contact_begin"]) < 0.0:
 			rec["t_contact_begin"] = now
@@ -1839,10 +1942,8 @@ func _on_combat_hit(attacker: Node3D, target: Node3D, damage: float, _crit: bool
 			if tid == int(rec.get("goal_target_id", 0)):
 				rec["goal_damage"] = float(rec.get("goal_damage", 0.0)) + dmg
 		if mine_taken:
-			# (e) 实际承伤 + B2 紧急反击的攻击者
+			# (e) 实际承伤（B2 已删：不再记录"谁在打我"用于反击）
 			rec["damage_in"] = float(rec.get("damage_in", 0.0)) + dmg
-			rec["last_attacker_id"] = aid
-			rec["last_attacker_t"] = now
 
 
 ## 记一笔"敌方打我方"的伤害（60 s 滚动）。只记我方被伤害的方向。
@@ -1869,13 +1970,20 @@ func _note_threat(attacker: Node3D, target: Node3D, dmg: float, now: float) -> v
 ## unit_died：本波成员死了记我方损失；目标死了立案"达成"；
 ## 3 s 内被本波打过的人死了记敌方损失（**辅助记录**，2C-3 不再拿它判好坏）。
 func _on_unit_died(unit: Node3D) -> void:
-	if _waves_active.is_empty() or unit == null:
+	if unit == null or not is_instance_valid(unit):
 		return
-	if not is_instance_valid(unit):
-		return
-	var uid: int = unit.get_instance_id()
 	var d: UnitDef = unit.get("def")
 	var now: float = Game.elapsed
+	# 2C-4 T10 追踪（与波次无关）：任意一个**出兵建筑**被摧毁 → 记旗标，
+	# 攒大波期间触发召回。只算敌方摧毁：当前 AI/玩家都没有"自拆建筑"路径
+	# （若有，需要给 unit_died 加击杀者归属——报告已标注）。
+	if d != null and d.kind == RtsConst.Kind.BUILDING:
+		var uf = unit.get("faction")
+		if uf == _faction and _producer_ids().has(d.id):
+			_producer_lost = true
+	if _waves_active.is_empty():
+		return
+	var uid: int = unit.get_instance_id()
 	for rec in _waves_active:
 		var members: Dictionary = rec["members"]
 		if members.has(uid):
@@ -1907,7 +2015,8 @@ const ST_PROBE: String = "probe"
 const ST_PRESS: String = "press"
 const ST_BANK: String = "bank"
 const ST_RETARGET: String = "retarget"
-const ST_TECH: String = "tech"
+## ST_TECH 已按 2C-4 删除（任务书 §1：科技改运营线与战斗并行）；
+## 状态机最终剩四个状态：试探 / 加强 / 攒大波 / 换目标。
 
 ## P1："效果好"的投入产出比阈值（敌损成本 / 我投成本）—— 定死值
 const P1_ROI: float = 0.9
@@ -1918,22 +2027,24 @@ const P3_FAST_STREAK: int = 3
 ## ★ 本实现用"攒大波期间**停发小股**"替代了这条门槛：不发小股，就没有"小股被吃掉"，
 ##   也就没有必要给日常预算留 150 金。比 P4 更严，且不引入任何"必须留 X 金"的硬闸。
 const P4_DAILY_RESERVE: int = 150
-## P5：攒大波封顶 = 2.5 × 2 = 5 倍（相对上一次实际派出兵力）
-const P5_BANK_CAP_MULT: float = 5.0
-## C3：攒大波的触发倍率（相对上一次实际派出**单位数**）
-const C3_BANK_MULT: float = 2.5
+## C3（2C-4 用户覆盖）：攒大波门槛 = 当前可派战斗单位**总成本(金+木)** ≥ 1.5 × 上一次实际派出成本。
+## **不封顶**（P5 的 5× 封顶删除）。旧口径"2.5× 单位数"在 max_army=10 下数学不可达（T9=0）。
+const BANK_MULT: float = 1.5
+## 攒大波超时：90 s 到点**直接出击**，不再转科技（删 T11a/T11b，任务书 §1）
+const BANK_MAX_SEC: float = 90.0
 ## P6：同一目标效果递减 —— 投入产出比从 ≥1.0 掉到 <0.8，连续 N=2 波
 const P6_DROP_HIGH: float = 1.0
 const P6_DROP_LOW: float = 0.8
 const P6_N: int = 2
-## T11：攒大波 ≥90 s 后看最近 30 s 的成本增量（≥5% 继续攒，<5% 转科技）
-const T11_SEC: float = 90.0
-const T11_GROWTH_SEC: float = 30.0
-const T11_GROWTH_PCT: float = 0.05
 ## T12b：换目标 10 s 内选不出新目标 → 回试探
 const T12_SEC: float = 10.0
-## T13/T14 留桩：进"升科技"状态后停多久回试探（见报告"留桩项"）
-const TECH_STUB_SEC: float = 60.0
+## 2C-4 科技运营线（§4.3）：前 5 分钟不科研；每 10 s 检查一次；
+## "最晚 7 分钟开始"是决策自维护的约束（时间线表 TODO 留空），不是强制兜底。
+const RESEARCH_NOT_BEFORE_SEC: float = 300.0
+const RESEARCH_CHECK_EVERY: float = 10.0
+const RESEARCH_LATEST_SEC: float = 420.0
+## 2C-4 常态出击比例（§4.2）：0.75 floor（10 派 7），且不超过"军队数 − 防守下限"
+const ATTACK_RATIO_NORMAL: float = 0.75
 
 ## 当前状态（bench / 报告读它）
 var strat_state: String = ST_PROBE
@@ -1957,19 +2068,28 @@ var _first_switch_t: float = -1.0
 var _threat_ledger: Array = []
 ## T2"换小股路线"：每次快速被消灭后换一个接近角
 var _probe_seq: int = 0
-## 攒大波的入场成本 + 30 s 采样（T11a/T11b 的输入）
+## 攒大波的入场可用成本与基准（1.5× 门槛的输入；T11 采样已删）
 var _bank_entry_cost: float = 0.0
-var _bank_samples: Array = []
+var _bank_baseline_cost: float = 0.0
+## 2C-4 T10：出兵建筑被敌方摧毁（攒大波期间触发召回）
+var _producer_lost: bool = false
+## 攒大波突围（T9）发出的那一波用 bank 出击口径（含临时防守）
+var _bank_breakout: bool = false
+## 2C-4 科技运营线：检查节流 / 研究完成跟踪 / 扩张线状态（0 未开始 1 进行中 2 完成）
+var _research_cd: float = 0.0
+var _research_was_running: bool = false
+var _expand_state: int = 0
 ## P6 的参考高点与连续低波计数
 var _p6_ref_roi: float = -1.0
 var _p6_low_streak: int = 0
 ## 转移统计与时间线（报告/bench 读）
 var strat_stats: Dictionary = {
 	"T1": 0, "T2": 0, "T3": 0, "T4": 0, "T5": 0, "T6": 0, "T7": 0, "T8": 0,
-	"T9": 0, "T10": 0, "T11a": 0, "T11b": 0, "T12": 0, "T12b": 0,
-	"T13": 0, "T14": 0,
-	# 2C-3 新增：换目标次数达标→攒大波 / 未判（不转移）
+	"T9": 0, "T10": 0, "T12": 0, "T12b": 0,
+	# 2C-3：换目标次数达标→攒大波 / 未判（不转移）
 	"T15": 0, "N0": 0,
+	# 2C-4：T11a/T11b/T13/T14 删除；科技改**运营线日志**（不再算状态转移）
+	"research_started": 0, "research_done": 0, "research_skipped_threat": 0,
 }
 var strat_log: Array = []
 
@@ -1984,8 +2104,12 @@ func _go(next: String, tag: String) -> void:
 	strat_state = next
 	_state_since = Game.elapsed
 	if next == ST_BANK:
-		_bank_entry_cost = _units_cost(_army_units())
-		_bank_samples = [{"t": Game.elapsed, "v": _bank_entry_cost}]
+		var avail_now: float = _units_cost(_available_units())
+		_bank_entry_cost = avail_now
+		# 2C-4 §3.5：门槛基准 = 上一次**实际派出**成本（不是全部训练成本）；
+		# 无历史（首波退化）= 进场时可用成本 × 0.75。
+		_bank_baseline_cost = float(_model_call("bank_baseline", [_last_wave_cost, avail_now]))
+		_producer_lost = false
 		# B4：攒大波的目标按 0.4×距离 + 0.4×威胁 选（效果分留桩）
 		_bank_goal = _choose_goal(_foe_faction(), "bank")
 		# ★ 进入攒大波 = 本轮"换目标"周期结束，计数清零。
@@ -1998,7 +2122,9 @@ func _go(next: String, tag: String) -> void:
 	if tag == "T2":
 		_probe_seq += 1
 	if tag == "T9":
-		# 攒够了：本 tick 就允许出兵，不再等下一个波次窗口
+		# 攒够了（或 90 s 到点）：本 tick 就允许出兵，且这一波用**攒大波出击口径**
+		#（训练出来的全部战斗单位，含临时防守；只留保底 ceil(下限×2/3)）
+		_bank_breakout = true
 		if not _bank_goal.is_empty():
 			_press_goal = _bank_goal
 		_next_wave_at = Game.elapsed
@@ -2022,6 +2148,26 @@ func _reset_switch() -> void:
 	_switch_count = 0
 	_first_switch_t = -1.0
 	_bad_streak = 0
+
+
+## T10 召回：只把"闲着且在外面"的叫回家；正在战斗的（order != NONE）等打完再回。
+## 留家部队不动（正常防守由 _manage_defense 管）。
+func _recall_outside_idle() -> void:
+	if _sched == null or _faction == null:
+		return
+	var home: Vector3 = RtsWorld.base_center(_faction)
+	var arr: Array = []
+	for u in _army_units():
+		if u == null or not is_instance_valid(u):
+			continue
+		if not bool(u.call("is_idle_like")):
+			continue
+		if u.global_position.distance_to(home) <= 12.0:
+			continue
+		arr.append(u)
+	if not arr.is_empty():
+		_sched.move(arr, home, "recall")
+		_log("T10：出兵建筑被毁，召回在外部队 %d 人（战斗中的打完再回）" % arr.size())
 
 
 ## 一波打完：按判定推进状态机。
@@ -2119,28 +2265,19 @@ func _tick_strategy(now: float) -> void:
 			if not _has_target():
 				_go(ST_RETARGET, "T5")
 		ST_BANK:
-			# T10：基地被压 ≥1 个敌人 → 取消攒兵先回防
-			if float(metrics.get("base_threat", 0.0)) >= 1.0:
+			# T10（2C-4 用户覆盖）：**出兵建筑被摧毁** → 召回在外的部队（正在战斗的
+			# 等打完再回），取消攒兵回试探。base_threat 的常规回防由 _manage_defense
+			# 处理，不再触发 T10（任务书 §1 覆盖表）。
+			if _producer_lost:
+				_recall_outside_idle()
 				_go(ST_PROBE, "T10")
 				return
-			_bank_samples.append({"t": now, "v": _units_cost(_army_units())})
-			while not _bank_samples.is_empty() \
-					and now - float(_bank_samples[0]["t"]) > T11_GROWTH_SEC * 2.0:
-				_bank_samples.pop_front()
-			var strength: int = _army_units().size()
-			var base_n: int = maxi(_last_wave_strength, 1)
-			# C3 用单位数；P5 的 5 倍封顶同时兜住"永远不出门"
-			if float(strength) >= C3_BANK_MULT * float(base_n) \
-					or float(strength) >= P5_BANK_CAP_MULT * float(base_n):
+			# T9（2C-4）：当前可派战斗单位**总成本** ≥ 1.5 × 基准 → 打出去（不封顶）；
+			# 或 90 s 到点**直接出击**（删 T11a/T11b 的"继续攒/转科技"分岔）。
+			var avail_cost: float = _units_cost(_available_units())
+			if bool(_model_call("bank_ready", [avail_cost, _bank_baseline_cost, BANK_MULT])) \
+					or now - _state_since >= BANK_MAX_SEC:
 				_go(ST_PRESS, "T9")
-			elif now - _state_since >= T11_SEC:
-				var old: float = _sample_before(now - T11_GROWTH_SEC)
-				var cur: float = _units_cost(_army_units())
-				var growth: float = (cur - old) / maxf(old, 1.0)
-				if growth >= T11_GROWTH_PCT:
-					_go(ST_BANK, "T11a")     # 还在长，继续攒
-				else:
-					_go(ST_TECH, "T11b")     # 收入被打断/经济崩溃
 		ST_RETARGET:
 			if now - _state_since >= T12_SEC:
 				_go(ST_PROBE, "T12b")        # 10 s 选不出来 → 回试探
@@ -2151,27 +2288,7 @@ func _tick_strategy(now: float) -> void:
 				# 2C-3：换目标同时换"打什么"（0.4 距离 + 0.4 威胁），不只是换一家
 				_press_goal = _choose_goal(f, "bank")
 				_go(ST_PROBE, "T12")
-		ST_TECH:
-			# ★ 留桩（T13/T14）：只喊研究 + 停 TECH_STUB_SEC 秒，没有做"兵种切换"。
-			#   原因：本轮预算优先给波次记录表与主路径；T13 的"克制落后"判据要等
-			#   记忆层/侦察数据；补的时机见报告"留桩项"。
-			if not bool(_researched_once):
-				_researched_once = true
-				_researched_ok = _sanity_research()
-			if now - _state_since >= TECH_STUB_SEC:
-				_go(ST_PROBE, "T14")
 
-
-var _researched_once: bool = false
-var _researched_ok: bool = false
-
-
-## 30 s 前（或最早一条）的成本采样
-func _sample_before(t: float) -> float:
-	for e in _bank_samples:
-		if float(e["t"]) >= t:
-			return float(e["v"])
-	return float(_bank_samples[0]["v"]) if not _bank_samples.is_empty() else 0.0
 
 
 ## 现在还有没有"能打的目标"（敌方有基地 = 有可打的建筑）
@@ -2363,16 +2480,17 @@ func _bank_hold() -> void:
 		moved += 1
 	if moved > 0 and Game.elapsed - _last_block_log >= 25.0:
 		_last_block_log = Game.elapsed
-		_log("攒大波：%d 人回基地待命（目标 %.0f 人，上次派出 %d 人）"
-			% [moved, C3_BANK_MULT * float(maxi(_last_wave_strength, 1)), _last_wave_strength])
+		_log("攒大波：%d 人回基地待命（门槛 %.0f 成本 / 基准 %.0f，超时 %ds 直接出击）"
+			% [moved, _bank_baseline_cost * BANK_MULT, _bank_baseline_cost, int(BANK_MAX_SEC)])
 
 
 ## 成波推进（2C-2：由状态机决定"发不发 / 发多少 / 打谁"）。
 ##
-## 试探（probe）：按 push_ratio 派一部分，掷侵略性骰子（保留"打不打"的随机性）；
-## 加强（press）：上一波有效果 → 全军压上、同一目标、间隔 ×0.75；
+## 试探（probe）：常态出击比例（0.75 floor，且不超过 军队数−防守下限）+ 侵略性骰子；
+## 加强（press）：同一目标，间隔 ×0.75，人数仍走常态口径（保底留守不动）；
+## 攒大波突围（T9 后第一波）：训练出来的**全部**战斗单位（含临时防守），只留保底 ceil(下限×2/3)；
 ## 攒大波（bank）：**不发小股**（T3/T8 的"停止小股出击"），只把人收回内圈；
-## 换目标 / 升科技：本 tick 不出击。
+## 换目标：本 tick 不出击。
 ##
 ## 出击前仍然先过战略导演的 `allow_attack`（家里挨打 / 计划说不打 → 不出门）。
 func _manage_waves(diff: DifficultyDef) -> void:
@@ -2385,7 +2503,7 @@ func _manage_waves(diff: DifficultyDef) -> void:
 		_bank_hold()
 		_next_wave_at = Game.elapsed + 5.0
 		return
-	if strat_state == ST_RETARGET or strat_state == ST_TECH:
+	if strat_state == ST_RETARGET:
 		return
 	if not bool(posture.get("allow_attack", false)):
 		# 不是"这一波取消"，而是"10 秒后再评估" —— 兵力一到位就会打出去
@@ -2402,10 +2520,19 @@ func _manage_waves(diff: DifficultyDef) -> void:
 	if strat_state == ST_PROBE and randf() > clampf(aggr, 0.0, 1.0):
 		return
 
-	var ratio: float = clampf(push_ratio, 0.1, 1.0)
-	if strat_state == ST_PRESS:
-		ratio = 1.0
-	var push_n: int = clampi(int(ceil(float(army.size()) * ratio)), 1, army.size())
+	# --- 2C-4 出击比例（任务书 §4.2）---
+	var defense_floor: int = _defense_floor()
+	var push_n: int = 0
+	if strat_state == ST_PRESS and _bank_breakout:
+		# 攒大波突围：全部战斗单位出击（含临时防守），保底 ceil(下限×2/3) 不低于
+		push_n = int(_model_call("bank_push_n", [army.size(), defense_floor]))
+		_bank_breakout = false
+	else:
+		# 常态（试探/加强）：0.75 floor 且不超过 军队数−防守下限（保底留守不动）
+		push_n = int(_model_call("normal_push_n", [army.size(), defense_floor]))
+	push_n = clampi(push_n, 0, army.size())
+	if push_n < 1:
+		return
 	var foe: RtsFaction = _press_foe_by_name() if strat_state == ST_PRESS else _foe_faction()
 	if foe == null:
 		foe = _foe_faction()
@@ -2712,6 +2839,95 @@ func _maybe_upgrade_tower() -> void:
 	if n != null:
 		_log("哨塔升级箭塔 @ (%.0f, %.0f)（哨塔 %d 座，目标 %d）" % [
 			pick.global_position.x, pick.global_position.z, towers.size(), prefer])
+
+
+## **扩张线（2C-4 §4.4，只留接口 + 最小可用）**：
+## 触发 = 农民到总上限（软上限+4）且木材足够 → 派 1 个农民建 1 座哨塔 → **停**
+##（不接入新矿区，完整扩张不在本轮）。农民去向的 "expand" 枚举 = 建造期间的
+## 建造命令（label "expand"），建造农民平常照常采集（_pick_builder 优先闲着的）。
+func _maybe_expand() -> void:
+	if _expand_state != 0 or _faction == null:
+		return
+	if _workers().size() < PEASANT_TOTAL_CAP:
+		return
+	var wid: StringName = _watchtower_id()
+	if wid == &"":
+		return
+	var wd: UnitDef = Cfg.unit(wid)
+	if wd == null:
+		return
+	# 木材也够（留 40 木 buffer，别把修理/农场的木头花光）
+	if _faction.wood < wd.wood_cost + 40:
+		return
+	for b in _faction.buildings:
+		if b == null or not is_instance_valid(b) or b.def == null:
+			continue
+		if b.def.id == wid:
+			var rb: RtsBuilding = b as RtsBuilding
+			if rb != null and not rb.is_constructed:
+				return
+	if not _can_spend(wid):
+		return
+	var builder: RtsUnit = _pick_builder()
+	if builder == null:
+		return
+	var spot: Vector3 = _expand_spot(wd.footprint)
+	if spot == Vector3.INF:
+		return
+	if _sched.build(builder, wd, spot, _build_yaw_at(spot), "expand") != null:
+		_expand_state = 2
+		_log("扩张线：派农民建哨塔 @ (%.0f, %.0f)（最小可用：建完即停，不接新矿）"
+			% [spot.x, spot.z])
+
+
+## 扩张选点 = §3.5 三因子（控制区边缘 + 最近战斗 + 地图中心）。
+## 候选：基地外圈 24~34m 环采样；评分 = 0.4×离最近己方建筑（推视野/控制区边缘）
+## + 0.4×离 60s 威胁账本质心（最近战斗的位置值得插眼）+ 0.2×朝地图中心。
+func _expand_spot(footprint: Vector2i) -> Vector3:
+	if _faction == null:
+		return Vector3.INF
+	var home: Vector3 = RtsWorld.base_center(_faction)
+	var map_center := Vector3(Cfg.game.map_size * 0.5, 0.0, Cfg.game.map_size * 0.5)
+	# 最近战斗：60s 威胁账本的位置质心（没有就退化为朝地图中心方向）
+	var battle := Vector3.INF
+	var n: int = 0
+	for e in _threat_ledger:
+		var nd = instance_from_id(int(e["id"]))
+		if nd == null or not is_instance_valid(nd) or not nd.is_alive():
+			continue
+		var pos: Vector3 = nd.global_position
+		battle = pos if n == 0 else battle + pos
+		n += 1
+	if n > 0:
+		battle = battle / float(n)
+	var best: Vector3 = Vector3.INF
+	var best_s: float = -1.0
+	var r: float = 24.0
+	var cands: Array = []
+	while r <= 34.0:
+		for i in range(12):
+			var ang: float = TAU * float(i) / 12.0
+			var raw := Vector3(home.x + cos(ang) * r, 0.0, home.z + sin(ang) * r)
+			var p: Vector3 = 建筑网格.snap_point(raw, footprint)
+			if 建筑网格.can_place(p, footprint) and _has_room(p, footprint):
+				cands.append(p)
+		r += 3.0
+	for p in cands:
+		var edge_nearest: float = INF
+		for b in _faction.buildings:
+			if b == null or not is_instance_valid(b) or not b.is_alive():
+				continue
+			edge_nearest = minf(edge_nearest, p.distance_to(b.global_position))
+		var edge_s: float = clampf(edge_nearest / 30.0, 0.0, 1.0)
+		var battle_s: float = 0.5
+		if battle != Vector3.INF:
+			battle_s = 1.0 - clampf(p.distance_to(battle) / 60.0, 0.0, 1.0)
+		var center_s: float = 1.0 - clampf(p.distance_to(map_center) / float(Cfg.game.map_size), 0.0, 1.0)
+		var s: float = 0.4 * edge_s + 0.4 * battle_s + 0.2 * center_s
+		if s > best_s:
+			best_s = s
+			best = p
+	return best
 
 
 ## 营火：**只在夜里考虑**，最多 CAMPFIRE_MAX 座，摆在基地朝敌方的一侧。

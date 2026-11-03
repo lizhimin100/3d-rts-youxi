@@ -81,6 +81,8 @@ func _run() -> void:
 	_case_roles()
 	_case_verdict_table()
 	_case_theory()
+	# 2C-4：判定层修正 + 决策层纯函数 + 卡系统
+	_case_2c4()
 	_finish(t0)
 
 
@@ -343,11 +345,12 @@ func _case_resilience() -> void:
 	fake.attack_range = 9.0
 	fake.gold_cost = 111
 	fake.wood_cost = 11
-	var weights: Dictionary = {&"frontline": 5.0, &"ranged": 3.0, &"caster": 1.0, &"siege": 1.0}
+	# 2C-4：候选池走**职能权重**（承伤/输出）；假兵无卡 → 能力回退（远+攻 → 输出）也进池
+	var weights: Dictionary = {&"承伤": 5.0, &"输出": 5.0}
 	_cfg.game.units[fake.id] = fake
 	var ids_add: Array = _model.call("candidate_combat_ids", weights)
 	var wf: float = float(_model.call("selection_weight", fake, 3.0, 0, prof, 1.0, 1.0))
-	_record("韧性D：新增 role=ranged 假兵 → 进入候选池", ids_add.has(fake.id),
+	_record("韧性D：新增职能未填的假兵 → 能力回退进入候选池", ids_add.has(fake.id),
 			"候选 %d 个，含 fake=%s" % [ids_add.size(), str(ids_add.has(fake.id))])
 	_record("韧性D：假兵选兵权重有限且 >0", is_finite(wf) and wf > 0.0, "w=%.6f" % wf)
 	_cfg.game.units.erase(fake.id)
@@ -392,20 +395,21 @@ func _case_roles() -> void:
 func _case_verdict_table() -> void:
 	var T: float = 40.0
 	var rows: Array = [
-		# 名称, achieved, forced, combat, out_eff, dmg_ratio, wiped, 期望
-		["达成优先于一切", true, false, 0.0, 0.0, 0.0, true, "达成"],
-		["时间≥0.8 + 输出/承伤在区间 → 好", false, false, 32.0, 1.0, 0.6, false, "好"],
-		["时间≥0.8 但输出偏离 → 一般", false, false, 32.0, 1.5, 0.6, false, "一般"],
-		["时间 0.5~0.8 → 一般", false, false, 24.0, 1.0, 0.6, false, "一般"],
-		["时间<0.5 且全灭 → 差", false, false, 16.0, 1.0, 0.6, true, "差"],
-		["时间<0.5 未全灭 → 未判（不许当差）", false, false, 16.0, 1.0, 0.6, false, "未判"],
-		["存活>180s 强制 → 一般", false, true, 16.0, 1.0, 0.6, false, "一般"],
+		# 名称, achieved, forced, combat, out_eff, dmg_ratio, survivors, strength, 期望
+		["达成优先于一切", true, false, 0.0, 0.0, 0.0, 0, 5, "达成"],
+		["时间≥0.8 + 输出/承伤在区间 → 好", false, false, 32.0, 1.0, 0.6, 5, 5, "好"],
+		["时间≥0.8 但输出偏离 → 一般", false, false, 32.0, 1.5, 0.6, 5, 5, "一般"],
+		["时间 0.5~0.8 → 一般", false, false, 24.0, 1.0, 0.6, 5, 5, "一般"],
+		["时间<0.5 且全灭 → 差", false, false, 16.0, 1.0, 0.6, 0, 5, "差"],
+		["时间<0.5 存活≤ceil(出发/3) → 差（2C-4 放宽：非全灭也判）", false, false, 16.0, 1.0, 0.6, 3, 10, "差"],
+		["时间<0.5 存活>ceil(出发/3) → 未判（不许当差）", false, false, 16.0, 1.0, 0.6, 5, 10, "未判"],
+		["存活>180s 强制 → 一般", false, true, 16.0, 1.0, 0.6, 5, 10, "一般"],
 	]
 	for r in rows:
 		var got: String = String(_model.call("classify_verdict",
-				r[1], r[2], r[3], T, r[4], r[5], r[6]))
-		_record("判定表：%s" % String(r[0]), got == String(r[7]),
-				"判=%s（期望 %s，战斗时间 %.0f/%.0fs）" % [got, String(r[7]), float(r[3]), T])
+				r[1], r[2], r[3], T, r[4], r[5], int(r[6]), int(r[7])))
+		_record("判定表：%s" % String(r[0]), got == String(r[8]),
+				"判=%s（期望 %s，战斗时间 %.0f/%.0fs）" % [got, String(r[8]), float(r[3]), T])
 
 
 # ===========================================================================
@@ -427,6 +431,102 @@ func _case_theory() -> void:
 	var ehp: float = float(_model.call("unit_effective_hp", foot))
 	_record("理论值：1 步兵理论承伤 = unit_effective_hp", _near(hp, ehp, 0.001),
 			"%.2f（期望 %.2f）" % [hp, ehp])
+
+
+# ===========================================================================
+# M 2C-4：判定层修正 + 决策层纯函数 + 卡系统
+# ===========================================================================
+func _case_2c4() -> void:
+	var UT = load("res://代码/配置/单位表.gd")
+	# ★ --script 模式**不能** load 带 class_name 的脚本（Godot 怪癖：
+	#   "Class X hides a global script class"），简单AI.gd 的常量用**文本级断言**；
+	#   它的编译检查由 --ai-bench / --autotest 真跑兜底（那两个模式没有这个限制）。
+	var sa_src: String = FileAccess.get_file_as_string("res://代码/ai/简单AI.gd")
+	var AIV = load("res://代码/配置/AI判定模式.gd")
+	var LW = load("res://代码/配置/定位词表.gd")
+
+	# --- 判定层：有效交战时间 ---
+	_record("2C4：hit_gap_contrib 正常间隔计入", _near(float(_model.call("hit_gap_contrib", 10.0, 13.0, 3.0)), 3.0, 0.0001), "=3")
+	_record("2C4：hit_gap_contrib 断档(>gap)不计", float(_model.call("hit_gap_contrib", 10.0, 14.0, 3.0)) == 0.0, "=0")
+	_record("2C4：hit_gap_contrib 首刀起表贡献0", float(_model.call("hit_gap_contrib", -1.0, 13.0, 3.0)) == 0.0, "=0")
+	_record("2C4：输出系数默认 0.55（用户确认 0.7→0.55）",
+			_near(float(AIV.DEFAULT_COEF), 0.55, 0.0001) and _near(float(AIV.output_coef()), 0.55, 0.0001)
+			and _near(float(load("res://代码/ai/战斗模型.gd").THEORY_OUTPUT_COEF), 0.55, 0.0001),
+			"coef=%.2f" % float(AIV.output_coef()))
+	# 交战断档参数可命令行口径存在
+	AIV.set_combat_gap_sec(5.0)
+	_record("2C4：combat_gap_sec 可设（敏感性 2/3/5 用）", _near(float(AIV.combat_gap_sec()), 5.0, 0.0001), "=5")
+	AIV.reset_defaults()
+
+	# --- 判定层：差放宽 / 好护栏 ---
+	_record("2C4：bad_survivor_cap(10)=ceil(10/3)=4", int(_model.call("bad_survivor_cap", 10)) == 4, "=4")
+	_record("2C4：bad_survivor_cap(9)=3", int(_model.call("bad_survivor_cap", 9)) == 3, "=3")
+	_record("2C4：好护栏 26/52 = 恰好一半不告警", not bool(_model.call("good_ratio_warning", 26, 52)), ">50% 才告警")
+	_record("2C4：好护栏 27/52 告警", bool(_model.call("good_ratio_warning", 27, 52)), "27/52")
+	_record("2C4：好护栏 空记录不告警", not bool(_model.call("good_ratio_warning", 0, 0)), "total=0 → false")
+
+	# --- 决策层：防守下限 / 出击比例 / 攒大波门槛 ---
+	_record("2C4：防守下限 5+2×1+1×1=8", int(_model.call("defense_floor_of", 1, 1)) == 8, "=8")
+	_record("2C4：保底留守 ceil(8×2/3)=6", int(_model.call("bank_garrison_floor", 8)) == 6, "=6")
+	_record("2C4：常态出击 10 人下限 8 → 派 2", int(_model.call("normal_push_n", 10, 8)) == 2, "=2")
+	_record("2C4：常态出击 16 人下限 9 → 派 7（0.75 floor）", int(_model.call("normal_push_n", 16, 9)) == 7, "=7")
+	_record("2C4：大波出击 10 人下限 8 → 派 4", int(_model.call("bank_push_n", 10, 8)) == 4, "=4")
+	_record("2C4：大波出击 6 人下限 8 → 派 0（保底不为负）", int(_model.call("bank_push_n", 6, 8)) == 0, "=0")
+	_record("2C4：bank_baseline 有历史=上次实际派出成本", _near(float(_model.call("bank_baseline", 200.0, 100.0)), 200.0, 0.0001), "=200")
+	_record("2C4：bank_baseline 无历史=可用×0.75（首波退化）", _near(float(_model.call("bank_baseline", 0.0, 100.0)), 75.0, 0.0001), "=75")
+	_record("2C4：bank_ready 226≥1.5×150 → 出击", bool(_model.call("bank_ready", 226.0, 150.0)), "1.5×150=225")
+	_record("2C4：bank_ready 224<225 → 不出击", not bool(_model.call("bank_ready", 224.0, 150.0)), "差1")
+	_record("2C4：bank_ready 不封顶（10000 也真）", bool(_model.call("bank_ready", 10000.0, 150.0)), "P5 已删")
+
+	# --- 决策层：简单AI 常量与状态机形态（文本级）---
+	_record("2C4：ST_TECH 已删除（四状态机）", not sa_src.contains("const ST_TECH"),
+			"含 ST_TECH 定义=%s" % str(sa_src.contains("const ST_TECH")))
+	_record("2C4：BANK_MAX_SEC=90（超时直接出击）",
+			sa_src.contains("const BANK_MAX_SEC: float = 90.0"), "文本命中")
+	_record("2C4：科技前 5 分钟不科研",
+			sa_src.contains("const RESEARCH_NOT_BEFORE_SEC: float = 300.0"), "文本命中")
+	_record("2C4：常态出击比例 0.75",
+			sa_src.contains("const ATTACK_RATIO_NORMAL: float = 0.75"), "文本命中")
+	_record("2C4：农民软上限直接覆盖（总=软+4）",
+			sa_src.contains("PEASANT_GOLD_SOFT_CAP: int = 8")
+			and sa_src.contains("PEASANT_TOTAL_CAP: int = PEASANT_GOLD_SOFT_CAP + 4"),
+			"软=8 总=12（TODO 农民测试标定）")
+
+	# --- 卡系统（C1~C5）---
+	var foot_card: EntityCard = UT.get_card(&"footman")
+	_record("2C4卡：get_card(footman) 命中且 power=-1",
+			foot_card != null and (foot_card as UnitCard).power == -1
+			and String((foot_card as UnitCard).icon) == "",
+			"power=%d icon='%s'" % [(foot_card as UnitCard).power if foot_card != null else -99,
+				String((foot_card as UnitCard).icon) if foot_card != null else "?"])
+	_record("2C4卡：职能承伤含 步兵/蒸汽重步兵/豺狼人战士",
+			UT.find_by_role(&"承伤").any(func(c): return c.card_id == "footman")
+			and UT.find_by_role(&"承伤").any(func(c): return c.card_id == "steam_guard")
+			and UT.find_by_role(&"承伤").any(func(c): return c.card_id == "gnoll_warrior"),
+			"承伤=%d 张" % UT.find_by_role(&"承伤").size())
+	_record("2C4卡：范围档派生 步兵=近战(1.35) / 蒸汽重步兵=中程(1.6，阈值占位 TODO)",
+			UT.find_by_range_tier(&"近战").any(func(c): return c.card_id == "footman")
+			and UT.find_by_range_tier(&"中程").any(func(c): return c.card_id == "steam_guard"),
+			"阈值 1.5/3.0/6.0")
+	var fake_def: UnitDef = UnitDef.new()
+	fake_def.id = &"fake_cardless"
+	fake_def.attack_damage = 10.0
+	fake_def.attack_range = 9.0
+	var fw := {&"承伤": 6.0, &"输出": 4.0}
+	_record("2C4卡：无卡兵走能力回退（远+攻→输出，权重取 max）",
+			bool(_model.call("def_roles_is_fallback", fake_def))
+			and _near(float(_model.call("def_function_weight", fake_def, fw)), 4.0, 0.0001),
+			"回退=输出 w=4")
+	var bad: PackedStringArray = LW.validate_words(&"魔法兵种", [&"坦克"], [], &"普通", &"轻甲")
+	_record("2C4卡：词表校验拦下非法词", bad.size() >= 2, "%s" % str(bad))
+	var all_units: Dictionary = UT.build_units()
+	_record("2C4卡：build_units = 17 卡 + 6 可采集物 = 23",
+			all_units.size() == 23 and all_units.has(&"footman") and all_units.has(&"goldmine"),
+			"size=%d" % all_units.size())
+	var tiers: Array = [LW.range_tier(1.0), LW.range_tier(2.0), LW.range_tier(5.0), LW.range_tier(9.0)]
+	_record("2C4卡：range_tier 四档单调",
+			String(tiers[0]) == "近战" and String(tiers[1]) == "中程"
+			and String(tiers[2]) == "远程" and String(tiers[3]) == "超远程", str(tiers))
 
 
 # ===========================================================================

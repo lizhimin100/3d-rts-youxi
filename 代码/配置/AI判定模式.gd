@@ -8,7 +8,8 @@ extends RefCounted
 ## 参数（全部走 `--` 之后的用户参数）：
 ##   --verdict-mode=old|new      判定口径（默认 new）
 ##   --verdict-base-sec=40|60    理论战斗时间的基准（默认 40，参数敏感性用 60）
-##   --verdict-coef=0.7          理论输出的保守系数（默认 0.7）
+##   --verdict-coef=0.55         理论输出的保守系数（2C-4 用户确认 0.7 → 0.55）
+##   --combat-gap-sec=3.0        有效交战时间的断档阈值（相邻两刀间隔 >N s 不计）
 ##   --verdict-time-limit=180    单波存活上限（默认 180）
 ##
 ## ★ 与 `AI战略权重.gd` 同一套写法：static var + set_mode()，非法值回落默认，
@@ -20,13 +21,17 @@ const MODES: Array[String] = [MODE_OLD, MODE_NEW]
 
 ## 默认值 —— 与 战斗模型.THEORY_BASE_SEC / THEORY_OUTPUT_COEF / TIME_LIMIT 保持一致
 const DEFAULT_BASE_SEC: float = 40.0
-const DEFAULT_COEF: float = 0.7
+## 2026-11-03 用户确认：0.7 → 0.55（任务书 §1 覆盖表）
+const DEFAULT_COEF: float = 0.55
+## 有效交战时间：相邻两刀间隔 > COMBAT_GAP_SEC 视为"断档"，走路/绕行段不计入战斗时间
+const DEFAULT_COMBAT_GAP_SEC: float = 3.0
 const DEFAULT_TIME_LIMIT: float = 180.0
 
 static var _mode: String = MODE_NEW
 static var _base_sec: float = DEFAULT_BASE_SEC
 static var _coef: float = DEFAULT_COEF
 static var _time_limit: float = DEFAULT_TIME_LIMIT
+static var _combat_gap_sec: float = DEFAULT_COMBAT_GAP_SEC
 static var _parsed: bool = false
 
 
@@ -63,6 +68,8 @@ static func setup_from_cmdline() -> void:
 			_coef = clampf(float(a.substr(String("--verdict-coef=").length())), 0.1, 1.5)
 		elif a.begins_with("--verdict-time-limit="):
 			_time_limit = clampf(float(a.substr(String("--verdict-time-limit=").length())), 30.0, 600.0)
+		elif a.begins_with("--combat-gap-sec="):
+			_combat_gap_sec = clampf(float(a.substr(String("--combat-gap-sec=").length())), 0.5, 30.0)
 
 
 static func base_sec() -> float:
@@ -81,6 +88,14 @@ static func set_output_coef(v: float) -> void:
 	_coef = clampf(v, 0.1, 1.5)
 
 
+static func combat_gap_sec() -> float:
+	return _combat_gap_sec
+
+
+static func set_combat_gap_sec(v: float) -> void:
+	_combat_gap_sec = clampf(v, 0.5, 30.0)
+
+
 static func time_limit() -> float:
 	return _time_limit
 
@@ -95,10 +110,11 @@ static func reset_defaults() -> void:
 	_base_sec = DEFAULT_BASE_SEC
 	_coef = DEFAULT_COEF
 	_time_limit = DEFAULT_TIME_LIMIT
+	_combat_gap_sec = DEFAULT_COMBAT_GAP_SEC
 
 
 static func describe() -> String:
 	if _mode == MODE_OLD:
 		return "old 判定（2C-2：存活比 + 投入产出比）"
-	return "new 判定（四样判据：%.0fs/1000 成本，输出系数 %.2f，存活上限 %.0fs）" % [
-		_base_sec, _coef, _time_limit]
+	return "new 判定（四样判据：%.0fs/1000 成本，输出系数 %.2f，交战断档 %.1fs，存活上限 %.0fs）" % [
+		_base_sec, _coef, _combat_gap_sec, _time_limit]

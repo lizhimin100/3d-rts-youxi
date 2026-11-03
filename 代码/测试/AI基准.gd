@@ -31,6 +31,8 @@ const SITUATION_EVERY: float = 5.0
 const AIW := preload("res://代码/配置/AI战略权重.gd")
 ## 判定口径开关（old/new）+ 理论值参数（2C-3）。
 const AIV := preload("res://代码/配置/AI判定模式.gd")
+## 护栏公式复用战斗模型的纯函数（不抄阈值）
+const _bench_model := preload("res://代码/ai/战斗模型.gd")
 
 # --- 参数 ---
 var seed_val: int = 1
@@ -744,6 +746,19 @@ func _finish(reason: String) -> void:
 			"目标": wr.get("goals", {}),
 			"建议": wr.get("advice", {}),
 		}
+	# 2C-4 §3.3 "好"比例护栏（只告警，不判失败、不阻断）
+	var good_n: int = 0
+	var total_n: int = 0
+	for fname in wave_records.keys():
+		var rows: Array = wave_records[fname].get("waves", [])
+		for r in rows:
+			total_n += 1
+			if String(r.get("verdict", "")) == "好":
+				good_n += 1
+	if _bench_model.good_ratio_warning(good_n, total_n):
+		print("[护栏 ⚠] 判定=好 的比例 %d/%d 超过 50%% —— 只告警，不判失败（任务书 §3.3）"
+			% [good_n, total_n])
+		summary["好比例告警"] = "%d/%d > 50%%" % [good_n, total_n]
 	print("AI-BENCH %s" % JSON.stringify(summary))
 	# 确定性签名：同 seed 复跑必须一致（外部脚本比对）
 	var sig: String = ""

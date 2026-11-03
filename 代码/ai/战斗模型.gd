@@ -38,9 +38,10 @@ const THEORY_BASE_SEC: float = 40.0
 ## 理论时间倍率（预留：以后要按难度/兵种调，先固定 1.0）
 const THEORY_TIME_SCALE: float = 1.0
 ## 理论输出的保守系数：近战卡位、远程被切、走到射程内都要时间，
-## 实际打不满"纸面 DPS × 战斗时间"。取 0.7 是让实际值更容易落在"好"的区间，
-## 避免把正常的仗误判成"一般"。**待 2~3 局长局数据后再决定 0.6/0.8**（报告 §4.4）。
-const THEORY_OUTPUT_COEF: float = 0.7
+## 实际打不满"纸面 DPS × 战斗时间"。
+## **2C-4 用户确认 0.7 → 0.55**（任务书 §1 覆盖表；配合"有效交战时间"口径一起改，
+## 2C-3 实测 0.7 分母含走路 → output_eff 71% < 0.3，"好"永远不可达）。
+const THEORY_OUTPUT_COEF: float = 0.55
 
 ## --- 判定枚举（严格按 2C-3 判定表）---
 const VD_ACHIEVED: String = "达成"
@@ -317,9 +318,10 @@ static func role_weights_of(diff: DifficultyDef) -> Dictionary:
 	return out
 
 
-## 当前配置下"可被 AI 选中的战斗兵种"：UNIT、非农民、role 权重 > 0。
-## **不写任何 id** —— 用户新增一个 role=ranged 的兵，下一次调用就会出现在这里。
-static func candidate_combat_ids(role_weights: Dictionary) -> Array:
+## 当前配置下"可被 AI 选中的战斗兵种"：UNIT、非农民、**职能权重 > 0**。
+## 2C-4 起配比只认 **承伤 / 输出**（词表·职能）；旧 frontline/ranged/… 从选兵逻辑退役。
+## **不写任何 id** —— 用户新增一个职能=输出的兵（或没填职能靠能力回退）都能进池。
+static func candidate_combat_ids(function_weights: Dictionary) -> Array:
 	var out: Array = []
 	var cfg: GameConfig = _cfg()
 	if cfg == null:
@@ -328,14 +330,59 @@ static func candidate_combat_ids(role_weights: Dictionary) -> Array:
 		var d: UnitDef = cfg.units[id]
 		if d == null or d.kind != RtsConst.Kind.UNIT:
 			continue
-		var r: StringName = role_of(d)
-		if String(r).is_empty() or r == &"worker":
+		if role_of(d) == &"worker":
 			continue
-		if float(role_weights.get(r, 0.0)) <= 0.0:
+		if def_function_weight(d, function_weights) <= 0.0:
 			continue
 		out.append(StringName(id))
 	out.sort_custom(func(a, b): return String(a) < String(b))
 	return out
+
+
+## 这个单位的**选兵职能权重** = 它拥有的职能里权重最高的那个（max，任务书 §4.5）。
+## 职能来自卡（UnitCard.roles）；无卡或 roles 为空 → 能力回退兜底
+## （有攻击+远 → 输出；有攻击+近 → 承伤；无攻击 → 辅助），是否回退用 `def_roles_is_fallback` 查。
+static func def_function_weight(def: UnitDef, function_weights: Dictionary) -> float:
+	if def == null or function_weights.is_empty():
+		return 0.0
+	var best: float = 0.0
+	for r in def_roles(def):
+		best = maxf(best, float(function_weights.get(StringName(r), 0.0)))
+	return best
+
+
+## 这个单位的职能列表（卡优先；无卡/空 roles 用能力回退，并可用 _fallback_warn 标记）
+static func def_roles(def: UnitDef) -> Array:
+	if def == null:
+		return []
+	var card: EntityCard = _card_of(def)
+	if card != null and card is UnitCard and not (card as UnitCard).roles.is_empty():
+		return (card as UnitCard).roles
+	return _fallback_roles(def)
+
+
+## 是否走了"能力回退兜底"（未填职能的兵）——调用方据此打报告警告
+static func def_roles_is_fallback(def: UnitDef) -> bool:
+	if def == null:
+		return false
+	var card: EntityCard = _card_of(def)
+	return card == null or not (card is UnitCard) or (card as UnitCard).roles.is_empty()
+
+
+static func _fallback_roles(def: UnitDef) -> Array:
+	if def.attack_damage > 0.0:
+		return [&"输出"] if def.attack_range >= 3.0 else [&"承伤"]
+	return [&"辅助"]
+
+
+## 卡索引（懒加载，**运行时 load 而非 preload** —— 单位表 preload 了本文件，preload 会成环）
+static var _unit_table_script: Variant = null
+static func _card_of(def: UnitDef) -> EntityCard:
+	if _unit_table_script == null:
+		_unit_table_script = load("res://代码/配置/单位表.gd")
+	if _unit_table_script == null:
+		return null
+	return _unit_table_script.get_card(def.id)
 
 
 # ===========================================================================
@@ -398,8 +445,8 @@ static func food_building_id() -> StringName:
 	return fallback
 
 
-## 产能建筑：`trains` 里至少有一个"role 权重 > 0 的非农民单位"。
-static func production_building_ids(role_weights: Dictionary) -> Array:
+## 产能建筑：`trains` 里至少有一个"职能权重 > 0 的非农民单位"（2C-4 职能口径）。
+static func production_building_ids(function_weights: Dictionary) -> Array:
 	var out: Array = []
 	var defs: Dictionary = all_unit_defs()
 	for id in defs.keys():
@@ -411,7 +458,7 @@ static func production_building_ids(role_weights: Dictionary) -> Array:
 			var ud: UnitDef = defs.get(uid, null)
 			if ud == null or role_of(ud) == &"worker":
 				continue
-			if float(role_weights.get(role_of(ud), 0.0)) > 0.0:
+			if def_function_weight(ud, function_weights) > 0.0:
 				hit = true
 				break
 		if hit:
@@ -434,7 +481,7 @@ static func primary_producer_id(role_weights: Dictionary) -> StringName:
 		for uid in d.trains:
 			var ud: UnitDef = defs.get(uid, null)
 			if ud != null:
-				score += float(role_weights.get(role_of(ud), 0.0))
+				score += def_function_weight(ud, role_weights)
 		if score > best_score:
 			best_score = score
 			best = StringName(id)
@@ -550,10 +597,11 @@ static func time_ratio(combat_time: float, theory_time: float) -> float:
 ##   theory_time   理论战斗时间
 ##   output_eff    实际输出 ÷ max(理论输出, 1)
 ##   damage_ratio  实际承伤 ÷ max(理论承伤, 1)
-##   wiped         本波成员是否全灭
+##   survivors     收尾时还活着的成员数
+##   strength      出发时的成员数（"差"的放宽基数：存活 ≤ ceil(出发数/3) 算崩）
 static func classify_verdict(achieved: bool, forced: bool, combat_time: float,
 		theory_time: float, output_eff: float, damage_ratio: float,
-		wiped: bool) -> String:
+		survivors: int, strength: int) -> String:
 	# 目标达成的优先级最高：打掉了就是打掉了，哪怕超时/全灭
 	if achieved:
 		return VD_ACHIEVED
@@ -567,8 +615,64 @@ static func classify_verdict(achieved: bool, forced: bool, combat_time: float,
 		return VD_GOOD if (out_ok and dmg_ok) else VD_FAIR
 	if tr >= VD_TIME_HALF:
 		return VD_FAIR
-	# 战斗时间不足一半：全灭 = 差；没全灭 = 未判（**不许当"差"**）
-	return VD_BAD if wiped else VD_UNDECIDED
+	# 战斗时间不足一半：崩了 = 差（2C-4 放宽：存活 ≤ ceil(出发数/3) 即"崩"，不要求全灭）；
+	# 还站得住 = 未判（**不许当"差"**）
+	return VD_BAD if survivors <= bad_survivor_cap(strength) else VD_UNDECIDED
+
+
+# ===========================================================================
+# 2C-4 判定层 / 决策层纯函数（配置回归直接断言，不抄公式）
+# ===========================================================================
+
+## "差"的存活门槛：存活 ≤ ceil(出发数/3) 算崩（2C-4 用户确认，替换"全灭"）
+static func bad_survivor_cap(strength: int) -> int:
+	return ceili(float(maxi(strength, 0)) / 3.0)
+
+
+## 有效交战时间的单条贡献：上一刀到这一刀的间隔 ≤ gap 才累计（断档切掉走路段）。
+## prev_hit < 0 = 首刀（起表，贡献 0）。
+static func hit_gap_contrib(prev_hit: float, now: float, gap: float) -> float:
+	if prev_hit < 0.0 or now < prev_hit:
+		return 0.0
+	var dt: float = now - prev_hit
+	return dt if dt <= maxf(gap, 0.0) else 0.0
+
+
+## "好"比例护栏（只告警）：全部收尾记录里 verdict==好 的比例 > 50%
+static func good_ratio_warning(good: int, total: int) -> bool:
+	return total > 0 and float(good) / float(total) > 0.5
+
+
+## 防守下限 = 5 + 2×基地数 + 1×出兵建筑数（2C-4 §4.1）
+static func defense_floor_of(bases: int, producers: int) -> int:
+	return 5 + 2 * maxi(bases, 0) + maxi(producers, 0)
+
+
+## 攒大波保底留守 = ceil(下限 × 2/3)，不低于（家里不空）
+static func bank_garrison_floor(defense_floor: int) -> int:
+	return ceili(float(maxi(defense_floor, 0)) * 2.0 / 3.0)
+
+
+## 常态出击人数：0.75（floor，10 派 7）且不超过"军队数 − 防守下限"（保底留守不动）
+static func normal_push_n(army_n: int, defense_floor: int) -> int:
+	var by_ratio: int = int(floor(float(maxi(army_n, 0)) * 0.75))
+	var spare: int = maxi(army_n - maxi(defense_floor, 0), 0)
+	return mini(by_ratio, spare)
+
+
+## 攒大波出击人数：训练出来的全部战斗单位（含临时防守），只留保底 ceil(下限×2/3)
+static func bank_push_n(army_n: int, defense_floor: int) -> int:
+	return maxi(army_n - bank_garrison_floor(defense_floor), 0)
+
+
+## 攒大波基准：上一次**实际派出**成本；无历史时退化 = 进场时可用成本 × 0.75（任务书 §3.5）
+static func bank_baseline(last_sent_cost: float, entry_available_cost: float) -> float:
+	return last_sent_cost if last_sent_cost > 0.0 else maxf(entry_available_cost, 0.0) * 0.75
+
+
+## 攒大波门槛：当前可派战斗单位总成本 ≥ 1.5 × 基准（**不封顶**，P5 删除）
+static func bank_ready(available_cost: float, baseline: float, mult: float = 1.5) -> bool:
+	return available_cost >= maxf(baseline, 0.0) * maxf(mult, 1.0)
 
 
 # ===========================================================================
