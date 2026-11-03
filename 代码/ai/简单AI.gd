@@ -563,7 +563,7 @@ func _assign_workers(_diff: DifficultyDef) -> void:
 ##   · 目标 share 回落（木材低于软盈余线）→ 采金的转去伐木。
 ## 每次只挪 1 个人、间隔 GATHER_REBALANCE_CD 秒 —— 换采集点要走过去，
 ## 一次挪一批等于让一半农民在路上白跑。
-func _rebalance_gatherers(diff: DifficultyDef, share: float, total: int) -> void:
+func _rebalance_gatherers(_diff: DifficultyDef, share: float, total: int) -> void:
 	if _gather_cd > 0.0 or _faction == null or total <= 0:
 		return
 	var on_gold: int = 0
