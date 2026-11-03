@@ -1253,13 +1253,20 @@ const VERDICT_GOOD: String = "效果好"
 const VERDICT_FAIR: String = "一般"
 ## 击杀归属窗口（秒）：最后一击后 3 s 内死亡才算本波战果（§3.4 建议，先做最后一击）
 const KILL_CREDIT_SEC: float = 3.0
-## 单波最长存活时间（秒，兜底）：超时强制收尾，防止"永远在途"把状态机钉死
-const WAVE_MAX_SEC: float = 180.0
+## 单波最长存活时间（秒，兜底）：超时强制收尾，防止"永远在途"把状态机钉死。
+## 90 s 的依据：本图一趟往返 + 一场遭遇战约 60~80 s；超过 90 s 还没回来，
+## 说明它已经被别的事（回防/巡逻/下一波）接管，这一波的"生命周期"该结算了。
+const WAVE_MAX_SEC: float = 120.0
+## 接敌结束后多久算"这一波打完了"（秒）。
+## 为什么需要它：本 AI 会在上一波还没回城时继续派增援（同一批兵可能被再次下令），
+## 只等"全员回家待命"的话，一波永远收不了尾，记录表整个失效。
+## 15 s 是一个"脱离接触就基本不会再打"的缓冲，比"等回城"更贴近实际存活时间。
+const WAVE_QUIET_SEC: float = 15.0
 
 ## 波次记录（旧 → 新，最多 WAVE_LOG_MAX 条）
 var wave_log: Array = []
-## 当前在途的那一波（空字典 = 没有在途波次）
-var _wave_active: Dictionary = {}
+## 在途波次（可以有多波同时在外面：后排增援不算"重开一波"）
+var _waves_active: Array = []
 ## 60 秒滚动收入采样：[{t, v}]，v = 金 + 木的正向跳变（与 bench 同口径）
 var _income_samples: Array = []
 var _prev_gold: int = -1
@@ -1313,11 +1320,10 @@ func _dict_cost(d: Dictionary) -> float:
 
 
 ## 开一波记录。`units` 只传真的派出去的那批（留守不算）。
+##
+## ★ 允许多波同时在途：上一波还在外面打的时候又派了增援，这是两波，
+##   不能把前一波"强制收尾"（那会把不完整的数据喂给状态机）。
 func _open_wave(units: Array, target: Vector3, foe: RtsFaction) -> void:
-	# 上一波还没收尾就开新波：先按现有数据收尾，但**不要**触发状态转移
-	# （这是强制收尾，不是"打完看结果"，让它改状态会写脏状态机）。
-	if not _wave_active.is_empty():
-		_close_wave(Game.elapsed, false)
 	var by_id: Dictionary = {}
 	var ids: Dictionary = {}
 	for u in units:
@@ -1326,7 +1332,7 @@ func _open_wave(units: Array, target: Vector3, foe: RtsFaction) -> void:
 		by_id[u.def.id] = int(by_id.get(u.def.id, 0)) + 1
 		ids[u.get_instance_id()] = true
 	_wave_index += 1
-	_wave_active = {
+	_waves_active.append({
 		"wave_id": _wave_index,
 		"t_start": Game.elapsed,
 		"units_out": by_id,
@@ -1342,17 +1348,17 @@ func _open_wave(units: Array, target: Vector3, foe: RtsFaction) -> void:
 		"losses_enemy": {},
 		"hits": {},
 		"t_last_death": -1.0,
-	}
+	})
 
 
-## 收一波：算判定 + 派生量 + 落表 + （可选）驱动状态机
-func _close_wave(now: float, apply_transition: bool = true) -> void:
-	if _wave_active.is_empty():
-		return
-	var rec: Dictionary = _wave_active
-	_wave_active = {}
+## 收一波：算判定 + 派生量 + 落表 + （可选）驱动状态机。
+## `reason`：dead / home / quiet / timeout —— 判定要用它区分"真的打完了"和"超时了"。
+func _close_wave(rec: Dictionary, now: float, reason: String = "home",
+		apply_transition: bool = true) -> void:
+	_waves_active.erase(rec)
 	var t_start: float = float(rec["t_start"])
 	rec["t_return"] = now
+	rec["end_reason"] = reason
 	rec["survival_actual"] = maxf(now - t_start, 0.0)
 	var income: float = maxf(income_60s(now), 1.0)
 	rec["income_60s"] = income
@@ -1363,12 +1369,16 @@ func _close_wave(now: float, apply_transition: bool = true) -> void:
 	var enemy_cost: float = float(rec["losses_enemy_cost"])
 	# 投入产出比 = 敌损成本 / 我投成本（P1）；净交换比 = 敌损 / 我损（P2，仅记录）
 	rec["roi"] = enemy_cost / maxf(float(rec["cost_out"]), 0.001)
-	rec["net_ratio"] = enemy_cost / maxf(mine_cost, 0.001)
-	# 判定（C2 + P1）：先看有没有接敌，再看"快速被消灭"，最后看投入产出比
+	# 我损为 0 时"净交换比"是无穷大，不写 1e5 这种假数字：用 -1 表示"不可计算"（P2 仅记录）
+	rec["net_ratio"] = (enemy_cost / mine_cost) if mine_cost > 0.0 else -1.0
+	# 判定（C2 + P1）：先看有没有接敌，再看"快速被消灭"，最后看投入产出比。
+	# ★ 超时收尾（timeout）不判"快速"：actual 被 WAVE_MAX_SEC 截断了，再除理论值
+	#   必然偏小，会把"打得久"误判成"死得快"。
 	var contacts: Dictionary = rec["contacts"]
 	if contacts.is_empty():
 		rec["verdict"] = VERDICT_NO_CONTACT
-	elif float(rec["survival_actual"]) / maxf(float(rec["survival_theory"]), 0.001) < 0.5:
+	elif reason != "timeout" \
+			and float(rec["survival_actual"]) / maxf(float(rec["survival_theory"]), 0.001) < 0.5:
 		rec["verdict"] = VERDICT_FAST
 	elif float(rec["roi"]) >= P1_ROI:
 		rec["verdict"] = VERDICT_GOOD
@@ -1383,83 +1393,92 @@ func _close_wave(now: float, apply_transition: bool = true) -> void:
 
 ## 每 tick 维护在途波次：全员死亡 / 全员回家待命 / 超时 → 收尾
 func _tick_wave(now: float) -> void:
-	if _wave_active.is_empty() or _faction == null:
+	if _waves_active.is_empty() or _faction == null:
 		return
-	var members: Dictionary = _wave_active["members"]
 	var home: Vector3 = RtsWorld.base_center(_faction)
-	var alive: int = 0
-	var all_home_idle: bool = true
-	for id in members.keys():
-		var u = instance_from_id(int(id))
-		if u == null or not is_instance_valid(u) or not u.is_alive():
-			continue
-		alive += 1
-		if not bool(u.call("is_idle_like")) \
-				or u.global_position.distance_to(home) > DEFENSE_RADIUS:
-			all_home_idle = false
-	if alive == 0:
-		# 全员阵亡：t_return 取最后一次死亡时刻（比"发现的时候"更准）
-		var t_end: float = float(_wave_active.get("t_last_death", now))
-		_close_wave(maxf(t_end, float(_wave_active["t_start"])))
-	elif all_home_idle:
-		_close_wave(now)
-	elif now - float(_wave_active["t_start"]) >= WAVE_MAX_SEC:
-		_close_wave(now)
+	# duplicate()：_close_wave 会从 _waves_active 里删元素，边遍历边删会跳项
+	for rec in _waves_active.duplicate():
+		var members: Dictionary = rec["members"]
+		var alive: int = 0
+		var all_home_idle: bool = true
+		for id in members.keys():
+			var u = instance_from_id(int(id))
+			if u == null or not is_instance_valid(u) or not u.is_alive():
+				continue
+			alive += 1
+			if not bool(u.call("is_idle_like")) \
+					or u.global_position.distance_to(home) > DEFENSE_RADIUS:
+				all_home_idle = false
+		if alive == 0:
+			# 全员阵亡：t_return 取最后一次死亡时刻（比"发现的时候"更准）
+			var t_end: float = maxf(float(rec.get("t_last_death", now)), float(rec["t_start"]))
+			_close_wave(rec, t_end, "dead")
+		elif all_home_idle:
+			_close_wave(rec, now, "home")
+		elif float(rec["t_contact_end"]) > 0.0 \
+				and now - float(rec["t_contact_end"]) >= WAVE_QUIET_SEC:
+			# 已脱离接触 WAVE_QUIET_SEC 秒：这一波打完了（人可能还在回城路上）
+			_close_wave(rec, float(rec["t_contact_end"]) + WAVE_QUIET_SEC, "quiet")
+		elif now - float(rec["t_start"]) >= WAVE_MAX_SEC:
+			_close_wave(rec, now, "timeout")
 
 
 ## combat_hit：只关心"本波成员参与的刀"。既用来记接敌，也用来记"谁打死的"。
 func _on_combat_hit(attacker: Node3D, target: Node3D, _damage: float, _crit: bool) -> void:
-	if _wave_active.is_empty():
+	if _waves_active.is_empty():
 		return
 	if attacker == null or target == null:
 		return
 	if not is_instance_valid(attacker) or not is_instance_valid(target):
 		return
-	var members: Dictionary = _wave_active["members"]
 	var aid: int = attacker.get_instance_id()
 	var tid: int = target.get_instance_id()
-	var mine_hit: bool = members.has(aid)
-	var mine_taken: bool = members.has(tid)
-	if not mine_hit and not mine_taken:
-		return
 	var now: float = Game.elapsed
-	if float(_wave_active["t_contact_begin"]) < 0.0:
-		_wave_active["t_contact_begin"] = now
-	_wave_active["t_contact_end"] = now
-	var other = target if mine_hit else attacker
-	var od: UnitDef = other.get("def")
-	if od != null and od.kind == RtsConst.Kind.UNIT:
-		var contacts: Dictionary = _wave_active["contacts"]
-		var e: Dictionary = contacts.get(od.id, {"t": now, "n": 0})
-		e["t"] = now
-		e["n"] = int(e["n"]) + 1
-		contacts[od.id] = e
-	if mine_hit:
-		# 最后一击归属：记下"这个敌人最后被本波成员打了"
-		_wave_active["hits"][tid] = now
+	for rec in _waves_active:
+		var members: Dictionary = rec["members"]
+		var mine_hit: bool = members.has(aid)
+		var mine_taken: bool = members.has(tid)
+		if not mine_hit and not mine_taken:
+			continue
+		if float(rec["t_contact_begin"]) < 0.0:
+			rec["t_contact_begin"] = now
+		rec["t_contact_end"] = now
+		var other = target if mine_hit else attacker
+		var od: UnitDef = other.get("def")
+		if od != null and od.kind == RtsConst.Kind.UNIT:
+			var contacts: Dictionary = rec["contacts"]
+			var e: Dictionary = contacts.get(od.id, {"t": now, "n": 0})
+			e["t"] = now
+			e["n"] = int(e["n"]) + 1
+			contacts[od.id] = e
+		if mine_hit:
+			# 最后一击归属：记下"这个敌人最后被本波成员打了"
+			rec["hits"][tid] = now
 
 
 ## unit_died：本波成员死了记我方损失；3 s 内被本波打过的人死了记敌方损失
 func _on_unit_died(unit: Node3D) -> void:
-	if _wave_active.is_empty() or unit == null:
+	if _waves_active.is_empty() or unit == null:
 		return
 	if not is_instance_valid(unit):
 		return
 	var uid: int = unit.get_instance_id()
-	var members: Dictionary = _wave_active["members"]
 	var d: UnitDef = unit.get("def")
-	if members.has(uid):
-		if d != null:
-			var lm: Dictionary = _wave_active["losses_mine"]
-			lm[d.id] = int(lm.get(d.id, 0)) + 1
-		_wave_active["t_last_death"] = Game.elapsed
-		return
-	if d == null or d.kind != RtsConst.Kind.UNIT:
-		return
-	var hit_t: float = float(_wave_active["hits"].get(uid, -999.0))
-	if hit_t >= Game.elapsed - KILL_CREDIT_SEC:
-		var le: Dictionary = _wave_active["losses_enemy"]
-		le[d.id] = int(le.get(d.id, 0)) + 1
+	var now: float = Game.elapsed
+	for rec in _waves_active:
+		var members: Dictionary = rec["members"]
+		if members.has(uid):
+			if d != null:
+				var lm: Dictionary = rec["losses_mine"]
+				lm[d.id] = int(lm.get(d.id, 0)) + 1
+			rec["t_last_death"] = now
+			continue
+		if d == null or d.kind != RtsConst.Kind.UNIT:
+			continue
+		var hit_t: float = float(rec["hits"].get(uid, -999.0))
+		if hit_t >= now - KILL_CREDIT_SEC:
+			var le: Dictionary = rec["losses_enemy"]
+			le[d.id] = int(le.get(d.id, 0)) + 1
 
 
 # ---------------------------------------------------------------------------

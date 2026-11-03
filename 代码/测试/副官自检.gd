@@ -228,6 +228,11 @@ func _test_sanity_stalled_site() -> void:
 	var spot: Vector3 = _adj._find_build_spot(farm.footprint)
 	if not _ok("E 组：基地附近有合法空位", spot != Vector3.INF):
 		return
+	# 2C-2：保留金闸删除后，副官会把玩家的钱花到接近 0。
+	# 这一步测的是"工地能不能落成"（审计的前置），不是财政 —— 所以测试自己补足建造费。
+	# 不补的话会因"80 金不够一座农场"假失败，把运营线的正常行为当成 bug。
+	Game.player_faction.gold = maxi(Game.player_faction.gold, 400)
+	Game.player_faction.wood = maxi(Game.player_faction.wood, 200)
 	var site: Node3D = builder.order_build(farm, spot, _adj._build_yaw_at(spot))
 	if not _ok("E 组：工地落成", site != null and site is RtsBuilding):
 		return
@@ -274,6 +279,11 @@ func _test_negative_control() -> void:
 	var target = free_units[0]
 	target.order_stop()
 	_adj.posture["allow_attack"] = true
+	# 2C-2：这一步只测"副官会不会给自由单位下令"，不测状态机/骰子 ——
+	# 把状态钉回试探、把侵略性骰子钉死，否则 45% 概率被随机数挡住（假失败）。
+	_adj.posture["aggression"] = 1.0
+	_adj.strat_state = "probe"
+	_adj._waves_active.clear()
 	_adj._next_wave_at = -1.0
 	_adj._sched.begin(Game.elapsed)
 	var diff: DifficultyDef = Cfg.difficulty(Game.difficulty_index)
