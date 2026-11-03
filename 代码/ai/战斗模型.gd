@@ -659,6 +659,35 @@ static func army_target_of(bases: int, producers: int, elapsed: float,
 	return maxi(t, maxi(defense_floor, 0))
 
 
+## 2C-6 P1：人口预判 —— C 条件（占用率 > ratio，默认 70%）。
+## cap=0（还没人口建筑）视为"必须建"，否则除零会返回 false 把 AI 卡死。
+static func pop_occupied_over(used: int, cap: int, ratio: float = 0.7) -> bool:
+	if cap <= 0:
+		return true
+	return float(maxi(used, 0)) / float(cap) > clampf(ratio, 0.0, 1.0)
+
+
+## 2C-6 P1：人口预判 —— A 条件（余量 < 未来 60 s 训练量 × buffer，默认 2 倍）。
+static func farm_headroom_low(headroom: int, predicted_60s: float, buffer: float = 2.0) -> bool:
+	return float(headroom) < maxf(predicted_60s, 0.0) * maxf(buffer, 0.0)
+
+
+## 2C-6 P1：未来 60 s 预计训练兵数 = 兵营数 × 60 ÷ 平均训练时间（训练时间下限 1 s，不除零）。
+static func predicted_trainees_60s(producers: int, avg_train_time: float) -> float:
+	if producers <= 0:
+		return 0.0
+	return float(producers) * 60.0 / maxf(avg_train_time, 1.0)
+
+
+## 2C-6 P2：兵营目标座数 —— 固定 ≥2；军队 >16 加到 3；上限 3。
+static func barracks_want_of(army_n: int, min_n: int = 2,
+		step_army: int = 16, at_step: int = 3, max_n: int = 3) -> int:
+	var want: int = maxi(min_n, 1)
+	if army_n > step_army:
+		want = maxi(want, at_step)
+	return clampi(want, 1, maxi(max_n, 1))
+
+
 ## 2C-5 P0-1：承伤分母。
 ##   mode = "targeted"（默认）—— **只算"曾作为 target 的成员"的有效生命**；
 ##   mode = "all"（2C-4 旧口径）—— 全程总有效生命，对照用。
@@ -686,11 +715,27 @@ static func damage_theory(comp: Dictionary, targeted: Dictionary = {},
 
 
 ## 2C-5 P1-4：建筑要不要修（血量比例低于阈值）。
-## 阈值放 AI判定模式（--repair-hp-threshold 可覆盖），这里只做纯判定。
+## **2C-6 起不用它做默认判据**（70% 线在 10~15 min 局结构性不可达，见 2C-5 §6.6）；
+## 保留只为 old 对照与回归表。
 static func repair_needed(hp: float, max_hp: float, threshold: float) -> bool:
 	if max_hp <= 0.0 or hp <= 0.0:
 		return false
 	return hp < max_hp * clampf(threshold, 0.0, 1.0)
+
+
+## 2C-6 P3：固定掉血口径 —— 掉的血 ≥ deficit 就修（默认 200 HP）。
+## 好处：对小建筑更敏感（农场 450 掉 200 = 44%）、对大建筑不苛刻（大本营 1600 掉 200 = 12.5%）；
+## 比例口径反过来：小建筑要掉 135 才到 70%，大本营要掉 480 —— 于是 10 min 局里永远是 0 次。
+static func repair_deficit(hp: float, max_hp: float) -> float:
+	if max_hp <= 0.0 or hp <= 0.0:
+		return 0.0
+	return maxf(max_hp - hp, 0.0)
+
+
+static func repair_needed_deficit(hp: float, max_hp: float, deficit: float) -> bool:
+	if max_hp <= 0.0 or hp <= 0.0:
+		return false
+	return repair_deficit(hp, max_hp) >= maxf(deficit, 0.0)
 
 
 ## 2C-5 P1-5：达成归属的伤害占比 = 本波对目标造成的伤害 ÷ 目标总生命（近似，含过量伤害）。

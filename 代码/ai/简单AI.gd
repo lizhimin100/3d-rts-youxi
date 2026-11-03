@@ -250,6 +250,10 @@ func _think_once(diff: DifficultyDef) -> void:
 	_manage_peasants(diff)
 	_assign_workers(diff)
 	_manage_food(diff, true)    # 人口余量 <4 → 农场急建（建造农民优先级 #1）
+	# 2C-6 P1：不急的农场也提到兵营**之前** —— 人口预判（占用>70% / 60 s 训练量×2）
+	# 一满足就建，否则"兵营先扩、人口后补"会让新兵营一完工就卡人口。
+	# 它仍然排在"急建"之后（上面那行先跑），所以不会抢紧急通道的钱。
+	_manage_food(diff, false)
 
 	# --- ④ 生产 / ⑤ 科技 ---
 	_manage_army(diff)
@@ -268,8 +272,6 @@ func _think_once(diff: DifficultyDef) -> void:
 		_manage_creep_clear(diff)
 		_manage_waves(diff)
 	_manage_upkeep(diff)
-	# 2C-4：不急的农场排最后（建造农民优先级 #5）；扩张线接口（最小可用）
-	_manage_food(diff, false)
 	_maybe_expand()
 
 	# --- ⑦ 反愚蠢审计（最后跑，救火命令优先）---
@@ -884,22 +886,26 @@ func _can_spend_army(id: StringName) -> bool:
 	return _can_spend(id)
 
 
-## 修理建筑（2C-5 P1-4）—— 建造农民优先级 **第 3 位**：
+## 修理建筑（2C-5 P1-4 接命令口；2C-6 P3 改判据）—— 建造农民优先级 **第 3 位**：
 ##   人口余量<4 农场(急) > 补兵营 > **修理** > 哨塔/防御塔 > 农场(不急)
 ##
-## 触发：己方**已完工**建筑 血量比例 < AI判定模式.repair_hp_threshold()（默认 70%），
-##       且木材够"把这栋修满"（repair_wood_for_full，含「修缮工艺」折扣）。
-## 做法：挑最破的那一栋；已经有人在修的那栋不再重复下令；一次只派一个农民。
-## 为什么不派多个：修理是"止损"，不是"抢修"；多派人等于把采集工抽干，
-##   而优先级表里它排在经济之后 —— 一个够用，把伤害止住就行。
+## 判据（2C-6）：**固定掉血值** `max_hp − hp ≥ AI判定模式.repair_hp_deficit()`（默认 200 HP），
+##   不再用血量比例。理由见 战斗模型.repair_needed_deficit 的注释（10~15 min 局 70% 线 0 触发）。
+##   **大本营不加修理优先**（用户口径）：它体积大、修一次吃光木头，排在所有其它建筑之后 ——
+##   不是"不修"，是"没有别的可修时才修"。
+## 做法：挑**掉血最多**的那一栋（绝对值）；已经有人在修的那栋不再重复下令；一次只派一个农民。
+## 木材不够"修满"时不派（repair_step 里木材不足就停工，派过去只是罚站）。
 ##
 ## ★ 这条接的是**引擎本来就有的 REPAIR 命令口**（`RtsUnit.order_repair` /
 ##   `RtsBuilding.repair_step`），2C-4 之前 AI 侧没有下令通道，只占了个位。
 func _manage_repair() -> void:
 	if _faction == null or _repair_cd > 0.0:
 		return
-	var thr: float = AIV.repair_hp_threshold()
+	var deficit_min: float = AIV.repair_hp_deficit()
+	var base_id: StringName = _main_base_id()
 	var best: RtsBuilding = null
+	var best_deficit: float = -1.0
+	var best_is_base: bool = true
 	var best_frac: float = 1.0
 	var wood_blocked: bool = false
 	for b in _faction.buildings:
@@ -908,8 +914,9 @@ func _manage_repair() -> void:
 		var rb: RtsBuilding = b as RtsBuilding
 		if rb == null or not rb.can_repair():
 			continue
-		if not bool(_model_call("repair_needed",
-				[float(rb.hp), float(rb.def.max_hp), thr])):
+		# 2C-6：固定掉血判据（200 HP），不再按比例
+		if not bool(_model_call("repair_needed_deficit",
+				[float(rb.hp), float(rb.def.max_hp), deficit_min])):
 			continue
 		var busy: bool = false
 		for w in _workers():
@@ -922,10 +929,18 @@ func _manage_repair() -> void:
 		if int(rb.call("repair_wood_for_full")) > _faction.wood:
 			wood_blocked = true
 			continue
-		var frac: float = float(rb.hp) / maxf(float(rb.def.max_hp), 1.0)
-		if frac < best_frac:
-			best_frac = frac
+		var deficit: float = float(_model_call("repair_deficit",
+				[float(rb.hp), float(rb.def.max_hp)]))
+		var is_base: bool = base_id != &"" and rb.def.id == base_id
+		# 优先非大本营；同类按掉血绝对值降序（并列时保留先遍历到的 = 稳定）
+		var better: bool = best == null \
+				or (best_is_base and not is_base) \
+				or (is_base == best_is_base and deficit > best_deficit)
+		if better:
 			best = rb
+			best_deficit = deficit
+			best_is_base = is_base
+			best_frac = float(rb.hp) / maxf(float(rb.def.max_hp), 1.0)
 	if best == null:
 		if wood_blocked:
 			repair_stats["blocked_wood"] = int(repair_stats.get("blocked_wood", 0)) + 1
@@ -942,8 +957,8 @@ func _manage_repair() -> void:
 		var bd: Dictionary = repair_stats.get("buildings", {})
 		bd[bn] = int(bd.get(bn, 0)) + 1
 		repair_stats["buildings"] = bd
-		_log("修 %s（血量 %.0f%%，修满约 %d 木）"
-				% [bn, best_frac * 100.0, int(best.call("repair_wood_for_full"))])
+		_log("修 %s（掉血 %.0f / 血量 %.0f%%，修满约 %d 木）"
+				% [bn, best_deficit, best_frac * 100.0, int(best.call("repair_wood_for_full"))])
 
 
 ## 补农场（2C-4 建造农民优先级）：
@@ -960,7 +975,8 @@ func _manage_food(diff: DifficultyDef, urgent: bool) -> void:
 	else:
 		if headroom < 4:
 			return    # 急的已经由 urgent 通道处理
-		if not _need_farm(diff):
+		# 2C-6 P1：老判据（连下一个兵都排不下）与人口预判（占用>70% / 60 s 训练量×2）任一成立就建
+		if not (_need_farm(diff) or _need_more_farm(diff)):
 			return
 	var fid: StringName = _food_building_id()
 	if fid == &"":
@@ -999,6 +1015,47 @@ func _need_farm(diff: DifficultyDef) -> bool:
 	if peasant != null:
 		max_food = maxi(max_food, peasant.food_cost)
 	return not _faction.has_food(max_food)
+
+
+## **人口预判（2C-6 P1）**：两个条件任一满足就提前建农场。
+##   C  占用率 > 70%（used_pop / max_pop）—— "还剩三成空位"时就开始铺，不等贴顶；
+##   A  余量 < 未来 60 s 预计训练的兵数 × 2 —— 一座农场 8 人口，留 2 倍缓冲才不会"兵排到一半卡人口"。
+##
+## 为什么不用"余量 < 4"：那个阈值只在**已经快满**时响应，而农场要 28 s 才盖好、期间兵营还在出人，
+## 于是"卡人口 → 停工 28 s → 继续"的锯齿在 2C-5 长局里一直存在（人口占用率 100% 从 480 s 起）。
+## 预计训练兵数 = 当前兵营数 × 60 s ÷ 平均训练时间（用**候选兵种**的平均值，不写常数）。
+func _need_more_farm(diff: DifficultyDef) -> bool:
+	if _faction == null:
+		return false
+	var cap: int = _faction.food_cap()
+	var used: int = _faction.food_used()
+	if cap <= 0:
+		return true
+	# C：占用率 > 70%
+	if bool(_model_call("pop_occupied_over", [used, cap])):
+		return true
+	# A：余量 < 未来 60 s 预计训练兵数 × 2
+	var headroom: int = cap - used
+	return bool(_model_call("farm_headroom_low", [headroom, _predicted_trainees_60s(diff)]))
+
+
+## 未来 60 s 大概能训练出几个兵（= 兵营数 × 60 ÷ 平均训练时间）。
+## 兵营数只数**已完工**的出兵建筑（在建的那座还没产能，不该算进人口预判）。
+func _predicted_trainees_60s(diff: DifficultyDef) -> float:
+	var producers: int = int(_base_producer_counts()["producers"])
+	if producers <= 0:
+		return 0.0
+	var sum: float = 0.0
+	var n: int = 0
+	for id in _candidate_ids(diff):
+		var d: UnitDef = Cfg.unit(StringName(id))
+		if d != null and d.train_time > 0.0:
+			sum += d.train_time
+			n += 1
+	if n == 0:
+		return 0.0
+	var avg: float = sum / float(n)
+	return float(_model_call("predicted_trainees_60s", [producers, avg]))
 
 ## 找基地附近的合法空位。
 ## **必须先吸附再判定**：判定用吸附后的点，落地也用这个点（order_build 内部还会再吸一次，
@@ -1296,14 +1353,29 @@ func _weighted_pick(weights: Array) -> int:
 	return weights.size() - 1
 
 ## 产能规划：主产能建筑（当前 = 兵营，按"能训练多少 role 权重的兵"自动选）不足就再盖一座。
-## 目标座数 = ceil(max_army / UNITS_PER_BARRACKS)，全部来自难度档，不写死 id。
+##
+## 2C-6 P2：目标座数**不再跟难度档 max_army 走**（那会把 16 人的目标卡在 2 座兵营 × 1 队列上）：
+##   · 固定 ≥ 2 座（一队列等兵 = 产能浪费，第二座从第 1 分钟就该在）；
+##   · 军队 > 16 时加到 3 座（16 人以上单/双队列排满，第三座才开始有边际收益）。
+##   7 分钟后 target_army 解除**不影响**这条：兵营数量独立判断，看的是"现在有多少兵"。
+const BARRACKS_MIN: int = 2
+const BARRACKS_ARMY_STEP: int = 16
+const BARRACKS_AT_STEP: int = 3
+
+
+func _barracks_want() -> int:
+	var army_n: int = _army_units().size()
+	return int(_model_call("barracks_want_of",
+			[army_n, BARRACKS_MIN, BARRACKS_ARMY_STEP, BARRACKS_AT_STEP, MAX_BARRACKS]))
+
+
 func _maybe_build_barracks(diff: DifficultyDef) -> void:
 	if _faction == null:
 		return
 	var pid: StringName = _primary_producer_id(diff)
 	if pid == &"":
 		return
-	var want: int = clampi(ceili(float(diff.max_army) / UNITS_PER_BARRACKS), 1, MAX_BARRACKS)
+	var want: int = _barracks_want()
 	var have: int = 0
 	var building_now: bool = false
 	for b in _faction.buildings:
@@ -1335,7 +1407,8 @@ func _maybe_build_barracks(diff: DifficultyDef) -> void:
 	if spot == Vector3.INF:
 		return
 	if _sched.build(builder, bd, spot, _build_yaw_at(spot), "economy") != null:
-		_log("扩建%s（已有 %d / 目标 %d，军队上限 %d）" % [bd.display_name, have, want, diff.max_army])
+		_log("扩建%s（已有 %d / 目标 %d，当前军队 %d）" % [
+			bd.display_name, have, want, _army_units().size()])
 
 ## 其余产能建筑（圣地 / 车坊）：**满编之后**才考虑，每种一座。
 ## 不写 id：由"谁能训练 role 权重 > 0 的兵"自动枚举。
@@ -3018,6 +3091,20 @@ func _maybe_upgrade_tower() -> void:
 	if n != null:
 		_log("哨塔升级箭塔 @ (%.0f, %.0f)（哨塔 %d 座，目标 %d）" % [
 			pick.global_position.x, pick.global_position.z, towers.size(), prefer])
+
+
+## **大本营能不能建（2C-6 P4，扩张线预留接口）**：**固定 false**。
+##
+## 用户口径：大本营现在**有成本**（320 金 / 125 木）且玩家能建（建造页第 10 个按钮），
+## 但 AI **本轮不自动建** —— 多基地会牵动资源点选择、防守下限（5+2×基地数）、
+## 分矿扩张顺序，那是下一轮"扩张线"的活。先把这个判断收成一个函数，
+## 下一轮接扩张线时只改这里 + 加一个 `_maybe_build_townhall()` 调用点，
+## 不会散落在建造逻辑里各写一份。
+##
+## ★ 不许为了让 AI "看起来会扩张"把它改成 true —— 那会立刻开始拿 320 金砸第二基地，
+##   而这轮的农田/兵营/修理预算都按"单基地"标定过。
+func can_build_townhall() -> bool:
+	return false
 
 
 ## **扩张线（2C-4 §4.4，只留接口 + 最小可用）**：

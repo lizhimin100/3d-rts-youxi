@@ -207,12 +207,15 @@ func can_enter_build_page() -> bool:
 
 
 ## 建造页里列出的建筑 id（顺序即按钮顺序；界面与自检共用这一份）
-## 9 条 = 5 列网格的 1.8 行，正好一屏放得下，不用翻页。
+## 10 条 = 5 列网格的整 2 行，正好一屏放得下，不用翻页。
 ## ★ 新增建筑一定要加到这里，否则农民建不了它（编辑器能摆、玩家点不出来）。
 ##   2026-11-01 新增 `campfire`（营火）：夜里照明用，玩家口径明确要求农民能造。
+##   2026-11-03 2C-6 新增 `townhall`（大本营）：卡已有成本（320 金 / 125 木），
+##     **玩家可建**；AI 不自动建（`简单AI.can_build_townhall()` 固定 false，扩张线下一轮接入）。
 func build_page_ids() -> Array:
 	return [&"farm", &"barracks", &"tower", &"watchtower",
-		&"blacksmith", &"sanctum", &"workshop", &"lumbercamp", &"campfire"]
+		&"blacksmith", &"sanctum", &"workshop", &"lumbercamp", &"campfire",
+		&"townhall"]
 
 
 # ===========================================================================
@@ -404,12 +407,12 @@ func _build_entries() -> Array:
 		})
 		out.append({
 			"label": "建造",
-			"hint": "打开建造菜单：农场 / 兵营 / 箭塔 / 哨塔 / 铁匠铺 / 神秘圣地 / 蒸汽车坊 / 伐木场（B 键）",
+			"hint": "打开建造菜单：农场 / 兵营 / 箭塔 / 哨塔 / 铁匠铺 / 神秘圣地 / 蒸汽车坊 / 伐木场 / 营火 / 大本营（B 键）",
 			"color": Color(0.82, 0.94, 0.74),
 			"glyph": "建",
 			"icon": "hammer",
 			"hotkey": "B",
-			"sub": "展开 8 种建筑",
+			"sub": "展开 10 种建筑",
 			"action": func(): enter_build_page(),
 		})
 	return out
