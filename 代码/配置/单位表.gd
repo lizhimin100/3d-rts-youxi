@@ -27,6 +27,7 @@ static func build_units() -> Dictionary:
 	# 2026-11-01：农民换成「方块人」v2（带骨骼 + 9 段动作：walk/idle/attack/carry_gold/carry_wood/hurt/death…）
 	peasant.model_path = MODEL_DIR + "方块人/方块人_农民.glb"
 	peasant.anim_set = RtsConst.AnimSet.WORKER
+	peasant.role = &"worker"
 	peasant.max_hp = 230.0
 	peasant.armor = 0.0
 	peasant.armor_type = RtsConst.ArmorType.LIGHT
@@ -65,6 +66,8 @@ static func build_units() -> Dictionary:
 	footman.kind = RtsConst.Kind.UNIT
 	footman.model_path = MODEL_DIR + "方块人/方块人_联盟步兵.glb"
 	footman.anim_set = RtsConst.AnimSet.MELEE
+	footman.role = &"frontline"
+	footman.tags = [&"heavy"]
 	footman.max_hp = 430.0
 	footman.armor = 5.0
 	footman.armor_type = RtsConst.ArmorType.HEAVY
@@ -95,6 +98,8 @@ static func build_units() -> Dictionary:
 	# 2026-11-01：弩手（archer）换成「方块人_弩兵」（shoot/reload/idle_b 三段远程动作齐全）
 	archer.model_path = MODEL_DIR + "方块人/方块人_弩兵.glb"
 	archer.anim_set = RtsConst.AnimSet.ARCHER
+	archer.role = &"ranged"
+	archer.tags = [&"light"]
 	archer.max_hp = 310.0
 	archer.armor = 2.0
 	archer.armor_type = RtsConst.ArmorType.LIGHT
@@ -127,6 +132,8 @@ static func build_units() -> Dictionary:
 	mage.kind = RtsConst.Kind.UNIT
 	mage.model_path = MODEL_DIR + "法师.glb"
 	mage.anim_set = RtsConst.AnimSet.MAGE
+	mage.role = &"caster"
+	mage.tags = [&"light", &"support"]
 	mage.max_hp = 270.0
 	mage.armor = 0.0
 	mage.armor_type = RtsConst.ArmorType.NONE
@@ -270,6 +277,7 @@ static func build_units() -> Dictionary:
 	# 资产包实测 7.1 × 7.0 × 17.5 → ×0.5
 	tower.model_scale = 0.5
 	tower.anim_set = RtsConst.AnimSet.TOWER
+	tower.role = &"defense"
 	tower.max_hp = 1050.0
 	tower.armor = 6.0
 	tower.armor_type = RtsConst.ArmorType.FORTIFIED
@@ -310,6 +318,7 @@ static func build_units() -> Dictionary:
 	watchtower.model_path = MODEL_DIR + "哨塔.glb"
 	watchtower.model_scale = 0.5
 	watchtower.anim_set = RtsConst.AnimSet.TOWER
+	watchtower.role = &"defense"
 	watchtower.max_hp = 820.0
 	watchtower.armor = 5.0
 	watchtower.armor_type = RtsConst.ArmorType.FORTIFIED
@@ -413,6 +422,8 @@ static func build_units() -> Dictionary:
 	steam_guard.model_path = MODEL_DIR + "步兵.glb"
 	steam_guard.model_scale = 1.12
 	steam_guard.anim_set = RtsConst.AnimSet.MELEE
+	steam_guard.role = &"frontline"
+	steam_guard.tags = [&"heavy", &"siege"]
 	steam_guard.max_hp = 640.0
 	steam_guard.armor = 9.0
 	steam_guard.armor_type = RtsConst.ArmorType.HEAVY
@@ -446,6 +457,8 @@ static func build_units() -> Dictionary:
 	gnoll_warrior.kind = RtsConst.Kind.UNIT
 	gnoll_warrior.model_path = MODEL_DIR + "野怪/豺狼人战士.glb"
 	gnoll_warrior.anim_set = RtsConst.AnimSet.MELEE
+	gnoll_warrior.role = &"frontline"
+	gnoll_warrior.tags = [&"light"]
 	gnoll_warrior.max_hp = 340.0
 	gnoll_warrior.armor = 2.0
 	gnoll_warrior.armor_type = RtsConst.ArmorType.LIGHT
@@ -470,6 +483,8 @@ static func build_units() -> Dictionary:
 	gnoll_scout.kind = RtsConst.Kind.UNIT
 	gnoll_scout.model_path = MODEL_DIR + "野怪/豺狼人斥候.glb"
 	gnoll_scout.anim_set = RtsConst.AnimSet.ARCHER
+	gnoll_scout.role = &"ranged"
+	gnoll_scout.tags = [&"light"]
 	gnoll_scout.max_hp = 240.0
 	gnoll_scout.armor = 1.0
 	gnoll_scout.armor_type = RtsConst.ArmorType.LIGHT
@@ -507,6 +522,7 @@ static func build_units() -> Dictionary:
 	# `combo:` = 由 代码/美术/营火外观.gd 现场拼（营火.glb + 一盏会呼吸的 OmniLight）
 	campfire.model_path = "combo:campfire"
 	campfire.anim_set = RtsConst.AnimSet.CIVIC_BUILDING
+	campfire.tags = [&"light"]
 	campfire.max_hp = 260.0
 	campfire.armor = 0.0
 	campfire.armor_type = RtsConst.ArmorType.LIGHT
@@ -648,7 +664,8 @@ static func build_difficulties() -> Array[DifficultyDef]:
 	easy.bonus_gold = 0
 	easy.aggression = 0.55
 	easy.defend_ratio = 0.5
-	easy.composition = {&"footman": 5, &"archer": 3, &"mage": 1}
+	# 旧 5:3:1 → role 权重（frontline:ranged:caster）。siege 目前无对应兵种，留 1 给用户以后加兵。
+	easy.role_weights = {&"frontline": 5.0, &"ranged": 3.0, &"caster": 1.0, &"siege": 1.0}
 	arr.append(easy)
 
 	var normal := DifficultyDef.new()
@@ -667,7 +684,8 @@ static func build_difficulties() -> Array[DifficultyDef]:
 	normal.bonus_gold = 100
 	normal.aggression = 0.75
 	normal.defend_ratio = 0.6
-	normal.composition = {&"footman": 5, &"archer": 4, &"mage": 2, &"steam_guard": 1}
+	# 旧 5 步 + 4 弓 + 2 法 + 1 蒸汽 → 6 前排 / 4 远程 / 2 法师（蒸汽重步兵 role=frontline）。
+	normal.role_weights = {&"frontline": 6.0, &"ranged": 4.0, &"caster": 2.0, &"siege": 1.0}
 	arr.append(normal)
 
 	var hard := DifficultyDef.new()
@@ -686,7 +704,8 @@ static func build_difficulties() -> Array[DifficultyDef]:
 	hard.bonus_gold = 250
 	hard.aggression = 0.9
 	hard.defend_ratio = 0.75
-	hard.composition = {&"footman": 6, &"archer": 5, &"mage": 3, &"steam_guard": 2}
+	# 旧 6 步 + 5 弓 + 3 法 + 2 蒸汽 → 8 前排 / 5 远程 / 3 法师。
+	hard.role_weights = {&"frontline": 8.0, &"ranged": 5.0, &"caster": 3.0, &"siege": 1.0}
 	arr.append(hard)
 
 	return arr

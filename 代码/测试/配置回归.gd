@@ -31,9 +31,9 @@ var _detail: Array = []
 var _engine_only: Array = [
 	{
 		"func": "简单AI._pick_army_unit() / _weighted_pick()",
-		"why": "依赖 RtsBuilding.can_train、_can_spend(Cfg+Game)、_faction.count_units()、_enemy_army() 场景扫描；"
-			+ "权重公式本身是 worth_per_cost × 设计权重 × 过载惩罚，前两项已在 B/C 里断言。",
-		"可拆": "把 weight 抽成 static 纯函数后即可脱引擎",
+		"why": "仍依赖 RtsBuilding.can_train、_can_spend(Cfg+Game)、_faction.count_units()、_enemy_army() 场景扫描；"
+			+ "**权重公式已抽成 战斗模型.selection_weight（static 纯函数）**，并在本轮韧性 A/B/D 里断言。",
+		"可拆": "已完成（selection_weight）；只剩 can_train / 场景扫描不可脱。",
 	},
 	{
 		"func": "简单AI._ratio_foe_army()（A/B/C 分母）",
@@ -76,6 +76,11 @@ func _run() -> void:
 	_case_edge()
 	_case_attack_gate()
 	_case_wave_cost()
+	# 2C-3：数值可变韧性 / 角色标签 / 判定表 / 理论值
+	_case_resilience()
+	_case_roles()
+	_case_verdict_table()
+	_case_theory()
 	_finish(t0)
 
 
@@ -257,6 +262,171 @@ func _case_wave_cost() -> void:
 
 	var empty_cost: float = float(_model.call("wave_cost", []))
 	_record("wave_cost(空编制) = 0（不报错）", empty_cost == 0.0, "%.1f" % empty_cost)
+
+
+# ===========================================================================
+# I 数值可变韧性（2C-3 · 第 1 部分）
+#
+# 断言口径：用户改数值/攻防关系/增删兵种后，AI 的派生量与选兵权重**跟着变**，
+# 不崩、不需要改 AI 代码。全部用 UnitDef 的运行时副本，不写 .tres，测完还原。
+# ===========================================================================
+func _case_resilience() -> void:
+	var foot: UnitDef = _cfg.unit(&"footman")
+	var arch: UnitDef = _cfg.unit(&"archer")
+	if foot == null or arch == null:
+		_record("韧性：基础兵种存在", false, "找不到 footman / archer")
+		return
+	var prof: Dictionary = _model.call("profile", [_unit(foot)])
+
+	# --- 改弓箭手攻击 +10% → dps ×1.1 → power ×√1.1 → 选兵权重上升 ---
+	var a1: UnitDef = arch.duplicate()
+	a1.attack_damage = float(arch.attack_damage) * 1.1
+	var r_dps: float = float(_model.call("unit_dps", a1)) / maxf(float(_model.call("unit_dps", arch)), 0.0001)
+	var r_pow: float = float(_model.call("unit_power", a1)) / maxf(float(_model.call("unit_power", arch)), 0.0001)
+	_record("韧性A：弓攻击+10% → unit_dps ×1.10", _near(r_dps, 1.1, 0.001), "×%.4f" % r_dps)
+	_record("韧性A：弓攻击+10% → unit_power ×√1.10", _near(r_pow, sqrt(1.1), 0.002),
+			"×%.4f（期望 %.4f）" % [r_pow, sqrt(1.1)])
+	var w0: float = float(_model.call("selection_weight", arch, 3.0, 0, prof, 1.0, 1.0))
+	var w1: float = float(_model.call("selection_weight", a1, 3.0, 0, prof, 1.0, 1.0))
+	_record("韧性A：弓攻击+10% → 选兵权重上升（方向断言）",
+			w1 > w0 * 1.02, "%.5f → %.5f（×%.4f）" % [w0, w1, w1 / maxf(w0, 0.0001)])
+
+	# --- 改步兵护甲 +2 → 有效生命上升 → 前排权重上升 ---
+	var f1: UnitDef = foot.duplicate()
+	f1.armor = float(foot.armor) + 2.0
+	var e0: float = float(_model.call("unit_effective_hp", foot))
+	var e1: float = float(_model.call("unit_effective_hp", f1))
+	_record("韧性B：步兵护甲+2 → unit_effective_hp 上升",
+			e1 > e0 * 1.15, "%.1f → %.1f（×%.3f）" % [e0, e1, e1 / maxf(e0, 0.0001)])
+	var fw0: float = float(_model.call("selection_weight", foot, 5.0, 0, prof, 1.0, 1.0))
+	var fw1: float = float(_model.call("selection_weight", f1, 5.0, 0, prof, 1.0, 1.0))
+	_record("韧性B：步兵护甲+2 → 前排选兵权重上升（方向断言）",
+			fw1 > fw0 * 1.02, "%.5f → %.5f（×%.4f）" % [fw0, fw1, fw1 / maxf(fw0, 0.0001)])
+
+	# --- 克制表 普通×重甲 0.85 → 1.10 ---
+	var table: Array = _cfg.game.damage_table
+	var idx: int = 0 * 4 + 1
+	var old: float = float(table[idx])
+	var before: float = float(_model.call("counter_multiplier", 0, 1))
+	table[idx] = 1.10
+	var after: float = float(_model.call("counter_multiplier", 0, 1))
+	var best_at_110: int = int(_model.call("best_counter_damage_type", [_unit(foot)]))
+	# 机制自检：把值抬到 1.20（**只在本条断言内**，不是规格值）→ 推荐必须翻成普通
+	table[idx] = 1.20
+	var best_at_120: int = int(_model.call("best_counter_damage_type", [_unit(foot)]))
+	table[idx] = old
+	_record("韧性C：克制 普通×重甲 %.2f→1.10 → counter_multiplier 跟着变" % old,
+			_near(after, 1.10, 0.0001) and after != before,
+			"%.2f → %.2f" % [before, after])
+	_record("韧性C：1.10 时推荐仍是魔法（1.15>1.10，规格预期不成立，见报告）",
+			best_at_110 == RtsConst.DamageType.MAGIC,
+			"best=%d（%d=普通/%d=魔法）" % [best_at_110, RtsConst.DamageType.NORMAL,
+				RtsConst.DamageType.MAGIC])
+	_record("韧性C：克制推荐机制本身会翻（1.20 时 → 普通）",
+			best_at_120 == RtsConst.DamageType.NORMAL,
+			"best@1.20=%d" % best_at_120)
+	_record("韧性C：克制表已还原", is_equal_approx(float(table[idx]), old),
+			"当前 %.3f（原 %.3f）" % [float(table[idx]), old])
+
+	# --- 新增一个假兵种（role=ranged）→ 不崩、能被选兵逻辑纳入 ---
+	var fake := UnitDef.new()
+	fake.id = &"fake_ranged_2c3"
+	fake.display_name = "假远程"
+	fake.kind = RtsConst.Kind.UNIT
+	fake.role = &"ranged"
+	fake.tags.append(&"light")
+	fake.anim_set = RtsConst.AnimSet.ARCHER
+	fake.max_hp = 210.0
+	fake.armor = 1.0
+	fake.attack_damage = 12.0
+	fake.attack_cooldown = 1.3
+	fake.attack_range = 9.0
+	fake.gold_cost = 111
+	fake.wood_cost = 11
+	var weights: Dictionary = {&"frontline": 5.0, &"ranged": 3.0, &"caster": 1.0, &"siege": 1.0}
+	_cfg.game.units[fake.id] = fake
+	var ids_add: Array = _model.call("candidate_combat_ids", weights)
+	var wf: float = float(_model.call("selection_weight", fake, 3.0, 0, prof, 1.0, 1.0))
+	_record("韧性D：新增 role=ranged 假兵 → 进入候选池", ids_add.has(fake.id),
+			"候选 %d 个，含 fake=%s" % [ids_add.size(), str(ids_add.has(fake.id))])
+	_record("韧性D：假兵选兵权重有限且 >0", is_finite(wf) and wf > 0.0, "w=%.6f" % wf)
+	_cfg.game.units.erase(fake.id)
+	var ids_after: Array = _model.call("candidate_combat_ids", weights)
+	_record("韧性D：假兵已移除", not ids_after.has(fake.id),
+			"候选 %d 个" % ids_after.size())
+
+	# --- 删除一个兵种（archer）→ 不崩、配比自动重排 ---
+	var before_n: int = int(_model.call("candidate_combat_ids", weights).size())
+	var saved: UnitDef = _cfg.game.units.get(&"archer", null)
+	_cfg.game.units.erase(&"archer")
+	var ids_del: Array = _model.call("candidate_combat_ids", weights)
+	var has_arch: bool = ids_del.has(&"archer")
+	var has_front: bool = ids_del.has(&"footman")
+	_cfg.game.units[&"archer"] = saved
+	_record("韧性E：删除 archer → 候选池少 1、不崩", not has_arch and ids_del.size() == before_n - 1,
+			"%d → %d" % [before_n, ids_del.size()])
+	_record("韧性E：删除 archer → 其它 role 仍可选中（自动重排）", has_front,
+			"footman 在候选池=%s" % str(has_front))
+	_record("韧性E：archer 已还原", _cfg.game.units.get(&"archer", null) != null, "ok")
+
+
+# ===========================================================================
+# J 角色标签（2C-3 · 第 2 部分，3 条）
+# ===========================================================================
+func _case_roles() -> void:
+	var foot: UnitDef = _cfg.unit(&"footman")
+	var arch: UnitDef = _cfg.unit(&"archer")
+	var steam: UnitDef = _cfg.unit(&"steam_guard")
+	_record("角色：is_frontline(步兵)=true", bool(_model.call("is_frontline", foot)),
+			"role=%s" % String(foot.role) if foot != null else "null")
+	_record("角色：is_backline(弓箭手)=true", bool(_model.call("is_backline", arch)),
+			"role=%s" % String(arch.role) if arch != null else "null")
+	_record("角色：has_tag(蒸汽重步兵, siege)=true",
+			bool(_model.call("has_tag", steam, &"siege")),
+			"tags=%s" % str(steam.tags) if steam != null else "null")
+
+
+# ===========================================================================
+# K 判定表（2C-3 · A4，7 条；纯函数，直接喂数）
+# ===========================================================================
+func _case_verdict_table() -> void:
+	var T: float = 40.0
+	var rows: Array = [
+		# 名称, achieved, forced, combat, out_eff, dmg_ratio, wiped, 期望
+		["达成优先于一切", true, false, 0.0, 0.0, 0.0, true, "达成"],
+		["时间≥0.8 + 输出/承伤在区间 → 好", false, false, 32.0, 1.0, 0.6, false, "好"],
+		["时间≥0.8 但输出偏离 → 一般", false, false, 32.0, 1.5, 0.6, false, "一般"],
+		["时间 0.5~0.8 → 一般", false, false, 24.0, 1.0, 0.6, false, "一般"],
+		["时间<0.5 且全灭 → 差", false, false, 16.0, 1.0, 0.6, true, "差"],
+		["时间<0.5 未全灭 → 未判（不许当差）", false, false, 16.0, 1.0, 0.6, false, "未判"],
+		["存活>180s 强制 → 一般", false, true, 16.0, 1.0, 0.6, false, "一般"],
+	]
+	for r in rows:
+		var got: String = String(_model.call("classify_verdict",
+				r[1], r[2], r[3], T, r[4], r[5], r[6]))
+		_record("判定表：%s" % String(r[0]), got == String(r[7]),
+				"判=%s（期望 %s，战斗时间 %.0f/%.0fs）" % [got, String(r[7]), float(r[3]), T])
+
+
+# ===========================================================================
+# L 理论值公式（2C-3 · A2，3 条）
+# ===========================================================================
+func _case_theory() -> void:
+	var t: float = float(_model.call("theory_combat_time", 1000.0))
+	_record("理论值：1000 金木成本 → 40 s", _near(t, 40.0, 0.0001), "%.1f s" % t)
+
+	var foot: UnitDef = _cfg.unit(&"footman")
+	var comp: Dictionary = {&"footman": 1}
+	var dps: float = float(_model.call("unit_dps", foot))
+	var out: float = float(_model.call("theory_output", comp, 10.0, 0.7))
+	var expect: float = dps * 10.0 * 0.7
+	_record("理论值：1 步兵 10 s 理论输出 = dps×10×0.7", _near(out, expect, 0.001),
+			"%.3f（dps=%.3f，期望 %.3f）" % [out, dps, expect])
+
+	var hp: float = float(_model.call("theory_hp", comp))
+	var ehp: float = float(_model.call("unit_effective_hp", foot))
+	_record("理论值：1 步兵理论承伤 = unit_effective_hp", _near(hp, ehp, 0.001),
+			"%.2f（期望 %.2f）" % [hp, ehp])
 
 
 # ===========================================================================

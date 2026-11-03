@@ -29,6 +29,8 @@ const SAMPLE_STEP: float = 0.25
 const SITUATION_EVERY: float = 5.0
 ## 战略权重开关（A/B/C）。默认 A，保证"不带参数 = 现状"。
 const AIW := preload("res://代码/配置/AI战略权重.gd")
+## 判定口径开关（old/new）+ 理论值参数（2C-3）。
+const AIV := preload("res://代码/配置/AI判定模式.gd")
 
 # --- 参数 ---
 var seed_val: int = 1
@@ -80,6 +82,15 @@ func _ready() -> void:
 			ratio_mode_arg = a.substr(13)
 		elif a.begins_with("--tag="):
 			tag = a.substr(6)
+	# ★ 判定口径必须在**任何 AI 思考之前**定下来（简单AI 每 tick 读它）
+	AIV.setup_from_cmdline()
+	for a in args:
+		if a.begins_with("--verdict-mode="):
+			AIV.set_mode(a.substr(String("--verdict-mode=").length()))
+		elif a.begins_with("--verdict-base-sec="):
+			AIV.set_base_sec(float(a.substr(String("--verdict-base-sec=").length())))
+		elif a.begins_with("--verdict-coef="):
+			AIV.set_output_coef(float(a.substr(String("--verdict-coef=").length())))
 	# ★ 出击门槛口径必须在**任何 AI 思考之前**定下来（简单AI 每 tick 读它）
 	AIW.set_mode(ratio_mode_arg)
 	# ★ 确定性：对局开始前固定全局 RNG。地图是固定 .tres、帧率定死 60，
@@ -109,9 +120,9 @@ func _ready() -> void:
 			print("[AI基准] 情况文本 → %s" % _file_sit)
 		else:
 			print("[AI基准] 打不开情况文本输出：%s" % _file_sit)
-	print("[AI基准] 开始：seed=%d minutes=%.1f speed=%.1f 地图=%s 口径=%s 耗时上限(墙钟)=%.0fs"
+	print("[AI基准] 开始：seed=%d minutes=%.1f speed=%.1f 地图=%s 口径=%s 判定=%s 耗时上限(墙钟)=%.0fs"
 		% [seed_val, minutes, speed, map_path if not map_path.is_empty() else "(默认)",
-			AIW.describe(), minutes * 60.0 * 8.0])
+			AIW.describe(), AIV.describe(), minutes * 60.0 * 8.0])
 
 
 func _process(delta: float) -> void:
@@ -587,6 +598,19 @@ func _abs(p: String) -> String:
 	return p
 
 
+## 一组波次记录按某个字段计数（判定/目标/建议分布）
+func _dist(rows: Array, key: String) -> Dictionary:
+	var out: Dictionary = {}
+	for r in rows:
+		if not (r is Dictionary):
+			continue
+		var k: String = String((r as Dictionary).get(key, ""))
+		if k.is_empty():
+			k = "(空)"
+		out[k] = int(out.get(k, 0)) + 1
+	return out
+
+
 func _finish(reason: String) -> void:
 	if _done:
 		return
@@ -644,13 +668,21 @@ func _finish(reason: String) -> void:
 				var c: Dictionary = (r as Dictionary).duplicate(true)
 				c.erase("members")
 				c.erase("hits")
+				for k in c.keys():
+					if String(k).begins_with("_"):
+						c.erase(k)
 				if c.has("target"):
 					c["target"] = str(c["target"])
+				if c.has("goal_target_pos"):
+					c["goal_target_pos"] = str(c["goal_target_pos"])
 				rows.append(c)
 		wave_records[fname2] = {
 			"state": String(n.get("strat_state")),
 			"stats": n.get("strat_stats"),
 			"timeline": n.get("strat_log"),
+			"verdicts": _dist(rows, "verdict"),
+			"goals": _dist(rows, "goal_type"),
+			"advice": _dist(rows, "comp_advice"),
 			"waves": rows,
 		}
 
@@ -658,6 +690,9 @@ func _finish(reason: String) -> void:
 		"seed": seed_val, "minutes": minutes, "speed": speed, "map": map_path,
 		"difficulty": Cfg.game.default_difficulty,
 		"ratio_mode": AIW.mode(), "ratio_mode_desc": AIW.describe(),
+		"verdict_mode": AIV.mode(), "verdict_desc": AIV.describe(),
+		"verdict_base_sec": AIV.base_sec(), "verdict_coef": AIV.output_coef(),
+		"verdict_time_limit": AIV.time_limit(),
 		"elapsed_game_s": snappedf(Game.elapsed, 0.01),
 		"wall_clock_s": snappedf(wall_sec, 0.1),
 		"end_reason": reason,
@@ -670,19 +705,22 @@ func _finish(reason: String) -> void:
 		"situations_file": _file_sit if not _file_sit.is_empty() else "未启用",
 	}
 	DirAccess.make_dir_recursive_absolute(_abs("res://_qa"))
-	_file_bench = _abs("res://_qa/bench_%s_%d%s.json" % [AIW.mode(), seed_val, tag])
+	_file_bench = _abs("res://_qa/bench_%s_%s_%d%s.json"
+		% [AIW.mode(), AIV.mode(), seed_val, tag])
 	var fa := FileAccess.open(_file_bench, FileAccess.WRITE)
 	if fa != null:
 		fa.store_string(JSON.stringify(report, "  "))
 		fa.close()
 	var summary := {
-		"seed": seed_val, "mode": AIW.mode(), "end": reason, "elapsed": snappedf(Game.elapsed, 0.1),
+		"seed": seed_val, "mode": AIW.mode(), "verdict_mode": AIV.mode(),
+		"base_sec": AIV.base_sec(), "end": reason, "elapsed": snappedf(Game.elapsed, 0.1),
 		"wall_s": snappedf(wall_sec, 0.1),
 	}
 	for f in Game.factions:
 		if f == null or not _stats.has(f.display_name):
 			continue
 		var s: Dictionary = _stats[f.display_name]
+		var wr: Dictionary = wave_records.get(f.display_name, {})
 		summary[f.display_name] = {
 			"金收入": int(s["gold_income"]), "木收入": int(s["wood_income"]),
 			"波次": int(s["wave_count"]), "首波": float(s["first_wave_t"]),
@@ -702,6 +740,9 @@ func _finish(reason: String) -> void:
 			"首次受击": snappedf(float(s["first_base_damage_t"]), 0.1),
 			"防守响应": float(s.get("defense_response_t", -1)),
 			"预判回防": bool(s.get("defense_preemptive", false)),
+			"判定": wr.get("verdicts", {}),
+			"目标": wr.get("goals", {}),
+			"建议": wr.get("advice", {}),
 		}
 	print("AI-BENCH %s" % JSON.stringify(summary))
 	# 确定性签名：同 seed 复跑必须一致（外部脚本比对）

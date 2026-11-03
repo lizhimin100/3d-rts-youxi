@@ -236,10 +236,13 @@ func _maybe_hint_request_control() -> void:
 func _manage_peasants(diff: DifficultyDef) -> void:
 	if _faction == null:
 		return
-	var peasants: int = _faction.count_units(&"peasant")
+	var wid: StringName = _worker_id()
+	if wid == &"":
+		return
+	var peasants: int = _faction.count_units(wid)
 	if peasants >= PEASANT_MAX:
 		return
-	var townhall: RtsBuilding = _first_building(&"townhall")
+	var townhall: RtsBuilding = _first_building(_main_base_id())
 	if townhall == null:
 		return
 	if townhall.train_count() >= MAX_QUEUE_PEASANT:
@@ -250,9 +253,9 @@ func _manage_peasants(diff: DifficultyDef) -> void:
 	if peasants >= 8 and _faction.gold < reserve_gold and army < diff.max_army:
 		return
 	# 副官自己的补农也要过同一道闸，否则它会把"留给玩家的钱"一点点磨掉
-	if not _can_spend(&"peasant"):
+	if not _can_spend(wid):
 		return
-	if townhall.queue_train(&"peasant"):
+	if townhall.queue_train(wid):
 		_log("补农民（现有 %d / 上限 %d）" % [peasants, PEASANT_MAX])
 
 

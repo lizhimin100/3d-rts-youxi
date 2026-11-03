@@ -1,6 +1,8 @@
 extends RefCounted
 ## **反愚蠢审计**：把"新手 AI 常犯的错"定义成**可检测的状态**，发现就当场修。
 ##
+## 2C-3：建筑 id 一律走 战斗模型 的"按能力找 id"，不在这里写 farm。
+const MODEL := preload("res://代码/ai/战斗模型.gd")
 ## 为什么需要它：经济和军事模块都是"按目标推进"的正面逻辑，它们只会在
 ## "该做什么"上出错，却不会发现"我明明有钱有兵营，却有 90 秒没出一个兵"。
 ## 这类**停滞**不会有任何报错，只会让 AI 看起来突然变傻。
@@ -101,7 +103,10 @@ func _check_supply(ctx: Dictionary) -> void:
 		return
 	if not _can_fix("supply_block", ctx):
 		return
-	var farm: UnitDef = Cfg.unit(&"farm")
+	var fid: StringName = MODEL.food_building_id()
+	if fid == &"":
+		return
+	var farm: UnitDef = Cfg.unit(fid)
 	var spot: Vector3 = _call_spot(ctx, farm)
 	if farm == null or spot == Vector3.INF:
 		return

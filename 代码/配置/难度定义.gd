@@ -41,5 +41,12 @@ extends Resource
 @export var aggression: float = 0.5
 ## 基地被攻击时回防比例
 @export var defend_ratio: float = 0.6
-## 兵种配比权重（id → 权重）
+## **兵种配比权重（role → 权重）**：frontline / ranged / caster / siege。
+## 2C-3 起 AI 只按 role 选兵，不再认具体兵种 id；同一 role 内按"每金战力 × 过载惩罚"竞争。
+## 旧配比 5:3:1 换算为 frontline 5 / ranged 3 / caster 1（siege 默认 1，当前无 role=siege 的兵，
+## 属于"给用户以后加兵留的权重"，不影响现有比例）。
+@export var role_weights: Dictionary = {}
+## @deprecated 旧口径（兵种 id → 权重）。保留只为兼容编辑器里已有的 .tres：
+## 若 role_weights 为空，战斗模型.role_weights_of() 会把它按 def.role 折算成 role 权重。
+## 新配置一律填 role_weights，不要再往这里写 id。
 @export var composition: Dictionary = {}

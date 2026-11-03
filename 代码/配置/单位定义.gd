@@ -20,6 +20,18 @@ extends Resource
 ## 动画套件类型（RtsConst.AnimSet）
 @export var anim_set: int = RtsConst.AnimSet.MELEE
 
+@export_group("AI 语义（2C-3）")
+## 战略角色：frontline / ranged / caster / siege / worker / defense。
+## **AI 只按 role 取兵，不再认 id** —— 用户增删兵种/改数值时 AI 不需要改代码。
+## 留空 = 由 战斗模型.role_of() 按能力回退推断（农民/远程/法师/近战）。
+@export var role: StringName = &""
+## 自由标签：heavy / light / anti_air / anti_building / support / light(照明) …
+## AI 用 has_tag() 读；新增标签不需要改 AI 代码。
+@export var tags: Array[StringName] = []
+## 用户填的**战略定位值**（AI 只记录、不参与任何决策）。
+## 用途：报告里与 computed_power 并列，检查"设计定位"与"数值算出的定位"是否一致。
+@export var design_power: float = 0.0
+
 @export_group("生命与防护")
 @export var max_hp: float = 100.0
 ## 护甲值，按公式减伤
