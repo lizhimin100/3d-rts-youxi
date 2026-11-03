@@ -83,6 +83,8 @@ func _run() -> void:
 	_case_theory()
 	# 2C-4：判定层修正 + 决策层纯函数 + 卡系统
 	_case_2c4()
+	# 2C-5：承伤分母 / 军队规模目标 / 修理 / 达成归属
+	_case_2c5()
 	_finish(t0)
 
 
@@ -527,6 +529,65 @@ func _case_2c4() -> void:
 	_record("2C4卡：range_tier 四档单调",
 			String(tiers[0]) == "近战" and String(tiers[1]) == "中程"
 			and String(tiers[2]) == "远程" and String(tiers[3]) == "超远程", str(tiers))
+
+
+# ===========================================================================
+# N 2C-5：承伤分母口径 / 军队规模目标 / 修理 / 达成归属（9 条）
+# ===========================================================================
+func _case_2c5() -> void:
+	var AIV = load("res://代码/配置/AI判定模式.gd")
+	var sa_src: String = FileAccess.get_file_as_string("res://代码/ai/简单AI.gd")
+	var sched_src: String = FileAccess.get_file_as_string("res://代码/ai/命令调度.gd")
+	var foot: UnitDef = _cfg.unit(&"footman")
+	var ehp: float = float(_model.call("unit_effective_hp", foot))
+	var comp: Dictionary = {&"footman": 3}
+
+	# --- P0-1 承伤分母：只算"曾作为 target 的成员"---
+	var dt: float = float(_model.call("damage_theory", comp, {&"footman": 1}, "targeted"))
+	_record("2C5：承伤分母 targeted 只算挨过打的成员（3 步兵 / 1 挨打）",
+			_near(dt, ehp, 0.001) and String(AIV.damage_theory_mode()) == "targeted",
+			"%.1f（期望 %.1f = 1 个有效生命；默认口径=%s）"
+				% [dt, ehp, String(AIV.damage_theory_mode())])
+	var da: float = float(_model.call("damage_theory", comp, {&"footman": 1}, "all"))
+	_record("2C5：承伤分母 all 回 2C-4 旧口径（全程 3 个有效生命）",
+			_near(da, ehp * 3.0, 0.001), "%.1f（期望 %.1f）" % [da, ehp * 3.0])
+
+	# --- P0-2 军队规模目标 ---
+	_record("2C5：军队目标 1 基地 1 兵营 = 10+4+2 = 16",
+			int(_model.call("army_target_of", 1, 1, 0.0, 8)) == 16,
+			"=%d" % int(_model.call("army_target_of", 1, 1, 0.0, 8)))
+	_record("2C5：军队目标 420 s 起解除（-1）",
+			int(_model.call("army_target_of", 1, 1, 420.0, 8)) == -1
+			and int(_model.call("army_target_of", 1, 1, 419.9, 8)) == 16,
+			"419.9s=%d / 420s=%d" % [int(_model.call("army_target_of", 1, 1, 419.9, 8)),
+				int(_model.call("army_target_of", 1, 1, 420.0, 8))])
+	_record("2C5：军队目标不低于防守下限（公式值 10 < 下限 12 → 取 12）",
+			int(_model.call("army_target_of", 0, 0, 0.0, 12)) == 12,
+			"=%d" % int(_model.call("army_target_of", 0, 0, 0.0, 12)))
+
+	# --- P1-4 修理阈值（默认 70%）---
+	_record("2C5：修理 血量 50% < 70% → 要修",
+			bool(_model.call("repair_needed", 500.0, 1000.0, 0.7)), "500/1000")
+	_record("2C5：修理 血量 80% ≥ 70% → 不修",
+			not bool(_model.call("repair_needed", 800.0, 1000.0, 0.7)), "800/1000")
+
+	# --- P1-5 达成归属 ---
+	var gr: float = float(_model.call("goal_damage_ratio_of", 300.0, 1000.0))
+	_record("2C5：达成归属 伤害占比 = 300/1000 = 0.3（目标 0 血返回 -1）",
+			_near(gr, 0.3, 0.0001)
+			and float(_model.call("goal_damage_ratio_of", 300.0, 0.0)) == -1.0,
+			"%.2f" % gr)
+
+	# --- 接线（文本级：--script 模式不能 load 带 class_name 的脚本）---
+	_record("2C5：接线 波次记录有 was_target / goal_last_hit / goal_damage_ratio；调度器有 repair 命令口",
+			sa_src.contains("\"was_target\"") and sa_src.contains("\"goal_last_hit\"")
+			and sa_src.contains("\"goal_damage_ratio\"")
+			and sched_src.contains("func repair(")
+			and sa_src.contains("_manage_repair()"),
+			"简单AI=%s/%s/%s 调度=%s" % [str(sa_src.contains("\"was_target\"")),
+				str(sa_src.contains("\"goal_last_hit\"")),
+				str(sa_src.contains("\"goal_damage_ratio\"")),
+				str(sched_src.contains("func repair("))])
 
 
 # ===========================================================================

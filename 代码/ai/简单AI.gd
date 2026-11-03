@@ -42,6 +42,9 @@ const PEASANT_TOTAL_CAP: int = PEASANT_GOLD_SOFT_CAP + 4
 ## 采集配比再平衡的最小间隔（秒）。
 ## 不每 tick 重排：来回换采集点会让农民一直在走路，比不换更亏。
 const GATHER_REBALANCE_CD: float = 8.0
+## 2C-5 P1-4 修理：同一栋楼两次下令的最小间隔（秒）。
+## 不节流会每 tick 重置 order_repair 的寻路目标 —— 农民在墙根反复起步，一秒也修不上。
+const REPAIR_REISSUE: float = 1.5
 ## 每座兵营"负责"的军队规模上限：军队目标越大越要多盖兵营才能跟上出兵节奏。
 const UNITS_PER_BARRACKS: float = 8.0
 ## 兵营数量上限（再多也没资源养）
@@ -211,6 +214,7 @@ func _process_inner(delta: float) -> void:
 	_patrol_cd = maxf(_patrol_cd - delta, 0.0)
 	_gather_cd = maxf(_gather_cd - delta, 0.0)
 	_research_cd = maxf(_research_cd - delta, 0.0)
+	_repair_cd = maxf(_repair_cd - delta, 0.0)
 	if _think > 0.0:
 		return
 	var interval: float = maxf(diff.think_interval * think_scale, 0.1)
@@ -880,11 +884,66 @@ func _can_spend_army(id: StringName) -> bool:
 	return _can_spend(id)
 
 
+## 修理建筑（2C-5 P1-4）—— 建造农民优先级 **第 3 位**：
+##   人口余量<4 农场(急) > 补兵营 > **修理** > 哨塔/防御塔 > 农场(不急)
+##
+## 触发：己方**已完工**建筑 血量比例 < AI判定模式.repair_hp_threshold()（默认 70%），
+##       且木材够"把这栋修满"（repair_wood_for_full，含「修缮工艺」折扣）。
+## 做法：挑最破的那一栋；已经有人在修的那栋不再重复下令；一次只派一个农民。
+## 为什么不派多个：修理是"止损"，不是"抢修"；多派人等于把采集工抽干，
+##   而优先级表里它排在经济之后 —— 一个够用，把伤害止住就行。
+##
+## ★ 这条接的是**引擎本来就有的 REPAIR 命令口**（`RtsUnit.order_repair` /
+##   `RtsBuilding.repair_step`），2C-4 之前 AI 侧没有下令通道，只占了个位。
+func _manage_repair() -> void:
+	if _faction == null or _repair_cd > 0.0:
+		return
+	var thr: float = AIV.repair_hp_threshold()
+	var best: RtsBuilding = null
+	var best_frac: float = 1.0
+	for b in _faction.buildings:
+		if b == null or not is_instance_valid(b) or not b.is_alive() or b.def == null:
+			continue
+		var rb: RtsBuilding = b as RtsBuilding
+		if rb == null or not rb.can_repair():
+			continue
+		if not bool(_model_call("repair_needed",
+				[float(rb.hp), float(rb.def.max_hp), thr])):
+			continue
+		var busy: bool = false
+		for w in _workers():
+			if w != null and is_instance_valid(w) and w.get("_repair_target") == rb:
+				busy = true
+				break
+		if busy:
+			continue
+		# 木材连"修满"都不够 → 派过去也只会站着（repair_step 里木材不足就停工）
+		if int(rb.call("repair_wood_for_full")) > _faction.wood:
+			continue
+		var frac: float = float(rb.hp) / maxf(float(rb.def.max_hp), 1.0)
+		if frac < best_frac:
+			best_frac = frac
+			best = rb
+	if best == null:
+		return
+	var builder: RtsUnit = _pick_builder()
+	if builder == null:
+		return
+	if bool(_sched.repair(builder, best, "repair")):
+		_repair_cd = REPAIR_REISSUE
+		var bn: String = String(best.def.display_name)
+		repair_stats["issued"] = int(repair_stats.get("issued", 0)) + 1
+		var bd: Dictionary = repair_stats.get("buildings", {})
+		bd[bn] = int(bd.get(bn, 0)) + 1
+		repair_stats["buildings"] = bd
+		_log("修 %s（血量 %.0f%%，修满约 %d 木）"
+				% [bn, best_frac * 100.0, int(best.call("repair_wood_for_full"))])
+
+
 ## 补农场（2C-4 建造农民优先级）：
 ##   urgent=true  —— 人口余量 <4 → 农场**急建**（提前防卡人口），排经济段最前；
 ##   urgent=false —— 不急的农场排最后（哨塔/防御塔之后）。
-## 修理建筑：优先级列表里占位，但当前引擎没有 AI 修理下令口（REPAIR 枚举在，
-## 命令调度未接）—— TODO，见报告。
+## 修理建筑：2C-5 起已接命令口（见 `_manage_repair`），优先级第 3 位。
 func _manage_food(diff: DifficultyDef, urgent: bool) -> void:
 	if _faction == null:
 		return
@@ -1026,35 +1085,43 @@ func _manage_army(diff: DifficultyDef) -> void:
 	var army: int = _army_units().size()
 	var producers: Array = _army_producers(diff)
 	# 2C-4 §4.1：低于防守下限 → 补战斗单位（只从训练队列补；不挪用农民——
-	# 本作没有"农民转兵"，天然满足）。训练目标 = max(难度档上限, 防守下限)。
-	var target_army: int = maxi(diff.max_army, _defense_floor())
+	# 本作没有"农民转兵"，天然满足）。
+	# 2C-5 P0-2：目标改成 `10 + 4×基地 + 2×出兵建筑`，**7 分钟后解除**（-1）。
+	#   解除后不再"够数就停"，只受钱/人口/队列限制 —— 也就是每个 tick 能造几个造几个。
+	var target_army: int = _army_target()
+	var capped: bool = target_army >= 0
+	strat_stats["army_target"] = target_army
+	if not strat_stats.has("army_target_first"):
+		strat_stats["army_target_first"] = target_army
 	# ① 产能为 0：先解决"有没有兵营"，本 tick 不再谈别的
 	if producers.is_empty():
 		_maybe_build_barracks(diff)
 		return
 	# ② 军队优先：能造几个造几个（不因为"造不满 N 个"就整个 tick 跳过）
-	if army < target_army:
+	if not capped or army < target_army:
 		for b in producers:
 			var rb: RtsBuilding = b as RtsBuilding
 			if rb == null or rb.train_count() >= MAX_QUEUE_ARMY:
 				continue
 			if _queue_one(rb, diff) != &"":
 				army += 1
-			if army >= target_army:
+			if capped and army >= target_army:
 				break
 	# ③ 队列都排满了 = 这一 tick 军队该占的钱已经占住，富余的钱才能给建筑。
 	#    队列没排满却没排上，只有一个原因：钱不够 —— 此时建筑一律延后到下一 tick，
 	#    并让 _demand_pressure() 去加经济，而不是把最后那点钱花在房子上。
-	var saturated: bool = army >= target_army or _all_queues_full(producers)
+	#    ★ 解除目标后（capped=false）"饱和"只剩"队列排满"一种 —— 这正是
+	#      "只受钱/人口/队列限制"的机器形态。
+	var saturated: bool = (capped and army >= target_army) or _all_queues_full(producers)
 	if saturated:
 		_maybe_build_barracks(diff)
 		_maybe_build_tower()
 	# 基地被压：塔是刚需，不受"军队优先"限制（一座塔只花一次钱）
 	if float(metrics.get("base_threat", 0.0)) > 0.0:
 		_maybe_build_tower()
-	# ④ 其余产能建筑：最后。满编之前一律不盖（钱给兵）。
+	# ④ 其余产能建筑：最后。满编/队列排满之前一律不盖（钱给兵）。
 	#    不写 sanctum/workshop：由"谁能训练职能权重 > 0 的兵"自动找出来。
-	if army >= target_army:
+	if saturated:
 		_maybe_build_extra_producers(diff)
 
 
@@ -1161,14 +1228,14 @@ func _available_units() -> Array:
 	return out
 
 
-## 防守下限 = 5 + 2×基地数 + 1×出兵建筑数（任务书 §4.1；其他建筑不计入）
-func _defense_floor() -> int:
+## 数"主基地 / 出兵建筑"各几座（已完工；在建工地不算）。
+## 一个函数两处用（防守下限 + 军队目标），避免两边对"什么算基地"口径漂开。
+func _base_producer_counts() -> Dictionary:
+	var out := {"bases": 0, "producers": 0}
 	if _faction == null:
-		return 0
+		return out
 	var base_id: StringName = _main_base_id()
 	var prod_ids: Array = _producer_ids()
-	var bases: int = 0
-	var producers: int = 0
 	for b in _faction.buildings:
 		if b == null or not is_instance_valid(b) or not b.is_alive() or b.def == null:
 			continue
@@ -1176,10 +1243,30 @@ func _defense_floor() -> int:
 		if rb != null and not rb.is_constructed:
 			continue
 		if base_id != &"" and b.def.id == base_id:
-			bases += 1
+			out["bases"] = int(out["bases"]) + 1
 		if prod_ids.has(b.def.id):
-			producers += 1
-	return int(_model_call("defense_floor_of", [bases, producers]))
+			out["producers"] = int(out["producers"]) + 1
+	return out
+
+
+## 防守下限 = 5 + 2×基地数 + 1×出兵建筑数（任务书 §4.1；其他建筑不计入）
+func _defense_floor() -> int:
+	if _faction == null:
+		return 0
+	var c: Dictionary = _base_producer_counts()
+	return int(_model_call("defense_floor_of", [int(c["bases"]), int(c["producers"])]))
+
+
+## 军队规模目标（2C-5 P0-2）：
+##   前 7 分钟 = 10 + 4×基地数 + 2×出兵建筑数，达到就停训（钱腾给建筑/科技）；
+##   7 分钟后 = **-1 = 解除**，只受钱/人口/队列限制。
+## 返回值 -1 表示"没有上限"，调用方不要再拿它做 >= 比较（会恒真）。
+func _army_target() -> int:
+	if _faction == null:
+		return -1
+	var c: Dictionary = _base_producer_counts()
+	return int(_model_call("army_target_of",
+			[int(c["bases"]), int(c["producers"]), Game.elapsed, _defense_floor()]))
 
 
 ## 出兵建筑 id 集（能训练战斗单位的建筑，与 _primary_producer_id 同源）
@@ -1658,6 +1745,15 @@ func _open_wave(units: Array, target: Vector3, foe: RtsFaction,
 		"goal_achieved": false,
 		"t_goal": -1.0,
 		"goal_damage": 0.0,
+		# --- 2C-5 P1-5 达成归属（只记录，不改变判定）---
+		# goal_last_hit：最后一击的攻击者是不是本波成员
+		# goal_damage_ratio：本波对目标造成的伤害 ÷ 目标总生命
+		"goal_last_hit": false,
+		"goal_damage_ratio": -1.0,
+		"goal_max_hp": 0.0,
+		"goal_last_attacker": 0,
+		# --- 2C-5 P0-1 承伤分母：曾作为 target 的成员（实例 id → def.id）---
+		"was_target": {},
 		# --- 四样判据的原始量 ---
 		"t_combat_begin": -1.0,
 		"t_combat_end": -1.0,
@@ -1731,7 +1827,15 @@ func _close_wave(rec: Dictionary, now: float, reason: String = "home",
 	# (c) 理论输出 / (d) 理论承伤
 	var theory_out: float = float(_model_call("theory_output",
 			[rec["units_out"], combat_time, AIV.output_coef()]))
-	var theory_hp: float = float(_model_call("theory_hp", [rec["units_out"]]))
+	# 2C-5 P0-1：承伤分母改口径 —— 只算"曾作为 target 的成员"的有效生命。
+	# mode=all 时回 2C-4 旧口径（全程总有效生命），同一次构建里可对照。
+	var targeted_counts: Dictionary = {}
+	var was_target: Dictionary = rec.get("was_target", {})
+	for uid in was_target.keys():
+		var did: String = String(was_target[uid])
+		targeted_counts[did] = int(targeted_counts.get(did, 0)) + 1
+	var theory_hp: float = float(_model_call("damage_theory",
+			[rec["units_out"], targeted_counts, AIV.damage_theory_mode()]))
 	var dmg_out: float = float(rec.get("damage_out", 0.0))
 	var dmg_in: float = float(rec.get("damage_in", 0.0))
 	# (e)(f)(g) 实际输出/承伤 + 两个比值（各自独立，绝不相除）
@@ -1740,6 +1844,8 @@ func _close_wave(rec: Dictionary, now: float, reason: String = "home",
 	rec["output_eff"] = dmg_out / maxf(theory_out, 1.0)
 	rec["damage_actual"] = dmg_in
 	rec["damage_theory"] = theory_hp
+	rec["damage_theory_mode"] = AIV.damage_theory_mode()
+	rec["targeted_n"] = was_target.size()
 	rec["damage_ratio"] = dmg_in / maxf(theory_hp, 1.0)
 
 	# --- 前后排构成（C1：按 role 标签数人头，不是成本）---
@@ -1941,9 +2047,16 @@ func _on_combat_hit(attacker: Node3D, target: Node3D, damage: float, _crit: bool
 			# 数据质量：这一刀打的是不是本波的目标（用于识别"达成但没参与"）
 			if tid == int(rec.get("goal_target_id", 0)):
 				rec["goal_damage"] = float(rec.get("goal_damage", 0.0)) + dmg
+				# 2C-5 P1-5：记"最后一个打目标的人"，目标死时用它判最后一击归属
+				rec["goal_last_attacker"] = aid
 		if mine_taken:
 			# (e) 实际承伤（B2 已删：不再记录"谁在打我"用于反击）
 			rec["damage_in"] = float(rec.get("damage_in", 0.0)) + dmg
+			# 2C-5 P0-1：标记"这个成员曾经当过 target"——承伤分母只算这批人。
+			# 存 def.id 而不是只存实例 id：收尾时节点可能已经 free，读不到 def。
+			var tdef: UnitDef = target.get("def")
+			if tdef != null:
+				rec["was_target"][tid] = String(tdef.id)
 
 
 ## 记一笔"敌方打我方"的伤害（60 s 滚动）。只记我方被伤害的方向。
@@ -1997,6 +2110,15 @@ func _on_unit_died(unit: Node3D) -> void:
 		if AIV.is_new() and int(rec.get("goal_target_id", 0)) == uid:
 			rec["goal_achieved"] = true
 			rec["t_goal"] = now
+			# 2C-5 P1-5 达成归属（**只记录，不改变达成判定**）：
+			#   最后一击 = 目标临死前最后一刀的攻击者是否属于本波；
+			#   伤害占比 = 本波对目标的累计伤害 ÷ 目标总生命（近似，含过量伤害）。
+			if d != null:
+				rec["goal_max_hp"] = float(d.max_hp)
+			rec["goal_damage_ratio"] = float(_model_call("goal_damage_ratio_of",
+					[float(rec.get("goal_damage", 0.0)), float(rec.get("goal_max_hp", 0.0))]))
+			var last_aid: int = int(rec.get("goal_last_attacker", 0))
+			rec["goal_last_hit"] = last_aid != 0 and members.has(last_aid)
 		if d == null or d.kind != RtsConst.Kind.UNIT:
 			continue
 		var hit_t: float = float(rec["hits"].get(uid, -999.0))
@@ -2079,6 +2201,9 @@ var _bank_breakout: bool = false
 var _research_cd: float = 0.0
 var _research_was_running: bool = false
 var _expand_state: int = 0
+## 2C-5 P1-4：修理下令节流 + 统计（报告/bench 读 repair_stats）
+var _repair_cd: float = 0.0
+var repair_stats: Dictionary = {"issued": 0, "buildings": {}}
 ## P6 的参考高点与连续低波计数
 var _p6_ref_roi: float = -1.0
 var _p6_low_streak: int = 0
@@ -2718,7 +2843,10 @@ func _nearest_creep_camp() -> Vector3:
 ##
 ## 顺序是有讲究的：先有哨塔才谈得上"升级多余的那几座"；
 ## 营火放最后 —— 它是纯功能性的照明，不能跟"能打的塔"抢资源。
+## 2C-5：修理插在最前（优先级第 3 位：农(急) > 兵营 > **修理** > 哨塔 > 农(缓)）；
+## 它比哨塔优先的理由是"已有的楼正在掉血"，而哨塔是"多一双眼睛"。
 func _manage_upkeep(diff: DifficultyDef) -> void:
+	_manage_repair()
 	_maybe_build_watchtower(diff)
 	_maybe_upgrade_tower()
 	_maybe_build_campfire()

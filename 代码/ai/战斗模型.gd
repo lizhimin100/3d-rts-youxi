@@ -621,8 +621,69 @@ static func classify_verdict(achieved: bool, forced: bool, combat_time: float,
 
 
 # ===========================================================================
-# 2C-4 判定层 / 决策层纯函数（配置回归直接断言，不抄公式）
+# 2C-4 / 2C-5 判定层 / 决策层纯函数（配置回归直接断言，不抄公式）
 # ===========================================================================
+
+## 2C-5 P0-2：前 7 分钟（elapsed < 420 s）的军队规模目标。
+##   target = 10 + 4×基地数 + 2×出兵建筑数；达到就停训（钱腾给建筑/科技）。
+##   elapsed ≥ 420 s → 返回 **-1 = 解除**（只受钱/人口/队列限制）。
+##   目标不低于防守下限（下限是"家里不空"的底线，目标不能比它低）。
+const ARMY_TARGET_SEC: float = 420.0
+const ARMY_TARGET_BASE: int = 10
+const ARMY_TARGET_PER_BASE: int = 4
+const ARMY_TARGET_PER_PRODUCER: int = 2
+
+
+static func army_target_of(bases: int, producers: int, elapsed: float,
+		defense_floor: int = 0) -> int:
+	if elapsed >= ARMY_TARGET_SEC:
+		return -1
+	var t: int = ARMY_TARGET_BASE \
+			+ ARMY_TARGET_PER_BASE * maxi(bases, 0) \
+			+ ARMY_TARGET_PER_PRODUCER * maxi(producers, 0)
+	return maxi(t, maxi(defense_floor, 0))
+
+
+## 2C-5 P0-1：承伤分母。
+##   mode = "targeted"（默认）—— **只算"曾作为 target 的成员"的有效生命**；
+##   mode = "all"（2C-4 旧口径）—— 全程总有效生命，对照用。
+## comp     = {def.id: 派出数量}
+## targeted = {def.id: 曾作为 target 的成员数}（同一个成员被反复打只算 1）
+##
+## why：拆塔 meta 下大部分成员从没挨过打，分母却按全员算 →
+## damage_ratio 长期 <0.2，"好"的 [0.4,0.9] 窗口永远进不去（2C-4 §6.1）。
+static func damage_theory(comp: Dictionary, targeted: Dictionary = {},
+		mode: String = "targeted") -> float:
+	if mode == "all":
+		return comp_hp(comp)
+	var cfg: GameConfig = _cfg()
+	if cfg == null:
+		return 0.0
+	var s: float = 0.0
+	for id in comp.keys():
+		var n: int = mini(int(comp[id]), int(targeted.get(id, 0)))
+		if n <= 0:
+			continue
+		var d: UnitDef = cfg.units.get(StringName(id), null)
+		if d != null:
+			s += unit_effective_hp(d) * float(n)
+	return s
+
+
+## 2C-5 P1-4：建筑要不要修（血量比例低于阈值）。
+## 阈值放 AI判定模式（--repair-hp-threshold 可覆盖），这里只做纯判定。
+static func repair_needed(hp: float, max_hp: float, threshold: float) -> bool:
+	if max_hp <= 0.0 or hp <= 0.0:
+		return false
+	return hp < max_hp * clampf(threshold, 0.0, 1.0)
+
+
+## 2C-5 P1-5：达成归属的伤害占比 = 本波对目标造成的伤害 ÷ 目标总生命（近似，含过量伤害）。
+static func goal_damage_ratio_of(damage_to_target: float, target_max_hp: float) -> float:
+	if target_max_hp <= 0.0:
+		return -1.0
+	return maxf(damage_to_target, 0.0) / target_max_hp
+
 
 ## "差"的存活门槛：存活 ≤ ceil(出发数/3) 算崩（2C-4 用户确认，替换"全灭"）
 static func bad_survivor_cap(strength: int) -> int:

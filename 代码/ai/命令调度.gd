@@ -198,6 +198,28 @@ func build(builder, def: UnitDef, point: Vector3, yaw: float, label: String = "b
 	return site
 
 
+## 修理也是"占位"命令（2C-5 P1-4）：接 REPAIR 命令口，语义与 build 相同 ——
+## 立刻发出 + 从本 tick 队列摘掉，避免后面的移动命令把修理工拉走。
+## 返回 true = 命令真的发出去了（调用方据此计数）。
+func repair(builder, building: Node3D, label: String = "repair") -> bool:
+	if builder == null or not is_instance_valid(builder) or building == null:
+		return false
+	if not is_instance_valid(building):
+		return false
+	var ok: Array = available([builder])
+	if ok.is_empty():
+		return false
+	if not builder.has_method("order_repair"):
+		return false
+	_queue.erase(builder.get_instance_id())
+	if not bool(builder.call("order_repair", building)):
+		return false
+	if Game.control != null:
+		Game.control.claim_ai([builder])
+	_sent += 1
+	return true
+
+
 # ===========================================================================
 # 真正发出
 # ===========================================================================
