@@ -1001,6 +1001,7 @@ func _manage_food(diff: DifficultyDef, urgent: bool) -> void:
 	if not _can_spend(fid):
 		return
 	if _sched.build(builder, farm_def, spot, _build_yaw_at(spot), "economy") != null:
+		_note_build(fid)
 		_log("造农场（人口 %d/%d）" % [_faction.food_used(), _faction.food_cap()])
 
 ## 人口是否已经不够下一个兵种了（用"权重最高的兵种"的 food_cost 作判据，别拍常数）
@@ -1407,6 +1408,7 @@ func _maybe_build_barracks(diff: DifficultyDef) -> void:
 	if spot == Vector3.INF:
 		return
 	if _sched.build(builder, bd, spot, _build_yaw_at(spot), "economy") != null:
+		_note_build(pid)
 		_log("扩建%s（已有 %d / 目标 %d，当前军队 %d）" % [
 			bd.display_name, have, want, _army_units().size()])
 
@@ -2328,6 +2330,10 @@ var repair_stats: Dictionary = {
 	"issued": 0, "buildings": {},
 	"candidates": 0, "blocked_wood": 0, "blocked_no_builder": 0,
 }
+## 2C-6：建造下单计数（id → 次数），只记**成功下达**的建造命令（报告用）。
+## 为什么单独一个字典：strat_log 只记状态转移，_log 是 stdout；
+## 长局要看"农场建了几次/兵营几座"必须有一个可落盘的口径。
+var build_stats: Dictionary = {}
 ## P6 的参考高点与连续低波计数
 var _p6_ref_roi: float = -1.0
 var _p6_low_streak: int = 0
@@ -3358,6 +3364,11 @@ func _first_building(id: StringName) -> RtsBuilding:
 ## 关键决策日志（带统一前缀）
 func _log(msg: String) -> void:
 	print("%s %s" % [log_prefix, msg])
+
+
+## 2C-6：建造下单计数（成功下达才记）。报告/bench 读 build_stats。
+func _note_build(id: StringName) -> void:
+	build_stats[String(id)] = int(build_stats.get(String(id), 0)) + 1
 
 ## "为什么不出击"的短诊断（日志用）。
 ## 2C-2 起出击许可只剩两条否决，所以这里把"威胁 / 侵略性"放最前；

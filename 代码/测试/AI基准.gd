@@ -458,11 +458,33 @@ func _sample_curve() -> void:
 		var arr: Array = _curves[name]
 		var used: int = f.food_used()
 		var cap: int = f.food_cap()
+		# 2C-6：农场 / 出兵建筑座数（曲线）
+		#   出兵建筑 = trains 里有 food_cost>0 的兵（大本营只训农民 → 不算兵营）
+		#   农场 = 提供人口且不是交汇点、不产兵（排除大本营/伐木场/车坊）
+		var farms: int = 0
+		var prods: int = 0
+		for b in f.buildings:
+			if b == null or not is_instance_valid(b) or not b.is_alive() or b.def == null:
+				continue
+			var rb: RtsBuilding = b as RtsBuilding
+			if rb != null and not rb.is_constructed:
+				continue
+			var is_prod: bool = false
+			for tid in b.def.trains:
+				var ud: UnitDef = Cfg.unit(tid)
+				if ud != null and ud.food_cost > 0:
+					is_prod = true
+					break
+			if is_prod:
+				prods += 1
+			elif int(b.def.food_provided) > 0 and not b.def.is_dropoff:
+				farms += 1
 		arr.append({
 			"t": snappedf(Game.elapsed, 0.1),
 			"army": int(s.get("army_n_last", 0)),
 			"pop_used": used, "pop_cap": cap,
 			"pop_rate": snappedf(float(used) / float(maxi(cap, 1)), 0.01),
+			"farms": farms, "producers": prods,
 			"gold": f.gold, "wood": f.wood,
 		})
 
@@ -691,6 +713,8 @@ func _finish(reason: String) -> void:
 	var wave_records: Dictionary = {}
 	# 2C-5 P1-4：修理统计（faction 名 → {issued, buildings}）
 	var repairs: Dictionary = {}
+	# 2C-6：建造下单计数（faction 名 → {id: 次数}）
+	var build_stats: Dictionary = {}
 	for b in _brains:
 		var n = b["node"]
 		if n == null or not is_instance_valid(n):
@@ -724,6 +748,7 @@ func _finish(reason: String) -> void:
 		}
 		# 2C-5 P1-4：修理统计（谁修的、修了几次）
 		repairs[fname2] = n.get("repair_stats")
+		build_stats[fname2] = n.get("build_stats")
 
 	# --- 2C-5 P1-5 达成归属：达成条数里"本波参与"的比例 ---
 	# 口径：goal_last_hit = 目标临死前最后一刀的攻击者属于本波；
@@ -782,6 +807,7 @@ func _finish(reason: String) -> void:
 		"wave_records": wave_records,
 		"army_curve": _curves,
 		"repairs": repairs,
+		"build_stats": build_stats,
 		"goal_attribution": attribution,
 		"events": _events,
 		"situations_file": _file_sit if not _file_sit.is_empty() else "未启用",
