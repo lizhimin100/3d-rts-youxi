@@ -27,6 +27,8 @@ extends Node
 const SAMPLE_STEP: float = 0.25
 ## 情况文本周期快照间隔（游戏秒）
 const SITUATION_EVERY: float = 5.0
+## 2C-5 军队规模 / 人口占用曲线采样间隔（游戏秒）
+const CURVE_STEP: float = 60.0
 ## 战略权重开关（A/B/C）。默认 A，保证"不带参数 = 现状"。
 const AIW := preload("res://代码/配置/AI战略权重.gd")
 ## 判定口径开关（old/new）+ 理论值参数（2C-3）。
@@ -48,6 +50,7 @@ var tag: String = ""
 # --- 状态 ---
 var _acc: float = 0.0            # 采样累计
 var _sit_acc: float = 0.0        # 情况文本累计
+var _curve_acc: float = 0.0      # 军队规模/人口曲线累计（2C-5，每 60 游戏秒一行）
 var _done: bool = false
 var _t0_msec: int = 0
 
@@ -55,6 +58,8 @@ var _t0_msec: int = 0
 var _brains: Array = []          # [{node, faction, prev_think, prev_wave, prev_plan, prev_defend_cd, prev_allow}]
 ## 全体阵营的累计指标（faction 名 → Dictionary）
 var _stats: Dictionary = {}
+## 2C-5：军队规模 / 人口占用曲线（faction 名 → [{t, army, pop_used, pop_cap}]，60 s 粒度）
+var _curves: Dictionary = {}
 ## 事件时间线（关键决策逐条）
 var _events: Array = []
 ## 每个阵营最近一次决策（写进情况文本 recent_decision）
@@ -146,6 +151,11 @@ func _process(delta: float) -> void:
 	while _sit_acc >= SITUATION_EVERY:
 		_sit_acc -= SITUATION_EVERY
 		_dump_situations(false)
+	# 2C-5：军队规模 / 人口占用曲线（60 s 一行，看"是否顶死"）
+	_curve_acc += delta
+	if _curve_acc >= CURVE_STEP:
+		_curve_acc -= CURVE_STEP
+		_sample_curve()
 	_sig_sample()
 
 
@@ -434,6 +444,29 @@ func _sample_units(step: float) -> void:
 		s["prev_bldg_hp"] = hp_sum
 
 
+## 2C-5：军队规模曲线 + 人口占用率（60 s 一行）。
+## 口径：army = 存活战斗单位（不含农民，与 _sample_units 同一把尺）；
+##       pop_used/pop_cap 直接读阵营，用来判断"军队是不是被人口顶死"。
+func _sample_curve() -> void:
+	for f in Game.factions:
+		if f == null or not _stats.has(f.display_name):
+			continue
+		var s: Dictionary = _stats[f.display_name]
+		var name: String = String(f.display_name)
+		if not _curves.has(name):
+			_curves[name] = []
+		var arr: Array = _curves[name]
+		var used: int = f.food_used()
+		var cap: int = f.food_cap()
+		arr.append({
+			"t": snappedf(Game.elapsed, 0.1),
+			"army": int(s.get("army_n_last", 0)),
+			"pop_used": used, "pop_cap": cap,
+			"pop_rate": snappedf(float(used) / float(maxi(cap, 1)), 0.01),
+			"gold": f.gold, "wood": f.wood,
+		})
+
+
 func _on_hit(attacker: Node3D, target: Node3D, damage: float, _crit: bool) -> void:
 	if attacker == null or target == null or not is_instance_valid(attacker) or not is_instance_valid(target):
 		return
@@ -656,6 +689,8 @@ func _finish(reason: String) -> void:
 	# 只读 AI 脑上的公开字段，原样落盘；不在这里重算判定（判定由 AI 自己算）。
 	# members/hits 是运行期索引（实例 id），落盘前剔掉，免得报告里全是内存地址。
 	var wave_records: Dictionary = {}
+	# 2C-5 P1-4：修理统计（faction 名 → {issued, buildings}）
+	var repairs: Dictionary = {}
 	for b in _brains:
 		var n = b["node"]
 		if n == null or not is_instance_valid(n):
@@ -687,6 +722,43 @@ func _finish(reason: String) -> void:
 			"advice": _dist(rows, "comp_advice"),
 			"waves": rows,
 		}
+		# 2C-5 P1-4：修理统计（谁修的、修了几次）
+		repairs[fname2] = n.get("repair_stats")
+
+	# --- 2C-5 P1-5 达成归属：达成条数里"本波参与"的比例 ---
+	# 口径：goal_last_hit = 目标临死前最后一刀的攻击者属于本波；
+	#       goal_damage_ratio = 本波对目标的累计伤害 ÷ 目标总生命（-1 = 无目标/未记录）。
+	var attribution := {
+		"achieved": 0, "last_hit": 0, "zero_damage": 0,
+		"ratio_sum": 0.0, "ratio_n": 0, "ratio_mean": -1.0, "by_faction": {},
+	}
+	for fname3 in wave_records.keys():
+		var rows3: Array = wave_records[fname3].get("waves", [])
+		var fa := {"achieved": 0, "last_hit": 0, "zero_damage": 0,
+			"ratio_sum": 0.0, "ratio_n": 0, "ratio_mean": -1.0}
+		for r in rows3:
+			if not bool((r as Dictionary).get("goal_achieved", false)):
+				continue
+			fa["achieved"] = int(fa["achieved"]) + 1
+			attribution["achieved"] = int(attribution["achieved"]) + 1
+			if bool((r as Dictionary).get("goal_last_hit", false)):
+				fa["last_hit"] = int(fa["last_hit"]) + 1
+				attribution["last_hit"] = int(attribution["last_hit"]) + 1
+			if float((r as Dictionary).get("goal_damage", 0.0)) <= 0.0:
+				fa["zero_damage"] = int(fa["zero_damage"]) + 1
+				attribution["zero_damage"] = int(attribution["zero_damage"]) + 1
+			var gr: float = float((r as Dictionary).get("goal_damage_ratio", -1.0))
+			if gr >= 0.0:
+				fa["ratio_sum"] = float(fa["ratio_sum"]) + gr
+				fa["ratio_n"] = int(fa["ratio_n"]) + 1
+				attribution["ratio_sum"] = float(attribution["ratio_sum"]) + gr
+				attribution["ratio_n"] = int(attribution["ratio_n"]) + 1
+		if int(fa["ratio_n"]) > 0:
+			fa["ratio_mean"] = snappedf(float(fa["ratio_sum"]) / float(fa["ratio_n"]), 0.01)
+		attribution["by_faction"][fname3] = fa
+	if int(attribution["ratio_n"]) > 0:
+		attribution["ratio_mean"] = snappedf(
+			float(attribution["ratio_sum"]) / float(attribution["ratio_n"]), 0.01)
 
 	var report := {
 		"seed": seed_val, "minutes": minutes, "speed": speed, "map": map_path,
@@ -695,6 +767,8 @@ func _finish(reason: String) -> void:
 		"verdict_mode": AIV.mode(), "verdict_desc": AIV.describe(),
 		"verdict_base_sec": AIV.base_sec(), "verdict_coef": AIV.output_coef(),
 		"verdict_time_limit": AIV.time_limit(),
+		"damage_theory_mode": AIV.damage_theory_mode(),
+		"repair_hp_threshold": AIV.repair_hp_threshold(),
 		"elapsed_game_s": snappedf(Game.elapsed, 0.01),
 		"wall_clock_s": snappedf(wall_sec, 0.1),
 		"end_reason": reason,
@@ -703,6 +777,9 @@ func _finish(reason: String) -> void:
 		"P1": "不可采：无任务层与情报层（见诊断 4.2）",
 		"factions": clean,
 		"wave_records": wave_records,
+		"army_curve": _curves,
+		"repairs": repairs,
+		"goal_attribution": attribution,
 		"events": _events,
 		"situations_file": _file_sit if not _file_sit.is_empty() else "未启用",
 	}
@@ -745,7 +822,28 @@ func _finish(reason: String) -> void:
 			"判定": wr.get("verdicts", {}),
 			"目标": wr.get("goals", {}),
 			"建议": wr.get("advice", {}),
+			"修理": int(((repairs.get(String(f.display_name), {}) or {}) as Dictionary).get("issued", 0)),
+			"军队目标": "%d→%d" % [
+				int((wr.get("stats", {}) or {}).get("army_target_first", -1)),
+				int((wr.get("stats", {}) or {}).get("army_target", -1))],
 		}
+	# 2C-5：达成归属摘要（达成条数里"本波参与"的比例）+ 曲线峰值
+	summary["达成归属"] = "%d/%d 条达成是本波最后一击（伤害占比均值 %.2f，0 伤害 %d 条）" % [
+		int(attribution["last_hit"]), int(attribution["achieved"]),
+		float(attribution["ratio_mean"]), int(attribution["zero_damage"])]
+	var peaks := {}
+	for fname in _curves.keys():
+		var arr2: Array = _curves[fname]
+		var max_army: int = 0
+		var max_rate: float = 0.0
+		var last_army: int = 0
+		for row in arr2:
+			max_army = maxi(max_army, int(row.get("army", 0)))
+			max_rate = maxf(max_rate, float(row.get("pop_rate", 0.0)))
+			last_army = int(row.get("army", 0))
+		peaks[fname] = {"峰值兵力": max_army, "末兵力": last_army,
+			"峰值人口率": snappedf(max_rate, 0.01)}
+	summary["曲线"] = peaks
 	# 2C-4 §3.3 "好"比例护栏（只告警，不判失败、不阻断）
 	var good_n: int = 0
 	var total_n: int = 0
