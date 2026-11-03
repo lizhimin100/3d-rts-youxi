@@ -46,6 +46,11 @@ extends Resource
 ## 旧配比 5:3:1 换算为 frontline 5 / ranged 3 / caster 1（siege 默认 1，当前无 role=siege 的兵，
 ## 属于"给用户以后加兵留的权重"，不影响现有比例）。
 @export var role_weights: Dictionary = {}
+## **2C-4 选兵职能权重（承伤 : 输出）**：旧 role_weights（frontline/ranged/…）从选兵逻辑
+## 退役（字段保留只为旧 .tres 兼容），选兵只认这两个职能。
+## 当前给简单权重（简单 5:5 / 普通 6:4 / 困难 7:5），**TODO 待实测细调**；
+## 用户口径："当前兵种少，不需要复杂职能加权，后续兵种丰富再细做"。
+@export var function_weights: Dictionary = {}
 ## @deprecated 旧口径（兵种 id → 权重）。保留只为兼容编辑器里已有的 .tres：
 ## 若 role_weights 为空，战斗模型.role_weights_of() 会把它按 def.role 折算成 role 权重。
 ## 新配置一律填 role_weights，不要再往这里写 id。
