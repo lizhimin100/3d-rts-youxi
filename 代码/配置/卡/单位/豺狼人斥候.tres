@@ -1,0 +1,48 @@
+[gd_resource type="Resource" script_class="UnitCard" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://代码/配置/单位卡.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+card_id = "gnoll_scout"
+display_name = "豺狼人斥候"
+icon = ""
+description = "中立野怪：更快、更脆、远程投掷。"
+cost_gold = 0
+cost_wood = 0
+unit_class = &"陆军"
+roles = Array[StringName]([&"输出"])
+counters = Array[StringName]([&"轻甲"])
+range = 8.0
+attack = 11
+attack_type = &"穿刺"
+defense = 1
+defense_type = &"轻甲"
+power = -1
+skills = Array[StringName]([])
+max_hp = 240.0
+attack_spread = 3.0
+attack_cooldown = 1.3
+projectile = 1
+projectile_speed = 22.0
+acquire_range = 11.0
+sight_range = 13.0
+move_speed = 4.8
+turn_speed = 11.0
+body_radius = 0.48
+selection_radius = 0.8
+food_cost = 0
+train_time = 10.0
+height = 1.86
+gather_rate = 0.0
+carry_capacity = 10
+max_mana = 0.0
+mana_regen = 0.0
+mana_cost = 0.0
+ability_cooldown = 8.0
+model_path = "res://美术/模型/野怪/豺狼人斥候.glb"
+model_scale = 1.0
+anim_set = 2
+def_role = &"ranged"
+def_tags = Array[StringName]([&"light"])
+design_power = 0.0
