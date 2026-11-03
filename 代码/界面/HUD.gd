@@ -1463,8 +1463,11 @@ func _install_fx() -> void:
 # ===========================================================================
 
 ## 中文名 → 单位 id（验收命令行允许写中文）
+## 2C-5：archer 的 display_name 改为「弩兵」（用户口径），旧名「弓箭手」保留为别名——
+## 旧验收脚本/截图命令仍在用中文名，删掉别名会让它们静默失效。
 const QA_NAME_MAP := {
-	"农民": "peasant", "步兵": "footman", "弓箭手": "archer", "法师": "mage",
+	"农民": "peasant", "步兵": "footman", "弓箭手": "archer", "弩兵": "archer",
+	"法师": "mage",
 	"大本营": "townhall", "兵营": "barracks", "铁匠铺": "blacksmith",
 	"农场": "farm", "箭塔": "tower", "金矿": "goldmine", "树": "tree",
 }
