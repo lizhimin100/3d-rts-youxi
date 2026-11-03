@@ -1,0 +1,44 @@
+[gd_resource type="Resource" script_class="BuildingCard" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://代码/配置/建筑卡.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+card_id = "townhall"
+display_name = "大本营"
+icon = ""
+description = "资源交汇点 + 农民产地 + 人口来源；被拆即败。"
+cost_gold = 0
+cost_wood = 0
+functions = Array[StringName]([&"产兵", &"资源", &"人口"])
+max_hp = 2600.0
+defense = 6
+defense_type = &"堡垒"
+footprint = Vector2i(9, 5)
+height = 12.6
+train_time = 11.0
+is_dropoff = true
+dropoff_kinds = Array[int]([])
+food_provided = 24
+trains = Array[StringName]([&"peasant"])
+researches = Array[StringName]([])
+sight_range = 15.0
+body_radius = 3.0
+selection_radius = 5.6
+detect_radius = 0.0
+aura_radius = 0.0
+aura_mana_regen = 0.0
+attack = 0
+range = 0.0
+attack_type = &"普通"
+attack_spread = 0.0
+attack_cooldown = 1.5
+projectile = 0
+projectile_speed = 20.0
+acquire_range = 0.0
+model_path = "res://美术/模型/大本营.glb"
+model_scale = 0.5
+anim_set = 4
+def_role = &""
+def_tags = Array[StringName]([])
+design_power = 0.0

@@ -1,0 +1,44 @@
+[gd_resource type="Resource" script_class="BuildingCard" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://代码/配置/建筑卡.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+card_id = "tower"
+display_name = "箭塔"
+icon = ""
+description = "有攻击的防御塔，但视野比哨塔小（它是箭，不是哨）。"
+cost_gold = 130
+cost_wood = 70
+functions = Array[StringName]([&"防御"])
+max_hp = 1050.0
+defense = 6
+defense_type = &"堡垒"
+footprint = Vector2i(4, 4)
+height = 8.7
+train_time = 25.0
+is_dropoff = false
+dropoff_kinds = Array[int]([])
+food_provided = 0
+trains = Array[StringName]([])
+researches = Array[StringName]([])
+sight_range = 12.0
+body_radius = 1.6
+selection_radius = 2.4
+detect_radius = 0.0
+aura_radius = 0.0
+aura_mana_regen = 0.0
+attack = 22
+range = 13.0
+attack_type = &"穿刺"
+attack_spread = 4.0
+attack_cooldown = 1.5
+projectile = 1
+projectile_speed = 28.0
+acquire_range = 13.0
+model_path = "res://美术/模型/箭塔.glb"
+model_scale = 0.5
+anim_set = 6
+def_role = &"defense"
+def_tags = Array[StringName]([])
+design_power = 0.0

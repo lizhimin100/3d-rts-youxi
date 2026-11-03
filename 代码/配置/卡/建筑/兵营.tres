@@ -1,0 +1,44 @@
+[gd_resource type="Resource" script_class="BuildingCard" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://代码/配置/建筑卡.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+card_id = "barracks"
+display_name = "兵营"
+icon = ""
+description = "出步兵 / 弩手。一座建筑只管一件事。"
+cost_gold = 180
+cost_wood = 60
+functions = Array[StringName]([&"产兵"])
+max_hp = 1500.0
+defense = 5
+defense_type = &"堡垒"
+footprint = Vector2i(6, 7)
+height = 5.8
+train_time = 30.0
+is_dropoff = false
+dropoff_kinds = Array[int]([])
+food_provided = 0
+trains = Array[StringName]([&"footman", &"archer"])
+researches = Array[StringName]([])
+sight_range = 12.0
+body_radius = 2.8
+selection_radius = 4.4
+detect_radius = 0.0
+aura_radius = 0.0
+aura_mana_regen = 0.0
+attack = 0
+range = 0.0
+attack_type = &"普通"
+attack_spread = 0.0
+attack_cooldown = 1.5
+projectile = 0
+projectile_speed = 20.0
+acquire_range = 0.0
+model_path = "res://美术/模型/兵营.glb"
+model_scale = 0.5
+anim_set = 5
+def_role = &""
+def_tags = Array[StringName]([])
+design_power = 0.0

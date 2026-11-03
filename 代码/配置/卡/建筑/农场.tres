@@ -1,0 +1,44 @@
+[gd_resource type="Resource" script_class="BuildingCard" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://代码/配置/建筑卡.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+card_id = "farm"
+display_name = "农场"
+icon = ""
+description = "提供人口。"
+cost_gold = 80
+cost_wood = 20
+functions = Array[StringName]([&"人口"])
+max_hp = 750.0
+defense = 3
+defense_type = &"堡垒"
+footprint = Vector2i(8, 7)
+height = 5.1
+train_time = 20.0
+is_dropoff = false
+dropoff_kinds = Array[int]([])
+food_provided = 8
+trains = Array[StringName]([])
+researches = Array[StringName]([])
+sight_range = 8.0
+body_radius = 3.2
+selection_radius = 4.6
+detect_radius = 0.0
+aura_radius = 0.0
+aura_mana_regen = 0.0
+attack = 0
+range = 0.0
+attack_type = &"普通"
+attack_spread = 0.0
+attack_cooldown = 1.5
+projectile = 0
+projectile_speed = 20.0
+acquire_range = 0.0
+model_path = "res://美术/模型/农场.glb"
+model_scale = 0.5
+anim_set = 4
+def_role = &""
+def_tags = Array[StringName]([])
+design_power = 0.0

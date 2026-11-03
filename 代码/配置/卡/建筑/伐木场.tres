@@ -1,0 +1,44 @@
+[gd_resource type="Resource" script_class="BuildingCard" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://代码/配置/建筑卡.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+card_id = "lumbercamp"
+display_name = "伐木场"
+icon = ""
+description = "木材交汇点（只收木材）+ 两项木材经济研究。"
+cost_gold = 90
+cost_wood = 0
+functions = Array[StringName]([&"资源", &"科技"])
+max_hp = 700.0
+defense = 3
+defense_type = &"堡垒"
+footprint = Vector2i(9, 6)
+height = 3.9
+train_time = 20.0
+is_dropoff = true
+dropoff_kinds = Array[int]([1])
+food_provided = 0
+trains = Array[StringName]([])
+researches = Array[StringName]([&"wood_haul", &"repair_tech"])
+sight_range = 9.0
+body_radius = 3.9
+selection_radius = 5.2
+detect_radius = 0.0
+aura_radius = 0.0
+aura_mana_regen = 0.0
+attack = 0
+range = 0.0
+attack_type = &"普通"
+attack_spread = 0.0
+attack_cooldown = 1.5
+projectile = 0
+projectile_speed = 20.0
+acquire_range = 0.0
+model_path = "res://美术/模型/伐木场.glb"
+model_scale = 0.5
+anim_set = 4
+def_role = &""
+def_tags = Array[StringName]([])
+design_power = 0.0
