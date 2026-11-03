@@ -1914,17 +1914,21 @@ func _close_wave(rec: Dictionary, now: float, reason: String = "home",
 	# 2C-6 P0：输出分母改 B —— 只算"最近 RECENT_ATTACK_WINDOW 秒内有过 combat_hit"的成员。
 	# mode=all 时回 2C-5 旧口径（Σ全员纸面 DPS），同一构建里可对照。
 	#
-	# ★ 参照时刻用 **t_last_hit（本波最后一次交火）**，不是 now：
-	#   收尾发生在"安静 WAVE_QUIET_SEC 秒"之后，按 now 判会得到"全员都不在打"→
-	#   分母恒 0 → output_eff 退化成"实际伤害值"（几百），判定全废。
-	#   用 t_last_hit 才等于"最后一刻还在打的人是谁"，与收尾延迟无关。
-	var ref_t: float = float(rec.get("t_last_hit", -1.0))
+	# ★ 参照时刻 = **本波成员最后一次出手**（不是 t_last_hit、更不是 now）。
+	#   实测两条坑（10 min seed1，20 波）：
+	#   · 用 now：收尾在安静 15 s 之后 → 全员都超窗 → 分母恒 0，output_eff 退化成伤害值；
+	#   · 用 t_last_hit：它含"我们被打"的那一刀，远程被白打/近战在走位时最后 3 s 无人出手
+	#     → **一半的波次分母为 0**（出手人数/强度中位数 0.000），output_eff 均值飙到 85。
+	#   取 max(recent_attack) 才等于"这波最后一次开火的时刻"，分母 >0 当且仅当这波真打出过伤害。
+	var ref_t: float = -1.0
+	var recent_attack: Dictionary = rec.get("recent_attack", {})
+	for uid in recent_attack.keys():
+		ref_t = maxf(ref_t, float(recent_attack[uid]))
 	if ref_t < 0.0:
 		ref_t = now
 	var recent_counts: Dictionary = {}
 	var recent_n: int = 0
 	var win: float = AIV.recent_attack_window()
-	var recent_attack: Dictionary = rec.get("recent_attack", {})
 	var members: Dictionary = rec.get("members", {})
 	for uid in recent_attack.keys():
 		if ref_t - float(recent_attack[uid]) > win:
