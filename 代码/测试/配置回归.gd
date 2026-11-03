@@ -85,6 +85,8 @@ func _run() -> void:
 	_case_2c4()
 	# 2C-5：承伤分母 / 军队规模目标 / 修理 / 达成归属
 	_case_2c5()
+	# 2C-6：0.4 系数 / B 输出分母 / 修理 200 HP / 农场预判 / 兵营座数 / 移速换算
+	_case_2c6()
 	_finish(t0)
 
 
@@ -588,6 +590,119 @@ func _case_2c5() -> void:
 				str(sa_src.contains("\"goal_last_hit\"")),
 				str(sa_src.contains("\"goal_damage_ratio\"")),
 				str(sched_src.contains("func repair("))])
+
+
+# ===========================================================================
+# O 2C-6：0.4 系数 / B 输出分母 / 修理 200 HP / 农场预判 / 兵营座数 / 移速换算
+# ===========================================================================
+func _case_2c6() -> void:
+	var AIV = load("res://代码/配置/AI判定模式.gd")
+	var UT = load("res://代码/配置/单位表.gd")
+	var sa_src: String = FileAccess.get_file_as_string("res://代码/ai/简单AI.gd")
+	var cmd_src: String = FileAccess.get_file_as_string("res://代码/界面/命令卡.gd")
+	var foot: UnitDef = _cfg.unit(&"footman")
+	var dps: float = float(_model.call("unit_dps", foot))
+
+	# --- P0 系数 0.4 + 命令行可覆盖（1 条）---
+	AIV.set_output_coef(0.3)
+	var ok_override: bool = _near(float(AIV.output_coef()), 0.3, 0.0001)
+	AIV.reset_defaults()
+	_record("2C6：系数 0.4 且 --verdict-coef 可覆盖（0.3 生效后回默认）",
+			_near(float(AIV.DEFAULT_COEF), 0.4, 0.0001) and ok_override
+			and _near(float(AIV.output_coef()), 0.4, 0.0001),
+			"默认 %.2f / 覆盖 0.3 / 复位 %.2f" % [
+				float(AIV.DEFAULT_COEF), float(AIV.output_coef())])
+
+	# --- P0 输出分母 B（2 条）---
+	# 5 人编制里只有 2 人最近出过手 → 分母只算 2 人的纸面 DPS
+	var b_out: float = float(_model.call("theory_output_recent", {&"footman": 2}, 10.0, 0.4))
+	var a_out: float = float(_model.call("theory_output", {&"footman": 5}, 10.0, 0.4))
+	_record("2C6：B 分母 只算最近出过手的成员（5 人编制 / 2 人出手）",
+			_near(b_out, dps * 2.0 * 10.0 * 0.4, 0.001) and b_out < a_out,
+			"B=%.1f（2×dps×10×0.4）/ A=%.1f（5×dps×10×0.4）" % [b_out, a_out])
+	AIV.set_output_theory_mode("all")
+	var mode_all: String = String(AIV.output_theory_mode())
+	AIV.reset_defaults()
+	AIV.set_recent_attack_window(5.0)
+	var win5: float = float(AIV.recent_attack_window())
+	AIV.reset_defaults()
+	_record("2C6：默认口径 recent / 窗口 3.0 s / all 与 5 s 可切（对照用）",
+			mode_all == "all" and _near(win5, 5.0, 0.0001)
+			and String(AIV.output_theory_mode()) == "recent"
+			and _near(float(AIV.recent_attack_window()), 3.0, 0.0001),
+			"all=%s / win5=%.1f / 复位 %.1f s" % [mode_all, win5,
+				float(AIV.recent_attack_window())])
+
+	# --- P3 修理判据：固定掉血 200 HP（1 条）---
+	# 1000 血掉 200：比例口径 80% 不修（2C-5 实测 0 触发的那个死结），新口径要修
+	_record("2C6：修理判据 掉血≥200（1000 血掉 200 修 / 掉 199 不修；70% 比例口径不修）",
+			bool(_model.call("repair_needed_deficit", 800.0, 1000.0, 200.0))
+			and not bool(_model.call("repair_needed_deficit", 801.0, 1000.0, 200.0))
+			and not bool(_model.call("repair_needed", 800.0, 1000.0, 0.7))
+			and _near(float(AIV.repair_hp_deficit()), 200.0, 0.0001),
+			"掉200=%s / 掉199=%s / 70%%口径=%s" % [
+				str(bool(_model.call("repair_needed_deficit", 800.0, 1000.0, 200.0))),
+				str(bool(_model.call("repair_needed_deficit", 801.0, 1000.0, 200.0))),
+				str(bool(_model.call("repair_needed", 800.0, 1000.0, 0.7)))])
+
+	# --- P1 农场预判（2 条：C 占用率 / A 训练量）---
+	_record("2C6：农场预判 C：占用 23/32=71.9% 建 / 22/32=68.8% 不建",
+			bool(_model.call("pop_occupied_over", 23, 32))
+			and not bool(_model.call("pop_occupied_over", 22, 32)),
+			"23/32=%s 22/32=%s" % [str(bool(_model.call("pop_occupied_over", 23, 32))),
+				str(bool(_model.call("pop_occupied_over", 22, 32)))])
+	# 2 兵营 × 60 s ÷ 18 s 平均训练 = 6.67 人 → 余量 13 < 13.33 建，14 不建
+	var pred: float = float(_model.call("predicted_trainees_60s", 2, 18.0))
+	_record("2C6：农场预判 A：60 s 预计 6.67 兵 ×2 → 余量 13 建 / 14 不建",
+			_near(pred, 6.6667, 0.001)
+			and bool(_model.call("farm_headroom_low", 13, pred))
+			and not bool(_model.call("farm_headroom_low", 14, pred)),
+			"预计=%.2f 余量13=%s 余量14=%s" % [pred,
+				str(bool(_model.call("farm_headroom_low", 13, pred))),
+				str(bool(_model.call("farm_headroom_low", 14, pred)))])
+
+	# --- P2 兵营座数（2 条：公式 / 接线不再用 max_army）---
+	_record("2C6：兵营目标 军队 16→2 座 / 17→3 座 / 0→2 座",
+			int(_model.call("barracks_want_of", 16)) == 2
+			and int(_model.call("barracks_want_of", 17)) == 3
+			and int(_model.call("barracks_want_of", 0)) == 2,
+			"16=%d 17=%d 0=%d" % [int(_model.call("barracks_want_of", 16)),
+				int(_model.call("barracks_want_of", 17)), int(_model.call("barracks_want_of", 0))])
+	_record("2C6：接线 兵营目标不再 ceil(max_army/UNITS_PER_BARRACKS)；农场排在兵营之前",
+			not sa_src.contains("ceili(float(diff.max_army) / UNITS_PER_BARRACKS)")
+			and sa_src.contains("_barracks_want()")
+			and sa_src.find("_manage_food(diff, false)") < sa_src.find("_manage_army(diff)"),
+			"农场 idx=%d < 兵营 idx=%d" % [
+				sa_src.find("_manage_food(diff, false)"), sa_src.find("_manage_army(diff)")])
+
+	# --- 移速换算（1 条：用户填 460，卡里必须是 4.6）---
+	var ids: Array = [&"footman", &"archer", &"mage", &"peasant", &"gnoll_warrior", &"gnoll_scout"]
+	var speeds: Array = []
+	var all_ok: bool = true
+	for id in ids:
+		var d: UnitDef = _cfg.unit(id)
+		if d == null:
+			all_ok = false
+			continue
+		speeds.append(snappedf(d.move_speed, 0.01))
+		if d.move_speed >= 20.0 or d.move_speed <= 0.5:
+			all_ok = false
+	_record("2C6：移速换算 460→4.6（全部单位 <20，无三位数漏写）",
+			all_ok and _near(float(_cfg.unit(&"footman").move_speed), 4.6, 0.0001),
+			"%s（步兵 %.2f）" % [str(speeds), float(_cfg.unit(&"footman").move_speed)])
+
+	# --- P4 大本营：有成本 / 玩家可建 / AI 不建（接线，1 条）---
+	var th_card = UT.get_card(&"townhall")
+	_record("2C6：大本营 320 金/125 木 + 建造页含 townhall + AI 固定不建",
+			th_card != null and int(th_card.cost_gold) == 320 and int(th_card.cost_wood) == 125
+			and cmd_src.contains("&\"townhall\"")
+			and sa_src.contains("func can_build_townhall() -> bool:") \
+				and sa_src.contains("func can_build_townhall() -> bool:\n\treturn false"),
+			"金=%d 木=%d 建造页=%s AI=%s" % [
+				int(th_card.cost_gold) if th_card != null else -1,
+				int(th_card.cost_wood) if th_card != null else -1,
+				str(cmd_src.contains("&\"townhall\"")),
+				str(sa_src.contains("func can_build_townhall() -> bool:\n\treturn false"))])
 
 
 # ===========================================================================
