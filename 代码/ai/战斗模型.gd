@@ -39,9 +39,10 @@ const THEORY_BASE_SEC: float = 40.0
 const THEORY_TIME_SCALE: float = 1.0
 ## 理论输出的保守系数：近战卡位、远程被切、走到射程内都要时间，
 ## 实际打不满"纸面 DPS × 战斗时间"。
-## **2C-4 用户确认 0.7 → 0.55**（任务书 §1 覆盖表；配合"有效交战时间"口径一起改，
-## 2C-3 实测 0.7 分母含走路 → output_eff 71% < 0.3，"好"永远不可达）。
-const THEORY_OUTPUT_COEF: float = 0.55
+## 2026-11-03 2C-6 用户拍板 **0.55 → 0.4**（任务书 §1 覆盖表）。
+## 前两轮的历史：2C-3 0.7（分母含走路）→ 2C-4 0.55（配"有效交战时间"）→ 2C-6 0.4
+## （同时把分母从"全员纸面 DPS"改成"最近 3 s 真出过手的成员"，见 theory_output_recent）。
+const THEORY_OUTPUT_COEF: float = 0.4
 
 ## --- 判定枚举（严格按 2C-3 判定表）---
 const VD_ACHIEVED: String = "达成"
@@ -573,10 +574,24 @@ static func comp_hp(comp: Dictionary) -> float:
 	return s
 
 
-## (c) 理论输出 = Σ(dps × 数量) × 战斗时间 × 0.7
+## (c) 理论输出 = Σ(dps × 数量) × 战斗时间 × coef
+## **2C-6 起这是"全员口径"（all）**，只作对照用；默认走 theory_output_recent。
 static func theory_output(comp: Dictionary, combat_time: float,
 		coef: float = THEORY_OUTPUT_COEF) -> float:
 	return comp_dps(comp) * maxf(combat_time, 0.0) * maxf(coef, 0.0)
+
+
+## (c') 理论输出 B 口径（2C-6 默认）= Σ(dps × **最近出过手的成员数**) × 战斗时间 × coef
+##
+## 为什么改分母：2C-5 实测"时间达标"的 48 波里只有 1 波 output_eff 落进 [0.7,1.3]。
+## 旧分母假设"全员全程在打"，可拆塔 meta 下远程常在射程外、近战在绕路、
+## 大半成员整波 0 伤害 —— 分母恒定高估，output_eff 必然被压到窗口下沿。
+##
+## `recent` = {def.id: 最近 RECENT_ATTACK_WINDOW 秒内有过 combat_hit 的成员数}
+## （按**实例**计数后按 def 聚合，不是"这个兵种有没有出现过"）。
+static func theory_output_recent(recent: Dictionary, combat_time: float,
+		coef: float = THEORY_OUTPUT_COEF) -> float:
+	return comp_dps(recent) * maxf(combat_time, 0.0) * maxf(coef, 0.0)
 
 
 ## (d) 理论承伤能力 = Σ(有效生命 × 数量)

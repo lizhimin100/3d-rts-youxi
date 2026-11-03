@@ -8,13 +8,19 @@ extends RefCounted
 ## 参数（全部走 `--` 之后的用户参数）：
 ##   --verdict-mode=old|new      判定口径（默认 new）
 ##   --verdict-base-sec=40|60    理论战斗时间的基准（默认 40，参数敏感性用 60）
-##   --verdict-coef=0.55         理论输出的保守系数（2C-4 用户确认 0.7 → 0.55）
+##   --verdict-coef=0.4          理论输出的保守系数（2C-6 用户拍板 0.55 → 0.4）
 ##   --combat-gap-sec=3.0        有效交战时间的断档阈值（相邻两刀间隔 >N s 不计）
 ##   --verdict-time-limit=180    单波存活上限（默认 180）
 ##   --damage-theory-mode=all|targeted
 ##                               承伤分母口径（2C-5 P0-1，默认 targeted =
 ##                               只算"曾作为 target 的成员"的有效生命；all = 2C-4 旧口径）
-##   --repair-hp-threshold=0.7   修理触发线（血量比例低于它才派农民去修，2C-5 P1-4）
+##   --output-theory-mode=all|recent
+##                               输出分母口径（2C-6 P0，默认 recent = 只算"最近
+##                               RECENT_ATTACK_WINDOW 秒内有过 combat_hit"的成员；
+##                               all = 2C-5 旧口径 = Σ全员纸面 DPS，对照用）
+##   --recent-attack-window=3.0  上面 "最近" 的窗口（秒）
+##   --repair-hp-threshold=0.7   修理触发线（血量比例低于它才派农民去修，2C-5 P1-4；
+##                               **2C-6 起改用固定掉血值**，见 REPAIR_HP_DEFICIT）
 ##
 ## ★ 与 `AI战略权重.gd` 同一套写法：static var + set_mode()，非法值回落默认，
 ##   绝不静默跑到第三个分支。
@@ -29,15 +35,30 @@ const DT_TARGETED: String = "targeted"
 const DT_MODES: Array[String] = [DT_ALL, DT_TARGETED]
 const DEFAULT_DAMAGE_THEORY_MODE: String = DT_TARGETED
 
+## 输出分母口径（2C-6）
+##   recent（默认）= Σ(unit_dps × 该成员最近 3 s 内有过 combat_hit 的标记) × 战斗时间 × coef
+##   all（2C-5 旧口径）= Σ(unit_dps × 全员数量) × 战斗时间 × coef
+const OT_ALL: String = "all"
+const OT_RECENT: String = "recent"
+const OT_MODES: Array[String] = [OT_ALL, OT_RECENT]
+const DEFAULT_OUTPUT_THEORY_MODE: String = OT_RECENT
+## "最近有过 combat_hit"的窗口（秒）。3.0 = 一次攻击间隔的量级：
+## 2.5 s 攻速的单位只要还在打就必然落在窗内，走位/绕行的成员会掉出去。
+const DEFAULT_RECENT_ATTACK_WINDOW: float = 3.0
+
 ## 默认值 —— 与 战斗模型.THEORY_BASE_SEC / THEORY_OUTPUT_COEF / TIME_LIMIT 保持一致
 const DEFAULT_BASE_SEC: float = 40.0
-## 2026-11-03 用户确认：0.7 → 0.55（任务书 §1 覆盖表）
-const DEFAULT_COEF: float = 0.55
+## 2026-11-03 2C-6 用户拍板：0.55 → 0.4（任务书 §1 覆盖表）
+const DEFAULT_COEF: float = 0.4
 ## 有效交战时间：相邻两刀间隔 > COMBAT_GAP_SEC 视为"断档"，走路/绕行段不计入战斗时间
 const DEFAULT_COMBAT_GAP_SEC: float = 3.0
 const DEFAULT_TIME_LIMIT: float = 180.0
-## 2C-5 P1-4：建筑血量比例低于该值才派农民修理（默认 70%）
+## 2C-5 P1-4：建筑血量比例低于该值才派农民修理（旧口径，2C-6 起只作对照）
 const DEFAULT_REPAIR_HP: float = 0.7
+## 2C-6 P3：修理判据改成**固定掉血值** —— max_hp − hp ≥ 200 就修。
+## 为什么不用比例：2C-5 长局实测单栋建筑整局掉血远小于 30%，70% 线在 10~15 min 局结构性不可达；
+## 200 点是"一次小规模骚扰"的量级（箭塔 620 血掉 200 = 32%，农场 450 掉 200 = 44%）。
+const DEFAULT_REPAIR_HP_DEFICIT: float = 200.0
 
 static var _mode: String = MODE_NEW
 static var _base_sec: float = DEFAULT_BASE_SEC
@@ -45,7 +66,10 @@ static var _coef: float = DEFAULT_COEF
 static var _time_limit: float = DEFAULT_TIME_LIMIT
 static var _combat_gap_sec: float = DEFAULT_COMBAT_GAP_SEC
 static var _damage_theory_mode: String = DEFAULT_DAMAGE_THEORY_MODE
+static var _output_theory_mode: String = DEFAULT_OUTPUT_THEORY_MODE
+static var _recent_attack_window: float = DEFAULT_RECENT_ATTACK_WINDOW
 static var _repair_hp: float = DEFAULT_REPAIR_HP
+static var _repair_hp_deficit: float = DEFAULT_REPAIR_HP_DEFICIT
 static var _parsed: bool = false
 
 
@@ -86,6 +110,14 @@ static func setup_from_cmdline() -> void:
 			_combat_gap_sec = clampf(float(a.substr(String("--combat-gap-sec=").length())), 0.5, 30.0)
 		elif a.begins_with("--damage-theory-mode="):
 			set_damage_theory_mode(a.substr(String("--damage-theory-mode=").length()))
+		elif a.begins_with("--output-theory-mode="):
+			set_output_theory_mode(a.substr(String("--output-theory-mode=").length()))
+		elif a.begins_with("--recent-attack-window="):
+			_recent_attack_window = clampf(
+				float(a.substr(String("--recent-attack-window=").length())), 0.5, 30.0)
+		elif a.begins_with("--repair-hp-deficit="):
+			_repair_hp_deficit = clampf(
+				float(a.substr(String("--repair-hp-deficit=").length())), 0.0, 100000.0)
 		elif a.begins_with("--repair-hp-threshold="):
 			_repair_hp = clampf(float(a.substr(String("--repair-hp-threshold=").length())), 0.1, 1.0)
 
@@ -101,7 +133,36 @@ static func set_damage_theory_mode(m: String) -> String:
 	return _damage_theory_mode
 
 
-## 修理触发线（血量比例）
+## 输出分母口径（"all" 旧 / "recent" 新）。非法值回落 recent。
+static func output_theory_mode() -> String:
+	return _output_theory_mode
+
+
+static func set_output_theory_mode(m: String) -> String:
+	var u: String = m.strip_edges().to_lower()
+	_output_theory_mode = u if OT_MODES.has(u) else OT_RECENT
+	return _output_theory_mode
+
+
+## "最近有过 combat_hit"的窗口（秒）
+static func recent_attack_window() -> float:
+	return _recent_attack_window
+
+
+static func set_recent_attack_window(v: float) -> void:
+	_recent_attack_window = clampf(v, 0.5, 30.0)
+
+
+## 2C-6 P3：修理工的**固定掉血阈值**（max_hp − hp ≥ 该值就修）
+static func repair_hp_deficit() -> float:
+	return _repair_hp_deficit
+
+
+static func set_repair_hp_deficit(v: float) -> void:
+	_repair_hp_deficit = clampf(v, 0.0, 100000.0)
+
+
+## 修理触发线（血量比例）—— 2C-5 旧口径，2C-6 起只用于对照/回归
 static func repair_hp_threshold() -> float:
 	return _repair_hp
 
@@ -150,11 +211,15 @@ static func reset_defaults() -> void:
 	_time_limit = DEFAULT_TIME_LIMIT
 	_combat_gap_sec = DEFAULT_COMBAT_GAP_SEC
 	_damage_theory_mode = DEFAULT_DAMAGE_THEORY_MODE
+	_output_theory_mode = DEFAULT_OUTPUT_THEORY_MODE
+	_recent_attack_window = DEFAULT_RECENT_ATTACK_WINDOW
 	_repair_hp = DEFAULT_REPAIR_HP
+	_repair_hp_deficit = DEFAULT_REPAIR_HP_DEFICIT
 
 
 static func describe() -> String:
 	if _mode == MODE_OLD:
 		return "old 判定（2C-2：存活比 + 投入产出比）"
-	return "new 判定（四样判据：%.0fs/1000 成本，输出系数 %.2f，交战断档 %.1fs，存活上限 %.0fs，承伤分母 %s，修理线 %.0f%%）" % [
-		_base_sec, _coef, _combat_gap_sec, _time_limit, _damage_theory_mode, _repair_hp * 100.0]
+	return "new 判定（四样判据：%.0fs/1000 成本，输出系数 %.2f，交战断档 %.1fs，存活上限 %.0fs，承伤分母 %s，输出分母 %s（窗 %.1fs），修理线掉血≥%.0f HP）" % [
+		_base_sec, _coef, _combat_gap_sec, _time_limit, _damage_theory_mode,
+		_output_theory_mode, _recent_attack_window, _repair_hp_deficit]

@@ -1732,7 +1732,9 @@ func _open_wave(units: Array, target: Vector3, foe: RtsFaction,
 		if u == null or not is_instance_valid(u) or u.def == null:
 			continue
 		by_id[u.def.id] = int(by_id.get(u.def.id, 0)) + 1
-		ids[u.get_instance_id()] = true
+		# 2C-6：members 的值从 `true` 改成 def.id —— 收尾算"最近出过手的成员"时
+		# 节点可能已经 free，读不到 def，必须开局就把 def.id 存下来。
+		ids[u.get_instance_id()] = String(u.def.id)
 	_wave_index += 1
 	_waves_active.append({
 		"wave_id": _wave_index,
@@ -1760,6 +1762,9 @@ func _open_wave(units: Array, target: Vector3, foe: RtsFaction,
 		"goal_last_attacker": 0,
 		# --- 2C-5 P0-1 承伤分母：曾作为 target 的成员（实例 id → def.id）---
 		"was_target": {},
+		# --- 2C-6 P0 输出分母 B：本波成员"最近一次出手"的时刻（实例 id → elapsed）---
+		# 只记 mine_hit（= 本波成员当 attacker），不记被打 —— 口径是"真出过手的人"。
+		"recent_attack": {},
 		# --- 四样判据的原始量 ---
 		"t_combat_begin": -1.0,
 		"t_combat_end": -1.0,
@@ -1831,8 +1836,36 @@ func _close_wave(rec: Dictionary, now: float, reason: String = "home",
 	rec["theory_time"] = theory_time
 	rec["time_ratio"] = combat_time / maxf(theory_time, 0.001)
 	# (c) 理论输出 / (d) 理论承伤
-	var theory_out: float = float(_model_call("theory_output",
-			[rec["units_out"], combat_time, AIV.output_coef()]))
+	# 2C-6 P0：输出分母改 B —— 只算"最近 RECENT_ATTACK_WINDOW 秒内有过 combat_hit"的成员。
+	# mode=all 时回 2C-5 旧口径（Σ全员纸面 DPS），同一构建里可对照。
+	#
+	# ★ 参照时刻用 **t_last_hit（本波最后一次交火）**，不是 now：
+	#   收尾发生在"安静 WAVE_QUIET_SEC 秒"之后，按 now 判会得到"全员都不在打"→
+	#   分母恒 0 → output_eff 退化成"实际伤害值"（几百），判定全废。
+	#   用 t_last_hit 才等于"最后一刻还在打的人是谁"，与收尾延迟无关。
+	var ref_t: float = float(rec.get("t_last_hit", -1.0))
+	if ref_t < 0.0:
+		ref_t = now
+	var recent_counts: Dictionary = {}
+	var recent_n: int = 0
+	var win: float = AIV.recent_attack_window()
+	var recent_attack: Dictionary = rec.get("recent_attack", {})
+	var members: Dictionary = rec.get("members", {})
+	for uid in recent_attack.keys():
+		if ref_t - float(recent_attack[uid]) > win:
+			continue
+		var rdid: String = String(members.get(uid, ""))
+		if rdid.is_empty():
+			continue
+		recent_counts[rdid] = int(recent_counts.get(rdid, 0)) + 1
+		recent_n += 1
+	var theory_out: float = 0.0
+	if AIV.output_theory_mode() == AIV.OT_ALL:
+		theory_out = float(_model_call("theory_output",
+				[rec["units_out"], combat_time, AIV.output_coef()]))
+	else:
+		theory_out = float(_model_call("theory_output_recent",
+				[recent_counts, combat_time, AIV.output_coef()]))
 	# 2C-5 P0-1：承伤分母改口径 —— 只算"曾作为 target 的成员"的有效生命。
 	# mode=all 时回 2C-4 旧口径（全程总有效生命），同一次构建里可对照。
 	var targeted_counts: Dictionary = {}
@@ -1848,6 +1881,9 @@ func _close_wave(rec: Dictionary, now: float, reason: String = "home",
 	rec["output_actual"] = dmg_out
 	rec["output_theory"] = theory_out
 	rec["output_eff"] = dmg_out / maxf(theory_out, 1.0)
+	rec["output_theory_mode"] = AIV.output_theory_mode()
+	rec["recent_attack_n"] = recent_n
+	rec["recent_attack_window"] = win
 	rec["damage_actual"] = dmg_in
 	rec["damage_theory"] = theory_hp
 	rec["damage_theory_mode"] = AIV.damage_theory_mode()
@@ -2050,6 +2086,8 @@ func _on_combat_hit(attacker: Node3D, target: Node3D, damage: float, _crit: bool
 			# (e) 实际输出 + 最后一击归属（归属只是辅助记录，不参与 new 判定）
 			rec["damage_out"] = float(rec.get("damage_out", 0.0)) + dmg
 			rec["hits"][tid] = now
+			# 2C-6 P0：给这个成员打"最近出过手"的时间戳（收尾时按 3 s 窗过滤）
+			rec["recent_attack"][aid] = now
 			# 数据质量：这一刀打的是不是本波的目标（用于识别"达成但没参与"）
 			if tid == int(rec.get("goal_target_id", 0)):
 				rec["goal_damage"] = float(rec.get("goal_damage", 0.0)) + dmg

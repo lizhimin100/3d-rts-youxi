@@ -768,7 +768,10 @@ func _finish(reason: String) -> void:
 		"verdict_base_sec": AIV.base_sec(), "verdict_coef": AIV.output_coef(),
 		"verdict_time_limit": AIV.time_limit(),
 		"damage_theory_mode": AIV.damage_theory_mode(),
+		"output_theory_mode": AIV.output_theory_mode(),
+		"recent_attack_window": AIV.recent_attack_window(),
 		"repair_hp_threshold": AIV.repair_hp_threshold(),
+		"repair_hp_deficit": AIV.repair_hp_deficit(),
 		"elapsed_game_s": snappedf(Game.elapsed, 0.01),
 		"wall_clock_s": snappedf(wall_sec, 0.1),
 		"end_reason": reason,
@@ -800,6 +803,14 @@ func _finish(reason: String) -> void:
 			continue
 		var s: Dictionary = _stats[f.display_name]
 		var wr: Dictionary = wave_records.get(f.display_name, {})
+		# ★ 别写 `(x or {}).get(...)` —— GDScript 的 `or` 返回 **bool**，
+		#   不是"短路取操作数"。2C-5 C5 就是栽在这上面：`repairs.get(...) or {}` 得到 false，
+		#   再 `as Dictionary` / `.get()` 当场报错，_finish 中断 → 进程不退出（实测挂满墙钟）。
+		#   正确写法是显式 `is Dictionary` 判一次。
+		var rraw = repairs.get(String(f.display_name), null)
+		var rr: Dictionary = rraw if rraw is Dictionary else {}
+		var wstats = wr.get("stats", null)
+		var wst: Dictionary = wstats if wstats is Dictionary else {}
 		summary[f.display_name] = {
 			"金收入": int(s["gold_income"]), "木收入": int(s["wood_income"]),
 			"波次": int(s["wave_count"]), "首波": float(s["first_wave_t"]),
@@ -822,10 +833,10 @@ func _finish(reason: String) -> void:
 			"判定": wr.get("verdicts", {}),
 			"目标": wr.get("goals", {}),
 			"建议": wr.get("advice", {}),
-			"修理": int(((repairs.get(String(f.display_name), {}) or {}) as Dictionary).get("issued", 0)),
+			"修理": int((rr as Dictionary).get("issued", 0)),
 			"军队目标": "%d→%d" % [
-				int((wr.get("stats", {}) or {}).get("army_target_first", -1)),
-				int((wr.get("stats", {}) or {}).get("army_target", -1))],
+				int(wst.get("army_target_first", -1)),
+				int(wst.get("army_target", -1))],
 		}
 	# 2C-5：达成归属摘要（达成条数里"本波参与"的比例）+ 曲线峰值
 	summary["达成归属"] = "%d/%d 条达成是本波最后一击（伤害占比均值 %.2f，0 伤害 %d 条）" % [

@@ -451,9 +451,9 @@ func _case_2c4() -> void:
 	_record("2C4：hit_gap_contrib 正常间隔计入", _near(float(_model.call("hit_gap_contrib", 10.0, 13.0, 3.0)), 3.0, 0.0001), "=3")
 	_record("2C4：hit_gap_contrib 断档(>gap)不计", float(_model.call("hit_gap_contrib", 10.0, 14.0, 3.0)) == 0.0, "=0")
 	_record("2C4：hit_gap_contrib 首刀起表贡献0", float(_model.call("hit_gap_contrib", -1.0, 13.0, 3.0)) == 0.0, "=0")
-	_record("2C4：输出系数默认 0.55（用户确认 0.7→0.55）",
-			_near(float(AIV.DEFAULT_COEF), 0.55, 0.0001) and _near(float(AIV.output_coef()), 0.55, 0.0001)
-			and _near(float(load("res://代码/ai/战斗模型.gd").THEORY_OUTPUT_COEF), 0.55, 0.0001),
+	_record("2C6：输出系数默认 0.4（2C-6 用户拍板 0.55→0.4）",
+			_near(float(AIV.DEFAULT_COEF), 0.4, 0.0001) and _near(float(AIV.output_coef()), 0.4, 0.0001)
+			and _near(float(load("res://代码/ai/战斗模型.gd").THEORY_OUTPUT_COEF), 0.4, 0.0001),
 			"coef=%.2f" % float(AIV.output_coef()))
 	# 交战断档参数可命令行口径存在
 	AIV.set_combat_gap_sec(5.0)
