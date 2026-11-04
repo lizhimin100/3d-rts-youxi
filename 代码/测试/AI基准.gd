@@ -342,6 +342,11 @@ func _new_faction_stats(f: RtsFaction) -> Dictionary:
 		"think_count": 0,
 		"cmd_sent": 0, "cmd_skipped": 0, "cmd_throttled": 0,
 		"cmd_filtered_player": 0, "cmd_stuck_locked": 0,
+		# 2C-8 P2：从**引擎侧**独立采样"同时建造/同时修理"（不读 AI 自报。
+		# 自报只说明 AI 认为自己在干什么；这里按 order 数人头，才能验证上限有没有破）。
+		"max_concurrent_build": 0, "max_concurrent_repairs": 0,
+		"concurrent_repair_samples": 0, "build_over_limit_samples": 0,
+		"builder_slots_max": 0, "builder_slots_last": 0,
 		"prev_gold": f.gold, "prev_wood": f.wood, "prev_bldg_hp": 0.0,
 	}
 
@@ -365,6 +370,10 @@ func _sample_units(step: float) -> void:
 		var stuck_n: int = 0
 		var wounded_n: int = 0
 		var army_n: int = 0
+		# 2C-8：用工并发（引擎侧口径 = order + _repair_target，不看 AI 的计数）
+		var workers_n: int = 0
+		var build_n: int = 0
+		var repair_targets: Dictionary = {}
 		var home: Vector3 = RtsWorld.base_center(f)
 		for u in f.units:
 			if u == null or not is_instance_valid(u) or not u.is_alive():
@@ -375,6 +384,15 @@ func _sample_units(step: float) -> void:
 				stuck_n += 1
 			var d: UnitDef = u.def
 			if d == null or RtsWorld.is_worker_def(d):
+				if d != null and RtsWorld.is_worker_def(d):
+					workers_n += 1
+					var o: int = int(u.order)
+					if o == RtsConst.Order.BUILD:
+						build_n += 1
+					elif o == RtsConst.Order.REPAIR:
+						var rt = u.get("_repair_target")
+						if rt != null and is_instance_valid(rt):
+							repair_targets[rt.get_instance_id()] = true
 				continue
 			if d.kind != RtsConst.Kind.UNIT:
 				continue
@@ -395,6 +413,18 @@ func _sample_units(step: float) -> void:
 			s["wounded_episodes"] = int(s["wounded_episodes"]) + wounded_n
 		s["army_n_last"] = army_n
 		s["idle_n_last"] = idle_n
+		# 2C-8：同时建造/修理（引擎侧独立口径）+ 上限校验
+		var slots_want: int = int(_bench_model.builder_count_for(workers_n))
+		var build_limit: int = int(_bench_model.builder_build_limit(slots_want))
+		s["builder_slots_last"] = slots_want
+		s["builder_slots_max"] = maxi(int(s["builder_slots_max"]), slots_want)
+		s["max_concurrent_build"] = maxi(int(s["max_concurrent_build"]), build_n)
+		if build_n > build_limit:
+			s["build_over_limit_samples"] = int(s["build_over_limit_samples"]) + 1
+		var n_rep: int = repair_targets.size()
+		s["max_concurrent_repairs"] = maxi(int(s["max_concurrent_repairs"]), n_rep)
+		if n_rep >= 2:
+			s["concurrent_repair_samples"] = int(s["concurrent_repair_samples"]) + 1
 
 		# 生产队列空档：有已完工产能建筑但队列全空，且钱够最便宜的兵。
 		# ★ 2026-11-03 2C-2 口径修正：还要 **army < max_army**。
@@ -485,6 +515,35 @@ func _sample_curve() -> void:
 				prods += 1
 			elif int(b.def.food_provided) > 0 and not b.def.is_dropoff:
 				farms += 1
+		# 2C-8：工位数 / 采金 / 采木 / 工位占用（报告要画"配比曲线"）
+		var workers_n: int = 0
+		var gold_w: int = 0
+		var wood_w: int = 0
+		var busy_w: int = 0
+		var idle_w: int = 0
+		for u in f.units:
+			if u == null or not is_instance_valid(u) or not u.is_alive() or u.def == null:
+				continue
+			if not RtsWorld.is_worker_def(u.def):
+				continue
+			workers_n += 1
+			var o: int = int(u.order)
+			if o == RtsConst.Order.BUILD or o == RtsConst.Order.REPAIR:
+				busy_w += 1
+			elif o == RtsConst.Order.GATHER \
+					and int(u.call("gather_kind")) == RtsConst.Harvest.GOLD:
+				gold_w += 1
+			elif o == RtsConst.Order.GATHER \
+					and int(u.call("gather_kind")) == RtsConst.Harvest.WOOD:
+				wood_w += 1
+			else:
+				idle_w += 1
+		var slots_target: int = int(_bench_model.builder_count_for(workers_n))
+		var slots_actual: int = 0
+		if brain != null:
+			var bu = brain.get("_builder_uids")
+			if bu is Array:
+				slots_actual = (bu as Array).size()
 		arr.append({
 			"t": snappedf(Game.elapsed, 0.1),
 			"army": int(s.get("army_n_last", 0)),
@@ -493,6 +552,9 @@ func _sample_curve() -> void:
 			"pop_rate": snappedf(float(used) / float(maxi(cap, 1)), 0.01),
 			"farms": farms, "producers": prods,
 			"gold": f.gold, "wood": f.wood,
+			"workers": workers_n, "builders": slots_target, "builders_actual": slots_actual,
+			"gather_gold": gold_w, "gather_wood": wood_w, "builder_busy": busy_w,
+			"idle_workers": idle_w,
 		})
 
 
@@ -685,6 +747,20 @@ func _dist(rows: Array, key: String) -> Dictionary:
 	return out
 
 
+## 2C-8：把一个计数字典压成"非零项"的短串（summary 用；零项不占篇幅）
+func _dict_brief(d) -> String:
+	if not (d is Dictionary):
+		return "-"
+	var parts: Array = []
+	for k in (d as Dictionary).keys():
+		if String(k).begins_with("_"):
+			continue
+		var v: int = int((d as Dictionary)[k])
+		if v > 0:
+			parts.append("%s%d" % [String(k), v])
+	return "/".join(parts) if not parts.is_empty() else "-"
+
+
 func _finish(reason: String) -> void:
 	if _done:
 		return
@@ -734,6 +810,10 @@ func _finish(reason: String) -> void:
 	var build_stats: Dictionary = {}
 	# 2C-7 P2：投资占比（faction 名 → {farm_gold/army_gold/samples/over_invest_60s}）
 	var invests: Dictionary = {}
+	# 2C-8 P2：用工 / 农场归因 / 训练阻塞
+	var labors: Dictionary = {}
+	var farm_fails: Dictionary = {}
+	var train_blocks: Dictionary = {}
 	for b in _brains:
 		var n = b["node"]
 		if n == null or not is_instance_valid(n):
@@ -770,6 +850,10 @@ func _finish(reason: String) -> void:
 		build_stats[fname2] = n.get("build_stats")
 		# 2C-7 P2：投资占比（农场 vs 军队）
 		invests[fname2] = n.get("invest_stats")
+		# 2C-8 P2：用工统计 / 农场失败归因 / 训练阻塞归因
+		labors[fname2] = n.get("labor_stats")
+		farm_fails[fname2] = n.get("farm_fail_stats")
+		train_blocks[fname2] = n.get("train_stats")
 
 	# --- 2C-5 P1-5 达成归属：达成条数里"本波参与"的比例 ---
 	# 口径：goal_last_hit = 目标临死前最后一刀的攻击者属于本波；
@@ -819,7 +903,9 @@ func _finish(reason: String) -> void:
 		"repair_hp_threshold": AIV.repair_hp_threshold(),
 		"repair_hp_deficit": AIV.repair_hp_deficit(),
 		"builder_slot": AIV.builder_slot(),
+		"builder_mode": AIV.builder_mode(),
 		"army_pop_cap": AIV.army_pop_cap(),
+		"army_target_formula": AIV.army_target_formula(),
 		"elapsed_game_s": snappedf(Game.elapsed, 0.01),
 		"wall_clock_s": snappedf(wall_sec, 0.1),
 		"end_reason": reason,
@@ -832,6 +918,9 @@ func _finish(reason: String) -> void:
 		"repairs": repairs,
 		"build_stats": build_stats,
 		"invest": invests,
+		"labor": labors,
+		"farm_fail": farm_fails,
+		"train_block": train_blocks,
 		"goal_attribution": attribution,
 		"events": _events,
 		"situations_file": _file_sit if not _file_sit.is_empty() else "未启用",
@@ -892,6 +981,16 @@ func _finish(reason: String) -> void:
 				int((rr as Dictionary).get("blocked_wood", 0))],
 			"工位角色": "%s（换%d次）" % [String((rr as Dictionary).get("builder_role", "-")),
 				int((rr as Dictionary).get("builder_swaps", 0))],
+			# 2C-8：用工并发（引擎侧采样）
+			"工位": "%d→%d（峰值）" % [
+				int(s.get("builder_slots_last", 0)), int(s.get("builder_slots_max", 0))],
+			"同时建造": "峰值%d（超限采样%d）" % [
+				int(s.get("max_concurrent_build", 0)), int(s.get("build_over_limit_samples", 0))],
+			"同时修理": "峰值%d（≥2 采样%d）" % [
+				int(s.get("max_concurrent_repairs", 0)),
+				int(s.get("concurrent_repair_samples", 0))],
+			"农场失败": _dict_brief(farm_fails.get(String(f.display_name), null)),
+			"训练阻塞": _dict_brief(train_blocks.get(String(f.display_name), null)),
 			"军队目标": "%d→%d" % [
 				int(wst.get("army_target_first", -1)),
 				int(wst.get("army_target", -1))],
