@@ -87,6 +87,8 @@ func _run() -> void:
 	_case_2c5()
 	# 2C-6：0.4 系数 / B 输出分母 / 修理 200 HP / 农场预判 / 兵营座数 / 移速换算
 	_case_2c6()
+	# 2C-7：固定修理工位 / 军队目标人口约束 / 农场 >90% 急建 / damage_ratio 归一化矩阵
+	_case_2c7()
 	_finish(t0)
 
 
@@ -491,10 +493,13 @@ func _case_2c4() -> void:
 			sa_src.contains("const RESEARCH_NOT_BEFORE_SEC: float = 300.0"), "文本命中")
 	_record("2C4：常态出击比例 0.75",
 			sa_src.contains("const ATTACK_RATIO_NORMAL: float = 0.75"), "文本命中")
-	_record("2C4：农民软上限直接覆盖（总=软+4）",
+	_record("2C4/2C7：农民工位 采金8 + 采木3 + 工位1 = 12（总数不变）",
 			sa_src.contains("PEASANT_GOLD_SOFT_CAP: int = 8")
-			and sa_src.contains("PEASANT_TOTAL_CAP: int = PEASANT_GOLD_SOFT_CAP + 4"),
-			"软=8 总=12（TODO 农民测试标定）")
+			and sa_src.contains("PEASANT_WOOD_TARGET: int = 3")
+			and sa_src.contains("PEASANT_BUILDER_SLOT: int = 1")
+			and sa_src.contains(
+				"PEASANT_TOTAL_CAP: int = PEASANT_GOLD_SOFT_CAP + PEASANT_WOOD_TARGET + PEASANT_BUILDER_SLOT"),
+			"8 + 3 + 1 = 12")
 
 	# --- 卡系统（C1~C5）---
 	var foot_card: EntityCard = UT.get_card(&"footman")
@@ -558,11 +563,15 @@ func _case_2c5() -> void:
 	_record("2C5：军队目标 1 基地 1 兵营 = 10+4+2 = 16",
 			int(_model.call("army_target_of", 1, 1, 0.0, 8)) == 16,
 			"=%d" % int(_model.call("army_target_of", 1, 1, 0.0, 8)))
-	_record("2C5：军队目标 420 s 起解除（-1）",
-			int(_model.call("army_target_of", 1, 1, 420.0, 8)) == -1
-			and int(_model.call("army_target_of", 1, 1, 419.9, 8)) == 16,
-			"419.9s=%d / 420s=%d" % [int(_model.call("army_target_of", 1, 1, 419.9, 8)),
-				int(_model.call("army_target_of", 1, 1, 420.0, 8))])
+	# 2C-7 P1 覆盖：不传人口时仍是 2C-6 口径（420 s 解除），传人口则取人口上限
+	_record("2C5/2C7：军队目标 420 s：不传人口→解除(-1)；人口 24→11（÷2−1）",
+			int(_model.call("army_target_of", 1, 1, 419.9, 8)) == 16
+			and int(_model.call("army_target_of", 1, 1, 420.0, 8)) == -1
+			and int(_model.call("army_target_of", 1, 1, 420.0, 8, 24)) == 11,
+			"419.9s=%d / 420s(pop=0)=%d / 420s(pop=24)=%d" % [
+				int(_model.call("army_target_of", 1, 1, 419.9, 8)),
+				int(_model.call("army_target_of", 1, 1, 420.0, 8)),
+				int(_model.call("army_target_of", 1, 1, 420.0, 8, 24))])
 	_record("2C5：军队目标不低于防守下限（公式值 10 < 下限 12 → 取 12）",
 			int(_model.call("army_target_of", 0, 0, 0.0, 12)) == 12,
 			"=%d" % int(_model.call("army_target_of", 0, 0, 0.0, 12)))
@@ -703,6 +712,111 @@ func _case_2c6() -> void:
 				int(th_card.cost_wood) if th_card != null else -1,
 				str(cmd_src.contains("&\"townhall\"")),
 				str(sa_src.contains("func can_build_townhall() -> bool:\n\treturn false"))])
+
+
+# ===========================================================================
+# P 2C-7：修理工位 / 军队目标人口约束 / 农场 >90% / damage_ratio 归一化矩阵
+# ===========================================================================
+func _case_2c7() -> void:
+	var AIV = load("res://代码/配置/AI判定模式.gd")
+	var bm = load("res://代码/ai/战斗模型.gd")
+	var sa_src: String = FileAccess.get_file_as_string("res://代码/ai/简单AI.gd")
+
+	# --- P0 修理工位（3 条）---
+	# ① 工位是**持久单一状态**，不是每 tick 现算（靠 order 分不清"待命砍树的工位"和"普通伐木工"）
+	_record("2C7：工位持久唯一（_builder_uid 保存、只在空缺/阵亡时指派、默认开）",
+			sa_src.contains("var _builder_uid: int = 0")
+			and sa_src.contains("func _builder_unit() -> RtsUnit:")
+			and sa_src.contains("_builder_uid = pick.get_instance_id()")
+			and bool(AIV.DEFAULT_BUILDER_SLOT) and bool(AIV.builder_slot()),
+			"uid 持久 + 缺口才换人（默认 = %s）" % str(bool(AIV.builder_slot())))
+	# ② 工位不被采集抢占：assign 强制采木、rebalance 排除工位
+	_record("2C7：工位不被采集/配比抢占（assign 强制采木 + rebalance 排除工位 + _pick_builder 只用工位）",
+			sa_src.contains("工位没活就砍树")
+			and sa_src.contains("工位不计入金木配比")
+			and sa_src.contains("工位永远不在候选池里")
+			and sa_src.contains("if not AIV.builder_slot():")
+			and sa_src.contains("var b: RtsUnit = _builder_unit()")
+			and sa_src.count("if builder != null and w == builder:") >= 2,
+			"命中 %d 处工位排除" % sa_src.count("if builder != null and w == builder:"))
+	# ③ 修理归因三分：无工位 / 工位在建造 / 木材不够（2C-6 只有前两类，混在一起看不出根因）
+	_record("2C7：修理归因分三类（blocked_no_builder / blocked_builder_busy / blocked_wood）+ 工位角色落盘",
+			sa_src.contains("\"blocked_builder_busy\"")
+			and sa_src.contains("repair_stats[\"blocked_builder_busy\"]")
+			and sa_src.contains("repair_stats[\"builder_role\"]")
+			and sa_src.contains("func _builder_role_name() -> String:"),
+			"三类计数 + builder_role/builder_swaps")
+
+	# --- P1 军队目标与人口（2 条）---
+	# 人口 24（1 大本营）= 24/2−1 = 11；人口 40（+2 农场）= 19，但公式 16 更小 → 取 16
+	_record("2C7：军队目标 = min(公式, 人口÷2−1)：pop24→11 / pop40→16（公式优先）",
+			int(_model.call("army_target_of", 1, 1, 0.0, 8, 24)) == 11
+			and int(_model.call("army_target_of", 1, 1, 0.0, 8, 40)) == 16
+			and int(bm.army_pop_limit(24)) == 11
+			and int(bm.army_pop_limit(40)) == 19,
+			"pop24=%d pop40=%d（上限函数 11/19）" % [
+				int(_model.call("army_target_of", 1, 1, 0.0, 8, 24)),
+				int(_model.call("army_target_of", 1, 1, 0.0, 8, 40))])
+	_record("2C7：420 s 后不解除，改取人口允许值（pop24→11 / pop40→19；不传人口才 -1）",
+			int(_model.call("army_target_of", 1, 1, 420.0, 8, 24)) == 11
+			and int(_model.call("army_target_of", 1, 1, 420.0, 8, 40)) == 19
+			and int(_model.call("army_target_of", 1, 1, 420.0, 8, 0)) == -1,
+			"420s: pop24=%d pop40=%d pop0=%d" % [
+				int(_model.call("army_target_of", 1, 1, 420.0, 8, 24)),
+				int(_model.call("army_target_of", 1, 1, 420.0, 8, 40)),
+				int(_model.call("army_target_of", 1, 1, 420.0, 8, 0))])
+
+	# --- P1 农场 >90% 急建（1 条）---
+	_record("2C7：人口 >90% 走农场急建（22/24=91.7% 触发 / 21/24=87.5% 不触发）",
+			bool(_model.call("pop_occupied_over", 22, 24, 0.9))
+			and not bool(_model.call("pop_occupied_over", 21, 24, 0.9))
+			and sa_src.contains("const POP_CRITICAL_RATIO: float = 0.9")
+			and sa_src.contains("func _pop_critical() -> bool:")
+			and sa_src.contains("if headroom >= 4 and not _pop_critical():"),
+			"22/24=%s 21/24=%s" % [
+				str(bool(_model.call("pop_occupied_over", 22, 24, 0.9))),
+				str(bool(_model.call("pop_occupied_over", 21, 24, 0.9)))])
+
+	# --- P5 damage_ratio 归一化（2 条）---
+	_record("2C7：raw_damage_all = 承伤 ÷ 全员有效生命（300/900=0.333）；波次记录三字段齐全",
+			_near(float(_model.call("raw_damage_ratio", 300.0, 900.0)), 1.0 / 3.0, 0.001)
+			and _near(float(_model.call("raw_damage_ratio", 300.0, 300.0)), 1.0, 0.0001)
+			and sa_src.contains("rec[\"hp_all_out\"]")
+			and sa_src.contains("rec[\"raw_damage_all\"]")
+			and sa_src.contains("rec[\"raw_damage_ps\"]"),
+			"raw=%.4f（targeted 同数据=1.0）" % float(_model.call("raw_damage_ratio", 300.0, 900.0)))
+	var vals: Array = [0.5, 0.95, 0.3, 0.82]
+	_record("2C7：窗口命中率 [0.4,0.9] = 2/4；lo↑ 命中率不增、hi↑ 命中率不减（4×4 矩阵可用）",
+			_near(float(_model.call("window_hit_ratio", vals, 0.4, 0.9)), 0.5, 0.0001)
+			and float(_model.call("window_hit_ratio", vals, 0.5, 0.9))
+				<= float(_model.call("window_hit_ratio", vals, 0.4, 0.9))
+			and float(_model.call("window_hit_ratio", vals, 0.4, 1.0))
+				>= float(_model.call("window_hit_ratio", vals, 0.4, 0.9)),
+			"[0.4,0.9]=%.2f [0.5,0.9]=%.2f [0.4,1.0]=%.2f" % [
+				float(_model.call("window_hit_ratio", vals, 0.4, 0.9)),
+				float(_model.call("window_hit_ratio", vals, 0.5, 0.9)),
+				float(_model.call("window_hit_ratio", vals, 0.4, 1.0))])
+
+	# --- 禁止项守门（1 条）：判定表窗口一个字不动 ---
+	_record("2C7：判定表窗口未动（时间 0.8/0.5、输出 0.7~1.3、承伤 0.4~0.9）",
+			_near(float(bm.VD_TIME_GOOD), 0.8, 0.0001)
+			and _near(float(bm.VD_TIME_HALF), 0.5, 0.0001)
+			and _near(float(bm.VD_OUT_LOW), 0.7, 0.0001)
+			and _near(float(bm.VD_OUT_HIGH), 1.3, 0.0001)
+			and _near(float(bm.VD_DMG_LOW), 0.4, 0.0001)
+			and _near(float(bm.VD_DMG_HIGH), 0.9, 0.0001),
+			"%.1f/%.1f %.1f~%.1f %.1f~%.1f" % [
+				float(bm.VD_TIME_GOOD), float(bm.VD_TIME_HALF),
+				float(bm.VD_OUT_LOW), float(bm.VD_OUT_HIGH),
+				float(bm.VD_DMG_LOW), float(bm.VD_DMG_HIGH)])
+
+	# --- 审计选人守门（1 条）：这一条是踩出来的 ---
+	# 第一版把 `find_builder` 指向 `_pick_builder`，结果副官自检 E 组连红 3 条：
+	# "停滞工地正好是工位自己盖的 → 工位在建造 → 审计拿不到人 → 立案失败"。
+	_record("2C7：审计选人允许工位在建造（find_builder 指向 _pick_sanity_builder）",
+			sa_src.contains("\"find_builder\": Callable(self, \"_pick_sanity_builder\")")
+			and sa_src.contains("func _pick_sanity_builder() -> RtsUnit:"),
+			"副官 E 组：停滞工地能拿到人（救火不受建造状态阻挡）")
 
 
 # ===========================================================================
