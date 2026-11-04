@@ -4364,6 +4364,11 @@ func _demand_army_train(diff: DifficultyDef, threat_n: int) -> Array:
 		return out
 	var target_army: int = _army_target()
 	var army: int = _army_units().size()
+	# 诊断字段：dept=on 时 `_manage_army` 不再被调用，这个键要在这里补上，
+	# 否则 bench 的「军队目标 -1→-1」会变成假信号（army_target_now 一直是好的）
+	strat_stats["army_target"] = target_army
+	if not strat_stats.has("army_target_first"):
+		strat_stats["army_target_first"] = target_army
 	if target_army >= 0 and army >= target_army:
 		return out
 	var gap: int = maxi(target_army - army, 1) if target_army >= 0 else 1
@@ -5023,10 +5028,26 @@ func qa_repair_probe() -> Dictionary:
 	var pack: Dictionary = _repair_candidates()
 	var list: Array = pack.get("cands", [])
 	var before: int = int(repair_stats.get("issued", 0))
-	if AIV.builder_mode() == "on" or AIV.dept_on():
-		_issue_repairs_multi(list)
-	else:
-		_issue_repairs_single(list)
+	# ★ 探针只测"**通路**能不能同时派 2 个工位"，不测"工位忙不忙"：
+	#   2C-8 的做法是冻结副官自动思考（整局不动）；这里只把工位手上的
+	#   建造/修理停掉，影响面更小、也不用改主循环。
+	#   （第一版直接调 `_issue_repairs_multi`，长局里 2 个工位有 1 个正在盖农场，
+	#     于是恒得 1/2 —— 那是"场景依赖"，不是通路问题，见报告 §4。）
+	var slots: Array = _builder_units()
+	if slots.size() < 2:
+		return {"ok": false, "why": "工位数 < 2（当前 %d）" % slots.size()}
+	var duo: Array = []
+	for s in slots:
+		if s == null or not is_instance_valid(s):
+			continue
+		if int(s.order) == RtsConst.Order.BUILD or int(s.order) == RtsConst.Order.REPAIR:
+			_sched.stop([s], "probe")
+		duo.append(s)
+	_sched.flush()
+	var n_pair: int = mini(list.size(), duo.size())
+	for i in range(n_pair):
+		var c: Dictionary = list[i]
+		_do_repair(duo[i], c["b"], float(c["deficit"]))
 	var issued: int = int(repair_stats.get("issued", 0)) - before
 	var repairing: int = 0
 	var distinct: Dictionary = {}
