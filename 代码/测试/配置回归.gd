@@ -89,6 +89,8 @@ func _run() -> void:
 	_case_2c6()
 	# 2C-7：固定修理工位 / 军队目标人口约束 / 农场 >90% 急建 / damage_ratio 归一化矩阵
 	_case_2c7()
+	# 2C-8：动态工位 / 三段时间军队目标 / 农场与训练归因 / 守门
+	_case_2c8()
 	_finish(t0)
 
 
@@ -493,13 +495,13 @@ func _case_2c4() -> void:
 			sa_src.contains("const RESEARCH_NOT_BEFORE_SEC: float = 300.0"), "文本命中")
 	_record("2C4：常态出击比例 0.75",
 			sa_src.contains("const ATTACK_RATIO_NORMAL: float = 0.75"), "文本命中")
-	_record("2C4/2C7：农民工位 采金8 + 采木3 + 工位1 = 12（总数不变）",
+	_record("2C4/2C8：农民工位 采金8 + 采木2 + 工位2 = 12（总数不变，工位动态）",
 			sa_src.contains("PEASANT_GOLD_SOFT_CAP: int = 8")
-			and sa_src.contains("PEASANT_WOOD_TARGET: int = 3")
-			and sa_src.contains("PEASANT_BUILDER_SLOT: int = 1")
+			and sa_src.contains("PEASANT_WOOD_TARGET: int = 2")
+			and sa_src.contains("PEASANT_BUILDER_SLOT: int = 2")
 			and sa_src.contains(
 				"PEASANT_TOTAL_CAP: int = PEASANT_GOLD_SOFT_CAP + PEASANT_WOOD_TARGET + PEASANT_BUILDER_SLOT"),
-			"8 + 3 + 1 = 12")
+			"8 + 2 + 2 = 12")
 
 	# --- 卡系统（C1~C5）---
 	var foot_card: EntityCard = UT.get_card(&"footman")
@@ -723,22 +725,22 @@ func _case_2c7() -> void:
 	var sa_src: String = FileAccess.get_file_as_string("res://代码/ai/简单AI.gd")
 
 	# --- P0 修理工位（3 条）---
-	# ① 工位是**持久单一状态**，不是每 tick 现算（靠 order 分不清"待命砍树的工位"和"普通伐木工"）
-	_record("2C7：工位持久唯一（_builder_uid 保存、只在空缺/阵亡时指派、默认开）",
-			sa_src.contains("var _builder_uid: int = 0")
-			and sa_src.contains("func _builder_unit() -> RtsUnit:")
-			and sa_src.contains("_builder_uid = pick.get_instance_id()")
+	# ① 工位是**持久状态**（数组），不是每 tick 现算（靠 order 分不清"待命砍树的工位"和"普通伐木工"）
+	_record("2C7/2C8：工位持久（_builder_uids 数组、只在空缺/阵亡时补位、默认动态）",
+			sa_src.contains("var _builder_uids: Array[int] = []")
+			and sa_src.contains("func _builder_units() -> Array:")
+			and sa_src.contains("_builder_uids.append(u.get_instance_id())")
+			and sa_src.contains("func _builder_count_target() -> int:")
 			and bool(AIV.DEFAULT_BUILDER_SLOT) and bool(AIV.builder_slot()),
-			"uid 持久 + 缺口才换人（默认 = %s）" % str(bool(AIV.builder_slot())))
+			"数组持久 + 缺口才补（默认 = %s）" % str(AIV.builder_mode()))
 	# ② 工位不被采集抢占：assign 强制采木、rebalance 排除工位
-	_record("2C7：工位不被采集/配比抢占（assign 强制采木 + rebalance 排除工位 + _pick_builder 只用工位）",
+	_record("2C8：工位不被采集/配比抢占（uid 集合排除 + assign 强制采木 + rebalance 排除）",
 			sa_src.contains("工位没活就砍树")
 			and sa_src.contains("工位不计入金木配比")
 			and sa_src.contains("工位永远不在候选池里")
-			and sa_src.contains("if not AIV.builder_slot():")
-			and sa_src.contains("var b: RtsUnit = _builder_unit()")
-			and sa_src.count("if builder != null and w == builder:") >= 2,
-			"命中 %d 处工位排除" % sa_src.count("if builder != null and w == builder:"))
+			and sa_src.contains("var slot_uids: Dictionary = {}")
+			and sa_src.count("if slot_uids.has(w.get_instance_id()):") >= 2,
+			"命中 %d 处 uid 排除" % sa_src.count("if slot_uids.has(w.get_instance_id()):"))
 	# ③ 修理归因三分：无工位 / 工位在建造 / 木材不够（2C-6 只有前两类，混在一起看不出根因）
 	_record("2C7：修理归因分三类（blocked_no_builder / blocked_builder_busy / blocked_wood）+ 工位角色落盘",
 			sa_src.contains("\"blocked_builder_busy\"")
@@ -817,6 +819,121 @@ func _case_2c7() -> void:
 			sa_src.contains("\"find_builder\": Callable(self, \"_pick_sanity_builder\")")
 			and sa_src.contains("func _pick_sanity_builder() -> RtsUnit:"),
 			"副官 E 组：停滞工地能拿到人（救火不受建造状态阻挡）")
+
+
+# ===========================================================================
+# Q 2C-8：动态工位 / 三段时间军队目标 / 农场与训练归因 / 守门
+# ===========================================================================
+func _case_2c8() -> void:
+	var AIV = load("res://代码/配置/AI判定模式.gd")
+	var bm = load("res://代码/ai/战斗模型.gd")
+	var sa_src: String = FileAccess.get_file_as_string("res://代码/ai/简单AI.gd")
+	var bench_src: String = FileAccess.get_file_as_string("res://代码/测试/AI基准.gd")
+
+	# --- P0 工位动态（4 条）---
+	var bc: Array = [0, 1, 6, 12, 13, 18, 19].map(func(n): return int(bm.builder_count_for(int(n))))
+	_record("2C8：工位数 max(2, ceil(N/6))：0→0 / 6→2 / 12→2 / 13→3 / 18→3 / 19→4",
+			bc == [0, 2, 2, 2, 3, 3, 4], "%s（N=0/1/6/12/13/18/19）" % str(bc))
+	_record("2C8：同时建造上限 = 工位数−1（2→1 / 3→2 / 1→0 / 0→0）",
+			int(bm.builder_build_limit(2)) == 1 and int(bm.builder_build_limit(3)) == 2
+			and int(bm.builder_build_limit(1)) == 0 and int(bm.builder_build_limit(0)) == 0,
+			"2→%d 3→%d 1→%d" % [int(bm.builder_build_limit(2)),
+				int(bm.builder_build_limit(3)), int(bm.builder_build_limit(1))])
+	_record("2C8：接线 _pick_builder 用**目标工位数**算上限（不按实际指派数，开局 1 人也能盖）",
+			sa_src.contains("var limit: int = int(_model_call(\"builder_build_limit\", [_builder_count_target()]))")
+			and sa_src.contains("if n_build >= limit:")
+			and sa_src.contains("func _builder_count_target() -> int:"),
+			"limit = builder_build_limit(目标) / n_build >= limit → null")
+	_record("2C8：工位补位顺序 正在建造 → 采木 → 任意（同一 tick 不重复挑人）",
+			sa_src.contains("for pool in [building_now, wood_pick, any_pick]:")
+			and sa_src.contains("if seen.has(uid3):")
+			and sa_src.contains("var _builder_uids: Array[int] = []"),
+			"三池顺序补位 + seen 去重")
+
+	# --- 配比（2 条）---
+	var w1: int = int(bm.peasant_gold_want_dynamic(12, 2, 8))
+	var w2: int = int(bm.peasant_gold_want_dynamic(15, 3, 8))
+	var w3: int = int(bm.peasant_gold_want_dynamic(6, 2, 8))
+	var w4: int = int(bm.peasant_gold_want_dynamic(2, 2, 8))
+	_record("2C8：采金 min(8, N−工位)：12/2→8、15/3→8、6/2→4、2/2→0",
+			w1 == 8 and w2 == 8 and w3 == 4 and w4 == 0,
+			"12/2=%d 15/3=%d 6/2=%d 2/2=%d" % [w1, w2, w3, w4])
+	_record("2C8：配比守恒 gold + wood = N − 工位（采木 = 余量，不封顶）",
+			(w1 + (12 - 2 - w1)) == 10 and (w2 + (15 - 3 - w2)) == 12
+			and (w3 + (6 - 2 - w3)) == 4,
+			"wood: 12/2→%d 15/3→%d 6/2→%d" % [12 - 2 - w1, 15 - 3 - w2, 6 - 2 - w3])
+
+	# --- 军队目标（5 条；10/12/14/16 分钟各一条 + 两段边界）---
+	_record("2C8：第 1 段 <480s：12+3B+P（0/479s，1B1P=16）",
+			int(bm.army_target_2c8(1, 1, 0.0)) == 16
+			and int(bm.army_target_2c8(1, 1, 479.9)) == 16,
+			"0s=%d 479.9s=%d" % [int(bm.army_target_2c8(1, 1, 0.0)),
+				int(bm.army_target_2c8(1, 1, 479.9))])
+	_record("2C8：第 2 段 480~599s：13+4B+2P（480/599.9s，1B1P=19）",
+			int(bm.army_target_2c8(1, 1, 480.0)) == 19
+			and int(bm.army_target_2c8(1, 1, 599.9)) == 19,
+			"480s=%d 599.9s=%d" % [int(bm.army_target_2c8(1, 1, 480.0)),
+				int(bm.army_target_2c8(1, 1, 599.9))])
+	_record("2C8：第 3 段 10 min（600s）：14+5B+3P，1B2P=25",
+			int(bm.army_target_2c8(1, 2, 600.0)) == 25
+			and int(bm.army_target_2c8(1, 2, 719.9)) == 25,
+			"600s=%d 719.9s=%d" % [int(bm.army_target_2c8(1, 2, 600.0)),
+				int(bm.army_target_2c8(1, 2, 719.9))])
+	_record("2C8：每 2 分钟全项 +1：12min=29 / 14min=33 / 16min=37（1B2P，步长 1+B+P=4）",
+			int(bm.army_target_2c8(1, 2, 720.0)) == 29
+			and int(bm.army_target_2c8(1, 2, 840.0)) == 33
+			and int(bm.army_target_2c8(1, 2, 960.0)) == 37,
+			"720=%d 840=%d 960=%d" % [int(bm.army_target_2c8(1, 2, 720.0)),
+				int(bm.army_target_2c8(1, 2, 840.0)), int(bm.army_target_2c8(1, 2, 960.0))])
+	_record("2C8：目标不与人口挂钩（无基地 12/13/14）+ 接线保留防守下限 + 开关默认 new",
+			int(bm.army_target_2c8(0, 0, 0.0)) == 12
+			and int(bm.army_target_2c8(0, 0, 480.0)) == 13
+			and int(bm.army_target_2c8(0, 0, 600.0)) == 14
+			and sa_src.contains("t = maxi(t, _defense_floor())")
+			and sa_src.contains("if AIV.army_target_formula() == \"new\":")
+			and String(AIV.DEFAULT_ARMY_TARGET_FORMULA) == "new"
+			and String(AIV.army_target_formula()) == "new",
+			"0/480/600s = 12/13/14，默认公式 %s" % String(AIV.army_target_formula()))
+
+	# --- 诊断（3 条；只读）---
+	_record("2C8：农场归因四因（no_builder / no_wood / no_spot / lost）+ lost 工地快照结算",
+			sa_src.contains("\"no_builder\": 0, \"no_wood\": 0, \"no_gold\": 0, \"no_spot\": 0, \"lost\": 0")
+			and sa_src.contains("func _note_farm_fail(reason: String)")
+			and sa_src.contains("_note_farm_fail(\"no_builder\")")
+			and sa_src.contains("_note_farm_fail(\"no_spot\")")
+			and sa_src.contains("_note_farm_fail(\"no_wood\")")
+			and sa_src.contains("func _tick_build_diag() -> void:")
+			and sa_src.contains("farm_fail_stats[\"lost\"]"),
+			"四因计数 + _farm_sites 快照")
+	_record("2C8：训练阻塞每 60 s 采样（no_gold/no_wood/no_pop/queue_full/no_producer/ok）",
+			sa_src.contains("const TRAIN_DIAG_SEC: float = 60.0")
+			and sa_src.contains("func _sample_train_block(diff: DifficultyDef) -> void:")
+			and sa_src.contains("_sample_train_block(diff)")
+			and sa_src.contains("\"no_gold\": 0, \"no_wood\": 0, \"no_pop\": 0, \"queue_full\": 0, \"no_producer\": 0")
+			and sa_src.contains("func _classify_train_block(diff: DifficultyDef) -> String:"),
+			"60 s 采样 + 六类归因")
+	_record("2C8：bench 落盘 labor / farm_fail / train_block + 曲线含 builders/gather/busy",
+			bench_src.contains("n.get(\"labor_stats\")")
+			and bench_src.contains("n.get(\"farm_fail_stats\")")
+			and bench_src.contains("n.get(\"train_stats\")")
+			and bench_src.contains("\"builders\": slots_target")
+			and bench_src.contains("\"gather_gold\": gold_w")
+			and bench_src.contains("\"builder_busy\": busy_w")
+			and bench_src.contains("\"concurrent_repair_samples\""),
+			"labor+两归因+三条曲线")
+
+	# --- 守门（1 条）：本轮禁止改的判定参数一个都不许动 ---
+	_record("2C8：不变式守门（窗口 0.8/0.5、0.7~1.3、0.4~0.9；系数 0.4；修理 200；gap 3.0）",
+			_near(float(bm.VD_TIME_GOOD), 0.8, 0.0001)
+			and _near(float(bm.VD_TIME_HALF), 0.5, 0.0001)
+			and _near(float(bm.VD_OUT_LOW), 0.7, 0.0001)
+			and _near(float(bm.VD_OUT_HIGH), 1.3, 0.0001)
+			and _near(float(bm.VD_DMG_LOW), 0.4, 0.0001)
+			and _near(float(bm.VD_DMG_HIGH), 0.9, 0.0001)
+			and _near(float(bm.THEORY_OUTPUT_COEF), 0.4, 0.0001)
+			and _near(float(AIV.repair_hp_deficit()), 200.0, 0.0001)
+			and _near(float(AIV.combat_gap_sec()), 3.0, 0.0001),
+			"判定窗口/系数/修理线/断档全部未动")
 
 
 # ===========================================================================
