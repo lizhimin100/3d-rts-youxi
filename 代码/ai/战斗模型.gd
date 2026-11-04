@@ -639,24 +639,44 @@ static func classify_verdict(achieved: bool, forced: bool, combat_time: float,
 # 2C-4 / 2C-5 判定层 / 决策层纯函数（配置回归直接断言，不抄公式）
 # ===========================================================================
 
-## 2C-5 P0-2：前 7 分钟（elapsed < 420 s）的军队规模目标。
-##   target = 10 + 4×基地数 + 2×出兵建筑数；达到就停训（钱腾给建筑/科技）。
-##   elapsed ≥ 420 s → 返回 **-1 = 解除**（只受钱/人口/队列限制）。
-##   目标不低于防守下限（下限是"家里不空"的底线，目标不能比它低）。
+## 2C-5 P0-2 / 2C-7 P1：军队规模目标。
+##   target = min(10 + 4×基地数 + 2×出兵建筑数, 人口上限 ÷ 2 − 1)
+##   · 前 7 分钟（elapsed < 420 s）：两者取小，达到就停训（钱腾给建筑/科技）；
+##   · elapsed ≥ 420 s：**不再解除**，直接取"人口上限允许的最大值"
+##     （2C-7 用户拍板：2C-6 的 -1 解除让 420 s 后军队仍被钱/人口卡在 15~16，看不出目标）；
+##   · 目标不低于防守下限（下限是"家里不空"的底线，钱可以再赚，家空了就没了）。
+##
+## `pop_cap` = 阵营 food_cap（大本营 + 农场）。传 0 = **不约束**（`--army-pop-cap=off`
+## 的 2C-6 对照局走这条，返回值 -1 = 无上限）。
 const ARMY_TARGET_SEC: float = 420.0
 const ARMY_TARGET_BASE: int = 10
 const ARMY_TARGET_PER_BASE: int = 4
 const ARMY_TARGET_PER_PRODUCER: int = 2
+## 每个战斗单位占的人口（步兵/弩兵 2，法师 3 —— 取 2 是"最便宜的兵"口径，用户拍板）
+const ARMY_POP_PER_UNIT: int = 2
+## 留 1 个人口余量，防止目标刚好等于上限时"排到一半卡住"
+const ARMY_POP_RESERVE: int = 1
+
+
+## 人口上限允许的最大军队规模 = floor(pop_cap / 2) − 1（不会为负）
+static func army_pop_limit(pop_cap: int) -> int:
+	return maxi(int(pop_cap) / ARMY_POP_PER_UNIT - ARMY_POP_RESERVE, 0)
 
 
 static func army_target_of(bases: int, producers: int, elapsed: float,
-		defense_floor: int = 0) -> int:
-	if elapsed >= ARMY_TARGET_SEC:
-		return -1
-	var t: int = ARMY_TARGET_BASE \
+		defense_floor: int = 0, pop_cap: int = 0) -> int:
+	var formula: int = ARMY_TARGET_BASE \
 			+ ARMY_TARGET_PER_BASE * maxi(bases, 0) \
 			+ ARMY_TARGET_PER_PRODUCER * maxi(producers, 0)
-	return maxi(t, maxi(defense_floor, 0))
+	var floor_v: int = maxi(defense_floor, 0)
+	if pop_cap <= 0:
+		# 不约束人口：2C-6 口径（420 s 后解除）
+		if elapsed >= ARMY_TARGET_SEC:
+			return -1
+		return maxi(formula, floor_v)
+	var limit: int = army_pop_limit(pop_cap)
+	var t: int = limit if elapsed >= ARMY_TARGET_SEC else mini(formula, limit)
+	return maxi(t, floor_v)
 
 
 ## 2C-6 P1：人口预判 —— C 条件（占用率 > ratio，默认 70%）。
@@ -686,6 +706,41 @@ static func barracks_want_of(army_n: int, min_n: int = 2,
 	if army_n > step_army:
 		want = maxi(want, at_step)
 	return clampi(want, 1, maxi(max_n, 1))
+
+
+## 2C-7 P0：**非工位**农民的采金人数目标（采金 8 : 采木 3 按比例，人少时同比缩）。
+## 满编 11 → 8；6 → 4（2 采木）；3 → 2。工位不参与这个分配（它默认砍树）。
+static func peasant_gold_want(non_builder: int, gold_target: int = 8,
+		wood_target: int = 3) -> int:
+	var n: int = maxi(non_builder, 0)
+	var gold: int = maxi(gold_target, 0)
+	var sum: int = maxi(gold + maxi(wood_target, 0), 1)
+	var want: int = int(round(float(n) * float(gold) / float(sum)))
+	return clampi(want, 0, gold)
+
+
+## 2C-7 P5：**与窗口无关**的原始承伤比 = 实际承伤 ÷ Σ(全员有效生命)。
+##
+## 与 `damage_ratio` 的唯一差别是**分母**：targeted 只算"曾作为 target 的成员"，
+## raw 算"这一波派出去的所有人的有效生命"。于是它不受"谁被打"影响，
+## 才能回答"[0.4,0.9] 这个窗口本身放对了吗"——**只给数据，不改窗口**。
+static func raw_damage_ratio(dmg_in: float, hp_all: float) -> float:
+	return maxf(dmg_in, 0.0) / maxf(hp_all, 1.0)
+
+
+## 2C-7 P5：窗口对照矩阵的一格 —— 落在 [lo, hi] 的样本比例（0~1）。
+## values 里 < 0 的样本（未记录）跳过，不进分母。
+static func window_hit_ratio(values: Array, lo: float, hi: float) -> float:
+	var n: int = 0
+	var hit: int = 0
+	for v in values:
+		var x: float = float(v)
+		if x < 0.0:
+			continue
+		n += 1
+		if x >= lo and x <= hi:
+			hit += 1
+	return 0.0 if n <= 0 else float(hit) / float(n)
 
 
 ## 2C-5 P0-1：承伤分母。
