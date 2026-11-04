@@ -91,6 +91,8 @@ func _run() -> void:
 	_case_2c7()
 	# 2C-8：动态工位 / 三段时间军队目标 / 农场与训练归因 / 守门
 	_case_2c8()
+	# 2C-9：三条线部门化 / 诉求结构 / 动作级仲裁 / 兵力预留 / 判定表分布
+	_case_2c9()
 	_finish(t0)
 
 
@@ -934,6 +936,269 @@ func _case_2c8() -> void:
 			and _near(float(AIV.repair_hp_deficit()), 200.0, 0.0001)
 			and _near(float(AIV.combat_gap_sec()), 3.0, 0.0001),
 			"判定窗口/系数/修理线/断档全部未动")
+
+
+# ===========================================================================
+# R 2C-9：三条线部门化 / 诉求结构 / 动作级仲裁 / 兵力预留 / 判定表分布
+# ===========================================================================
+func _case_2c9() -> void:
+	var AIV = load("res://代码/配置/AI判定模式.gd")
+	var bm = load("res://代码/ai/战斗模型.gd")
+	var sa_src: String = FileAccess.get_file_as_string("res://代码/ai/简单AI.gd")
+	var bench_src: String = FileAccess.get_file_as_string("res://代码/测试/AI基准.gd")
+
+	# ---------- 诉求结构字段完整性（8 条）----------
+	var want_fields: Array = ["来源线", "动作类型", "目标", "金币成本", "木材成本",
+		"兵力占用", "可被征用", "诉求分", "依据", "驳回原因"]
+	_record("2C9：诉求结构恰好 10 个必带字段（与任务书 §3.1 逐字一致）",
+			Array(bm.DEMAND_FIELDS) == want_fields,
+			"%d 项：%s" % [Array(bm.DEMAND_FIELDS).size(), str(bm.DEMAND_FIELDS)])
+	var d0: Dictionary = bm.demand_make("运营线", "训练", "步兵", 125, 0, 0, false,
+			3.5, "军队缺口=3", true)
+	var missing: Array = []
+	for f in want_fields:
+		if not d0.has(f):
+			missing.append(f)
+	_record("2C9：demand_make 产出的字典一个字段都不少",
+			missing.is_empty(), "缺 %d 个：%s" % [missing.size(), str(missing)])
+	_record("2C9：三条线枚举齐全（运营线/战斗线/扩展线）",
+			Array(bm.DEP_SOURCES) == ["运营线", "战斗线", "扩展线"],
+			str(bm.DEP_SOURCES))
+	_record("2C9：九个动作类型齐全（训练/建造/修理/出击/防守/侦查/巡逻/建塔/建分基地）",
+			Array(bm.ACT_TYPES) == ["训练", "建造", "修理", "出击", "防守",
+				"侦查", "巡逻", "建塔", "建分基地"],
+			"%d 项" % Array(bm.ACT_TYPES).size())
+	_record("2C9：六个驳回原因枚举齐全（金币/木材/兵力/被更高分压后/条件不满足/本周期已执行）",
+			Array(bm.RJ_REASONS) == ["金币不足", "木材不足", "兵力不足",
+				"被更高分压后", "条件不满足", "本周期已执行"],
+			"%d 项" % Array(bm.RJ_REASONS).size())
+	_record("2C9：demand_valid 合法诉求 → true（十个字段齐全 + 枚举合法 + 成本非负）",
+			bool(bm.demand_valid(d0)), "训练/步兵/125 金")
+	var d_bad: Dictionary = d0.duplicate(true)
+	d_bad.erase("依据")
+	_record("2C9：demand_valid 缺字段 → false",
+			not bool(bm.demand_valid(d_bad)), "删掉「依据」")
+	var d_bad2: Dictionary = d0.duplicate(true)
+	d_bad2["来源线"] = "后勤线"
+	_record("2C9：demand_valid 非法来源线 / 负成本 → false",
+			not bool(bm.demand_valid(d_bad2))
+			and not bool(bm.demand_valid(_demand_gold(d0, -1))),
+			"来源线「后勤线」/ 金币 −1")
+
+	# ---------- 仲裁：排序 + 金币/木材/兵力扣减（6 条）----------
+	var a1: Dictionary = bm.demand_make("运营线", "建造", "农场", 120, 25, 0, false, 1.0, "农场缺口=1")
+	var a2: Dictionary = bm.demand_make("运营线", "训练", "步兵", 125, 0, 0, false, 5.0, "军队缺口=5")
+	var a3: Dictionary = bm.demand_make("扩展线", "巡逻", "基地外圈", 0, 0, 2, true, 1.0, "巡逻 2 人")
+	var p1: Dictionary = bm.arbitrate([a1, a2, a3], 400, 100, 8)
+	var exec_names: Array = []
+	for d in (p1["执行"] as Array):
+		exec_names.append(String((d as Dictionary)["动作类型"]))
+	_record("2C9：仲裁按诉求分降序（训练5.0 → 农场1.0 → 巡逻1.0，同分按提交顺序）",
+			exec_names == ["训练", "建造", "巡逻"],
+			"执行顺序 %s" % str(exec_names))
+	_record("2C9：金币/木材/兵力都够 → 同周期**都执行**（不是只做一个）",
+			(p1["执行"] as Array).size() == 3
+			and int(p1["金币余"]) == 400 - 125 - 120
+			and int(p1["木材余"]) == 100 - 25
+			and int(p1["兵力余"]) == 8 - 2,
+			"执行3条，余金%d/木%d/兵%d" % [int(p1["金币余"]), int(p1["木材余"]), int(p1["兵力余"])])
+	var p2: Dictionary = bm.arbitrate([a1, a2], 200, 100, 8)
+	var exec2: Array = p2["执行"] as Array
+	_record("2C9：金币只够一个 → 高分先执行，低分驳回（不是随机/不分次序）",
+			exec2.size() == 1 and String((exec2[0] as Dictionary)["动作类型"]) == "训练"
+			and String((p2["驳回"] as Array)[0]["驳回原因"]) in ["被更高分压后", "金币不足"],
+			"执行=%s 驳回=%s" % [
+				String((exec2[0] as Dictionary)["动作类型"]),
+				String((p2["驳回"] as Array)[0]["驳回原因"])])
+	var a_wood: Dictionary = bm.demand_make("运营线", "建造", "农场", 0, 90, 0, false, 2.0, "木材贵")
+	var p3: Dictionary = bm.arbitrate([a_wood], 500, 40, 8)
+	_record("2C9：木材独立扣减（金够木不够 → 木材不足，不动金币余额）",
+			(p3["执行"] as Array).is_empty()
+			and String((p3["驳回"] as Array)[0]["驳回原因"]) == "木材不足"
+			and int(p3["金币余"]) == 500,
+			"驳回=%s 金余%d" % [String((p3["驳回"] as Array)[0]["驳回原因"]), int(p3["金币余"])])
+	var t1: Dictionary = bm.demand_make("战斗线", "出击", "AI·2队", 0, 0, 5, false, 9.0, "出击5人")
+	var t2: Dictionary = bm.demand_make("扩展线", "巡逻", "外围", 0, 0, 3, true, 1.0, "巡逻3人")
+	var p4: Dictionary = bm.arbitrate([t1, t2], 0, 0, 6)
+	_record("2C9：兵力扣减（6 个兵：出击 5 → 巡逻 3 兵力不足）",
+			(p4["执行"] as Array).size() == 1 and int(p4["兵力余"]) == 1
+			and String((p4["驳回"] as Array)[0]["驳回原因"]) in ["被更高分压后", "兵力不足"],
+			"兵余%d 驳回=%s" % [int(p4["兵力余"]),
+				String((p4["驳回"] as Array)[0]["驳回原因"])])
+	var dup1: Dictionary = bm.demand_make("运营线", "训练", "步兵", 0, 0, 0, false, 2.0, "同一座兵营")
+	var dup2: Dictionary = bm.demand_make("运营线", "训练", "步兵", 0, 0, 0, false, 1.0, "同一座兵营")
+	var p5: Dictionary = bm.arbitrate([dup1, dup2], 500, 500, 8)
+	_record("2C9：同 (线,动作,目标) 在一次周期里只执行一次 → 后来者「本周期已执行」",
+			(p5["执行"] as Array).size() == 1
+			and String((p5["驳回"] as Array)[0]["驳回原因"]) == "本周期已执行",
+			"执行1 驳回=%s" % String((p5["驳回"] as Array)[0]["驳回原因"]))
+
+	# ---------- 兵力预留制（5 条）----------
+	var al1: Dictionary = bm.troop_allocate(3, 8, 2, 4)
+	_record("2C9：兵力扣减顺序 防守锁定 > 临时防守可征用 > 空闲（3=临时2+空闲1）",
+			bool(al1["够"]) and int(al1["临时防守"]) == 2 and int(al1["空闲"]) == 1
+			and int(al1["防守锁定"]) == 8,
+			"临时%d 空闲%d 锁定%d" % [int(al1["临时防守"]), int(al1["空闲"]), int(al1["防守锁定"])])
+	var al2: Dictionary = bm.troop_allocate(9, 8, 2, 4)
+	_record("2C9：可用兵力不足 → 够=false（不预扣、不超发）",
+			not bool(al2["够"]) and int(al2["可用"]) == 6,
+			"可用%d < 需要 9" % int(al2["可用"]))
+	var al3: Dictionary = bm.troop_allocate(0, 8, 2, 4)
+	_record("2C9：不占兵力的诉求（修建/训练）永远够，且不消耗临时防守",
+			bool(al3["够"]) and int(al3["临时防守"]) == 0 and int(al3["空闲"]) == 0,
+			"需要 0")
+	_record("2C9：接线 锁定/解锁/到期清扫 + 可用兵力 = 现役 − 防守锁定 − 已锁",
+			sa_src.contains("func _troop_lock(")
+			and sa_src.contains("func _troop_unlock(")
+			and sa_src.contains("func _troop_lock_tick(")
+			and sa_src.contains("_troop_unlock(\"wave:%d\" % int(rec.get(\"wave_id\", 0)), true)")
+			and sa_src.contains("func _troop_available() -> int:")
+			and sa_src.contains("func _defense_reserved(army_n: int) -> int:"),
+			"wave 锁在 _close_wave 里显式解锁")
+	_record("2C9：锁定泄漏口径（wave 锁超时 = 泄漏信号；巡逻/侦查是短租约不算）",
+			sa_src.contains("lock_wave_released")
+			and sa_src.contains("lock_wave_timeout")
+			and sa_src.contains("if kind == \"wave\":")
+			and bench_src.contains("泄漏%d"),
+			"lock_wave_held - released - timeout = 泄漏")
+
+	# ---------- 驳回原因（3 条）----------
+	var b1: Dictionary = bm.demand_make("运营线", "建造", "农场", 300, 0, 0, false, 1.0, "没钱")
+	var pb1: Dictionary = bm.arbitrate([b1], 100, 0, 0)
+	_record("2C9：驳回原因 周期开始就不够 → 金币不足（不是「被更高分压后」）",
+			String((pb1["驳回"] as Array)[0]["驳回原因"]) == "金币不足",
+			"金 100 需要 300")
+	var pb2: Dictionary = bm.arbitrate([a2, a1], 130, 100, 8)
+	_record("2C9：驳回原因 周期开始够、被更高分吃掉 → 被更高分压后",
+			String((pb2["驳回"] as Array)[0]["驳回原因"]) == "被更高分压后",
+			"金 130：训练 125 先走 → 农场 120 被压后")
+	var b3: Dictionary = bm.demand_make("运营线", "建造", "农场", 0, 0, 0, false, 9.0, "没有位置", false)
+	var pb3: Dictionary = bm.arbitrate([b3], 999, 999, 8)
+	_record("2C9：驳回原因 部门自己判「做不了」→ 条件不满足（且不扣资源）",
+			String((pb3["驳回"] as Array)[0]["驳回原因"]) == "条件不满足"
+			and int(pb3["金币余"]) == 999,
+			"可执行=false，金余 999")
+
+	# ---------- 上下文 L0~L3（4 条）----------
+	_record("2C9：L0 快照字段齐全（金/木/人口上限/人口占用/兵力/阶段/威胁）",
+			sa_src.contains("\"pop_cap\": _faction.food_cap()")
+			and sa_src.contains("\"pop_used\": _faction.food_used()")
+			and sa_src.contains("\"阶段\": \"夜晚\" if Game.is_night() else \"白天\"")
+			and sa_src.contains("\"threat\": int(metrics.get(\"base_threat\", 0.0))"),
+			"ctx0 每 tick 覆盖写")
+	_record("2C9：L1 是固定长度环形槽（受伤 30 s / 收支 60 s / 最近 3 波），不存事件列表",
+			sa_src.contains("const L1_DMG_SEC: int = 30")
+			and sa_src.contains("const L1_INCOME_SEC: int = 60")
+			and sa_src.contains("const L1_VERDICT_N: int = 3")
+			and sa_src.contains("_l1_dmg[sec % L1_DMG_SEC] = 0.0")
+			and sa_src.contains("\"dmg_30s\": dmg30"),
+			"槽位覆盖 + O(1)")
+	_record("2C9：L2 每 2 s 全量重建（不跨周期累积）",
+			sa_src.contains("const DEPT_CYCLE: float = 2.0")
+			and sa_src.contains("demands_l2 = _ops_demands(diff)")
+			and sa_src.contains("demands_l2.append_array(_combat_demands(diff))")
+			and _near(float(bm.DEPT_CYCLE_SEC), 2.0, 0.0001),
+			"赋值 = 重建，不是 append")
+	_record("2C9：L3 决策日志只落盘不进决策（_dept_log 在仲裁之后调用）",
+			sa_src.contains("func _dept_log(now: float, plan: Dictionary) -> void:")
+			and sa_src.contains("_dept_execute(plan)\n\t_dept_log(now, plan)")
+			and sa_src.contains("fa.store_line(JSON.stringify(row))"),
+			"--dept-log 落 jsonl")
+
+	# ---------- 判定表分布落盘（3 条）----------
+	var rec_ach: Dictionary = {"goal_achieved": true, "combat_time": 0.0,
+		"theory_time": 40.0, "output_eff": 0.0, "damage_ratio": 0.0,
+		"survivors": 0, "strength": 10}
+	var bins_ach: Dictionary = bm.judge_bins(rec_ach)
+	_record("2C9：判据分布 目标达成 → 四样判据全部记「达成」",
+			String(bins_ach["判据1"]) == "达成" and String(bins_ach["判据2"]) == "达成"
+			and String(bins_ach["判据3"]) == "达成" and String(bins_ach["判据4"]) == "达成",
+			str(bins_ach))
+	var rec_bad: Dictionary = {"goal_achieved": false, "combat_time": 10.0,
+		"theory_time": 40.0, "output_eff": 0.5, "damage_ratio": 0.2,
+		"survivors": 2, "strength": 10}
+	var rec_und: Dictionary = {"goal_achieved": false, "combat_time": 10.0,
+		"theory_time": 40.0, "output_eff": 0.5, "damage_ratio": 0.2,
+		"survivors": 8, "strength": 10}
+	var bins_bad: Dictionary = bm.judge_bins(rec_bad)
+	var bins_und: Dictionary = bm.judge_bins(rec_und)
+	_record("2C9：判据1（战斗时间）<0.5：崩→差 / 没崩→未判（沿用 2C-4 放宽规则）",
+			String(bins_bad["判据1"]) == "差" and String(bins_und["判据1"]) == "未判",
+			"存活2/10→%s，存活8/10→%s" % [String(bins_bad["判据1"]), String(bins_und["判据1"])])
+	var counts: Dictionary = bm.judge_bin_counts([{"判据": bins_bad}, {"判据": bins_ach}], "判据1")
+	_record("2C9：judge_bin_counts 五档齐全（达成/好/一般/差/未判，缺省 0）",
+			counts.has("达成") and counts.has("好") and counts.has("一般")
+			and counts.has("差") and counts.has("未判")
+			and int(counts["差"]) == 1 and int(counts["达成"]) == 1,
+			str(counts))
+	_record("2C9：bench 落盘 JUDGE-DIST（每局每阵营一行 + 合计一行）+ 每波含四样判据",
+			bench_src.contains("print(\"JUDGE-DIST %s\"")
+			and bench_src.contains("c[\"判据\"] = _bench_model.judge_bins(c)")
+			and bench_src.contains("\"judge_dist\": judge_dist")
+			and bench_src.contains("c[\"零伤害\"]"),
+			"JUDGE-DIST + 判据 + 零伤害")
+
+	# ---------- 并发修理探针转正（2 条）----------
+	_record("2C9：并发修理探针入库（简单AI.qa_repair_probe 断言 2/2/2/2）",
+			sa_src.contains("func qa_repair_probe() -> Dictionary:")
+			and sa_src.contains("maxf(float(rb2.def.max_hp) - 250.0, 1.0)")
+			and sa_src.contains("list.size() == 2 and repairing == 2")
+			and sa_src.contains("and distinct.size() == 2 and issued == 2"),
+			"两栋各掉 250 → targets/repairing/distinct/issued 全 2")
+	_record("2C9：探针由 `--qa-repair-probe[=秒]` 定点触发并打印 PROBE-2C9-REPAIR",
+			bench_src.contains("--qa-repair-probe")
+			and bench_src.contains("PROBE-2C9-REPAIR")
+			and bench_src.contains("n.call(\"qa_repair_probe\")"),
+			"定点 + 一行 JSON")
+
+	# ---------- 系数卡 + 开关 + 守门（4 条）----------
+	var coef_card: Resource = load("res://代码/配置/卡/AI诉求系数.tres")
+	var coef_ok: bool = coef_card != null
+	var coef_names: Array = ["训练_威胁系数", "训练_缺口系数", "建造_农场缺口系数",
+		"建造_农场紧迫系数", "建造_兵营缺口系数", "建造_兵营紧迫系数", "修理_掉血系数",
+		"出击_兵力比系数", "防守_威胁系数", "侦查_固定分", "巡逻_固定分", "建塔_固定分",
+		"分基地_固定分"]
+	var coef_bad: Array = []
+	if coef_card != null:
+		for nm in coef_names:
+			var v = coef_card.get(nm)
+			if v == null or not _near(float(v), 1.0, 0.000001):
+				coef_bad.append(nm)
+	_record("2C9：诉求分系数卡 13 个系数全部 = 1.0（2C-9 不调值）",
+			coef_ok and coef_bad.is_empty(),
+			"缺/非 1.0：%s" % str(coef_bad))
+	_record("2C9：系数卡被 demand_coef 读取（改卡立刻生效，缺卡回落 1.0）",
+			_near(float(bm.demand_coef("训练_威胁系数")), 1.0, 0.000001)
+			and _near(float(bm.demand_coef("不存在的键", 0.7)), 0.7, 0.000001),
+			"训练_威胁系数=1.0；未知键回落 0.7")
+	_record("2C9：dept 开关 on/off（默认 on；非法值回落 on）",
+			String(AIV.DEFAULT_DEPT_MODE) == "on"
+			and String(AIV.dept_mode()) == "on"
+			and bool(AIV.dept_on())
+			and String(AIV.set_dept_mode("乱写")) == "on",
+			"默认 %s" % String(AIV.dept_mode()))
+	_record("2C9：不变式守门（判定表窗口/系数/分母/修理线/gap 一个字没动）",
+			_near(float(bm.VD_TIME_GOOD), 0.8, 0.0001)
+			and _near(float(bm.VD_TIME_HALF), 0.5, 0.0001)
+			and _near(float(bm.VD_OUT_LOW), 0.7, 0.0001)
+			and _near(float(bm.VD_OUT_HIGH), 1.3, 0.0001)
+			and _near(float(bm.VD_DMG_LOW), 0.4, 0.0001)
+			and _near(float(bm.VD_DMG_HIGH), 0.9, 0.0001)
+			and _near(float(bm.THEORY_OUTPUT_COEF), 0.4, 0.0001)
+			and _near(float(AIV.repair_hp_deficit()), 200.0, 0.0001)
+			and _near(float(AIV.combat_gap_sec()), 3.0, 0.0001)
+			and _near(float(AIV.output_coef()), 0.4, 0.0001)
+			and String(AIV.damage_theory_mode()) == "targeted"
+			and String(AIV.output_theory_mode()) == "recent"
+			and sa_src.contains("func can_build_townhall() -> bool:\n\treturn false"),
+			"窗口 0.8/0.5、0.7~1.3、0.4~0.9；系数 0.4；targeted/recent；修理 200；gap 3.0；大本营仍 false")
+
+
+## 造一条"金币成本被改成负数"的诉求（用于 demand_valid 的非法值断言）
+func _demand_gold(base: Dictionary, gold: int) -> Dictionary:
+	var d: Dictionary = base.duplicate(true)
+	d["金币成本"] = gold
+	return d
 
 
 # ===========================================================================

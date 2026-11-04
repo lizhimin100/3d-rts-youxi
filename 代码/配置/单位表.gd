@@ -305,6 +305,31 @@ static func _card_verify(built: Dictionary) -> void:
 		"结果": "通过" if problems.is_empty() and word_errs.is_empty() else "不通过",
 		"说明": "C5 起为结构校验（legacy 已删）；删除前最后一次字段级零差异=17卡/0差异/0词表错误",
 	}
+	# 2C-9：第 18 张卡 = 诉求分系数卡（不是 UnitDef 卡的子类，单独校验）
+	var coef_problems: Array = []
+	var coef_card: Resource = load("res://代码/配置/卡/AI诉求系数.tres")
+	if coef_card == null:
+		coef_problems.append("加载失败")
+	else:
+		var names: Array = [
+			"训练_威胁系数", "训练_缺口系数", "建造_农场缺口系数", "建造_农场紧迫系数",
+			"建造_兵营缺口系数", "建造_兵营紧迫系数", "修理_掉血系数", "出击_兵力比系数",
+			"防守_威胁系数", "侦查_固定分", "巡逻_固定分", "建塔_固定分", "分基地_固定分",
+		]
+		for nm in names:
+			var v = coef_card.get(nm)
+			if v == null:
+				coef_problems.append("%s 缺失" % nm)
+			elif absf(float(v) - 1.0) > 0.000001:
+				coef_problems.append("%s=%.3f（2C-9 必须 =1.0）" % [nm, float(v)])
+		var cyc = coef_card.get("周期秒")
+		if cyc == null or absf(float(cyc) - 2.0) > 0.000001:
+			coef_problems.append("周期秒≠2.0")
+	report["系数卡"] = {
+		"卡数": 1, "问题": coef_problems,
+		"结果": "通过" if coef_problems.is_empty() else "不通过",
+		"说明": "2C-9：13 个系数全部 =1.0（本轮不调值）；刻度只在卡里改",
+	}
 	# 报告始终落盘（_qa/ 不入库，摘要进报告正文）
 	var path := ProjectSettings.globalize_path("res://_qa/card_verify.json")
 	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
@@ -312,8 +337,9 @@ static func _card_verify(built: Dictionary) -> void:
 	if fa != null:
 		fa.store_string(JSON.stringify(report, "  "))
 		fa.close()
-	print("[卡校验] %s（卡 %d 张，问题 %d，词表错误 %d）"
-		% [report["结果"], _cards.size(), problems.size(), word_errs.size()])
+	print("[卡校验] %s（卡 %d 张，问题 %d，词表错误 %d）；系数卡 %s（1 张，问题 %d）"
+		% [report["结果"], _cards.size(), problems.size(), word_errs.size(),
+			report["系数卡"]["结果"], coef_problems.size()])
 
 
 
