@@ -70,6 +70,10 @@ var _wounded_seen: Dictionary = {}
 var _sig_lines: Array = []
 var _file_bench: String = ""
 var _file_sit: String = ""
+## 2C-9：并发修理探针（`--qa-repair-probe`），定点在第 N 个 AI 脑上跑一次
+var qa_repair_probe: bool = false
+var qa_repair_at: float = 90.0
+var _qa_repair_done: bool = false
 
 
 func _ready() -> void:
@@ -89,6 +93,10 @@ func _ready() -> void:
 			ratio_mode_arg = a.substr(13)
 		elif a.begins_with("--tag="):
 			tag = a.substr(6)
+		elif a.begins_with("--qa-repair-probe"):
+			qa_repair_probe = true
+			if a.begins_with("--qa-repair-probe="):
+				qa_repair_at = float(a.substr(String("--qa-repair-probe=").length()))
 	# ★ 判定口径必须在**任何 AI 思考之前**定下来（简单AI 每 tick 读它）
 	AIV.setup_from_cmdline()
 	for a in args:
@@ -143,6 +151,10 @@ func _process(delta: float) -> void:
 		return
 
 	_watch_brains()          # 逐帧：思考边界 / 波次 / 拒绝 / 回防 / 计划切换
+	# 2C-9：并发修理探针（定点跑一次，结果打一行 PROBE-2C9-REPAIR）
+	if qa_repair_probe and not _qa_repair_done and Game.elapsed >= qa_repair_at:
+		_qa_repair_done = true
+		_run_repair_probe()
 	_acc += delta
 	while _acc >= SAMPLE_STEP:
 		_acc -= SAMPLE_STEP
@@ -700,6 +712,21 @@ func _dump_situations(is_event: bool, extra: Dictionary = {}, f_override = null)
 # 事件 / 签名 / 收尾
 # ===========================================================================
 
+## 2C-9：并发修理探针（`--qa-repair-probe[=秒]`）。
+## 只在第一个 AI 脑上跑一次；断言写在 `简单AI.qa_repair_probe()` 里，这里只负责打印。
+func _run_repair_probe() -> void:
+	for b in _brains:
+		var n = b["node"]
+		if n == null or not is_instance_valid(n):
+			continue
+		if not n.has_method("qa_repair_probe"):
+			continue
+		var r = n.call("qa_repair_probe")
+		print("PROBE-2C9-REPAIR %s" % JSON.stringify(r))
+		return
+	print("PROBE-2C9-REPAIR %s" % JSON.stringify({"ok": false, "why": "找不到带探针的 AI 脑"}))
+
+
 func _event(fac: String, name: String, detail: Dictionary, decision: String) -> void:
 	var e := {"t": snappedf(Game.elapsed, 0.01), "faction": fac, "event": name}
 	for k in detail.keys():
@@ -761,6 +788,56 @@ func _dict_brief(d) -> String:
 	return "/".join(parts) if not parts.is_empty() else "-"
 
 
+# --- 2C-9：仲裁账本的四个摘要（都只读 dept_stats，不重算）---
+
+func _dept_exec_rate(d) -> String:
+	if not (d is Dictionary):
+		return "-（dept=off）"
+	var total: int = int((d as Dictionary).get("demands", 0))
+	var done: int = int((d as Dictionary).get("executed", 0))
+	if total <= 0:
+		return "0/0"
+	return "%d/%d=%.1f%%" % [done, total, 100.0 * float(done) / float(total)]
+
+
+func _dept_reject(d) -> Dictionary:
+	if not (d is Dictionary):
+		return {}
+	var rj = (d as Dictionary).get("reject_by_reason", {})
+	return rj if rj is Dictionary else {}
+
+
+func _dept_train_build(d) -> String:
+	if not (d is Dictionary):
+		return "-（dept=off）"
+	return "训练%d/建造%d（同周期竞争%d 次）" % [
+		int((d as Dictionary).get("win_train", 0)),
+		int((d as Dictionary).get("win_build", 0)),
+		int((d as Dictionary).get("compete_train_build", 0))]
+
+
+func _dept_push_patrol(d) -> String:
+	if not (d is Dictionary):
+		return "-（dept=off）"
+	return "出击%d(%d兵)/巡逻%d(%d兵)" % [
+		int((d as Dictionary).get("win_push", 0)),
+		int((d as Dictionary).get("lock_wave_held", 0)),
+		int((d as Dictionary).get("win_patrol", 0)),
+		int((d as Dictionary).get("lock_patrol_held", 0))]
+
+
+func _dept_locks(d) -> String:
+	if not (d is Dictionary):
+		return "-（dept=off）"
+	return "峰%d/显式解锁%d/超时%d/泄漏%d" % [
+		int((d as Dictionary).get("lock_held_max", 0)),
+		int((d as Dictionary).get("lock_wave_released", 0)),
+		int((d as Dictionary).get("lock_wave_timeout", 0)),
+		maxi(int((d as Dictionary).get("lock_wave_held", 0))
+			- int((d as Dictionary).get("lock_wave_released", 0))
+			- int((d as Dictionary).get("lock_wave_timeout", 0)), 0)]
+
+
 func _finish(reason: String) -> void:
 	if _done:
 		return
@@ -814,6 +891,11 @@ func _finish(reason: String) -> void:
 	var labors: Dictionary = {}
 	var farm_fails: Dictionary = {}
 	var train_blocks: Dictionary = {}
+	# 2C-9：三条线部门化的仲裁统计（faction 名 → dept_stats）
+	var depts: Dictionary = {}
+	# 2C-9 P1：判定表分布（faction 名 → {判据1..4: 五档计数}）
+	var judge_dist: Dictionary = {}
+	var judge_rows: Array = []
 	for b in _brains:
 		var n = b["node"]
 		if n == null or not is_instance_valid(n):
@@ -828,6 +910,9 @@ func _finish(reason: String) -> void:
 				var c: Dictionary = (r as Dictionary).duplicate(true)
 				c.erase("members")
 				c.erase("hits")
+				# 2C-9：四样判据各自的档位（同一批冻结阈值，不重算判定）
+				c["判据"] = _bench_model.judge_bins(c)
+				c["零伤害"] = float(c.get("damage_out", 0.0)) <= 0.0
 				for k in c.keys():
 					if String(k).begins_with("_"):
 						c.erase(k)
@@ -836,6 +921,7 @@ func _finish(reason: String) -> void:
 				if c.has("goal_target_pos"):
 					c["goal_target_pos"] = str(c["goal_target_pos"])
 				rows.append(c)
+				judge_rows.append(c)
 		wave_records[fname2] = {
 			"state": String(n.get("strat_state")),
 			"stats": n.get("strat_stats"),
@@ -844,6 +930,13 @@ func _finish(reason: String) -> void:
 			"goals": _dist(rows, "goal_type"),
 			"advice": _dist(rows, "comp_advice"),
 			"waves": rows,
+		}
+		judge_dist[fname2] = {
+			"总波次": rows.size(),
+			"判据1": _bench_model.judge_bin_counts(rows, "判据1"),
+			"判据2": _bench_model.judge_bin_counts(rows, "判据2"),
+			"判据3": _bench_model.judge_bin_counts(rows, "判据3"),
+			"判据4": _bench_model.judge_bin_counts(rows, "判据4"),
 		}
 		# 2C-5 P1-4：修理统计（谁修的、修了几次）
 		repairs[fname2] = n.get("repair_stats")
@@ -854,6 +947,8 @@ func _finish(reason: String) -> void:
 		labors[fname2] = n.get("labor_stats")
 		farm_fails[fname2] = n.get("farm_fail_stats")
 		train_blocks[fname2] = n.get("train_stats")
+		# 2C-9：仲裁账本（执行率 / 驳回原因 / 胜出次数 / 兵力锁）
+		depts[fname2] = n.get("dept_stats")
 
 	# --- 2C-5 P1-5 达成归属：达成条数里"本波参与"的比例 ---
 	# 口径：goal_last_hit = 目标临死前最后一刀的攻击者属于本波；
@@ -906,6 +1001,8 @@ func _finish(reason: String) -> void:
 		"builder_mode": AIV.builder_mode(),
 		"army_pop_cap": AIV.army_pop_cap(),
 		"army_target_formula": AIV.army_target_formula(),
+		"dept_mode": AIV.dept_mode(),
+		"dept_desc": "三条线部门化 + 主部门动作级仲裁" if AIV.dept_on() else "2C-8 固定调用顺序",
 		"elapsed_game_s": snappedf(Game.elapsed, 0.01),
 		"wall_clock_s": snappedf(wall_sec, 0.1),
 		"end_reason": reason,
@@ -921,6 +1018,8 @@ func _finish(reason: String) -> void:
 		"labor": labors,
 		"farm_fail": farm_fails,
 		"train_block": train_blocks,
+		"dept": depts,
+		"judge_dist": judge_dist,
 		"goal_attribution": attribution,
 		"events": _events,
 		"situations_file": _file_sit if not _file_sit.is_empty() else "未启用",
@@ -995,6 +1094,12 @@ func _finish(reason: String) -> void:
 				int(wst.get("army_target_first", -1)),
 				int(wst.get("army_target", -1))],
 			"军队目标末": int(brain_at),
+			# 2C-9：仲裁执行率 / 驳回原因 / 训练vs建造 / 出击vs巡逻
+			"仲裁执行率": _dept_exec_rate(depts.get(String(f.display_name), null)),
+			"仲裁驳回": _dict_brief(_dept_reject(depts.get(String(f.display_name), null))),
+			"训练vs建造": _dept_train_build(depts.get(String(f.display_name), null)),
+			"出击vs巡逻": _dept_push_patrol(depts.get(String(f.display_name), null)),
+			"兵力锁": _dept_locks(depts.get(String(f.display_name), null)),
 		}
 	# 2C-5：达成归属摘要（达成条数里"本波参与"的比例）+ 曲线峰值
 	summary["达成归属"] = "%d/%d 条达成是本波最后一击（伤害占比均值 %.2f，0 伤害 %d 条）" % [
@@ -1026,6 +1131,24 @@ func _finish(reason: String) -> void:
 		print("[护栏 ⚠] 判定=好 的比例 %d/%d 超过 50%% —— 只告警，不判失败（任务书 §3.3）"
 			% [good_n, total_n])
 		summary["好比例告警"] = "%d/%d > 50%%" % [good_n, total_n]
+	# --- 2C-9 P1：判定表**首次分布**落盘（每局每个 AI 阵营一行 + 该局合计一行）---
+	# 格式按任务书 §4.1：JUDGE-DIST {"局":..,"总波次":..,"判据1":{..},..}
+	var game_id: String = "seed%d%s" % [seed_val, tag if not tag.is_empty() else ""]
+	for fname4 in judge_dist.keys():
+		var jd: Dictionary = judge_dist[fname4]
+		var row1: Dictionary = {"局": "%s/%s" % [game_id, fname4]}
+		for k in jd.keys():
+			row1[k] = jd[k]
+		print("JUDGE-DIST %s" % JSON.stringify(row1))
+	var all_jd: Dictionary = {
+		"局": "%s/全部" % game_id, "总波次": judge_rows.size(),
+		"判据1": _bench_model.judge_bin_counts(judge_rows, "判据1"),
+		"判据2": _bench_model.judge_bin_counts(judge_rows, "判据2"),
+		"判据3": _bench_model.judge_bin_counts(judge_rows, "判据3"),
+		"判据4": _bench_model.judge_bin_counts(judge_rows, "判据4"),
+	}
+	print("JUDGE-DIST %s" % JSON.stringify(all_jd))
+	summary["JUDGE-DIST"] = all_jd
 	print("AI-BENCH %s" % JSON.stringify(summary))
 	# 确定性签名：同 seed 复跑必须一致（外部脚本比对）
 	var sig: String = ""
