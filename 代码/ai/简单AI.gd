@@ -1596,7 +1596,10 @@ func _tick_labor_stats() -> void:
 				repair_targets[t.get_instance_id()] = true
 	labor_stats["max_concurrent_build"] = \
 			maxi(int(labor_stats["max_concurrent_build"]), n_build)
-	if n_build > int(_model_call("builder_build_limit", [target])):
+	# 下限取 1：off 模式的目标工位数是 1，`builder_build_limit(1)=0` 会把"单工位在建造"
+	# 误记成超限（2C-8 第一版踩过：改前局自报 369 次超限，而引擎侧采样是 0）。
+	var build_limit: int = maxi(int(_model_call("builder_build_limit", [target])), 1)
+	if n_build > build_limit:
 		labor_stats["build_over_limit_ticks"] = \
 				int(labor_stats["build_over_limit_ticks"]) + 1
 	var n_rep: int = repair_targets.size()
