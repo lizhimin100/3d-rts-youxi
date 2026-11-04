@@ -42,10 +42,20 @@ const PEASANT_GOLD_SOFT_CAP: int = 8
 ## 都有人在盖房/砍树，repair_stats 里 10 min 局 **76 次 candidates / 0 次 issued**
 ## （2C-6 §7-1）。现在把 4 拆成 3 + 1：3 个专职伐木，1 个专职建造/修理（闲置时也砍树）。
 ## ★ **总数仍是 12**，不是加人；改的是"这 12 个人各自负责什么"。
-const PEASANT_WOOD_TARGET: int = 3
-const PEASANT_BUILDER_SLOT: int = 1
-## 总农民上限 = 采金 + 采木 + 工位 = 12（与 2C-6 同数值，只是重新切分）
+##
+## ★ 2C-8 P0（用户拍板，覆盖上面的 8:3:1）：**工位数动态化**
+##   builder_count = max(2, ceil(农民总数 / 6))；
+##   采金 = min(8, N − 工位)，采木 = N − 工位 − 采金。
+##   满编 12 → 采金 8 + 采木 2 + 工位 2；15 → 8 + 4 + 3。
+##   同时建造数 = 工位数 − 1（**至少留 1 个工位给修理**）；
+##   无建造任务时全部工位可修；无修理任务时全部工位采木（不待命）。
+##   ★ 总数仍是 12（PEASANT_TOTAL_CAP 不变），改的是"工位几个人、怎么分工"。
+const PEASANT_WOOD_TARGET: int = 2
+const PEASANT_BUILDER_SLOT: int = 2
+## 总农民上限 = 采金 + 采木 + 工位 = 12（与 2C-6/2C-7 同数值，只是重新切分）
 const PEASANT_TOTAL_CAP: int = PEASANT_GOLD_SOFT_CAP + PEASANT_WOOD_TARGET + PEASANT_BUILDER_SLOT
+## 2C-8 P0：每 6 个农民配 1 个工位；工位下限 2（公式在 战斗模型.builder_count_for 里）
+const PEASANT_PER_BUILDER: float = 6.0
 ## 2C-7 P0：农民角色（**报告/归因用枚举**，不参与判定表任何阈值）。
 ## 只在"为什么这个人没去修"这类归因里用；行为判据仍是 order/gather_kind。
 enum PeasantRole { GATHER_GOLD, GATHER_WOOD, BUILDER }
@@ -112,10 +122,11 @@ var _patrol_cd: float = 0.0
 var _patrol_seq: int = 0
 ## 采集配比再平衡冷却（秒，2C-2）
 var _gather_cd: float = 0.0
-## 2C-7 P0：建造/修理工位（农民 instance_id；0 = 未指派）。
+## 2C-7 P0 / 2C-8 P0：建造/修理工位（农民 instance_id 数组；空 = 未指派）。
 ## ★ 这是**持久状态**，不是每 tick 现算的：靠 order 判"谁是建造工"分不清
 ##   "工位在砍树（待命）"和"普通伐木工"，两者 order 都是 GATHER/WOOD。
-var _builder_uid: int = 0
+## 2C-8：从单值 `_builder_uid` 扩成数组，数量 = max(2, ceil(N/6))，随农民总数重算。
+var _builder_uids: Array[int] = []
 ## 2C-7 P0：工位任期（秒）+ 换人次数（诊断：频繁换人说明农民在死/被打断）
 var _builder_tenure: float = 0.0
 var _builder_swaps: int = 0
@@ -129,6 +140,31 @@ var invest_stats: Dictionary = {
 }
 var _invest_cd: float = 0.0
 var _invest_prev: Dictionary = {"farm": 0, "army": 0}
+## 2C-8 P2：用工诊断（**只读不改**）—— 工位数 / 同时建造 / 同时修理。
+##   max_concurrent_build   同一 tick 最多几个人在 order=BUILD（自带口径）
+##   build_over_limit_ticks 同时建造数 > 工位数−1 的 tick 数（必须 0）
+##   concurrent_repairs     "≥2 个工位同时修**不同**建筑"的 tick 数（验收 ≥1）
+var labor_stats: Dictionary = {
+	"builder_slots": 0, "max_concurrent_build": 0, "build_over_limit_ticks": 0,
+	"concurrent_repairs": 0, "max_concurrent_repairs": 0, "samples": 0,
+}
+## 2C-8 P2：农场建不成的归因（每次"想建但没建成"记一个原因）
+##   no_builder 工位全忙 / no_wood 木不够 / no_gold 金不够 / no_spot 选址失败 /
+##   lost 建到一半被拆（在 _tick_build_diag 里对工地快照结算）
+var farm_fail_stats: Dictionary = {
+	"no_builder": 0, "no_wood": 0, "no_gold": 0, "no_spot": 0, "lost": 0,
+}
+## 农场工地快照：instance_id → true（建完/被拆时结算并移除）
+var _farm_sites: Dictionary = {}
+## 2C-8 P2：训练队列排不满的归因（每 60 s 采一次，**只记录**）
+##   no_gold / no_wood / no_pop / queue_full / no_producer / ok
+var train_stats: Dictionary = {
+	"no_gold": 0, "no_wood": 0, "no_pop": 0, "queue_full": 0, "no_producer": 0,
+	"ok": 0, "samples": 0,
+}
+var _train_diag_cd: float = 0.0
+## 2C-8 P2：训练阻塞采样间隔（游戏秒）
+const TRAIN_DIAG_SEC: float = 60.0
 ## 入夜收队轮次（同上）
 var _night_seq: int = 0
 ## 下一波的时间点（秒，Game.elapsed 口径）
@@ -247,7 +283,8 @@ func _process_inner(delta: float) -> void:
 	_research_cd = maxf(_research_cd - delta, 0.0)
 	_repair_cd = maxf(_repair_cd - delta, 0.0)
 	_invest_cd = maxf(_invest_cd - delta, 0.0)
-	if _builder_uid != 0:
+	_train_diag_cd = maxf(_train_diag_cd - delta, 0.0)
+	if not _builder_uids.is_empty():
 		_builder_tenure += delta
 	if _think > 0.0:
 		return
@@ -284,6 +321,8 @@ func _think_once(diff: DifficultyDef) -> void:
 
 	# --- ③ 经济 ---
 	_manage_peasants(diff)
+	# 2C-8 P2：先结算"农场工地被拆"（在建→消失），再跑本 tick 的建农场决策
+	_tick_build_diag()
 	_assign_workers(diff)
 	_manage_food(diff, true)    # 人口余量 <4 → 农场急建（建造农民优先级 #1）
 	# 2C-6 P1：不急的农场也提到兵营**之前** —— 人口预判（占用>70% / 60 s 训练量×2）
@@ -293,6 +332,8 @@ func _think_once(diff: DifficultyDef) -> void:
 
 	# --- ④ 生产 / ⑤ 科技 ---
 	_manage_army(diff)
+	# 2C-8 P2：训练队列排不满的归因（60 s 一次，只记录）
+	_sample_train_block(diff)
 	_manage_research(diff)
 
 	# --- ⑥ 军事 ---
@@ -656,23 +697,30 @@ func _manage_peasants(diff: DifficultyDef) -> void:
 		_log("排农民（现有 %d / 目标 %d，军队 %d）"
 				% [peasants, target, _army_units().size()])
 
-## 给闲着的农民派采集活：**采金 8 / 采木 3 按比例分**，工位单独走"闲了就砍树"。
+## 给闲着的农民派采集活：**采金 / 采木按"先扣工位、再截 8"分**，工位单独走"闲了就砍树"。
 ##
 ## 2C-7 P0 改动（相对 2C-6）：
 ##   · 工位农民**不参与金木配比** —— 它没活时的默认工作是伐木（优先级最低）；
 ##   · 非工位农民按 `peasant_gold_want()` 分 8:3（满编 11 人 = 8 采金 + 3 采木）；
 ##   · 人数不足时按同一比例缩（例如 6 个非工位 → 4 金 2 木），不是"全塞去采金"。
+##
+## 2C-8 P0：工位可能不止 1 个 —— 用 uid 集合一次性排除；配比改成
+##   `peasant_gold_want_dynamic(农民总数, 工位数)` = min(8, N − 工位)，
+##   满编 12 + 2 工位 → 8 金 / 2 木。`off/legacy` 对照局仍走 2C-7 的比例口径。
 func _assign_workers(_diff: DifficultyDef) -> void:
 	var workers: Array = _workers()
 	if workers.is_empty():
 		return
-	var builder: RtsUnit = _builder_unit()
+	var builders: Array = _builder_units()
+	var slot_uids: Dictionary = {}
+	for b in builders:
+		slot_uids[b.get_instance_id()] = true
 	var on_gold: int = 0
 	var on_wood: int = 0
 	var idle: Array = []
 	for w in workers:
-		# 工位不占金木名额（它的默认活是砍树，但仍然不算进"采木 3 人"的配比）
-		if builder != null and w == builder:
+		# 工位不占金木名额（它的默认活是砍树，但仍然不算进"采木 N 人"的配比）
+		if slot_uids.has(w.get_instance_id()):
 			if bool(w.call("is_idle_like")):
 				idle.append(w)
 			continue
@@ -686,17 +734,23 @@ func _assign_workers(_diff: DifficultyDef) -> void:
 	if idle.is_empty():
 		return
 
-	var total: int = workers.size() - (1 if builder != null else 0)
-	var want_gold: int = int(_model_call("peasant_gold_want",
-			[total, PEASANT_GOLD_SOFT_CAP, PEASANT_WOOD_TARGET]))
+	var total: int = workers.size() - builders.size()
+	var want_gold: int = 0
+	if AIV.builder_mode() == "on":
+		want_gold = int(_model_call("peasant_gold_want_dynamic",
+				[workers.size(), _builder_count_target(), PEASANT_GOLD_SOFT_CAP]))
+	else:
+		want_gold = int(_model_call("peasant_gold_want",
+				[total, PEASANT_GOLD_SOFT_CAP, PEASANT_WOOD_TARGET]))
 	var base: Vector3 = RtsWorld.base_center(_faction)
 	var radius: float = Cfg.game.map_size * 0.75
 	# 木材的"收货点"每 tick 只算一次（伐木场优先，其次大本营）
 	var wood_drop: Vector3 = _wood_dropoff()
 
 	for w in idle:
+		var is_slot: bool = slot_uids.has(w.get_instance_id())
 		var kind: int = RtsConst.Harvest.GOLD
-		if builder != null and w == builder:
+		if is_slot:
 			# 2C-7 P0：工位没活就砍树（优先级最低）；不再被配比拉去采金
 			kind = RtsConst.Harvest.WOOD
 		elif on_gold >= want_gold:
@@ -716,7 +770,7 @@ func _assign_workers(_diff: DifficultyDef) -> void:
 		if node == null:
 			continue
 		_sched.gather([w], node, "economy")
-		if builder != null and w == builder:
+		if is_slot:
 			continue    # 工位不计入金木配比
 		if kind == RtsConst.Harvest.GOLD:
 			on_gold += 1
@@ -738,17 +792,20 @@ func _assign_workers(_diff: DifficultyDef) -> void:
 ##
 ## ★ 2C-7 P0：**工位永远不在候选池里**（既不被拉去采金，也不被从木头挪走），
 ##   否则"固定 1 个建造工"在配比再平衡面前只成立一个 CD 周期。
+## ★ 2C-8 P0：工位是数组，用 uid 集合排除；目标配比同步换成"先扣工位"口径。
 func _rebalance_gatherers(total: int) -> void:
 	if _gather_cd > 0.0 or _faction == null or total <= 0:
 		return
-	var builder: RtsUnit = _builder_unit()
+	var slot_uids: Dictionary = {}
+	for b in _builder_units():
+		slot_uids[b.get_instance_id()] = true
 	var on_gold: int = 0
 	var gold_workers: Array = []
 	var wood_workers: Array = []
 	for w in _workers():
 		if w == null or not is_instance_valid(w):
 			continue
-		if builder != null and w == builder:
+		if slot_uids.has(w.get_instance_id()):
 			continue
 		var k: int = int(w.call("gather_kind"))
 		var gathering: bool = int(w.order) == RtsConst.Order.GATHER
@@ -758,8 +815,14 @@ func _rebalance_gatherers(total: int) -> void:
 				gold_workers.append(w)
 		elif k == RtsConst.Harvest.WOOD and gathering:
 			wood_workers.append(w)
-	var want_gold: int = int(_model_call("peasant_gold_want",
-			[total, PEASANT_GOLD_SOFT_CAP, PEASANT_WOOD_TARGET]))
+	var want_gold: int = 0
+	if AIV.builder_mode() == "on":
+		var bc: int = _builder_count_target()
+		want_gold = int(_model_call("peasant_gold_want_dynamic",
+				[total + bc, bc, PEASANT_GOLD_SOFT_CAP]))
+	else:
+		want_gold = int(_model_call("peasant_gold_want",
+				[total, PEASANT_GOLD_SOFT_CAP, PEASANT_WOOD_TARGET]))
 	var kind: int = -1
 	var pool: Array = []
 	if on_gold < want_gold and not wood_workers.is_empty():
@@ -942,35 +1005,58 @@ func _can_spend_army(id: StringName) -> bool:
 	return _can_spend(id)
 
 
-## 修理建筑（2C-5 P1-4 接命令口；2C-6 P3 改判据；2C-7 P0 改派人）
+## 修理建筑（2C-5 P1-4 接命令口；2C-6 P3 改判据；2C-7 P0 改派人；2C-8 P0 改多工位）
 ## 建造/修理的优先级 **第 3 位**（沿用）：农场(急) > 补兵营 > **修理** > 哨塔 > 农场(不急)。
 ##
 ## 判据（2C-6，本轮不动）：**固定掉血值** `max_hp − hp ≥ AI判定模式.repair_hp_deficit()`（默认 200）。
 ##   **大本营不加修理优先**（用户口径）：排在所有其它建筑之后 —— 不是"不修"，是"最后修"。
 ##
 ## ★ 2C-7 P0：**派人改成固定工位**（`_builder_unit()`）。
-##   2C-6 用 `_pick_builder()`（"任意空闲农民，其次任意农民"），长局实测
-##   **76 candidates / 0 issued / 76 blocked_no_builder** —— 12 个农民永远在采集/建造。
-##   现在：
-##     · 工位存在且没在建造 → 派它（它可能正在砍树，砍树可中断）；
-##     · 工位正在建造 → 记 `blocked_builder_busy`（**归因要能分清"没工位"和"工位被建造占满"**）；
-##     · `--builder-slot=off` 对照局仍走 2C-6 的 `_pick_builder()`。
+## ★ 2C-8 P0（用户拍板）：工位是数组。修理不再"只修一栋"：
+##     · 收集**所有**该修且没人修的建筑，按优先级排序（非大本营优先、掉血多优先）；
+##     · 每个空闲工位领一栋（**每栋一个工位，不抢同一栋**），一次思考可以同时开修多栋；
+##     · 正在修理的工位不打断（修理是长动作，换来换去等于一直走路）；
+##     · 无建造任务时**全部工位**都可去修；都不需要修时由 `_assign_workers` 派去采木。
+##   归因三类保留：`blocked_no_builder` / `blocked_builder_busy` / `blocked_wood`。
 func _manage_repair() -> void:
 	if _faction == null:
 		return
-	# 工位诊断（每 tick 都刷，不受修理节流影响）：报告要看"工位这一局到底是建造工还是伐木工"
-	if AIV.builder_slot():
-		repair_stats["builder_role"] = _builder_role_name()
+	var mode: String = AIV.builder_mode()
+	# 工位诊断（每 tick 都刷，不受修理节流影响）：报告要看"这一局工位到底在干什么"
+	if mode != "legacy":
+		_tick_labor_stats()
+		repair_stats["builder_role"] = _builder_roles_desc()
 		repair_stats["builder_swaps"] = _builder_swaps
+		repair_stats["builder_slots"] = _builder_uids.size()
+		repair_stats["builder_count"] = _builder_count_target()
 	if _repair_cd > 0.0:
 		return
+	var pack: Dictionary = _repair_candidates()
+	var cands: Array = pack["cands"]
+	if cands.is_empty():
+		if bool(pack["wood_blocked"]):
+			repair_stats["blocked_wood"] = int(repair_stats.get("blocked_wood", 0)) + 1
+		return
+	# candidates 保持 2C-7 口径（"有该修的 tick 数"），另加 candidate_buildings（栋数），
+	# 否则"一轮修 3 栋"会让 issued/candidates > 1，看起来像把阈值调松了。
+	repair_stats["candidates"] = int(repair_stats.get("candidates", 0)) + 1
+	repair_stats["candidate_buildings"] = \
+			int(repair_stats.get("candidate_buildings", 0)) + cands.size()
+	if mode == "on":
+		_issue_repairs_multi(cands)
+	else:
+		_issue_repairs_single(cands)
+
+
+## 收集"该修且当前没人修"的建筑，附带优先级排序所需的字段。
+## 返回 {cands: [{b, deficit, is_base}], wood_blocked: bool}
+func _repair_candidates() -> Dictionary:
+	var cands: Array = []
+	var wood_blocked: bool = false
+	if _faction == null:
+		return {"cands": cands, "wood_blocked": wood_blocked}
 	var deficit_min: float = AIV.repair_hp_deficit()
 	var base_id: StringName = _main_base_id()
-	var best: RtsBuilding = null
-	var best_deficit: float = -1.0
-	var best_is_base: bool = true
-	var best_frac: float = 1.0
-	var wood_blocked: bool = false
 	for b in _faction.buildings:
 		if b == null or not is_instance_valid(b) or not b.is_alive() or b.def == null:
 			continue
@@ -994,48 +1080,89 @@ func _manage_repair() -> void:
 			continue
 		var deficit: float = float(_model_call("repair_deficit",
 				[float(rb.hp), float(rb.def.max_hp)]))
-		var is_base: bool = base_id != &"" and rb.def.id == base_id
-		# 优先非大本营；同类按掉血绝对值降序（并列时保留先遍历到的 = 稳定）
-		var better: bool = best == null \
-				or (best_is_base and not is_base) \
-				or (is_base == best_is_base and deficit > best_deficit)
-		if better:
-			best = rb
-			best_deficit = deficit
-			best_is_base = is_base
-			best_frac = float(rb.hp) / maxf(float(rb.def.max_hp), 1.0)
-	if best == null:
-		if wood_blocked:
-			repair_stats["blocked_wood"] = int(repair_stats.get("blocked_wood", 0)) + 1
+		cands.append({
+			"b": rb, "deficit": deficit,
+			"is_base": base_id != &"" and rb.def.id == base_id,
+		})
+	# 优先非大本营；同类按掉血绝对值降序（sort_custom 稳定：并列保持遍历顺序）
+	cands.sort_custom(func(a, b):
+		if bool(a["is_base"]) != bool(b["is_base"]):
+			return not bool(a["is_base"])
+		return float(a["deficit"]) > float(b["deficit"]))
+	return {"cands": cands, "wood_blocked": wood_blocked}
+
+
+## 2C-8：多工位并行修理 —— 每个空闲工位领一栋，最多领到 cands 用完。
+func _issue_repairs_multi(cands: Array) -> void:
+	var slots: Array = _builder_units()
+	if slots.is_empty():
+		repair_stats["blocked_no_builder"] = int(repair_stats.get("blocked_no_builder", 0)) + 1
 		return
-	repair_stats["candidates"] = int(repair_stats.get("candidates", 0)) + 1
-	# --- 2C-7 P0：派人（工位唯一 / 或 2C-6 旧口径）---
+	var free: Array = []
+	for s in slots:
+		var o: int = int(s.order)
+		if o == RtsConst.Order.BUILD or o == RtsConst.Order.REPAIR:
+			continue
+		free.append(s)
+	if free.is_empty():
+		# 工位都在建造/修理 —— 这是"工位被占满"，不是"没工位"
+		repair_stats["blocked_builder_busy"] = \
+				int(repair_stats.get("blocked_builder_busy", 0)) + 1
+		return
+	var issued_n: int = 0
+	for c in cands:
+		if free.is_empty():
+			break
+		var rb: RtsBuilding = c["b"]
+		# 前面的楼可能刚花掉木材：派之前再判一次（只读）
+		if int(rb.call("repair_wood_for_full")) > _faction.wood:
+			repair_stats["blocked_wood"] = int(repair_stats.get("blocked_wood", 0)) + 1
+			continue
+		var s: RtsUnit = free.pop_front()
+		if _do_repair(s, rb, float(c["deficit"])):
+			issued_n += 1
+	if issued_n > 0:
+		_repair_cd = REPAIR_REISSUE
+
+
+## 2C-7 单工位 / 2C-6 任意农民：只派一个人、只修一栋（长局"改前"对照走这条）。
+func _issue_repairs_single(cands: Array) -> void:
 	var builder: RtsUnit = null
-	if AIV.builder_slot():
+	if AIV.builder_mode() == "off":
 		var slot: RtsUnit = _builder_unit()
 		if slot == null:
 			repair_stats["blocked_no_builder"] = int(repair_stats.get("blocked_no_builder", 0)) + 1
 			return
 		if int(slot.order) == RtsConst.Order.BUILD:
-			# 工位在盖房子 —— 这是"工位被建造占满"，不是"没工位"
 			repair_stats["blocked_builder_busy"] = \
 					int(repair_stats.get("blocked_builder_busy", 0)) + 1
 			return
 		builder = slot
 	else:
-		builder = _pick_builder()
+		builder = _pick_builder_legacy()
 		if builder == null:
 			repair_stats["blocked_no_builder"] = int(repair_stats.get("blocked_no_builder", 0)) + 1
 			return
-	if bool(_sched.repair(builder, best, "repair")):
+	var c: Dictionary = cands[0]
+	if _do_repair(builder, c["b"], float(c["deficit"])):
 		_repair_cd = REPAIR_REISSUE
-		var bn: String = String(best.def.display_name)
-		repair_stats["issued"] = int(repair_stats.get("issued", 0)) + 1
-		var bd: Dictionary = repair_stats.get("buildings", {})
-		bd[bn] = int(bd.get(bn, 0)) + 1
-		repair_stats["buildings"] = bd
-		_log("修 %s（掉血 %.0f / 血量 %.0f%%，修满约 %d 木）"
-				% [bn, best_deficit, best_frac * 100.0, int(best.call("repair_wood_for_full"))])
+
+
+## 真正下达一条修理命令 + 记账（issued / buildings / 日志）。
+func _do_repair(builder: RtsUnit, rb: RtsBuilding, deficit: float) -> bool:
+	if builder == null or rb == null or rb.def == null:
+		return false
+	if not bool(_sched.repair(builder, rb, "repair")):
+		return false
+	var bn: String = String(rb.def.display_name)
+	var frac: float = float(rb.hp) / maxf(float(rb.def.max_hp), 1.0)
+	repair_stats["issued"] = int(repair_stats.get("issued", 0)) + 1
+	var bd: Dictionary = repair_stats.get("buildings", {})
+	bd[bn] = int(bd.get(bn, 0)) + 1
+	repair_stats["buildings"] = bd
+	_log("修 %s（掉血 %.0f / 血量 %.0f%%，修满约 %d 木）"
+			% [bn, deficit, frac * 100.0, int(rb.call("repair_wood_for_full"))])
+	return true
 
 
 ## 补农场（2C-4 建造农民优先级；2C-7 P1 改触发条件）：
@@ -1074,15 +1201,45 @@ func _manage_food(diff: DifficultyDef, urgent: bool) -> void:
 			return
 	var builder: RtsUnit = _pick_builder()
 	if builder == null:
+		# 2C-8 P2：归因 —— 想建农场但工位都在建造/修理（或没有工位）
+		_note_farm_fail("no_builder")
 		return
 	var spot: Vector3 = _find_build_spot(farm_def.footprint)
 	if spot == Vector3.INF:
+		_note_farm_fail("no_spot")
 		return
 	if not _can_spend(fid):
+		# 2C-8 P2：木材不够是农场的头号断供原因；金不够单独记（报告里区分）
+		if _faction.wood < int(farm_def.wood_cost):
+			_note_farm_fail("no_wood")
+		else:
+			_note_farm_fail("no_gold")
 		return
-	if _sched.build(builder, farm_def, spot, _build_yaw_at(spot), "economy") != null:
+	var site: Node3D = _sched.build(builder, farm_def, spot, _build_yaw_at(spot), "economy")
+	if site != null:
 		_note_build(fid)
+		# 2C-8 P2：登记工地快照，"建到一半被拆"在这一局结束时结算成 lost
+		_farm_sites[site.get_instance_id()] = true
 		_log("造农场（人口 %d/%d）" % [_faction.food_used(), _faction.food_cap()])
+
+
+## 2C-8 P2：农场失败归因计数（只读诊断，不参与任何决策）
+func _note_farm_fail(reason: String) -> void:
+	farm_fail_stats[reason] = int(farm_fail_stats.get(reason, 0)) + 1
+
+
+## 2C-8 P2：农场工地快照结算 —— 完工出列；被拆/消失计 `lost`。
+## 每 tick 一次（在 `_manage_food` 之前），只扫自己下过单的几座农场。
+func _tick_build_diag() -> void:
+	if _farm_sites.is_empty():
+		return
+	for k in _farm_sites.keys():
+		var b: RtsBuilding = instance_from_id(int(k)) as RtsBuilding
+		if b == null or not is_instance_valid(b) or not b.is_alive():
+			farm_fail_stats["lost"] = int(farm_fail_stats.get("lost", 0)) + 1
+			_farm_sites.erase(k)
+		elif bool(b.is_constructed):
+			_farm_sites.erase(k)
 
 ## 2C-7 P1：人口占用 >90%（"顶到嗓子眼"）。cap=0 视为不紧急（没有人口建筑时
 ## `_need_more_farm` 已经会强制建，别在这里重复触发）。
@@ -1200,59 +1357,103 @@ func _has_room(spot: Vector3, footprint: Vector2i) -> bool:
 func _build_yaw_at(_spot: Vector3) -> float:
 	return 建筑网格.snap_yaw(建筑网格.default_yaw())
 
-## **2C-7 P0：建造/修理工位**（固定 1 人，返回该农民；必要时指派）。
+## **2C-7 P0 / 2C-8 P0：建造/修理工位**（持久数组；返回**所有**存活工位）。
 ##
 ## 为什么要一个**持久工位**，而不是每 tick 从"空闲农民"里挑：
 ##   2C-6 长局 `repair_stats` 是 76 candidates / **0 issued** / 76 blocked_no_builder ——
 ##   每次判定"该修"的时候，12 个农民全在采集/建造。判据（掉血 ≥200）没问题，
 ##   是**没有人被允许放下手上的活**去修。
 ##
-## 指派顺序（只在工位空缺/阵亡时发生，不每 tick 换人）：
-##   ① 上一任还活着 → 继续用（换人会打断建造/修理，目标点也要重走）；
-##   ② 有农民正在建造（工位 uid 丢了才会走到这里）→ 接回它；
-##   ③ 正在采木的农民（采木优先级最低，抽走损失最小）；
-##   ④ 任意农民（按 faction.units 顺序，稳定）。
+## 2C-8：工位数 = max(2, ceil(N/6))，随农民总数实时重算（`_builder_count_target()`）。
+##   · 农民阵亡/消失 → 当 tick 补位（优先正在建造的 → 伐木工 → 任意农民）；
+##   · 农民变多 → 追加；变少 → 优先退回"没在建造/修理"的（正在干活的先留着收尾）。
+##   · 工位是 `_builder_uids`（instance_id 数组），不做"每 tick 重新挑人"。
 ##
-## `PEASANT_BUILDER_SLOT = 0` 或 `--builder-slot=off` → 返回 null（回 2C-6 旧行为）。
+## 模式：on（默认）动态数组 / off 单工位（2C-7）/ legacy 无工位（2C-6，只为对照）。
+func _builder_units() -> Array:
+	var out: Array = []
+	if _faction == null or AIV.builder_legacy():
+		_builder_uids.clear()
+		return out
+	var target: int = _builder_count_target() if AIV.builder_mode() == "on" else 1
+	if target <= 0:
+		_builder_uids.clear()
+		return out
+	# ① 校验存活（阵亡/消失 → 计数，下面补位）
+	var seen: Dictionary = {}
+	for uid in _builder_uids:
+		var cur: RtsUnit = instance_from_id(uid) as RtsUnit
+		if cur == null or not is_instance_valid(cur) or not cur.is_alive() \
+				or cur.def == null or not RtsWorld.is_worker_def(cur.def) \
+				or cur.faction != _faction:
+			_builder_swaps += 1
+			_builder_tenure = 0.0
+			continue
+		out.append(cur)
+		seen[cur.get_instance_id()] = true
+	# ② 超出目标：优先退回"没在建造/修理"的（从后往前，保留老工位 = 稳定）
+	if out.size() > target:
+		var i: int = out.size() - 1
+		while out.size() > target and i >= 0:
+			var o: int = int(out[i].order)
+			if o != RtsConst.Order.BUILD and o != RtsConst.Order.REPAIR:
+				out.remove_at(i)
+				_builder_tenure = 0.0
+			i -= 1
+	# ③ 不足目标：按"正在建造 → 采木 → 任意"补位（同一 tick 内不重复挑同一个人）
+	if out.size() < target:
+		var building_now: Array = []
+		var wood_pick: Array = []
+		var any_pick: Array = []
+		for u in _faction.units:
+			if u == null or not is_instance_valid(u):
+				continue
+			if not u.is_alive() or u.def == null or not RtsWorld.is_worker_def(u.def):
+				continue
+			var uid2: int = u.get_instance_id()
+			if seen.has(uid2):
+				continue
+			if int(u.order) == RtsConst.Order.BUILD:
+				building_now.append(u)
+			elif int(u.call("gather_kind")) == RtsConst.Harvest.WOOD:
+				wood_pick.append(u)
+			else:
+				any_pick.append(u)
+		for pool in [building_now, wood_pick, any_pick]:
+			for u in pool:
+				if out.size() >= target:
+					break
+				var uid3: int = u.get_instance_id()
+				if seen.has(uid3):
+					continue
+				out.append(u)
+				seen[uid3] = true
+				_builder_tenure = 0.0
+	# ④ 回写（数组是唯一真相源）
+	_builder_uids.clear()
+	for u in out:
+		_builder_uids.append(u.get_instance_id())
+	return out
+
+
+## 2C-8：工位**目标数**（不是实际人数）：max(2, ceil(存活农民数 / 6))。
+## off 模式固定 1（= 2C-7 的单工位）；legacy 模式 0（没有持久工位）。
+func _builder_count_target() -> int:
+	if _faction == null or AIV.builder_legacy():
+		return 0
+	if AIV.builder_mode() == "off":
+		return 1
+	return int(_model_call("builder_count_for", [_workers().size()]))
+
+
+## 兼容入口（2C-7 的调用点/回归用它）：返回**第一个**工位；没有就 null。
 func _builder_unit() -> RtsUnit:
-	if _faction == null or PEASANT_BUILDER_SLOT <= 0:
-		return null
-	if not AIV.builder_slot():
-		return null
-	if _builder_uid != 0:
-		var cur = instance_from_id(_builder_uid)
-		if cur != null and is_instance_valid(cur) and cur is RtsUnit \
-				and cur.is_alive() and cur.def != null and RtsWorld.is_worker_def(cur.def):
-			return cur
-		# 工位阵亡/消失：计数，下面重新指派
-		_builder_uid = 0
-		_builder_tenure = 0.0
-		_builder_swaps += 1
-	var building_now: RtsUnit = null
-	var wood_pick: RtsUnit = null
-	var any_pick: RtsUnit = null
-	for u in _faction.units:
-		if u == null or not is_instance_valid(u):
-			continue
-		if not u.is_alive() or u.def == null or not RtsWorld.is_worker_def(u.def):
-			continue
-		if any_pick == null:
-			any_pick = u
-		if building_now == null and int(u.order) == RtsConst.Order.BUILD:
-			building_now = u
-		if wood_pick == null and int(u.call("gather_kind")) == RtsConst.Harvest.WOOD:
-			wood_pick = u
-	var pick: RtsUnit = building_now if building_now != null \
-			else (wood_pick if wood_pick != null else any_pick)
-	if pick == null:
-		return null
-	_builder_uid = pick.get_instance_id()
-	_builder_tenure = 0.0
-	return pick
+	var slots: Array = _builder_units()
+	return slots[0] if not slots.is_empty() else null
 
 
 ## 2C-6 旧口径（任意空闲农民，其次任意农民；有人正在建造就整轮不派）。
-## 只在 `--builder-slot=off` 对照局里走这条路 —— 保留它是为了"同构建改前/改后"。
+## 只在 `--builder-slot=legacy` 对照局里走这条路 —— 保留它是为了"同构建改前/改后"。
 func _pick_builder_legacy() -> RtsUnit:
 	if _faction == null:
 		return null
@@ -1271,19 +1472,38 @@ func _pick_builder_legacy() -> RtsUnit:
 	return best
 
 
-## 挑一个能去盖房子/修房子的农民。
-##   · 2C-7 默认：**只用固定工位**，工位正在建造时本 tick 不派第二栋
-##     （一个人被两条建造命令拉扯 = 两处都盖不完）；
-##   · `--builder-slot=off`：回 2C-6 的"任意空闲农民"。
+## 挑一个能去盖房子的农民。**同时建造数 = 工位数 − 1**（至少留 1 个工位给修理）。
+##   · on（2C-8）：工位数组里挑一个"没在建造/修理"的；已在建造的人数到上限就返回 null；
+##   · off（2C-7）：单工位，正在建造就返回 null；
+##   · legacy（2C-6）：任意空闲农民。
+## 为什么用"目标工位数"算上限而不是"当前实际指派数"：开局只有 1 个农民时也要能盖第一座兵营，
+## 否则前 1 分钟永远没有产能。人补齐后目标 ≥2，上限自然回到 N−1。
 func _pick_builder() -> RtsUnit:
-	if not AIV.builder_slot():
+	if AIV.builder_legacy():
 		return _pick_builder_legacy()
-	var b: RtsUnit = _builder_unit()
-	if b == null:
+	if AIV.builder_mode() == "off":
+		var s: RtsUnit = _builder_unit()
+		if s == null:
+			return null
+		if int(s.order) == RtsConst.Order.BUILD:
+			return null
+		return s
+	var slots: Array = _builder_units()
+	if slots.is_empty():
 		return null
-	if int(b.order) == RtsConst.Order.BUILD:
+	var limit: int = int(_model_call("builder_build_limit", [_builder_count_target()]))
+	var n_build: int = 0
+	for s in slots:
+		if int(s.order) == RtsConst.Order.BUILD:
+			n_build += 1
+	if n_build >= limit:
 		return null
-	return b
+	for s in slots:
+		var o: int = int(s.order)
+		if o == RtsConst.Order.BUILD or o == RtsConst.Order.REPAIR:
+			continue
+		return s
+	return null
 
 
 ## **反愚蠢审计专用选人**（2C-7）：与 `_pick_builder()` 的语义差别只有一个 ——
@@ -1292,14 +1512,35 @@ func _pick_builder() -> RtsUnit:
 ## 为什么必须分开：审计的语义是"救火"（工地停滞 / 农民闲置），它最后跑、命令要覆盖前面所有命令；
 ## 若沿用 `_pick_builder()`（工位在建造就返回 null），就会出现
 ## "停滞工地正好是工位自己盖的 → 审计拿不到人 → 立案失败"（副官自检 E 组实测 3 条连续红）。
-## 常规建造（农场/兵营/塔）仍走 `_pick_builder()`，不允许把正在建造的人扯去盖第二栋。
+## 2C-8：优先给"空闲/采木"的工位，其次才是正在建造的（避免救火把修理工从墙上拽走）。
 func _pick_sanity_builder() -> RtsUnit:
-	if not AIV.builder_slot():
+	if AIV.builder_legacy():
 		return _pick_builder_legacy()
-	return _builder_unit()
+	var slots: Array = _builder_units()
+	if slots.is_empty():
+		return null
+	# 2C-8：救火也不能破"同时建造 ≤ 工位数−1"。已经到上限时**复用正在建造的工位**
+	# （换工地不增加并发数），而不是再拉一个空闲工位去盖第二栋。
+	var limit: int = int(_model_call("builder_build_limit", [_builder_count_target()]))
+	var n_build: int = 0
+	for s in slots:
+		if int(s.order) == RtsConst.Order.BUILD:
+			n_build += 1
+	if n_build >= limit:
+		for s in slots:
+			if int(s.order) == RtsConst.Order.BUILD:
+				return s
+	for s in slots:
+		var o: int = int(s.order)
+		if o != RtsConst.Order.BUILD and o != RtsConst.Order.REPAIR:
+			return s
+	for s in slots:
+		if int(s.order) == RtsConst.Order.BUILD:
+			return s
+	return slots[0]
 
 
-## 工位角色（报告用）：工位在建造/修理 → BUILDER；否则它当前在采什么就是什么。
+## 工位角色（报告用）：第一个工位在建造/修理 → BUILDER；否则它当前在采什么就是什么。
 func _builder_role_name() -> String:
 	var b: RtsUnit = _builder_unit()
 	if b == null:
@@ -1311,6 +1552,59 @@ func _builder_role_name() -> String:
 	if int(b.call("gather_kind")) == RtsConst.Harvest.GOLD:
 		return "GATHER_GOLD"
 	return "待命"
+
+
+## 2C-8：全部工位的一句话状态（报告/bench 的"工位角色"字段）
+func _builder_roles_desc() -> String:
+	var slots: Array = _builder_units()
+	if slots.is_empty():
+		return "无工位"
+	var n_build: int = 0
+	var n_repair: int = 0
+	var n_wood: int = 0
+	var n_other: int = 0
+	for s in slots:
+		var o: int = int(s.order)
+		if o == RtsConst.Order.BUILD:
+			n_build += 1
+		elif o == RtsConst.Order.REPAIR:
+			n_repair += 1
+		elif int(s.call("gather_kind")) == RtsConst.Harvest.WOOD:
+			n_wood += 1
+		else:
+			n_other += 1
+	return "%d建造/%d修理/%d采木/%d其它" % [n_build, n_repair, n_wood, n_other]
+
+
+## 2C-8 P2：用工统计（只读）—— 同时建造数 / 同时修理数 / 超限 tick。
+## 每 tick 调一次（`_manage_repair` 顶部），成本 = 遍历 2~3 个工位。
+func _tick_labor_stats() -> void:
+	var slots: Array = _builder_units()
+	var target: int = _builder_count_target()
+	labor_stats["samples"] = int(labor_stats["samples"]) + 1
+	labor_stats["builder_slots"] = slots.size()
+	labor_stats["builder_target"] = target
+	var n_build: int = 0
+	var repair_targets: Dictionary = {}
+	for s in slots:
+		var o: int = int(s.order)
+		if o == RtsConst.Order.BUILD:
+			n_build += 1
+		elif o == RtsConst.Order.REPAIR:
+			var t = s.get("_repair_target")
+			if t != null and is_instance_valid(t):
+				repair_targets[t.get_instance_id()] = true
+	labor_stats["max_concurrent_build"] = \
+			maxi(int(labor_stats["max_concurrent_build"]), n_build)
+	if n_build > int(_model_call("builder_build_limit", [target])):
+		labor_stats["build_over_limit_ticks"] = \
+				int(labor_stats["build_over_limit_ticks"]) + 1
+	var n_rep: int = repair_targets.size()
+	labor_stats["max_concurrent_repairs"] = \
+			maxi(int(labor_stats["max_concurrent_repairs"]), n_rep)
+	if n_rep >= 2:
+		# 两个工位同时修**不同**建筑（repair_targets 按 instance_id 去重）
+		labor_stats["concurrent_repairs"] = int(labor_stats["concurrent_repairs"]) + 1
 
 # ===========================================================================
 # 生产 / 科技
@@ -1362,7 +1656,11 @@ func _manage_army(diff: DifficultyDef) -> void:
 	#    并让 _demand_pressure() 去加经济，而不是把最后那点钱花在房子上。
 	#    ★ 解除目标后（capped=false）"饱和"只剩"队列排满"一种 —— 这正是
 	#      "只受钱/人口/队列限制"的机器形态。
-	var saturated: bool = (capped and army >= target_army) or _all_queues_full(producers)
+	# ★ 2C-8：目标不再受人口约束（会远超人口），所以"军队 >= 目标"可能永远不成立。
+	#   必须补一条"人口已经排不下下一个兵"也算饱和 —— 否则农场/兵营/科技会被永久饿死
+	#   （2C-7 靠 target=人口÷2−1 天然满足，删掉人口约束后这个副作用必须显式补回）。
+	var saturated: bool = (capped and army >= target_army) \
+			or _all_queues_full(producers) or _need_farm(diff)
 	if saturated:
 		_maybe_build_barracks(diff)
 		_maybe_build_tower()
@@ -1423,6 +1721,55 @@ func _queue_one(b: RtsBuilding, diff: DifficultyDef) -> StringName:
 			invest_stats["army_wood"] = int(invest_stats["army_wood"]) + int(ud.wood_cost)
 		return picked
 	return &""
+
+
+## 2C-8 P2：训练队列排不满的归因（**每 60 s 采一次，只记录不改判定**）。
+## 判据顺序：产能 → 队列 → 人口 → 金币 → 木材。
+## 为什么人口排在钱前面：卡人口时再多的钱也出不了兵，"no_gold"会把真正的瓶颈盖掉。
+func _sample_train_block(diff: DifficultyDef) -> void:
+	if _train_diag_cd > 0.0:
+		return
+	_train_diag_cd = TRAIN_DIAG_SEC
+	var reason: String = _classify_train_block(diff)
+	train_stats["samples"] = int(train_stats["samples"]) + 1
+	train_stats[reason] = int(train_stats.get(reason, 0)) + 1
+
+
+func _classify_train_block(diff: DifficultyDef) -> String:
+	var producers: Array = _army_producers(diff)
+	if producers.is_empty():
+		return "no_producer"
+	var has_space: bool = false
+	for b in producers:
+		var rb: RtsBuilding = b as RtsBuilding
+		if rb != null and rb.train_count() < MAX_QUEUE_ARMY:
+			has_space = true
+			break
+	if not has_space:
+		return "queue_full"
+	# 候选池与 _pick_army_unit 同一把尺（职能权重 > 0），否则会拿"根本不会造的兵"当分母
+	var rw: Dictionary = _role_weights(diff)
+	var best_gold: int = 1 << 30
+	var best_wood: int = 1 << 30
+	var best_food: int = 1 << 30
+	for id in _candidate_ids(diff):
+		var d: UnitDef = Cfg.unit(StringName(id))
+		if d == null:
+			continue
+		if float(_model_call("def_function_weight", [d, rw])) <= 0.0:
+			continue
+		best_gold = mini(best_gold, int(d.gold_cost))
+		best_wood = mini(best_wood, int(d.wood_cost))
+		best_food = mini(best_food, int(d.food_cost))
+	if best_gold > (1 << 29):
+		return "ok"    # 没有可选兵种：不是"被卡住"，是没事可做
+	if best_food < (1 << 29) and not _faction.has_food(best_food):
+		return "no_pop"
+	if _faction.gold < best_gold:
+		return "no_gold"
+	if _faction.wood < best_wood:
+		return "no_wood"
+	return "ok"
 
 ## **按"role 权重 × 每金战力 × 克制"选兵**（2C-3：不再认具体兵种 id）。
 ##
@@ -1512,22 +1859,32 @@ func _defense_floor() -> int:
 	return int(_model_call("defense_floor_of", [int(c["bases"]), int(c["producers"])]))
 
 
-## 军队规模目标（2C-5 P0-2 起；2C-7 P1 用户拍板改为"公式 ∩ 人口"）：
-##   target = min(10 + 4×基地数 + 2×出兵建筑数, **人口上限 ÷ 2 − 1**)
-##   前 7 分钟：两者取小；≥420 s：**不再解除**，直接取"人口允许的最大值"。
-##   （人口 24 = 1 大本营 → 11 个兵；每座农场 +8 人口 → 目标 +4。）
-## 返回值 -1 仍表示"没有上限"（只有 `--army-pop-cap=off` 的 2C-6 对照局会返回）。
+## 军队规模目标（2C-5 P0-2 起；2C-7 P1 加人口约束；2C-8 P1 换成三段时间）：
+##   new（默认，用户 2C-8 拍板）：
+##     t < 480        ：12 + 3×基地 + 1×出兵建筑
+##     480 ≤ t < 600  ：13 + 4×基地 + 2×出兵建筑
+##     t ≥ 600        ：(14+n) + (5+n)×基地 + (3+n)×出兵建筑，n = floor((t−600)/120)
+##     **不与人口挂钩**（人口卡训练机制兜住），最后 max(结果, 防守下限)。
+##   old（2C-7 对照，--army-target-formula=old）：
+##     min(10 + 4B + 2P, 人口上限÷2 − 1)；420 s 后取人口允许值；不传人口 → -1。
+## 返回值 -1 仍表示"没有上限"（只可能出现在 old + --army-pop-cap=off 的 2C-6 对照）。
 ## ★ 目标不低于防守下限：钱可以再赚，家空了就没了 —— 所以最后再 max 一次。
 func _army_target() -> int:
 	if _faction == null:
 		army_target_now = -1
 		return -1
 	var c: Dictionary = _base_producer_counts()
-	# 2C-7 P1：人口上限也参与约束（每个战斗单位 2 人口、留 1 点余量）。
-	# `--army-pop-cap=off` 时传 0 = 不约束 → 回 2C-6 口径（420 s 后 -1 解除）。
-	var pop_cap: int = _faction.food_cap() if AIV.army_pop_cap() else 0
-	var t: int = int(_model_call("army_target_of",
-			[int(c["bases"]), int(c["producers"]), Game.elapsed, _defense_floor(), pop_cap]))
+	var t: int = 0
+	if AIV.army_target_formula() == "new":
+		t = int(_model_call("army_target_2c8",
+				[int(c["bases"]), int(c["producers"]), Game.elapsed]))
+		t = maxi(t, _defense_floor())
+	else:
+		# 2C-7 P1：人口上限也参与约束（每个战斗单位 2 人口、留 1 点余量）。
+		# `--army-pop-cap=off` 时传 0 = 不约束 → 回 2C-6 口径（420 s 后 -1 解除）。
+		var pop_cap: int = _faction.food_cap() if AIV.army_pop_cap() else 0
+		t = int(_model_call("army_target_of",
+				[int(c["bases"]), int(c["producers"]), Game.elapsed, _defense_floor(), pop_cap]))
 	army_target_now = t
 	return t
 
@@ -2545,8 +2902,11 @@ var _repair_cd: float = 0.0
 ## 前者说明"建造把工位占满了"（下一轮要么加人要么让建造排队），后者说明"压根没人"。
 var repair_stats: Dictionary = {
 	"issued": 0, "buildings": {},
-	"candidates": 0, "blocked_wood": 0, "blocked_no_builder": 0,
+	"candidates": 0, "candidate_buildings": 0,
+	"blocked_wood": 0, "blocked_no_builder": 0,
 	"blocked_builder_busy": 0, "builder_role": "", "builder_swaps": 0,
+	# 2C-8：工位数（目标/实际），报告画"工位数曲线"用
+	"builder_slots": 0, "builder_count": 0,
 }
 ## 2C-6：建造下单计数（id → 次数），只记**成功下达**的建造命令（报告用）。
 ## 为什么单独一个字典：strat_log 只记状态转移，_log 是 stdout；
