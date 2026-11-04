@@ -64,7 +64,7 @@ $g = 'D:/youxi/anzhuang/steamapps/common/Godot Engine/godot.windows.opt.tools.64
   **样本不足、已作废**，白烧了 15 分钟墙钟。要做敏感性就先确认"每档至少 10 波"。
 - 本机 `--speed=8` 不会更快：CPU bound，10 min 局墙钟 ≈ 600~625 s（≈1× 实时）。
   排期按"游戏时长 ≈ 墙钟"算，多局并行才省时间。
-- 对照局必须**同构建、同 seed、同难度**，只切参数开关（`--builder-slot` / `--army-pop-cap`
+- 对照局必须**同构建、同 seed、同难度**，只切参数开关（`--builder-slot` / `--army-target-formula`
   这类，见 `代码/配置/AI判定模式.gd`），不要改代码再编译两次 —— 否则证据链断在版本上。
 
 ## 四、提交时不该进库的东西
