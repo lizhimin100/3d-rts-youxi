@@ -77,6 +77,17 @@ const DEFAULT_REPAIR_HP_DEFICIT: float = 200.0
 const DEFAULT_BUILDER_SLOT: bool = true
 const DEFAULT_ARMY_POP_CAP: bool = true
 
+## 2C-9 P0：**决策层结构开关**（同一构建做"改前 / 改后"对照）
+##   on（默认，2C-9）= 三条线部门化：运营/战斗/扩展各自报诉求，主部门按诉求分动作级仲裁；
+##   off（2C-8）= 旧的固定调用顺序（农场急建 → 农场 → 军队 → 科技 → 军事 →  upkeep），
+##                一分钱一分钱"谁先动钱谁优先"，没有任何跨线上下文。
+## ★ 这个开关**只换决策结构**，不动判定表、不动工位公式、不动军队目标公式、
+##   不动战斗线的"判定→攒波→换目标→出击"闭环。
+const DEPT_ON: String = "on"
+const DEPT_OFF: String = "off"
+const DEPT_MODES: Array[String] = [DEPT_ON, DEPT_OFF]
+const DEFAULT_DEPT_MODE: String = DEPT_ON
+
 ## 2C-8：工位模式三值（on / off / legacy）
 const BS_ON: String = "on"
 const BS_OFF: String = "off"
@@ -101,6 +112,7 @@ static var _repair_hp_deficit: float = DEFAULT_REPAIR_HP_DEFICIT
 static var _builder_mode: String = BS_ON
 static var _army_pop_cap: bool = DEFAULT_ARMY_POP_CAP
 static var _army_target_formula: String = DEFAULT_ARMY_TARGET_FORMULA
+static var _dept_mode: String = DEFAULT_DEPT_MODE
 static var _parsed: bool = false
 
 
@@ -162,6 +174,8 @@ static func setup_from_cmdline() -> void:
 		elif a.begins_with("--army-target-formula="):
 			set_army_target_formula(
 				a.substr(String("--army-target-formula=").length()))
+		elif a.begins_with("--dept="):
+			set_dept_mode(a.substr(String("--dept=").length()))
 
 
 ## "on"/"off"（也接受 1/0/true/false）→ bool。非法值回落 true（默认开）。
@@ -216,6 +230,25 @@ static func army_pop_cap() -> bool:
 static func set_army_pop_cap(on: bool) -> bool:
 	_army_pop_cap = on
 	return _army_pop_cap
+
+
+## 2C-9 P0：决策层结构开关（on = 三条线部门化 + 主部门动作级仲裁；off = 2C-8 固定顺序）
+static func dept_mode() -> String:
+	return _dept_mode
+
+
+static func set_dept_mode(m: String) -> String:
+	var u: String = m.strip_edges().to_lower()
+	_dept_mode = u if DEPT_MODES.has(u) else DEPT_ON
+	return _dept_mode
+
+
+static func dept_on() -> bool:
+	return _dept_mode == DEPT_ON
+
+
+static func dept_off() -> bool:
+	return _dept_mode == DEPT_OFF
 
 
 ## 承伤分母口径（"all" 旧 / "targeted" 新）。非法值回落 targeted。
@@ -314,12 +347,13 @@ static func reset_defaults() -> void:
 	_builder_mode = BS_ON
 	_army_pop_cap = DEFAULT_ARMY_POP_CAP
 	_army_target_formula = DEFAULT_ARMY_TARGET_FORMULA
+	_dept_mode = DEFAULT_DEPT_MODE
 
 
 static func describe() -> String:
 	if _mode == MODE_OLD:
 		return "old 判定（2C-2：存活比 + 投入产出比）"
-	return "new 判定（四样判据：%.0fs/1000 成本，输出系数 %.2f，交战断档 %.1fs，存活上限 %.0fs，承伤分母 %s，输出分母 %s（窗 %.1fs），修理线掉血≥%.0f HP，工位 %s，军队目标 %s）" % [
+	return "new 判定（四样判据：%.0fs/1000 成本，输出系数 %.2f，交战断档 %.1fs，存活上限 %.0fs，承伤分母 %s，输出分母 %s（窗 %.1fs），修理线掉血≥%.0f HP，工位 %s，军队目标 %s，决策层 %s）" % [
 		_base_sec, _coef, _combat_gap_sec, _time_limit, _damage_theory_mode,
 		_output_theory_mode, _recent_attack_window, _repair_hp_deficit,
-		_builder_mode, _army_target_formula]
+		_builder_mode, _army_target_formula, _dept_mode]

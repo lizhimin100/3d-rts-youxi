@@ -184,6 +184,55 @@ var _last_block_log: float = -999.0
 var metrics: Dictionary = {}
 var posture: Dictionary = {}
 
+## ===========================================================================
+## 2C-9 · 三条线部门化（dept=on）的状态
+##
+## 四层上下文（用户拍板 §3.5）：
+##   ctx0  L0 当前快照      —— 每 tick 覆盖写
+##   ctx1  L1 短窗口聚合    —— 固定长度环形槽，槽位覆盖（内存 O(1)，不存事件列表）
+##   demands_l2 L2 部门诉求 —— 每 2 s 全量重建，不跨周期累积
+##   dept_stats L3 决策日志 —— 每 2 s 一行落盘，**不进决策**
+## ===========================================================================
+## 仲裁周期（秒）；与 `战斗模型.DEPT_CYCLE_SEC` 同值
+const DEPT_CYCLE: float = 2.0
+## 侦查节流（秒）：固定分诉求不节流会每 2 s 派一个人出去
+const SCOUT_INTERVAL: float = 20.0
+## L1 窗口：受伤 30 s（1 s 一个槽）/ 收支 60 s / 最近 3 波判定
+const L1_DMG_SEC: int = 30
+const L1_INCOME_SEC: int = 60
+const L1_VERDICT_N: int = 3
+## 出击锁的租约（秒）：攒大波最长 90 s + 一波最长 180 s，取 300 兜住
+const DEPT_WAVE_LOCK_TTL: float = 300.0
+
+var ctx0: Dictionary = {}
+var ctx1: Dictionary = {}
+var demands_l2: Array = []
+var dept_stats: Dictionary = {
+	"cycles": 0, "demands": 0, "executed": 0, "rejected": 0,
+	"reject_by_reason": {},
+	"win_train": 0, "win_train_peasant": 0, "win_build": 0,
+	"win_push": 0, "win_defend": 0, "win_patrol": 0, "win_scout": 0, "win_tower": 0,
+	"compete_train_build": 0, "compete_push_patrol": 0,
+	"lock_wave_held": 0, "lock_wave_released": 0, "lock_wave_timeout": 0,
+	"lock_patrol_held": 0, "lock_scout_held": 0,
+	"lock_held_max": 0, "lock_held_last": 0,
+	"requisitionable_written": 0,
+}
+var _dept_cd: float = 0.0
+var _scout_cd: float = 0.0
+var _scout_seq: int = 0
+## 兵力锁：key → {"n": 占用兵力, "t": 到期时刻, "k": 种类（wave/patrol/scout）}
+var _troop_locks: Dictionary = {}
+var _l1_dmg: Array[float] = []
+var _l1_gold: Array[float] = []
+var _l1_wood: Array[float] = []
+var _l1_verdicts: Array[String] = []
+var _l1_sec: int = -1
+var _prev_gold_dept: int = -1
+var _prev_wood_dept: int = -1
+## L3 决策日志落盘路径（`--dept-log=`；空 = 不落盘）
+var dept_log_path: String = ""
+
 ## --- 子系统（_ready 里建，全部是纯逻辑，不认识场景树）---
 var _sched = null      # 命令调度
 var _director = null   # 战略导演
@@ -196,6 +245,20 @@ var _combat = null     # 战斗数学
 
 func _ready() -> void:
 	AIV.setup_from_cmdline()
+	# 2C-9 L3：决策日志落盘路径（**只落盘，不进决策**）
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--dept-log="):
+			dept_log_path = a.substr(String("--dept-log=").length())
+			if dept_log_path.begins_with("res://"):
+				dept_log_path = ProjectSettings.globalize_path(dept_log_path)
+	if dept_log_path.is_empty() and AIV.dept_on():
+		dept_log_path = ProjectSettings.globalize_path("res://_qa/dept_log.jsonl")
+	if not dept_log_path.is_empty():
+		DirAccess.make_dir_recursive_absolute(dept_log_path.get_base_dir())
+		if not FileAccess.file_exists(dept_log_path):
+			var fc := FileAccess.open(dept_log_path, FileAccess.WRITE)
+			if fc != null:
+				fc.close()
 	_faction = command_faction if command_faction != null else Game.enemy_faction
 	if _faction == null:
 		# 多队图没有"唯一的敌人"：退到"第一个不是玩家的阵营"
@@ -284,6 +347,8 @@ func _process_inner(delta: float) -> void:
 	_repair_cd = maxf(_repair_cd - delta, 0.0)
 	_invest_cd = maxf(_invest_cd - delta, 0.0)
 	_train_diag_cd = maxf(_train_diag_cd - delta, 0.0)
+	_dept_cd = maxf(_dept_cd - delta, 0.0)
+	_scout_cd = maxf(_scout_cd - delta, 0.0)
 	if not _builder_uids.is_empty():
 		_builder_tenure += delta
 	if _think > 0.0:
@@ -320,36 +385,48 @@ func _think_once(diff: DifficultyDef) -> void:
 	_tick_wave(now)
 
 	# --- ③ 经济 ---
-	_manage_peasants(diff)
-	# 2C-8 P2：先结算"农场工地被拆"（在建→消失），再跑本 tick 的建农场决策
-	_tick_build_diag()
-	_assign_workers(diff)
-	_manage_food(diff, true)    # 人口余量 <4 → 农场急建（建造农民优先级 #1）
-	# 2C-6 P1：不急的农场也提到兵营**之前** —— 人口预判（占用>70% / 60 s 训练量×2）
-	# 一满足就建，否则"兵营先扩、人口后补"会让新兵营一完工就卡人口。
-	# 它仍然排在"急建"之后（上面那行先跑），所以不会抢紧急通道的钱。
-	_manage_food(diff, false)
-
-	# --- ④ 生产 / ⑤ 科技 ---
-	_manage_army(diff)
-	# 2C-8 P2：训练队列排不满的归因（60 s 一次，只记录）
-	_sample_train_block(diff)
-	_manage_research(diff)
-
-	# --- ⑥ 军事 ---
-	# ★ 2026-11-01 昼夜分流（玩家口径）：
-	#   白天 → 出门打敌对玩家 + **清野怪营地**；夜里 → 守家、营火、农民采木。
-	#   分流的唯一判据是 `Game.is_night()`（别在这里自己算小时）。
-	_manage_retreat()
-	_manage_defense(diff)
-	if Game.is_night():
-		_manage_night(diff)
+	if AIV.dept_on():
+		# 2C-9：三条线部门化。L2 诉求每 2 s 全量重建 → 主部门动作级仲裁 → 按分数顺序执行。
+		# 旧顺序（农场急建 → 农场 → 军队 → 科技 → 军事 → upkeep）整段被替换，
+		# 但**每一块的判定条件原样复用**（部门只负责"报诉求"，主部门只负责"排序 + 扣减"）。
+		_dept_tick(diff, now)
+		# 仲裁外的两件收尾（**都不在用户拍板的九个动作类型里**，见 §3.19）：
+		#   · 哨塔升级箭塔 = 改造（花钱但不新建），2C-9 不纳入仲裁；
+		#   · 科技研究 = 阵营级升级，动作类型表里没有"研究"。
+		_maybe_upgrade_tower()
+		_manage_research(diff)
+		_maybe_expand()            # 扩展线"最小可用"桩，2C-9 未纳入仲裁
 	else:
-		_manage_patrol(diff)
-		_manage_creep_clear(diff)
-		_manage_waves(diff)
-	_manage_upkeep(diff)
-	_maybe_expand()
+		_manage_peasants(diff)
+		# 2C-8 P2：先结算"农场工地被拆"（在建→消失），再跑本 tick 的建农场决策
+		_tick_build_diag()
+		_assign_workers(diff)
+		_manage_food(diff, true)    # 人口余量 <4 → 农场急建（建造农民优先级 #1）
+		# 2C-6 P1：不急的农场也提到兵营**之前** —— 人口预判（占用>70% / 60 s 训练量×2）
+		# 一满足就建，否则"兵营先扩、人口后补"会让新兵营一完工就卡人口。
+		# 它仍然排在"急建"之后（上面那行先跑），所以不会抢紧急通道的钱。
+		_manage_food(diff, false)
+
+		# --- ④ 生产 / ⑤ 科技 ---
+		_manage_army(diff)
+		# 2C-8 P2：训练队列排不满的归因（60 s 一次，只记录）
+		_sample_train_block(diff)
+		_manage_research(diff)
+
+		# --- ⑥ 军事 ---
+		# ★ 2026-11-01 昼夜分流（玩家口径）：
+		#   白天 → 出门打敌对玩家 + **清野怪营地**；夜里 → 守家、营火、农民采木。
+		#   分流的唯一判据是 `Game.is_night()`（别在这里自己算小时）。
+		_manage_retreat()
+		_manage_defense(diff)
+		if Game.is_night():
+			_manage_night(diff)
+		else:
+			_manage_patrol(diff)
+			_manage_creep_clear(diff)
+			_manage_waves(diff)
+		_manage_upkeep(diff)
+		_maybe_expand()
 
 	# --- ⑦ 反愚蠢审计（最后跑，救火命令优先）---
 	_sanity.update(ctx)
@@ -2173,27 +2250,50 @@ func _manage_retreat() -> void:
 
 ## 回防：只在"有敌人压到建筑门口"时触发，按 defend_ratio 抽人。
 ## 标签用 defend —— 调度器对防守命令不做重发节流（节流会直接导致基地被拆）。
+##
+## ★ 2C-9：拆成 `_defense_plan()`（判定）与 `_issue_defend()`（下令），判定逻辑未改；
+##   防守在仲裁里**不占新增兵力**（用的是"防守锁定"那一层预留），见 §3.19。
 func _manage_defense(diff: DifficultyDef) -> void:
-	if _faction == null:
+	var p: Dictionary = _defense_plan(diff)
+	if p.is_empty():
 		return
+	_issue_defend(p)
+
+
+func _defense_plan(diff: DifficultyDef) -> Dictionary:
+	if _faction == null:
+		return {}
 	var threats: Array = _threat_units()
 	if threats.is_empty():
-		return
+		return {}
 	if _defend_cd > 0.0:
-		return
-	_defend_cd = DEFEND_REISSUE
+		return {}
 	var army: Array = _army_units()
 	if army.is_empty():
-		return
+		return {}
 	var n: int = clampi(int(ceil(float(army.size()) * clampf(diff.defend_ratio, 0.0, 1.0))),
 			1, army.size())
-	var point: Vector3 = _defend_point()
+	return {"n": n, "point": _defend_point(), "army_n": army.size(),
+		"threat_n": threats.size()}
+
+
+func _issue_defend(p: Dictionary) -> bool:
+	if _faction == null:
+		return false
+	_defend_cd = DEFEND_REISSUE
+	var n: int = int(p.get("n", 0))
+	var army: Array = _army_units()
+	if n < 1 or n > army.size():
+		return false
+	var point: Vector3 = p.get("point", RtsWorld.base_center(_faction))
 	var before: int = int(_sched.stats().get("queued", 0))
 	_sched.attack_move(army.slice(0, n), point, "defend")
 	# 只在"真的登记了命令"时才打日志：否则每 4 秒一行同样的字，
 	# 看起来像在疯狂下令，其实早就在路上了（到达判定已经拦掉了）。
 	if int(_sched.stats().get("queued", 0)) > before:
-		_log("回防：%d/%d 兵（压家敌人 %d 个）" % [n, army.size(), threats.size()])
+		_log("回防：%d/%d 兵（压家敌人 %d 个）" % [
+			n, army.size(), int(p.get("threat_n", 0))])
+	return true
 
 ## 巡逻：没有战事时让 1~3 个兵绕着基地转，别全挤在基地里发呆。
 ## 顺手还能"发现自己家门口的敌人"——AI 的反应速度肉眼可见地变快。
@@ -2215,16 +2315,32 @@ static func _dhash01(a: int, b: int) -> float:
 
 
 func _manage_patrol(_diff: DifficultyDef) -> void:
+	var p: Dictionary = _patrol_plan()
+	if p.is_empty():
+		return
+	_issue_patrol(p)
+
+
+## 巡逻判定（2C-9 拆出来给扩展线报诉求用）：返回 {} 或 {n}
+func _patrol_plan() -> Dictionary:
 	if _patrol_cd > 0.0 or _faction == null:
-		return
+		return {}
 	if not bool(posture.get("allow_patrol", true)):
-		return
+		return {}
 	var army: Array = _army_units()
 	if army.size() < 2:
-		return
+		return {}
+	var n: int = clampi(int(ceil(float(army.size()) * 0.25)), 1, 3)
+	return {"n": n}
+
+
+func _issue_patrol(p: Dictionary) -> bool:
+	if _faction == null:
+		return false
 	_patrol_cd = PATROL_INTERVAL
 	_patrol_seq += 1
-	var n: int = clampi(int(ceil(float(army.size()) * 0.25)), 1, 3)
+	var n: int = int(p.get("n", 1))
+	var army: Array = _army_units()
 	var home: Vector3 = RtsWorld.base_center(_faction)
 	var moved: int = 0
 	for u in army:
@@ -2240,6 +2356,7 @@ func _manage_patrol(_diff: DifficultyDef) -> void:
 		var r: float = 16.0 + 10.0 * _dhash01(seed_h, _patrol_seq + 7919)
 		_sched.attack_move([u], home + Vector3(cos(ang) * r, 0.0, sin(ang) * r), "patrol")
 		moved += 1
+	return moved > 0
 
 # ===========================================================================
 # 波次记录表（2C-2 · 设计文档 §3.4）
@@ -2373,6 +2490,9 @@ func _open_wave(units: Array, target: Vector3, foe: RtsFaction,
 	_waves_active.append({
 		"wave_id": _wave_index,
 		"t_start": Game.elapsed,
+		# 2C-9：开波时记下"已经换过几次目标"，收尾时算这一波换了几次
+		# （B3 的规则是换满 2 次进攒大波，`SWITCH_TO_BANK_N`）
+		"switch_at_open": _switch_count,
 		"units_out": by_id,
 		"members": ids,
 		"strength": ids.size(),
@@ -2432,6 +2552,8 @@ func _close_wave(rec: Dictionary, now: float, reason: String = "home",
 	var t_start: float = float(rec["t_start"])
 	rec["t_return"] = now
 	rec["end_reason"] = reason
+	# 2C-9：这一波换过几次目标（B3 规则上限 2 次）；bench 的"每波明细"用它
+	rec["retarget_n"] = maxi(_switch_count - int(rec.get("switch_at_open", 0)), 0)
 	rec["survival_actual"] = maxf(now - t_start, 0.0)
 	var income: float = maxf(income_60s(now), 1.0)
 	rec["income_60s"] = income
@@ -2597,6 +2719,12 @@ func _close_wave(rec: Dictionary, now: float, reason: String = "home",
 	wave_log.append(rec)
 	while wave_log.size() > WAVE_LOG_MAX:
 		wave_log.pop_front()
+	# --- 2C-9：兵力预留制的**解锁**（波次打完 = 这一波锁的兵回来了）---
+	_troop_unlock("wave:%d" % int(rec.get("wave_id", 0)), true)
+	# --- 2C-9：L1 短窗口"最近 3 波判定"（固定长度，槽位覆盖）---
+	_l1_verdicts.append(String(rec["verdict"]))
+	while _l1_verdicts.size() > L1_VERDICT_N:
+		_l1_verdicts.pop_front()
 	# --- 存活撤回：达成 / 好 / 差 / 强制超时 → 把还活着的人叫回家 ---
 	# 一般 → 换目标（不撤回）；未判 → 继续打（不撤回）
 	if AIV.is_new():
@@ -2762,6 +2890,8 @@ func _note_threat(attacker: Node3D, target: Node3D, dmg: float, now: float) -> v
 	var tf = target.get("faction")
 	if tf == null or tf != _faction:
 		return
+	# 2C-9 L1：最近 30 s 受伤总量（1 s 一个环形槽，槽位覆盖，O(1)，不存事件列表）
+	_l1_add_damage(dmg, now)
 	var af = attacker.get("faction")
 	if af == null or af == _faction:
 		return
@@ -3329,46 +3459,59 @@ func _bank_hold() -> void:
 ## 换目标：本 tick 不出击。
 ##
 ## 出击前仍然先过战略导演的 `allow_attack`（家里挨打 / 计划说不打 → 不出门）。
+##
+## ★ 2C-9：拆成 `_wave_plan()`（判定，返回一份计划）与 `_issue_wave_plan()`（下令）。
+##   **判定逻辑一个字没动**，只是把"算出来的东西"从局部变量变成一份可交给主部门仲裁的计划；
+##   dept=off 时两段仍按原顺序连着调，行为与 2C-8 一致。
 func _manage_waves(diff: DifficultyDef) -> void:
-	if _faction == null:
+	var p: Dictionary = _wave_plan(diff)
+	if p.is_empty():
 		return
+	_issue_wave_plan(p)
+
+
+## 出击判定（**只读 + 只改时钟**，不下任何战斗命令）。
+## 返回 {} = 本 tick 不出击；否则返回 {push_n, goal, foe, target, army_n, state}。
+func _wave_plan(diff: DifficultyDef) -> Dictionary:
+	if _faction == null:
+		return {}
 	_tick_strategy(Game.elapsed)
 	if Game.elapsed < _next_wave_at:
-		return
+		return {}
 	if strat_state == ST_BANK:
 		_bank_hold()
 		_next_wave_at = Game.elapsed + 5.0
-		return
+		return {}
 	if strat_state == ST_RETARGET:
-		return
+		return {}
 	if not bool(posture.get("allow_attack", false)):
 		# 不是"这一波取消"，而是"10 秒后再评估" —— 兵力一到位就会打出去
 		_next_wave_at = Game.elapsed + 10.0
 		if Game.elapsed - _last_block_log >= 25.0:
 			_last_block_log = Game.elapsed
 			_log("暂不出击：%s" % _block_reason())
-		return
+		return {}
 	var army: Array = _army_units()
 	if army.size() < maxi(diff.min_wave_size, 3):
-		return
+		return {}
 	var aggr: float = float(posture.get("aggression", diff.aggression))
 	# 加强不掷骰：上一波已经证明"打得动"，这时候犹豫等于把战果还回去
 	if strat_state == ST_PROBE and randf() > clampf(aggr, 0.0, 1.0):
-		return
+		return {}
 
 	# --- 2C-4 出击比例（任务书 §4.2）---
 	var defense_floor: int = _defense_floor()
 	var push_n: int = 0
-	if strat_state == ST_PRESS and _bank_breakout:
+	var breakout: bool = strat_state == ST_PRESS and _bank_breakout
+	if breakout:
 		# 攒大波突围：全部战斗单位出击（含临时防守），保底 ceil(下限×2/3) 不低于
 		push_n = int(_model_call("bank_push_n", [army.size(), defense_floor]))
-		_bank_breakout = false
 	else:
 		# 常态（试探/加强）：0.75 floor 且不超过 军队数−防守下限（保底留守不动）
 		push_n = int(_model_call("normal_push_n", [army.size(), defense_floor]))
 	push_n = clampi(push_n, 0, army.size())
 	if push_n < 1:
-		return
+		return {}
 	var foe: RtsFaction = _press_foe_by_name() if strat_state == ST_PRESS else _foe_faction()
 	if foe == null:
 		foe = _foe_faction()
@@ -3384,11 +3527,35 @@ func _manage_waves(diff: DifficultyDef) -> void:
 		_press_goal = goal
 	var target: Vector3 = goal.get("pos", Vector3.ZERO) if not goal.is_empty() else _target_for(foe)
 	if target == Vector3.ZERO:
-		return
+		return {}
 	# T2"换小股路线"：每次快速被消灭后换一个接近角，别用同一条路再送一次
 	if strat_state == ST_PROBE and _probe_seq > 0:
 		var ang0: float = _dhash01(_probe_seq, 17) * TAU
 		target += Vector3(cos(ang0), 0.0, sin(ang0)) * 8.0
+	return {
+		"push_n": push_n,
+		"goal": goal,
+		"foe": foe,
+		"target": target,
+		"army_n": army.size(),
+		"state": strat_state,
+		"goal_name": String(goal.get("name", "?")),
+		"breakout": breakout,
+	}
+
+
+## 真的把一波发出去（原 `_manage_waves` 的后半段，一行未改）。
+func _issue_wave_plan(p: Dictionary) -> bool:
+	var push_n: int = int(p.get("push_n", 0))
+	var army: Array = _army_units()
+	if push_n < 1 or push_n > army.size():
+		return false
+	# 攒大波突围标记在**真的发出去**之后才消费（计划被驳回时不丢这个状态）
+	if bool(p.get("breakout", false)):
+		_bank_breakout = false
+	var target: Vector3 = p.get("target", Vector3.ZERO)
+	var foe = p.get("foe", null)
+	var goal: Dictionary = p.get("goal", {})
 	var targets: Array = _scatter_targets(army.slice(0, push_n), target)
 	var home: Vector3 = RtsWorld.base_center(_faction)
 	var sent: Array = []
@@ -3409,6 +3576,7 @@ func _manage_waves(diff: DifficultyDef) -> void:
 	_open_wave(sent, target, foe, goal)
 	# C 模式的衰减时钟在这里归零：**真的打出去了**才算"成功出击"。
 	_last_attack_t = Game.elapsed
+	var diff: DifficultyDef = Cfg.difficulty(Game.difficulty_index)
 	var interval: float = maxf(
 		diff.wave_interval - diff.wave_interval_decay * float(_wave_index),
 		diff.wave_interval_min)
@@ -3418,6 +3586,7 @@ func _manage_waves(diff: DifficultyDef) -> void:
 	_log("第 %d 波[%s]：%d 出击 / %d 留守 → %s·%s（下一波 +%.0fs）" % [
 		_wave_index, strat_state, push_n, army.size() - push_n,
 		_foe_name(), String(goal.get("name", "?")), interval])
+	return true
 
 
 ## 按名字找我打的那一家（加强时用；找不到就退回最近的一家）
@@ -3942,9 +4111,941 @@ func _first_building(id: StringName) -> RtsBuilding:
 			return rb
 	return null
 
+# ===========================================================================
+# 2C-9 · 三条线部门化 + 主部门动作级仲裁（dept=on）
+#
+# 结构（不是参数）：
+#   ① 每 tick：L0 快照覆盖写 + L1 环形槽滚动 + 后台采集派工（不仲裁）
+#   ② 每 2 s：三条线各自报诉求（L2 全量重建）→ 主部门按诉求分排序 → 依次扣减/锁定
+#   ③ 执行按**仲裁后的顺序**，不按部门顺序；每一块的判定条件复用 2C-8 原函数
+#   ④ 每 2 s 一行 L3 决策日志落盘（只落盘，不进决策）
+#
+# 三条线的职责边界（用户拍板，见设计文档 §3.19）：
+#   运营线 —— 训练（农民/战斗单位）、建造（农场/兵营/哨塔/营火/科技建筑）、修理
+#   战斗线 —— 出击（"判定→攒波→换目标→出击"闭环**原样复用**）、防守
+#   扩展线 —— 侦查、巡逻、建塔（箭塔）、建分基地（`can_build_townhall()` 仍 false）
+# ===========================================================================
+
+## 造一条诉求（与本文件外的 `战斗模型.demand_make` **同一套字段**；回归会比对键集）。
+## 为什么不直接 call demand_make：11 个参数超过 `_model_call` 的逐个展开分支，
+## 落到 `callv` 会踩 Godot 4 对 static 函数的已知坑（见 `_model_call` 注释）。
+func _demand(source: String, action: String, target: String,
+		gold: int, wood: int, troops: int, requis: bool,
+		score: float, basis: String, ready: bool, exec: Callable) -> Dictionary:
+	return {
+		"来源线": source,
+		"动作类型": action,
+		"目标": target,
+		"金币成本": maxi(gold, 0),
+		"木材成本": maxi(wood, 0),
+		"兵力占用": maxi(troops, 0),
+		"可被征用": requis,
+		"诉求分": score,
+		"依据": basis,
+		"驳回原因": "",
+		"可执行": ready,
+		"执行": exec,
+	}
+
+
+## 主入口：一次 dept 思考（每 tick 调，内部按 2 s 节拍仲裁）
+func _dept_tick(diff: DifficultyDef, now: float) -> void:
+	if _faction == null:
+		return
+	_dept_ctx_tick(now)
+	# --- 后台：采集派工 / 工地结算 / 训练归因（**不参与仲裁**，用户口径"经济在后台"）---
+	_assign_workers(diff)
+	_tick_build_diag()
+	_tick_repair_stats()
+	_sample_train_block(diff)
+	# --- 战斗线里"不花资源也不抢新增兵力"的部分：残血撤退 / 入夜收队 / 清野 ---
+	#   ★ 2C-9 明确**不重写**战斗线闭环，所以这三段保持原样，跑在仲裁之前。
+	_manage_retreat()
+	if Game.is_night():
+		_manage_night(diff)
+	else:
+		_manage_creep_clear(diff)
+	# --- 2 s 节拍：L2 重建 → 主部门仲裁 → 按分数顺序执行 ---
+	if _dept_cd > 0.0:
+		return
+	_dept_cd = DEPT_CYCLE
+	_l1_snapshot()
+	demands_l2 = _ops_demands(diff)
+	demands_l2.append_array(_combat_demands(diff))
+	demands_l2.append_array(_expand_demands(diff))
+	_dept_note_competition()
+	var t_avail: int = _troop_available()
+	var plan: Dictionary = _model_call("arbitrate",
+			[demands_l2, _faction.gold, _faction.wood, t_avail])
+	if plan == null:
+		return
+	_dept_execute(plan)
+	_dept_log(now, plan)
+
+
+## L0 快照（每 tick 覆盖写）+ L1 环形槽推进（1 s 一格）
+func _dept_ctx_tick(now: float) -> void:
+	if _faction == null:
+		return
+	ctx0 = {
+		"t": now,
+		"gold": _faction.gold,
+		"wood": _faction.wood,
+		"pop_cap": _faction.food_cap(),
+		"pop_used": _faction.food_used(),
+		"troops": _army_units().size(),
+		"peasants": _workers().size(),
+		"阶段": "夜晚" if Game.is_night() else "白天",
+		"threat": int(metrics.get("base_threat", 0.0)),
+	}
+	if _l1_dmg.size() != L1_DMG_SEC:
+		_l1_dmg.resize(L1_DMG_SEC)
+		_l1_dmg.fill(0.0)
+	if _l1_gold.size() != L1_INCOME_SEC:
+		_l1_gold.resize(L1_INCOME_SEC)
+		_l1_gold.fill(0.0)
+	if _l1_wood.size() != L1_INCOME_SEC:
+		_l1_wood.resize(L1_INCOME_SEC)
+		_l1_wood.fill(0.0)
+	if _prev_gold_dept < 0:
+		_prev_gold_dept = _faction.gold
+		_prev_wood_dept = _faction.wood
+	var sec: int = int(now)
+	if sec != _l1_sec:
+		_l1_sec = sec
+		_l1_dmg[sec % L1_DMG_SEC] = 0.0
+		# 收支速率只记**正向跳变**（采集交付），花钱不算"负收入"
+		_l1_gold[sec % L1_INCOME_SEC] = float(maxi(_faction.gold - _prev_gold_dept, 0))
+		_l1_wood[sec % L1_INCOME_SEC] = float(maxi(_faction.wood - _prev_wood_dept, 0))
+		_prev_gold_dept = _faction.gold
+		_prev_wood_dept = _faction.wood
+
+
+func _l1_add_damage(dmg: float, now: float) -> void:
+	if _l1_dmg.size() != L1_DMG_SEC:
+		return
+	_l1_dmg[int(now) % L1_DMG_SEC] = float(_l1_dmg[int(now) % L1_DMG_SEC]) + maxf(dmg, 0.0)
+
+
+## L1 聚合（窗口外的旧数据直接丢弃，内存 O(1)；**不引入历史压缩参数、不存事件列表**）
+func _l1_snapshot() -> void:
+	var dmg30: float = 0.0
+	for v in _l1_dmg:
+		dmg30 += v
+	var g60: float = 0.0
+	var w60: float = 0.0
+	for v in _l1_gold:
+		g60 += v
+	for v in _l1_wood:
+		w60 += v
+	ctx1 = {
+		"dmg_30s": dmg30,
+		"gold_60s": g60,
+		"wood_60s": w60,
+		"gold_rate": g60 / 60.0,
+		"wood_rate": w60 / 60.0,
+		"verdicts": _l1_verdicts.duplicate(),
+	}
+
+
+# ---------------------------------------------------------------------------
+# 兵力预留制（锁定 / 解锁 / 扣减顺序）
+# ---------------------------------------------------------------------------
+
+## 防守锁定：留给"家里不空"的那部分（防守下限与压家敌人取大，且不超过现役）
+func _defense_reserved(army_n: int) -> int:
+	var floor_v: int = _defense_floor()
+	var threat_n: int = int(metrics.get("base_threat", 0.0))
+	return mini(maxi(army_n, 0), maxi(floor_v, threat_n * 2))
+
+
+## 本次仲裁可用的兵力 = 现役 − 防守锁定 − 已锁定
+func _troop_available() -> int:
+	var army_n: int = _army_units().size()
+	var locks: int = 0
+	for k in _troop_locks.keys():
+		locks += int((_troop_locks[k] as Dictionary).get("n", 0))
+	dept_stats["lock_held_last"] = _troop_locks.size()
+	return maxi(army_n - _defense_reserved(army_n) - locks, 0)
+
+
+func _troop_lock(key: String, n: int, ttl: float, kind: String) -> void:
+	if n <= 0:
+		return
+	_troop_locks[key] = {"n": n, "t": Game.elapsed + maxf(ttl, 0.1), "k": kind}
+	match kind:
+		"wave":
+			dept_stats["lock_wave_held"] = int(dept_stats["lock_wave_held"]) + 1
+		"patrol":
+			dept_stats["lock_patrol_held"] = int(dept_stats["lock_patrol_held"]) + 1
+		"scout":
+			dept_stats["lock_scout_held"] = int(dept_stats["lock_scout_held"]) + 1
+	dept_stats["lock_held_max"] = maxi(int(dept_stats["lock_held_max"]), _troop_locks.size())
+
+
+## 解锁。`explicit=true` = 动作正常结束（波次收尾）；false/超时 = 租约到期。
+func _troop_unlock(key: String, explicit: bool = false) -> bool:
+	if not _troop_locks.has(key):
+		return false
+	var k: String = String((_troop_locks[key] as Dictionary).get("k", ""))
+	_troop_locks.erase(key)
+	if explicit and k == "wave":
+		dept_stats["lock_wave_released"] = int(dept_stats["lock_wave_released"]) + 1
+	return true
+
+
+## 租约到期清扫（**只有 `wave` 锁到期算泄漏信号** —— 波次收尾应该显式解锁）
+func _troop_lock_tick(now: float) -> void:
+	var dead: Array = []
+	for k in _troop_locks.keys():
+		if now >= float((_troop_locks[k] as Dictionary).get("t", 0.0)):
+			dead.append(k)
+	for k in dead:
+		var kind: String = String((_troop_locks[k] as Dictionary).get("k", ""))
+		_troop_locks.erase(k)
+		if kind == "wave":
+			dept_stats["lock_wave_timeout"] = int(dept_stats["lock_wave_timeout"]) + 1
+
+
+# ---------------------------------------------------------------------------
+# 三条线：报诉求
+# ---------------------------------------------------------------------------
+
+## 运营线：训练 + 建造 + 修理（金币 / 木材的竞争者全在这条线上）
+func _ops_demands(diff: DifficultyDef) -> Array:
+	var out: Array = []
+	if _faction == null:
+		return out
+	var threat_n: int = int(ctx0.get("threat", 0))
+	var pd: Dictionary = _demand_peasant()
+	if not pd.is_empty():
+		out.append(pd)
+	out.append_array(_demand_army_train(diff, threat_n))
+	out.append_array(_demand_repairs())
+	out.append_array(_demand_builds(diff, threat_n))
+	return out
+
+
+## 训练农民（与训练兵**同池竞争金币**，不藏在运营线内部自裁）
+func _demand_peasant() -> Dictionary:
+	if _faction == null:
+		return {}
+	var diff: DifficultyDef = Cfg.difficulty(Game.difficulty_index)
+	var target: int = PEASANT_TOTAL_CAP + int(posture.get("worker_bonus", 0))
+	var starving: bool = _demand_pressure(diff)
+	if starving:
+		target = mini(target + PEASANT_EMERGENCY_BONUS, PEASANT_TOTAL_CAP)
+	var peasants: int = _faction.count_units(_worker_id())
+	if peasants >= target:
+		return {}
+	if not starving and peasants >= _army_units().size() + VILLAGER_ARMY_GAP:
+		return {}
+	var wid: StringName = _worker_id()
+	var wd: UnitDef = Cfg.unit(wid) if wid != &"" else null
+	if wd == null:
+		return {}
+	var hall: RtsBuilding = _first_building(_main_base_id())
+	var ready: bool = hall != null and hall.train_count() < MAX_QUEUE_PEASANT
+	var gap: int = target - peasants
+	return _demand("运营线", "训练", "农民",
+			int(wd.gold_cost), int(wd.wood_cost), 0, false,
+			float(_model_call("demand_score_train", [gap, int(ctx0.get("threat", 0))])),
+			"农民缺口=%d（目标 %d 现有 %d）" % [gap, target, peasants],
+			ready, Callable(self, "_exec_train_peasant"))
+
+
+## 训练战斗单位：每座"队列有空位"的产能建筑报一条（同部门多诉求由主部门重判）
+func _demand_army_train(diff: DifficultyDef, threat_n: int) -> Array:
+	var out: Array = []
+	if _faction == null:
+		return out
+	var producers: Array = _army_producers(diff)
+	if producers.is_empty():
+		return out
+	var target_army: int = _army_target()
+	var army: int = _army_units().size()
+	if target_army >= 0 and army >= target_army:
+		return out
+	var gap: int = maxi(target_army - army, 1) if target_army >= 0 else 1
+	for b in producers:
+		var rb: RtsBuilding = b as RtsBuilding
+		if rb == null or not is_instance_valid(rb) or not rb.is_alive():
+			continue
+		if rb.train_count() >= MAX_QUEUE_ARMY:
+			continue
+		var picked: StringName = _pick_army_unit(rb, diff)
+		if picked == &"":
+			continue
+		var ud: UnitDef = Cfg.unit(picked)
+		if ud == null:
+			continue
+		out.append(_demand("运营线", "训练", String(ud.display_name),
+				int(ud.gold_cost), int(ud.wood_cost), 0, false,
+				float(_model_call("demand_score_train", [gap, threat_n])),
+				"军队缺口=%d（目标 %d 实际 %d）" % [gap, target_army, army],
+				true, Callable(self, "_exec_train_army").bind(rb, picked)))
+	return out
+
+
+## 修理：每栋"掉血 ≥200 且没人修"的建筑一条（分数 = 掉血 ÷ 200，掉血多优先）
+func _demand_repairs() -> Array:
+	var out: Array = []
+	if _faction == null:
+		return out
+	var pack: Dictionary = _repair_candidates()
+	for c in (pack.get("cands", []) as Array):
+		var rb: RtsBuilding = c["b"]
+		if rb == null or not is_instance_valid(rb) or rb.def == null:
+			continue
+		var deficit: float = float(c["deficit"])
+		out.append(_demand("运营线", "修理", String(rb.def.display_name),
+				0, 0, 0, false,
+				float(_model_call("demand_score_repair", [deficit])),
+				"掉血=%.0f" % deficit, true,
+				Callable(self, "_exec_repair").bind(rb, deficit)))
+	return out
+
+
+## 修理统计（**每 tick 采样，与 dept=off 的 `candidates` 口径对齐**；只读不派工）
+func _tick_repair_stats() -> void:
+	if _faction == null:
+		return
+	var pack: Dictionary = _repair_candidates()
+	var cands: Array = pack.get("cands", [])
+	if cands.is_empty():
+		if bool(pack.get("wood_blocked", false)):
+			repair_stats["blocked_wood"] = int(repair_stats.get("blocked_wood", 0)) + 1
+		return
+	repair_stats["candidates"] = int(repair_stats.get("candidates", 0)) + 1
+	repair_stats["candidate_buildings"] = \
+			int(repair_stats.get("candidate_buildings", 0)) + cands.size()
+
+
+## 建造：农场 / 兵营 / 哨塔 / 营火 / 科技建筑（每类一 tick 最多报一条）
+func _demand_builds(diff: DifficultyDef, threat_n: int) -> Array:
+	var out: Array = []
+	if _faction == null:
+		return out
+	# ① 农场（急建走 10 分，不急 1 分 —— 刻度在系数卡里）
+	var fid: StringName = _food_building_id()
+	if fid != &"" and not _has_site_of(fid):
+		var urgent: bool = _farm_urgent()
+		if urgent or _farm_wanted(diff):
+			var fd: UnitDef = Cfg.unit(fid)
+			if fd != null:
+				var fs: float = float(_model_call("demand_scale",
+						["农场急建" if urgent else "农场不急"]))
+				out.append(_demand("运营线", "建造", String(fd.display_name),
+						int(fd.gold_cost), int(fd.wood_cost), 0, false,
+						float(_model_call("demand_score_build", [1, fs, 0, 1.0])),
+						"农场缺口=1（%s，人口 %d/%d）" % [
+							"急" if urgent else "不急",
+							_faction.food_used(), _faction.food_cap()],
+						true, Callable(self, "_exec_build_farm")))
+	# ② 兵营（主产能建筑）
+	var pid: StringName = _primary_producer_id(diff)
+	if pid != &"" and not _has_site_of(pid):
+		var want: int = _barracks_want()
+		var have: int = _faction.count_buildings(pid)
+		if have < want:
+			var bd: UnitDef = Cfg.unit(pid)
+			if bd != null:
+				var bs: float = float(_model_call("demand_scale",
+						["兵营无产能" if have <= 0 else "兵营扩建"]))
+				out.append(_demand("运营线", "建造", String(bd.display_name),
+						int(bd.gold_cost), int(bd.wood_cost), 0, false,
+						float(_model_call("demand_score_build",
+							[0, 1.0, maxi(want - have, 1), bs])),
+						"兵营缺口=%d（目标 %d 已有 %d）" % [
+							maxi(want - have, 1), want, have],
+						true, Callable(self, "_exec_build_barracks")))
+	# ③ 哨塔（扩视野；运营线的"建造/哨塔"）
+	var wid: StringName = _watchtower_id()
+	if wid != &"" and not _has_site_of(wid):
+		var wd: UnitDef = Cfg.unit(wid)
+		var tid: StringName = _tower_id()
+		var wwant: int = clampi(1 + int(Game.elapsed / WATCHTOWER_GROW_SEC), 1, WATCHTOWER_MAX)
+		var whave: int = _faction.count_buildings(wid)
+		var cap_ok: bool = tid == &"" or _faction.count_buildings(tid) < MAX_ARROW_TOWERS
+		if wd != null and whave < wwant and cap_ok:
+			out.append(_demand("运营线", "建造", String(wd.display_name),
+					int(wd.gold_cost), int(wd.wood_cost), 0, false,
+					float(_model_call("demand_score_fixed", ["建塔"])) * (1.0 + float(threat_n)),
+					"哨塔 %d/%d 座" % [whave, wwant], true,
+					Callable(self, "_exec_build_watchtower")))
+	# ④ 营火（只在夜里，最多 CAMPFIRE_MAX 座）
+	if Game.is_night():
+		var cid: StringName = _campfire_id()
+		if cid != &"" and not _has_site_of(cid):
+			var cd: UnitDef = Cfg.unit(cid)
+			if cd != null and _faction.count_buildings(cid) < CAMPFIRE_MAX:
+				out.append(_demand("运营线", "建造", String(cd.display_name),
+						int(cd.gold_cost), int(cd.wood_cost), 0, false,
+						1.0,
+						"夜营火（已有 %d）" % _faction.count_buildings(cid),
+						true, Callable(self, "_exec_build_campfire")))
+	# ⑤ 其余产能建筑（圣地/车坊）：每种一座，最低分
+	for id in _production_building_ids(diff):
+		var nid: StringName = StringName(id)
+		if nid == pid:
+			continue
+		if _faction.count_buildings(nid) >= 1 or _has_site_of(nid):
+			continue
+		var ed: UnitDef = Cfg.unit(nid)
+		if ed == null:
+			continue
+		out.append(_demand("运营线", "建造", String(ed.display_name),
+				int(ed.gold_cost), int(ed.wood_cost), 0, false,
+				float(_model_call("demand_scale", ["农场不急"])),
+				"科技建筑每种一座（已有 %d）" % _faction.count_buildings(nid),
+				true, Callable(self, "_exec_build_extra").bind(nid)))
+	return out
+
+
+## 战斗线：出击 + 防守（**不花金币**，竞争的是兵力存量）
+func _combat_demands(diff: DifficultyDef) -> Array:
+	var out: Array = []
+	if _faction == null:
+		return out
+	var threat_n: int = int(ctx0.get("threat", 0))
+	if threat_n > 0:
+		var dp: Dictionary = _defense_plan(diff)
+		if not dp.is_empty():
+			out.append(_demand("战斗线", "防守", "基地", 0, 0, 0, false,
+					float(_model_call("demand_score_defend", [threat_n])),
+					"压家敌人=%d" % threat_n, true,
+					Callable(self, "_exec_defend").bind(dp)))
+	var wp: Dictionary = _wave_plan(diff)
+	if not wp.is_empty():
+		var ratio: float = float(posture.get("army_ratio", 1.0))
+		var requis: bool = bool(wp.get("breakout", false))
+		out.append(_demand("战斗线", "出击", String(wp.get("goal_name", "?")),
+				0, 0, int(wp.get("push_n", 0)), requis,
+				float(_model_call("demand_score_push", [ratio])),
+				"兵力比=%.2f 出击 %d 人" % [ratio, int(wp.get("push_n", 0))],
+				true, Callable(self, "_exec_wave").bind(wp)))
+	return out
+
+
+## 扩展线：侦查 / 巡逻 / 建塔 / 建分基地（侦查巡逻与战斗线**同池竞争兵力**）
+func _expand_demands(diff: DifficultyDef) -> Array:
+	var out: Array = []
+	if _faction == null:
+		return out
+	var threat_n: int = int(ctx0.get("threat", 0))
+	# ① 巡逻
+	var pp: Dictionary = _patrol_plan()
+	if not pp.is_empty():
+		out.append(_demand("扩展线", "巡逻", "基地外圈", 0, 0, int(pp.get("n", 1)), true,
+				float(_model_call("demand_score_fixed", ["巡逻"])),
+				"巡逻 %d 人" % int(pp.get("n", 1)), true,
+				Callable(self, "_exec_patrol").bind(pp)))
+	# ② 侦查（节流 20 s；固定分 1.0）
+	if _scout_cd <= 0.0 and threat_n <= 0 and _idle_scout_unit() != null:
+		out.append(_demand("扩展线", "侦查", "敌方方向", 0, 0, 1, true,
+				float(_model_call("demand_score_fixed", ["侦查"])),
+				"侦查 1 人", true, Callable(self, "_exec_scout")))
+	# ③ 建塔（箭塔；有压家敌人时分数 ×(1+威胁)）
+	var tid: StringName = _tower_id()
+	if tid != &"" and not _has_site_of(tid):
+		var td: UnitDef = Cfg.unit(tid)
+		var pid: StringName = _primary_producer_id(diff)
+		var twant: int = clampi(_faction.count_buildings(pid) / 2, 1, 2) if pid != &"" else 1
+		if td != null and _faction.count_buildings(tid) < twant:
+			out.append(_demand("扩展线", "建塔", String(td.display_name),
+					int(td.gold_cost), int(td.wood_cost), 0, false,
+					float(_model_call("demand_score_fixed", ["建塔"])) * (1.0 + float(threat_n)),
+					"箭塔 %d/%d 座" % [_faction.count_buildings(tid), twant], true,
+					Callable(self, "_exec_build_arrow_tower")))
+	# ④ 建分基地（`can_build_townhall()` 固定 false → 本轮不会真的报出来；
+	#    代码路径留着，2C-10 把开关打开就能进仲裁）
+	if can_build_townhall():
+		var hid: StringName = _main_base_id()
+		var hd: UnitDef = Cfg.unit(hid) if hid != &"" else null
+		if hd != null:
+			out.append(_demand("扩展线", "建分基地", String(hd.display_name),
+					int(hd.gold_cost), int(hd.wood_cost), 0, false,
+					float(_model_call("demand_score_fixed", ["分基地"])),
+					"分基地（接口预留）", false, Callable(self, "_exec_build_townhall")))
+	return out
+
+
+## 竞争计数（只记录：训练 vs 建造 / 出击 vs 巡逻 是否在同一周期里同时存在）
+func _dept_note_competition() -> void:
+	var has_train: bool = false
+	var has_build: bool = false
+	var has_push: bool = false
+	var has_patrol: bool = false
+	var req_written: int = 0
+	for d in demands_l2:
+		if not (d is Dictionary):
+			continue
+		match String((d as Dictionary).get("动作类型", "")):
+			"训练":
+				has_train = true
+			"建造":
+				has_build = true
+			"出击":
+				has_push = true
+			"巡逻":
+				has_patrol = true
+		if bool((d as Dictionary).get("可被征用", false)):
+			req_written += 1
+	dept_stats["requisitionable_written"] = \
+			int(dept_stats["requisitionable_written"]) + req_written
+	if has_train and has_build:
+		dept_stats["compete_train_build"] = int(dept_stats["compete_train_build"]) + 1
+	if has_push and has_patrol:
+		dept_stats["compete_push_patrol"] = int(dept_stats["compete_push_patrol"]) + 1
+
+
+# ---------------------------------------------------------------------------
+# 主部门：按仲裁结果顺序执行
+# ---------------------------------------------------------------------------
+
+func _dept_execute(plan: Dictionary) -> void:
+	dept_stats["cycles"] = int(dept_stats["cycles"]) + 1
+	dept_stats["demands"] = int(dept_stats["demands"]) + int(plan.get("总额", 0))
+	var rej: Array = plan.get("驳回", [])
+	dept_stats["rejected"] = int(dept_stats["rejected"]) + rej.size()
+	var rj: Dictionary = dept_stats["reject_by_reason"]
+	for d in rej:
+		var r: String = String((d as Dictionary).get("驳回原因", ""))
+		if not r.is_empty():
+			rj[r] = int(rj.get(r, 0)) + 1
+	for d in (plan.get("执行", []) as Array):
+		var dd: Dictionary = d
+		var action: String = String(dd.get("动作类型", ""))
+		var ok: bool = true
+		var cb = dd.get("执行", null)
+		if cb is Callable:
+			ok = bool((cb as Callable).call())
+		if not ok:
+			# 执行阶段失败：资源其实没花出去（下个周期按真实资源重判），按"条件不满足"记账
+			rj["条件不满足"] = int(rj.get("条件不满足", 0)) + 1
+			continue
+		dept_stats["executed"] = int(dept_stats["executed"]) + 1
+		match action:
+			"训练":
+				if String(dd.get("目标", "")) == "农民":
+					dept_stats["win_train_peasant"] = int(dept_stats["win_train_peasant"]) + 1
+				else:
+					dept_stats["win_train"] = int(dept_stats["win_train"]) + 1
+			"建造":
+				dept_stats["win_build"] = int(dept_stats["win_build"]) + 1
+			"出击":
+				dept_stats["win_push"] = int(dept_stats["win_push"]) + 1
+			"防守":
+				dept_stats["win_defend"] = int(dept_stats["win_defend"]) + 1
+			"巡逻":
+				dept_stats["win_patrol"] = int(dept_stats["win_patrol"]) + 1
+			"侦查":
+				dept_stats["win_scout"] = int(dept_stats["win_scout"]) + 1
+			"建塔":
+				dept_stats["win_tower"] = int(dept_stats["win_tower"]) + 1
+		# 兵力锁定：出击的锁跟着波次走（收尾时显式解锁），巡逻/侦查是短租约
+		var t: int = int(dd.get("兵力占用", 0))
+		if t > 0:
+			if action == "出击":
+				_troop_lock("wave:%d" % _wave_index, t, DEPT_WAVE_LOCK_TTL, "wave")
+			elif action == "巡逻":
+				_troop_lock("patrol", t, DEPT_CYCLE * 1.5, "patrol")
+			elif action == "侦查":
+				_troop_lock("scout", t, DEPT_CYCLE * 1.5, "scout")
+	dept_stats["reject_by_reason"] = rj
+	_troop_lock_tick(Game.elapsed)
+
+
+## L3 决策日志：每 2 s 一行（**只落盘，不进决策**）
+func _dept_log(now: float, plan: Dictionary) -> void:
+	if dept_log_path.is_empty():
+		return
+	var row: Dictionary = {
+		"t": snappedf(now, 0.01),
+		"阵营": String(_faction.display_name) if _faction != null else "?",
+		"周期": int(dept_stats["cycles"]),
+		"L0": {"金": int(ctx0.get("gold", 0)), "木": int(ctx0.get("wood", 0)),
+			"人口": "%d/%d" % [int(ctx0.get("pop_used", 0)), int(ctx0.get("pop_cap", 0))],
+			"兵力": int(ctx0.get("troops", 0)), "威胁": int(ctx0.get("threat", 0))},
+		"L1": {"伤30s": snappedf(float(ctx1.get("dmg_30s", 0.0)), 0.1),
+			"金速": snappedf(float(ctx1.get("gold_rate", 0.0)), 0.01),
+			"木速": snappedf(float(ctx1.get("wood_rate", 0.0)), 0.01)},
+		"诉求": [],
+		"执行": [],
+		"驳回": {},
+	}
+	for d in demands_l2:
+		if not (d is Dictionary):
+			continue
+		(row["诉求"] as Array).append({
+			"线": String(d.get("来源线", "")), "动作": String(d.get("动作类型", "")),
+			"目标": String(d.get("目标", "")),
+			"分": snappedf(float(d.get("诉求分", 0.0)), 0.01),
+			"金": int(d.get("金币成本", 0)), "木": int(d.get("木材成本", 0)),
+			"兵": int(d.get("兵力占用", 0)),
+		})
+	for d in (plan.get("执行", []) as Array):
+		(row["执行"] as Array).append("%s·%s" % [
+			String((d as Dictionary).get("来源线", "")),
+			String((d as Dictionary).get("动作类型", ""))])
+	var rj: Dictionary = {}
+	for k in (dept_stats["reject_by_reason"] as Dictionary).keys():
+		rj[k] = int(dept_stats["reject_by_reason"][k])
+	row["驳回"] = rj
+	var fa := FileAccess.open(dept_log_path, FileAccess.READ_WRITE)
+	if fa == null:
+		return
+	fa.seek_end()
+	fa.store_line(JSON.stringify(row))
+	fa.close()
+
+
+# ---------------------------------------------------------------------------
+# 执行器（每个都返回 bool：true = 命令/扣费真的发生了）
+# ---------------------------------------------------------------------------
+
+func _exec_train_peasant() -> bool:
+	if _faction == null:
+		return false
+	var wid: StringName = _worker_id()
+	var hall: RtsBuilding = _first_building(_main_base_id())
+	if hall == null or wid == &"":
+		return false
+	if hall.train_count() >= MAX_QUEUE_PEASANT:
+		return false
+	if not hall.queue_train(wid):
+		return false
+	_log("排农民（部门仲裁，现有 %d）" % _faction.count_units(wid))
+	return true
+
+
+func _exec_train_army(b: RtsBuilding, picked: StringName) -> bool:
+	if b == null or not is_instance_valid(b) or not b.is_alive():
+		return false
+	if b.train_count() >= MAX_QUEUE_ARMY:
+		return false
+	if not b.can_train(picked):
+		return false
+	if not b.queue_train(picked):
+		return false
+	var ud: UnitDef = Cfg.unit(picked)
+	if ud != null:
+		invest_stats["army_gold"] = int(invest_stats["army_gold"]) + int(ud.gold_cost)
+		invest_stats["army_wood"] = int(invest_stats["army_wood"]) + int(ud.wood_cost)
+	return true
+
+
+func _exec_build_farm() -> bool:
+	var fid: StringName = _food_building_id()
+	if fid == &"" or _faction == null:
+		return false
+	var d: UnitDef = Cfg.unit(fid)
+	if d == null:
+		return false
+	var builder: RtsUnit = _pick_builder()
+	if builder == null:
+		_note_farm_fail("no_builder")
+		return false
+	var spot: Vector3 = _find_build_spot(d.footprint)
+	if spot == Vector3.INF:
+		_note_farm_fail("no_spot")
+		return false
+	if not _can_spend(fid):
+		if _faction.wood < int(d.wood_cost):
+			_note_farm_fail("no_wood")
+		else:
+			_note_farm_fail("no_gold")
+		return false
+	var site: Node3D = _sched.build(builder, d, spot, _build_yaw_at(spot), "economy")
+	if site == null:
+		return false
+	_note_build(fid)
+	_farm_sites[site.get_instance_id()] = true
+	_log("造农场（部门仲裁，人口 %d/%d）" % [_faction.food_used(), _faction.food_cap()])
+	return true
+
+
+func _exec_build_barracks() -> bool:
+	if _faction == null:
+		return false
+	var diff: DifficultyDef = Cfg.difficulty(Game.difficulty_index)
+	var pid: StringName = _primary_producer_id(diff)
+	if pid == &"":
+		return false
+	var bd: UnitDef = Cfg.unit(pid)
+	if bd == null or not Game.can_afford(_faction, pid):
+		return false
+	# 必须留足"新兵营一完工就能立刻出一个兵"的钱（2C-6 起的老规矩，未改）
+	var reserve: int = _cheapest_army_gold(diff) * MAX_QUEUE_ARMY
+	if _faction.gold < int(bd.gold_cost) + reserve:
+		return false
+	var builder: RtsUnit = _pick_builder()
+	if builder == null:
+		return false
+	var spot: Vector3 = _find_build_spot(bd.footprint)
+	if spot == Vector3.INF:
+		return false
+	if _sched.build(builder, bd, spot, _build_yaw_at(spot), "economy") == null:
+		return false
+	_note_build(pid)
+	_log("扩建%s（部门仲裁）" % bd.display_name)
+	return true
+
+
+func _exec_build_watchtower() -> bool:
+	if _faction == null:
+		return false
+	var wid: StringName = _watchtower_id()
+	if wid == &"":
+		return false
+	var d: UnitDef = Cfg.unit(wid)
+	if d == null or not _can_spend(wid):
+		return false
+	var builder: RtsUnit = _pick_builder()
+	if builder == null:
+		return false
+	var spot: Vector3 = _frontier_spot(d.footprint, 24.0, 34.0)
+	if spot == Vector3.INF:
+		spot = _find_build_spot(d.footprint)
+	if spot == Vector3.INF:
+		return false
+	if _sched.build(builder, d, spot, _build_yaw_at(spot), "defense") == null:
+		return false
+	_note_build(wid)
+	_log("造哨塔扩视野（部门仲裁）")
+	return true
+
+
+func _exec_build_arrow_tower() -> bool:
+	if _faction == null:
+		return false
+	var tid: StringName = _tower_id()
+	if tid == &"":
+		return false
+	var td: UnitDef = Cfg.unit(tid)
+	if td == null or not _can_spend(tid):
+		return false
+	var builder: RtsUnit = _pick_builder()
+	if builder == null:
+		return false
+	var spot: Vector3 = _find_build_spot(td.footprint)
+	if spot == Vector3.INF:
+		return false
+	if _sched.build(builder, td, spot, _build_yaw_at(spot), "economy") == null:
+		return false
+	_note_build(tid)
+	_log("补箭塔（部门仲裁）")
+	return true
+
+
+func _exec_build_campfire() -> bool:
+	if _faction == null:
+		return false
+	var cid: StringName = _campfire_id()
+	if cid == &"":
+		return false
+	var d: UnitDef = Cfg.unit(cid)
+	if d == null or not _can_spend(cid):
+		return false
+	var builder: RtsUnit = _pick_builder()
+	if builder == null:
+		return false
+	var spot: Vector3 = _frontier_spot(d.footprint, 10.0, 16.0)
+	if spot == Vector3.INF:
+		spot = _find_build_spot(d.footprint)
+	if spot == Vector3.INF:
+		return false
+	if _sched.build(builder, d, spot, _build_yaw_at(spot), "night") == null:
+		return false
+	_note_build(cid)
+	_log("夜里点营火（部门仲裁）")
+	return true
+
+
+func _exec_build_extra(id: StringName) -> bool:
+	if _faction == null:
+		return false
+	var d: UnitDef = Cfg.unit(id)
+	if d == null or not _can_spend(id):
+		return false
+	var builder: RtsUnit = _pick_builder()
+	if builder == null:
+		return false
+	var spot: Vector3 = _find_build_spot(d.footprint)
+	if spot == Vector3.INF:
+		return false
+	if _sched.build(builder, d, spot, _build_yaw_at(spot), "tech") == null:
+		return false
+	_note_build(id)
+	_log("扩建%s（部门仲裁）" % d.display_name)
+	return true
+
+
+func _exec_build_townhall() -> bool:
+	# 接口预留：`can_build_townhall()` 固定 false，本函数当前**不可达**（回归断言守住）
+	return false
+
+
+func _exec_repair(rb: RtsBuilding, deficit: float) -> bool:
+	if _faction == null or rb == null or not is_instance_valid(rb) or not rb.is_alive():
+		return false
+	var slots: Array = _builder_units()
+	var free: Array = []
+	for s in slots:
+		var o: int = int(s.order)
+		if o == RtsConst.Order.BUILD or o == RtsConst.Order.REPAIR:
+			continue
+		free.append(s)
+	if free.is_empty():
+		if slots.is_empty():
+			repair_stats["blocked_no_builder"] = \
+					int(repair_stats.get("blocked_no_builder", 0)) + 1
+		else:
+			repair_stats["blocked_builder_busy"] = \
+					int(repair_stats.get("blocked_builder_busy", 0)) + 1
+		return false
+	if int(rb.call("repair_wood_for_full")) > _faction.wood:
+		repair_stats["blocked_wood"] = int(repair_stats.get("blocked_wood", 0)) + 1
+		return false
+	return _do_repair(free[0], rb, deficit)
+
+
+func _exec_wave(p: Dictionary) -> bool:
+	return _issue_wave_plan(p)
+
+
+func _exec_defend(p: Dictionary) -> bool:
+	return _issue_defend(p)
+
+
+func _exec_patrol(p: Dictionary) -> bool:
+	return _issue_patrol(p)
+
+
+func _idle_scout_unit() -> RtsUnit:
+	for u in _army_units():
+		if u != null and is_instance_valid(u) and bool(u.call("is_idle_like")):
+			return u
+	return null
+
+
+## 侦查：派 1 个闲着的兵朝敌方方向走 45 m（纯移动，不交战；到点自动变回 idle）
+func _exec_scout() -> bool:
+	if _faction == null or _scout_cd > 0.0:
+		return false
+	var u: RtsUnit = _idle_scout_unit()
+	if u == null:
+		return false
+	var home: Vector3 = RtsWorld.base_center(_faction)
+	var dir := Vector3.FORWARD
+	var foe: RtsFaction = _foe_faction()
+	if foe != null:
+		var to: Vector3 = RtsWorld.base_center(foe) - home
+		to.y = 0.0
+		if to.length() > 1.0:
+			dir = to.normalized()
+	_scout_seq += 1
+	var off: float = (_dhash01(_scout_seq, 41) - 0.5) * 0.8
+	var ang: float = atan2(dir.x, dir.z) + off
+	var p: Vector3 = home + Vector3(sin(ang), 0.0, cos(ang)) * 45.0
+	_sched.move([u], p, "scout")
+	_scout_cd = SCOUT_INTERVAL
+	return true
+
+
+## "这个 id 有没有正在施工的工地"（与 `_maybe_build_one` 的"在建不重复盖"同口径）
+func _has_site_of(id: StringName) -> bool:
+	if _faction == null:
+		return false
+	for b in _faction.buildings:
+		if b == null or not is_instance_valid(b) or b.def == null:
+			continue
+		if b.def.id != id:
+			continue
+		var rb: RtsBuilding = b as RtsBuilding
+		if rb != null and rb.is_alive() and not rb.is_constructed:
+			return true
+	return false
+
+
+## 农场"急建"通道（人口余量 <4 或占用 >90%）
+func _farm_urgent() -> bool:
+	if _faction == null:
+		return false
+	var headroom: int = _faction.food_cap() - _faction.food_used()
+	return headroom < 4 or _pop_critical()
+
+
+## 农场"不急"通道（人口预判：占用>70% / 60 s 训练量×2 / 连一个兵都排不下）
+func _farm_wanted(diff: DifficultyDef) -> bool:
+	if _faction == null:
+		return false
+	var headroom: int = _faction.food_cap() - _faction.food_used()
+	if headroom < 4:
+		return false
+	return _need_farm(diff) or _need_more_farm(diff)
+
+
 ## 关键决策日志（带统一前缀）
 func _log(msg: String) -> void:
 	print("%s %s" % [log_prefix, msg])
+
+
+## 2C-9：**并发修理探针**（2C-8 的 `_qa/probe_2c8_repair.gd` 转正）。
+##
+## 做法（与 2C-8 探针同一口径）：把两栋**已完工**的自有建筑各打到 `max_hp − 250`，
+## 然后手动调一次修理派工，断言 `targets==2 && repairing==2 && distinct==2 && issued==2`。
+##
+## 为什么要转正：2C-8 的探针是临时挂在 `主场景.gd` 上的一个 `_qa/` 脚本（不入库、跑完撤掉），
+## 于是"并发修理"这条能力每轮都要重写一遍。现在收成一个公开方法，
+## 由 `--qa-repair-probe` 在基准里定点调用（见 AI基准.gd），命令固定、结果可复现。
+func qa_repair_probe() -> Dictionary:
+	if _faction == null:
+		return {"ok": false, "why": "无阵营"}
+	var two: Array = []
+	for b in _faction.buildings:
+		if b == null or not is_instance_valid(b) or b.def == null:
+			continue
+		var rb: RtsBuilding = b as RtsBuilding
+		# ★ 不能先判 `can_repair()`：它的语义是"血量已经掉了"（hp < max_hp−0.5），
+		#   满血的楼一律 false —— 2C-8 探针踩过同一个坑（那时候是先打血再判）。
+		if rb == null or not rb.is_constructed or not rb.is_alive():
+			continue
+		if float(rb.def.max_hp) <= 251.0:
+			continue
+		two.append(rb)
+		if two.size() >= 2:
+			break
+	if two.size() < 2:
+		return {"ok": false, "why": "需要 2 栋已完工且可修的建筑（当前 %d）" % two.size()}
+	for rb2 in two:
+		rb2.hp = maxf(float(rb2.def.max_hp) - 250.0, 1.0)
+	var pack: Dictionary = _repair_candidates()
+	var list: Array = pack.get("cands", [])
+	var before: int = int(repair_stats.get("issued", 0))
+	if AIV.builder_mode() == "on" or AIV.dept_on():
+		_issue_repairs_multi(list)
+	else:
+		_issue_repairs_single(list)
+	var issued: int = int(repair_stats.get("issued", 0)) - before
+	var repairing: int = 0
+	var distinct: Dictionary = {}
+	for w in _workers():
+		if w == null or not is_instance_valid(w):
+			continue
+		if int(w.order) != RtsConst.Order.REPAIR:
+			continue
+		var rt = w.get("_repair_target")
+		if rt == null or not is_instance_valid(rt):
+			continue
+		repairing += 1
+		distinct[rt.get_instance_id()] = true
+	var ok: bool = list.size() == 2 and repairing == 2 \
+			and distinct.size() == 2 and issued == 2
+	return {
+		"targets": list.size(), "repairing": repairing,
+		"distinct": distinct.size(), "issued": issued, "ok": ok,
+	}
 
 
 ## 2C-6：建造下单计数（成功下达才记）。报告/bench 读 build_stats。
