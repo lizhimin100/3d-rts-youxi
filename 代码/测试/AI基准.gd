@@ -447,6 +447,8 @@ func _sample_units(step: float) -> void:
 ## 2C-5：军队规模曲线 + 人口占用率（60 s 一行）。
 ## 口径：army = 存活战斗单位（不含农民，与 _sample_units 同一把尺）；
 ##       pop_used/pop_cap 直接读阵营，用来判断"军队是不是被人口顶死"。
+## 2C-7：再加 "army_target" —— **本 tick 的军队目标**（AI 脑上的 army_target_now）。
+##       有了它才能画"目标 vs 实际 vs 人口上限"三条线，而不是只看实际值猜目标。
 func _sample_curve() -> void:
 	for f in Game.factions:
 		if f == null or not _stats.has(f.display_name):
@@ -458,6 +460,10 @@ func _sample_curve() -> void:
 		var arr: Array = _curves[name]
 		var used: int = f.food_used()
 		var cap: int = f.food_cap()
+		var brain: Node = _brain_node(f)
+		var at: int = -1
+		if brain != null:
+			at = int(brain.get("army_target_now"))
 		# 2C-6：农场 / 出兵建筑座数（曲线）
 		#   出兵建筑 = trains 里有 food_cost>0 的兵（大本营只训农民 → 不算兵营）
 		#   农场 = 提供人口且不是交汇点、不产兵（排除大本营/伐木场/车坊）
@@ -482,11 +488,22 @@ func _sample_curve() -> void:
 		arr.append({
 			"t": snappedf(Game.elapsed, 0.1),
 			"army": int(s.get("army_n_last", 0)),
+			"army_target": at,
 			"pop_used": used, "pop_cap": cap,
 			"pop_rate": snappedf(float(used) / float(maxi(cap, 1)), 0.01),
 			"farms": farms, "producers": prods,
 			"gold": f.gold, "wood": f.wood,
 		})
+
+
+## 某阵营的 AI 脑（没有就 null）。曲线要读"本 tick 的军队目标"只能从脑上拿。
+func _brain_node(f) -> Node:
+	for b in _brains:
+		if b["faction"] == f:
+			var n = b["node"]
+			if n != null and is_instance_valid(n):
+				return n
+	return null
 
 
 func _on_hit(attacker: Node3D, target: Node3D, damage: float, _crit: bool) -> void:
@@ -715,6 +732,8 @@ func _finish(reason: String) -> void:
 	var repairs: Dictionary = {}
 	# 2C-6：建造下单计数（faction 名 → {id: 次数}）
 	var build_stats: Dictionary = {}
+	# 2C-7 P2：投资占比（faction 名 → {farm_gold/army_gold/samples/over_invest_60s}）
+	var invests: Dictionary = {}
 	for b in _brains:
 		var n = b["node"]
 		if n == null or not is_instance_valid(n):
@@ -749,6 +768,8 @@ func _finish(reason: String) -> void:
 		# 2C-5 P1-4：修理统计（谁修的、修了几次）
 		repairs[fname2] = n.get("repair_stats")
 		build_stats[fname2] = n.get("build_stats")
+		# 2C-7 P2：投资占比（农场 vs 军队）
+		invests[fname2] = n.get("invest_stats")
 
 	# --- 2C-5 P1-5 达成归属：达成条数里"本波参与"的比例 ---
 	# 口径：goal_last_hit = 目标临死前最后一刀的攻击者属于本波；
@@ -797,6 +818,8 @@ func _finish(reason: String) -> void:
 		"recent_attack_window": AIV.recent_attack_window(),
 		"repair_hp_threshold": AIV.repair_hp_threshold(),
 		"repair_hp_deficit": AIV.repair_hp_deficit(),
+		"builder_slot": AIV.builder_slot(),
+		"army_pop_cap": AIV.army_pop_cap(),
 		"elapsed_game_s": snappedf(Game.elapsed, 0.01),
 		"wall_clock_s": snappedf(wall_sec, 0.1),
 		"end_reason": reason,
@@ -808,6 +831,7 @@ func _finish(reason: String) -> void:
 		"army_curve": _curves,
 		"repairs": repairs,
 		"build_stats": build_stats,
+		"invest": invests,
 		"goal_attribution": attribution,
 		"events": _events,
 		"situations_file": _file_sit if not _file_sit.is_empty() else "未启用",
@@ -829,6 +853,8 @@ func _finish(reason: String) -> void:
 			continue
 		var s: Dictionary = _stats[f.display_name]
 		var wr: Dictionary = wave_records.get(f.display_name, {})
+		var bn: Node = _brain_node(f)
+		var brain_at: int = int(bn.get("army_target_now")) if bn != null else -1
 		# ★ 别写 `(x or {}).get(...)` —— GDScript 的 `or` 返回 **bool**，
 		#   不是"短路取操作数"。2C-5 C5 就是栽在这上面：`repairs.get(...) or {}` 得到 false，
 		#   再 `as Dictionary` / `.get()` 当场报错，_finish 中断 → 进程不退出（实测挂满墙钟）。
@@ -860,9 +886,16 @@ func _finish(reason: String) -> void:
 			"目标": wr.get("goals", {}),
 			"建议": wr.get("advice", {}),
 			"修理": int((rr as Dictionary).get("issued", 0)),
+			"修阻塞": "无工位%d/工位忙%d/木%d" % [
+				int((rr as Dictionary).get("blocked_no_builder", 0)),
+				int((rr as Dictionary).get("blocked_builder_busy", 0)),
+				int((rr as Dictionary).get("blocked_wood", 0))],
+			"工位角色": "%s（换%d次）" % [String((rr as Dictionary).get("builder_role", "-")),
+				int((rr as Dictionary).get("builder_swaps", 0))],
 			"军队目标": "%d→%d" % [
 				int(wst.get("army_target_first", -1)),
 				int(wst.get("army_target", -1))],
+			"军队目标末": int(brain_at),
 		}
 	# 2C-5：达成归属摘要（达成条数里"本波参与"的比例）+ 曲线峰值
 	summary["达成归属"] = "%d/%d 条达成是本波最后一击（伤害占比均值 %.2f，0 伤害 %d 条）" % [
