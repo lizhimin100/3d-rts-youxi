@@ -920,6 +920,361 @@ static func bank_ready(available_cost: float, baseline: float, mult: float = 1.5
 
 
 # ===========================================================================
+# 2C-9 · 三条线部门化的诉求结构 + 动作级仲裁（纯函数）
+#
+# 为什么放在本文件：它和判定表一样是"结构 + 纯函数"，不放场景、不读时间；
+# 配置回归可以直接断言排序/扣减/驳回，不用起一局。
+#
+# 用户拍板的三条线（不再讨论）：
+#   运营线 —— 经济/建造/修理/训练（花金币木材，训练产出兵）
+#   战斗线 —— 摧毁/防守/交战（不花金币，抢兵力；"判定→攒波→换目标→出击"闭环不重写）
+#   扩展线 —— 侦查/巡逻/建塔/分基地（侦查巡逻抢兵力，建塔分基地抢金币木材）
+# ===========================================================================
+
+const DEP_OPS: String = "运营线"
+const DEP_COMBAT: String = "战斗线"
+const DEP_EXPAND: String = "扩展线"
+const DEP_SOURCES: Array[String] = [DEP_OPS, DEP_COMBAT, DEP_EXPAND]
+
+const ACT_TRAIN: String = "训练"
+const ACT_BUILD: String = "建造"
+const ACT_REPAIR: String = "修理"
+const ACT_PUSH: String = "出击"
+const ACT_DEFEND: String = "防守"
+const ACT_SCOUT: String = "侦查"
+const ACT_PATROL: String = "巡逻"
+const ACT_TOWER: String = "建塔"
+const ACT_EXPAND: String = "建分基地"
+const ACT_TYPES: Array[String] = [
+	ACT_TRAIN, ACT_BUILD, ACT_REPAIR, ACT_PUSH, ACT_DEFEND,
+	ACT_SCOUT, ACT_PATROL, ACT_TOWER, ACT_EXPAND,
+]
+
+## 驳回原因枚举（用户拍板：**只带枚举，不带自然语言解释**）
+const RJ_NONE: String = ""
+const RJ_GOLD: String = "金币不足"
+const RJ_WOOD: String = "木材不足"
+const RJ_TROOP: String = "兵力不足"
+const RJ_OUTBID: String = "被更高分压后"
+const RJ_COND: String = "条件不满足"
+const RJ_DONE: String = "本周期已执行"
+const RJ_REASONS: Array[String] = [
+	RJ_GOLD, RJ_WOOD, RJ_TROOP, RJ_OUTBID, RJ_COND, RJ_DONE,
+]
+
+## 诉求结构的**必带字段**（第 3.1 节）。回归按这张表断言"一条都不能少"。
+## `可执行` 是本轮实现里额外汇入的一个内部字段（部门自己判不动作为 false），
+## 不改变用户拍板的字段表 —— 它只是让"条件不满足"这条枚举有出处。
+const DEMAND_FIELDS: Array[String] = [
+	"来源线", "动作类型", "目标", "金币成本", "木材成本", "兵力占用",
+	"可被征用", "诉求分", "依据", "驳回原因",
+]
+
+## 仲裁周期（秒）：L2 诉求列表每 2 s 全量重建，不跨周期累积
+const DEPT_CYCLE_SEC: float = 2.0
+## 修理诉求分的刻度：掉血 / 200（200 是 2C-6 起冻结的修理线，**不是新阈值**）
+const DEMAND_REPAIR_SCALE: float = 200.0
+## 兵力比 → 出击诉求分的刻度（1.3 的兵力比 ≈ 6.5 分，落在"急建农场 10 分"之下）
+const DEMAND_PUSH_SCALE: float = 5.0
+## 威胁数量 → 防守诉求分的刻度（1 个压家敌人 = 20 分，最高的那一档）
+const DEMAND_DEFEND_SCALE: float = 20.0
+## 缺人口紧迫：急建通道（headroom<4 或占用>90%）
+const DEMAND_FARM_URGENT: float = 10.0
+## 缺人口紧迫：不急通道（占用>70% / 60 s 训练量×2）
+const DEMAND_FARM_NORMAL: float = 1.0
+## 兵营紧迫：一座产能建筑都没有（先解决"有没有兵营"）
+const DEMAND_BARRACKS_URGENT: float = 3.0
+## 兵营紧迫：已有产能，只是座数不够
+const DEMAND_BARRACKS_NORMAL: float = 1.0
+
+
+## 系数卡（`代码/配置/卡/AI诉求系数.tres`）。**懒加载、不缓存值**：
+## 卡里的数改了，下一次调用立刻生效（与"卡是唯一真相源"同一口径）。
+static var _demand_card: Resource = null
+static var _demand_card_tried: bool = false
+
+
+static func demand_card() -> Resource:
+	if not _demand_card_tried:
+		_demand_card_tried = true
+		_demand_card = load("res://代码/配置/卡/AI诉求系数.tres")
+	return _demand_card
+
+
+## 读一个系数；卡缺失/字段缺失一律回落 1.0（**绝不静默变成 0**）
+static func demand_coef(name: String, fallback: float = 1.0) -> float:
+	var c: Resource = demand_card()
+	if c == null:
+		return fallback
+	var v = c.get(name)
+	if v == null:
+		return fallback
+	return float(v)
+
+
+## 造一条诉求。**十个必带字段一个都不少**，另加内部 `可执行` 与执行闭包。
+static func demand_make(source: String, action: String, target: String,
+		gold: int, wood: int, troops: int, requisitionable: bool,
+		score: float, basis: String, ready: bool = true,
+		exec: Callable = Callable()) -> Dictionary:
+	return {
+		"来源线": source,
+		"动作类型": action,
+		"目标": target,
+		"金币成本": maxi(gold, 0),
+		"木材成本": maxi(wood, 0),
+		"兵力占用": maxi(troops, 0),
+		"可被征用": requisitionable,
+		"诉求分": score,
+		"依据": basis,
+		"驳回原因": RJ_NONE,
+		# --- 内部字段（不进用户字段表，只服务执行与归因）---
+		"可执行": ready,
+		"执行": exec,
+	}
+
+
+## 一条诉求是否结构合法（字段齐全 + 枚举合法 + 数值非负）
+static func demand_valid(d) -> bool:
+	if not (d is Dictionary):
+		return false
+	var dd: Dictionary = d
+	for f in DEMAND_FIELDS:
+		if not dd.has(f):
+			return false
+	if not DEP_SOURCES.has(String(dd["来源线"])):
+		return false
+	if not ACT_TYPES.has(String(dd["动作类型"])):
+		return false
+	if int(dd["金币成本"]) < 0 or int(dd["木材成本"]) < 0 or int(dd["兵力占用"]) < 0:
+		return false
+	if not (dd["可被征用"] is bool):
+		return false
+	if not is_finite(float(dd["诉求分"])):
+		return false
+	return true
+
+
+## 动作级仲裁（P0 核心，纯函数）。
+##
+## 规则（用户拍板，逐条对应 §3.2/§3.3）：
+##   1. 所有诉求按 `诉求分` 从高到低排序；**同分按部门提交顺序**（稳定，不掷骰）。
+##   2. 依次检查资源够不够：够 → 记执行并扣减/锁定；不够 → 跳过并填 `驳回原因`。
+##   3. "一起做"：金币木材兵力都够两个动作 → 同周期都执行（不限额）。
+##   4. 同部门多诉求：主部门按分数重判（不额外加权），不预设部门优先级。
+##   5. 驳回原因：**周期开始时就不够** → 金币/木材/兵力不足；
+##      **周期开始时够、被更高分吃掉了** → 被更高分压后（这条区分是报告要看的）。
+##   6. 同 (部门, 动作, 目标) 在一次周期里只执行一次 → 后来者填 `本周期已执行`。
+##   7. `可执行=false`（部门自己判"条件不成立"，如没有可建位置）→ `条件不满足`。
+##
+## 返回 {执行:[...], 驳回:[...], 金币余, 木材余, 兵力余, 总额}
+static func arbitrate(demands: Array, gold: int, wood: int, troops: int) -> Dictionary:
+	var g: int = maxi(gold, 0)
+	var w: int = maxi(wood, 0)
+	var t: int = maxi(troops, 0)
+	var g0: int = g
+	var w0: int = w
+	var t0: int = t
+	var order: Array = []
+	for i in range(demands.size()):
+		var d = demands[i]
+		if d is Dictionary:
+			order.append({"i": i, "s": float((d as Dictionary).get("诉求分", 0.0))})
+	order.sort_custom(func(a, b):
+		var sa: float = float(a["s"])
+		var sb: float = float(b["s"])
+		if absf(sa - sb) > 0.000001:
+			return sa > sb
+		return int(a["i"]) < int(b["i"]))
+	var done: Array = []
+	var rej: Array = []
+	var seen: Dictionary = {}
+	for e in order:
+		var d2: Dictionary = demands[int(e["i"])]
+		var key: String = "%s|%s|%s" % [
+			String(d2.get("来源线", "")), String(d2.get("动作类型", "")),
+			String(d2.get("目标", ""))]
+		d2["驳回原因"] = RJ_NONE
+		if seen.has(key):
+			d2["驳回原因"] = RJ_DONE
+			rej.append(d2)
+			continue
+		if not bool(d2.get("可执行", true)):
+			d2["驳回原因"] = RJ_COND
+			rej.append(d2)
+			continue
+		var ng: int = int(d2.get("金币成本", 0))
+		var nw: int = int(d2.get("木材成本", 0))
+		var nt: int = int(d2.get("兵力占用", 0))
+		var lack: Array = []
+		if g < ng:
+			lack.append("g")
+		if w < nw:
+			lack.append("w")
+		if t < nt:
+			lack.append("t")
+		if not lack.is_empty():
+			# 周期开始时够不够？全够 = 被更高分的诉求吃掉了
+			var outbid: bool = true
+			if lack.has("g") and g0 < ng:
+				outbid = false
+			if lack.has("w") and w0 < nw:
+				outbid = false
+			if lack.has("t") and t0 < nt:
+				outbid = false
+			if outbid:
+				d2["驳回原因"] = RJ_OUTBID
+			elif lack.has("g"):
+				d2["驳回原因"] = RJ_GOLD
+			elif lack.has("w"):
+				d2["驳回原因"] = RJ_WOOD
+			else:
+				d2["驳回原因"] = RJ_TROOP
+			rej.append(d2)
+			continue
+		g -= ng
+		w -= nw
+		t -= nt
+		seen[key] = true
+		done.append(d2)
+	return {
+		"执行": done, "驳回": rej,
+		"金币余": g, "木材余": w, "兵力余": t,
+		"总额": demands.size(),
+	}
+
+
+## 兵力预留制的**扣减顺序**（用户拍板）：防守锁定 > 临时防守可征用 > 空闲。
+##
+## `defense_locked` 是已经预留给"家里不空"的那部分（本次仲裁**不可动用**）；
+## 剩下的先从"临时防守（可被征用）"扣，不够再扣空闲。
+## 返回 {够, 临时防守, 空闲, 可用, 防守锁定}
+static func troop_allocate(need: int, defense_locked: int,
+		temp_defense: int, idle: int) -> Dictionary:
+	var n: int = maxi(need, 0)
+	var dl: int = maxi(defense_locked, 0)
+	var td: int = maxi(temp_defense, 0)
+	var idl: int = maxi(idle, 0)
+	var avail: int = td + idl
+	if n > avail:
+		return {"够": false, "临时防守": 0, "空闲": 0,
+			"可用": avail, "防守锁定": dl}
+	var from_temp: int = mini(n, td)
+	return {"够": true, "临时防守": from_temp, "空闲": n - from_temp,
+		"可用": avail, "防守锁定": dl}
+
+
+## 诉求分：训练 = 缺口 × (1 + 威胁 × 威胁系数) × 缺口系数
+static func demand_score_train(gap: int, threat_n: int) -> float:
+	var g: float = maxf(float(gap), 0.0)
+	var th: float = maxf(float(threat_n), 0.0)
+	return g * (1.0 + th * demand_coef("训练_威胁系数")) * demand_coef("训练_缺口系数")
+
+
+## 诉求分：建造 = 农场缺口 × 缺人口紧迫 + 兵营缺口 × 兵营紧迫（各自带系数）
+static func demand_score_build(farm_gap: int, farm_urgent: float,
+		barracks_gap: int, barracks_urgent: float) -> float:
+	return maxf(float(farm_gap), 0.0) * maxf(farm_urgent, 0.0) \
+			* demand_coef("建造_农场缺口系数") * demand_coef("建造_农场紧迫系数") \
+			+ maxf(float(barracks_gap), 0.0) * maxf(barracks_urgent, 0.0) \
+			* demand_coef("建造_兵营缺口系数") * demand_coef("建造_兵营紧迫系数")
+
+
+## 诉求分：修理 = 掉血 / 200（保持 2C-6/2C-8 的"掉血多优先"排序）
+static func demand_score_repair(deficit: float) -> float:
+	var scale: float = demand_coef("刻度_修理", DEMAND_REPAIR_SCALE)
+	return maxf(deficit, 0.0) / maxf(scale, 1.0) * demand_coef("修理_掉血系数")
+
+
+## 诉求分：出击 = 兵力比 × 5（"保持战斗线现有波次判定输出"的可量化代理）
+static func demand_score_push(army_ratio: float) -> float:
+	var scale: float = demand_coef("刻度_出击", DEMAND_PUSH_SCALE)
+	return clampf(army_ratio, 0.0, 8.0) * scale * demand_coef("出击_兵力比系数")
+
+
+## 诉求分：防守 = 压家敌人数量 × 20
+static func demand_score_defend(threat_n: int) -> float:
+	var scale: float = demand_coef("刻度_防守", DEMAND_DEFEND_SCALE)
+	return maxf(float(threat_n), 0.0) * scale * demand_coef("防守_威胁系数")
+
+
+## 紧迫刻度：急建 / 不急 / 无产能 / 扩建（全部从卡里读，缺省回落常量）
+static func demand_scale(key: String) -> float:
+	match key:
+		"农场急建":
+			return demand_coef("刻度_农场急建", DEMAND_FARM_URGENT)
+		"农场不急":
+			return demand_coef("刻度_农场不急", DEMAND_FARM_NORMAL)
+		"兵营无产能":
+			return demand_coef("刻度_兵营无产能", DEMAND_BARRACKS_URGENT)
+		"兵营扩建":
+			return demand_coef("刻度_兵营扩建", DEMAND_BARRACKS_NORMAL)
+		_:
+			return 1.0
+
+
+## 诉求分：固定值（侦查 / 巡逻 / 建塔 / 分基地）
+static func demand_score_fixed(kind: String) -> float:
+	return maxf(demand_coef(kind + "_固定分"), 0.0)
+
+
+# ---------------------------------------------------------------------------
+# 2C-9 · 判定表**分布**（P1）：把四样判据各自落到 达成/好/一般/差/未判
+#
+# ★ 这里**不重算判定**，只是把 `classify_verdict` 已经在用的同一批阈值
+#   （0.8 / 0.5、0.7~1.3、0.4~0.9、ceil(出发/3)）分别套到每一条判据上，
+#   目的是回答"哪一条判据最常给出 未判/一般" —— 不改窗口、不改权重、不改判定结果。
+# ---------------------------------------------------------------------------
+static func judge_bins(rec: Dictionary) -> Dictionary:
+	var achieved: bool = bool(rec.get("goal_achieved", false))
+	var forced: bool = bool(rec.get("forced_timeout", false))
+	var tr: float = time_ratio(float(rec.get("combat_time", 0.0)),
+			float(rec.get("theory_time", 0.0)))
+	var oe: float = float(rec.get("output_eff", 0.0))
+	var dr: float = float(rec.get("damage_ratio", 0.0))
+	var surv: int = int(rec.get("survivors", 0))
+	var strength: int = int(rec.get("strength", 0))
+	var cap: int = bad_survivor_cap(strength)
+	var b1: String = VD_UNDECIDED
+	var b2: String = VD_FAIR
+	var b3: String = VD_FAIR
+	var b4: String = VD_GOOD if surv > cap else VD_BAD
+	if achieved:
+		b1 = VD_ACHIEVED
+		b2 = VD_ACHIEVED
+		b3 = VD_ACHIEVED
+		b4 = VD_ACHIEVED
+	else:
+		if forced:
+			b1 = VD_FAIR
+		elif tr >= VD_TIME_GOOD:
+			b1 = VD_GOOD
+		elif tr >= VD_TIME_HALF:
+			b1 = VD_FAIR
+		else:
+			b1 = VD_BAD if surv <= cap else VD_UNDECIDED
+		b2 = VD_GOOD if (oe >= VD_OUT_LOW and oe <= VD_OUT_HIGH) else VD_FAIR
+		b3 = VD_GOOD if (dr >= VD_DMG_LOW and dr <= VD_DMG_HIGH) else VD_FAIR
+	return {"判据1": b1, "判据2": b2, "判据3": b3, "判据4": b4}
+
+
+## 把一批波次记录按"某一判据"的五个档位计数（缺省补 0，报告不用再猜键在不在）
+static func judge_bin_counts(rows: Array, key: String) -> Dictionary:
+	var out: Dictionary = {
+		VD_ACHIEVED: 0, VD_GOOD: 0, VD_FAIR: 0, VD_BAD: 0, VD_UNDECIDED: 0,
+	}
+	for r in rows:
+		if not (r is Dictionary):
+			continue
+		var bins = (r as Dictionary).get("判据", null)
+		if not (bins is Dictionary):
+			continue
+		var k: String = String((bins as Dictionary).get(key, VD_UNDECIDED))
+		out[k] = int(out.get(k, 0)) + 1
+	return out
+
+
+# ===========================================================================
 # 队伍
 # ===========================================================================
 
