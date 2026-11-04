@@ -710,6 +710,9 @@ static func barracks_want_of(army_n: int, min_n: int = 2,
 
 ## 2C-7 P0：**非工位**农民的采金人数目标（采金 8 : 采木 3 按比例，人少时同比缩）。
 ## 满编 11 → 8；6 → 4（2 采木）；3 → 2。工位不参与这个分配（它默认砍树）。
+##
+## 2C-8 起这条只服务 `--builder-slot=off/legacy` 的对照局；默认口径换成
+## `peasant_gold_want_dynamic()`（采金 = min(8, N − 工位数)，余量全给采木）。
 static func peasant_gold_want(non_builder: int, gold_target: int = 8,
 		wood_target: int = 3) -> int:
 	var n: int = maxi(non_builder, 0)
@@ -717,6 +720,71 @@ static func peasant_gold_want(non_builder: int, gold_target: int = 8,
 	var sum: int = maxi(gold + maxi(wood_target, 0), 1)
 	var want: int = int(round(float(n) * float(gold) / float(sum)))
 	return clampi(want, 0, gold)
+
+
+# ---------------------------------------------------------------------------
+# 2C-8 P0：农民工位**动态数量**（用户拍板：max(2, ceil(N/6))，随农民总数实时重算）
+# ---------------------------------------------------------------------------
+
+## 每多少个农民配 1 个建造/修理工位
+const BUILDER_PER_PEASANT: float = 6.0
+## 工位下限：2（1 个建造 + 1 个修理）。农民少于 2 时按实际人数封顶。
+const BUILDER_MIN: int = 2
+
+## 工位目标数 = max(2, ceil(农民总数 / 6))。
+## N=0 → 0（没有农民就没有工位）；N=1..6 → 2；N=12 → 2；N=13..18 → 3。
+## ★ 这是**目标**，不是实际能派出来的人数：实际工位 = min(目标, 存活农民数)。
+static func builder_count_for(peasant_total: int) -> int:
+	var n: int = maxi(peasant_total, 0)
+	if n <= 0:
+		return 0
+	return maxi(BUILDER_MIN, ceili(float(n) / BUILDER_PER_PEASANT))
+
+
+## 同时建造数上限 = 工位数 − 1（**至少留 1 个工位给修理**）。
+## 用**目标工位数**而不是"当前实际指派数"：开局只有 1 个农民时仍然允许他建造
+## （否则第 1 分钟永远盖不出兵营），但工位补齐后上限自然回到 N−1。
+static func builder_build_limit(builder_count: int) -> int:
+	return maxi(maxi(builder_count, 0) - 1, 0)
+
+
+## 2C-8 P0：采金人数 = min(软上限, 农民总数 − 工位数)，其余全去采木。
+## 满编 12 + 2 工位 → 采金 8 / 采木 2；15 + 3 工位 → 8 / 4；6 + 2 工位 → 4 / 0。
+## 与 `peasant_gold_want()` 的差别：**先扣工位，再用软上限截断**，不做比例缩放。
+static func peasant_gold_want_dynamic(peasant_total: int, builder_count: int,
+		gold_cap: int = 8) -> int:
+	var n: int = maxi(peasant_total, 0)
+	var b: int = clampi(builder_count, 0, n)
+	var cap: int = maxi(gold_cap, 0)
+	return clampi(n - b, 0, cap)
+
+
+# ---------------------------------------------------------------------------
+# 2C-8 P1：军队目标 —— 三段时间 + 每 2 分钟全项 +1（不再与人口挂钩）
+# ---------------------------------------------------------------------------
+
+## 第一段/第二段的分界（秒）：480 s 前 12+3B+P，480~600 s 13+4B+2P
+const ARMY_TARGET_2C8_SEC1: float = 480.0
+## 第三段起点（秒）：≥600 s 起每 120 s 全项 +1
+const ARMY_TARGET_2C8_SEC2: float = 600.0
+const ARMY_TARGET_2C8_STEP: float = 120.0
+
+## 2C-8 军队目标（**无人口约束**，由人口卡训练自然兜住）：
+##   t < 480        ：12 + 3B + 1P
+##   480 ≤ t < 600  ：13 + 4B + 2P
+##   t ≥ 600        ：(14+n) + (5+n)B + (3+n)P，n = floor((t − 600) / 120)
+## 调用方再与防守下限取 max（目标不低于防守下限）。
+## 为什么时间分段而不是一口气给大数：早期给 20+ 会让 AI 把起始金币全砸进兵营，
+## 农场/科技全饿死；分段让"目标随经济一起长"，600 s 后每 2 分钟才有新增胃口。
+static func army_target_2c8(bases: int, producers: int, elapsed: float) -> int:
+	var b: int = maxi(bases, 0)
+	var p: int = maxi(producers, 0)
+	if elapsed < ARMY_TARGET_2C8_SEC1:
+		return 12 + 3 * b + p
+	if elapsed < ARMY_TARGET_2C8_SEC2:
+		return 13 + 4 * b + 2 * p
+	var n: int = maxi(int(floor((elapsed - ARMY_TARGET_2C8_SEC2) / ARMY_TARGET_2C8_STEP)), 0)
+	return (14 + n) + (5 + n) * b + (3 + n) * p
 
 
 ## 2C-7 P5：**与窗口无关**的原始承伤比 = 实际承伤 ÷ Σ(全员有效生命)。

@@ -61,15 +61,32 @@ const DEFAULT_REPAIR_HP: float = 0.7
 const DEFAULT_REPAIR_HP_DEFICIT: float = 200.0
 
 ## 2C-7 P0/P1 **行为开关**（同一构建里做"改前 / 改后"对照，不靠改代码再编译两次）：
-##   --builder-slot=on|off
-##       on（默认）= 固定建造/修理工位（1 人）；off = 2C-6 的"任意空闲农民"。
+##   --builder-slot=on|off|legacy
+##       on（默认，2C-8）= **动态工位数组** max(2, ceil(N/6))，同时建造 = 工位−1；
+##       off（2C-7）= 固定 1 个工位（本轮长局的"改前"）；
+##       legacy（2C-6）= 任意空闲农民（只为历史对照保留，不要再扩）。
 ##   --army-pop-cap=on|off
-##       on（默认）= 军队目标 = min(公式, 人口上限÷2−1)，420 s 后不解除；
+##       on = 2C-7 口径 min(公式, 人口÷2−1)，420 s 后不解除；
 ##       off = 2C-6 口径（公式；420 s 后 -1 解除）。
+##       ★ 2C-8 默认走 `--army-target-formula`，本开关只在 formula=old 时有意义。
+##   --army-target-formula=old|new
+##       old = 2C-7/2C-6 的 `army_target_of()`（受 army-pop-cap 影响）；
+##       new（默认，2C-8）= 三段时间 + 每 2 分钟全项 +1，**不与人口挂钩**。
 ## 为什么放这个文件：它已经是"判定 + 参数总闸"，两个开关都必须**在任何 AI 思考之前**
 ## 定下来（bench 在 _ready 里 setup_from_cmdline），放这里不用再加一个 autoload。
 const DEFAULT_BUILDER_SLOT: bool = true
 const DEFAULT_ARMY_POP_CAP: bool = true
+
+## 2C-8：工位模式三值（on / off / legacy）
+const BS_ON: String = "on"
+const BS_OFF: String = "off"
+const BS_LEGACY: String = "legacy"
+const BS_MODES: Array[String] = [BS_ON, BS_OFF, BS_LEGACY]
+## 2C-8：军队目标公式（new = 三段时间；old = 2C-7 人口约束口径）
+const ATF_OLD: String = "old"
+const ATF_NEW: String = "new"
+const ATF_MODES: Array[String] = [ATF_OLD, ATF_NEW]
+const DEFAULT_ARMY_TARGET_FORMULA: String = ATF_NEW
 
 static var _mode: String = MODE_NEW
 static var _base_sec: float = DEFAULT_BASE_SEC
@@ -81,8 +98,9 @@ static var _output_theory_mode: String = DEFAULT_OUTPUT_THEORY_MODE
 static var _recent_attack_window: float = DEFAULT_RECENT_ATTACK_WINDOW
 static var _repair_hp: float = DEFAULT_REPAIR_HP
 static var _repair_hp_deficit: float = DEFAULT_REPAIR_HP_DEFICIT
-static var _builder_slot: bool = DEFAULT_BUILDER_SLOT
+static var _builder_mode: String = BS_ON
 static var _army_pop_cap: bool = DEFAULT_ARMY_POP_CAP
+static var _army_target_formula: String = DEFAULT_ARMY_TARGET_FORMULA
 static var _parsed: bool = false
 
 
@@ -134,9 +152,16 @@ static func setup_from_cmdline() -> void:
 		elif a.begins_with("--repair-hp-threshold="):
 			_repair_hp = clampf(float(a.substr(String("--repair-hp-threshold=").length())), 0.1, 1.0)
 		elif a.begins_with("--builder-slot="):
-			set_builder_slot(_parse_on_off(a.substr(String("--builder-slot=").length())))
+			var bsv: String = a.substr(String("--builder-slot=").length()).strip_edges().to_lower()
+			if bsv == BS_LEGACY:
+				set_builder_mode(BS_LEGACY)
+			else:
+				set_builder_slot(_parse_on_off(bsv))
 		elif a.begins_with("--army-pop-cap="):
 			set_army_pop_cap(_parse_on_off(a.substr(String("--army-pop-cap=").length())))
+		elif a.begins_with("--army-target-formula="):
+			set_army_target_formula(
+				a.substr(String("--army-target-formula=").length()))
 
 
 ## "on"/"off"（也接受 1/0/true/false）→ bool。非法值回落 true（默认开）。
@@ -145,14 +170,42 @@ static func _parse_on_off(s: String) -> bool:
 	return not (u == "off" or u == "0" or u == "false")
 
 
-## 2C-7 P0：固定建造/修理工位开关
+## 2C-7 P0：固定建造/修理工位开关。
+## 2C-8 起语义升级：`on` = 动态工位数组；`off` = 2C-7 单工位；`legacy` = 2C-6 任意农民。
+## `builder_slot()` 仍返回 bool（on 才 true），历史调用点不用改。
 static func builder_slot() -> bool:
-	return _builder_slot
+	return _builder_mode == BS_ON
+
+
+static func builder_mode() -> String:
+	return _builder_mode
+
+
+static func set_builder_mode(m: String) -> String:
+	var u: String = m.strip_edges().to_lower()
+	_builder_mode = u if BS_MODES.has(u) else BS_ON
+	return _builder_mode
 
 
 static func set_builder_slot(on: bool) -> bool:
-	_builder_slot = on
-	return _builder_slot
+	_builder_mode = BS_ON if on else BS_OFF
+	return _builder_mode == BS_ON
+
+
+## `--builder-slot=legacy`：2C-6 的"任意空闲农民"（只为历史对照，不要再扩）
+static func builder_legacy() -> bool:
+	return _builder_mode == BS_LEGACY
+
+
+## 2C-8 P1：军队目标公式（new = 三段时间 + 每 2 分钟 +1；old = 2C-7 人口约束口径）
+static func army_target_formula() -> String:
+	return _army_target_formula
+
+
+static func set_army_target_formula(m: String) -> String:
+	var u: String = m.strip_edges().to_lower()
+	_army_target_formula = u if ATF_MODES.has(u) else ATF_NEW
+	return _army_target_formula
 
 
 ## 2C-7 P1：军队目标与人口上限挂钩开关
@@ -258,14 +311,15 @@ static func reset_defaults() -> void:
 	_recent_attack_window = DEFAULT_RECENT_ATTACK_WINDOW
 	_repair_hp = DEFAULT_REPAIR_HP
 	_repair_hp_deficit = DEFAULT_REPAIR_HP_DEFICIT
-	_builder_slot = DEFAULT_BUILDER_SLOT
+	_builder_mode = BS_ON
 	_army_pop_cap = DEFAULT_ARMY_POP_CAP
+	_army_target_formula = DEFAULT_ARMY_TARGET_FORMULA
 
 
 static func describe() -> String:
 	if _mode == MODE_OLD:
 		return "old 判定（2C-2：存活比 + 投入产出比）"
-	return "new 判定（四样判据：%.0fs/1000 成本，输出系数 %.2f，交战断档 %.1fs，存活上限 %.0fs，承伤分母 %s，输出分母 %s（窗 %.1fs），修理线掉血≥%.0f HP，工位 %s，军队人口约束 %s）" % [
+	return "new 判定（四样判据：%.0fs/1000 成本，输出系数 %.2f，交战断档 %.1fs，存活上限 %.0fs，承伤分母 %s，输出分母 %s（窗 %.1fs），修理线掉血≥%.0f HP，工位 %s，军队目标 %s）" % [
 		_base_sec, _coef, _combat_gap_sec, _time_limit, _damage_theory_mode,
 		_output_theory_mode, _recent_attack_window, _repair_hp_deficit,
-		"开" if _builder_slot else "关", "开" if _army_pop_cap else "关"]
+		_builder_mode, _army_target_formula]
