@@ -100,6 +100,8 @@ func _run() -> void:
 	_case_2c10()
 	# 2C-11：储蓄 G(t) / 同时做事数 / 紧急白名单 / 工地停滞 / 仲裁接线
 	_case_2c11()
+	# 2C-12：口径修复（成本中位数 / 0 成本豁免）/ 承诺表 / 副官自检 / POP90 双口径
+	_case_2c12()
 	_finish(t0)
 
 
@@ -1439,11 +1441,14 @@ func _case_2c11() -> void:
 				float(b.typical_unit_cost([{"金币成本": 0}], 150.0))])
 
 	# ---------- 储备击穿 / 并发上限击穿 ----------
-	_record("2C11：储备不足驳回（金币=G-1 非紧急驳回 / 紧急通过）",
-			bool(b.saving_breach(529, 0, 530.0, false))
-			and not bool(b.saving_breach(529, 0, 530.0, true))
-			and not bool(b.saving_breach(530, 0, 530.0, false)),
-			"G=530：金529非紧急驳回、紧急通过、金530通过")
+	# 2C-12 §2.2 改了 0 成本行为：原断言用 cost=0 测"击穿"，现在 0 成本一律放行，
+	# 故改用 cost=1 测击穿本身，并把"0 成本放行"作为新增条件一起守。
+	_record("2C11/2C12：储备不足驳回（金 G-1 买 1 金→驳回 / 紧急通过 / 0 成本放行）",
+			bool(b.saving_breach(529, 1, 530.0, false))
+			and not bool(b.saving_breach(529, 1, 530.0, true))
+			and not bool(b.saving_breach(531, 1, 530.0, false))
+			and not bool(b.saving_breach(529, 0, 530.0, false)),
+			"G=530：金529买1金非紧急驳回、紧急通过、金531通过、0 成本放行")
 	_record("2C11：按「当前金币 - 本诉求金币成本」判击穿（金 G+79 买 80）",
 			bool(b.saving_breach(609, 80, 530.0, false))
 			and not bool(b.saving_breach(610, 80, 530.0, false)),
@@ -1487,14 +1492,16 @@ func _case_2c11() -> void:
 	# ---------- C2：仲裁接入（policy）----------
 	var mkA: Dictionary = b.demand_make("运营线", "训练", "步兵", 80, 0, 0, false, 5.0, "x")
 	var mkB: Dictionary = b.demand_make("扩展线", "建塔", "哨塔", 80, 0, 0, false, 4.0, "x")
-	var mkC: Dictionary = b.demand_make("运营线", "巡逻", "巡逻", 0, 0, 1, false, 3.0, "x")
+	var mkC: Dictionary = b.demand_make("运营线", "巡逻", "巡逻", 80, 0, 1, false, 3.0, "x")
 	var pol_save: Dictionary = {"reserve": 530.0, "caps": {}, "urgent": false}
 	var r_save: Dictionary = b.arbitrate([mkA, mkB, mkC], 529, 1000, 10, pol_save)
 	var all_saving: bool = true
 	for d in (r_save["驳回"] as Array):
 		if String((d as Dictionary).get("驳回原因", "")) != String(b.RJ_SAVING):
 			all_saving = false
-	_record("2C11：仲裁 储备不足驳回（金=G-1，非紧急 3 条全驳回且原因统一）",
+	# ★ 2C-12 §2.2 起 0 成本诉求不再判储备线，所以这里三条**都带 80 金成本**，
+	#   否则「非紧急 3 条全驳回」会因为巡逻被豁免而变成 2 条。
+	_record("2C11/2C12：仲裁 储备不足驳回（金=G-1，非紧急 3 条全驳回且原因统一）",
 			int((r_save["执行"] as Array).size()) == 0
 			and int((r_save["驳回"] as Array).size()) == 3 and all_saving,
 			"执行=%d 驳回=%d 原因统一=%s" % [
@@ -1549,13 +1556,13 @@ func _case_2c11() -> void:
 	if f11 != null:
 		sa11 = f11.get_as_text()
 		f11.close()
-	_record("2C11：接线 _dept_tick 每周期算 G(t)/上限/单件成本并作为单个 policy 传入",
+	_record("2C11/2C12：接线 _dept_tick 每周期算 G(t)/上限/单件成本并作为单个 policy 传入",
 			sa11.contains("var policy: Dictionary = {\"reserve\": reserve, \"caps\": caps, \"urgent\": urgent}")
 			and sa11.contains("\"saving_target\", [t_sec, unit_cost]")
 			and sa11.contains("\"concurrency_caps\", [t_sec]")
-			and sa11.contains("\"typical_unit_cost\",")
+			and sa11.contains("\"typical_unit_cost_median\",")
 			and sa11.contains("t_avail, policy]"),
-			"储备目标只算一次，运营/扩展共用")
+			"储备目标只算一次，运营/扩展共用；单件成本走 2C-12 中位数口径")
 	_record("2C11：POP90 修正口径（触发时已有农场工地算成功）",
 			sa11.contains("if _has_site_of(fid):")
 			and sa11.contains("\"pop90_site_already\"")
@@ -1628,7 +1635,7 @@ func _case_2c11() -> void:
 		"训练_威胁系数", "训练_缺口系数", "建造_农场缺口系数", "建造_农场紧迫系数",
 		"建造_兵营缺口系数", "建造_兵营紧迫系数", "修理_掉血系数", "出击_兵力比系数",
 		"防守_威胁系数", "侦查_固定分", "巡逻_固定分", "建塔_固定分", "分基地_固定分",
-		"人口压力_阈值", "人口压力_k", "储蓄_安全系数",
+		"人口压力_阈值", "人口压力_k", "储蓄_安全系数", "储蓄_假待办周期",
 		"刻度_修理", "刻度_出击", "刻度_防守", "刻度_农场急建", "刻度_农场不急",
 		"刻度_兵营无产能", "刻度_兵营扩建", "周期秒",
 	]
@@ -1636,8 +1643,8 @@ func _case_2c11() -> void:
 	for k in keys24:
 		if not _near(float(b.demand_coef(String(k))), float(defs[k]), 0.000001):
 			same = false
-	_record("2C11：加载后读到的 24 个值与 AI诉求系数.gd defaults() 逐项一致",
-			same and int(defs.size()) == 24,
+	_record("2C11/2C12：加载后读到的 25 个值与 AI诉求系数.gd defaults() 逐项一致",
+			same and int(defs.size()) == 25,
 			"逐项 %d 键，一致=%s" % [int(defs.size()), str(same)])
 	var card_obj: Resource = load("res://代码/配置/卡/AI诉求系数.tres")
 	var export_same: bool = true
@@ -1645,8 +1652,8 @@ func _case_2c11() -> void:
 		var v = card_obj.get(String(k))
 		if v == null or not _near(float(v), float(defs[k]), 0.000001):
 			export_same = false
-	_record("2C11：.gd 的 @export 默认值与 defaults() 逐项一致（两处同步守门）",
-			export_same, "24 项一致=%s" % str(export_same))
+	_record("2C11/2C12：.gd 的 @export 默认值与 defaults() 逐项一致（两处同步守门）",
+			export_same, "25 项一致=%s" % str(export_same))
 	var bm_src: String = ""
 	var fbm := FileAccess.open("res://代码/ai/战斗模型.gd", FileAccess.READ)
 	if fbm != null:
@@ -1678,6 +1685,72 @@ func _case_2c11() -> void:
 			sa11.contains("\"saving_sufficient_cycles\"")
 			and sa11.contains("if float(_faction.gold) >= reserve:"),
 			"gold >= G(t) 的周期数 / cycles")
+
+
+# ===========================================================================
+# 2C-12：口径修复（成本中位数 / 0 成本豁免）/ 承诺表 / 副官自检 / POP90 双口径
+# ===========================================================================
+func _case_2c12() -> void:
+	var bm = load("res://代码/ai/战斗模型.gd")
+	var AIV = load("res://代码/配置/AI判定模式.gd")
+
+	# ---------- §2.1 单件典型成本 = 有效待办中位数（假待办先排除）----------
+	var d80: Dictionary = bm.demand_make("运营线", "建造", "农场", 80, 0, 0, false, 1.0, "80")
+	var d150: Dictionary = bm.demand_make("运营线", "建造", "兵营", 150, 0, 0, false, 1.0, "150")
+	var d275: Dictionary = bm.demand_make("运营线", "建造", "神秘圣地", 275, 0, 0, false, 1.0, "275")
+	var three: Array = [d80, d150, d275]
+	# 275 连续 30 个周期在报但一次没执行 → 排除 → 中位数(80,150)=115
+	var c_ex: float = float(bm.typical_unit_cost_median(three, {"神秘圣地": 30}, 30, 80.0))
+	# 再执行一次 275（streak 清零）→ 重新纳入 → 中位数(80,150,275)=150
+	var c_back: float = float(bm.typical_unit_cost_median(three, {"神秘圣地": 0}, 30, 80.0))
+	_record("2C12 §2.1：假待办排除后取中位数（275 连报 30 周期→115；执行一次→150）",
+			_near(c_ex, 115.0, 0.0001) and _near(c_back, 150.0, 0.0001),
+			"排除=%.1f 重新纳入=%.1f" % [c_ex, c_back])
+	# 边界：29 周期不排除；空列表 / 全 0 成本沿用 last
+	var c29: float = float(bm.typical_unit_cost_median(three, {"神秘圣地": 29}, 30, 80.0))
+	var c_empty: float = float(bm.typical_unit_cost_median([], {"x": 99}, 30, 150.0))
+	var d_zero: Dictionary = bm.demand_make("战斗线", "出击", "目标", 0, 0, 0, false, 1.0, "0")
+	var c_zero: float = float(bm.typical_unit_cost_median([d_zero], {}, 30, 150.0))
+	_record("2C12 §2.1：边界（29 周期不排除→150；空/全 0 成本沿用 last=150）",
+			_near(c29, 150.0, 0.0001) and _near(c_empty, 150.0, 0.0001)
+			and _near(c_zero, 150.0, 0.0001),
+			"29=%.1f 空=%.1f 全0=%.1f" % [c29, c_empty, c_zero])
+	var c_old: float = float(bm.typical_unit_cost(three, 80.0))
+	_record("2C12 §2.1：2C-11 旧 max 口径保留作对照（275 ≠ 中位数 150）",
+			_near(c_old, 275.0, 0.0001), "max=%.1f" % c_old)
+	_record("2C12 §2.1：假待办周期数进卡（储蓄_假待办周期=30，走 demand_coef）",
+			_near(float(bm.demand_coef("储蓄_假待办周期", 0.0)), 30.0, 0.0001),
+			"demand_coef=%.1f" % float(bm.demand_coef("储蓄_假待办周期", 0.0)))
+
+	# ---------- §2.2 0 金币成本动作豁免储备线 ----------
+	var zc: bool = bool(bm.saving_breach(100, 0, 550.0, false))
+	var pc: bool = bool(bm.saving_breach(100, 50, 550.0, false))
+	var uc: bool = bool(bm.saving_breach(100, 50, 550.0, true))
+	_record("2C12 §2.2：0 成本不判储备线（G=550/gold=100：0 放行、50 驳回、紧急放行）",
+			(not zc) and pc and (not uc),
+			"0成本=%s 50成本=%s 紧急=%s" % [str(zc), str(pc), str(uc)])
+	var d_push: Dictionary = bm.demand_make("战斗线", "出击", "敌营", 0, 0, 1, false, 5.0, "0 成本")
+	var d_build: Dictionary = bm.demand_make("运营线", "建造", "兵营", 50, 0, 0, false, 1.0, "50 成本")
+	var plan02: Dictionary = bm.arbitrate([d_push, d_build], 100, 100, 8,
+			{"reserve": 550.0, "caps": {}, "urgent": false})
+	var rej02: Array = plan02["驳回"]
+	var rj02: String = String((rej02[0] as Dictionary).get("驳回原因", "")) if rej02.size() > 0 else ""
+	_record("2C12 §2.2：仲裁层 0 成本出击执行、50 成本建造判「储备不足」",
+			(plan02["执行"] as Array).size() == 1 and rej02.size() == 1 and rj02 == "储备不足",
+			"执行%d 驳回%d 原因=%s 金余=%d" % [(plan02["执行"] as Array).size(),
+				rej02.size(), rj02, int(plan02["金币余"])])
+
+	# ---------- §2.3 神秘圣地常驻的根因：生成侧没有「买得起」前置 ----------
+	var sa12: String = FileAccess.get_file_as_string("res://代码/ai/简单AI.gd")
+	var i_anchor: int = sa12.find("其余产能建筑")
+	var i_loop: int = sa12.find("for id in _production_building_ids(diff):", i_anchor + 1)
+	var i_spend: int = sa12.find("if not _can_spend(nid):", i_loop + 1)
+	var i_append: int = sa12.find("String(ed.display_name)", i_loop + 1)
+	_record("2C12 §2.3：科技建筑诉求加「买得起」前置（_can_spend 在 append 之前 + 跳过计数）",
+			i_loop >= 0 and i_spend > i_loop
+			and i_append > i_spend and sa12.contains("tech_demand_skipped"),
+			"loop@%d spend@%d append@%d" % [i_loop, i_spend, i_append])
+
 
 
 ## 造一条"金币成本被改成负数"的诉求（用于 demand_valid 的非法值断言）

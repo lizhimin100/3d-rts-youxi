@@ -1427,7 +1427,8 @@ static func saving_target(t_sec: float, unit_cost: float, safety: float = -1.0) 
 	return minf(raw, SAVING_CAP)
 
 
-## 单件典型成本 = 当前最贵待办动作的金币成本；无待办（全 0 或空）取最近一次的值。
+## 2C-11 口径（保留作对照）：单件典型成本 = 当前**最贵**待办动作的金币成本。
+## ★ 2C-12 起不再是运行时口径（被"神秘圣地 275"这类常驻假待办顶死），只留给回归对照。
 static func typical_unit_cost(demands: Array, last: float) -> float:
 	var best: float = 0.0
 	for d in demands:
@@ -1438,10 +1439,51 @@ static func typical_unit_cost(demands: Array, last: float) -> float:
 	return best
 
 
+## 2C-12 §2.1：单件典型成本 = **有效待办**成本的中位数（不是 max）。
+##
+## 为什么改：2C-11 取 max，被"建造·神秘圣地 275 金"顶死 —— 它 866/866 个仲裁周期
+## 都在报却一次没执行，于是 `unit_cost ≡ 275`、`G(t)` 恒贴 550 封顶（2C-11 §6.3）。
+##
+## 假待办判据：同一**目标**连续 `stall_n` 个仲裁周期都在报、但一次都没执行。
+##   `stall` 由场景侧维护（目标 → 连续未执行周期数），执行一次即清零；
+##   本函数只读、不改入参（保持纯函数）。
+## 中位数口径：奇数个取正中；偶数个取中间两个的均值（(80+150)/2=115）。
+## 金币成本 ≤ 0 的诉求不参与统计（0 成本动作不构成"单件成本"）。
+## 无有效待办 → 沿用上一次的值 `last`；开局由调用方给 80（农场成本）。
+static func typical_unit_cost_median(demands: Array, stall: Dictionary,
+		stall_n: int, last: float) -> float:
+	var costs: Array = []
+	var n_skip: int = maxi(stall_n, 1)
+	for d in demands:
+		if not (d is Dictionary):
+			continue
+		var c: float = float((d as Dictionary).get("金币成本", 0))
+		if c <= 0.0:
+			continue
+		var tgt: String = String((d as Dictionary).get("目标", ""))
+		if int(stall.get(tgt, 0)) >= n_skip:
+			continue
+		costs.append(c)
+	if costs.is_empty():
+		return maxf(last, 0.0)
+	costs.sort()
+	var n: int = costs.size()
+	if n % 2 == 1:
+		return float(costs[n / 2])
+	return (float(costs[n / 2 - 1]) + float(costs[n / 2])) * 0.5
+
+
 ## 是否因击穿储备线而应驳回：非紧急 且（当前金币 − 本诉求成本）< G(t)。
 ## 紧急诉求照常执行、不受储备线约束（但仍受真实金币不足约束，由 arbitrate 判）。
+## ★ 2C-12 §2.2：**金币成本 = 0 的诉求不判储备线**。
+##   2C-11 按"每条诉求执行前都检查"的字面实现，把出击 / 巡逻 / 侦查也判成
+##   「储备不足」—— 它们一分钱不花，却成了 65% 驳回率里的一部分，也是
+##   波次 22.83 → 6.5 的直接原因之一。不花钱的动作不需要储备，
+##   仍受并发上限 / 兵力 / 真实金币（0）约束。
 static func saving_breach(gold: int, cost: int, reserve: float, urgent: bool) -> bool:
 	if urgent:
+		return false
+	if cost <= 0:
 		return false
 	return float(gold) - float(cost) < reserve
 
@@ -1478,6 +1520,9 @@ static func site_is_stalled(now: float, last_work_at: float,
 	if last_work_at < 0.0:
 		return false
 	return now - last_work_at >= stall_sec
+
+
+
 
 
 # ---------------------------------------------------------------------------

@@ -229,6 +229,8 @@ var dept_stats: Dictionary = {
 	"pop90_site_already": 0,
 	# 2C-11 §4：建造停滞恢复（停滞工地数 / 成功接续数 -> P2 恢复率）
 	"site_stall_detected": 0, "site_recovery_issued": 0,
+	# 2C-12 §2.3：科技建筑诉求因"买不起"被生成侧跳过（只观测，回答"还常驻吗"）
+	"tech_demand_skipped": 0,
 }
 var _dept_cd: float = 0.0
 var _scout_cd: float = 0.0
@@ -249,6 +251,10 @@ var _pop90_last_site_t: float = -1.0
 var _pending_requisition: int = 0
 ## 2C-11：单件典型成本记忆（本周期无待办时取最近一次的值，早期农场 80）
 var _saving_last_unit_cost: float = 80.0
+## 2C-12 §2.1：**假待办账本**（目标 → 连续"在报但没执行"的仲裁周期数）。
+## 执行一次即从字典里删掉（"曾经执行过"的目标不再算假待办）；
+## 金币成本 0 的诉求不记账（不构成"单件成本"统计）。
+var _saving_stall: Dictionary = {}
 ## 2C-11 §3：最近 60 s 被拆建筑账本。只存时刻、不存对象引用，避免悬空。
 ## `_known_buildings` = 上一次思考时存活的建筑 instance_id 集合；
 ## 完工不会让 id 消失，所以「上次有、这次没了」只可能是被拆/被移除。
@@ -4309,9 +4315,29 @@ func _site_recovery_tick(now: float) -> void:
 			repair_stats["blocked_builder_busy"] = int(repair_stats["blocked_builder_busy"]) + 1
 
 
+## 2C-12 §2.1：假待办账本。本周期**执行了**的目标 → 清零（曾经执行过就不算假）；
+## 被驳回且金币成本 > 0 的目标 → 连续未执行周期数 +1。
+## 只服务 `typical_unit_cost_median`，不进任何决策。
+func _saving_note_stall(plan: Dictionary) -> void:
+	var done_t: Dictionary = {}
+	for d in (plan.get("执行", []) as Array):
+		if d is Dictionary:
+			done_t[String((d as Dictionary).get("目标", ""))] = true
+	for k in done_t.keys():
+		_saving_stall.erase(k)
+	for d2 in (plan.get("驳回", []) as Array):
+		if not (d2 is Dictionary):
+			continue
+		var t: String = String((d2 as Dictionary).get("目标", ""))
+		if t.is_empty() or done_t.has(t):
+			continue
+		if int((d2 as Dictionary).get("金币成本", 0)) <= 0:
+			continue
+		_saving_stall[t] = int(_saving_stall.get(t, 0)) + 1
+
+
 ## 主入口：一次 dept 思考（每 tick 调，内部按 2 s 节拍仲裁）
-func _dept_tick(diff: DifficultyDef, now: float) -> void:
-	if _faction == null:
+func _dept_tick(diff: DifficultyDef, now: float) -> void:	if _faction == null:
 		return
 	_dept_ctx_tick(now)
 	# --- 后台：采集派工 / 工地结算 / 训练归因（**不参与仲裁**，用户口径"经济在后台"）---
@@ -4338,10 +4364,14 @@ func _dept_tick(diff: DifficultyDef, now: float) -> void:
 	var t_avail: int = _troop_available_raw()
 	dept_stats["troop_available"] = _troop_available()
 	# --- 2C-11 §2：全局一个储备 G(t)（运营线/扩展线共用，不分池）+ 同时做事数上限 ---
-	# 单件典型成本取本周期最贵待办；无待办时取最近一次的值（_saving_last_unit_cost）。
+	# 2C-12 §2.1：单件典型成本改成「有效待办成本的中位数」——
+	#   连续 N 个周期在报却一次没执行的假待办（如神秘圣地 275）先被排除，
+	#   再取中位数；无有效待办时沿用上一次的值（_saving_last_unit_cost）。
 	var t_sec: float = Game.elapsed
-	var unit_cost: float = float(_model_call("typical_unit_cost",
-			[demands_l2, _saving_last_unit_cost]))
+	var stall_n: int = int(round(float(_model_call("demand_coef",
+			["储蓄_假待办周期", 30.0]))))
+	var unit_cost: float = float(_model_call("typical_unit_cost_median",
+			[demands_l2, _saving_stall, stall_n, _saving_last_unit_cost]))
 	_saving_last_unit_cost = unit_cost
 	var reserve: float = float(_model_call("saving_target", [t_sec, unit_cost]))
 	var caps: Dictionary = _model_call("concurrency_caps", [t_sec])
@@ -4367,6 +4397,10 @@ func _dept_tick(diff: DifficultyDef, now: float) -> void:
 		return
 	_dept_execute(plan)
 	_dept_log(now, plan)
+	# 2C-12 §2.1：假待办账本（执行过的目标清零，被驳回的目标 +1）。
+	# 放在 _dept_log 之后：它只影响**下一周期**的单件成本口径，不进本周期决策，
+	# 也不破坏 2C-9 的「_dept_execute 紧接 _dept_log」顺序断言。
+	_saving_note_stall(plan)
 
 
 ## L0 快照（每 tick 覆盖写）+ L1 环形槽推进（1 s 一格）
@@ -4786,6 +4820,12 @@ func _demand_builds(diff: DifficultyDef, threat_n: int) -> Array:
 						"夜营火（已有 %d）" % _faction.count_buildings(cid),
 						true, Callable(self, "_exec_build_campfire")))
 	# ⑤ 其余产能建筑（圣地/车坊）：每种一座，最低分
+	# ★ 2C-12 §2.3：这里必须加「买得起」前置（与 dept=off 的 `_maybe_build_one` 同口径）。
+	#   2C-11 是无条件报（`可执行=true`），于是"建造·神秘圣地 275 金"在
+	#   866/866 个仲裁周期都在报、一次没执行。它同时是全局最贵待办，把单件成本
+	#   顶成 275 → G(t) 封顶 550 → 自己（以及农场 120 / 兵营 160）都被储备线卡死，
+	#   形成"报 → 顶高 G → 更过不了 → 下周再报"的三层自锁。
+	#   修法分两层：生成侧只报买得起的（本条）+ 单件成本取中位数并排除假待办（§2.1）。
 	for id in _production_building_ids(diff):
 		var nid: StringName = StringName(id)
 		if nid == pid:
@@ -4794,6 +4834,10 @@ func _demand_builds(diff: DifficultyDef, threat_n: int) -> Array:
 			continue
 		var ed: UnitDef = Cfg.unit(nid)
 		if ed == null:
+			continue
+		if not _can_spend(nid):
+			dept_stats["tech_demand_skipped"] = \
+					int(dept_stats.get("tech_demand_skipped", 0)) + 1
 			continue
 		out.append(_demand("运营线", "建造", String(ed.display_name),
 				int(ed.gold_cost), int(ed.wood_cost), 0, false,
