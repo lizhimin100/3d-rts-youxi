@@ -86,7 +86,11 @@ const DEFAULT_ARMY_POP_CAP: bool = true
 const DEPT_ON: String = "on"
 const DEPT_OFF: String = "off"
 const DEPT_MODES: Array[String] = [DEPT_ON, DEPT_OFF]
-const DEFAULT_DEPT_MODE: String = DEPT_ON
+## ★ 2C-12 处置（A 组判失败）：默认值 `on` → **`off`**。
+##   2C-12 长局实测两项都明显低于 off（cap −11.90% / 农场 −46.67%），按任务书 §6.1
+##   「部门制失败 → 回退 2C-8 为主线」。部门制冻结为实验分支，用 `--dept=on` 显式开启。
+##   保留：储蓄纯函数 / 建造恢复 / 判定层 / 诊断数据 / 承诺表代码（都还在，只是不再默认走）。
+const DEFAULT_DEPT_MODE: String = DEPT_OFF
 
 ## 2C-12 P0：**承诺表开关**（占位机制，只对金币）
 ##   on（默认）= 部门为还没执行的动作预扣金币；仲裁按「金币 − 已承诺 − G(t)」判；
@@ -251,7 +255,8 @@ static func dept_mode() -> String:
 
 static func set_dept_mode(m: String) -> String:
 	var u: String = m.strip_edges().to_lower()
-	_dept_mode = u if DEPT_MODES.has(u) else DEPT_ON
+	# 2C-12：非法值回落**默认值**（现在是 off），不再硬编码回 on
+	_dept_mode = u if DEPT_MODES.has(u) else DEFAULT_DEPT_MODE
 	return _dept_mode
 
 

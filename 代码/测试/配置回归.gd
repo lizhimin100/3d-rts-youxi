@@ -1182,12 +1182,16 @@ func _case_2c9() -> void:
 			_near(float(bm.demand_coef("训练_威胁系数")), 0.8, 0.000001)
 			and _near(float(bm.demand_coef("不存在的键", 0.7)), 0.7, 0.000001),
 			"训练_威胁系数=0.8；未知键回落 0.7")
-	_record("2C9：dept 开关 on/off（默认 on；非法值回落 on）",
-			String(AIV.DEFAULT_DEPT_MODE) == "on"
-			and String(AIV.dept_mode()) == "on"
-			and bool(AIV.dept_on())
-			and String(AIV.set_dept_mode("乱写")) == "on",
-			"默认 %s" % String(AIV.dept_mode()))
+	# 2C-12 处置：A 组判失败 → 部门制回退 2C-8 为主线，默认改成 off（`--dept=on` 仍可实验）
+	_record("2C9/2C12：dept 开关 on/off（默认 off；非法值回落 off；on 可显式开）",
+			String(AIV.DEFAULT_DEPT_MODE) == "off"
+			and String(AIV.dept_mode()) == "off"
+			and bool(AIV.dept_off())
+			and String(AIV.set_dept_mode("乱写")) == "off"
+			and String(AIV.set_dept_mode("on")) == "on"
+			and bool(AIV.dept_on()),
+			"默认 %s（回退 2C-8 为主线）" % String(AIV.DEFAULT_DEPT_MODE))
+	AIV.reset_defaults()
 	_record("2C9：不变式守门（判定表窗口/系数/分母/修理线/gap 一个字没动）",
 			_near(float(bm.VD_TIME_GOOD), 0.8, 0.0001)
 			and _near(float(bm.VD_TIME_HALF), 0.5, 0.0001)
