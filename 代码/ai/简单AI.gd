@@ -23,6 +23,9 @@ const LOG_PREFIX: String = "[AI]"
 const AIW := preload("res://代码/配置/AI战略权重.gd")
 ## 判定口径开关（old/new）+ 理论值参数。默认 new；bench 用 --verdict-mode 覆盖。
 const AIV := preload("res://代码/配置/AI判定模式.gd")
+## 2C-12：直接引战斗模型拿**承诺表的常量与状态枚举**（TTL / 人口门槛 / 状态名）。
+## ★ 只读常量，不 new 实例 —— 场景侧真正的调用仍走 `_model_call`（统一入口）。
+const BM := preload("res://代码/ai/战斗模型.gd")
 ## 大本营最多排几个农民（农民便宜，排两个不心疼）
 const MAX_QUEUE_PEASANT: int = 2
 ## 兵营最多排几个兵。
@@ -231,6 +234,15 @@ var dept_stats: Dictionary = {
 	"site_stall_detected": 0, "site_recovery_issued": 0,
 	# 2C-12 §2.3：科技建筑诉求因"买不起"被生成侧跳过（只观测，回答"还常驻吗"）
 	"tech_demand_skipped": 0,
+	# 2C-12 §3：承诺表四个生命周期计数 + 局末残留 + 可自由资源（只观测，不进决策）
+	"promise_made": 0, "promise_consumed": 0,
+	"promise_expired": 0, "promise_preempted": 0,
+	"promise_dropped_target_done": 0,
+	"promise_left_at_end": 0,
+	"promise_committed_last": 0, "promise_free_gold_last": 0.0,
+	"promise_claim_skips": 0,
+	# 2C-12 D 组哨兵：0 成本诉求被判「储备不足」（必须恒 0）
+	"zero_cost_saving_rej": 0,
 }
 var _dept_cd: float = 0.0
 var _scout_cd: float = 0.0
@@ -241,7 +253,9 @@ var _troop_locks: Dictionary = {}
 ## 触发：占用率=(占用+在训)/上限 首次 >90%；响应：20 s 内任意一座农场工地开工；
 ## 一次触发结算后冷却 15 s 再评估下一次，避免同一次卡人口被反复计数。
 var pop90: Dictionary = {"触发": 0, "成功": 0, "失败": 0, "失败明细": [],
-	"峰值": 0.0, "农场开工": 0, "触发时刻": []}
+	"峰值": 0.0, "农场开工": 0, "触发时刻": [],
+	# 2C-12 §5：双口径拆分 —— 成功 = 已有工地 + 20 s 内新开工，两个数分开记。
+	"已有工地": 0, "新开工成功": 0}
 var _pop90_waiting: bool = false
 var _pop90_trigger_t: float = -1.0
 var _pop90_cooldown_until: float = -1.0
@@ -255,6 +269,10 @@ var _saving_last_unit_cost: float = 80.0
 ## 执行一次即从字典里删掉（"曾经执行过"的目标不再算假待办）；
 ## 金币成本 0 的诉求不记账（不构成"单件成本"统计）。
 var _saving_stall: Dictionary = {}
+## 2C-12 §3：**承诺表**（承诺键 "动作|目标" → 承诺字典，7 字段见 战斗模型.promise_make）。
+## 只对金币做承诺：可自由资源 = 金币 − 已承诺 − G(t)。
+## 生命周期：有效 → 执行中 → 已执行（删除）；或 已过期 / 被抢占（释放）。
+var _promise: Dictionary = {}
 ## 2C-11 §3：最近 60 s 被拆建筑账本。只存时刻、不存对象引用，避免悬空。
 ## `_known_buildings` = 上一次思考时存活的建筑 instance_id 集合；
 ## 完工不会让 id 消失，所以「上次有、这次没了」只可能是被拆/被移除。
@@ -4336,8 +4354,150 @@ func _saving_note_stall(plan: Dictionary) -> void:
 		_saving_stall[t] = int(_saving_stall.get(t, 0)) + 1
 
 
+# ---------------------------------------------------------------------------
+# 2C-12 §3 · 承诺表（占位机制，只对金币）
+#
+# 一张表，不新建层：key = "动作|目标" → 7 字段承诺（战斗模型.promise_make）。
+# 生命周期全部在这里：生成（部门提案）→ 执行中 → 已执行（删除）；
+# 或 过期 / 被抢占 / 目标已满足（释放回可自由资源）。每周期扫描，不允许泄漏。
+# ---------------------------------------------------------------------------
+
+## 每 2 s 仲裁周期调一次（只在 _dept_tick 的节拍里，不是每帧）。
+func _promise_tick(now: float, diff: DifficultyDef, urgent: bool) -> void:
+	if not AIV.promise_on():
+		# promise=off：完全回到 2C-11（没有承诺表 → 可自由资源只有 金币 − G(t)）
+		if not _promise.is_empty():
+			_promise.clear()
+		return
+	if _faction == null:
+		return
+	# ① 过期扫描（「有效」和「执行中」都被 TTL 兜住 → 不会跨周期泄漏）
+	var scan: Dictionary = _model_call("promise_expire", [_promise, now])
+	_promise = scan["存活"]
+	dept_stats["promise_expired"] = int(dept_stats["promise_expired"]) \
+			+ (scan["过期"] as Array).size()
+	# ② 目标已满足 → 承诺作废（不是泄漏：目的已达成，钱该回公共池）。
+	#    ★ 判据必须与 §3.3 的**生成条件逐条对应**，否则会来回打转：
+	#      农场是"可多座"建筑，不能用 count_buildings>=1 当达成（2C-12 首版踩过：
+	#      生成 164 / 作废 160 / 执行 2，全是"已有一座农场"被当成"目标已达成"）。
+	for k in _promise.keys():
+		var tgt: String = String((_promise[k] as Dictionary).get("目标", ""))
+		if _promise_target_done(tgt, diff):
+			_promise.erase(k)
+			dept_stats["promise_dropped_target_done"] = \
+					int(dept_stats["promise_dropped_target_done"]) + 1
+	# ③ 紧急抢占（只抢「有效」，不抢「执行中」—— 后者已经动钱）
+	var pp: Dictionary = _model_call("promise_preempt", [_promise, urgent])
+	_promise = pp["存活"]
+	dept_stats["promise_preempted"] = int(dept_stats["promise_preempted"]) \
+			+ (pp["被抢占"] as Array).size()
+	# ④ 生成（"已有同类有效承诺则跳过"在 _promise_add 里判）
+	_promise_spawn(now, diff)
+
+
+## 承诺的"目标已满足"判据 —— **必须与 _promise_spawn 的生成条件逐条对应**。
+##   农场：有工地，或者已经不再需要（不急也不想要）→ 达成
+##   兵营：有工地，或者座数已经够 → 达成
+##   分基地：已建成 2 座 → 达成
+## 不这么写就会退化成「生成→下一周期作废→再生成」的空转（首版实测 164/160/2）。
+func _promise_target_done(disp: String, diff: DifficultyDef) -> bool:
+	if disp.is_empty():
+		return false
+	var fid: StringName = _food_building_id()
+	if fid != &"":
+		var fd: UnitDef = Cfg.unit(fid)
+		if fd != null and String(fd.display_name) == disp:
+			if _has_site_of(fid):
+				return true
+			return not (_farm_urgent() or _farm_wanted(diff))
+	var pid: StringName = _primary_producer_id(diff)
+	if pid != &"":
+		var bd: UnitDef = Cfg.unit(pid)
+		if bd != null and String(bd.display_name) == disp:
+			return _has_site_of(pid) or _faction.count_buildings(pid) >= _barracks_want()
+	var hid: StringName = _main_base_id()
+	if hid != &"":
+		var hd: UnitDef = Cfg.unit(hid)
+		if hd != null and String(hd.display_name) == disp:
+			return _faction.count_buildings(hid) >= 2
+	return false
+
+
+## 生成三条（任务书 §3.3）。
+func _promise_spawn(now: float, diff: DifficultyDef) -> void:
+	# ① 运营线·农场：人口占用率（含在训）> 85% 且农场缺口 > 0 且无农场工地
+	var fid: StringName = _food_building_id()
+	var farm_disp: String = ""
+	if fid != &"":
+		var fd: UnitDef = Cfg.unit(fid)
+		if fd != null:
+			farm_disp = String(fd.display_name)
+			var cap: int = _faction.food_cap()
+			var rate: float = 0.0
+			if cap > 0:
+				rate = float(maxi(_faction.food_used(), 0)
+						+ maxi(_faction.food_reserved(), 0)) / float(cap)
+			var gap: bool = _farm_urgent() or _farm_wanted(diff)
+			if rate > BM.PROMISE_POP_RATE and gap and not _has_site_of(fid):
+				_promise_add("建造", farm_disp, int(fd.gold_cost),
+						int(fd.wood_cost), now, BM.PROMISE_TTL_FARM)
+	# ② 兵营：数量 < 目标，且**没有农场承诺**（避免抢农场预算）
+	var pid: StringName = _primary_producer_id(diff)
+	if pid != &"":
+		var bd: UnitDef = Cfg.unit(pid)
+		if bd != null:
+			var farm_key: String = ""
+			if not farm_disp.is_empty():
+				farm_key = "%s|%s" % ["建造", farm_disp]
+			var blocked_by_farm: bool = not farm_key.is_empty() and _promise.has(farm_key)
+			if not blocked_by_farm and not _has_site_of(pid) \
+					and _faction.count_buildings(pid) < _barracks_want():
+				_promise_add("建造", String(bd.display_name), int(bd.gold_cost),
+						int(bd.wood_cost), now, BM.PROMISE_TTL_BARRACKS)
+	# ③ 分基地：资源点 90 s 内枯竭 且 金币 ≥ 分基地成本 → TTL 60 s。
+	#    ★ `can_build_townhall()` 仍固定 false（禁止项：AI 自动建大本营），
+	#      所以本条当前**永不触发**，只保留承诺结构；开关一开即生效。
+	if can_build_townhall():
+		var hid: StringName = _main_base_id()
+		var hd: UnitDef = Cfg.unit(hid) if hid != &"" else null
+		if hd != null and _expand_due_soon() and _faction.gold >= int(hd.gold_cost):
+			_promise_add("建造", String(hd.display_name), int(hd.gold_cost),
+					int(hd.wood_cost), now, BM.PROMISE_TTL_EXPAND)
+
+
+## 资源点"90 s 内枯竭"判据的**接口桩**。
+## 分基地的生成被 `can_build_townhall()`（恒 false）挡在前面，本函数当前不会被调用；
+## 2C-13 若开分基地，在这里接「剩余矿量 ÷ 最近 60 s 金币速率」即可。
+func _expand_due_soon() -> bool:
+	return false
+
+
+## 生成一条承诺（已有同类则跳过）。返回是否真的新增。
+func _promise_add(action: String, target: String, gold: int, wood: int,
+		now: float, ttl: float) -> bool:
+	var k: String = "%s|%s" % [action, target]
+	if _promise.has(k):
+		return false
+	var p = _model_call("promise_make", [action, target, gold, wood, now, ttl])
+	if p == null or not (p is Dictionary):
+		return false
+	_promise[k] = p
+	dept_stats["promise_made"] = int(dept_stats["promise_made"]) + 1
+	return true
+
+
+## 局末清空承诺表（bench 在 _finish 前调）。
+## 返回清理前的条数 → 落盘 `promise_left_at_end`（生命周期管理断言：清理后必须为 0）。
+func promise_dispose() -> int:
+	var n: int = _promise.size()
+	_promise.clear()
+	dept_stats["promise_left_at_end"] = n
+	return n
+
+
 ## 主入口：一次 dept 思考（每 tick 调，内部按 2 s 节拍仲裁）
-func _dept_tick(diff: DifficultyDef, now: float) -> void:	if _faction == null:
+func _dept_tick(diff: DifficultyDef, now: float) -> void:
+	if _faction == null:
 		return
 	_dept_ctx_tick(now)
 	# --- 后台：采集派工 / 工地结算 / 训练归因（**不参与仲裁**，用户口径"经济在后台"）---
@@ -4363,6 +4523,21 @@ func _dept_tick(diff: DifficultyDef, now: float) -> void:	if _faction == null:
 	_dept_note_competition()
 	var t_avail: int = _troop_available_raw()
 	dept_stats["troop_available"] = _troop_available()
+	# --- 2C-11 §3：紧急白名单（命中任一 → 本周期诉求不受储备线约束）---
+	# ★ 2C-12：**提到承诺表之前算** —— 紧急态要能抢占非紧急承诺。
+	var hits: Array = _saving_urgency()
+	var urgent: bool = not hits.is_empty()
+	var hit_stat: Dictionary = dept_stats["saving_urgent_hits"]
+	for h in hits:
+		var hk: String = String(h)
+		hit_stat[hk] = int(hit_stat.get(hk, 0)) + 1
+	dept_stats["saving_urgent_reasons_last"] = hits
+	# --- 2C-12 §3：承诺表维护（过期 / 目标已满足 / 紧急抢占 / 按需生成）---
+	# 跑在仲裁之前：本周期新生成的承诺要能影响本周期"可自由使用资源"。
+	_promise_tick(now, diff, urgent)
+	var committed: int = int(_model_call("promise_committed_gold", [_promise]))
+	var claimed: Array = _model_call("promise_claimed_keys", [_promise])
+	dept_stats["promise_committed_last"] = committed
 	# --- 2C-11 §2：全局一个储备 G(t)（运营线/扩展线共用，不分池）+ 同时做事数上限 ---
 	# 2C-12 §2.1：单件典型成本改成「有效待办成本的中位数」——
 	#   连续 N 个周期在报却一次没执行的假待办（如神秘圣地 275）先被排除，
@@ -4375,14 +4550,6 @@ func _dept_tick(diff: DifficultyDef, now: float) -> void:	if _faction == null:
 	_saving_last_unit_cost = unit_cost
 	var reserve: float = float(_model_call("saving_target", [t_sec, unit_cost]))
 	var caps: Dictionary = _model_call("concurrency_caps", [t_sec])
-	# --- 2C-11 §3：紧急白名单（命中任一 → 本周期诉求不受储备线约束）---
-	var hits: Array = _saving_urgency()
-	var urgent: bool = not hits.is_empty()
-	var hit_stat: Dictionary = dept_stats["saving_urgent_hits"]
-	for h in hits:
-		var hk: String = String(h)
-		hit_stat[hk] = int(hit_stat.get(hk, 0)) + 1
-	dept_stats["saving_urgent_reasons_last"] = hits
 	# 2C-11 P2：储备充足率 = 金币 >= G(t) 的周期数 / 总周期数（只记录，不进决策）
 	if float(_faction.gold) >= reserve:
 		dept_stats["saving_sufficient_cycles"] = int(dept_stats.get("saving_sufficient_cycles", 0)) + 1
@@ -4390,7 +4557,14 @@ func _dept_tick(diff: DifficultyDef, now: float) -> void:	if _faction == null:
 	dept_stats["saving_unit_cost_last"] = unit_cost
 	dept_stats["saving_urgent_last"] = urgent
 	dept_stats["caps_last"] = caps
-	var policy: Dictionary = {"reserve": reserve, "caps": caps, "urgent": urgent}
+	# 2C-12 §3.2：可自由使用资源 = 当前金币 − 已承诺金币 − G(t)。
+	# 仲裁用 `committed` 把「已经留给某个动作的钱」从公共池里扣掉；
+	# 被承诺覆盖的诉求（`claimed`）跳过储备线 —— 它那笔钱已经划走了，
+	# 再判一次就会变成"承诺了却永远执行不了"的死锁。
+	dept_stats["promise_free_gold_last"] = float(_model_call("promise_free_gold",
+			[_faction.gold, _promise, reserve]))
+	var policy: Dictionary = {"reserve": reserve, "caps": caps, "urgent": urgent,
+			"committed": committed, "claimed": claimed}
 	var plan: Dictionary = _model_call("arbitrate",
 			[demands_l2, _faction.gold, _faction.wood, t_avail, policy])
 	if plan == null:
@@ -4507,6 +4681,8 @@ func _pop90_tick(now: float) -> void:
 	if _pop90_waiting:
 		if now - _pop90_trigger_t <= 20.0 and _pop90_last_site_t >= _pop90_trigger_t - 0.001:
 			pop90["成功"] = int(pop90["成功"]) + 1
+			# 2C-12 §5 双口径：这一条算「20 s 内新开工」（触发时没有工地，之后才开的）
+			pop90["新开工成功"] = int(pop90["新开工成功"]) + 1
 			_pop90_waiting = false
 			_pop90_cooldown_until = now + 15.0
 		elif now - _pop90_trigger_t > 20.0:
@@ -4534,6 +4710,8 @@ func _pop90_tick(now: float) -> void:
 		# 不改农场预判 / 人口逻辑，只改观测判定。
 		if _has_site_of(fid):
 			pop90["成功"] = int(pop90["成功"]) + 1
+			# 2C-12 §5 双口径：这一条只算「触发时已有工地」，**不算新开工**
+			pop90["已有工地"] = int(pop90["已有工地"]) + 1
 			dept_stats["pop90_site_already"] = int(dept_stats.get("pop90_site_already", 0)) + 1
 			_pop90_cooldown_until = now + 15.0
 			return
@@ -4951,6 +5129,9 @@ func _dept_note_competition() -> void:
 func _dept_execute(plan: Dictionary) -> void:
 	dept_stats["cycles"] = int(dept_stats["cycles"]) + 1
 	dept_stats["demands"] = int(dept_stats["demands"]) + int(plan.get("总额", 0))
+	# 2C-12 D 组哨兵：0 成本诉求被判「储备不足」的次数（正常恒 0）
+	dept_stats["zero_cost_saving_rej"] = int(dept_stats.get("zero_cost_saving_rej", 0)) \
+			+ int(plan.get("零成本储备驳回", 0))
 	# 2C-11 P2：同时做事数的**实际分布**（每周期执行条数 -> 出现次数），
 	# 与 caps_last 的上限表对照，回答"储蓄后真的同时做多件事了吗"。
 	var done_n: int = int((plan.get("执行", []) as Array).size())
@@ -4967,6 +5148,12 @@ func _dept_execute(plan: Dictionary) -> void:
 	for d in (plan.get("执行", []) as Array):
 		var dd: Dictionary = d
 		var action: String = String(dd.get("动作类型", ""))
+		# 2C-12 §3.4：承诺生命周期 —— 执行前标「执行中」；失败回「有效」；
+		# 成功标「已执行」并从表里删除（实际扣减已由 _sched.build / queue_train 完成）。
+		var pkey: String = "%s|%s" % [action, String(dd.get("目标", ""))]
+		var p_live: bool = _promise.has(pkey)
+		if p_live:
+			(_promise[pkey] as Dictionary)["状态"] = BM.PROMISE_RUNNING
 		# 2C-10 §6：攒大波出击（`可被征用=true`）先征回临时防守兵，
 		# 释放短租约锁 → 兵力并入本次出击 → 收尾统一转 wave 锁。
 		_pending_requisition = 0
@@ -4982,8 +5169,14 @@ func _dept_execute(plan: Dictionary) -> void:
 		if not ok:
 			# 执行阶段失败：资源其实没花出去（下个周期按真实资源重判），按"条件不满足"记账
 			rj["条件不满足"] = int(rj.get("条件不满足", 0)) + 1
+			# 承诺回滚到「有效」，下个周期重试（仍受 TTL 约束，不会无限等）
+			if p_live and _promise.has(pkey):
+				(_promise[pkey] as Dictionary)["状态"] = BM.PROMISE_VALID
 			continue
 		dept_stats["executed"] = int(dept_stats["executed"]) + 1
+		if p_live:
+			_promise.erase(pkey)
+			dept_stats["promise_consumed"] = int(dept_stats["promise_consumed"]) + 1
 		match action:
 			"训练":
 				if String(dd.get("目标", "")) == "农民":

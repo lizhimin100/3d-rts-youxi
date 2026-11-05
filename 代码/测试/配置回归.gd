@@ -1557,7 +1557,7 @@ func _case_2c11() -> void:
 		sa11 = f11.get_as_text()
 		f11.close()
 	_record("2C11/2C12：接线 _dept_tick 每周期算 G(t)/上限/单件成本并作为单个 policy 传入",
-			sa11.contains("var policy: Dictionary = {\"reserve\": reserve, \"caps\": caps, \"urgent\": urgent}")
+			sa11.contains("var policy: Dictionary = {\"reserve\": reserve, \"caps\": caps, \"urgent\": urgent,")
 			and sa11.contains("\"saving_target\", [t_sec, unit_cost]")
 			and sa11.contains("\"concurrency_caps\", [t_sec]")
 			and sa11.contains("\"typical_unit_cost_median\",")
@@ -1834,6 +1834,28 @@ func _case_2c12() -> void:
 			and bool(AIV.promise_off()),
 			"默认 %s，off 可切并回落" % String(AIV.DEFAULT_PROMISE_MODE))
 	AIV.reset_defaults()
+
+	# ---------- §4 副官自检第 28 条（产品侧修：宽限到期归 0）----------
+	var ctrl_src: String = FileAccess.get_file_as_string("res://代码/ai/控制权.gd")
+	_record("2C12 §4：宽限到期真正交还（_grace_watch + _tick_grace + 到期置 OWNER_AI）",
+			ctrl_src.contains("var _grace_watch: Array = []")
+			and ctrl_src.contains("func _tick_grace(now: float) -> void:")
+			and ctrl_src.contains("_tick_grace(now)\n\tif _groups.is_empty():")
+			and ctrl_src.contains("_set_owner(u, OWNER_AI, 0.0, 0)\n\t\tstats[\"grace_expired\"] += 1")
+			and ctrl_src.contains("_watch_grace(u)")
+			and ctrl_src.contains("_grace_watch.clear()"),
+			"进宽限登记 → 到期归 0，不再依赖 claim_ai")
+
+	# ---------- §5 90% 响应双口径 ----------
+	var b_p90: String = FileAccess.get_file_as_string("res://代码/测试/AI基准.gd")
+	_record("2C12 §5：POP90 双口径拆分（成功 = 已有工地 + 20 s 内新开工）",
+			sa12.contains("\"已有工地\": 0, \"新开工成功\": 0")
+			and sa12.contains("pop90[\"新开工成功\"]")
+			and sa12.contains("pop90[\"已有工地\"]")
+			and b_p90.contains("\"修正口径成功率\"")
+			and b_p90.contains("\"新开工成功率\"")
+			and b_p90.contains("口径拆分自洽"),
+			"两个来源分开记，两个率都落盘")
 
 
 ## 造一条"金币成本被改成负数"的诉求（用于 demand_valid 的非法值断言）

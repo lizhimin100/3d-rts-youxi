@@ -54,6 +54,13 @@ var active_max_seconds: float = 120.0
 
 ## 命令组：gid -> {"units": Array, "deadline": float, "order": int, "since": float}
 var _groups: Dictionary = {}
+## 2C-12 §4：**宽限期观察名单**。
+## 2C-11 及以前，宽限到期只让 `is_protected()` 返回 false，`order_owner` 仍是 2，
+## 要等 AI 真的对它下过一条令（`claim_ai`）才回 0。dept=on 走仲裁只认领 push_n 个兵，
+## 队尾那个没人认领 → 副官自检 C 组恒 owner=002（27/28）。
+## 现在：进宽限就登记；到期那一刻直接把 owner 归 0（AI 空闲池），
+## **不再依赖 AI 是否认领**。已被 AI 认领 / 玩家重新下令的自动退出名单。
+var _grace_watch: Array = []
 var _next_gid: int = 1
 var _attached: bool = false
 var _last_tick: float = -1.0
@@ -67,6 +74,7 @@ var stats: Dictionary = {
 	"grants": 0,
 	"ai_skipped": 0,
 	"stale_groups": 0,
+	"grace_expired": 0,
 }
 
 
@@ -85,6 +93,7 @@ func attach() -> void:
 ## 复位（重开一局 / 单元测试）
 func reset() -> void:
 	_groups.clear()
+	_grace_watch.clear()
 	_next_gid = 1
 	_last_tick = -1.0
 	for k in stats.keys():
@@ -163,6 +172,7 @@ func unlock(units: Array) -> void:
 	for u in _valid(units):
 		if int(u.order_owner) == OWNER_LOCKED:
 			_set_owner(u, OWNER_GRACE, now + grace_seconds, 0)
+			_watch_grace(u)
 
 
 ## 立刻交还 AI
@@ -240,6 +250,8 @@ func debug_string() -> String:
 ## 另外还有一道 120 秒的安全上限：再长的命令也不能无限 ACTIVE。
 func tick(now: float) -> void:
 	_last_tick = now
+	# 2C-12 §4：宽限到期必须**真正交还**（owner → OWNER_AI），不能只靠 is_protected 假装没保护。
+	_tick_grace(now)
 	if _groups.is_empty():
 		return
 	for gid in _groups.keys():
@@ -273,8 +285,38 @@ func tick(now: float) -> void:
 		for u in keep:
 			if int(u.order_group) == gid:
 				_set_owner(u, OWNER_GRACE, now + grace_seconds, 0)
+				_watch_grace(u)
 		_groups.erase(gid)
 		stats["groups_finished"] += 1
+
+
+## 2C-12 §4：宽限期结算 —— 到期就归 0，不等 AI 认领。
+## 退出名单的三种情况：失效/死亡、已被 AI 认领或玩家重新下令、宽限尚未到期。
+func _tick_grace(now: float) -> void:
+	if _grace_watch.is_empty():
+		return
+	var keep: Array = []
+	for u in _grace_watch:
+		if u == null or not is_instance_valid(u):
+			continue
+		if not u.has_method("is_alive") or not u.is_alive():
+			continue
+		if int(u.order_owner) != OWNER_GRACE:
+			# 已被 claim_ai / grant / 玩家新命令接管 → 不必再管
+			continue
+		var until: float = float(u.order_until)
+		if until > 0.0 and now < until:
+			keep.append(u)
+			continue
+		_set_owner(u, OWNER_AI, 0.0, 0)
+		stats["grace_expired"] += 1
+	_grace_watch = keep
+
+
+## 进宽限时登记（同一单位重复进入只留一份）
+func _watch_grace(u) -> void:
+	if not _grace_watch.has(u):
+		_grace_watch.append(u)
 
 
 # ===========================================================================

@@ -1092,6 +1092,11 @@ static func arbitrate(demands: Array, gold: int, wood: int, troops: int,
 	var reserve: float = float(policy.get("reserve", -1.0))
 	var caps: Dictionary = policy.get("caps", {})
 	var urgent: bool = bool(policy.get("urgent", false))
+	# 2C-12 §3.2：承诺表。`committed` = 已承诺金币合计，`claimed` = 被承诺覆盖的键。
+	# 空 policy / promise=off 时两者都是 0 / 空 → 完全退化成 2C-11 行为。
+	var committed: int = maxi(int(policy.get("committed", 0)), 0)
+	var claimed_v = policy.get("claimed", [])
+	var claimed: Array = claimed_v if claimed_v is Array else []
 	var use_saving: bool = reserve >= 0.0
 	var use_caps: bool = not caps.is_empty()
 	var per_dept: Dictionary = {}
@@ -1109,6 +1114,9 @@ static func arbitrate(demands: Array, gold: int, wood: int, troops: int,
 	var done: Array = []
 	var rej: Array = []
 	var seen: Dictionary = {}
+	# 2C-12 §2.2 / D 组判据：金币成本 0 的诉求**绝不该**被判「储备不足」。
+	# 这个计数正常情况下恒 0；一旦 >0 就说明 0 成本豁免被破坏（口径脏数据）。
+	var zero_cost_saving_rej: int = 0
 	for e in order:
 		var d2: Dictionary = demands[int(e["i"])]
 		var key: String = "%s|%s|%s" % [
@@ -1166,10 +1174,19 @@ static func arbitrate(demands: Array, gold: int, wood: int, troops: int,
 		# ★ 口径选择：gold < cost 仍归「金币不足」，储备不足只描述「有钱但不该花」，
 		#   保住 2C-10 的金币不足驳回观测口径（报告里要直接对比），不把两者混成一个数。
 		#   紧急诉求（§3）跳过本检查，照常执行。
-		if use_saving and saving_breach(g, ng, reserve, urgent):
+		# 2C-12 §3.2：储备线用**可自由使用资源** = 周期剩余金币 − 已承诺金币。
+		#   被本部门承诺覆盖的诉求（claimed 里）跳过储备线：那笔钱已经从公共池
+		#   划走了，再判一次就是"承诺了却永远执行不了"的死锁；执行后把占用扣回来。
+		var key_p: String = "%s|%s" % [src, String(d2.get("目标", ""))]
+		var covered: bool = claimed.has(key_p)
+		if use_saving and not covered and saving_breach(g - committed, ng, reserve, urgent):
+			if ng <= 0:
+				zero_cost_saving_rej += 1
 			d2["驳回原因"] = RJ_SAVING
 			rej.append(d2)
 			continue
+		if covered:
+			committed = maxi(committed - ng, 0)
 		g -= ng
 		w -= nw
 		t -= nt
@@ -1182,6 +1199,8 @@ static func arbitrate(demands: Array, gold: int, wood: int, troops: int,
 		"金币余": g, "木材余": w, "兵力余": t,
 		"总额": demands.size(),
 		"储备": reserve, "紧急": urgent, "上限": caps, "执行中": done.size(),
+		# 2C-12：D 组口径哨兵（正常恒 0）
+		"零成本储备驳回": zero_cost_saving_rej,
 	}
 
 

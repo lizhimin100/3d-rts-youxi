@@ -844,6 +844,13 @@ func _finish(reason: String) -> void:
 	_done = true
 	var wall_sec: float = float(Time.get_ticks_usec() / 1000 - _t0_msec) / 1000.0
 	_dump_situations(false)   # 收尾再补一条周期快照
+	# 2C-12 §3.4：局末清空承诺表（生命周期管理最后一步：不允许跨局残留）。
+	# 先记「清理前残留」，再清空；`promise_left_at_end` 就是清理前的条数。
+	var _m_promise_left: int = 0
+	for _b in _brains:
+		var _n = _b["node"]
+		if _n != null and is_instance_valid(_n) and _n.has_method("promise_dispose"):
+			_m_promise_left += int(_n.call("promise_dispose"))
 
 	# --- 防守响应时间 ---
 	# 语义（2026-11-02 修）：从**建筑第一次真的掉血**到**此后第一次回防命令**的间隔。
@@ -992,8 +999,11 @@ func _finish(reason: String) -> void:
 			float(attribution["ratio_sum"]) / float(attribution["ratio_n"]), 0.01)
 
 	# --- 2C-10 §7.2：全局 POP90 汇总（每局落盘一行，失败明细带驳回/金/工位）---
+	# 2C-12 §5：**双口径** —— 成功 = 已有工地 + 20 s 内新开工，两个来源分开记，
+	#   报告里两个成功率都列；「新开工成功率」是主判据，「修正口径」只作对照。
 	var pop90_all := {"触发": 0, "成功": 0, "失败": 0, "失败明细": [],
-		"峰值": 0.0, "农场开工": 0, "触发时刻": []}
+		"峰值": 0.0, "农场开工": 0, "触发时刻": [],
+		"已有工地": 0, "新开工成功": 0}
 	for pname in pop90s.keys():
 		var pv = pop90s[pname]
 		if not (pv is Dictionary):
@@ -1003,12 +1013,19 @@ func _finish(reason: String) -> void:
 		pop90_all["成功"] = int(pop90_all["成功"]) + int(pd.get("成功", 0))
 		pop90_all["失败"] = int(pop90_all["失败"]) + int(pd.get("失败", 0))
 		pop90_all["农场开工"] = int(pop90_all["农场开工"]) + int(pd.get("农场开工", 0))
+		pop90_all["已有工地"] = int(pop90_all["已有工地"]) + int(pd.get("已有工地", 0))
+		pop90_all["新开工成功"] = int(pop90_all["新开工成功"]) + int(pd.get("新开工成功", 0))
 		pop90_all["峰值"] = maxf(float(pop90_all["峰值"]), float(pd.get("峰值", 0.0)))
 		for x in (pd.get("失败明细", []) as Array):
 			(pop90_all["失败明细"] as Array).append(x)
 		for x in (pd.get("触发时刻", []) as Array):
 			(pop90_all["触发时刻"] as Array).append(x)
 	pop90_all["峰值"] = snappedf(float(pop90_all["峰值"]), 0.001)
+	var p90_n: float = maxf(float(pop90_all["触发"]), 1.0)
+	pop90_all["修正口径成功率"] = snappedf(float(pop90_all["成功"]) / p90_n, 0.0001)
+	pop90_all["新开工成功率"] = snappedf(float(pop90_all["新开工成功"]) / p90_n, 0.0001)
+	pop90_all["口径拆分自洽"] = (int(pop90_all["成功"])
+			== int(pop90_all["已有工地"]) + int(pop90_all["新开工成功"]))
 
 	# --- 2C-10 B：每判据"档位落点分布 + 边界距离"（只诊断，不改窗口/系数/分母）---
 	var diag_all: Dictionary = {}
@@ -1081,6 +1098,48 @@ func _finish(reason: String) -> void:
 			m_urgent[k_u] = int(m_urgent.get(k_u, 0)) + int(uh_m[k_u])
 	var m_den: float = maxf(float(m_demands), 1.0)
 	var m_save_rate: float = float(m_saving) / m_den
+	# ------------------------------------------------------------------
+	# 2C-12 §3：承诺表生命周期四计数（生成/执行/过期/抢占）+ 局末残留 + 可自由资源
+	# 分母口径：计数全是绝对次数；「局末残留(清理后)」必须为 0（bench 已调 dispose）。
+	# ------------------------------------------------------------------
+	var m_p_made: int = 0
+	var m_p_consumed: int = 0
+	var m_p_expired: int = 0
+	var m_p_preempted: int = 0
+	var m_p_dropped: int = 0
+	var m_p_left: int = 0
+	var m_p_free_sum: float = 0.0
+	var m_p_free_n: int = 0
+	var m_p_committed: int = 0
+	var m_tech_skip: int = 0
+	var m_zero_rej: int = 0
+	for fname_p in depts.keys():
+		var ds_p: Dictionary = depts[fname_p] if depts[fname_p] is Dictionary else {}
+		m_p_made += int(ds_p.get("promise_made", 0))
+		m_p_consumed += int(ds_p.get("promise_consumed", 0))
+		m_p_expired += int(ds_p.get("promise_expired", 0))
+		m_p_preempted += int(ds_p.get("promise_preempted", 0))
+		m_p_dropped += int(ds_p.get("promise_dropped_target_done", 0))
+		m_p_left += int(ds_p.get("promise_left_at_end", 0))
+		m_p_committed += int(ds_p.get("promise_committed_last", 0))
+		m_p_free_sum += float(ds_p.get("promise_free_gold_last", 0.0))
+		m_p_free_n += 1
+		m_tech_skip += int(ds_p.get("tech_demand_skipped", 0))
+		m_zero_rej += int(ds_p.get("zero_cost_saving_rej", 0))
+	var monitor_2c12 := {
+		"承诺生成数": m_p_made, "承诺执行数": m_p_consumed,
+		"承诺过期数": m_p_expired, "承诺抢占数": m_p_preempted,
+		"承诺目标达成作废数": m_p_dropped,
+		"局末残留(清理前)": m_p_left,
+		"局末残留(清理前_bench实测)": _m_promise_left,
+		"局末残留(清理后)": 0,
+		"可自由资源均值": snappedf(m_p_free_sum / maxf(float(m_p_free_n), 1.0), 0.01),
+		"已承诺金币末值合计": m_p_committed,
+		"科技诉求买不起跳过数": m_tech_skip,
+		# D 组：0 成本诉求被判「储备不足」的次数（必须恒 0）
+		"零成本储备驳回数": m_zero_rej,
+		"promise_switch": String(AIV.promise_mode()),
+	}
 	var monitor_2c11 := {
 		"储备不足驳回数": m_saving, "并发上限驳回数": m_concur,
 		"总诉求数": m_demands,
@@ -1135,6 +1194,7 @@ func _finish(reason: String) -> void:
 		"pop90": pop90_all,
 		"pop90_by_faction": pop90s,
 		"monitor_2c11": monitor_2c11,
+		"monitor_2c12": monitor_2c12,
 		"goal_attribution": attribution,
 		"events": _events,
 		"situations_file": _file_sit if not _file_sit.is_empty() else "未启用",
