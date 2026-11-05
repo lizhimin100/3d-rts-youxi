@@ -896,6 +896,8 @@ func _finish(reason: String) -> void:
 	# 2C-9 P1：判定表分布（faction 名 → {判据1..4: 五档计数}）
 	var judge_dist: Dictionary = {}
 	var judge_rows: Array = []
+	# 2C-10：90% 人口压力响应（faction 名 → pop90 观测字典）
+	var pop90s: Dictionary = {}
 	for b in _brains:
 		var n = b["node"]
 		if n == null or not is_instance_valid(n):
@@ -912,6 +914,8 @@ func _finish(reason: String) -> void:
 				c.erase("hits")
 				# 2C-9：四样判据各自的档位（同一批冻结阈值，不重算判定）
 				c["判据"] = _bench_model.judge_bins(c)
+				# 2C-10 B：每波四样判据的**原始输入值 + 档位边界 + 边界距离**（只诊断）
+				c["判据诊断"] = _bench_model.judge_diag(c)
 				c["零伤害"] = float(c.get("damage_out", 0.0)) <= 0.0
 				for k in c.keys():
 					if String(k).begins_with("_"):
@@ -949,6 +953,8 @@ func _finish(reason: String) -> void:
 		train_blocks[fname2] = n.get("train_stats")
 		# 2C-9：仲裁账本（执行率 / 驳回原因 / 胜出次数 / 兵力锁）
 		depts[fname2] = n.get("dept_stats")
+		# 2C-10 §7.2：每阵营的 POP90 观测
+		pop90s[fname2] = n.get("pop90")
 
 	# --- 2C-5 P1-5 达成归属：达成条数里"本波参与"的比例 ---
 	# 口径：goal_last_hit = 目标临死前最后一刀的攻击者属于本波；
@@ -985,6 +991,62 @@ func _finish(reason: String) -> void:
 		attribution["ratio_mean"] = snappedf(
 			float(attribution["ratio_sum"]) / float(attribution["ratio_n"]), 0.01)
 
+	# --- 2C-10 §7.2：全局 POP90 汇总（每局落盘一行，失败明细带驳回/金/工位）---
+	var pop90_all := {"触发": 0, "成功": 0, "失败": 0, "失败明细": [],
+		"峰值": 0.0, "农场开工": 0, "触发时刻": []}
+	for pname in pop90s.keys():
+		var pv = pop90s[pname]
+		if not (pv is Dictionary):
+			continue
+		var pd: Dictionary = pv as Dictionary
+		pop90_all["触发"] = int(pop90_all["触发"]) + int(pd.get("触发", 0))
+		pop90_all["成功"] = int(pop90_all["成功"]) + int(pd.get("成功", 0))
+		pop90_all["失败"] = int(pop90_all["失败"]) + int(pd.get("失败", 0))
+		pop90_all["农场开工"] = int(pop90_all["农场开工"]) + int(pd.get("农场开工", 0))
+		pop90_all["峰值"] = maxf(float(pop90_all["峰值"]), float(pd.get("峰值", 0.0)))
+		for x in (pd.get("失败明细", []) as Array):
+			(pop90_all["失败明细"] as Array).append(x)
+		for x in (pd.get("触发时刻", []) as Array):
+			(pop90_all["触发时刻"] as Array).append(x)
+	pop90_all["峰值"] = snappedf(float(pop90_all["峰值"]), 0.001)
+
+	# --- 2C-10 B：每判据"档位落点分布 + 边界距离"（只诊断，不改窗口/系数/分母）---
+	var diag_all: Dictionary = {}
+	for dkey in ["判据1", "判据2", "判据3", "判据4"]:
+		var cnt: Dictionary = {}
+		var dsum: float = 0.0
+		var dn: int = 0
+		var dnear: int = 0
+		var dmin: float = 1e9
+		var dmax: float = 0.0
+		var edges: Variant = null
+		for rr in judge_rows:
+			var dgv = (rr as Dictionary).get("判据诊断", null)
+			if not (dgv is Dictionary):
+				continue
+			var one = (dgv as Dictionary).get(dkey, null)
+			if not (one is Dictionary):
+				continue
+			var od: Dictionary = one as Dictionary
+			if edges == null:
+				edges = od.get("边界", [])
+			var dist: float = float(od.get("边界距离", 0.0))
+			dsum += dist
+			dn += 1
+			dmin = minf(dmin, dist)
+			dmax = maxf(dmax, dist)
+			if dist <= 0.05:
+				dnear += 1
+			var bin: String = String(od.get("档", "?"))
+			cnt[bin] = int(cnt.get(bin, 0)) + 1
+		diag_all[dkey] = {
+			"档位": cnt, "边界": edges,
+			"边界距离": {"均值": snappedf(dsum / maxf(float(dn), 1.0), 0.001),
+				"最小": snappedf(dmin if dn > 0 else 0.0, 0.001),
+				"最大": snappedf(dmax, 0.001),
+				"近边界0.05占比": snappedf(float(dnear) / maxf(float(dn), 1.0), 0.001)},
+		}
+
 	var report := {
 		"seed": seed_val, "minutes": minutes, "speed": speed, "map": map_path,
 		"difficulty": Cfg.game.default_difficulty,
@@ -1020,6 +1082,9 @@ func _finish(reason: String) -> void:
 		"train_block": train_blocks,
 		"dept": depts,
 		"judge_dist": judge_dist,
+		"judge_diag": diag_all,
+		"pop90": pop90_all,
+		"pop90_by_faction": pop90s,
 		"goal_attribution": attribution,
 		"events": _events,
 		"situations_file": _file_sit if not _file_sit.is_empty() else "未启用",
@@ -1149,6 +1214,12 @@ func _finish(reason: String) -> void:
 	}
 	print("JUDGE-DIST %s" % JSON.stringify(all_jd))
 	summary["JUDGE-DIST"] = all_jd
+	# 2C-10 B：每判据原始输入落点 + 边界距离（只诊断，不改窗口）
+	print("JUDGE-DIAG %s" % JSON.stringify(diag_all))
+	summary["JUDGE-DIAG"] = diag_all
+	# 2C-10 §7.2：90% 响应测试每局落盘一行
+	print("POP90 %s" % JSON.stringify(pop90_all))
+	summary["POP90"] = pop90_all
 	print("AI-BENCH %s" % JSON.stringify(summary))
 	# 确定性签名：同 seed 复跑必须一致（外部脚本比对）
 	var sig: String = ""
