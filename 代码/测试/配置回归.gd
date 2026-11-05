@@ -1584,6 +1584,26 @@ func _case_2c11() -> void:
 			and bool(r_urg["紧急"]) and not bool(r_save["紧急"]),
 			"紧急执行 3 / 非紧急执行 0")
 
+	# ---------- C4：建造停滞恢复接线 ----------
+	_record("2C11：接线 每 5s 扫工地（不是每帧）且优先于仲裁/新工地",
+			sa11.contains("SITE_SCAN_SEC_2C11: float = 5.0")
+			and sa11.contains("if now >= _site_scan_next_t:")
+			and sa11.contains("_site_recovery_tick(now)")
+			and sa11.contains("func _site_recovery_tick(now: float) -> void:")
+			and _near(float(b.SITE_SCAN_SEC), 5.0, 0.0001),
+			"5 s 节拍，_think_once 里跑在 _dept_tick 之前")
+	_record("2C11：接线 20s 停滞判据 + 派工接续 + 计时清零 + 复用 blocked_builder_busy",
+			sa11.contains("\"site_is_stalled\", [now, last_t]")
+			and sa11.contains("builder.call(\"order_build_site\", s2)")
+			and sa11.contains("_site_last_work[sid2] = now")
+			and sa11.contains("repair_stats[\"blocked_builder_busy\"]")
+			and _near(float(b.SITE_STALL_SEC), 20.0, 0.0001),
+			"20 s 停滞 / 只接活不新建 / 归因不新增结构")
+	_record("2C11：P2 监控 停滞工地数 / 成功接续数 都有落盘计数",
+			sa11.contains("\"site_stall_detected\"")
+			and sa11.contains("\"site_recovery_issued\""),
+			"建造停滞恢复率 = issued / detected")
+
 
 ## 造一条"金币成本被改成负数"的诉求（用于 demand_valid 的非法值断言）
 func _demand_gold(base: Dictionary, gold: int) -> Dictionary:

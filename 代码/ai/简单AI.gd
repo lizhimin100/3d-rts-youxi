@@ -227,6 +227,8 @@ var dept_stats: Dictionary = {
 	"saving_urgent_reasons_last": [],
 	"caps_last": {}, "exec_per_cycle": {},
 	"pop90_site_already": 0,
+	# 2C-11 §4：建造停滞恢复（停滞工地数 / 成功接续数 -> P2 恢复率）
+	"site_stall_detected": 0, "site_recovery_issued": 0,
 }
 var _dept_cd: float = 0.0
 var _scout_cd: float = 0.0
@@ -253,6 +255,10 @@ var _saving_last_unit_cost: float = 80.0
 var _known_buildings: Dictionary = {}
 var _lost_building_t: Array = []
 const URG_LOST_WINDOW_SEC: float = 60.0
+## 2C-11 §4：工地施工时间戳（instance_id -> 最后一次有农民施工的时刻）
+var _site_last_work: Dictionary = {}
+var _site_scan_next_t: float = -1.0
+const SITE_SCAN_SEC_2C11: float = 5.0
 var _l1_dmg: Array[float] = []
 var _l1_gold: Array[float] = []
 var _l1_wood: Array[float] = []
@@ -397,6 +403,12 @@ func _think_once(diff: DifficultyDef) -> void:
 	var now: float = Game.elapsed
 	# 2C-11 §3：建筑被拆账本（dept on/off 都跑，纯观测，不进决策）
 	_track_building_losses(now)
+	# 2C-11 §4：建造停滞恢复（每 5 s 扫一次，不是每帧）。
+	# ★ 跑在 _dept_tick / 仲裁之前 = 优先级高于新工地，且不占仲裁额度、
+	#   不受储备线约束（已投入成本的止损，不是新开销）。
+	if now >= _site_scan_next_t:
+		_site_scan_next_t = now + SITE_SCAN_SEC_2C11
+		_site_recovery_tick(now)
 	# 2C-10 §7.2：90% 压力响应纯观测（dept on/off 都跑，不进任何决策）
 	_pop90_tick(now)
 	_sched.begin(now)
@@ -4232,6 +4244,69 @@ func _saving_urgency() -> Array:
 	var attacked: bool = _under_attack()
 	return _model_call("urgent_reasons",
 			[rate, has_site, army_n, floor_v, lost_n, attacked])
+
+
+# ---------------------------------------------------------------------------
+# 2C-11 §4 · 建造停滞恢复（独立行为，不走仲裁）
+#
+# 每 5 s 扫一次全部未完工工地（不是每帧）；连续 20 s 无农民施工判停滞，
+# 派工位接续建造（优先级高于新工地）。不设上限、不受储备线约束。
+# 归因复用 2C-8 的 repair_stats["blocked_builder_busy"]，不新增归因结构；
+# P2 只需在 dept_stats 里记「停滞数 / 成功接续数」两个计数。
+# ---------------------------------------------------------------------------
+func _site_recovery_tick(now: float) -> void:
+	if _faction == null:
+		return
+	var sites: Array = []
+	var alive_ids: Dictionary = {}
+	for b in _faction.buildings:
+		if b == null or not is_instance_valid(b) or b.def == null:
+			continue
+		if not b.is_alive():
+			continue
+		var rb: RtsBuilding = b as RtsBuilding
+		if rb == null or rb.is_constructed:
+			continue
+		sites.append(rb)
+		alive_ids[int(rb.get_instance_id())] = true
+	# 有工位正在它上面施工 → 刷新时间戳；首次见到的工地先建基线（不立刻判停滞）
+	var builders: Array = _builder_units()
+	for s in sites:
+		var sid: int = s.get_instance_id()
+		var worked: bool = false
+		for u in builders:
+			if u == null or not is_instance_valid(u):
+				continue
+			if int(u.order) != RtsConst.Order.BUILD:
+				continue
+			var bs: Node3D = u.get("_build_site") as Node3D
+			if bs != null and is_instance_valid(bs) and bs.get_instance_id() == sid:
+				worked = true
+				break
+		if worked:
+			_site_last_work[sid] = now
+		elif not _site_last_work.has(sid):
+			_site_last_work[sid] = now
+	# 清掉已完工 / 已拆工地的记录，避免字典无限长
+	for k in _site_last_work.keys():
+		if not alive_ids.has(k):
+			_site_last_work.erase(k)
+	# 停滞 → 直接派工接续（不走仲裁、不占额度、不看储备线）
+	for s2 in sites:
+		var sid2: int = s2.get_instance_id()
+		var last_t: float = float(_site_last_work.get(sid2, now))
+		if not bool(_model_call("site_is_stalled", [now, last_t])):
+			continue
+		dept_stats["site_stall_detected"] = int(dept_stats["site_stall_detected"]) + 1
+		var builder: RtsUnit = _pick_sanity_builder()
+		if builder == null or not builder.has_method("order_build_site"):
+			repair_stats["blocked_builder_busy"] = int(repair_stats["blocked_builder_busy"]) + 1
+			continue
+		if bool(builder.call("order_build_site", s2)):
+			dept_stats["site_recovery_issued"] = int(dept_stats["site_recovery_issued"]) + 1
+			_site_last_work[sid2] = now   # 派工后计时清零
+		else:
+			repair_stats["blocked_builder_busy"] = int(repair_stats["blocked_builder_busy"]) + 1
 
 
 ## 主入口：一次 dept 思考（每 tick 调，内部按 2 s 节拍仲裁）
