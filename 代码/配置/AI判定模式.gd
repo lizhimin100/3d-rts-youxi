@@ -88,6 +88,15 @@ const DEPT_OFF: String = "off"
 const DEPT_MODES: Array[String] = [DEPT_ON, DEPT_OFF]
 const DEFAULT_DEPT_MODE: String = DEPT_ON
 
+## 2C-12 P0：**承诺表开关**（占位机制，只对金币）
+##   on（默认）= 部门为还没执行的动作预扣金币；仲裁按「金币 − 已承诺 − G(t)」判；
+##   off = 完全回到 2C-11 行为（可自由资源 = 金币 − G(t)，无承诺表）。
+## ★ 与 --dept 正交：dept=off 时承诺表本来就不跑（没有仲裁）。
+const PROMISE_ON: String = "on"
+const PROMISE_OFF: String = "off"
+const PROMISE_MODES: Array[String] = [PROMISE_ON, PROMISE_OFF]
+const DEFAULT_PROMISE_MODE: String = PROMISE_ON
+
 ## 2C-8：工位模式三值（on / off / legacy）
 const BS_ON: String = "on"
 const BS_OFF: String = "off"
@@ -113,6 +122,7 @@ static var _builder_mode: String = BS_ON
 static var _army_pop_cap: bool = DEFAULT_ARMY_POP_CAP
 static var _army_target_formula: String = DEFAULT_ARMY_TARGET_FORMULA
 static var _dept_mode: String = DEFAULT_DEPT_MODE
+static var _promise_mode: String = DEFAULT_PROMISE_MODE
 static var _parsed: bool = false
 
 
@@ -176,6 +186,8 @@ static func setup_from_cmdline() -> void:
 				a.substr(String("--army-target-formula=").length()))
 		elif a.begins_with("--dept="):
 			set_dept_mode(a.substr(String("--dept=").length()))
+		elif a.begins_with("--promise="):
+			set_promise_mode(a.substr(String("--promise=").length()))
 
 
 ## "on"/"off"（也接受 1/0/true/false）→ bool。非法值回落 true（默认开）。
@@ -249,6 +261,25 @@ static func dept_on() -> bool:
 
 static func dept_off() -> bool:
 	return _dept_mode == DEPT_OFF
+
+
+## 2C-12 P0：承诺表开关（on = 预扣金币 + 仲裁用可自由资源；off = 2C-11 行为）
+static func promise_mode() -> String:
+	return _promise_mode
+
+
+static func set_promise_mode(m: String) -> String:
+	var u: String = m.strip_edges().to_lower()
+	_promise_mode = u if PROMISE_MODES.has(u) else PROMISE_ON
+	return _promise_mode
+
+
+static func promise_on() -> bool:
+	return _promise_mode == PROMISE_ON
+
+
+static func promise_off() -> bool:
+	return _promise_mode == PROMISE_OFF
 
 
 ## 承伤分母口径（"all" 旧 / "targeted" 新）。非法值回落 targeted。
@@ -348,12 +379,13 @@ static func reset_defaults() -> void:
 	_army_pop_cap = DEFAULT_ARMY_POP_CAP
 	_army_target_formula = DEFAULT_ARMY_TARGET_FORMULA
 	_dept_mode = DEFAULT_DEPT_MODE
+	_promise_mode = DEFAULT_PROMISE_MODE
 
 
 static func describe() -> String:
 	if _mode == MODE_OLD:
 		return "old 判定（2C-2：存活比 + 投入产出比）"
-	return "new 判定（四样判据：%.0fs/1000 成本，输出系数 %.2f，交战断档 %.1fs，存活上限 %.0fs，承伤分母 %s，输出分母 %s（窗 %.1fs），修理线掉血≥%.0f HP，工位 %s，军队目标 %s，决策层 %s）" % [
+	return "new 判定（四样判据：%.0fs/1000 成本，输出系数 %.2f，交战断档 %.1fs，存活上限 %.0fs，承伤分母 %s，输出分母 %s（窗 %.1fs），修理线掉血≥%.0f HP，工位 %s，军队目标 %s，决策层 %s，承诺 %s）" % [
 		_base_sec, _coef, _combat_gap_sec, _time_limit, _damage_theory_mode,
 		_output_theory_mode, _recent_attack_window, _repair_hp_deficit,
-		_builder_mode, _army_target_formula, _dept_mode]
+		_builder_mode, _army_target_formula, _dept_mode, _promise_mode]

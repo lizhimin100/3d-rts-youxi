@@ -1750,7 +1750,90 @@ func _case_2c12() -> void:
 			i_loop >= 0 and i_spend > i_loop
 			and i_append > i_spend and sa12.contains("tech_demand_skipped"),
 			"loop@%d spend@%d append@%d" % [i_loop, i_spend, i_append])
+	# ---------- §3.1 承诺表纯函数 ----------
+	var p_farm: Dictionary = bm.promise_make("建造", "农场", 120, 20, 100.0, 20.0)
+	var p7: Array = ["动作类型", "目标", "金币成本", "木材成本",
+			"承诺时间", "过期时间", "状态"]
+	var p_missing: Array = []
+	for f in p7:
+		if not p_farm.has(f):
+			p_missing.append(f)
+	_record("2C12 §3.1：承诺结构恰好任务书 7 个字段（动作/目标/金/木/承诺时间/过期时间/状态）",
+			p_missing.is_empty() and p7.size() == p_farm.size()
+			and String(p_farm["状态"]) == bm.PROMISE_VALID
+			and _near(float(p_farm["过期时间"]), 120.0, 0.0001),
+			"缺=%s 字段数=%d 过期=%.1f" % [str(p_missing), p_farm.size(),
+				float(p_farm["过期时间"])])
+	var p_run: Dictionary = bm.promise_make("建造", "兵营2", 160, 0, 100.0, 20.0)
+	p_run["状态"] = bm.PROMISE_RUNNING
+	var p_dead: Dictionary = bm.promise_make("建造", "兵营", 160, 0, 100.0, 20.0)
+	p_dead["状态"] = bm.PROMISE_EXPIRED
+	var p_take: Dictionary = bm.promise_make("建造", "分基地", 300, 0, 100.0, 60.0)
+	p_take["状态"] = bm.PROMISE_PREEMPTED
+	var p_tab: Dictionary = {
+		"建造|农场": p_farm, "建造|农场(执行中)": p_run,
+		"建造|兵营": p_dead, "建造|分基地": p_take,
+	}
+	_record("2C12 §3.2：已承诺金币只算「有效 + 执行中」（过期/被抢占不计）",
+			int(bm.promise_committed_gold(p_tab)) == 280
+			and int(bm.promise_committed_gold({})) == 0,
+			"120+160(执行中)=%d" % int(bm.promise_committed_gold(p_tab)))
+	_record("2C12 §3.2：可自由资源 = 金币 − 已承诺 − G(t)（500−120−350=30）",
+			_near(float(bm.promise_free_gold(500, {"建造|农场": p_farm}, 350.0)),
+				30.0, 0.0001)
+			and _near(float(bm.promise_free_gold(100, {"建造|农场": p_farm}, 350.0)),
+				-370.0, 0.0001),
+			"500→30 / 100→-370")
+	# 过期：19 s 存活 / 21 s 过期 / **入参不被修改**
+	var ex19: Dictionary = bm.promise_expire({"建造|农场": p_farm}, 119.0)
+	var ex21: Dictionary = bm.promise_expire({"建造|农场": p_farm}, 121.0)
+	_record("2C12 §3.4：承诺 TTL 过期（19 s 存活 / 21 s 过期 / 状态=已过期 / 入参不变）",
+			(ex19["存活"] as Dictionary).size() == 1
+			and (ex19["过期"] as Array).is_empty()
+			and (ex21["存活"] as Dictionary).is_empty()
+			and (ex21["过期"] as Array).size() == 1
+			and String(((ex21["过期"] as Array)[0] as Dictionary)["状态"]) == bm.PROMISE_EXPIRED
+			and _near(float(p_farm["过期时间"]), 120.0, 0.0001),
+			"19s存活=%d 21s过期=%d 原表仍 1 条" % [
+				(ex19["存活"] as Dictionary).size(), (ex21["过期"] as Array).size()])
+	# 抢占：不紧急不动 / 紧急抢"有效"但保留"执行中"
+	var pn0: Dictionary = bm.promise_preempt({"a": p_farm, "b": p_run}, false)
+	var pn1: Dictionary = bm.promise_preempt({"a": p_farm, "b": p_run}, true)
+	_record("2C12 §3.4：紧急抢占非紧急承诺（不紧急不动；紧急→有效被抢、执行中保留）",
+			(pn0["存活"] as Dictionary).size() == 2
+			and (pn0["被抢占"] as Array).is_empty()
+			and (pn1["存活"] as Dictionary).size() == 1
+			and (pn1["被抢占"] as Array).size() == 1
+			and String(((pn1["被抢占"] as Array)[0] as Dictionary)["状态"]) == bm.PROMISE_PREEMPTED,
+			"不紧急=%d 紧急存活=%d 被抢占=%d" % [
+				(pn0["存活"] as Dictionary).size(),
+				(pn1["存活"] as Dictionary).size(),
+				(pn1["被抢占"] as Array).size()])
+	_record("2C12 §3.4：承诺键 = 动作类型+目标；claimed 只含「有效」",
+			String(bm.promise_key("建造", "农场")) == "建造|农场"
+			and (bm.promise_claimed_keys({"a": p_farm, "b": p_run, "c": p_dead}) as Array).size() == 1
+			and not (bm.promise_get({"建造|农场": p_farm}, "建造", "农场") as Dictionary).is_empty()
+			and (bm.promise_get({"建造|农场": p_farm}, "建造", "兵营") as Dictionary).is_empty(),
+			"key=%s claimed=%s" % [String(bm.promise_key("建造", "农场")),
+				str(bm.promise_claimed_keys({"a": p_farm, "b": p_run, "c": p_dead}))])
+	# TTL 常量：农场 20 / 兵营 20 / 分基地 60；人口门槛 85%
+	_record("2C12 §3.3：TTL 农场 20 s / 兵营 20 s / 分基地 60 s；人口门槛 85%",
+			_near(float(bm.PROMISE_TTL_FARM), 20.0, 0.0001)
+			and _near(float(bm.PROMISE_TTL_BARRACKS), 20.0, 0.0001)
+			and _near(float(bm.PROMISE_TTL_EXPAND), 60.0, 0.0001)
+			and _near(float(bm.PROMISE_POP_RATE), 0.85, 0.0001),
+			"20/20/60，门槛 0.85")
 
+	# ---------- §3.5 开关 ----------
+	_record("2C12 §3.5：promise 开关默认 on / 非法值回落 on / off 可切",
+			String(AIV.DEFAULT_PROMISE_MODE) == "on"
+			and String(AIV.promise_mode()) == "on"
+			and bool(AIV.promise_on()) and not bool(AIV.promise_off())
+			and String(AIV.set_promise_mode("乱写")) == "on"
+			and String(AIV.set_promise_mode("off")) == "off"
+			and bool(AIV.promise_off()),
+			"默认 %s，off 可切并回落" % String(AIV.DEFAULT_PROMISE_MODE))
+	AIV.reset_defaults()
 
 
 ## 造一条"金币成本被改成负数"的诉求（用于 demand_valid 的非法值断言）

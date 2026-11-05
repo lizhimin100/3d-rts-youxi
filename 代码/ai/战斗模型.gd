@@ -1522,7 +1522,131 @@ static func site_is_stalled(now: float, last_work_at: float,
 	return now - last_work_at >= stall_sec
 
 
+# ===========================================================================
+# 2C-12 §3 · 承诺表（占位机制）
+#
+# 一条「承诺」= 某个部门为一个**还没执行**的动作预扣金币。
+#   可自由使用资源 = 当前金币 − Σ(有效/执行中承诺的金币) − G(t)
+# 目的：同一笔钱不会被农场 / 兵营 / 科技建筑在同一时刻都当成自己的预算。
+#
+# 全部 static 纯函数（**入参不修改**、返回新字典），回归与场景共用同一套口径。
+# 2C-12 只对**金币**做承诺；木材字段照存，但扣减沿用 2C-11 的真实资源逻辑。
+# ===========================================================================
 
+const PROMISE_VALID: String = "有效"
+const PROMISE_RUNNING: String = "执行中"
+const PROMISE_DONE: String = "已执行"
+const PROMISE_EXPIRED: String = "已过期"
+const PROMISE_PREEMPTED: String = "被抢占"
+const PROMISE_STATES: Array[String] = [
+	PROMISE_VALID, PROMISE_RUNNING, PROMISE_DONE, PROMISE_EXPIRED, PROMISE_PREEMPTED,
+]
+## TTL（秒）。任务书 §3.3：农场 20 s / 分基地 60 s；兵营沿用 20 s。
+const PROMISE_TTL_FARM: float = 20.0
+const PROMISE_TTL_BARRACKS: float = 20.0
+const PROMISE_TTL_EXPAND: float = 60.0
+## 农场承诺的触发门槛：人口占用率（含在训）> 85%
+const PROMISE_POP_RATE: float = 0.85
+
+
+## 造一条承诺。字段与任务书 §3.1 逐字一致（一个不多一个不少）。
+static func promise_make(action: String, target: String, gold: int, wood: int,
+		now: float, ttl: float) -> Dictionary:
+	return {
+		"动作类型": action,
+		"目标": target,
+		"金币成本": maxi(gold, 0),
+		"木材成本": maxi(wood, 0),
+		"承诺时间": now,
+		"过期时间": now + maxf(ttl, 0.0),
+		"状态": PROMISE_VALID,
+	}
+
+
+## 承诺键 = 动作类型 + 目标（"已有同类有效承诺则跳过"的判据）
+static func promise_key(action: String, target: String) -> String:
+	return "%s|%s" % [action, target]
+
+
+## 还没了结的金币合计（有效 + 执行中）。已执行/已过期/被抢占都不算。
+static func promise_committed_gold(promises: Dictionary) -> int:
+	var n: int = 0
+	for k in promises.keys():
+		var p = promises[k]
+		if not (p is Dictionary):
+			continue
+		var st: String = String((p as Dictionary).get("状态", ""))
+		if st == PROMISE_VALID or st == PROMISE_RUNNING:
+			n += maxi(int((p as Dictionary).get("金币成本", 0)), 0)
+	return n
+
+
+## 可自由使用资源 = 金币 − 已承诺 − G(t)（可为负；负 = 这一笔不该花）。
+static func promise_free_gold(gold: int, promises: Dictionary, reserve: float) -> float:
+	return float(gold) - float(promise_committed_gold(promises)) - maxf(reserve, 0.0)
+
+
+## 过期扫描（纯函数）：返回 {存活, 过期}，**不改入参**。
+## 「有效」和「执行中」都判过期 —— 执行中若跨周期没落地（执行器异常），
+## 也必须被 TTL 兜住，否则就是泄漏。
+static func promise_expire(promises: Dictionary, now: float) -> Dictionary:
+	var alive: Dictionary = {}
+	var expired: Array = []
+	for k in promises.keys():
+		var p = promises[k]
+		if not (p is Dictionary):
+			continue
+		var pd: Dictionary = p as Dictionary
+		var st: String = String(pd.get("状态", ""))
+		var live: bool = st == PROMISE_VALID or st == PROMISE_RUNNING
+		if live and now > float(pd.get("过期时间", 0.0)):
+			var q: Dictionary = pd.duplicate(true)
+			q["状态"] = PROMISE_EXPIRED
+			expired.append(q)
+			continue
+		alive[k] = pd
+	return {"存活": alive, "过期": expired}
+
+
+## 紧急抢占（纯函数）：紧急态下把**有效**承诺全部标「被抢占」并移出表。
+## 执行中的不抢 —— 正在执行的动作已经动了钱，抢掉会让资源账对不上。
+static func promise_preempt(promises: Dictionary, urgent: bool) -> Dictionary:
+	if not urgent:
+		return {"存活": promises.duplicate(true), "被抢占": []}
+	var alive: Dictionary = {}
+	var taken: Array = []
+	for k in promises.keys():
+		var p = promises[k]
+		if not (p is Dictionary):
+			continue
+		var pd: Dictionary = p as Dictionary
+		if String(pd.get("状态", "")) == PROMISE_VALID:
+			var q: Dictionary = pd.duplicate(true)
+			q["状态"] = PROMISE_PREEMPTED
+			taken.append(q)
+			continue
+		alive[k] = pd
+	return {"存活": alive, "被抢占": taken}
+
+
+## 按 (动作类型, 目标) 查一条承诺；没有返回空字典（不是 null，调用方不用判类型）。
+static func promise_get(promises: Dictionary, action: String, target: String) -> Dictionary:
+	var k: String = promise_key(action, target)
+	if promises.has(k) and promises[k] is Dictionary:
+		return promises[k] as Dictionary
+	return {}
+
+
+## 还有效的承诺键（给仲裁：这些诉求的金币已经从公共池里划走了 → 跳过储备线）。
+static func promise_claimed_keys(promises: Dictionary) -> Array:
+	var out: Array = []
+	for k in promises.keys():
+		var p = promises[k]
+		if not (p is Dictionary):
+			continue
+		if String((p as Dictionary).get("状态", "")) == PROMISE_VALID:
+			out.append(String(k))
+	return out
 
 
 # ---------------------------------------------------------------------------
