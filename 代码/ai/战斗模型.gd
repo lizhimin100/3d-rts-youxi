@@ -992,8 +992,13 @@ const DEMAND_BARRACKS_URGENT: float = 3.0
 const DEMAND_BARRACKS_NORMAL: float = 1.0
 
 
-## 系数卡（`代码/配置/卡/AI诉求系数.tres`）。**懒加载、不缓存值**：
-## 卡里的数改了，下一次调用立刻生效（与"卡是唯一真相源"同一口径）。
+## 2C-11 §5.2（用户拍 A）：**代码显式注入**。
+## 本机 Godot 4.7 的 `.tres` 属性赋值不生效（2C-10 §0.1），运行时不再读它：
+## 唯一真相源 = `代码/配置/AI诉求系数.gd` 的 `defaults()`。
+## `.tres` 保留为备份/展示，改它不会影响运行时。
+static var _coef_defaults: Dictionary = {}
+
+## 展示/校验用：仍可取到那张 .tres，但 **demand_coef 不读它**。
 static var _demand_card: Resource = null
 static var _demand_card_tried: bool = false
 
@@ -1005,15 +1010,16 @@ static func demand_card() -> Resource:
 	return _demand_card
 
 
-## 读一个系数；卡缺失/字段缺失一律回落 1.0（**绝不静默变成 0**）
+## 读一个系数；键缺失/脚本取不到一律回落 fallback（**绝不静默变成 0**）。
+## 与旧实现的唯一行为差别：值来自代码 defaults()，不再来自 .tres 的 get()。
 static func demand_coef(name: String, fallback: float = 1.0) -> float:
-	var c: Resource = demand_card()
-	if c == null:
+	if _coef_defaults.is_empty():
+		var g = load("res://代码/配置/AI诉求系数.gd")
+		if g != null:
+			_coef_defaults = g.defaults()
+	if not _coef_defaults.has(name):
 		return fallback
-	var v = c.get(name)
-	if v == null:
-		return fallback
-	return float(v)
+	return float(_coef_defaults[name])
 
 
 ## 造一条诉求。**十个必带字段一个都不少**，另加内部 `可执行` 与执行闭包。

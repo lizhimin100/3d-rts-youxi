@@ -1176,10 +1176,10 @@ func _case_2c9() -> void:
 	_record("2C9/2C10：诉求分系数卡 13 个系数齐备且为有限正数（2C-10 已标定，不再要求 =1.0）",
 			coef_ok and coef_bad.is_empty(),
 			"缺/非正数：%s" % str(coef_bad))
-	_record("2C9/2C10：系数卡被 demand_coef 读取（改卡立刻生效，缺卡回落 1.0）",
+	_record("2C9/2C11：demand_coef 读代码 defaults()（缺键回落，不再读 .tres）",
 			_near(float(bm.demand_coef("训练_威胁系数")), 0.8, 0.000001)
 			and _near(float(bm.demand_coef("不存在的键", 0.7)), 0.7, 0.000001),
-			"训练_威胁系数=0.8（2C-10 标定值）；未知键回落 0.7")
+			"训练_威胁系数=0.8；未知键回落 0.7")
 	_record("2C9：dept 开关 on/off（默认 on；非法值回落 on）",
 			String(AIV.DEFAULT_DEPT_MODE) == "on"
 			and String(AIV.dept_mode()) == "on"
@@ -1603,6 +1603,61 @@ func _case_2c11() -> void:
 			sa11.contains("\"site_stall_detected\"")
 			and sa11.contains("\"site_recovery_issued\""),
 			"建造停滞恢复率 = issued / detected")
+
+	# ---------- C5.1：副官自检测试场景 / normal_push_n 零改动 ----------
+	_record("2C11：normal_push_n 行为不变（现役=下限 -> 0 / 下限+2 -> >0）",
+			int(b.normal_push_n(8, 8)) == 0
+			and int(b.normal_push_n(10, 8)) > 0,
+			"8/8=%d 10/8=%d" % [int(b.normal_push_n(8, 8)), int(b.normal_push_n(10, 8))])
+	var adj_src: String = ""
+	var fadj := FileAccess.open("res://代码/测试/副官自检.gd", FileAccess.READ)
+	if fadj != null:
+		adj_src = fadj.get_as_text()
+		fadj.close()
+	_record("2C11：副官自检只改测试场景兵力（>=下限+2），不改产品逻辑",
+			adj_src.contains("var need_army: int = floor_v + 2")
+			and adj_src.contains("Game.spawn_unit(Game.player_faction, &\"footman\", spawn_pos)")
+			and adj_src.contains("normal_push_n 源码未改")
+			and not adj_src.contains("func normal_push_n"),
+			"负对照场景补兵，28 条口径不变")
+
+	# ---------- C5.2：系数卡代码显式注入 ----------
+	var cgd = load("res://代码/配置/AI诉求系数.gd")
+	var defs: Dictionary = cgd.defaults()
+	var keys24: Array = [
+		"训练_威胁系数", "训练_缺口系数", "建造_农场缺口系数", "建造_农场紧迫系数",
+		"建造_兵营缺口系数", "建造_兵营紧迫系数", "修理_掉血系数", "出击_兵力比系数",
+		"防守_威胁系数", "侦查_固定分", "巡逻_固定分", "建塔_固定分", "分基地_固定分",
+		"人口压力_阈值", "人口压力_k", "储蓄_安全系数",
+		"刻度_修理", "刻度_出击", "刻度_防守", "刻度_农场急建", "刻度_农场不急",
+		"刻度_兵营无产能", "刻度_兵营扩建", "周期秒",
+	]
+	var same: bool = true
+	for k in keys24:
+		if not _near(float(b.demand_coef(String(k))), float(defs[k]), 0.000001):
+			same = false
+	_record("2C11：加载后读到的 24 个值与 AI诉求系数.gd defaults() 逐项一致",
+			same and int(defs.size()) == 24,
+			"逐项 %d 键，一致=%s" % [int(defs.size()), str(same)])
+	var card_obj: Resource = load("res://代码/配置/卡/AI诉求系数.tres")
+	var export_same: bool = true
+	for k in keys24:
+		var v = card_obj.get(String(k))
+		if v == null or not _near(float(v), float(defs[k]), 0.000001):
+			export_same = false
+	_record("2C11：.gd 的 @export 默认值与 defaults() 逐项一致（两处同步守门）",
+			export_same, "24 项一致=%s" % str(export_same))
+	var bm_src: String = ""
+	var fbm := FileAccess.open("res://代码/ai/战斗模型.gd", FileAccess.READ)
+	if fbm != null:
+		bm_src = fbm.get_as_text()
+		fbm.close()
+	_record("2C11：demand_coef 不再读 .tres（改 .tres 不影响运行时）",
+			bm_src.contains("_coef_defaults = g.defaults()")
+			and not bm_src.contains("var c: Resource = demand_card()")
+			and not bm_src.contains("var v = c.get(name)")
+			and bm_src.contains("## 展示/校验用"),
+			"唯一真相源 = AI诉求系数.gd defaults()")
 
 
 ## 造一条"金币成本被改成负数"的诉求（用于 demand_valid 的非法值断言）

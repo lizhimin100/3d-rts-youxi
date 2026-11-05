@@ -172,6 +172,10 @@ func _test_grace() -> void:
 			still = false
 	_ok("C 组：宽限 2 秒时仍在保护中", still, "owner=%s" % _owners(_selected))
 
+	# 2C-11 §5.1 实测记录：曾把观察窗 5 s -> 12 s 想容纳 dept=on 的仲裁时序，
+	# 结果仍 owner=002（不是时序抖动，是 claim_ai 没落到队尾单位），已回退 5 s。
+	# 也试过在自检开局补兵到 下限+6，反而让 dept=off 从 28/28 退化到 27/28，已回退。
+	# 结论：C 组这条红与 normal_push_n 无关，2C-10 的归因漏了一层；本轮不美化。
 	await _wait(5.0)
 	var handed: bool = true
 	for u in _selected:
@@ -264,6 +268,25 @@ func _test_sanity_stalled_site() -> void:
 # ===========================================================================
 
 func _test_negative_control() -> void:
+	# 2C-11 §5.1（用户拍 C：改测试，不改产品）：
+	# 2C-10 里这组负对照走旧路径 _manage_waves → _wave_plan → normal_push_n，
+	# 玩家现役 6 ≤ 防守下限 8 → normal_push_n(6,8)=0 → 一条命令都下不出去，
+	# 于是「宽限到期交还副官」「副官给空闲部队下命令」两条恒红（dept=on 26/28）。
+	# normal_push_n 是 2C-4 冻结的产品逻辑，一个字不动；这里只把**测试场景**
+	# 的兵力补到 >= 下限+2，让常态出击规模真的 >0。只 print、不新增断言，
+	# 保持 28 条口径不变。
+	var floor_v: int = int(_adj._defense_floor())
+	var need_army: int = floor_v + 2
+	var army_before: int = int(_adj._army_units().size())
+	var made: int = 0
+	if army_before < need_army:
+		var base_pos: Vector3 = RtsWorld.base_center(Game.player_faction)
+		for i in range(need_army - army_before):
+			var spawn_pos: Vector3 = base_pos + Vector3(20.0 + float(i) * 2.0, 0.0, 8.0)
+			if Game.spawn_unit(Game.player_faction, &"footman", spawn_pos) != null:
+				made += 1
+	print("[2C-11] 负对照测试场景：下限=%d 现役 %d→%d（目标>=%d，造 %d 兵）；normal_push_n 源码未改" % [
+		floor_v, army_before, int(_adj._army_units().size()), need_army, made])
 	var free_units: Array = []
 	for u in Game.player_faction.units:
 		if u == null or not is_instance_valid(u) or not u.is_alive() or u.def == null:
