@@ -217,12 +217,28 @@ var dept_stats: Dictionary = {
 	"lock_patrol_held": 0, "lock_scout_held": 0,
 	"lock_held_max": 0, "lock_held_last": 0,
 	"requisitionable_written": 0,
+	# 2C-10：可被征用消费 / 70% 系数触发 / 农场开工计数
+	"requisition_times": 0, "requisitioned_units": 0,
+	"farm_factor_triggers": 0, "farm_factor_last": 1.0,
+	"farm_site_starts": 0,
 }
 var _dept_cd: float = 0.0
 var _scout_cd: float = 0.0
 var _scout_seq: int = 0
-## 兵力锁：key → {"n": 占用兵力, "t": 到期时刻, "k": 种类（wave/patrol/scout）}
+## 兵力锁：key → {"n": 占用兵力, "t": 到期时刻, "k": 种类（wave/patrol/scout/temp_defense）}
 var _troop_locks: Dictionary = {}
+## 2C-10 §7.2：90% 人口压力响应测试（**只观测，不进任何决策**）
+## 触发：占用率=(占用+在训)/上限 首次 >90%；响应：20 s 内任意一座农场工地开工；
+## 一次触发结算后冷却 15 s 再评估下一次，避免同一次卡人口被反复计数。
+var pop90: Dictionary = {"触发": 0, "成功": 0, "失败": 0, "失败明细": [],
+	"峰值": 0.0, "农场开工": 0, "触发时刻": []}
+var _pop90_waiting: bool = false
+var _pop90_trigger_t: float = -1.0
+var _pop90_cooldown_until: float = -1.0
+var _pop90_seen_sites: Dictionary = {}
+var _pop90_last_site_t: float = -1.0
+## 2C-10 §6：攒大波出击征用的兵力数（在 _exec_wave 里兑成 push_n）
+var _pending_requisition: int = 0
 var _l1_dmg: Array[float] = []
 var _l1_gold: Array[float] = []
 var _l1_wood: Array[float] = []
@@ -365,6 +381,8 @@ func _process_inner(delta: float) -> void:
 ## 一次完整的思考。抽成函数是为了让自检可以"手动推一帧"。
 func _think_once(diff: DifficultyDef) -> void:
 	var now: float = Game.elapsed
+	# 2C-10 §7.2：90% 压力响应纯观测（dept on/off 都跑，不进任何决策）
+	_pop90_tick(now)
 	_sched.begin(now)
 
 	# --- ① 指标 + 姿态 ---
@@ -4174,7 +4192,8 @@ func _dept_tick(diff: DifficultyDef, now: float) -> void:
 	demands_l2.append_array(_combat_demands(diff))
 	demands_l2.append_array(_expand_demands(diff))
 	_dept_note_competition()
-	var t_avail: int = _troop_available()
+	var t_avail: int = _troop_available_raw()
+	dept_stats["troop_available"] = _troop_available()
 	var plan: Dictionary = _model_call("arbitrate",
 			[demands_l2, _faction.gold, _faction.wood, t_avail])
 	if plan == null:
@@ -4249,6 +4268,69 @@ func _l1_snapshot() -> void:
 
 
 # ---------------------------------------------------------------------------
+# 2C-10 §7.2 · 90% 人口压力响应测试（纯观测）
+# ---------------------------------------------------------------------------
+
+## 占用率 =(占用 + 在训)/上限；首次 >90% 记一次触发；20 s 内出现任意一座
+## 农场工地开工 = 响应成功；结算后冷却 15 s。**不改农场预判/人口逻辑**，
+## 也不进任何决策 —— 只往 pop90 / dept_stats 里写观测值。
+func _pop90_tick(now: float) -> void:
+	if _faction == null:
+		return
+	var cap: int = _faction.food_cap()
+	var used: int = _faction.food_used()
+	var reserved: int = _faction.food_reserved()
+	var rate: float = 0.0
+	if cap > 0:
+		rate = float(maxi(used, 0) + maxi(reserved, 0)) / float(cap)
+	pop90["峰值"] = maxf(float(pop90["峰值"]), rate)
+	# --- 农场工地开工检测：出现新的"未完工农场"实例 id 即记一次 ---
+	var fid: StringName = _food_building_id()
+	if fid != &"":
+		for b in _faction.buildings:
+			if b == null or not is_instance_valid(b) or b.def == null:
+				continue
+			if b.def.id != fid:
+				continue
+			var rb: RtsBuilding = b as RtsBuilding
+			if rb == null or rb.is_constructed:
+				continue
+			var sid: int = rb.get_instance_id()
+			if not _pop90_seen_sites.has(sid):
+				_pop90_seen_sites[sid] = true
+				_pop90_last_site_t = now
+				pop90["农场开工"] = int(pop90["农场开工"]) + 1
+				dept_stats["farm_site_starts"] = int(dept_stats["farm_site_starts"]) + 1
+	# --- 等待响应：先判成功，再判 20 s 超时 ---
+	if _pop90_waiting:
+		if now - _pop90_trigger_t <= 20.0 and _pop90_last_site_t >= _pop90_trigger_t - 0.001:
+			pop90["成功"] = int(pop90["成功"]) + 1
+			_pop90_waiting = false
+			_pop90_cooldown_until = now + 15.0
+		elif now - _pop90_trigger_t > 20.0:
+			pop90["失败"] = int(pop90["失败"]) + 1
+			var rj: Dictionary = dept_stats.get("reject_by_reason", {})
+			var top: Array = []
+			for k in rj.keys():
+				top.append("%s:%d" % [String(k), int(rj[k])])
+			(pop90["失败明细"] as Array).append({
+				"t": snappedf(_pop90_trigger_t, 0.1), "占用率": snappedf(rate, 0.001),
+				"金币": int(_faction.gold), "木材": int(_faction.wood),
+				"工位": _builder_uids.size(), "驳回原因": top,
+				"农场工地": _has_site_of(fid),
+			})
+			_pop90_waiting = false
+			_pop90_cooldown_until = now + 15.0
+		return
+	# --- 冷却结束 + 首次 >90% → 触发 ---
+	if now >= _pop90_cooldown_until and rate > 0.90:
+		pop90["触发"] = int(pop90["触发"]) + 1
+		(pop90["触发时刻"] as Array).append(snappedf(now, 0.1))
+		_pop90_waiting = true
+		_pop90_trigger_t = now
+
+
+# ---------------------------------------------------------------------------
 # 兵力预留制（锁定 / 解锁 / 扣减顺序）
 # ---------------------------------------------------------------------------
 
@@ -4259,14 +4341,23 @@ func _defense_reserved(army_n: int) -> int:
 	return mini(maxi(army_n, 0), maxi(floor_v, threat_n * 2))
 
 
-## 本次仲裁可用的兵力 = 现役 − 防守锁定 − 已锁定
-func _troop_available() -> int:
+## P0-A（2C-10 修法 b）：**仲裁池** = 现役 − 已锁，**不扣防守下限**。
+## 原来 `_troop_available` 和 `normal_push_n` 各扣一次防守下限 →
+## 现役 ≤ 下限时可用兵力恒 0，巡逻/侦查/出击全被"兵力不足"驳回（副官自检 26/28）。
+## 下限改由 normal_push_n / bank_push_n 在**出击规模**里扣那唯一一次。
+func _troop_available_raw() -> int:
 	var army_n: int = _army_units().size()
 	var locks: int = 0
 	for k in _troop_locks.keys():
 		locks += int((_troop_locks[k] as Dictionary).get("n", 0))
 	dept_stats["lock_held_last"] = _troop_locks.size()
-	return maxi(army_n - _defense_reserved(army_n) - locks, 0)
+	return maxi(army_n - locks, 0)
+
+
+## 账面可用兵力 = 现役 − 防守锁定 − 已锁（**只扣一次**）。
+## 2C-10 起只作诊断口径，不再传给 `arbitrate`（回归断言这个函数签名）。
+func _troop_available() -> int:
+	return maxi(_troop_available_raw() - _defense_reserved(_army_units().size()), 0)
 
 
 func _troop_lock(key: String, n: int, ttl: float, kind: String) -> void:
@@ -4305,6 +4396,23 @@ func _troop_lock_tick(now: float) -> void:
 		_troop_locks.erase(k)
 		if kind == "wave":
 			dept_stats["lock_wave_timeout"] = int(dept_stats["lock_wave_timeout"]) + 1
+
+
+## 2C-10 §6：**可被征用消费**。攒大波出击时把"临时防守 / 巡逻 / 侦查"的短租约锁
+## 释放掉、折成出击兵力；这些锁随后由 `_dept_execute` 统一转成 wave 锁，
+## 波次收尾 `_close_wave` 显式解锁。2C-9 只写 `可被征用` 从不消费（2904 写 / 0 消费）。
+func _requisition_temp_defense() -> int:
+	var q: Dictionary = _model_call("requisition_quota", [_troop_locks])
+	if q == null or not (q is Dictionary):
+		return 0
+	var n: int = int((q as Dictionary).get("可征用", 0))
+	if n <= 0:
+		return 0
+	for k in ((q as Dictionary).get("释放键", []) as Array):
+		_troop_unlock(String(k), false)
+	dept_stats["requisition_times"] = int(dept_stats["requisition_times"]) + 1
+	dept_stats["requisitioned_units"] = int(dept_stats["requisitioned_units"]) + n
+	return n
 
 
 # ---------------------------------------------------------------------------
@@ -4440,11 +4548,22 @@ func _demand_builds(diff: DifficultyDef, threat_n: int) -> Array:
 			if fd != null:
 				var fs: float = float(_model_call("demand_scale",
 						["农场急建" if urgent else "农场不急"]))
+				# 2C-10 P0-B：70% 人口压力动态系数（**只乘农场建造诉求分**）。
+				# 占用率必须含在训人口（food_reserved），否则刚点兵就误判"还有空位"。
+				var fcap: int = _faction.food_cap()
+				var frate: float = 0.0
+				if fcap > 0:
+					frate = float(_faction.food_used() + _faction.food_reserved()) / float(fcap)
+				var pf: float = float(_model_call("farm_pressure_factor", [frate]))
+				dept_stats["farm_factor_last"] = pf
+				if pf > 1.000001:
+					dept_stats["farm_factor_triggers"] = \
+							int(dept_stats["farm_factor_triggers"]) + 1
 				out.append(_demand("运营线", "建造", String(fd.display_name),
 						int(fd.gold_cost), int(fd.wood_cost), 0, false,
-						float(_model_call("demand_score_build", [1, fs, 0, 1.0])),
-						"农场缺口=1（%s，人口 %d/%d）" % [
-							"急" if urgent else "不急",
+						float(_model_call("demand_score_build", [1, fs, 0, 1.0])) * pf,
+						"农场缺口=1（%s，占用 %.0f%% 含在训，压力系数 %.2f，人口 %d/%d）" % [
+							"急" if urgent else "不急", frate * 100.0, pf,
 							_faction.food_used(), _faction.food_cap()],
 						true, Callable(self, "_exec_build_farm")))
 	# ② 兵营（主产能建筑）
@@ -4621,10 +4740,18 @@ func _dept_execute(plan: Dictionary) -> void:
 	for d in (plan.get("执行", []) as Array):
 		var dd: Dictionary = d
 		var action: String = String(dd.get("动作类型", ""))
+		# 2C-10 §6：攒大波出击（`可被征用=true`）先征回临时防守兵，
+		# 释放短租约锁 → 兵力并入本次出击 → 收尾统一转 wave 锁。
+		_pending_requisition = 0
+		var req_n: int = 0
+		if action == "出击" and bool(dd.get("可被征用", false)):
+			req_n = _requisition_temp_defense()
+			_pending_requisition = req_n
 		var ok: bool = true
 		var cb = dd.get("执行", null)
 		if cb is Callable:
 			ok = bool((cb as Callable).call())
+		_pending_requisition = 0
 		if not ok:
 			# 执行阶段失败：资源其实没花出去（下个周期按真实资源重判），按"条件不满足"记账
 			rj["条件不满足"] = int(rj.get("条件不满足", 0)) + 1
@@ -4648,8 +4775,9 @@ func _dept_execute(plan: Dictionary) -> void:
 				dept_stats["win_scout"] = int(dept_stats["win_scout"]) + 1
 			"建塔":
 				dept_stats["win_tower"] = int(dept_stats["win_tower"]) + 1
-		# 兵力锁定：出击的锁跟着波次走（收尾时显式解锁），巡逻/侦查是短租约
-		var t: int = int(dd.get("兵力占用", 0))
+		# 兵力锁定：出击的锁跟着波次走（收尾时显式解锁），巡逻/侦查是短租约。
+		# 2C-10 §6：征回来的 N 个兵一起转 wave 锁（释放 → 转锁，不重复占额度）。
+		var t: int = int(dd.get("兵力占用", 0)) + req_n
 		if t > 0:
 			if action == "出击":
 				_troop_lock("wave:%d" % _wave_index, t, DEPT_WAVE_LOCK_TTL, "wave")
@@ -4916,11 +5044,20 @@ func _exec_repair(rb: RtsBuilding, deficit: float) -> bool:
 
 
 func _exec_wave(p: Dictionary) -> bool:
+	# 2C-10 §6：被征用的临时防守兵并入出击规模（+N）；锁由 _dept_execute 转 wave
+	if _pending_requisition > 0:
+		p["push_n"] = int(p.get("push_n", 0)) + _pending_requisition
+		_pending_requisition = 0
 	return _issue_wave_plan(p)
 
 
 func _exec_defend(p: Dictionary) -> bool:
-	return _issue_defend(p)
+	var ok: bool = _issue_defend(p)
+	if ok:
+		# 2C-10 §6：回防的兵挂"临时防守"短租约锁，攒大波时可被征用。
+		# 固定 key（不是每波一个）→ 重复回防覆盖旧锁，不累积。
+		_troop_lock("temp_defense", int(p.get("n", 0)), DEPT_CYCLE * 3.0, "temp_defense")
+	return ok
 
 
 func _exec_patrol(p: Dictionary) -> bool:
