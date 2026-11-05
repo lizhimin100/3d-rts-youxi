@@ -23,6 +23,9 @@ extends SceneTree
 
 var _cfg: Node = null
 var _model = null
+## ★ 不能用 preload 引 战斗模型.gd：--script 模式下 autoload(Cfg) 尚未注册，
+##   编译期预加载会拉起 RtsCombat -> Cfg 依赖链并报 "Identifier not found: Cfg"。
+##   与本文其它 _case_* 一样，一律运行时 load()。
 
 var _pass: int = 0
 var _fail: int = 0
@@ -95,6 +98,8 @@ func _run() -> void:
 	_case_2c9()
 	# 2C-10：副官双重扣减 / 70% 动态系数 / 可被征用消费 / 判定表诊断 / POP90
 	_case_2c10()
+	# 2C-11：储蓄 G(t) / 同时做事数 / 紧急白名单 / 工地停滞 / 仲裁接线
+	_case_2c11()
 	_finish(t0)
 
 
@@ -1334,6 +1339,149 @@ func _case_2c10() -> void:
 			and String(AIV.output_theory_mode()) == "recent"
 			and sa_src.contains("func can_build_townhall() -> bool:\n\treturn false"),
 			"机器断言守门：0.4 / targeted / recent / 200 / 3.0 / townhall=false 全冻结")
+
+
+# ===========================================================================
+# 2C-11 · 储蓄 / 同时做事数 / 紧急白名单 / 工地停滞（纯函数机器断言）
+#
+# ★ 口径说明：任务书 §2.3 定义 G(t)=min(550, 固定值+上限×成本×0.15)，
+#   §2.6 却写「G(t) 在 1.5/3/5/10/12 min = 70/100/200/350/530」——
+#   前四个数其实是**固定值表**，与公式项的 530 混在一行。这里把
+#   `saving_base`（固定值曲线）与 `saving_target`（G(t)）分开断言，
+#   两套口径都留实测值，报告 §2 照实记录这处不一致。
+# ===========================================================================
+func _case_2c11() -> void:
+	var b = load("res://代码/ai/战斗模型.gd")
+	# ---------- 固定值曲线 ----------
+	var ts: Array = [90.0, 180.0, 300.0, 600.0, 720.0]
+	var want_base: Array = [70.0, 100.0, 200.0, 350.0, 350.0]
+	var got_base: Array = []
+	for t in ts:
+		got_base.append(snappedf(float(b.saving_base(float(t))), 0.01))
+	_record("2C11：储备固定值表 1.5/3/5/10/12 min = 70/100/200/350/350",
+			got_base == want_base, "实测 %s（表外 clamp 到 350）" % str(got_base))
+	_record("2C11：固定值表中间线性插值（2.25 min=85 / 4 min=150）",
+			_near(float(b.saving_base(135.0)), 85.0, 0.0001)
+			and _near(float(b.saving_base(240.0)), 150.0, 0.0001),
+			"2.25min=%.2f 4min=%.2f" % [
+				float(b.saving_base(135.0)), float(b.saving_base(240.0))])
+	_record("2C11：固定值表 t<=0 不外推成负数（clamp 70）",
+			_near(float(b.saving_base(0.0)), 70.0, 0.0001)
+			and _near(float(b.saving_base(-10.0)), 70.0, 0.0001),
+			"0s=%.1f -10s=%.1f" % [
+				float(b.saving_base(0.0)), float(b.saving_base(-10.0))])
+
+	# ---------- 同时做事数上限（七个点逐项）----------
+	var mins: Array = [2.0, 3.0, 5.0, 8.0, 10.0, 12.0, 14.0]
+	var want_total: Array = [2, 4, 4, 8, 8, 9, 10]
+	var want_dept: Array = [1, 2, 2, 3, 3, 3, 4]
+	var got_total: Array = []
+	var got_dept: Array = []
+	for m in mins:
+		var c: Dictionary = b.concurrency_caps(float(m) * 60.0)
+		got_total.append(int(c["总上限"]))
+		got_dept.append(int(c["同部门上限"]))
+	_record("2C11：同时做事数总上限 2/3/5/8/10/12/14 min = 2/4/4/8/8/9/10",
+			got_total == want_total, "实测 %s" % str(got_total))
+	_record("2C11：同时做事数同部门上限七个点 = 1/2/2/3/3/3/4",
+			got_dept == want_dept, "实测 %s" % str(got_dept))
+	var cap18: Dictionary = b.concurrency_caps(18.0 * 60.0)
+	var cap30: Dictionary = b.concurrency_caps(30.0 * 60.0)
+	_record("2C11：总上限封顶 12 / 同部门封顶 4（18 min 后不再涨）",
+			int(cap18["总上限"]) == 12 and int(cap30["总上限"]) == 12
+			and int(cap30["同部门上限"]) == 4,
+			"18min=%s 30min=%s" % [str(cap18), str(cap30)])
+	var mono: bool = true
+	var prev_total: int = -1
+	for i in range(13):
+		var c2: Dictionary = b.concurrency_caps(300.0 + float(i) * 15.0)
+		if int(c2["总上限"]) < prev_total:
+			mono = false
+		prev_total = int(c2["总上限"])
+	_record("2C11：5~8 min 线性攀升段单调不减（每 15 s 采样）", mono,
+			"单调=%s" % str(mono))
+
+	# ---------- G(t) ----------
+	var g_zero: Array = []
+	for t in ts:
+		g_zero.append(snappedf(float(b.saving_target(float(t), 0.0, 0.15)), 0.01))
+	_record("2C11：G(t) 公式项=0 时退化为固定值表（同一个储备，不分池）",
+			g_zero == want_base, "实测 %s" % str(g_zero))
+	_record("2C11：10 min 对照预期 350 + 8x150x0.15 = 530",
+			_near(float(b.saving_target(600.0, 150.0, 0.15)), 530.0, 0.0001),
+			"G(10min,cost150)=%.2f" % float(b.saving_target(600.0, 150.0, 0.15)))
+	_record("2C11：12 件时 350+270=620 封顶 550（固定值+公式一起封）",
+			_near(float(b.saving_target(1080.0, 150.0, 0.15)), 550.0, 0.0001),
+			"G(18min,cost150)=%.2f" % float(b.saving_target(1080.0, 150.0, 0.15)))
+	_record("2C11：16 min G=550 且 20/30 min 不继续涨",
+			_near(float(b.saving_target(960.0, 150.0, 0.15)), 550.0, 0.0001)
+			and _near(float(b.saving_target(1200.0, 150.0, 0.15)), 550.0, 0.0001)
+			and _near(float(b.saving_target(1800.0, 150.0, 0.15)), 550.0, 0.0001),
+			"16/20/30min 全 550")
+	_record("2C11：安全系数 0.15 进卡且被 saving_target 读到",
+			_near(float(b.demand_coef("储蓄_安全系数", 0.0)), 0.15, 0.0001)
+			and _near(float(b.saving_target(600.0, 150.0)), 530.0, 0.0001),
+			"卡值=%.3f G(默认系数)=%.2f" % [
+				float(b.demand_coef("储蓄_安全系数", 0.0)),
+				float(b.saving_target(600.0, 150.0))])
+
+	# ---------- 单件典型成本 ----------
+	var ds: Array = [{"金币成本": 80}, {"金币成本": 150}, {"金币成本": 40}]
+	_record("2C11：单件典型成本 = 最贵待办动作（80/150/40 -> 150）",
+			_near(float(b.typical_unit_cost(ds, 80.0)), 150.0, 0.0001),
+			"=%.1f" % float(b.typical_unit_cost(ds, 80.0)))
+	_record("2C11：无待办时取最近一次的值（空列表 / 全 0 -> 上次 150）",
+			_near(float(b.typical_unit_cost([], 150.0)), 150.0, 0.0001)
+			and _near(float(b.typical_unit_cost([{"金币成本": 0}], 150.0)), 150.0, 0.0001),
+			"空=%.1f 全0=%.1f" % [
+				float(b.typical_unit_cost([], 150.0)),
+				float(b.typical_unit_cost([{"金币成本": 0}], 150.0))])
+
+	# ---------- 储备击穿 / 并发上限击穿 ----------
+	_record("2C11：储备不足驳回（金币=G-1 非紧急驳回 / 紧急通过）",
+			bool(b.saving_breach(529, 0, 530.0, false))
+			and not bool(b.saving_breach(529, 0, 530.0, true))
+			and not bool(b.saving_breach(530, 0, 530.0, false)),
+			"G=530：金529非紧急驳回、紧急通过、金530通过")
+	_record("2C11：按「当前金币 - 本诉求金币成本」判击穿（金 G+79 买 80）",
+			bool(b.saving_breach(609, 80, 530.0, false))
+			and not bool(b.saving_breach(610, 80, 530.0, false)),
+			"609-80=529<530 驳回；610-80=530 通过")
+	_record("2C11：并发上限击穿（总/同部门任一到顶即驳回）",
+			bool(b.concurrency_breach(2, 0, {"总上限": 2, "同部门上限": 1}))
+			and bool(b.concurrency_breach(0, 1, {"总上限": 8, "同部门上限": 1}))
+			and not bool(b.concurrency_breach(1, 0, {"总上限": 8, "同部门上限": 1})),
+			"总到顶 / 部门到顶 / 都没到顶")
+
+	# ---------- 紧急白名单三条边界 ----------
+	_record("2C11：紧急_防卡人口 边界（95% 不触发 / 95.1%+无工地触发 / 有工地不触发）",
+			(b.urgent_reasons(0.95, false, 20, 8, 0, false) as Array).is_empty()
+			and (b.urgent_reasons(0.951, false, 20, 8, 0, false) as Array).has(b.URG_POP_BLOCK)
+			and (b.urgent_reasons(0.99, true, 20, 8, 0, false) as Array).is_empty(),
+			"严格 >95% 且农场无工地")
+	_record("2C11：紧急_兵力严重不足 边界（下限8：现役4触发 / 5不触发）",
+			(b.urgent_reasons(0.5, false, 4, 8, 0, false) as Array).has(b.URG_ARMY_LOW)
+			and (b.urgent_reasons(0.5, false, 5, 8, 0, false) as Array).is_empty(),
+			"现役 < 8x0.6=4.8")
+	_record("2C11：紧急_建筑被拆 边界（60s 内 >=2 栋且仍被攻击才触发）",
+			(b.urgent_reasons(0.5, false, 20, 8, 2, true) as Array).has(b.URG_BUILDING_LOST)
+			and (b.urgent_reasons(0.5, false, 20, 8, 1, true) as Array).is_empty()
+			and (b.urgent_reasons(0.5, false, 20, 8, 2, false) as Array).is_empty(),
+			">=2 栋 + 仍被攻击，缺一不可")
+	_record("2C11：3 个紧急枚举齐全且 URG_REASONS 恰好 3 项",
+			int((b.URG_REASONS as Array).size()) == 3
+			and String(b.URG_POP_BLOCK) == "紧急_防卡人口"
+			and String(b.URG_ARMY_LOW) == "紧急_兵力严重不足"
+			and String(b.URG_BUILDING_LOST) == "紧急_建筑被拆",
+			"%s" % str(b.URG_REASONS))
+
+	# ---------- 工地停滞 ----------
+	_record("2C11：工地 19s 不判停滞 / 21s 判停滞 / 派工后计时清零",
+			not bool(b.site_is_stalled(19.0, 0.0))
+			and bool(b.site_is_stalled(21.0, 0.0))
+			and not bool(b.site_is_stalled(21.0, 21.0))
+			and not bool(b.site_is_stalled(100.0, -1.0)),
+			"20 s 阈值，last_work<0 不误判")
 
 
 ## 造一条"金币成本被改成负数"的诉求（用于 demand_valid 的非法值断言）

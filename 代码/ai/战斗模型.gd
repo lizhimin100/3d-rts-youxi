@@ -958,6 +958,10 @@ const RJ_TROOP: String = "兵力不足"
 const RJ_OUTBID: String = "被更高分压后"
 const RJ_COND: String = "条件不满足"
 const RJ_DONE: String = "本周期已执行"
+## 2C-11：第 7 / 第 8 个枚举 —— 储备线击穿、同时做事数超限。
+## ★ 接入 RJ_REASONS 与仲裁逻辑都在 C2，C1 只定义常量（保持零行为变化）。
+const RJ_SAVING: String = "储备不足"
+const RJ_CONCURRENT: String = "并发上限"
 const RJ_REASONS: Array[String] = [
 	RJ_GOLD, RJ_WOOD, RJ_TROOP, RJ_OUTBID, RJ_COND, RJ_DONE,
 ]
@@ -1288,6 +1292,155 @@ static func judge_diag(rec: Dictionary) -> Dictionary:
 		"判据4": {"值": surv, "边界": [cap4],
 			"边界距离": absf(float(surv) - float(cap4)), "档": String(bins["判据4"])},
 	}
+
+
+# ===========================================================================
+# 2C-11 · 储蓄 / 同时做事数 / 紧急白名单 / 工地停滞
+#
+# 全部 static 纯函数，回归与 bench 共用同一套口径；不读场景、不读 Game。
+# 时间参数一律 **游戏秒**（Game.elapsed），表里用分钟只是为了对齐任务书。
+# ===========================================================================
+
+## 储备固定值表（金币）：[时间秒, 固定值]。表内线性插值，表外 clamp 到端点。
+## 1.5 min=70 / 3 min=100 / 5 min=200 / 10 min=350。
+const SAVING_BASE_TABLE: Array = [
+	[90.0, 70.0], [180.0, 100.0], [300.0, 200.0], [600.0, 350.0],
+]
+## G(t) 封顶：固定值 + 公式项一起封顶 550
+const SAVING_CAP: float = 550.0
+## 同时做事数：总上限封顶 12 / 同部门封顶 4
+const CAP_TOTAL_MAX: float = 12.0
+const CAP_DEPT_CUT: int = 10
+const CAP_DEPT_MAX: int = 4
+## 紧急白名单（3 枚举，命中任一即紧急）
+const URG_POP_BLOCK: String = "紧急_防卡人口"
+const URG_ARMY_LOW: String = "紧急_兵力严重不足"
+const URG_BUILDING_LOST: String = "紧急_建筑被拆"
+const URG_REASONS: Array[String] = [URG_POP_BLOCK, URG_ARMY_LOW, URG_BUILDING_LOST]
+const URG_POP_RATIO: float = 0.95
+const URG_ARMY_RATIO: float = 0.6
+const URG_LOST_COUNT: int = 2
+const URG_LOST_WINDOW: float = 60.0
+## 工地停滞恢复：每 5 s 扫一次，连续 20 s 无农民施工判停滞
+const SITE_SCAN_SEC: float = 5.0
+const SITE_STALL_SEC: float = 20.0
+
+
+## 固定值曲线（**不含**公式项）。用来对任务书 §2.6 的 70/100/200/350。
+static func saving_base(t_sec: float) -> float:
+	var t: float = maxf(t_sec, 0.0)
+	var first: Array = SAVING_BASE_TABLE[0] as Array
+	if t <= float(first[0]):
+		return float(first[1])
+	for i in range(1, SAVING_BASE_TABLE.size()):
+		var lo: Array = SAVING_BASE_TABLE[i - 1] as Array
+		var hi: Array = SAVING_BASE_TABLE[i] as Array
+		if t <= float(hi[0]):
+			var t_lo: float = float(lo[0])
+			var t_hi: float = float(hi[0])
+			var span: float = t_hi - t_lo
+			if span <= 0.0:
+				return float(hi[1])
+			var v_lo: float = float(lo[1])
+			var v_hi: float = float(hi[1])
+			return v_lo + (v_hi - v_lo) * (t - t_lo) / span
+	var last: Array = SAVING_BASE_TABLE[SAVING_BASE_TABLE.size() - 1] as Array
+	return float(last[1])
+
+
+## 同时做事数上限（总 / 同部门）。
+##   前 3 min 2/1；3~5 min 4/2；5~8 min 线性攀升到 8/3；8~10 min 8/3；
+##   10 min 后每 2 min 总 +1（封顶 12）；总上限到 10 件时同部门切 4（封顶 4）。
+##   线性段取 floor —— 保守，不提前放宽额度。
+static func concurrency_caps(t_sec: float) -> Dictionary:
+	var t: float = maxf(t_sec, 0.0)
+	var total: float = 2.0
+	var dept: float = 1.0
+	if t < 180.0:
+		total = 2.0
+		dept = 1.0
+	elif t < 300.0:
+		total = 4.0
+		dept = 2.0
+	elif t < 480.0:
+		var k: float = (t - 300.0) / 180.0
+		total = floor(4.0 + 4.0 * k)
+		dept = floor(2.0 + 1.0 * k)
+	elif t < 600.0:
+		total = 8.0
+		dept = 3.0
+	else:
+		total = minf(8.0 + floor((t - 600.0) / 120.0), CAP_TOTAL_MAX)
+		if total >= float(CAP_DEPT_CUT):
+			dept = float(CAP_DEPT_MAX)
+		else:
+			dept = 3.0
+	return {"总上限": int(total), "同部门上限": int(dept)}
+
+
+## 储备目标 G(t) = min(550, 固定值(t) + 同时做事数总上限(t) × 单件典型成本 × 安全系数)。
+## safety < 0 表示从系数卡读「储蓄_安全系数」（默认 0.15）。
+static func saving_target(t_sec: float, unit_cost: float, safety: float = -1.0) -> float:
+	var k: float = safety
+	if k < 0.0:
+		k = maxf(demand_coef("储蓄_安全系数", 0.15), 0.0)
+	var caps: Dictionary = concurrency_caps(t_sec)
+	var cap_total: float = float(caps["总上限"])
+	var raw: float = saving_base(t_sec) + cap_total * maxf(unit_cost, 0.0) * k
+	return minf(raw, SAVING_CAP)
+
+
+## 单件典型成本 = 当前最贵待办动作的金币成本；无待办（全 0 或空）取最近一次的值。
+static func typical_unit_cost(demands: Array, last: float) -> float:
+	var best: float = 0.0
+	for d in demands:
+		if d is Dictionary:
+			best = maxf(best, float((d as Dictionary).get("金币成本", 0)))
+	if best <= 0.0:
+		return maxf(last, 0.0)
+	return best
+
+
+## 是否因击穿储备线而应驳回：非紧急 且（当前金币 − 本诉求成本）< G(t)。
+## 紧急诉求照常执行、不受储备线约束（但仍受真实金币不足约束，由 arbitrate 判）。
+static func saving_breach(gold: int, cost: int, reserve: float, urgent: bool) -> bool:
+	if urgent:
+		return false
+	return float(gold) - float(cost) < reserve
+
+
+## 是否超出同时做事数上限（执行中诉求总数 / 同部门执行数）。
+static func concurrency_breach(exec_total: int, exec_dept: int,
+		caps: Dictionary) -> bool:
+	var lim_total: int = int(caps.get("总上限", 0))
+	var lim_dept: int = int(caps.get("同部门上限", 0))
+	return exec_total >= lim_total or exec_dept >= lim_dept
+
+
+## 紧急白名单：命中任一即紧急。返回命中的枚举数组（空 = 不紧急）。
+##   URG_POP_BLOCK      人口占用率 > 95% 且农场无工地
+##   URG_ARMY_LOW       现役 < 防守下限 × 0.6
+##   URG_BUILDING_LOST  最近 60 s 内被拆 ≥ 2 栋 且 当前仍被攻击（回防合并在此条）
+static func urgent_reasons(pop_rate: float, has_farm_site: bool,
+		army_n: int, defense_floor: int,
+		demolished_60s: int, under_attack: bool) -> Array:
+	var out: Array = []
+	if pop_rate > URG_POP_RATIO and not has_farm_site:
+		out.append(URG_POP_BLOCK)
+	if float(maxi(army_n, 0)) < float(maxi(defense_floor, 0)) * URG_ARMY_RATIO:
+		out.append(URG_ARMY_LOW)
+	if demolished_60s >= URG_LOST_COUNT and under_attack:
+		out.append(URG_BUILDING_LOST)
+	return out
+
+
+## 工地停滞：距最后一次有农民施工 ≥ stall_sec 秒。
+## last_work_at < 0 表示尚未建立记录（新工地），保守地不判停滞。
+static func site_is_stalled(now: float, last_work_at: float,
+		stall_sec: float = SITE_STALL_SEC) -> bool:
+	if last_work_at < 0.0:
+		return false
+	return now - last_work_at >= stall_sec
 
 
 # ---------------------------------------------------------------------------
