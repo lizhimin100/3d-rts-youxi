@@ -958,12 +958,12 @@ const RJ_TROOP: String = "兵力不足"
 const RJ_OUTBID: String = "被更高分压后"
 const RJ_COND: String = "条件不满足"
 const RJ_DONE: String = "本周期已执行"
-## 2C-11：第 7 / 第 8 个枚举 —— 储备线击穿、同时做事数超限。
-## ★ 接入 RJ_REASONS 与仲裁逻辑都在 C2，C1 只定义常量（保持零行为变化）。
+## 2C-11：第 7 / 第 8 个枚举 —— 储备线击穿、同时做事数超限（C2 接入仲裁）
 const RJ_SAVING: String = "储备不足"
 const RJ_CONCURRENT: String = "并发上限"
 const RJ_REASONS: Array[String] = [
 	RJ_GOLD, RJ_WOOD, RJ_TROOP, RJ_OUTBID, RJ_COND, RJ_DONE,
+	RJ_SAVING, RJ_CONCURRENT,
 ]
 
 ## 诉求结构的**必带字段**（第 3.1 节）。回归按这张表断言"一条都不能少"。
@@ -1072,13 +1072,23 @@ static func demand_valid(d) -> bool:
 ##   7. `可执行=false`（部门自己判"条件不成立"，如没有可建位置）→ `条件不满足`。
 ##
 ## 返回 {执行:[...], 驳回:[...], 金币余, 木材余, 兵力余, 总额}
-static func arbitrate(demands: Array, gold: int, wood: int, troops: int) -> Dictionary:
+static func arbitrate(demands: Array, gold: int, wood: int, troops: int,
+		policy: Dictionary = {}) -> Dictionary:
 	var g: int = maxi(gold, 0)
 	var w: int = maxi(wood, 0)
 	var t: int = maxi(troops, 0)
 	var g0: int = g
 	var w0: int = w
 	var t0: int = t
+	# 2C-11：policy = {"reserve": G(t), "caps": {...}, "urgent": bool}
+	# ★ 空 policy 完全沿用 2C-9 的仲裁行为（回归里所有旧断言不受影响）。
+	#   储备线是**全局一个**，不按部门分池。
+	var reserve: float = float(policy.get("reserve", -1.0))
+	var caps: Dictionary = policy.get("caps", {})
+	var urgent: bool = bool(policy.get("urgent", false))
+	var use_saving: bool = reserve >= 0.0
+	var use_caps: bool = not caps.is_empty()
+	var per_dept: Dictionary = {}
 	var order: Array = []
 	for i in range(demands.size()):
 		var d = demands[i]
@@ -1105,6 +1115,15 @@ static func arbitrate(demands: Array, gold: int, wood: int, troops: int) -> Dict
 			continue
 		if not bool(d2.get("可执行", true)):
 			d2["驳回原因"] = RJ_COND
+			rej.append(d2)
+			continue
+		# 2C-11 §2.5：本周期执行中诉求总数 / 同部门执行数先过结构上限。
+		# 放在储备线之前：并发是周期级硬约束，不消耗资源，先判才能让两条
+		# 新枚举各自有稳定的观测样本。
+		var src: String = String(d2.get("来源线", ""))
+		if use_caps and concurrency_breach(done.size(),
+				int(per_dept.get(src, 0)), caps):
+			d2["驳回原因"] = RJ_CONCURRENT
 			rej.append(d2)
 			continue
 		var ng: int = int(d2.get("金币成本", 0))
@@ -1136,15 +1155,27 @@ static func arbitrate(demands: Array, gold: int, wood: int, troops: int) -> Dict
 				d2["驳回原因"] = RJ_TROOP
 			rej.append(d2)
 			continue
+		# 2C-11 §2.4：真实资源够（上面已过）才谈「该不该花」。
+		# 用周期内剩余金币 g 判：前面已执行的诉求已经花了钱，剩余不能击穿储备线。
+		# ★ 口径选择：gold < cost 仍归「金币不足」，储备不足只描述「有钱但不该花」，
+		#   保住 2C-10 的金币不足驳回观测口径（报告里要直接对比），不把两者混成一个数。
+		#   紧急诉求（§3）跳过本检查，照常执行。
+		if use_saving and saving_breach(g, ng, reserve, urgent):
+			d2["驳回原因"] = RJ_SAVING
+			rej.append(d2)
+			continue
 		g -= ng
 		w -= nw
 		t -= nt
 		seen[key] = true
 		done.append(d2)
+		if use_caps:
+			per_dept[src] = int(per_dept.get(src, 0)) + 1
 	return {
 		"执行": done, "驳回": rej,
 		"金币余": g, "木材余": w, "兵力余": t,
 		"总额": demands.size(),
+		"储备": reserve, "紧急": urgent, "上限": caps, "执行中": done.size(),
 	}
 
 

@@ -975,9 +975,10 @@ func _case_2c9() -> void:
 			Array(bm.ACT_TYPES) == ["训练", "建造", "修理", "出击", "防守",
 				"侦查", "巡逻", "建塔", "建分基地"],
 			"%d 项" % Array(bm.ACT_TYPES).size())
-	_record("2C9：六个驳回原因枚举齐全（金币/木材/兵力/被更高分压后/条件不满足/本周期已执行）",
+	_record("2C9/2C11：八个驳回原因枚举齐全（原 6 + 储备不足 / 并发上限）",
 			Array(bm.RJ_REASONS) == ["金币不足", "木材不足", "兵力不足",
-				"被更高分压后", "条件不满足", "本周期已执行"],
+				"被更高分压后", "条件不满足", "本周期已执行",
+				"储备不足", "并发上限"],
 			"%d 项" % Array(bm.RJ_REASONS).size())
 	_record("2C9：demand_valid 合法诉求 → true（十个字段齐全 + 枚举合法 + 成本非负）",
 			bool(bm.demand_valid(d0)), "训练/步兵/125 金")
@@ -1482,6 +1483,84 @@ func _case_2c11() -> void:
 			and not bool(b.site_is_stalled(21.0, 21.0))
 			and not bool(b.site_is_stalled(100.0, -1.0)),
 			"20 s 阈值，last_work<0 不误判")
+
+	# ---------- C2：仲裁接入（policy）----------
+	var mkA: Dictionary = b.demand_make("运营线", "训练", "步兵", 80, 0, 0, false, 5.0, "x")
+	var mkB: Dictionary = b.demand_make("扩展线", "建塔", "哨塔", 80, 0, 0, false, 4.0, "x")
+	var mkC: Dictionary = b.demand_make("运营线", "巡逻", "巡逻", 0, 0, 1, false, 3.0, "x")
+	var pol_save: Dictionary = {"reserve": 530.0, "caps": {}, "urgent": false}
+	var r_save: Dictionary = b.arbitrate([mkA, mkB, mkC], 529, 1000, 10, pol_save)
+	var all_saving: bool = true
+	for d in (r_save["驳回"] as Array):
+		if String((d as Dictionary).get("驳回原因", "")) != String(b.RJ_SAVING):
+			all_saving = false
+	_record("2C11：仲裁 储备不足驳回（金=G-1，非紧急 3 条全驳回且原因统一）",
+			int((r_save["执行"] as Array).size()) == 0
+			and int((r_save["驳回"] as Array).size()) == 3 and all_saving,
+			"执行=%d 驳回=%d 原因统一=%s" % [
+				int((r_save["执行"] as Array).size()),
+				int((r_save["驳回"] as Array).size()), str(all_saving)])
+	var pol_urg: Dictionary = {"reserve": 530.0, "caps": {}, "urgent": true}
+	var r_urg: Dictionary = b.arbitrate([mkA, mkB, mkC], 529, 1000, 10, pol_urg)
+	_record("2C11：仲裁 紧急诉求不受储备线约束（同金币下 3 条照常执行）",
+			int((r_urg["执行"] as Array).size()) == 3,
+			"紧急执行=%d" % int((r_urg["执行"] as Array).size()))
+	var r_mix: Dictionary = b.arbitrate([mkA, mkB], 529, 1000, 10, pol_save)
+	_record("2C11：全局一个储备（运营线/扩展线读同一个 G(t)，不分池）",
+			_near(float(r_save["储备"]), 530.0, 0.0001)
+			and int((r_mix["驳回"] as Array).size()) == 2,
+			"policy 只有一个 reserve，两条线同时被它驳回")
+	var r_old: Dictionary = b.arbitrate([mkA, mkB, mkC], 1000, 1000, 10)
+	_record("2C11：空 policy 完全保留 2C-9 仲裁行为（3 条都执行）",
+			int((r_old["执行"] as Array).size()) == 3
+			and int((r_old["驳回"] as Array).size()) == 0,
+			"执行=%d 驳回=%d" % [
+				int((r_old["执行"] as Array).size()),
+				int((r_old["驳回"] as Array).size())])
+	var pol_cap: Dictionary = {"reserve": -1.0,
+			"caps": {"总上限": 2, "同部门上限": 1}, "urgent": false}
+	var r_cap: Dictionary = b.arbitrate([mkA, mkB, mkC], 1000, 1000, 10, pol_cap)
+	_record("2C11：仲裁 并发上限（总上限 2 → 执行 2、第 3 条驳回并发上限）",
+			int((r_cap["执行"] as Array).size()) == 2
+			and String(((r_cap["驳回"] as Array)[0] as Dictionary).get("驳回原因", "")) == String(b.RJ_CONCURRENT),
+			"执行=%d 驳回原因=%s" % [
+				int((r_cap["执行"] as Array).size()),
+				String(((r_cap["驳回"] as Array)[0] as Dictionary).get("驳回原因", ""))])
+	var pol_dept: Dictionary = {"reserve": -1.0,
+			"caps": {"总上限": 8, "同部门上限": 1}, "urgent": false}
+	var r_dept: Dictionary = b.arbitrate([mkA, mkB, mkC], 1000, 1000, 10, pol_dept)
+	_record("2C11：仲裁 同部门上限（运营线第 2 条被驳回，扩展线不受影响）",
+			int((r_dept["执行"] as Array).size()) == 2
+			and String(((r_dept["驳回"] as Array)[0] as Dictionary).get("驳回原因", "")) == String(b.RJ_CONCURRENT)
+			and String(((r_dept["驳回"] as Array)[0] as Dictionary).get("来源线", "")) == "运营线",
+			"同部门上限=1")
+	var mkBad: Dictionary = b.demand_make("运营线", "巡逻", "巡逻2", 0, 0, 1,
+			false, 0.1, "x", false)
+	var r_low: Dictionary = b.arbitrate([mkBad], 1000, 1000, 10,
+			{"reserve": -1.0, "caps": {"总上限": 2, "同部门上限": 1}, "urgent": false})
+	_record("2C11：不设下限（低分/不可执行动作不因「至少做 N 件」被强行放行）",
+			int((r_low["执行"] as Array).size()) == 0
+			and String(((r_low["驳回"] as Array)[0] as Dictionary).get("驳回原因", "")) == String(b.RJ_COND),
+			"条件不满足，不凑数")
+
+	# ---------- C2：接线（源码文本守门）----------
+	var sa11: String = ""
+	var f11 := FileAccess.open("res://代码/ai/简单AI.gd", FileAccess.READ)
+	if f11 != null:
+		sa11 = f11.get_as_text()
+		f11.close()
+	_record("2C11：接线 _dept_tick 每周期算 G(t)/上限/单件成本并作为单个 policy 传入",
+			sa11.contains("var policy: Dictionary = {\"reserve\": reserve, \"caps\": caps, \"urgent\": urgent}")
+			and sa11.contains("\"saving_target\", [t_sec, unit_cost]")
+			and sa11.contains("\"concurrency_caps\", [t_sec]")
+			and sa11.contains("\"typical_unit_cost\",")
+			and sa11.contains("t_avail, policy]"),
+			"储备目标只算一次，运营/扩展共用")
+	_record("2C11：POP90 修正口径（触发时已有农场工地算成功）",
+			sa11.contains("if _has_site_of(fid):")
+			and sa11.contains("\"pop90_site_already\"")
+			and sa11.contains("2C-11 §7 修正口径"),
+			"只改观测判定，不改农场预判/人口逻辑")
 
 
 ## 造一条"金币成本被改成负数"的诉求（用于 demand_valid 的非法值断言）

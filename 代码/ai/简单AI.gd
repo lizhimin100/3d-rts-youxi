@@ -221,6 +221,11 @@ var dept_stats: Dictionary = {
 	"requisition_times": 0, "requisitioned_units": 0,
 	"farm_factor_triggers": 0, "farm_factor_last": 1.0,
 	"farm_site_starts": 0,
+	# 2C-11：储蓄 / 同时做事数 / 紧急 / POP90 修正口径（P2 监控，只落盘不进决策）
+	"saving_reserve_last": 0.0, "saving_unit_cost_last": 80.0,
+	"saving_urgent_last": false, "saving_urgent_hits": {},
+	"caps_last": {}, "exec_per_cycle": {},
+	"pop90_site_already": 0,
 }
 var _dept_cd: float = 0.0
 var _scout_cd: float = 0.0
@@ -239,6 +244,8 @@ var _pop90_seen_sites: Dictionary = {}
 var _pop90_last_site_t: float = -1.0
 ## 2C-10 §6：攒大波出击征用的兵力数（在 _exec_wave 里兑成 push_n）
 var _pending_requisition: int = 0
+## 2C-11：单件典型成本记忆（本周期无待办时取最近一次的值，早期农场 80）
+var _saving_last_unit_cost: float = 80.0
 var _l1_dmg: Array[float] = []
 var _l1_gold: Array[float] = []
 var _l1_wood: Array[float] = []
@@ -4194,8 +4201,23 @@ func _dept_tick(diff: DifficultyDef, now: float) -> void:
 	_dept_note_competition()
 	var t_avail: int = _troop_available_raw()
 	dept_stats["troop_available"] = _troop_available()
+	# --- 2C-11 §2：全局一个储备 G(t)（运营线/扩展线共用，不分池）+ 同时做事数上限 ---
+	# 单件典型成本取本周期最贵待办；无待办时取最近一次的值（_saving_last_unit_cost）。
+	var t_sec: float = Game.elapsed
+	var unit_cost: float = float(_model_call("typical_unit_cost",
+			[demands_l2, _saving_last_unit_cost]))
+	_saving_last_unit_cost = unit_cost
+	var reserve: float = float(_model_call("saving_target", [t_sec, unit_cost]))
+	var caps: Dictionary = _model_call("concurrency_caps", [t_sec])
+	# C3 接紧急白名单；C2 先把 policy 结构接好（urgent 暂恒 false）。
+	var urgent: bool = false
+	dept_stats["saving_reserve_last"] = reserve
+	dept_stats["saving_unit_cost_last"] = unit_cost
+	dept_stats["saving_urgent_last"] = urgent
+	dept_stats["caps_last"] = caps
+	var policy: Dictionary = {"reserve": reserve, "caps": caps, "urgent": urgent}
 	var plan: Dictionary = _model_call("arbitrate",
-			[demands_l2, _faction.gold, _faction.wood, t_avail])
+			[demands_l2, _faction.gold, _faction.wood, t_avail, policy])
 	if plan == null:
 		return
 	_dept_execute(plan)
@@ -4271,9 +4293,10 @@ func _l1_snapshot() -> void:
 # 2C-10 §7.2 · 90% 人口压力响应测试（纯观测）
 # ---------------------------------------------------------------------------
 
-## 占用率 =(占用 + 在训)/上限；首次 >90% 记一次触发；20 s 内出现任意一座
-## 农场工地开工 = 响应成功；结算后冷却 15 s。**不改农场预判/人口逻辑**，
-## 也不进任何决策 —— 只往 pop90 / dept_stats 里写观测值。
+## 占用率 =(占用 + 在训)/上限；首次 >90% 记一次触发；结算后冷却 15 s。
+## 2C-11 §7 修正口径：**触发时已有农场工地算成功**（不只看 20 s 内新开工），
+## 否则 2C-10 的 8.3% 里有 43.7% 是口径假失败。仍不进任何决策，
+## 也不改农场预判/人口逻辑 —— 只往 pop90 / dept_stats 里写观测值。
 func _pop90_tick(now: float) -> void:
 	if _faction == null:
 		return
@@ -4326,6 +4349,15 @@ func _pop90_tick(now: float) -> void:
 	if now >= _pop90_cooldown_until and rate > 0.90:
 		pop90["触发"] = int(pop90["触发"]) + 1
 		(pop90["触发时刻"] as Array).append(snappedf(now, 0.1))
+		# 2C-11 §7 修正口径：触发时**已有农场工地在建** = 已经在响应，直接记成功。
+		# 2C-10 §7.2.2 里 43.7% 的失败属"要求 20 s 内新开工"造成的口径假失败
+		# （_demand_builds 有 `not _has_site_of(farm)` 早退，有工地时本就不会再报新农场）。
+		# 不改农场预判 / 人口逻辑，只改观测判定。
+		if _has_site_of(fid):
+			pop90["成功"] = int(pop90["成功"]) + 1
+			dept_stats["pop90_site_already"] = int(dept_stats.get("pop90_site_already", 0)) + 1
+			_pop90_cooldown_until = now + 15.0
+			return
 		_pop90_waiting = true
 		_pop90_trigger_t = now
 
@@ -4730,6 +4762,12 @@ func _dept_note_competition() -> void:
 func _dept_execute(plan: Dictionary) -> void:
 	dept_stats["cycles"] = int(dept_stats["cycles"]) + 1
 	dept_stats["demands"] = int(dept_stats["demands"]) + int(plan.get("总额", 0))
+	# 2C-11 P2：同时做事数的**实际分布**（每周期执行条数 -> 出现次数），
+	# 与 caps_last 的上限表对照，回答"储蓄后真的同时做多件事了吗"。
+	var done_n: int = int((plan.get("执行", []) as Array).size())
+	var dist: Dictionary = dept_stats["exec_per_cycle"]
+	var dk: String = str(done_n)
+	dist[dk] = int(dist.get(dk, 0)) + 1
 	var rej: Array = plan.get("驳回", [])
 	dept_stats["rejected"] = int(dept_stats["rejected"]) + rej.size()
 	var rj: Dictionary = dept_stats["reject_by_reason"]
@@ -4806,6 +4844,11 @@ func _dept_log(now: float, plan: Dictionary) -> void:
 		"诉求": [],
 		"执行": [],
 		"驳回": {},
+		# 2C-11：储备线 / 同时做事数上限 / 紧急态（只落盘，不进决策）
+		"储备": snappedf(float(dept_stats.get("saving_reserve_last", 0.0)), 0.1),
+		"单件成本": snappedf(float(dept_stats.get("saving_unit_cost_last", 0.0)), 0.1),
+		"上限": dept_stats.get("caps_last", {}),
+		"紧急": bool(dept_stats.get("saving_urgent_last", false)),
 	}
 	for d in demands_l2:
 		if not (d is Dictionary):
