@@ -44,3 +44,6 @@ _backup/
 地图/_测试地图.tres
 地图/_最近地图.cfg
 地图/_编辑器链路自检.tres
+
+# WorkBuddy agent 元文件（.workbuddy/memory 等）：本机工作记录，不属于工程内容
+.workbuddy/
