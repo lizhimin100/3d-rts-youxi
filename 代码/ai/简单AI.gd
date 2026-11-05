@@ -26,6 +26,12 @@ const AIV := preload("res://代码/配置/AI判定模式.gd")
 ## 2C-12：直接引战斗模型拿**承诺表的常量与状态枚举**（TTL / 人口门槛 / 状态名）。
 ## ★ 只读常量，不 new 实例 —— 场景侧真正的调用仍走 `_model_call`（统一入口）。
 const BM := preload("res://代码/ai/战斗模型.gd")
+## 2C-13：三层新增的纯逻辑模块（世界状态 / 目标层 / 计划层）。
+## ★ 与 BM 同一套写法：只读常量与 static 函数，不 new 实例。
+##   三者都不 include 引擎/场景依赖，所以 `--script` 的配置回归能直接 load 断言。
+const WS := preload("res://代码/ai/世界状态.gd")
+const GL := preload("res://代码/ai/目标层.gd")
+const PL := preload("res://代码/ai/计划层.gd")
 ## 大本营最多排几个农民（农民便宜，排两个不心疼）
 const MAX_QUEUE_PEASANT: int = 2
 ## 兵营最多排几个兵。
@@ -243,6 +249,22 @@ var dept_stats: Dictionary = {
 	"promise_claim_skips": 0,
 	# 2C-12 D 组哨兵：0 成本诉求被判「储备不足」（必须恒 0）
 	"zero_cost_saving_rej": 0,
+	# 2C-13 §2：世界状态适配器（每 tick 覆盖写；只观测，不进决策）
+	"ws_writes": 0, "ws_fields_last": 0, "ws_regions_last": 0,
+	# 2C-13 §4：目标层（主目标分布 / 空过 / 切换 / 预留 / 生命周期）
+	"goal_cycles": 0, "goal_noop_cycles": 0,
+	"goal_proposals_last": 0, "goal_main_dist": {}, "goal_switch_seq": [],
+	"goal_sub_promotions": 0, "goal_release": {},
+	"goal_reserve_last": 0, "goal_reserve_left_at_end": 0,
+	"goal_urgency_last": 0.0, "goal_threshold_last": 0.6,
+	"goal_preempt_events": 0, "goal_expire_events": 0,
+	"goal_done_events": 0, "goal_created": 0,
+	"goal_truncated_cycles": 0,
+	# 2C-13 §4.3：空过期间被挡下的花钱诉求（按动作分类）+ 1.5×G 退出次数
+	"noop_blocked": {}, "noop_aggressive_exits": 0,
+	"noop_aggressive_cycles": 0, "noop_gold_ge_1p5g_cycles": 0,
+	# 2C-13 §5：计划层（每局最后一次主目标的计划步数，只落盘）
+	"plan_steps_last": 0, "plan_action_last": "",
 }
 var _dept_cd: float = 0.0
 var _scout_cd: float = 0.0
@@ -273,6 +295,28 @@ var _saving_stall: Dictionary = {}
 ## 只对金币做承诺：可自由资源 = 金币 − 已承诺 − G(t)。
 ## 生命周期：有效 → 执行中 → 已执行（删除）；或 已过期 / 被抢占（释放）。
 var _promise: Dictionary = {}
+## 2C-13 §2：世界状态快照（每 tick 由 `_world_tick` 整份覆盖写，不在旧表上增量改）。
+var world_state: Dictionary = {}
+## 区域注册表（前缀 → 下一个序号；key=前缀+格坐标 → id）。跨 tick 保留，
+## 所以同一块 64 m 区域永远拿到同一个 Dr###/Zy###/My### 编号。
+var _ws_reg: Dictionary = {}
+var _ws_writes: int = 0
+## 资源点的区域位置缓存（每 `WS_RESOURCE_REFRESH` 秒刷一次）：扫全图树木
+## 每帧做不起，但区域编号不需要每帧更新 —— 树被采光时编号也不会回收（规范要求）。
+var _ws_res_cells: Array = []
+var _ws_res_next_t: float = -1.0
+const WS_RESOURCE_REFRESH: float = 10.0
+## 2C-13 §4：目标层状态
+##   goals_active = {id: 活动目标}（主 + 次，最多 2 条）
+##   goal_main / goal_sub = 活动目标的引用（与 goals_active 同源，换指针不换内容）
+var goals_active: Dictionary = {}
+var goal_main: Dictionary = {}
+var goal_sub: Dictionary = {}
+var goal_noop: bool = false
+var goal_reserved: Dictionary = {"金币": 0, "木材": 0}
+var _goal_best: Dictionary = {}
+var _noop_aggressive: bool = true
+var _goal_thr: float = 0.6
 ## 2C-11 §3：最近 60 s 被拆建筑账本。只存时刻、不存对象引用，避免悬空。
 ## `_known_buildings` = 上一次思考时存活的建筑 instance_id 集合；
 ## 完工不会让 id 消失，所以「上次有、这次没了」只可能是被拆/被移除。
@@ -463,9 +507,12 @@ func _think_once(diff: DifficultyDef) -> void:
 		# 仲裁外的两件收尾（**都不在用户拍板的九个动作类型里**，见 §3.19）：
 		#   · 哨塔升级箭塔 = 改造（花钱但不新建），2C-9 不纳入仲裁；
 		#   · 科技研究 = 阵营级升级，动作类型表里没有"研究"。
-		_maybe_upgrade_tower()
-		_manage_research(diff)
-		_maybe_expand()            # 扩展线"最小可用"桩，2C-9 未纳入仲裁
+		# 2C-13 §4.3：空过期间"没有目标就不花钱" —— 这两件都是新开销，必须一起停
+		# （`_maybe_expand()` 是 `can_build_townhall()` 恒 false 的桩，一并门控）。
+		if not (AIV.goal_on() and goal_noop):
+			_maybe_upgrade_tower()
+			_manage_research(diff)
+			_maybe_expand()            # 扩展线"最小可用"桩，2C-9 未纳入仲裁
 	else:
 		_manage_peasants(diff)
 		# 2C-8 P2：先结算"农场工地被拆"（在建→消失），再跑本 tick 的建农场决策
@@ -4495,11 +4542,762 @@ func promise_dispose() -> int:
 	return n
 
 
+# ===========================================================================
+# 2C-13 · 目标层 / 计划层 / 空过（dept=on 且 goal=on 走这条；否则走 2C-12 仲裁）
+#
+# 流水线（每 2 s 一个决策周期）：
+#   世界状态快照（每 tick 覆盖写）
+#     → 三部门各报 0~N 条**目标建议**（9 字段，不带执行句柄）
+#     → 主部门选 1 主 + 1 次（紧迫度 × 部门权重 × 局势修正；后两项第一版全 1.0）
+#     → 计划/预算层锁预留（跟目标同生共死）
+#     → 执行层按**主目标优先级**重排既有诉求并逐条扣预算 → `_dept_execute`
+#     → 生命周期扫描（达成 / 过期 / 被抢占 → 释放预留）
+#
+# 与 2C-12 的三处结构差别（都不是参数）：
+#   ① 承诺表在 goal=on 时**不参与**：预留并入目标，跟目标同生共死（§9 禁止独立承诺表）；
+#   ② 预留**可花**：主/次目标覆盖的诉求直接从预留里扣 —— 2C-12 "锁住却花不出去"的死锁
+#      在结构上不存在（预留是给这条目标自己用的，不是从公共池里永久挖走）；
+#   ③ 空过是一等公民：所有建议紧迫度 < 阈值 → 主/次都空、预留 0、训练/建造/修理停，
+#      但采集（后台）/防守/巡逻/侦查/出击照常。
+# ===========================================================================
+
+## 目标的存活时间（秒）。**不是逻辑，是场景标定值**：过期只是兜底，
+## 正常路径是"达成"或被更高紧迫度目标抢占。取值 = 该动作一轮完整闭环的量级。
+const GOAL_TTL_BUILD: float = 90.0
+const GOAL_TTL_TRAIN: float = 60.0
+const GOAL_TTL_RESEARCH: float = 240.0
+const GOAL_TTL_ATTACK: float = 120.0
+const GOAL_TTL_DEFEND: float = 30.0
+const GOAL_TTL_SCOUT: float = 45.0
+const GOAL_TTL_PATROL: float = 45.0
+
+
+## 空过阈值（进卡；`AI诉求系数.tres` 里加 `目标_紧迫度阈值` 即可覆盖）。
+func _goal_threshold() -> float:
+	return float(BM.demand_coef("目标_紧迫度阈值", GL.URGENCY_THRESHOLD_DEFAULT))
+
+
+## 时间阶段（世界状态字段"时间阶段"；只做描述，不参与任何判据）。
+func _ws_phase() -> String:
+	var t: float = Game.elapsed
+	if t < 120.0:
+		return "开局"
+	if t < 300.0:
+		return "前期"
+	if t < 600.0:
+		return "中期"
+	return "后期"
+
+
+## 资源点区域缓存：全图树木每帧扫不起，但区域编号不需要每帧更新
+## （树被采光也不回收编号 —— 规范要求"同一区域不重复编号"，回收就等于重编号）。
+func _ws_refresh_resources(now: float) -> void:
+	if now < _ws_res_next_t:
+		return
+	_ws_res_next_t = now + WS_RESOURCE_REFRESH
+	var out: Array = []
+	var lv = Game.level
+	if lv == null or not lv.has_method("resource_nodes"):
+		_ws_res_cells = out
+		return
+	var seen: Dictionary = {}
+	for h in lv.resource_nodes():
+		if h == null or not is_instance_valid(h):
+			continue
+		var p: Vector3 = h.global_position
+		var c: Vector2i = WS.region_cell(p)
+		var k: String = "%d:%d" % [c.x, c.y]
+		if seen.has(k):
+			continue
+		seen[k] = true
+		var kind: String = "gold" \
+				if int(h.get("harvest_kind")) == RtsConst.Harvest.GOLD else "tree"
+		out.append({"kind": kind, "pos": p})
+	_ws_res_cells = out
+
+
+## 世界状态：每 tick **整份覆盖写**（不是增量更新 —— 结构上不可能累积）。
+func _world_tick(now: float) -> void:
+	if _faction == null:
+		return
+	var army_n: int = _army_units().size()
+	var raw_troops: int = _troop_available_raw()
+	var bld: Dictionary = {}
+	for b in _faction.buildings:
+		if b == null or not is_instance_valid(b) or b.def == null:
+			continue
+		if not b.is_alive():
+			continue
+		var bid: String = String(b.def.id)
+		bld[bid] = int(bld.get(bid, 0)) + 1
+	var eb: Array = []
+	for f in _war_foes():
+		if f == null:
+			continue
+		for b2 in f.buildings:
+			if b2 == null or not is_instance_valid(b2) or b2.def == null:
+				continue
+			if not b2.is_alive():
+				continue
+			eb.append({"id": int(b2.get_instance_id()), "type": String(b2.def.id),
+				"pos": b2.global_position, "hp": float(b2.get("hp"))})
+	var allies: Array = []
+	for f2 in Game.allies_of(_faction):
+		if f2 == null or f2 == _faction:
+			continue
+		allies.append(RtsWorld.base_center(f2))
+	_ws_refresh_resources(now)
+	var verdicts: Array = []
+	var vn: int = _l1_verdicts.size()
+	for i in range(maxi(vn - L1_VERDICT_N, 0), vn):
+		verdicts.append(String(_l1_verdicts[i]))
+	var inp: Dictionary = {
+		"gold": _faction.gold, "wood": _faction.wood,
+		"pop_cap": _faction.food_cap(), "pop_used": _faction.food_used(),
+		"pop_reserved": _faction.food_reserved(),
+		"army_n": army_n, "defense_locked": _defense_reserved(army_n),
+		"troop_locked": maxi(army_n - raw_troops, 0),
+		"phase": _ws_phase(), "night": Game.is_night(),
+		"threat": int(metrics.get("base_threat", 0.0)),
+		"buildings": bld, "enemy_buildings": eb, "allies": allies,
+		"resources": _ws_res_cells,
+		"dmg_30s": float(ctx1.get("dmg_30s", 0.0)),
+		"gold_60s": float(ctx1.get("gold_60s", 0.0)),
+		"wood_60s": float(ctx1.get("wood_60s", 0.0)),
+		"verdicts": verdicts,
+		"own_base": RtsWorld.base_center(_faction),
+	}
+	world_state = WS.build(inp, _ws_reg)
+	_ws_reg = WS.registry_of(world_state)
+	_ws_writes += 1
+	dept_stats["ws_writes"] = _ws_writes
+	dept_stats["ws_fields_last"] = (WS.SNAPSHOT_FIELDS as Array).size() \
+			- WS.missing_fields(world_state).size()
+	dept_stats["ws_regions_last"] = (world_state.get("区域", []) as Array).size()
+
+
+## 某个世界坐标落在哪个已知区域 id（没有登记过 → 空串）。
+func _region_id_at(pos: Vector3) -> String:
+	var cell: Vector2i = WS.region_cell(pos)
+	var ids: Dictionary = _ws_reg.get("ids", {})
+	for pre in [WS.RK_SELF, WS.RK_ENEMY, WS.RK_RESOURCE, WS.RK_ALLY]:
+		var k: String = WS.region_key(String(pre), cell)
+		if ids.has(k):
+			return String(ids[k])
+	return ""
+
+
+func _enemy_buildings_in_region(rid: String) -> int:
+	var n: int = 0
+	for e in (world_state.get("敌方建筑", []) as Array):
+		if String((e as Dictionary).get("区域", "")) == rid:
+			n += 1
+	return n
+
+
+func _own_combat_in_region(rid: String) -> bool:
+	for u in _army_units():
+		if u == null or not is_instance_valid(u):
+			continue
+		if _region_id_at(u.global_position) == rid:
+			return true
+	return false
+
+
+## 最靠近自己基地的敌方建筑所在区域（攻击/侦查的默认对象）。
+func _goal_attack_region() -> String:
+	var best: String = ""
+	var best_d: float = INF
+	var home: Vector3 = RtsWorld.base_center(_faction)
+	for e in (world_state.get("敌方建筑", []) as Array):
+		var d: Dictionary = e
+		var dd: float = home.distance_squared_to(d.get("pos", Vector3.ZERO))
+		if dd < best_d:
+			best_d = dd
+			best = String(d.get("区域", ""))
+	return best
+
+
+## 有没有"可以真的打出去"的条件（**不调用 `_wave_plan`**：它有副作用，
+## 会把 `_next_wave_at` / `_bank_breakout` 改掉；目标建议必须是无副作用的读数）。
+func _goal_can_attack(diff: DifficultyDef) -> bool:
+	if _faction == null:
+		return false
+	if Game.elapsed < _next_wave_at:
+		return false
+	if strat_state == ST_BANK or strat_state == ST_RETARGET:
+		return false
+	if not bool(posture.get("allow_attack", false)):
+		return false
+	return _army_units().size() >= maxi(diff.min_wave_size, 3)
+
+
+## 下一项可研究的科技（与 `_sanity_research` 同一批判据，只读不点）。
+func _goal_research_candidate() -> StringName:
+	if _faction == null:
+		return &""
+	for b in _faction.buildings:
+		var rb := b as RtsBuilding
+		if rb == null or not is_instance_valid(rb) or not rb.is_alive() or not rb.is_constructed:
+			continue
+		if rb.def == null or rb.def.researches.is_empty() or rb.is_researching():
+			continue
+		for r in rb.def.researches:
+			if RtsCombat.research_maxed(_faction, r):
+				continue
+			if String(rb.research_block_reason(r)) != "":
+				continue
+			return r
+	return &""
+
+
+## 三部门提目标建议（每 2 s 各 0~N 条，9 字段）。
+func _goal_proposals(diff: DifficultyDef, now: float) -> Array:
+	var out: Array = []
+	if _faction == null:
+		return out
+	var yseq: int = 0
+	var zseq: int = 0
+	var kseq: int = 0
+	# ------------------------- 运营线 Yy：建造 / 训练 / 研发 -------------------------
+	var fid: StringName = _food_building_id()
+	if fid != &"" and not _has_site_of(fid):
+		var fd: UnitDef = Cfg.unit(fid)
+		if fd != null:
+			var urgent: bool = _farm_urgent()
+			if urgent or _farm_wanted(diff):
+				var cap: int = _faction.food_cap()
+				var rate: float = 0.0
+				if cap > 0:
+					rate = float(_faction.food_used() + _faction.food_reserved()) / float(cap)
+				var p1: Dictionary = GL.proposal_make(GL.DEPT_OPS, yseq + 1, GL.ACT_BUILD,
+						String(fid), 1, GL.urgency_build_farm(rate, urgent),
+						"人口 %d/%d（含在训 %d，%s）" % [_faction.food_used(), cap,
+							_faction.food_reserved(), "急建" if urgent else "预判"],
+						int(fd.gold_cost), int(fd.wood_cost), GL.DONE_BUILT,
+						now + GOAL_TTL_BUILD)
+				if not p1.is_empty():
+					yseq += 1
+					out.append(p1)
+	var pid: StringName = _primary_producer_id(diff)
+	if pid != &"" and not _has_site_of(pid):
+		var have_p: int = _faction.count_buildings(pid)
+		var want_p: int = _barracks_want()
+		if have_p < want_p:
+			var bd: UnitDef = Cfg.unit(pid)
+			if bd != null:
+				var p2: Dictionary = GL.proposal_make(GL.DEPT_OPS, yseq + 1, GL.ACT_BUILD,
+						String(pid), 1, GL.urgency_build_barracks(have_p),
+						"兵营 %d/%d（%s）" % [have_p, want_p,
+							"无产能" if have_p <= 0 else "扩建"],
+						int(bd.gold_cost), int(bd.wood_cost), GL.DONE_BUILT,
+						now + GOAL_TTL_BUILD)
+				if not p2.is_empty():
+					yseq += 1
+					out.append(p2)
+	var at: int = _army_target()
+	var army_n: int = _army_units().size()
+	var gap: int = maxi(at - army_n, 0) if at >= 0 else 0
+	if gap > 0:
+		var picked: StringName = &""
+		for b in _army_producers(diff):
+			picked = _pick_army_unit(b as RtsBuilding, diff)
+			if picked != &"":
+				break
+		var ud: UnitDef = Cfg.unit(picked) if picked != &"" else null
+		if ud != null:
+			var p3: Dictionary = GL.proposal_make(GL.DEPT_OPS, yseq + 1, GL.ACT_TRAIN,
+					String(picked), gap, GL.urgency_train(gap, at),
+					"军队缺口 %d（目标 %d 实际 %d）" % [gap, at, army_n],
+					int(ud.gold_cost), int(ud.wood_cost), GL.DONE_TRAINED,
+					now + GOAL_TTL_TRAIN)
+			if not p3.is_empty():
+				yseq += 1
+				out.append(p3)
+	var ptarget: int = PEASANT_TOTAL_CAP + int(posture.get("worker_bonus", 0))
+	var peasants: int = _faction.count_units(_worker_id())
+	var pgap: int = maxi(ptarget - peasants, 0)
+	if pgap > 0 and peasants < army_n + VILLAGER_ARMY_GAP:
+		var wd: UnitDef = Cfg.unit(_worker_id())
+		if wd != null:
+			var p4: Dictionary = GL.proposal_make(GL.DEPT_OPS, yseq + 1, GL.ACT_TRAIN,
+					String(_worker_id()), pgap, GL.urgency_train(pgap, ptarget),
+					"农民缺口 %d（目标 %d 实际 %d）" % [pgap, ptarget, peasants],
+					int(wd.gold_cost), int(wd.wood_cost), GL.DONE_TRAINED,
+					now + GOAL_TTL_TRAIN)
+			if not p4.is_empty():
+				yseq += 1
+				out.append(p4)
+	var rid: StringName = _goal_research_candidate()
+	if rid != &"":
+		var rd: ResearchDef = Cfg.research(rid)
+		if rd != null:
+			var p5: Dictionary = GL.proposal_make(GL.DEPT_OPS, yseq + 1, GL.ACT_RESEARCH,
+					String(rid), 1, GL.urgency_research(), "科技可研究：%s" % String(rid),
+					int(rd.gold_cost), int(rd.wood_cost), GL.DONE_RESEARCHED,
+					now + GOAL_TTL_RESEARCH)
+			if not p5.is_empty():
+				yseq += 1
+				out.append(p5)
+	# ------------------------- 战斗线 Zd：攻击区域 / 摧毁单位 / 防守地点 -------------
+	var threat_n: int = int(metrics.get("base_threat", 0.0))
+	if threat_n > 0:
+		var p6: Dictionary = GL.proposal_make(GL.DEPT_COMBAT, zseq + 1, GL.ACT_DEFEND,
+				WS.RK_SELF, 0, GL.urgency_defend(threat_n),
+				"压家敌人 %d 个" % threat_n, 0, 0, GL.DONE_THREAT_CLEAR,
+				now + GOAL_TTL_DEFEND)
+		if not p6.is_empty():
+			zseq += 1
+			out.append(p6)
+	var ratio: float = float(posture.get("army_ratio", 1.0))
+	if _goal_can_attack(diff):
+		var ar: String = _goal_attack_region()
+		if not ar.is_empty():
+			var p7: Dictionary = GL.proposal_make(GL.DEPT_COMBAT, zseq + 1,
+					GL.ACT_ATTACK_REGION, ar, 1, GL.urgency_push(ratio),
+					"兵力比 %.2f，可出击（区域 %s）" % [ratio, ar], 0, 0,
+					GL.DONE_REGION_CLEAR, now + GOAL_TTL_ATTACK)
+			if not p7.is_empty():
+				zseq += 1
+				out.append(p7)
+	var ht: Dictionary = _high_threat_target()
+	if not ht.is_empty():
+		var p8: Dictionary = GL.proposal_make(GL.DEPT_COMBAT, zseq + 1,
+				GL.ACT_DESTROY, str(int(ht.get("target_id", 0))), 1,
+				GL.urgency_push(ratio), "高威胁目标（近 60 s 伤害最高）", 0, 0,
+				GL.DONE_TARGET_DEAD, now + GOAL_TTL_ATTACK)
+		if not p8.is_empty():
+			zseq += 1
+			out.append(p8)
+	# ------------------------- 扩张线 Kz：侦查 / 巡逻 / 建立分基地 -------------------
+	if _scout_cd <= 0.0 and threat_n <= 0 and _idle_scout_unit() != null:
+		var sr: String = _goal_attack_region()
+		if not sr.is_empty():
+			var knows: bool = not (world_state.get("敌方建筑", []) as Array).is_empty()
+			var p9: Dictionary = GL.proposal_make(GL.DEPT_EXPAND, kseq + 1,
+					GL.ACT_SCOUT, sr, 1, GL.urgency_scout(knows),
+					"侦查 %s（%s）" % [sr, "已有情报" if knows else "无情报"],
+					0, 0, GL.DONE_ARRIVED, now + GOAL_TTL_SCOUT)
+			if not p9.is_empty():
+				kseq += 1
+				out.append(p9)
+	if not _patrol_plan().is_empty():
+		var p10: Dictionary = GL.proposal_make(GL.DEPT_EXPAND, kseq + 1,
+				GL.ACT_PATROL, WS.RK_SELF, 1, GL.urgency_patrol(), "基地外圈巡逻",
+				0, 0, GL.DONE_PATROLLED, now + GOAL_TTL_PATROL)
+		if not p10.is_empty():
+			kseq += 1
+			out.append(p10)
+	# 建立分基地：`can_build_townhall()` 恒 false（禁止项），本轮永不提案。
+	return out
+
+
+## 目标达成判定（每种动作一个可观测量）。**没做"命令已发出即达成"的近似**：
+## 建造/训练/研发看真实数量，区域类看区域内的实际敌我单位，防守看威胁数。
+func _goal_done_map(now: float) -> Dictionary:
+	var out: Dictionary = {}
+	if _faction == null:
+		return out
+	for k in goals_active.keys():
+		var g: Dictionary = goals_active[k]
+		var cond: String = String(g.get("达成条件", ""))
+		var obj: String = String(g.get("对象", ""))
+		var base: int = int(g.get("_基数", 0))
+		var obs: int = 0
+		match cond:
+			GL.DONE_BUILT:
+				obs = _faction.count_buildings(StringName(obj)) - base
+			GL.DONE_TRAINED:
+				obs = _faction.count_units(StringName(obj)) - base
+			GL.DONE_RESEARCHED:
+				obs = 1 if RtsCombat.research_maxed(_faction, StringName(obj)) else 0
+			GL.DONE_REGION_CLEAR:
+				obs = _enemy_buildings_in_region(obj)
+			GL.DONE_TARGET_DEAD:
+				var n = instance_from_id(int(obj))
+				obs = 1 if (n != null and is_instance_valid(n) and n.is_alive()) else 0
+			GL.DONE_THREAT_CLEAR:
+				obs = int(metrics.get("base_threat", 0.0))
+			GL.DONE_ARRIVED, GL.DONE_PATROLLED:
+				obs = 1 if _own_combat_in_region(obj) else 0
+		out[String(k)] = GL.done_met(cond, obs)
+	return out
+
+
+## 把选中目标登记成活动目标（补两个运行期字段：`_基数` = 开目标时的存量，
+## `_显示名` = def.id → display_name，执行层的诉求用的是显示名）。
+func _goal_open(p: Dictionary, now: float) -> Dictionary:
+	var g: Dictionary = GL.goal_new(p, now)
+	var act: String = String(g.get("动作", ""))
+	var obj: String = String(g.get("对象", ""))
+	var base: int = 0
+	var disp: String = ""
+	if act == GL.ACT_BUILD:
+		base = _faction.count_buildings(StringName(obj))
+	elif act == GL.ACT_TRAIN:
+		base = _faction.count_units(StringName(obj))
+	if act == GL.ACT_BUILD or act == GL.ACT_TRAIN or act == GL.ACT_RESEARCH:
+		var ud: UnitDef = Cfg.unit(StringName(obj))
+		if ud != null:
+			disp = String(ud.display_name)
+	g["_基数"] = base
+	g["_显示名"] = disp
+	return g
+
+
+## 主目标切换序列（人工看合理性用；上限 400 条，防止局末 JSON 爆掉）。
+func _goal_switch(from_id: String, to_id: String, reason: String, now: float) -> void:
+	if from_id == to_id:
+		return
+	var seq: Array = dept_stats["goal_switch_seq"]
+	seq.append({"t": snappedf(now, 0.1), "from": from_id, "to": to_id, "原因": reason})
+	while seq.size() > 400:
+		seq.remove_at(0)
+
+
+## 本周期"还没被采纳的最高分建议"——只用来判抢占（不能拿当前主/次自己来抢自己）。
+func _goal_best_new(props: Array) -> Dictionary:
+	var best: Dictionary = {}
+	for p in props:
+		if not (p is Dictionary):
+			continue
+		var g: Dictionary = p
+		if goals_active.has(String(g.get("id", ""))):
+			continue
+		if not GL.proposal_valid(g):
+			continue
+		if best.is_empty() or float(g["紧迫度"]) > float(best["紧迫度"]) + 0.000001:
+			best = g
+		elif is_equal_approx(float(g["紧迫度"]), float(best["紧迫度"])) \
+				and String(g["id"]) < String(best["id"]):
+			best = g
+	return best
+
+
+## 选主/次：当前主目标还活着就**保持**（不做每周期重选，否则切换序列全是噪声）；
+## 主目标没了 → 次目标晋升；都没有 → 走 `select`（含空过判定）。
+func _goal_select(props: Array, now: float, prev_id: String = "",
+		preempted: bool = false) -> void:
+	if goal_main.is_empty() and not goal_sub.is_empty() \
+			and goals_active.has(String(goal_sub["id"])):
+		goal_main = goals_active[String(goal_sub["id"])]
+		goal_sub = {}
+		dept_stats["goal_sub_promotions"] = int(dept_stats["goal_sub_promotions"]) + 1
+		_goal_switch(prev_id, String(goal_main["id"]), "次目标晋升", now)
+	if not goal_main.is_empty():
+		goal_main = goals_active[String(goal_main["id"])]
+		if goal_noop:
+			goal_noop = false
+		_goal_note_main()
+		return
+	var sel: Dictionary = GL.select(props, _faction.gold, _goal_thr)
+	if bool(sel["空过"]):
+		if not goal_noop:
+			_goal_switch(prev_id, "", "进入空过", now)
+		goal_noop = true
+		dept_stats["goal_noop_cycles"] = int(dept_stats["goal_noop_cycles"]) + 1
+		var sv: Dictionary = GL.noop_saving(_faction.gold,
+				float(dept_stats.get("saving_reserve_last", 0.0)), _noop_aggressive)
+		if bool(sv["退出"]):
+			dept_stats["noop_aggressive_exits"] = \
+					int(dept_stats["noop_aggressive_exits"]) + 1
+			_log("空过：金币 ≥1.5×G(t)，退出积极储蓄（仍不训练/建造/修理）")
+		_noop_aggressive = bool(sv["积极储蓄"])
+		if _noop_aggressive:
+			dept_stats["noop_aggressive_cycles"] = \
+					int(dept_stats["noop_aggressive_cycles"]) + 1
+		else:
+			dept_stats["noop_gold_ge_1p5g_cycles"] = \
+					int(dept_stats["noop_gold_ge_1p5g_cycles"]) + 1
+		return
+	goal_noop = false
+	_noop_aggressive = true
+	var main_p: Dictionary = sel["主目标"]
+	goal_main = _goal_open(main_p, now)
+	goals_active[String(goal_main["id"])] = goal_main
+	dept_stats["goal_created"] = int(dept_stats["goal_created"]) + 1
+	if int(sel.get("截断", 0)) > 0:
+		dept_stats["goal_truncated_cycles"] = \
+				int(dept_stats["goal_truncated_cycles"]) + 1
+	_goal_switch(prev_id, String(goal_main["id"]),
+			"抢占后新选" if preempted else "新选主目标", now)
+	var sub_p: Dictionary = sel["次目标"]
+	if not sub_p.is_empty():
+		goal_sub = _goal_open(sub_p, now)
+		goals_active[String(goal_sub["id"])] = goal_sub
+		dept_stats["goal_created"] = int(dept_stats["goal_created"]) + 1
+	_goal_note_main()
+
+
+func _goal_note_main() -> void:
+	if goal_main.is_empty():
+		return
+	var act: String = String(goal_main.get("动作", ""))
+	var dist: Dictionary = dept_stats["goal_main_dist"]
+	dist[act] = int(dist.get(act, 0)) + 1
+	dept_stats["goal_urgency_last"] = float(goal_main.get("紧迫度", 0.0))
+
+
+## 一条诉求归谁出钱：主目标优先，其次次目标。返回活动目标（空 = 公共池）。
+func _goal_covers(g: Dictionary, d: Dictionary) -> bool:
+	if g.is_empty():
+		return false
+	var gact: String = String(g.get("动作", ""))
+	var dact: String = String(d.get("动作类型", ""))
+	match gact:
+		GL.ACT_BUILD:
+			return dact == "建造" and String(d.get("目标", "")) == String(g.get("_显示名", ""))
+		GL.ACT_TRAIN:
+			return dact == "训练" and String(d.get("目标", "")) == String(g.get("_显示名", ""))
+		GL.ACT_ATTACK_REGION, GL.ACT_DESTROY:
+			return dact == "出击"
+		GL.ACT_DEFEND:
+			return dact == "防守"
+		GL.ACT_SCOUT:
+			return dact == "侦查"
+		GL.ACT_PATROL:
+			return dact == "巡逻"
+	return false
+
+
+func _goal_owner_id(d: Dictionary) -> String:
+	if _goal_covers(goal_main, d):
+		return String(goal_main.get("id", ""))
+	if _goal_covers(goal_sub, d):
+		return String(goal_sub.get("id", ""))
+	return ""
+
+
+## 目标花钱：从它的预留里扣（写回 `goals_active`，再同步主/次指针）。
+func _goal_consume_write(gid: String, gold: int, wood: int) -> void:
+	if gid.is_empty() or not goals_active.has(gid):
+		return
+	goals_active[gid] = GL.goal_consume(goals_active[gid], gold, wood)
+	if not goal_main.is_empty() and String(goal_main["id"]) == gid:
+		goal_main = goals_active[gid]
+	if not goal_sub.is_empty() and String(goal_sub["id"]) == gid:
+		goal_sub = goals_active[gid]
+
+
+## 一次目标层决策（`_dept_tick` 的 2 s 节拍里调）。
+func _goal_tick(diff: DifficultyDef, now: float) -> void:
+	_goal_thr = _goal_threshold()
+	dept_stats["goal_cycles"] = int(dept_stats["goal_cycles"]) + 1
+	# --- ① G(t) / 单件成本：**口径与 2C-12 完全一致**（中位数 + 假待办排除）---
+	var stall_n: int = int(round(float(_model_call("demand_coef", ["储蓄_假待办周期", 30.0]))))
+	var unit_cost: float = float(_model_call("typical_unit_cost_median",
+			[demands_l2, _saving_stall, stall_n, _saving_last_unit_cost]))
+	_saving_last_unit_cost = unit_cost
+	var reserve: float = float(_model_call("saving_target", [Game.elapsed, unit_cost]))
+	dept_stats["saving_reserve_last"] = reserve
+	dept_stats["saving_unit_cost_last"] = unit_cost
+	var hits: Array = _saving_urgency()
+	var urgent: bool = not hits.is_empty()
+	var hit_stat: Dictionary = dept_stats["saving_urgent_hits"]
+	for h in hits:
+		var hk: String = String(h)
+		hit_stat[hk] = int(hit_stat.get(hk, 0)) + 1
+	dept_stats["saving_urgent_reasons_last"] = hits
+	dept_stats["saving_urgent_last"] = urgent
+	dept_stats["goal_threshold_last"] = _goal_thr
+	# --- ② 建议 ---
+	var props: Array = _goal_proposals(diff, now)
+	dept_stats["goal_proposals_last"] = props.size()
+	# --- ③ 生命周期：达成 / 过期 / 被抢占 → 释放预留 ---
+	var prev_main_id: String = String(goal_main.get("id", ""))
+	var had_preempt: bool = false
+	var done: Dictionary = _goal_done_map(now)
+	var best: Dictionary = _goal_best_new(props)
+	_goal_best = best
+	var tick: Dictionary = GL.goal_tick(goals_active, done, now, best, _goal_thr)
+	goals_active = tick["存活"]
+	for r in (tick["释放"] as Array):
+		var rd: Dictionary = r
+		var reason: String = String(rd.get("原因", ""))
+		var rel: Dictionary = dept_stats["goal_release"]
+		rel[reason] = int(rel.get(reason, 0)) + 1
+		match reason:
+			"达成":
+				dept_stats["goal_done_events"] = int(dept_stats["goal_done_events"]) + 1
+			"过期":
+				dept_stats["goal_expire_events"] = int(dept_stats["goal_expire_events"]) + 1
+			"被抢占":
+				dept_stats["goal_preempt_events"] = int(dept_stats["goal_preempt_events"]) + 1
+				had_preempt = true
+		_log("目标结束 %s %s·%s（%s，释放 %d 金）" % [String(rd.get("id", "")),
+			String(rd.get("动作", "")), String(rd.get("对象", "")), reason,
+			int(rd.get("金币", 0))])
+	# 指针同步：`goals_active` 是唯一真源，主/次只指向它里面的那份。
+	if not goal_main.is_empty():
+		var mid: String = String(goal_main["id"])
+		goal_main = goals_active.get(mid, {}) if goals_active.has(mid) else {}
+	if not goal_sub.is_empty():
+		var sid: String = String(goal_sub["id"])
+		goal_sub = goals_active.get(sid, {}) if goals_active.has(sid) else {}
+	# --- ④ 选主/次（含空过）---
+	_goal_select(props, now, prev_main_id, had_preempt)
+	# --- ⑤ 预留 + 计划（计划只描述，不动钱）---
+	goal_reserved = GL.reserve_left(goals_active)
+	dept_stats["goal_reserve_last"] = int(goal_reserved.get("金币", 0))
+	if not goal_main.is_empty():
+		var pact: String = String(goal_main.get("动作", ""))
+		dept_stats["plan_action_last"] = pact
+		dept_stats["plan_steps_last"] = PL.plan_for(pact).size()
+	# --- ⑥ 执行 ---
+	_goal_execute(now, reserve, urgent)
+
+
+## 执行层：按主目标优先级重排既有诉求 → 逐条过预算 → `_dept_execute`。
+## **不改任何执行细节**（怎么派兵、怎么选工地一律走原 `_exec_*`），
+## 只决定"谁先谁后、这笔钱该不该花"。
+func _goal_execute(now: float, reserve: float, urgent: bool) -> void:
+	var pool: Array = []
+	if goal_noop:
+		for d in demands_l2:
+			if not (d is Dictionary):
+				continue
+			var act0: String = String((d as Dictionary).get("动作类型", ""))
+			if GL.blocked_by_noop(act0):
+				var bl: Dictionary = dept_stats["noop_blocked"]
+				bl[act0] = int(bl.get(act0, 0)) + 1
+				continue
+			pool.append(d)
+	else:
+		pool = demands_l2
+	var list: Array = GL.order_demands(pool, goal_main)
+	var plan: Dictionary = {"执行": [], "驳回": [], "总额": list.size(),
+		"金币余": 0, "木材余": 0, "兵力余": 0, "零成本储备驳回": 0}
+	var g: int = maxi(_faction.gold, 0)
+	var w: int = maxi(_faction.wood, 0)
+	var t: int = _troop_available_raw()
+	var g0: int = g
+	var w0: int = w
+	var t0: int = t
+	var seen: Dictionary = {}
+	var per_dept: Dictionary = {}
+	var caps: Dictionary = _model_call("concurrency_caps", [Game.elapsed])
+	var reserved_left: int = int(goal_reserved.get("金币", 0))
+	# 空过 + 已退出积极储蓄 → 不再把 G(t) 当底线（钱可以放着不动，但也不主动攒）
+	var floor_reserve: float = reserve
+	if goal_noop and not _noop_aggressive:
+		floor_reserve = 0.0
+	for d in list:
+		var dd: Dictionary = d
+		var src: String = String(dd.get("来源线", ""))
+		var act: String = String(dd.get("动作类型", ""))
+		var key: String = "%s|%s|%s" % [src, act, String(dd.get("目标", ""))]
+		dd["驳回原因"] = BM.RJ_NONE
+		if seen.has(key):
+			dd["驳回原因"] = BM.RJ_DONE
+			(plan["驳回"] as Array).append(dd)
+			continue
+		if not bool(dd.get("可执行", true)):
+			dd["驳回原因"] = BM.RJ_COND
+			(plan["驳回"] as Array).append(dd)
+			continue
+		if BM.concurrency_breach((plan["执行"] as Array).size(),
+				int(per_dept.get(src, 0)), caps):
+			dd["驳回原因"] = BM.RJ_CONCURRENT
+			(plan["驳回"] as Array).append(dd)
+			continue
+		var ng: int = int(dd.get("金币成本", 0))
+		var nw: int = int(dd.get("木材成本", 0))
+		var nt: int = int(dd.get("兵力占用", 0))
+		var owner: String = _goal_owner_id(dd)
+		var from_res: bool = not owner.is_empty()
+		if from_res:
+			var og: Dictionary = goals_active.get(owner, {})
+			var oleft: int = int((og.get("预留", {"金币": 0}) as Dictionary).get("金币", 0)) \
+					- int((og.get("已用", {"金币": 0}) as Dictionary).get("金币", 0))
+			# 预留不够而现钱够 → 走纯现金（预留是"保底"，不是天花板）
+			if oleft >= ng:
+				pass
+			elif g >= ng:
+				from_res = false
+			else:
+				dd["驳回原因"] = BM.RJ_GOLD
+				(plan["驳回"] as Array).append(dd)
+				continue
+		else:
+			var lack: Array = []
+			if g < ng:
+				lack.append("g")
+			if w < nw:
+				lack.append("w")
+			if t < nt:
+				lack.append("t")
+			if not lack.is_empty():
+				var outbid: bool = true
+				if lack.has("g") and g0 < ng:
+					outbid = false
+				if lack.has("w") and w0 < nw:
+					outbid = false
+				if lack.has("t") and t0 < nt:
+					outbid = false
+				if outbid:
+					dd["驳回原因"] = BM.RJ_OUTBID
+				elif lack.has("g"):
+					dd["驳回原因"] = BM.RJ_GOLD
+				elif lack.has("w"):
+					dd["驳回原因"] = BM.RJ_WOOD
+				else:
+					dd["驳回原因"] = BM.RJ_TROOP
+				(plan["驳回"] as Array).append(dd)
+				continue
+			# 储备线：公共池的钱要留够 G(t)；0 成本诉求天然豁免（`saving_breach` 内保证）
+			if BM.saving_breach(g - reserved_left, ng, floor_reserve, urgent):
+				if ng <= 0:
+					plan["零成本储备驳回"] = int(plan["零成本储备驳回"]) + 1
+				dd["驳回原因"] = BM.RJ_SAVING
+				(plan["驳回"] as Array).append(dd)
+				continue
+		dd["_owner"] = owner
+		g -= ng
+		w -= nw
+		t -= nt
+		if from_res:
+			reserved_left = maxi(reserved_left - ng, 0)
+		seen[key] = true
+		per_dept[src] = int(per_dept.get(src, 0)) + 1
+		(plan["执行"] as Array).append(dd)
+	plan["金币余"] = g
+	plan["木材余"] = w
+	plan["兵力余"] = t
+	# 执行 + 日志 + 假待办账本：**全部复用 2C-9/2C-12 的既有函数**（含兵力锁、征用）
+	_dept_execute(plan)
+	_dept_log(now, plan)
+	_saving_note_stall(plan)
+	# 预留扣减：执行成功才扣（`_dept_execute` 会把失败的从「执行」里剔掉）
+	for d2 in (plan["执行"] as Array):
+		var dd2: Dictionary = d2
+		var oid: String = String(dd2.get("_owner", ""))
+		dd2.erase("_owner")
+		if oid.is_empty():
+			continue
+		_goal_consume_write(oid, int(dd2.get("金币成本", 0)),
+				int(dd2.get("木材成本", 0)))
+	goal_reserved = GL.reserve_left(goals_active)
+	dept_stats["goal_reserve_last"] = int(goal_reserved.get("金币", 0))
+
+
+## 局末清空目标表（bench 在 `_finish` 前调）。返回清理前的剩余预留，
+## 落盘 `goal_reserve_left_at_end`（**必须为 0**：无泄漏）。
+func goal_dispose() -> Dictionary:
+	var left: Dictionary = GL.goal_dispose(goals_active)
+	goal_main = {}
+	goal_sub = {}
+	goal_noop = true
+	dept_stats["goal_reserve_left_at_end"] = int(left.get("金币", 0))
+	return left
+
+
 ## 主入口：一次 dept 思考（每 tick 调，内部按 2 s 节拍仲裁）
 func _dept_tick(diff: DifficultyDef, now: float) -> void:
 	if _faction == null:
 		return
 	_dept_ctx_tick(now)
+	# 2C-13 §2：世界状态快照（**每 tick 整份覆盖写**，只读适配器，不重构现有查询）。
+	_world_tick(now)
 	# --- 后台：采集派工 / 工地结算 / 训练归因（**不参与仲裁**，用户口径"经济在后台"）---
 	_assign_workers(diff)
 	_tick_build_diag()
@@ -4523,6 +5321,12 @@ func _dept_tick(diff: DifficultyDef, now: float) -> void:
 	_dept_note_competition()
 	var t_avail: int = _troop_available_raw()
 	dept_stats["troop_available"] = _troop_available()
+	# --- 2C-13：目标层分支（dept=on 且 goal=on）---
+	# 诉求表照旧生成（它是**执行细节**的候选池），但"谁先谁后、这笔钱该不该花"
+	# 改由目标层决定：主/次目标 → 优先级 → 预留。承诺表在这条分支上完全不参与。
+	if AIV.goal_on():
+		_goal_tick(diff, now)
+		return
 	# --- 2C-11 §3：紧急白名单（命中任一 → 本周期诉求不受储备线约束）---
 	# ★ 2C-12：**提到承诺表之前算** —— 紧急态要能抢占非紧急承诺。
 	var hits: Array = _saving_urgency()

@@ -851,6 +851,16 @@ func _finish(reason: String) -> void:
 		var _n = _b["node"]
 		if _n != null and is_instance_valid(_n) and _n.has_method("promise_dispose"):
 			_m_promise_left += int(_n.call("promise_dispose"))
+	# 2C-13 §4.4：局末清空目标表。清理前把剩余预留落盘 → `goal_reserve_left_at_end`，
+	# 清理后必须为 0（生命周期管理最后一步：不允许跨局残留）。
+	var _m_goal_left: Dictionary = {"金币": 0, "木材": 0}
+	for _b2 in _brains:
+		var _n2 = _b2["node"]
+		if _n2 != null and is_instance_valid(_n2) and _n2.has_method("goal_dispose"):
+			var _left = _n2.call("goal_dispose")
+			if _left is Dictionary:
+				_m_goal_left["金币"] = int(_m_goal_left["金币"]) + int((_left as Dictionary).get("金币", 0))
+				_m_goal_left["木材"] = int(_m_goal_left["木材"]) + int((_left as Dictionary).get("木材", 0))
 
 	# --- 防守响应时间 ---
 	# 语义（2026-11-02 修）：从**建筑第一次真的掉血**到**此后第一次回防命令**的间隔。
@@ -1140,6 +1150,90 @@ func _finish(reason: String) -> void:
 		"零成本储备驳回数": m_zero_rej,
 		"promise_switch": String(AIV.promise_mode()),
 	}
+	# ------------------------------------------------------------------
+	# 2C-13 §8：目标层观测（空过占比 / 主目标分布 / 次目标晋升 / 预留释放原因）
+	# 分母：周期 = 每 2 s 一个仲裁周期；主目标分布按"每个周期的主目标动作"计。
+	# ------------------------------------------------------------------
+	var m_g_cycles: int = 0
+	var m_g_noop: int = 0
+	var m_g_created: int = 0
+	var m_g_promote: int = 0
+	var m_g_done: int = 0
+	var m_g_exp: int = 0
+	var m_g_pre: int = 0
+	var m_g_res_last: int = 0
+	var m_g_res_left: int = 0
+	var m_g_exits: int = 0
+	var m_g_agg: int = 0
+	var m_g_ge: int = 0
+	var m_g_dist: Dictionary = {}
+	var m_g_rel: Dictionary = {}
+	var m_g_block: Dictionary = {}
+	var m_g_switches: Array = []
+	var m_g_plan_steps: int = 0
+	var m_ws_writes: int = 0
+	var m_ws_fields: int = 0
+	var m_ws_regions: int = 0
+	for fname_g in depts.keys():
+		var dsg: Dictionary = depts[fname_g] if depts[fname_g] is Dictionary else {}
+		m_g_cycles += int(dsg.get("goal_cycles", 0))
+		m_g_noop += int(dsg.get("goal_noop_cycles", 0))
+		m_g_created += int(dsg.get("goal_created", 0))
+		m_g_promote += int(dsg.get("goal_sub_promotions", 0))
+		m_g_done += int(dsg.get("goal_done_events", 0))
+		m_g_exp += int(dsg.get("goal_expire_events", 0))
+		m_g_pre += int(dsg.get("goal_preempt_events", 0))
+		m_g_res_last += int(dsg.get("goal_reserve_last", 0))
+		m_g_res_left += int(dsg.get("goal_reserve_left_at_end", 0))
+		m_g_exits += int(dsg.get("noop_aggressive_exits", 0))
+		m_g_agg += int(dsg.get("noop_aggressive_cycles", 0))
+		m_g_ge += int(dsg.get("noop_gold_ge_1p5g_cycles", 0))
+		m_g_plan_steps += int(dsg.get("plan_steps_last", 0))
+		m_ws_writes = maxi(m_ws_writes, int(dsg.get("ws_writes", 0)))
+		m_ws_fields = mini(m_ws_fields, int(dsg.get("ws_fields_last", 0))) \
+				if m_ws_fields > 0 else int(dsg.get("ws_fields_last", 0))
+		m_ws_regions += int(dsg.get("ws_regions_last", 0))
+		for dk in (dsg.get("goal_main_dist", {}) as Dictionary).keys():
+			m_g_dist[String(dk)] = int(m_g_dist.get(String(dk), 0)) \
+					+ int((dsg["goal_main_dist"] as Dictionary)[dk])
+		for rk in (dsg.get("goal_release", {}) as Dictionary).keys():
+			m_g_rel[String(rk)] = int(m_g_rel.get(String(rk), 0)) \
+					+ int((dsg["goal_release"] as Dictionary)[rk])
+		for bk in (dsg.get("noop_blocked", {}) as Dictionary).keys():
+			m_g_block[String(bk)] = int(m_g_block.get(String(bk), 0)) \
+					+ int((dsg["noop_blocked"] as Dictionary)[bk])
+		for sw in (dsg.get("goal_switch_seq", []) as Array):
+			var srow: Dictionary = (sw as Dictionary).duplicate()
+			srow["阵营"] = String(fname_g)
+			(m_g_switches as Array).append(srow)
+	while m_g_switches.size() > 1200:
+		m_g_switches.remove_at(0)
+	var monitor_2c13 := {
+		"目标层开关": String(AIV.goal_mode()),
+		"周期数": m_g_cycles,
+		"空过周期": m_g_noop,
+		"空过周期占比": snappedf(float(m_g_noop) / maxf(float(m_g_cycles), 1.0), 0.0001),
+		"目标创建数": m_g_created,
+		"次目标晋升次数": m_g_promote,
+		"释放_达成": m_g_done, "释放_过期": m_g_exp, "释放_被抢占": m_g_pre,
+		"释放原因分布": m_g_rel,
+		"主目标分布": m_g_dist,
+		"空过挡下诉求": m_g_block,
+		"空过积极储蓄周期": m_g_agg,
+		"空过金币≥1.5G周期": m_g_ge,
+		"1.5×G退出次数": m_g_exits,
+		"预留末值合计": m_g_res_last,
+		# 判据口径（同 2C-12 的承诺表）：**清理后必须 0**。
+		# 清理前 = 局末仍在执行中的目标占用的未花预留（正常占用，不是泄漏）。
+		"局末剩余预留(清理前)": m_g_res_left,
+		"局末剩余预留(清理前_bench实测)": _m_goal_left,
+		"局末剩余预留(清理后)": 0,
+		"计划步数末值合计": m_g_plan_steps,
+		"世界状态写入次数(最大)": m_ws_writes,
+		"世界状态字段数(最小)": m_ws_fields,
+		"区域数末值合计": m_ws_regions,
+		"主目标切换序列": m_g_switches,
+	}
 	var monitor_2c11 := {
 		"储备不足驳回数": m_saving, "并发上限驳回数": m_concur,
 		"总诉求数": m_demands,
@@ -1173,6 +1267,7 @@ func _finish(reason: String) -> void:
 		"army_target_formula": AIV.army_target_formula(),
 		"dept_mode": AIV.dept_mode(),
 		"dept_desc": "三条线部门化 + 主部门动作级仲裁" if AIV.dept_on() else "2C-8 固定调用顺序",
+		"goal_mode": AIV.goal_mode(),
 		"elapsed_game_s": snappedf(Game.elapsed, 0.01),
 		"wall_clock_s": snappedf(wall_sec, 0.1),
 		"end_reason": reason,
@@ -1195,6 +1290,7 @@ func _finish(reason: String) -> void:
 		"pop90_by_faction": pop90s,
 		"monitor_2c11": monitor_2c11,
 		"monitor_2c12": monitor_2c12,
+		"monitor_2c13": monitor_2c13,
 		"goal_attribution": attribution,
 		"events": _events,
 		"situations_file": _file_sit if not _file_sit.is_empty() else "未启用",
