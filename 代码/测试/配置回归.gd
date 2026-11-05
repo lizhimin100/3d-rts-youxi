@@ -93,6 +93,8 @@ func _run() -> void:
 	_case_2c8()
 	# 2C-9：三条线部门化 / 诉求结构 / 动作级仲裁 / 兵力预留 / 判定表分布
 	_case_2c9()
+	# 2C-10：副官双重扣减 / 70% 动态系数 / 可被征用消费 / 判定表诊断 / POP90
+	_case_2c10()
 	_finish(t0)
 
 
@@ -1162,15 +1164,16 @@ func _case_2c9() -> void:
 	if coef_card != null:
 		for nm in coef_names:
 			var v = coef_card.get(nm)
-			if v == null or not _near(float(v), 1.0, 0.000001):
+			# 2C-10：13 个系数已标定一轮，不再要求 =1.0；只要求"在卡里且为有限正数"
+			if v == null or not is_finite(float(v)) or float(v) <= 0.0:
 				coef_bad.append(nm)
-	_record("2C9：诉求分系数卡 13 个系数全部 = 1.0（2C-9 不调值）",
+	_record("2C9/2C10：诉求分系数卡 13 个系数齐备且为有限正数（2C-10 已标定，不再要求 =1.0）",
 			coef_ok and coef_bad.is_empty(),
-			"缺/非 1.0：%s" % str(coef_bad))
-	_record("2C9：系数卡被 demand_coef 读取（改卡立刻生效，缺卡回落 1.0）",
-			_near(float(bm.demand_coef("训练_威胁系数")), 1.0, 0.000001)
+			"缺/非正数：%s" % str(coef_bad))
+	_record("2C9/2C10：系数卡被 demand_coef 读取（改卡立刻生效，缺卡回落 1.0）",
+			_near(float(bm.demand_coef("训练_威胁系数")), 0.8, 0.000001)
 			and _near(float(bm.demand_coef("不存在的键", 0.7)), 0.7, 0.000001),
-			"训练_威胁系数=1.0；未知键回落 0.7")
+			"训练_威胁系数=0.8（2C-10 标定值）；未知键回落 0.7")
 	_record("2C9：dept 开关 on/off（默认 on；非法值回落 on）",
 			String(AIV.DEFAULT_DEPT_MODE) == "on"
 			and String(AIV.dept_mode()) == "on"
@@ -1192,6 +1195,145 @@ func _case_2c9() -> void:
 			and String(AIV.output_theory_mode()) == "recent"
 			and sa_src.contains("func can_build_townhall() -> bool:\n\treturn false"),
 			"窗口 0.8/0.5、0.7~1.3、0.4~0.9；系数 0.4；targeted/recent；修理 200；gap 3.0；大本营仍 false")
+
+
+# ===========================================================================
+# 2C-10：P0-A 双重扣减 / P0-B 70% 动态系数 / 可被征用消费 / B 诊断 / POP90
+# ===========================================================================
+func _case_2c10() -> void:
+	var AIV = load("res://代码/配置/AI判定模式.gd")
+	var bm = load("res://代码/ai/战斗模型.gd")
+	var sa_src: String = FileAccess.get_file_as_string("res://代码/ai/简单AI.gd")
+	var bench_src: String = FileAccess.get_file_as_string("res://代码/测试/AI基准.gd")
+	var card: Resource = load("res://代码/配置/卡/AI诉求系数.tres")
+
+	# ---------- P0-A：防守下限只扣一次（3 条）----------
+	var pa0: int = int(bm.troop_available(8, 8, 0))
+	var pa1: int = int(bm.troop_available(12, 8, 0))
+	var pa2: int = int(bm.troop_available(12, 8, 2))
+	_record("2C10 P0-A：可用兵力只扣一次下限（=下限→0 不为负 / >下限→现役−下限 / 再扣已锁）",
+			pa0 == 0 and pa0 >= 0 and pa1 == 4 and pa2 == 2,
+			"8/8=%d，12/8=%d，12/8/锁2=%d" % [pa0, pa1, pa2])
+	_record("2C10 P0-A：接线 仲裁池改用 _troop_available_raw()（不扣下限）",
+			sa_src.contains("func _troop_available_raw() -> int:")
+			and sa_src.contains("return maxi(army_n - locks, 0)")
+			and sa_src.contains("var t_avail: int = _troop_available_raw()")
+			and sa_src.contains("func _troop_available() -> int:"),
+			"下限只由 normal_push_n / bank_push_n 在出击规模里扣")
+	var d_patrol: Dictionary = bm.demand_make("扩展线", "巡逻", "基地外圈",
+			0, 0, 1, true, 0.6, "回归用例")
+	var p_patrol: Dictionary = bm.arbitrate([d_patrol], 0, 0, 8)
+	_record("2C10 P0-A：现役=下限(8) 时 raw 池=8 → 巡逻能出击（旧双重扣减恒判「兵力不足」）",
+			(p_patrol["执行"] as Array).size() == 1,
+			"执行%d 驳回%d" % [(p_patrol["执行"] as Array).size(),
+				(p_patrol["驳回"] as Array).size()])
+
+	# ---------- P0-B：70% 人口压力动态系数（5 条）----------
+	var f70: float = float(bm.farm_pressure_factor(0.70))
+	var f85: float = float(bm.farm_pressure_factor(0.85))
+	var f100: float = float(bm.farm_pressure_factor(1.00))
+	var f50: float = float(bm.farm_pressure_factor(0.50))
+	var f120: float = float(bm.farm_pressure_factor(1.20))
+	_record("2C10 P0-B：系数四点 70%→1.0 / 85%→2.0 / 100%→3.0 / 50%→1.0 / 120% 截断 3.0",
+			_near(f70, 1.0, 0.0001) and _near(f85, 2.0, 0.0001)
+			and _near(f100, 3.0, 0.0001) and _near(f50, 1.0, 0.0001)
+			and _near(f120, 3.0, 0.0001),
+			"%.2f / %.2f / %.2f / %.2f / %.2f" % [f70, f85, f100, f50, f120])
+	var r68: float = float(bm.pop_pressure(68, 0, 100))
+	var r72: float = float(bm.pop_pressure(68, 4, 100))
+	var r0: float = float(bm.pop_pressure(10, 2, 0))
+	_record("2C10 P0-B：占用率含在训人口（68%→1.0；在训 2 人×2 →72%→>1.0；cap=0 不除零）",
+			_near(r68, 0.68, 0.0001) and _near(r72, 0.72, 0.0001)
+			and _near(float(bm.farm_pressure_factor(r68)), 1.0, 0.0001)
+			and float(bm.farm_pressure_factor(r72)) > 1.0 and _near(r0, 0.0, 0.0001),
+			"68%%=%.2f / 72%%=%.2f / cap0=%.2f" % [r68, r72, r0])
+	var thr_v: float = float(card.get("人口压力_阈值")) if card != null else -1.0
+	var k_v: float = float(card.get("人口压力_k")) if card != null else -1.0
+	_record("2C10 P0-B：第 18 张卡新增第 14/15 项（阈值 0.70 / k=2.0）可调",
+			_near(thr_v, 0.70, 0.0001) and _near(k_v, 2.0, 0.0001),
+			"阈值=%.2f k=%.2f" % [thr_v, k_v])
+	_record("2C10 P0-B：系数**只**乘农场建造诉求分（兵营/哨塔/修理/训练不动）",
+			sa_src.find("farm_pressure_factor") == sa_src.rfind("farm_pressure_factor")
+			and sa_src.contains("float(_model_call(\"demand_score_build\", [1, fs, 0, 1.0])) * pf"),
+			"代码里只有 1 处 farm_pressure_factor；农场诉求分 = 原分 × pf")
+	_record("2C10 P0-B：不改农场预判/人口逻辑（_farm_urgent 仍只读 food_used，未掺在训）",
+			sa_src.contains("var headroom: int = _faction.food_cap() - _faction.food_used()")
+			and sa_src.contains("func _farm_urgent() -> bool:"),
+			"90% 响应测试是纯观测，不为凑触发改预判")
+
+	# ---------- §6：可被征用消费（3 条）----------
+	var lk: Dictionary = {
+		"wave:1": {"n": 5, "k": "wave", "t": 999.0},
+		"temp_defense": {"n": 2, "k": "temp_defense", "t": 999.0},
+		"patrol": {"n": 1, "k": "patrol", "t": 999.0},
+	}
+	var q: Dictionary = bm.requisition_quota(lk)
+	_record("2C10 §6：征用配额（临时防守2+巡逻1=3；wave 锁不可自征）",
+			int(q["可征用"]) == 3 and (q["释放键"] as Array).size() == 2
+			and not (q["释放键"] as Array).has("wave:1"),
+			"可征用=%d 释放键=%s" % [int(q["可征用"]), str(q["释放键"])])
+	_record("2C10 §6：接线 征用→出击兵力+N→转 wave 锁→波次收尾显式解锁",
+			sa_src.contains("func _requisition_temp_defense() -> int:")
+			and sa_src.contains("req_n = _requisition_temp_defense()")
+			and sa_src.contains("p[\"push_n\"] = int(p.get(\"push_n\", 0)) + _pending_requisition")
+			and sa_src.contains("var t: int = int(dd.get(\"兵力占用\", 0)) + req_n")
+			and sa_src.contains("_troop_unlock(\"wave:%d\" % int(rec.get(\"wave_id\", 0)), true)"),
+			"释放短租约锁 → +N 出击 → 锁随波次收尾")
+	_record("2C10 §6：临时防守锁由回防动作创建（固定 key 不累积）",
+			sa_src.contains("_troop_lock(\"temp_defense\", int(p.get(\"n\", 0)), DEPT_CYCLE * 3.0, \"temp_defense\")")
+			and sa_src.contains("\"requisition_times\": 0, \"requisitioned_units\": 0,"),
+			"可被征用 从「只写不消费」变成有计数")
+
+	# ---------- B 诊断 + POP90 字段（3 条）----------
+	var drec: Dictionary = {"goal_achieved": false, "combat_time": 20.0,
+		"theory_time": 40.0, "output_eff": 0.9, "damage_ratio": 0.5,
+		"survivors": 6, "strength": 10}
+	var jd: Dictionary = bm.judge_diag(drec)
+	var d1: Dictionary = jd["判据1"]
+	_record("2C10 B：judge_diag 给原始值+档位边界+边界距离+落档（不改窗口）",
+			jd.has("判据1") and jd.has("判据2") and jd.has("判据3") and jd.has("判据4")
+			and _near(float(d1["值"]), 0.5, 0.0001)
+			and _near(float((d1["边界"] as Array)[0]), 0.5, 0.0001)
+			and _near(float((d1["边界"] as Array)[1]), 0.8, 0.0001)
+			and _near(float(d1["边界距离"]), 0.0, 0.0001),
+			"判据1 值=%.2f 边界=%s 距离=%.3f 档=%s" % [
+				float(d1["值"]), str(d1["边界"]), float(d1["边界距离"]), String(d1["档"])])
+	_record("2C10 B：bench 每波落 判据诊断 + JUDGE-DIAG 汇总（原始输入/边界距离）",
+			bench_src.contains("c[\"判据诊断\"] = _bench_model.judge_diag(c)")
+			and bench_src.contains("print(\"JUDGE-DIAG %s\"")
+			and bench_src.contains("\"judge_diag\": diag_all"),
+			"只诊断，不写「建议改成 X」")
+	_record("2C10 §7.2：每局落盘 POP90（触发/成功/失败明细/峰值/农场开工）",
+			sa_src.contains("func _pop90_tick(now: float) -> void:")
+			and sa_src.contains("and rate > 0.90")
+			and sa_src.contains("now - _pop90_trigger_t > 20.0")
+			and sa_src.contains("_pop90_cooldown_until = now + 15.0")
+			and bench_src.contains("print(\"POP90 %s\"")
+			and bench_src.contains("\"pop90\": pop90_all"),
+			"含在训 / 20s 响应窗 / 15s 冷却 / 失败明细带驳回原因·金币·工位")
+
+	# ---------- 系数标定 + 不变式守门（2 条）----------
+	_record("2C10 A：13 个系数标定一轮已进卡（抽查 巡逻0.6 / 出击1.3 / 农场紧迫1.2）",
+			card != null and _near(float(card.get("巡逻_固定分")), 0.6, 0.0001)
+			and _near(float(card.get("出击_兵力比系数")), 1.3, 0.0001)
+			and _near(float(card.get("建造_农场紧迫系数")), 1.2, 0.0001)
+			and _near(float(card.get("分基地_固定分")), 1.0, 0.0001),
+			"只标一轮，不收敛")
+	_record("2C10：不变式守门（判定表窗口/系数/分母/修理线/gap/大本营 一个字没动）",
+			_near(float(bm.VD_TIME_GOOD), 0.8, 0.0001)
+			and _near(float(bm.VD_TIME_HALF), 0.5, 0.0001)
+			and _near(float(bm.VD_OUT_LOW), 0.7, 0.0001)
+			and _near(float(bm.VD_OUT_HIGH), 1.3, 0.0001)
+			and _near(float(bm.VD_DMG_LOW), 0.4, 0.0001)
+			and _near(float(bm.VD_DMG_HIGH), 0.9, 0.0001)
+			and _near(float(bm.THEORY_OUTPUT_COEF), 0.4, 0.0001)
+			and _near(float(AIV.repair_hp_deficit()), 200.0, 0.0001)
+			and _near(float(AIV.combat_gap_sec()), 3.0, 0.0001)
+			and _near(float(AIV.output_coef()), 0.4, 0.0001)
+			and String(AIV.damage_theory_mode()) == "targeted"
+			and String(AIV.output_theory_mode()) == "recent"
+			and sa_src.contains("func can_build_townhall() -> bool:\n\treturn false"),
+			"机器断言守门：0.4 / targeted / recent / 200 / 3.0 / townhall=false 全冻结")
 
 
 ## 造一条"金币成本被改成负数"的诉求（用于 demand_valid 的非法值断言）
