@@ -4573,7 +4573,11 @@ const GOAL_TTL_PATROL: float = 45.0
 
 
 ## 空过阈值（进卡；`AI诉求系数.tres` 里加 `目标_紧迫度阈值` 即可覆盖）。
+## `--goal-thr=` 只给**机制验证局**用（默认 -1 = 不覆盖）。
 func _goal_threshold() -> float:
+	var ov: float = AIV.goal_threshold_override()
+	if ov >= 0.0:
+		return ov
 	return float(BM.demand_coef("目标_紧迫度阈值", GL.URGENCY_THRESHOLD_DEFAULT))
 
 
@@ -6036,6 +6040,19 @@ func _dept_log(now: float, plan: Dictionary) -> void:
 		"上限": dept_stats.get("caps_last", {}),
 		"紧急": bool(dept_stats.get("saving_urgent_last", false)),
 		"紧急事由": dept_stats.get("saving_urgent_reasons_last", []),
+		# 2C-13 §4：目标层（只落盘，不进决策）——
+		# 判硬要回答"空过期间训练/建造/修理真的 0 执行"，必须有逐周期的空过标记，
+		# 否则只能靠结构推断（结构性保证在回归里，观测得靠这一行）。
+		"空过": goal_noop,
+		"主目标": String(goal_main.get("id", "")),
+		"主目标动作": String(goal_main.get("动作", "")),
+		"主目标对象": String(goal_main.get("对象", "")),
+		"主目标紧迫度": snappedf(float(goal_main.get("紧迫度", 0.0)), 0.01),
+		"次目标": String(goal_sub.get("id", "")),
+		"预留": int(goal_reserved.get("金币", 0)),
+		"阈值": snappedf(float(_goal_thr), 0.01),
+		"世界": {"字段": int(dept_stats.get("ws_fields_last", 0)),
+			"区域": int(dept_stats.get("ws_regions_last", 0))},
 	}
 	for d in demands_l2:
 		if not (d is Dictionary):

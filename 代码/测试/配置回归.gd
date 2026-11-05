@@ -2060,26 +2060,28 @@ func _case_2c13() -> void:
 			"默认首位分数=0.90（权重缺省 1.0）")
 
 	# ---------------- §4.3 空过机制 ----------------
-	_record("2C13 §4.3：空过停训练/建造/修理，采集与防守/巡逻/侦查/出击照常",
+	_record("2C13 §4.3：空过停训练/建造/修理/建塔/建分基地，采集与防守/巡逻/侦查/出击照常",
 			gl.blocked_by_noop("训练") and gl.blocked_by_noop("建造")
-			and gl.blocked_by_noop("修理")
+			and gl.blocked_by_noop("修理") and gl.blocked_by_noop("建塔")
+			and gl.blocked_by_noop("建分基地") and gl.blocked_by_noop("研发")
 			and not gl.blocked_by_noop("防守")
 			and not gl.blocked_by_noop("出击")
 			and not gl.blocked_by_noop("巡逻")
 			and not gl.blocked_by_noop("侦查"),
-			"停=训练/建造/修理；放行=防守/出击/巡逻/侦查（采集走后台派工）")
-	# 空过期间的过滤结果：7 条诉求里只留 4 条非花钱诉求
+			"停=训练/建造/修理/建塔/建分基地/研发；放行=防守/出击/巡逻/侦查（采集走后台派工）")
+	# 空过期间的过滤结果：8 条诉求里只留 4 条非花钱诉求
 	var demo: Array = []
-	for act in ["训练", "建造", "修理", "防守", "出击", "侦查", "巡逻"]:
+	for act in ["训练", "建造", "修理", "防守", "出击", "侦查", "巡逻", "建塔"]:
 		demo.append({"动作类型": act, "目标": act, "诉求分": 1.0})
 	var kept: Array = []
 	for d in demo:
 		if not gl.blocked_by_noop(String((d as Dictionary)["动作类型"])):
 			kept.append(String((d as Dictionary)["动作类型"]))
-	_record("2C13 §4.3：空过过滤（7 条诉求 → 只剩 防守/出击/侦查/巡逻 4 条）",
-			kept.size() == 4 and kept.has("防守") and kept.has("出击")
-			and not kept.has("训练") and not kept.has("建造") and not kept.has("修理"),
-			"保留=%s" % str(kept))
+	_record("2C13 §4.3：空过过滤（8 条诉求 → 只剩 防守/出击/侦查/巡逻 4 条）",
+			demo.size() == 8 and kept.size() == 4 and kept.has("防守") and kept.has("出击")
+			and not kept.has("训练") and not kept.has("建造") and not kept.has("修理")
+			and not kept.has("建塔") and not kept.has("建分基地"),
+			"输入=%d 保留=%s" % [demo.size(), str(kept)])
 	# 1.5×G(t)：100/150 仍积极；150 整退出；退出只记一次
 	var nv1: Dictionary = gl.noop_saving(100, 100.0, true)
 	var nv2: Dictionary = gl.noop_saving(149, 100.0, true)

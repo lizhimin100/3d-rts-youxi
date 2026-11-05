@@ -438,9 +438,13 @@ static func goal_dispose(active: Dictionary) -> Dictionary:
 # 空过机制（§4.3）
 # ---------------------------------------------------------------------------
 
-## 空过期间**停**的动作类型（新工地 / 新开销）。采集不在诉求表里（后台照常），
-## 建造恢复停滞工地也不在这里（`_site_recovery_tick` 独立跑，属"已投入成本的止损"）。
-const NOOP_BLOCKED_ACTIONS: Array[String] = [ACT_TRAIN, ACT_BUILD, "修理", ACT_RESEARCH]
+## 空过期间**停**的动作类型（新工地 / 新开销）。
+## ★ 执行层的动作名不止"建造"一个字：箭塔/分基地走的是 `建塔` / `建分基地`
+##   （2C-9 的九动作表），漏一个就会在空过期间继续开新工地
+##   —— 机制验证局（--goal-thr=0.95）实测漏过 3 次"扩展线·建塔"，所以这里必须列全。
+const NOOP_BLOCKED_ACTIONS: Array[String] = [
+	ACT_TRAIN, ACT_BUILD, "修理", ACT_RESEARCH, "建塔", "建分基地",
+]
 
 static func blocked_by_noop(action: String) -> bool:
 	return NOOP_BLOCKED_ACTIONS.has(action)

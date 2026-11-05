@@ -111,6 +111,12 @@ const GOAL_ON: String = "on"
 const GOAL_OFF: String = "off"
 const GOAL_MODES: Array[String] = [GOAL_ON, GOAL_OFF]
 const DEFAULT_GOAL_MODE: String = GOAL_ON
+## 2C-13 诊断：**空过阈值覆盖**（`--goal-thr=0.95`）。
+## 默认 -1 = 不覆盖，走 `AI诉求系数.tres` 的 `目标_紧迫度阈值`（缺省 0.6）。
+## 为什么要有它：默认 0.6 下 AI 几乎总有"补军队"目标 → 空过进不去，
+## 判硬里"空过期间花钱动作 0 执行"就只能靠回归的结构断言，没法实测。
+## 这个开关只给**机制验证局**用，不参与主线判硬，也不改默认值。
+const DEFAULT_GOAL_THRESHOLD: float = -1.0
 
 ## 2C-8：工位模式三值（on / off / legacy）
 const BS_ON: String = "on"
@@ -139,6 +145,7 @@ static var _army_target_formula: String = DEFAULT_ARMY_TARGET_FORMULA
 static var _dept_mode: String = DEFAULT_DEPT_MODE
 static var _promise_mode: String = DEFAULT_PROMISE_MODE
 static var _goal_mode: String = DEFAULT_GOAL_MODE
+static var _goal_thr_override: float = DEFAULT_GOAL_THRESHOLD
 static var _parsed: bool = false
 
 
@@ -206,6 +213,8 @@ static func setup_from_cmdline() -> void:
 			set_promise_mode(a.substr(String("--promise=").length()))
 		elif a.begins_with("--goal="):
 			set_goal_mode(a.substr(String("--goal=").length()))
+		elif a.begins_with("--goal-thr="):
+			set_goal_threshold_override(float(a.substr(String("--goal-thr=").length())))
 
 
 ## "on"/"off"（也接受 1/0/true/false）→ bool。非法值回落 true（默认开）。
@@ -320,6 +329,16 @@ static func goal_off() -> bool:
 	return _goal_mode == GOAL_OFF
 
 
+## 空过阈值覆盖（-1 = 不覆盖，走系数卡）。只给机制验证局用。
+static func goal_threshold_override() -> float:
+	return _goal_thr_override
+
+
+static func set_goal_threshold_override(v: float) -> float:
+	_goal_thr_override = clampf(v, -1.0, 1.0)
+	return _goal_thr_override
+
+
 ## 承伤分母口径（"all" 旧 / "targeted" 新）。非法值回落 targeted。
 static func damage_theory_mode() -> String:
 	return _damage_theory_mode
@@ -419,6 +438,7 @@ static func reset_defaults() -> void:
 	_dept_mode = DEFAULT_DEPT_MODE
 	_promise_mode = DEFAULT_PROMISE_MODE
 	_goal_mode = DEFAULT_GOAL_MODE
+	_goal_thr_override = DEFAULT_GOAL_THRESHOLD
 
 
 static func describe() -> String:
