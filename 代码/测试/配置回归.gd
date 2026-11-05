@@ -102,6 +102,8 @@ func _run() -> void:
 	_case_2c11()
 	# 2C-12：口径修复（成本中位数 / 0 成本豁免）/ 承诺表 / 副官自检 / POP90 双口径
 	_case_2c12()
+	# 2C-13：世界状态适配器 / 区域 id / 目标层（建议·选目标·空过·生命周期）/ 计划层 / 优先级
+	_case_2c13()
 	_finish(t0)
 
 
@@ -1867,6 +1869,435 @@ func _demand_gold(base: Dictionary, gold: int) -> Dictionary:
 	var d: Dictionary = base.duplicate(true)
 	d["金币成本"] = gold
 	return d
+
+
+# ===========================================================================
+# 2C-13 · 世界状态 / 区域 id / 目标层 / 计划层 / 空位 / 优先级
+# ===========================================================================
+func _case_2c13() -> void:
+	var ws = load("res://代码/ai/世界状态.gd")
+	var gl = load("res://代码/ai/目标层.gd")
+	var pl = load("res://代码/ai/计划层.gd")
+
+	# ---------------- §2 世界状态：字段完整性 / 区域 id / 覆盖写 ----------------
+	var inp0: Dictionary = {
+		"gold": 120, "wood": 40, "pop_cap": 32, "pop_used": 20, "pop_reserved": 3,
+		"army_n": 7, "defense_locked": 3, "troop_locked": 2,
+		"phase": "前期", "night": false, "threat": 1,
+		"buildings": {"farm": 2, "barracks": 1},
+		"enemy_buildings": [{"id": 11, "type": "farm", "pos": Vector3(100, 0, 100),
+			"hp": 300.0}],
+		"allies": [],
+		"resources": [{"kind": "gold", "pos": Vector3(30, 0, 40)}],
+		"dmg_30s": 12.5, "gold_60s": 88.0, "wood_60s": 30.0,
+		"verdicts": ["好", "一般", "差"], "own_base": Vector3(5, 0, 5),
+	}
+	var snap1: Dictionary = ws.build(inp0, ws.region_registry())
+	var miss: Array = ws.missing_fields(snap1)
+	_record("2C13 §2：快照 18 字段一个不缺（任务书 §2 的字段表逐项展开）",
+			miss.is_empty() and (ws.SNAPSHOT_FIELDS as Array).size() == 18
+			and snap1.size() == 19,   # 18 字段 + 内部 _reg
+			"缺=%s 字段数=%d 总键=%d" % [str(miss), (ws.SNAPSHOT_FIELDS as Array).size(),
+				snap1.size()])
+	_record("2C13 §2：快照字段取值正确（金币/人口/在训/兵力/锁定/昼夜/建筑）",
+			int(snap1["金币"]) == 120 and int(snap1["人口上限"]) == 32
+			and int(snap1["在训人口"]) == 3 and int(snap1["现役兵力"]) == 7
+			and int(snap1["防守锁定"]) == 3 and int(snap1["已锁定兵力"]) == 2
+			and String(snap1["昼夜"]) == "白天"
+			and int((snap1["建筑"] as Dictionary).get("farm", 0)) == 2
+			and (snap1["敌方建筑"] as Array).size() == 1
+			and float(snap1["最近30s受伤"]) == 12.5,
+			"金=%d 人口=%d/%d 兵=%d" % [int(snap1["金币"]), int(snap1["人口占用"]),
+				int(snap1["人口上限"]), int(snap1["现役兵力"])])
+	# 区域 id 格式：Zj 无序号 / Dr### / Zy### / My###
+	var reg0: Dictionary = ws.region_registry()
+	var a_dr: Dictionary = ws.region_assign(reg0, "Dr", Vector2i(1, 1))
+	var a_dr2: Dictionary = ws.region_assign(a_dr["reg"], "Dr", Vector2i(2, 1))
+	var a_zy: Dictionary = ws.region_assign(a_dr2["reg"], "Zy", Vector2i(0, 0))
+	var a_my: Dictionary = ws.region_assign(a_zy["reg"], "My", Vector2i(3, 3))
+	_record("2C13 §3：区域 id 格式（Zj 无序号；Dr001/Dr002/Zy001/My001 三位补零）",
+			String(a_dr["id"]) == "Dr001" and String(a_dr2["id"]) == "Dr002"
+			and String(a_zy["id"]) == "Zy001" and String(a_my["id"]) == "My001"
+			and String(ws.region_id_of("Zj", 9)) == "Zj"
+			and ws.region_id_valid("Zj") and ws.region_id_valid("Dr001")
+			and ws.region_id_valid("My007") and not ws.region_id_valid("Dr1")
+			and not ws.region_id_valid("Dr000") and not ws.region_id_valid("Xx001"),
+			"Dr001/Dr002/Zy001/My001；非法 Dr1/Dr000/Xx001 被拒")
+	# 同一区域不重复编号
+	var dup: Dictionary = ws.region_assign(a_dr2["reg"], "Dr", Vector2i(1, 1))
+	_record("2C13 §3：同一区域不重复编号（同格再取 → 原 id，created=false）",
+			String(dup["id"]) == "Dr001" and not bool(dup["created"])
+			and int(((dup["reg"] as Dictionary)["next"] as Dictionary)["Dr"]) == 3,
+			"id=%s created=%s next.Dr=%d" % [String(dup["id"]), str(dup["created"]),
+				int(((dup["reg"] as Dictionary)["next"] as Dictionary)["Dr"])])
+	# 区域中心 = 8×8 地块中心（64 m 区域 → 中心 +32）
+	var c1: Vector3 = ws.region_center(Vector2i(0, 0))
+	var c2: Vector3 = ws.region_center(Vector2i(2, 3))
+	_record("2C13 §3：区域中心 = 8×8 地块中心（64 m 块 → 格心 +32，且反算回同一格）",
+			is_equal_approx(c1.x, 32.0) and is_equal_approx(c1.z, 32.0)
+			and is_equal_approx(c2.x, 160.0) and is_equal_approx(c2.z, 224.0)
+			and ws.region_cell(c2) == Vector2i(2, 3)
+			and ws.region_cell(Vector3(63.9, 0, 63.9)) == Vector2i(0, 0)
+			and ws.region_cell(Vector3(64.1, 0, 0.1)) == Vector2i(1, 0),
+			"c1=(%.0f,%.0f) c2=(%.0f,%.0f) 反算一致" % [c1.x, c1.z, c2.x, c2.z])
+	# 每 tick 覆盖写不累积：同一输入连造 3 份，列表长度不变、互不影响
+	var snap2: Dictionary = ws.build(inp0, ws.registry_of(snap1))
+	var snap3: Dictionary = ws.build(inp0, ws.registry_of(snap2))
+	(snap3["敌方建筑"] as Array).append({"id": 99})
+	_record("2C13 §2：每 tick 覆盖写不累积（3 次 build 敌建都=1；改第 3 份不影响第 2 份）",
+			(snap1["敌方建筑"] as Array).size() == 1
+			and (snap2["敌方建筑"] as Array).size() == 1
+			and (snap3["敌方建筑"] as Array).size() == 2,
+			"1/1/2（第三份被外部 append 后 2）")
+	var regions3: Array = snap3["区域"]
+	_record("2C13 §3：区域表含 Zj + Dr + Zy（自己的区域恒在，序号不重编）",
+			regions3.has("Zj") and regions3.has("Dr001") and regions3.has("Zy001")
+			and regions3.size() == 3,
+			"区域=%s" % str(regions3))
+
+	# ---------------- §4.1 目标建议：9 字段 / 前缀 / 序号 / 越界 ----------------
+	var p1: Dictionary = gl.proposal_make(gl.DEPT_OPS, 1, gl.ACT_BUILD, "farm", 1, 0.9,
+			"人口压力", 120, 20, gl.DONE_BUILT, 100.0)
+	var p2: Dictionary = gl.proposal_make(gl.DEPT_OPS, 2, gl.ACT_TRAIN, "archer", 3, 0.7,
+			"军队缺口", 40, 0, gl.DONE_TRAINED, 120.0)
+	var pz: Dictionary = gl.proposal_make(gl.DEPT_COMBAT, 1, gl.ACT_DEFEND, "Zj", 0, 0.9,
+			"压家", 0, 0, gl.DONE_THREAT_CLEAR, 130.0)
+	var pk: Dictionary = gl.proposal_make(gl.DEPT_EXPAND, 1, gl.ACT_SCOUT, "Dr001", 1, 0.65,
+			"无情报", 0, 0, gl.DONE_ARRIVED, 140.0)
+	var f9: Array = []
+	for f in gl.GOAL_FIELDS:
+		if not p1.has(f):
+			f9.append(f)
+	_record("2C13 §4.1：目标建议恰好 9 字段（id/动作/对象/期望值/紧迫度/理由/建议预留/达成条件/过期时间）",
+			f9.is_empty() and (gl.GOAL_FIELDS as Array).size() == 9 and p1.size() == 9,
+			"缺=%s 字段数=%d 键数=%d" % [str(f9), (gl.GOAL_FIELDS as Array).size(), p1.size()])
+	_record("2C13 §4.1：id 前缀正确 + 序号自增（Yy001/Yy002/Zd001/Kz001）",
+			String(p1["id"]) == "Yy001" and String(p2["id"]) == "Yy002"
+			and String(pz["id"]) == "Zd001" and String(pk["id"]) == "Kz001"
+			and gl.proposal_valid(p1) and gl.proposal_valid(p2)
+			and gl.proposal_valid(pz) and gl.proposal_valid(pk),
+			"%s %s %s %s" % [String(p1["id"]), String(p2["id"]),
+				String(pz["id"]), String(pk["id"])])
+	# 部门职责：越界动作结构上拒绝（运营线不能报"出击"）
+	var bad1: Dictionary = gl.proposal_make(gl.DEPT_OPS, 1, gl.ACT_ATTACK_REGION, "Dr001",
+			1, 0.9, "越界", 0, 0, gl.DONE_REGION_CLEAR, 100.0)
+	var bad2: Dictionary = gl.proposal_make(gl.DEPT_COMBAT, 1, gl.ACT_BUILD, "farm",
+			1, 0.9, "越界", 100, 0, gl.DONE_BUILT, 100.0)
+	_record("2C13 §7：三部门只提自己那三类（运营线报出击 / 战斗线报建造 → 拒绝）",
+			bad1.is_empty() and bad2.is_empty()
+			and gl.action_allowed(gl.DEPT_OPS, gl.ACT_BUILD)
+			and not gl.action_allowed(gl.DEPT_OPS, gl.ACT_ATTACK_REGION)
+			and not gl.action_allowed(gl.DEPT_EXPAND, gl.ACT_TRAIN),
+			"越界建议两条都被拒（{}）")
+	# 对象 id 存在性：建议里的对象按"def.id 不转换"写，必须能在单位表里查到
+	var obj_ok: bool = true
+	var obj_bad: Array = []
+	for oid in ["farm", "barracks", "archer"]:
+		var ud = _cfg.call("unit", StringName(oid))
+		if ud == null:
+			obj_ok = false
+			obj_bad.append(oid)
+	var reg_obj: Dictionary = gl.proposal_make(gl.DEPT_COMBAT, 2, gl.ACT_ATTACK_REGION,
+			"Dr001", 1, 0.7, "区域目标", 0, 0, gl.DONE_REGION_CLEAR, 100.0)
+	_record("2C13 §4.1：对象 id 存在性（def.id 能在单位表查到；区域 id 走 §3 格式）",
+			obj_ok and gl.proposal_valid(reg_obj)
+			and ws.region_id_valid(String(reg_obj["对象"])),
+			"查不到=%s；区域对象=%s 合法=%s" % [str(obj_bad),
+				String(reg_obj["对象"]), str(ws.region_id_valid(String(reg_obj["对象"])))])
+	# 非法建议：缺字段 / 对象空 / 紧迫度越界
+	var broken: Dictionary = p1.duplicate(true)
+	broken.erase("理由")
+	var empty_obj: Dictionary = gl.proposal_make(gl.DEPT_OPS, 3, gl.ACT_BUILD, "", 1, 0.9,
+			"空对象", 10, 0, gl.DONE_BUILT, 100.0)
+	_record("2C13 §4.1：非法建议被提案层拒绝（缺字段/对象空）",
+			not gl.proposal_valid(broken) and empty_obj.is_empty()
+			and (gl.proposal_errors(broken) as Array).size() > 0,
+			"缺理由=%d 条错误；空对象=%s" % [(gl.proposal_errors(broken) as Array).size(),
+				str(empty_obj.is_empty())])
+
+	# ---------------- §4.2 选主/次目标 + 空过边界 0.59/0.60 ----------------
+	var low: Array = [gl.proposal_make(gl.DEPT_OPS, 1, gl.ACT_BUILD, "farm", 1, 0.59,
+			"低", 120, 20, gl.DONE_BUILT, 100.0)]
+	var edge: Array = [gl.proposal_make(gl.DEPT_OPS, 1, gl.ACT_BUILD, "farm", 1, 0.60,
+			"边界", 120, 20, gl.DONE_BUILT, 100.0)]
+	var s_low: Dictionary = gl.select(low, 500)
+	var s_edge: Dictionary = gl.select(edge, 500)
+	_record("2C13 §4.2：空过边界（0.59 → 空过；0.60 → 选目标）",
+			bool(s_low["空过"]) and (s_low["主目标"] as Dictionary).is_empty()
+			and int((s_low["预留总额"] as Dictionary)["金币"]) == 0
+			and not bool(s_edge["空过"])
+			and String((s_edge["主目标"] as Dictionary)["id"]) == "Yy001",
+			"0.59 空过=%s / 0.60 空过=%s 主=%s" % [str(s_low["空过"]),
+				str(s_edge["空过"]), String((s_edge["主目标"] as Dictionary).get("id", ""))])
+	var two: Array = [p1, p2]
+	var s2: Dictionary = gl.select(two, 500)
+	var mid: String = String((s2["主目标"] as Dictionary).get("id", ""))
+	var sid: String = String((s2["次目标"] as Dictionary).get("id", ""))
+	_record("2C13 §4.2：主/次目标唯一且按分数排序（0.90 主 / 0.70 次）",
+			mid == "Yy001" and sid == "Yy002" and mid != sid
+			and not bool(s2["空过"]),
+			"主=%s 次=%s" % [mid, sid])
+	# 预留总额 ≤ 当前金币（超出按优先级截断：主先占，次只能拿剩下的）
+	var big1: Dictionary = gl.proposal_make(gl.DEPT_OPS, 1, gl.ACT_BUILD, "farm", 1, 0.9,
+			"大", 200, 20, gl.DONE_BUILT, 100.0)
+	var big2: Dictionary = gl.proposal_make(gl.DEPT_COMBAT, 1, gl.ACT_DEFEND, "Zj", 0, 0.8,
+			"次", 150, 0, gl.DONE_THREAT_CLEAR, 100.0)
+	var s_cut: Dictionary = gl.select([big1, big2], 180)
+	var tot: int = int((s_cut["预留总额"] as Dictionary)["金币"])
+	var got_main: int = int((s_cut["主目标"] as Dictionary)["预留"]["金币"])
+	var got_sub: int = int((s_cut["次目标"] as Dictionary)["预留"]["金币"])
+	_record("2C13 §4.2：预留总额 ≤ 当前金币（200+150 对 180 金 → 180+0，截断 2 条）",
+			tot <= 180 and got_main == 180 and got_sub == 0
+			and int(s_cut["截断"]) == 2,
+			"总=%d 主=%d 次=%d 截断=%d" % [tot, got_main, got_sub, int(s_cut["截断"])])
+	# 部门权重 / 局势修正是留桩：默认 1.0，显式给权重时生效
+	var s_w: Dictionary = gl.select(two, 500, 0.6, {gl.DEPT_COMBAT: 1.0,
+			gl.DEPT_OPS: 0.5})
+	_record("2C13 §4.2：部门权重留桩（全 1.0 默认；给 0.5 后运营线分数被压）",
+			is_equal_approx(float((gl.ranked(two, {} as Dictionary)[0] as Dictionary)["_分"]),
+				0.9)
+			and not bool(s_w["空过"]),
+			"默认首位分数=0.90（权重缺省 1.0）")
+
+	# ---------------- §4.3 空过机制 ----------------
+	_record("2C13 §4.3：空过停训练/建造/修理，采集与防守/巡逻/侦查/出击照常",
+			gl.blocked_by_noop("训练") and gl.blocked_by_noop("建造")
+			and gl.blocked_by_noop("修理")
+			and not gl.blocked_by_noop("防守")
+			and not gl.blocked_by_noop("出击")
+			and not gl.blocked_by_noop("巡逻")
+			and not gl.blocked_by_noop("侦查"),
+			"停=训练/建造/修理；放行=防守/出击/巡逻/侦查（采集走后台派工）")
+	# 空过期间的过滤结果：7 条诉求里只留 4 条非花钱诉求
+	var demo: Array = []
+	for act in ["训练", "建造", "修理", "防守", "出击", "侦查", "巡逻"]:
+		demo.append({"动作类型": act, "目标": act, "诉求分": 1.0})
+	var kept: Array = []
+	for d in demo:
+		if not gl.blocked_by_noop(String((d as Dictionary)["动作类型"])):
+			kept.append(String((d as Dictionary)["动作类型"]))
+	_record("2C13 §4.3：空过过滤（7 条诉求 → 只剩 防守/出击/侦查/巡逻 4 条）",
+			kept.size() == 4 and kept.has("防守") and kept.has("出击")
+			and not kept.has("训练") and not kept.has("建造") and not kept.has("修理"),
+			"保留=%s" % str(kept))
+	# 1.5×G(t)：100/150 仍积极；150 整退出；退出只记一次
+	var nv1: Dictionary = gl.noop_saving(100, 100.0, true)
+	var nv2: Dictionary = gl.noop_saving(149, 100.0, true)
+	var nv3: Dictionary = gl.noop_saving(150, 100.0, true)
+	var nv4: Dictionary = gl.noop_saving(200, 100.0, false)
+	_record("2C13 §4.3：金币 ≥1.5×G(t) 退出积极储蓄（100/149 积极；150 退出；不重复计）",
+			bool(nv1["积极储蓄"]) and bool(nv2["积极储蓄"])
+			and not bool(nv3["积极储蓄"]) and bool(nv3["退出"])
+			and not bool(nv4["退出"]),
+			"100=%s 149=%s 150=%s(退出%s) 200(已退出)=%s" % [
+				str(nv1["积极储蓄"]), str(nv2["积极储蓄"]), str(nv3["积极储蓄"]),
+				str(nv3["退出"]), str(nv4["退出"])])
+	# 退出积极储蓄**不退出空过**：空过只由紧迫度 0.6 决定
+	var s_low2: Dictionary = gl.select(low, 9999)
+	_record("2C13 §4.3：金币再多也不退出空过（只由紧迫度 ≥0.60 决定）",
+			bool(s_low2["空过"]) and int((s_low2["预留总额"] as Dictionary)["金币"]) == 0,
+			"金=9999 仍空过=%s" % str(s_low2["空过"]))
+	# 紧迫度 0.60 触发退出（同一条建议，0.59 空过 / 0.60 选目标已在上面断言）
+	_record("2C13 §4.3：紧迫度 0.6 边界（严格小于才空过；等于 0.6 就选目标）",
+			gl.empty_pass(low) and not gl.empty_pass(edge),
+			"0.59 空过=%s 0.60 空过=%s" % [str(gl.empty_pass(low)),
+				str(gl.empty_pass(edge))])
+	# 紧迫度映射的边界（第一版直觉值，报告里列分布）
+	_record("2C13 §7：紧迫度映射（农场急建 0.95 / 70% 占用 0.62 / 50% 占用 0.25；军队缺口满 0.90）",
+			is_equal_approx(gl.urgency_build_farm(0.5, true), 0.95)
+			and is_equal_approx(gl.urgency_build_farm(0.70, false), 0.62)
+			and is_equal_approx(gl.urgency_build_farm(0.50, false), 0.25)
+			and is_equal_approx(gl.urgency_train(10, 10), 0.90)
+			and is_equal_approx(gl.urgency_train(0, 10), 0.35)
+			and is_equal_approx(gl.urgency_defend(3), 0.90)
+			and is_equal_approx(gl.urgency_research(), 0.50),
+			"农场 0.95/0.62/0.25；训练 0.90/0.35；防守 0.90；研发 0.50")
+
+	# ---------------- §4.4 生命周期四条路径 ----------------
+	# 生命周期用一条"过期时间给足"的目标（gg 的过期时间=100 只适合选目标用例，
+	# 放到 101 s 的生命周期扫描里会先过期，掩盖抢占/存活断言）。
+	var p_life: Dictionary = p1.duplicate(true)
+	p_life["过期时间"] = 160.0
+	var gg: Dictionary = gl.goal_new(p_life, 100.0)
+	_record("2C13 §4.4：确立（状态=执行中，预留锁定，已用 0）",
+			String(gg["状态"]) == gl.ST_RUNNING
+			and int((gg["预留"] as Dictionary)["金币"]) == 120
+			and int((gg["已用"] as Dictionary)["金币"]) == 0,
+			"状态=%s 预留=%d" % [String(gg["状态"]), int((gg["预留"] as Dictionary)["金币"])])
+	var act_done: Dictionary = {"Yy001": gg}
+	var t_done: Dictionary = gl.goal_tick(act_done, {"Yy001": true}, 101.0, {})
+	var r_done: Array = t_done["释放"]
+	_record("2C13 §4.4：达成 → 已达成 + 释放预留（释放额 = 预留−已用）",
+			(t_done["存活"] as Dictionary).is_empty() and r_done.size() == 1
+			and String((r_done[0] as Dictionary)["原因"]) == "达成"
+			and int((r_done[0] as Dictionary)["金币"]) == 120
+			and int(t_done["达成"]) == 1,
+			"释放=%d 金 原因=%s" % [int((r_done[0] as Dictionary)["金币"]),
+				String((r_done[0] as Dictionary)["原因"])])
+	var t_exp: Dictionary = gl.goal_tick({"Yy001": gg}, {}, 161.0, {})
+	var t_exp2: Dictionary = gl.goal_tick({"Yy001": gg}, {}, 159.5, {})
+	_record("2C13 §4.4：过期（now > 过期时间 → 已过期 + 释放；未到期则存活）",
+			(t_exp["存活"] as Dictionary).is_empty()
+			and String(((t_exp["释放"] as Array)[0] as Dictionary)["原因"]) == "过期"
+			and (t_exp2["存活"] as Dictionary).size() == 1,
+			"161>160 过期；159.5 仍存活")
+	# 抢占：更高紧迫度 + margin
+	var hi: Dictionary = gl.proposal_make(gl.DEPT_COMBAT, 1, gl.ACT_DEFEND, "Zj", 0, 0.99,
+			"更高", 0, 0, gl.DONE_THREAT_CLEAR, 200.0)
+	var t_pre: Dictionary = gl.goal_tick({"Yy001": gg}, {}, 101.0, hi)
+	var near_p: Dictionary = gl.proposal_make(gl.DEPT_COMBAT, 1, gl.ACT_DEFEND, "Zj", 0, 0.93,
+			"只高 0.03", 0, 0, gl.DONE_THREAT_CLEAR, 200.0)
+	var t_near: Dictionary = gl.goal_tick({"Yy001": gg}, {}, 101.0, near_p)
+	_record("2C13 §4.4：抢占（+0.09 抢；只高 0.03 不抢；同 id 不抢自己）",
+			(t_pre["存活"] as Dictionary).is_empty()
+			and String(((t_pre["释放"] as Array)[0] as Dictionary)["原因"]) == "被抢占"
+			and (t_near["存活"] as Dictionary).size() == 1
+			and (gl.goal_tick({"Yy001": gg}, {}, 101.0, gg)["存活"] as Dictionary).size() == 1,
+			"0.99 抢空=%s / 0.93 存活=%d / 同id 存活=%d" % [
+				str((t_pre["存活"] as Dictionary).is_empty()),
+				(t_near["存活"] as Dictionary).size(),
+				(gl.goal_tick({"Yy001": gg}, {}, 101.0, gg)["存活"] as Dictionary).size()])
+	# 花钱：从预留里扣，扣到预留为止（不出现负预留）
+	var c1g: Dictionary = gl.goal_consume(gg, 100, 20)
+	var c2g: Dictionary = gl.goal_consume(c1g, 999, 999)
+	_record("2C13 §4.4：目标花钱从预留扣（100+20 后剩 20 金；再扣 999 不越界）",
+			int((c1g["已用"] as Dictionary)["金币"]) == 100
+			and int(gl.reserve_left({"Yy001": c1g})["金币"]) == 20
+			and int(gl.reserve_left({"Yy001": c2g})["金币"]) == 0,
+			"剩 20 → 0（不出现负预留）")
+	# 清理：局末剩余预留必须先记后清，清完为 0
+	var left: Dictionary = gl.goal_dispose({"Yy001": c1g})
+	_record("2C13 §4.4：清理（局末剩余预留 20 先落盘，清完表空、再算=0）",
+			int(left["金币"]) == 20 and gl.reserve_left({"Yy001": c1g})["金币"] == 20,
+			"清理前 %d 金" % int(left["金币"]))
+	var tbl: Dictionary = {"Yy001": gg}
+	var _l: Dictionary = gl.goal_dispose(tbl)
+	_record("2C13 §4.4：清理后表空且预留 0（无泄漏）",
+			(tbl as Dictionary).is_empty() and int(gl.reserve_left(tbl)["金币"]) == 0,
+			"表=%d 预留=%d" % [tbl.size(), int(gl.reserve_left(tbl)["金币"])])
+	# 达成条件语义
+	_record("2C13 §4.4：达成条件语义（已建成 observed≥1；目标死亡/威胁解除 observed=0）",
+			gl.done_met(gl.DONE_BUILT, 1) and not gl.done_met(gl.DONE_BUILT, 0)
+			and gl.done_met(gl.DONE_TARGET_DEAD, 0) and not gl.done_met(gl.DONE_TARGET_DEAD, 1)
+			and gl.done_met(gl.DONE_THREAT_CLEAR, 0)
+			and gl.done_met(gl.DONE_ARRIVED, 1),
+			"8 种条件枚举语义逐条核对")
+
+	# ---------------- §5 计划/预算层 ----------------
+	var all_ok: bool = pl.all_plans_valid()
+	var steps_max: int = 0
+	var steps_min: int = 99
+	for a in gl.ACTIONS:
+		var st: Array = pl.plan_for(String(a))
+		steps_max = maxi(steps_max, st.size())
+		steps_min = mini(steps_min, st.size())
+	_record("2C13 §5：9 种动作都有计划模板，步数 1~3（全部合法）",
+			all_ok and steps_max <= 3 and steps_min >= 1
+			and pl.plan_for(gl.ACT_BUILD).size() == 2
+			and pl.plan_for(gl.ACT_TRAIN).size() == 3,
+			"步数区间 %d~%d；建造=%d 训练=%d" % [steps_min, steps_max,
+				pl.plan_for(gl.ACT_BUILD).size(), pl.plan_for(gl.ACT_TRAIN).size()])
+	_record("2C13 §5：计划只是描述（模板是字符串，不含执行句柄/资源）",
+			pl.plan_for(gl.ACT_BUILD)[0] is String
+			and pl.has_plan(gl.ACT_EXPAND_BASE),
+			"建造首步=%s" % String(pl.plan_for(gl.ACT_BUILD)[0]))
+	_record("2C13 §5：预留跟目标不跟计划（没预留字段→0；有计划也不产生预算）",
+			int(pl.reserve_of({})["金币"]) == 0
+			and int(pl.reserve_of(gg)["金币"]) == 120
+			and int(pl.reserve_of({"计划": pl.plan_for(gl.ACT_BUILD)})["金币"]) == 0,
+			"空=0 / 带预留=%d / 只有计划=0" % int(pl.reserve_of(gg)["金币"]))
+
+	# ---------------- §6 执行层优先级 ----------------
+	var ord_build: Array = gl.priority_order(p1)
+	var ord_train: Array = gl.priority_order(p2)
+	var ord_def: Array = gl.priority_order(pz)
+	var ord_push: Array = gl.priority_order(reg_obj)
+	var ord_attack_unit: Array = gl.priority_order(gl.proposal_make(gl.DEPT_COMBAT, 3,
+			gl.ACT_DESTROY, "123", 1, 0.7, "x", 0, 0, gl.DONE_TARGET_DEAD, 100.0))
+	var ord_scout: Array = gl.priority_order(pk)
+	var ord_patrol: Array = gl.priority_order(gl.proposal_make(gl.DEPT_EXPAND, 2,
+			gl.ACT_PATROL, "Zj", 1, 0.45, "x", 0, 0, gl.DONE_PATROLLED, 100.0))
+	var ord_res: Array = gl.priority_order(gl.proposal_make(gl.DEPT_OPS, 4, gl.ACT_RESEARCH,
+			"attack_up", 1, 0.5, "x", 100, 0, gl.DONE_RESEARCHED, 100.0))
+	var first_acts: Array = []
+	for o in [ord_build, ord_train, ord_def, ord_push, ord_attack_unit, ord_scout,
+			ord_patrol, ord_res]:
+		var oo: Array = o
+		first_acts.append("%s/%d" % [String((oo[0] as Dictionary)["动作"]) if oo.size() > 0 else "-",
+			oo.size()])
+	_record("2C13 §6：每种主目标的首位优先级正确（建造/训练/修理/出击/侦查/巡逻/研发）",
+			String((ord_build[0] as Dictionary)["动作"]) == "建造"
+			and String((ord_build[0] as Dictionary)["目标"]) == "farm"
+			and String((ord_train[0] as Dictionary)["动作"]) == "训练"
+			and String((ord_def[0] as Dictionary)["动作"]) == "修理"
+			and String((ord_push[0] as Dictionary)["动作"]) == "出击"
+			and String((ord_attack_unit[0] as Dictionary)["动作"]) == "出击"
+			and String((ord_scout[0] as Dictionary)["动作"]) == "侦查"
+			and String((ord_patrol[0] as Dictionary)["动作"]) == "巡逻"
+			and String((ord_res[0] as Dictionary)["动作"]) == "研发",
+			"首位=%s" % str(first_acts))
+	# 防守主目标：修理 > 回防 > 训练 > 其他
+	var dmg_list: Array = [
+		{"动作类型": "训练", "目标": "archer", "诉求分": 5.0},
+		{"动作类型": "出击", "目标": "敌营", "诉求分": 4.0},
+		{"动作类型": "修理", "目标": "农场", "诉求分": 1.0},
+		{"动作类型": "建造", "目标": "农场", "诉求分": 2.0},
+	]
+	var ordered: Array = gl.order_demands(dmg_list, pz)
+	var seq_acts: Array = []
+	for d in ordered:
+		seq_acts.append(String((d as Dictionary)["动作类型"]))
+	_record("2C13 §6：防守主目标重排（修理 > 出击 > 训练 > 建造；原诉求分只做同序内排序）",
+			String(seq_acts[0]) == "修理" and String(seq_acts[1]) == "出击"
+			and String(seq_acts[2]) == "训练" and String(seq_acts[3]) == "建造",
+			"实际顺序=%s" % str(seq_acts))
+	# 训练主目标：训练 > 建造 > 修理（修理在训练之后）
+	var ord2: Array = gl.order_demands(dmg_list, p2)
+	var seq2: Array = []
+	for d in ord2:
+		seq2.append(String((d as Dictionary)["动作类型"]))
+	_record("2C13 §6：训练主目标重排（训练 > 建造 > 修理 > 出击）",
+			String(seq2[0]) == "训练" and String(seq2[1]) == "建造"
+			and String(seq2[2]) == "修理" and String(seq2[3]) == "出击",
+			"实际顺序=%s" % str(seq2))
+	# 空过：花钱动作整条不进执行列表（结构保证，不是靠驳回）
+	var noop_kept: Array = []
+	for d in dmg_list:
+		if not gl.blocked_by_noop(String((d as Dictionary)["动作类型"])):
+			noop_kept.append(String((d as Dictionary)["动作类型"]))
+	_record("2C13 §6：空过时花钱动作不进执行列表（训练/建造/修理 全被剔除）",
+			noop_kept.size() == 1 and String(noop_kept[0]) == "出击",
+			"保留=%s" % str(noop_kept))
+
+	# ---------------- 接线检查（结构断言：代码里真的走这条分支）----------------
+	var sa13: String = FileAccess.get_file_as_string("res://代码/ai/简单AI.gd")
+	_record("2C13 接线：dept=on 且 goal=on → _goal_tick，且承诺表不参与该分支",
+			sa13.contains("if AIV.goal_on():\n\t\t_goal_tick(diff, now)\n\t\treturn")
+			and sa13.contains("func _goal_tick(diff: DifficultyDef, now: float) -> void:")
+			and sa13.contains("func _world_tick(now: float) -> void:")
+			and sa13.contains("func goal_dispose() -> Dictionary:"),
+			"分支在承诺表维护之前 return")
+	_record("2C13 接线：空过时仲裁外的花钱动作（升级箭塔/研究/分基地）一并门控",
+			sa13.contains("if not (AIV.goal_on() and goal_noop):")
+			and sa13.contains("_maybe_upgrade_tower()\n\t\t\t_manage_research(diff)"),
+			"升塔/研究/分基地在门控内")
+	_record("2C13 §9：AI 自动建大本营仍被禁止（can_build_townhall 恒 false）",
+			sa13.contains("func can_build_townhall() -> bool:") and _townhall_blocked(sa13),
+			"can_build_townhall 仍 return false")
+	var aiv13: String = FileAccess.get_file_as_string("res://代码/配置/AI判定模式.gd")
+	_record("2C13 §1：默认 dept=off 主线不变；新架构只在 --dept=on 实验分支",
+			aiv13.contains("const DEFAULT_DEPT_MODE: String = DEPT_OFF")
+			and aiv13.contains("const DEFAULT_GOAL_MODE: String = GOAL_ON"),
+			"dept 默认 off / goal 默认 on（只在 dept=on 时生效）")
+
+
+## `can_build_townhall()` 是否仍然固定返回 false（2C-9 起的禁止项）。
+func _townhall_blocked(src: String) -> bool:
+	var i: int = src.find("func can_build_townhall() -> bool:")
+	if i < 0:
+		return false
+	var seg: String = src.substr(i, 160)
+	return seg.contains("return false")
 
 
 # ===========================================================================
