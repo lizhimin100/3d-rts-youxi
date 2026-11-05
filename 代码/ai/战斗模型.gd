@@ -1218,6 +1218,78 @@ static func demand_score_fixed(kind: String) -> float:
 	return maxf(demand_coef(kind + "_固定分"), 0.0)
 
 
+# ===========================================================================
+# 2C-10 · 人口压力 / 可用兵力 / 判定表诊断（纯函数；回归与 bench 共用同一套口径）
+# ===========================================================================
+
+## 人口占用率 = (当前人口占用 + 在训人口) / 当前人口上限。
+## ★ 必须含在训（food_reserved）：刚点兵就按"还有空位"算，会让 90% 触发整整晚一轮。
+static func pop_pressure(used: int, reserved: int, cap: int) -> float:
+	if cap <= 0:
+		return 0.0
+	return float(maxi(used, 0) + maxi(reserved, 0)) / float(cap)
+
+
+## 70% 人口压力动态系数（**只乘农场建造诉求分**，其余诉求一律不动）。
+##   r ≤ 阈值 → 1.0；r > 阈值 → 1 + k × min(1, (r−阈值)/(1−阈值))，上限 1+k。
+## 阈值/k 从第 18 张系数卡第 14、15 项读，缺卡回落 0.70 / 2.0。
+static func farm_pressure_factor(rate: float) -> float:
+	var thr: float = clampf(demand_coef("人口压力_阈值", 0.70), 0.0, 0.99)
+	var k: float = maxf(demand_coef("人口压力_k", 2.0), 0.0)
+	if not is_finite(rate) or rate <= thr:
+		return 1.0
+	var span: float = maxf(1.0 - thr, 0.0001)
+	return clampf(1.0 + k * minf((rate - thr) / span, 1.0), 1.0, 1.0 + k)
+
+
+## P0-A：可用兵力**只扣一次**防守下限（现役 − 下限 − 已锁，且不为负）。
+## 仲裁池用 raw（不扣下限），本函数只做"账面可用兵力"口径与回归断言。
+static func troop_available(army_n: int, defense_floor: int, locks: int) -> int:
+	return maxi(maxi(army_n, 0) - maxi(defense_floor, 0) - maxi(locks, 0), 0)
+
+
+## 2C-10 §6：可被征用消费（纯函数）—— 把"临时防守 / 巡逻 / 侦查"三种短租约锁
+## 折成这次攒大波能征回来的兵力数。**wave 锁不可征用**（正在出击的兵不能自征）。
+## 返回 {"可征用": n, "释放键": [...]}，不改传入的 locks（由调用方按键释放）。
+static func requisition_quota(locks: Dictionary) -> Dictionary:
+	var n: int = 0
+	var keys: Array = []
+	for k in locks.keys():
+		var d = locks[k]
+		if not (d is Dictionary):
+			continue
+		var kind: String = String((d as Dictionary).get("k", ""))
+		if kind == "temp_defense" or kind == "patrol" or kind == "scout":
+			keys.append(k)
+			n += int((d as Dictionary).get("n", 0))
+	return {"可征用": n, "释放键": keys}
+
+
+## B 诊断：四样判据的**原始输入值 + 档位边界 + 到最近边界的距离 + 落档**。
+## 只诊断，不重算判定、不改任何窗口/分母/系数。
+static func judge_diag(rec: Dictionary) -> Dictionary:
+	var tr: float = time_ratio(float(rec.get("combat_time", 0.0)),
+			float(rec.get("theory_time", 0.0)))
+	var oe: float = float(rec.get("output_eff", 0.0))
+	var dr: float = float(rec.get("damage_ratio", 0.0))
+	var surv: int = int(rec.get("survivors", 0))
+	var cap4: int = bad_survivor_cap(int(rec.get("strength", 0)))
+	var bins: Dictionary = judge_bins(rec)
+	var d1: float = minf(absf(tr - VD_TIME_HALF), absf(tr - VD_TIME_GOOD))
+	var d2: float = minf(absf(oe - VD_OUT_LOW), absf(oe - VD_OUT_HIGH))
+	var d3: float = minf(absf(dr - VD_DMG_LOW), absf(dr - VD_DMG_HIGH))
+	return {
+		"判据1": {"值": snappedf(tr, 0.001), "边界": [VD_TIME_HALF, VD_TIME_GOOD],
+			"边界距离": snappedf(d1, 0.001), "档": String(bins["判据1"])},
+		"判据2": {"值": snappedf(oe, 0.001), "边界": [VD_OUT_LOW, VD_OUT_HIGH],
+			"边界距离": snappedf(d2, 0.001), "档": String(bins["判据2"])},
+		"判据3": {"值": snappedf(dr, 0.001), "边界": [VD_DMG_LOW, VD_DMG_HIGH],
+			"边界距离": snappedf(d3, 0.001), "档": String(bins["判据3"])},
+		"判据4": {"值": surv, "边界": [cap4],
+			"边界距离": absf(float(surv) - float(cap4)), "档": String(bins["判据4"])},
+	}
+
+
 # ---------------------------------------------------------------------------
 # 2C-9 · 判定表**分布**（P1）：把四样判据各自落到 达成/好/一般/差/未判
 #

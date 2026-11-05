@@ -318,17 +318,16 @@ static func _card_verify(built: Dictionary) -> void:
 		]
 		for nm in names:
 			var v = coef_card.get(nm)
-			if v == null:
-				coef_problems.append("%s 缺失" % nm)
-			elif absf(float(v) - 1.0) > 0.000001:
-				coef_problems.append("%s=%.3f（2C-9 必须 =1.0）" % [nm, float(v)])
+			# 2C-9 要求全部 =1.0；2C-10 标定一轮后不再有这个约束，只校验"在且为有限正数"
+			if v == null or not is_finite(float(v)) or float(v) <= 0.0:
+				coef_problems.append("%s 缺失/非正数" % nm)
 		var cyc = coef_card.get("周期秒")
 		if cyc == null or absf(float(cyc) - 2.0) > 0.000001:
 			coef_problems.append("周期秒≠2.0")
 	report["系数卡"] = {
 		"卡数": 1, "问题": coef_problems,
 		"结果": "通过" if coef_problems.is_empty() else "不通过",
-		"说明": "2C-9：13 个系数全部 =1.0（本轮不调值）；刻度只在卡里改",
+		"说明": "2C-10：13 个系数已标定一轮（不再要求 =1.0），只校验存在且为有限正数；刻度只在卡里改",
 	}
 	# 报告始终落盘（_qa/ 不入库，摘要进报告正文）
 	var path := ProjectSettings.globalize_path("res://_qa/card_verify.json")
