@@ -1562,6 +1562,28 @@ func _case_2c11() -> void:
 			and sa11.contains("2C-11 §7 修正口径"),
 			"只改观测判定，不改农场预判/人口逻辑")
 
+	# ---------- C3：紧急白名单接线 ----------
+	_record("2C11：接线 紧急白名单 3 枚举由 _saving_urgency 取 6 个场景状态",
+			sa11.contains("func _saving_urgency() -> Array:")
+			and sa11.contains("var hits: Array = _saving_urgency()")
+			and sa11.contains("\"urgent_reasons\",")
+			and sa11.contains("var urgent: bool = not hits.is_empty()")
+			and sa11.contains("_under_attack()")
+			and sa11.contains("_has_site_of(fid)"),
+			"命中任一即紧急，接入 policy.urgent")
+	_record("2C11：接线 最近 60s 被拆账本（首次只建基线 / 窗口外清掉）",
+			sa11.contains("func _track_building_losses(now: float) -> void:")
+			and sa11.contains("_track_building_losses(now)")
+			and sa11.contains("URG_LOST_WINDOW_SEC: float = 60.0")
+			and sa11.contains("if not _known_buildings.is_empty():")
+			and _near(float(b.URG_LOST_WINDOW), 60.0, 0.0001),
+			"60 s 窗口，与纯函数 URG_LOST_WINDOW 一致")
+	_record("2C11：紧急态不受储备线约束 / 不紧急被驳回（policy 只差 urgent）",
+			int((r_urg["执行"] as Array).size()) == 3
+			and int((r_save["执行"] as Array).size()) == 0
+			and bool(r_urg["紧急"]) and not bool(r_save["紧急"]),
+			"紧急执行 3 / 非紧急执行 0")
+
 
 ## 造一条"金币成本被改成负数"的诉求（用于 demand_valid 的非法值断言）
 func _demand_gold(base: Dictionary, gold: int) -> Dictionary:

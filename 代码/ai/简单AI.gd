@@ -224,6 +224,7 @@ var dept_stats: Dictionary = {
 	# 2C-11：储蓄 / 同时做事数 / 紧急 / POP90 修正口径（P2 监控，只落盘不进决策）
 	"saving_reserve_last": 0.0, "saving_unit_cost_last": 80.0,
 	"saving_urgent_last": false, "saving_urgent_hits": {},
+	"saving_urgent_reasons_last": [],
 	"caps_last": {}, "exec_per_cycle": {},
 	"pop90_site_already": 0,
 }
@@ -246,6 +247,12 @@ var _pop90_last_site_t: float = -1.0
 var _pending_requisition: int = 0
 ## 2C-11：单件典型成本记忆（本周期无待办时取最近一次的值，早期农场 80）
 var _saving_last_unit_cost: float = 80.0
+## 2C-11 §3：最近 60 s 被拆建筑账本。只存时刻、不存对象引用，避免悬空。
+## `_known_buildings` = 上一次思考时存活的建筑 instance_id 集合；
+## 完工不会让 id 消失，所以「上次有、这次没了」只可能是被拆/被移除。
+var _known_buildings: Dictionary = {}
+var _lost_building_t: Array = []
+const URG_LOST_WINDOW_SEC: float = 60.0
 var _l1_dmg: Array[float] = []
 var _l1_gold: Array[float] = []
 var _l1_wood: Array[float] = []
@@ -388,6 +395,8 @@ func _process_inner(delta: float) -> void:
 ## 一次完整的思考。抽成函数是为了让自检可以"手动推一帧"。
 func _think_once(diff: DifficultyDef) -> void:
 	var now: float = Game.elapsed
+	# 2C-11 §3：建筑被拆账本（dept on/off 都跑，纯观测，不进决策）
+	_track_building_losses(now)
 	# 2C-10 §7.2：90% 压力响应纯观测（dept on/off 都跑，不进任何决策）
 	_pop90_tick(now)
 	_sched.begin(now)
@@ -4173,6 +4182,58 @@ func _demand(source: String, action: String, target: String,
 	}
 
 
+# ---------------------------------------------------------------------------
+# 2C-11 §3 · 紧急白名单（3 枚举，命中任一即紧急）
+#
+# 纯判定住在 战斗模型.urgent_reasons；这里只负责「把场景状态取成 6 个标量」
+# 和「最近 60 s 被拆建筑账本」。不新增归因结构，计数复用 dept_stats。
+# ---------------------------------------------------------------------------
+
+## 被拆账本：每次思考扫一次建筑 id 集合，消失的记时刻，清掉 60 s 前的记录。
+## 首次调用只建基线，不把开局建筑误记成「被拆」。
+func _track_building_losses(now: float) -> void:
+	if _faction == null:
+		return
+	var alive: Dictionary = {}
+	for b in _faction.buildings:
+		if b == null or not is_instance_valid(b) or b.def == null:
+			continue
+		if not b.is_alive():
+			continue
+		alive[int(b.get_instance_id())] = true
+	if not _known_buildings.is_empty():
+		for k in _known_buildings.keys():
+			if not alive.has(k):
+				_lost_building_t.append(now)
+	_known_buildings = alive
+	var cutoff: float = now - URG_LOST_WINDOW_SEC
+	while not _lost_building_t.is_empty() and float(_lost_building_t[0]) < cutoff:
+		_lost_building_t.remove_at(0)
+
+
+## 本周期的紧急事由（空数组 = 不紧急）。
+##   pop_rate 含在训人口（与 2C-10 pop_pressure 同口径）；
+##   has_farm_site 用现有 _has_site_of（未完工农场工地）；
+##   lost_n 由 _track_building_losses 的 60 s 窗口给出；
+##   under_attack 用现有 _under_attack()（任一建筑掉血）。
+func _saving_urgency() -> Array:
+	if _faction == null:
+		return []
+	var cap: int = _faction.food_cap()
+	var rate: float = 0.0
+	if cap > 0:
+		var used_sum: int = maxi(_faction.food_used(), 0) + maxi(_faction.food_reserved(), 0)
+		rate = float(used_sum) / float(cap)
+	var fid: StringName = _food_building_id()
+	var has_site: bool = fid != &"" and _has_site_of(fid)
+	var army_n: int = _army_units().size()
+	var floor_v: int = _defense_floor()
+	var lost_n: int = _lost_building_t.size()
+	var attacked: bool = _under_attack()
+	return _model_call("urgent_reasons",
+			[rate, has_site, army_n, floor_v, lost_n, attacked])
+
+
 ## 主入口：一次 dept 思考（每 tick 调，内部按 2 s 节拍仲裁）
 func _dept_tick(diff: DifficultyDef, now: float) -> void:
 	if _faction == null:
@@ -4209,8 +4270,14 @@ func _dept_tick(diff: DifficultyDef, now: float) -> void:
 	_saving_last_unit_cost = unit_cost
 	var reserve: float = float(_model_call("saving_target", [t_sec, unit_cost]))
 	var caps: Dictionary = _model_call("concurrency_caps", [t_sec])
-	# C3 接紧急白名单；C2 先把 policy 结构接好（urgent 暂恒 false）。
-	var urgent: bool = false
+	# --- 2C-11 §3：紧急白名单（命中任一 → 本周期诉求不受储备线约束）---
+	var hits: Array = _saving_urgency()
+	var urgent: bool = not hits.is_empty()
+	var hit_stat: Dictionary = dept_stats["saving_urgent_hits"]
+	for h in hits:
+		var hk: String = String(h)
+		hit_stat[hk] = int(hit_stat.get(hk, 0)) + 1
+	dept_stats["saving_urgent_reasons_last"] = hits
 	dept_stats["saving_reserve_last"] = reserve
 	dept_stats["saving_unit_cost_last"] = unit_cost
 	dept_stats["saving_urgent_last"] = urgent
@@ -4849,6 +4916,7 @@ func _dept_log(now: float, plan: Dictionary) -> void:
 		"单件成本": snappedf(float(dept_stats.get("saving_unit_cost_last", 0.0)), 0.1),
 		"上限": dept_stats.get("caps_last", {}),
 		"紧急": bool(dept_stats.get("saving_urgent_last", false)),
+		"紧急事由": dept_stats.get("saving_urgent_reasons_last", []),
 	}
 	for d in demands_l2:
 		if not (d is Dictionary):
