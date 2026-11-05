@@ -4353,6 +4353,9 @@ func _dept_tick(diff: DifficultyDef, now: float) -> void:
 		var hk: String = String(h)
 		hit_stat[hk] = int(hit_stat.get(hk, 0)) + 1
 	dept_stats["saving_urgent_reasons_last"] = hits
+	# 2C-11 P2：储备充足率 = 金币 >= G(t) 的周期数 / 总周期数（只记录，不进决策）
+	if float(_faction.gold) >= reserve:
+		dept_stats["saving_sufficient_cycles"] = int(dept_stats.get("saving_sufficient_cycles", 0)) + 1
 	dept_stats["saving_reserve_last"] = reserve
 	dept_stats["saving_unit_cost_last"] = unit_cost
 	dept_stats["saving_urgent_last"] = urgent

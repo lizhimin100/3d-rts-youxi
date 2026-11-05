@@ -1047,6 +1047,55 @@ func _finish(reason: String) -> void:
 				"近边界0.05占比": snappedf(float(dnear) / maxf(float(dn), 1.0), 0.001)},
 		}
 
+	# ------------------------------------------------------------------
+	# 2C-11 P2 监控（不判硬，只落盘）：储备不足 / 并发上限驳回率、
+	# 建造停滞恢复率、同时做事数实际分布、储备充足率、紧急命中。
+	# 驳回率分母统一用「总诉求数」，储备充足率分母用「总周期数」。
+	# ------------------------------------------------------------------
+	var m_saving: int = 0
+	var m_concur: int = 0
+	var m_demands: int = 0
+	var m_cycles: int = 0
+	var m_sufficient: int = 0
+	var m_stall: int = 0
+	var m_recover: int = 0
+	var m_site_already: int = 0
+	var m_exec_dist: Dictionary = {}
+	var m_urgent: Dictionary = {}
+	for fname_m in depts.keys():
+		var ds_m: Dictionary = depts[fname_m] if depts[fname_m] is Dictionary else {}
+		var rj_m: Dictionary = ds_m.get("reject_by_reason", {})
+		m_saving += int(rj_m.get("储备不足", 0))
+		m_concur += int(rj_m.get("并发上限", 0))
+		m_demands += int(ds_m.get("demands", 0))
+		m_cycles += int(ds_m.get("cycles", 0))
+		m_sufficient += int(ds_m.get("saving_sufficient_cycles", 0))
+		m_stall += int(ds_m.get("site_stall_detected", 0))
+		m_recover += int(ds_m.get("site_recovery_issued", 0))
+		m_site_already += int(ds_m.get("pop90_site_already", 0))
+		var ed_m: Dictionary = ds_m.get("exec_per_cycle", {})
+		for k_m in ed_m.keys():
+			m_exec_dist[k_m] = int(m_exec_dist.get(k_m, 0)) + int(ed_m[k_m])
+		var uh_m: Dictionary = ds_m.get("saving_urgent_hits", {})
+		for k_u in uh_m.keys():
+			m_urgent[k_u] = int(m_urgent.get(k_u, 0)) + int(uh_m[k_u])
+	var m_den: float = maxf(float(m_demands), 1.0)
+	var m_save_rate: float = float(m_saving) / m_den
+	var monitor_2c11 := {
+		"储备不足驳回数": m_saving, "并发上限驳回数": m_concur,
+		"总诉求数": m_demands,
+		"储备不足驳回率": snappedf(m_save_rate, 0.0001),
+		"并发上限驳回率": snappedf(float(m_concur) / m_den, 0.0001),
+		"储蓄过度标注": "储蓄过度，AI 接近停摆" if m_save_rate > 0.5 else "",
+		"储备充足率": snappedf(float(m_sufficient) / maxf(float(m_cycles), 1.0), 0.0001),
+		"储备充足周期": m_sufficient, "总周期": m_cycles,
+		"停滞工地数": m_stall, "成功接续数": m_recover,
+		"建造停滞恢复率": snappedf(float(m_recover) / maxf(float(m_stall), 1.0), 0.0001),
+		"同时做事数实际分布": m_exec_dist,
+		"紧急命中": m_urgent,
+		"POP90已有工地算成功数": m_site_already,
+	}
+
 	var report := {
 		"seed": seed_val, "minutes": minutes, "speed": speed, "map": map_path,
 		"difficulty": Cfg.game.default_difficulty,
@@ -1085,6 +1134,7 @@ func _finish(reason: String) -> void:
 		"judge_diag": diag_all,
 		"pop90": pop90_all,
 		"pop90_by_faction": pop90s,
+		"monitor_2c11": monitor_2c11,
 		"goal_attribution": attribution,
 		"events": _events,
 		"situations_file": _file_sit if not _file_sit.is_empty() else "未启用",

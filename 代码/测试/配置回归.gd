@@ -1659,6 +1659,26 @@ func _case_2c11() -> void:
 			and bm_src.contains("## 展示/校验用"),
 			"唯一真相源 = AI诉求系数.gd defaults()")
 
+	# ---------- C6：P2 监控落盘 ----------
+	var bench11: String = ""
+	var fb11 := FileAccess.open("res://代码/测试/AI基准.gd", FileAccess.READ)
+	if fb11 != null:
+		bench11 = fb11.get_as_text()
+		fb11.close()
+	_record("2C11：P2 监控落盘 monitor_2c11（不判硬，>50% 只标注不自动降档）",
+			bench11.contains("\"monitor_2c11\": monitor_2c11")
+			and bench11.contains("\"储备不足驳回率\"")
+			and bench11.contains("\"并发上限驳回率\"")
+			and bench11.contains("\"建造停滞恢复率\"")
+			and bench11.contains("\"同时做事数实际分布\"")
+			and bench11.contains("\"储备充足率\"")
+			and bench11.contains("储蓄过度，AI 接近停摆"),
+			"驳回率分母=总诉求数；充足率分母=总周期数")
+	_record("2C11：储备充足率由产品侧逐周期计数（只记录，不进决策）",
+			sa11.contains("\"saving_sufficient_cycles\"")
+			and sa11.contains("if float(_faction.gold) >= reserve:"),
+			"gold >= G(t) 的周期数 / cycles")
+
 
 ## 造一条"金币成本被改成负数"的诉求（用于 demand_valid 的非法值断言）
 func _demand_gold(base: Dictionary, gold: int) -> Dictionary:
