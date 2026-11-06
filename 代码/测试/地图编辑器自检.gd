@@ -30,6 +30,7 @@ func _ready() -> void:
 	_test_validate_unreachable_mine()
 	_test_validate_overlap()
 	_test_asset_catalog()
+	_test_twelve_players()
 	_cleanup()
 	print("------------------------------------")
 	if _fails.is_empty():
@@ -390,6 +391,29 @@ func _test_asset_catalog() -> void:
 		var is_box: bool = model is MeshInstance3D and (model as MeshInstance3D).mesh is BoxMesh
 		_ok(model != null and not is_box, "组合件预览退回了占位方块：%s" % id)
 		n.queue_free()
+
+
+## 2026-11-07：2~12 玩家槽位（编辑器可加删、加载器生成布局/队伍/颜色）
+func _test_twelve_players() -> void:
+	var m: MapDef = MapLoader.new_map(224, 12, 20261107)
+	_ok(m.players.size() == 12, "新建 12 人图槽位数不是 12（%d）" % m.players.size())
+	var ids: Dictionary = {}
+	var cols: Dictionary = {}
+	var teams_ok: bool = true
+	var starts_ok: bool = true
+	for p in m.players:
+		if p == null:
+			continue
+		ids[int(p.id)] = true
+		cols[p.color.to_html()] = true
+		if int(p.team) < 1:
+			teams_ok = false
+		if p.start_pos.length() < 8.0:
+			starts_ok = false
+	_ok(ids.size() == 12, "12 人图槽位 id 有重复（%d 个不同 id）" % ids.size())
+	_ok(cols.size() == 12, "12 人图槽位颜色有重复（%d 种）" % cols.size())
+	_ok(teams_ok, "12 人图存在 team < 1 的槽位（0 在运行时是中立敌对）")
+	_ok(starts_ok, "12 人图有出生点落在圆心附近（布局没铺开）")
 
 
 # ===========================================================================
