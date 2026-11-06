@@ -53,6 +53,7 @@ func _运行() -> void:
 		_用例B_攻击移动续行()
 		_用例C_待机不锁射程外()
 		_用例D_自动施法不吞指令()
+		_用例E_射程口径()
 	报告["失败项"] = 失败
 	报告["结果"] = "通过" if 失败.is_empty() else "失败"
 	报告["耗时(毫秒)"] = Time.get_ticks_msec() - 开始
@@ -360,3 +361,51 @@ func _用例D_自动施法不吞指令() -> void:
 	if int(法.order) != int(指令["ATTACK_MOVE"]):
 		失败.append("D 自动施法：放完火球后指令被清成了 %s（原指令 ATTACK_MOVE 丢了）" % 明细["放完后指令"])
 	_记("D_自动施法不吞指令", 明细)
+
+
+# ===========================================================================
+# E · 射程口径（2026-11-07 统一：attack_range = 身位边缘 → 目标边缘的间隙）
+# ===========================================================================
+
+## 纯数值断言，不打架：直接问单位的 `_target_gap` / `_attack_reach`。
+##   · 步兵贴身（中心距 ≈ 两半径之和）必须够得着；
+##   · 步兵隔 2m 必须够不着（旧口径 1.35 + 双方半径 ≈ 2.35，会"隔空砍人"）；
+##   · 弩兵 8m：中心距 8.8（边缘间隙 7.92）够得着，9.2（8.32）够不着。
+func _用例E_射程口径() -> void:
+	var 基: Vector3 = 关卡.call("base_center", 游戏.get("player_faction"))
+	var 位: Vector3 = 关卡.call("walkable_pos", 基 + Vector3(-4.0, 0.0, 16.0))
+	var 兵 = _造单位("player_faction", &"footman", 位)
+	var 弓 = _造单位("player_faction", &"archer", 位 + Vector3(30.0, 0.0, 0.0))
+	var 靶 = _造单位("enemy_faction", &"archer", 位 + Vector3(1.2, 0.0, 0.0), 5000.0)
+	var 靶2 = _造单位("enemy_faction", &"archer", 位 + Vector3(2.2, 0.0, 0.0), 5000.0)
+	if 兵 == null or 弓 == null or 靶 == null or 靶2 == null:
+		return
+	# 贴身：中心距 1.2，双方半径 0.5 + 0.44 → 边缘间隙 0.26
+	var 贴身间隙: float = float(兵.call("_target_gap", 靶))
+	var 贴身够: bool = 贴身间隙 <= float(兵.call("_attack_reach", 靶))
+	# 隔 2.2m：边缘间隙 1.26
+	var 远间隙: float = float(兵.call("_target_gap", 靶2))
+	var 远够: bool = 远间隙 <= float(兵.call("_attack_reach", 靶2))
+	# 弩兵 vs 另一个靶：8.8 / 9.2（另外造两个点，直接用同一对单位算）
+	var 弓够8: bool = (8.8 - 0.44 - 0.44) <= float(弓.call("_attack_reach", 靶))
+	var 弓够9: bool = (9.2 - 0.44 - 0.44) <= float(弓.call("_attack_reach", 靶))
+
+	var 明细: Dictionary = {
+		"步兵贴身间隙(米)": "%.2f" % 贴身间隙,
+		"步兵攻击距离(米)": "%.2f" % float(兵.call("_attack_reach", 靶)),
+		"贴身够得着": 贴身够,
+		"隔2.2m间隙(米)": "%.2f" % 远间隙,
+		"隔2.2m够得着": 远够,
+		"弩兵8.8m够": 弓够8,
+		"弩兵9.2m够": 弓够9,
+		"弩兵攻击距离(米)": "%.2f" % float(弓.call("_attack_reach", 靶)),
+	}
+	if not 贴身够:
+		失败.append("E 射程：步兵贴身还打不到（间隙 %.2f > 射程）" % 贴身间隙)
+	if 远够:
+		失败.append("E 射程：步兵隔 2.2m 还能打到（间隙 %.2f ≤ 射程，旧口径残留）" % 远间隙)
+	if not 弓够8:
+		失败.append("E 射程：弩兵 8.8m（边缘 7.92）打不到，射程被压小了")
+	if 弓够9:
+		失败.append("E 射程：弩兵 9.2m（边缘 8.32）还能打到，射程超了")
+	_记("E_射程口径", 明细)

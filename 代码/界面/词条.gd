@@ -286,11 +286,24 @@ static func stat(d: UnitDef, key: String, u: Node3D = null) -> Dictionary:
 				"foot": "",
 			}
 		"range":
+			# ★ 口径（2026-11-07）：attack_range 是**身位边缘→目标边缘**的间隙。
+			#   近战 0.2 直接说"贴身"，别写成"射程 0.2 米"（玩家会以为是 bug）。
+			if d.attack_range < 1.0:
+				return {
+					"icon": "sword", "icon_color": Color(0.98, 0.62, 0.42),
+					"title": "近战 · 贴身",
+					"tag": "攻击距离",
+					"body": "只要双方身体贴住就一定能打到（[b]%.1f 米[/b] 是留的余量，不是武器长度）。\n"
+							% d.attack_range
+							+ "身体没贴住就打不到，会自己向前贴近。",
+					"foot": "",
+				}
 			return {
 				"icon": "bow", "icon_color": Color(0.86, 0.80, 0.52),
 				"title": "射程 · %s 米" % fmt(d.attack_range),
 				"tag": "攻击距离",
-				"body": "超过这个距离就打不到目标，会自动向前贴近。",
+				"body": "从[b]自己的身体边缘[/b]算起，超出这个距离就打不到目标。\n"
+						+ "选中时地上的圈 = 这个距离 + 自身半径，圈边就是真正的够得着边界。",
 				"foot": "",
 			}
 		"sight":

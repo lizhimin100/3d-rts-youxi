@@ -820,6 +820,8 @@ func _setup_fog() -> void:
 		return
 	level.add_child(fog)
 	fog.setup(level.terrain, Game.player_faction, level.world_size)
+	# 索敌/开火的可见性过滤读这里（见 游戏状态.is_visible_to）
+	Game.fog_node = fog
 	# QA：--qa-reveal 关迷雾（验收截图/野怪体检时看全图用，正常游玩不要开）
 	if _qa_reveal and fog.has_method("set_enabled"):
 		fog.call("set_enabled", false)

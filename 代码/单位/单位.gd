@@ -462,10 +462,11 @@ func take_damage(amount: float, _type: int, from: Node3D) -> void:
 	#   否则撤退中的兵会被一次流弹拽回去追人（手感比"不还手"更差）。
 	if from != null and is_instance_valid(from):
 		var tf: RtsFaction = from.get("faction") as RtsFaction
-		if tf != null and faction != null and faction.is_enemy_of(tf):
+		if tf != null and faction != null and faction.is_enemy_of(tf) \
+				and Game.is_node_visible_to(faction, from):
 			_acquire_grace = 0.0
-			var reach: float = _attack_reach(from) * 1.5
-			if _flat_dist(from.global_position) <= reach:
+			# 距离口径与开火一致（边缘间隙），别再用中心距 ×1.5 的野路子
+			if _target_gap(from) <= _attack_reach(from):
 				if target == null or not is_instance_valid(target) or not target.is_alive():
 					target = from
 	# 农民挨打就往基地跑，别站那儿送死
@@ -1984,21 +1985,29 @@ func _snap_ground(dt: float) -> void:
 		_slope_mult = clampf(1.0 - slope * 0.55, 1.0, 1.22)          # 下坡：略快
 
 
-## 攻击能打到的距离。建筑**不加半径**：距离用的是"到墙面"（见 _target_gap）。
+## 攻击能打到的距离。
+##
+## ★ 2026-11-07 统一口径（玩家反馈"弩兵实际射程比圈大、还能打雾里的敌人"）：
+##   `UnitDef.attack_range` = **本单位碰撞圆边缘 → 目标碰撞体边缘的水平间隙（米）**。
+##   旧实现 `_attack_reach` 又加了一次目标半径、`_target_gap` 又减了一次，
+##   结果真实够得着 = attack_range + 2×目标半径（步兵 1.35 → 实际 2.35），
+##   而范围圈按 attack_range 画 → 圈永远比实际小一大截。
+##
+##   现在：`_attack_reach` 只返回 attack_range，`_target_gap` 把**双方**半径都扣掉。
+##   于是"贴身必中"= attack_range ≥ 0.2 就一定成立（0 = 两具身体正好贴住）。
+##
+##   建筑目标例外：寻路把占地外扩 1 格，最近的合法站位离墙 1.50m（见 AGENTS/memory），
+##   扣掉自身半径 0.5 后边缘间隙仍有 1.0m —— 近战给 `BUILDING_REACH` 的墙面余量，
+##   否则"贴到墙边也砍不到楼"。
+const BUILDING_REACH: float = 1.15
 func _attack_reach(t: Node3D) -> float:
 	var r: float = def.attack_range if def != null else 0.0
 	if t is RtsBuilding:
-		# ★ 打建筑：占地外扩 1 格后最近的合法站位在墙面外 1.5m，
-		#   近战 reach 只有 1.35 → 每帧判"够不着"→ 贴墙抽动、不砍楼
-		#   （和建造卡死同一个病灶，2026-11-06 一并修）。
-		if r < 2.0:
-			r = maxf(r, 1.62)
-	elif t != null and t.has_method("get_radius"):
-		r += float(t.call("get_radius"))
-	return maxf(r, 0.3)
+		r = maxf(r, BUILDING_REACH)
+	return maxf(r, 0.05)
 
 
-## 到目标的**有效间隙**：建筑量到墙面、单位量到身位边缘。
+## 到目标的**有效间隙**：建筑量到墙面，单位量到身位边缘（双方半径都扣掉）。
 ##
 ## 近战打建筑必须用这个，不能用中心距（见 建筑.distance_to_footprint 的注释）。
 func _target_gap(t: Node3D) -> float:
@@ -2006,10 +2015,14 @@ func _target_gap(t: Node3D) -> float:
 		return INF
 	var b := t as RtsBuilding
 	if b != null:
-		return b.distance_to_footprint(global_position)
+		var d: float = b.distance_to_footprint(global_position)
+		# 自己也扣掉半径：口径统一成"边缘到墙面"，否则大本营 9m 宽会把近战挡在 4.5m 外
+		d -= get_radius()
+		return maxf(d, 0.0)
 	var d: float = _flat_dist(t.global_position)
 	if t.has_method("get_radius"):
 		d -= float(t.call("get_radius"))
+	d -= get_radius()
 	return maxf(d, 0.0)
 
 
@@ -2050,30 +2063,44 @@ func _stand_off(t: Node3D) -> float:
 	return maxf(r, 0.6)
 
 
-## 当前指令会不会"追出去"（决定索敌半径，也决定够不着时追不追）
+## 警戒圈半径：待机/警戒时**看得见、愿意走过去打**的距离。
+##
+## 为什么要单独一个半径（2026-11-07）：
+##   以前待机索敌直接用 `attack_range`（近战 1.35m），改成"贴身 0.3m"以后，
+##   一个敌人站在 1.2m 外、步兵却一辈子不理他 —— 玩家看到的是"兵在旁边装死"。
+##   现在近战给 `attack_range + 3`（约 3.3m，一个身位多一点），远程按视野封顶。
+##   走过去的距离仍然受 acquire_range / sight_range 约束，不会隔半张图冲锋。
+func _guard_radius() -> float:
+	var base: float = def.attack_range if def != null else 0.0
+	var want: float = maxf(base + 3.0, 3.5)
+	if def != null and def.acquire_range > 0.0:
+		want = minf(want, def.acquire_range)
+	if def != null and def.sight_range > 0.0:
+		want = minf(want, def.sight_range)
+	return maxf(want, base + 0.1)
 
 
 ## 当前指令会不会"追出去"（决定索敌半径，也决定够不着时追不追）
+##
+## ★ 待机/警戒也要能"走过去打"：只要当前锁定的目标还在警戒圈里就允许追。
+##   不然 `_update_attack` 会因为 `not _may_pursue()` 直接 target=null，
+##   近战永远够不着 1m 外的敌人。
 func _may_pursue() -> bool:
 	if not is_mobile():
 		return false
-	return order == RtsConst.Order.ATTACK \
+	if order == RtsConst.Order.ATTACK \
 			or order == RtsConst.Order.ATTACK_MOVE \
-			or order == RtsConst.Order.MOVE
+			or order == RtsConst.Order.MOVE:
+		return true
+	if target != null and is_instance_valid(target) and target.is_alive():
+		return _flat_dist(target.global_position) <= _guard_radius()
+	return false
 
 
 ## 自动索敌：走 Game 的注册表（不遍历场景），带分片。
 ##
-## ⚠ 待机/警戒**只认射程内的敌人**：老代码对任何指令都用 acquire_range（步兵 11m、
-##   攻击距离 1.35m），待机会锁一个够不着的目标；而 `_acquire` 开头"已有目标就返回"
-##   又让它再也不索敌 —— 结果就是站在那儿对着 9m 外的敌人发呆。
-
-
-## 自动索敌：走 Game 的注册表（不遍历场景），带分片。
-##
-## ⚠ 待机/警戒**只认射程内的敌人**：老代码对任何指令都用 acquire_range（步兵 11m、
-##   攻击距离 1.35m），待机会锁一个够不着的目标；而 `_acquire` 开头"已有目标就返回"
-##   又让它再也不索敌 —— 结果就是站在那儿对着 9m 外的敌人发呆。
+## 待机/警戒：在**警戒圈**内找，找到就允许走过去（见 _guard_radius / _may_pursue）。
+## 行军：只在前方 45% 索敌半径内反应，不改变原路线。
 func _acquire(dt: float, radius_scale: float = 1.0) -> void:
 	if def == null or def.acquire_range <= 0.0:
 		return
@@ -2087,10 +2114,15 @@ func _acquire(dt: float, radius_scale: float = 1.0) -> void:
 		return
 	_think_t = THINK_SLICE
 	var pursue: bool = _may_pursue()
-	var radius: float = (def.acquire_range if pursue else def.attack_range) * radius_scale
+	var scan_r: float = def.acquire_range if pursue else _guard_radius()
+	var radius: float = scan_r * radius_scale
 	if radius <= 0.0:
 		return
 	var cand: Node3D = Game.find_nearest_enemy(global_position, faction, radius)
+	# ★ 看不见的敌人不许锁（迷雾口径，唯一出口 Game.is_node_visible_to）：
+	#   以前弩兵能隔着黑雾锁定 12m 外的野怪并一路射死，玩家完全看不到目标。
+	if cand != null and not Game.is_node_visible_to(faction, cand):
+		cand = null
 	if cand != null and not pursue and _target_gap(cand) > _attack_reach(cand):
 		cand = null
 	target = cand
@@ -2117,6 +2149,12 @@ func _update_attack(dt: float) -> void:
 		return
 
 	if target == null or not is_instance_valid(target) or not target.is_alive():
+		target = null
+		return
+
+	# ★ 目标跑进黑雾/树林阴影里 → 立刻放掉锁定。看不见就打不了，
+	#   否则会出现"对着空气挥砍/放箭"（玩家 2026-11-06 反馈）。
+	if not Game.is_node_visible_to(faction, target):
 		target = null
 		return
 
@@ -2193,12 +2231,21 @@ func _begin_swing() -> void:
 
 
 ## 出手：近战立刻结算，远程发投射物（伤害在落点）
+##
+## ★ 出手前**再验一次**距离与可见性（2026-11-07）：
+##   前摇有 0.2~0.5s，目标在这段时间里跑出射程/钻进黑雾时，老代码照样结算伤害，
+##   玩家看到的是"弩兵隔着半张地图把人射死"。现在超出「射程 + 0.5m 容差」就收手。
 func _release_attack() -> void:
 	_swinging = false
 	if def == null:
 		return
 	if target == null or not is_instance_valid(target) or not target.is_alive():
 		target = null
+		return
+	if not Game.is_node_visible_to(faction, target):
+		target = null
+		return
+	if _target_gap(target) > _attack_reach(target) + 0.5:
 		return
 
 	if def.projectile == RtsConst.Projectile.NONE:

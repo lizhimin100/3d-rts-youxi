@@ -66,6 +66,14 @@ var neutral_faction: RtsFaction = null
 ## 关卡（由 主场景 挂上）
 var level: Node3D = null
 
+## **战争迷雾节点**（由 主场景 在 _setup_fog 里挂上；没有 = 无迷雾，全部可见）。
+## ★ 单位索敌 / 开火都要问"我这一刻看不看得见他"，唯一出口是本文件的 `is_visible_to()`。
+##   以前索敌只按半径找人（`find_nearest_enemy`），结果弩兵能隔着整片黑雾
+##   锁定并射杀自己根本没看见的敌人（玩家 2026-11-06 反馈）。
+##   迷雾只统计**玩家阵营（含盟友）**的视野：AI 阵营保持全知，否则 AI 会因为
+##   玩家视角的迷雾表变瞎（这是刻意的非对称，写在 `is_visible_to` 里）。
+var fog_node: Node = null
+
 ## **日夜系统**（由 主场景 在 4.98 挂上；没有它就是白天）。
 ## ★ 这是"现在是不是夜里"的**唯一全局出口**：AI / 副官 / 界面 / 营火都读这里，
 ##   不要再各自去 `get_parent().get("day_night")` 或者 get_node("../日夜") —— 那是
@@ -80,6 +88,44 @@ func is_night() -> bool:
 	if not day_night.has_method("is_night"):
 		return false
 	return bool(day_night.call("is_night"))
+
+
+# ===========================================================================
+# 可见性（索敌 / 开火 / 小地图共用的唯一口径）
+# ===========================================================================
+## 阵营 `f` 此刻能不能看见世界坐标 `pos`。
+##
+## 规则（2026-11-07 统一）：
+##   · 没有迷雾节点 / 迷雾被 `--qa-reveal` 关掉 → 全部可见；
+##   · **只有玩家阵营和它的盟友受迷雾约束**。AI 阵营、中立野怪一律返回 true：
+##     迷雾表是按"玩家视角"算的，拿它去限制 AI 会让 AI 变瞎（不是变难）。
+##     想要 AI 也受迷雾约束，得给每个 AI 单独算一张视野表，那是另一个工程。
+##   · `explored_only = true` 用于建筑/资源：只要探索过就永远看得到（魔兽口径）。
+func is_visible_to(f: RtsFaction, pos: Vector3, explored_only: bool = false) -> bool:
+	if f == null or fog_node == null or not is_instance_valid(fog_node):
+		return true
+	if f.slot < 0:
+		return true
+	if player_faction == null or f != player_faction:
+		# 盟友也吃玩家视角的迷雾（共用一张表）；非玩家阵营直接放行
+		if player_faction == null or not player_faction.is_ally_of(f):
+			return true
+	if explored_only:
+		if fog_node.has_method("is_world_explored_pos"):
+			return bool(fog_node.call("is_world_explored_pos", pos))
+		return true
+	if fog_node.has_method("is_world_visible_pos"):
+		return bool(fog_node.call("is_world_visible_pos", pos))
+	return true
+
+
+## `is_visible_to` 的节点版：建筑用"探索过"，其它用"此刻可见"。
+func is_node_visible_to(f: RtsFaction, n: Node3D) -> bool:
+	if n == null or not is_instance_valid(n):
+		return false
+	if n is RtsBuilding:
+		return is_visible_to(f, n.global_position, true)
+	return is_visible_to(f, n.global_position, false)
 
 ## **控制权登记表**（谁有权给单位下令）。由 _ready 建好，全项目共用一份：
 ## 玩家下过令的单位在"命令组"生命周期内不许副官/人机碰（见 代码/ai/控制权.gd）。

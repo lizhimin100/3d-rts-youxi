@@ -529,9 +529,12 @@ func _case_2c4() -> void:
 			and UT.find_by_role(&"承伤").any(func(c): return c.card_id == "steam_guard")
 			and UT.find_by_role(&"承伤").any(func(c): return c.card_id == "gnoll_warrior"),
 			"承伤=%d 张" % UT.find_by_role(&"承伤").size())
-	_record("2C4卡：范围档派生 步兵=近战(1.35) / 蒸汽重步兵=中程(1.6，阈值占位 TODO)",
+	# ★ 2026-11-07 射程口径统一后（attack_range = 身位边缘→目标边缘的间隙）：
+	#   步兵 0.2 / 蒸汽重步兵 0.35 都是近战；弩兵 8.0 是超远程（阈值 6m）。
+	_record("2C4卡：范围档派生 步兵=近战(0.2) / 蒸汽重步兵=近战(0.35) / 弩兵=超远程(8.0)",
 			UT.find_by_range_tier(&"近战").any(func(c): return c.card_id == "footman")
-			and UT.find_by_range_tier(&"中程").any(func(c): return c.card_id == "steam_guard"),
+			and UT.find_by_range_tier(&"近战").any(func(c): return c.card_id == "steam_guard")
+			and UT.find_by_range_tier(&"超远程").any(func(c): return c.card_id == "archer"),
 			"阈值 1.5/3.0/6.0")
 	var fake_def: UnitDef = UnitDef.new()
 	fake_def.id = &"fake_cardless"

@@ -559,10 +559,27 @@ func _sync_range_rings() -> void:
 ## 只画"圈"不画"盘"：盘会盖住地表明暗（RTS 里选区高亮是另一种信息，别混）。
 ## 材质：unshaded + alpha + 双面，颜色取阵营色提亮一档 ——
 ## 和选中圈（实心渐隐环）在观感上要能区分：这个是**细亮线**，不是光圈。
+##
+## ★ 2026-11-07 半径口径 = `attack_range + 自身半径`（建筑换成占地半宽）。
+##   attack_range 本身是"身位边缘→目标边缘"的间隙，圈画在自身中心就得多加自己的半径，
+##   这样圈的边缘 = 真正够得着的边界（玩家反馈"实际射程比圈大"就是这里少了这半步）。
+func _range_ring_radius(u: RtsUnit) -> float:
+	var r: float = u.def.attack_range
+	if u is RtsBuilding:
+		var fp: Vector2i = u.def.footprint
+		if fp != Vector2i.ZERO:
+			r += float(maxi(fp.x, fp.y)) * 0.5
+		else:
+			r += float(u.call("get_radius")) if u.has_method("get_radius") else 0.0
+	elif u.has_method("get_radius"):
+		r += float(u.call("get_radius"))
+	return r
+
+
 func _make_range_ring(u: RtsUnit) -> Node3D:
 	if u == null or not is_instance_valid(u) or u.def == null:
 		return null
-	var r: float = u.def.attack_range
+	var r: float = _range_ring_radius(u)
 	if r <= 0.0:
 		return null
 	var color: Color = u.faction.color if u.faction != null else (
