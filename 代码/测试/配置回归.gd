@@ -508,13 +508,14 @@ func _case_2c4() -> void:
 			sa_src.contains("const RESEARCH_NOT_BEFORE_SEC: float = 300.0"), "文本命中")
 	_record("2C4：常态出击比例 0.75",
 			sa_src.contains("const ATTACK_RATIO_NORMAL: float = 0.75"), "文本命中")
-	_record("2C4/2C8：农民工位 采金8 + 采木2 + 工位2 = 12（总数不变，工位动态）",
-			sa_src.contains("PEASANT_GOLD_SOFT_CAP: int = 8")
-			and sa_src.contains("PEASANT_WOOD_TARGET: int = 2")
+	# ★ 2026-11-07 玩家口径「采矿农民改 5」：5 金 + 5 木 + 2 工位 = 12（总数不变）
+	_record("2C4/2C8：农民工位 采金5 + 采木5 + 工位2 = 12（总数不变，工位动态）",
+			sa_src.contains("PEASANT_GOLD_SOFT_CAP: int = 5")
+			and sa_src.contains("PEASANT_WOOD_TARGET: int = 5")
 			and sa_src.contains("PEASANT_BUILDER_SLOT: int = 2")
 			and sa_src.contains(
 				"PEASANT_TOTAL_CAP: int = PEASANT_GOLD_SOFT_CAP + PEASANT_WOOD_TARGET + PEASANT_BUILDER_SLOT"),
-			"8 + 2 + 2 = 12")
+			"5 + 5 + 2 = 12")
 
 	# --- 卡系统（C1~C5）---
 	var foot_card: EntityCard = UT.get_card(&"footman")
@@ -864,12 +865,12 @@ func _case_2c8() -> void:
 			"三池顺序补位 + seen 去重")
 
 	# --- 配比（2 条）---
-	var w1: int = int(bm.peasant_gold_want_dynamic(12, 2, 8))
-	var w2: int = int(bm.peasant_gold_want_dynamic(15, 3, 8))
-	var w3: int = int(bm.peasant_gold_want_dynamic(6, 2, 8))
-	var w4: int = int(bm.peasant_gold_want_dynamic(2, 2, 8))
-	_record("2C8：采金 min(8, N−工位)：12/2→8、15/3→8、6/2→4、2/2→0",
-			w1 == 8 and w2 == 8 and w3 == 4 and w4 == 0,
+	var w1: int = int(bm.peasant_gold_want_dynamic(12, 2, 5))
+	var w2: int = int(bm.peasant_gold_want_dynamic(15, 3, 5))
+	var w3: int = int(bm.peasant_gold_want_dynamic(6, 2, 5))
+	var w4: int = int(bm.peasant_gold_want_dynamic(2, 2, 5))
+	_record("2C8：采金 min(5, N−工位)：12/2→5、15/3→5、6/2→4、2/2→0",
+			w1 == 5 and w2 == 5 and w3 == 4 and w4 == 0,
 			"12/2=%d 15/3=%d 6/2=%d 2/2=%d" % [w1, w2, w3, w4])
 	_record("2C8：配比守恒 gold + wood = N − 工位（采木 = 余量，不封顶）",
 			(w1 + (12 - 2 - w1)) == 10 and (w2 + (15 - 3 - w2)) == 12

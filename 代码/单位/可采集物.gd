@@ -99,6 +99,18 @@ func selection_point() -> Vector3:
 	return global_position + Vector3.UP * h
 
 
+## 金矿洞口（世界坐标）。只有 goldmine 用；树没有这个函数，调用方用 has_method 探测。
+##
+## 金矿 glb 的洞口是局部 z=-1.30 的一块 1.0×1.56m 暗板（M_cavity），
+## 关卡生成时把整只矿转了 180°（关卡.gd 的 `rotation.y = PI`），
+## 所以这个局部坐标落到世界是「朝向基地」的那一面 —— 农民正是从那一面过来的。
+## 往里再送 0.55m，人就躲到暗板后面（opaque + 深度测试），读起来就是"走进了矿洞"。
+const MOUTH_LOCAL := Vector3(0.0, 0.75, -1.85)
+
+func mouth_point() -> Vector3:
+	return to_global(MOUTH_LOCAL)
+
+
 # ===========================================================================
 # 采集
 # ===========================================================================
@@ -113,6 +125,28 @@ func consume(amount: int) -> int:
 		remaining = 0
 		_deplete()
 	return take
+
+
+## 被砍时晃一下（2026-11-07 玩家口径「采木头不要木渣，只需要树会摇晃」）。
+##
+## 只转 `visual`（UnitVisual 外壳），不动本体：
+##   · 本体的 rotation.y 是关卡给的朝向，rotation.z 被 _deplete_tree 的倒下动画占着；
+##   · 树的静态倾斜/下沉烘焙在 visual 内层的 root 上（树库.gd），外壳转一圈不会打架。
+var _shake_tw: Tween = null
+
+func shake(strength: float = 1.0) -> void:
+	if visual == null or not is_instance_valid(visual):
+		return
+	if _shake_tw != null and _shake_tw.is_valid():
+		_shake_tw.kill()
+	var amp: float = deg_to_rad(2.6) * clampf(strength, 0.3, 2.0)
+	var ax: float = 1.0 if Fx.rand() > 0.5 else -1.0
+	visual.rotation = Vector3.ZERO
+	_shake_tw = create_tween()
+	_shake_tw.tween_property(visual, "rotation", Vector3(ax * amp, 0.0, amp * 0.6), 0.07)
+	_shake_tw.tween_property(visual, "rotation", Vector3(-ax * amp * 0.6, 0.0, -amp * 0.35), 0.09)
+	_shake_tw.tween_property(visual, "rotation", Vector3(ax * amp * 0.3, 0.0, amp * 0.15), 0.09)
+	_shake_tw.tween_property(visual, "rotation", Vector3.ZERO, 0.11)
 
 
 ## 枯竭

@@ -45,7 +45,11 @@ const VILLAGER_ARMY_GAP: int = 2
 const PEASANT_EMERGENCY_BONUS: int = 2
 ## 2C-4 农民软上限（**直接覆盖旧上限 10**，任务书 §4.4）：采金人数到这个数 → 转采木。
 ## TODO 初始值待农民测试（§4.4）产出后取下沿标定
-const PEASANT_GOLD_SOFT_CAP: int = 8
+## ★ 2026-11-07 玩家口径「决策系统里采矿的农民数量改为 5 个」：
+##   5 金 + 5 木 + 2 工位 = 12（总数不变，只是把 3 个采金的挪去采木）。
+##   只改这一行会让 PEASANT_TOTAL_CAP 从 12 掉到 9 —— 农民总量跟着缩水，
+##   所以 PEASANT_WOOD_TARGET 一起从 2 提到 5。
+const PEASANT_GOLD_SOFT_CAP: int = 5
 ## 2C-7 P0 农民工位（用户拍板）：**采金 8 + 采木 3 + 建造/修理 1 = 12**。
 ## 旧口径是"软上限 8 + 4 个机动农民"—— 那 4 个既伐木又建造，于是每次"该修"时
 ## 都有人在盖房/砍树，repair_stats 里 10 min 局 **76 次 candidates / 0 次 issued**
@@ -59,7 +63,7 @@ const PEASANT_GOLD_SOFT_CAP: int = 8
 ##   同时建造数 = 工位数 − 1（**至少留 1 个工位给修理**）；
 ##   无建造任务时全部工位可修；无修理任务时全部工位采木（不待命）。
 ##   ★ 总数仍是 12（PEASANT_TOTAL_CAP 不变），改的是"工位几个人、怎么分工"。
-const PEASANT_WOOD_TARGET: int = 2
+const PEASANT_WOOD_TARGET: int = 5
 const PEASANT_BUILDER_SLOT: int = 2
 ## 总农民上限 = 采金 + 采木 + 工位 = 12（与 2C-6/2C-7 同数值，只是重新切分）
 const PEASANT_TOTAL_CAP: int = PEASANT_GOLD_SOFT_CAP + PEASANT_WOOD_TARGET + PEASANT_BUILDER_SLOT

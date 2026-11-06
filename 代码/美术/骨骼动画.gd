@@ -46,6 +46,11 @@ const FALLBACK := {
 ## gather / build 不在里面 —— 它们是"持续动作"，见 LOOPING 的注释。
 const ONE_SHOT: Array[StringName] = [&"attack", &"shoot", &"cast", &"hurt", &"death"]
 
+## 打完一发接的"装填"动作（弩兵/火枪这类）。纯视觉：不参与伤害时序，
+## 只是让玩家看见「射一箭要上一次弦」，而不是凭空连发。
+## 资产契约：`shoot` + `reload` 两个动作同时存在才生效，别的兵种完全不受影响。
+const RELOAD_AFTER := {&"shoot": &"reload"}
+
 const BLEND := 0.16
 ## 循环动作（walk）在高速播放时，0.16s 的淡入已经接近半个周期，会糊。
 ## 实测 2.3x 步频下用 0.09s 既不断帧、也不吃掉落脚。
@@ -54,6 +59,8 @@ const BLEND_LOOP := 0.09
 var _ap: AnimationPlayer = null
 var _current: StringName = &""
 var _one_shot: StringName = &""
+## 正在补播"装填"动作（shoot 播完 → reload → idle）
+var _reloading: bool = false
 var _speed: float = 1.0
 var _ready_ok: bool = false
 
@@ -152,7 +159,22 @@ func _on_finished(anim: StringName) -> void:
 	if anim == &"death":
 		_one_shot = &""
 		return
+	# 装填播完 → 回 idle
+	if _reloading and anim == &"reload":
+		_reloading = false
+		_one_shot = &""
+		set_state("idle")
+		return
 	if ONE_SHOT.has(anim):
+		# 弩兵：射完接一段上弦（资产里有 reload 才播）
+		var nxt: StringName = RELOAD_AFTER.get(anim, &"")
+		if nxt != &"" and _ap.has_animation(String(nxt)):
+			_reloading = true
+			_current = nxt
+			_one_shot = nxt
+			_ap.play(String(nxt), BLEND, 1.0)
+			_ap.seek(0.0, true)
+			return
 		_one_shot = &""
 		set_state("idle")
 

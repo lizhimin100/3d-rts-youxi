@@ -160,9 +160,15 @@ func _orient() -> void:
 	var vel: Vector3 = global_position - _prev_pos
 	if vel.length_squared() < 0.000001:
 		return
-	# look_at 让 -Z 指向目标方向，箭身自然"扎"向前方
-	if global_position.distance_squared_to(_prev_pos + vel) > 0.0001:
-		look_at(global_position + vel, Vector3.UP)
+	# ★ 这里以前写的是 `if global_position.distance_squared_to(_prev_pos + vel) > 0.0001`
+	#   而 _prev_pos + vel 恒等于当前位置 → 判据永远为假 → look_at 从来没执行过，
+	#   箭一直是"世界坐标默认朝向"横着飞（玩家口径「箭几乎都是歪的」）。直接对齐即可。
+	var dir: Vector3 = vel.normalized()
+	# 近乎垂直的箭用 UP 当上方向会退化（基向量共线 → 画面抽帧），换个参考轴
+	var up: Vector3 = Vector3.UP
+	if absf(dir.dot(Vector3.UP)) > 0.995:
+		up = Vector3.FORWARD
+	look_at(global_position + dir, up)
 
 
 # ===========================================================================

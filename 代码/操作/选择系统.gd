@@ -496,7 +496,7 @@ func _sync_rings() -> void:
 ## 攻击范围圈：unit → Node3D（挂在单位身上的贴地圆环，跟随移动，无需每帧更新）
 var _range_rings: Dictionary = {}
 ## 攻击范围圈的线宽（米）。0.22 在 44m 的默认视距下正好"看得见又不吵"
-const RANGE_RING_WIDTH := 0.22
+const RANGE_RING_WIDTH := 0.14
 ## 贴在离地多高（米）：0.12 能压住地形又不和选中圈（0.06）打架
 const RANGE_RING_LIFT := 0.12
 
@@ -512,6 +512,11 @@ const RANGE_RING_LIFT := 0.12
 func _range_targets() -> Array:
 	var out: Array = []
 	if selected.is_empty():
+		return out
+	# ★ 2026-11-07 玩家口径「似乎有两个圆圈」：多选同类时每个单位各画一个射程圈，
+	#   3 个弩兵 = 3 个 12m 大圈叠在一起，屏幕上只剩一堆圆圈。
+	#   射程是**单个单位**的属性，多选时它不构成信息量 → 只在单选时画。
+	if selected.size() > 1:
 		return out
 	var first_id: StringName = &""
 	for u in selected:
@@ -571,9 +576,9 @@ func _make_range_ring(u: RtsUnit) -> Node3D:
 	for i in range(segs + 1):
 		var ang: float = TAU * float(i) / float(segs)
 		var dir := Vector3(cos(ang), 0.0, sin(ang))
-		im.surface_set_color(Color(color.r, color.g, color.b, 0.62))
+		im.surface_set_color(Color(color.r, color.g, color.b, 0.34))
 		im.surface_add_vertex(dir * r)
-		im.surface_set_color(Color(color.r, color.g, color.b, 0.40))
+		im.surface_set_color(Color(color.r, color.g, color.b, 0.16))
 		im.surface_add_vertex(dir * (r - RANGE_RING_WIDTH))
 	im.surface_end()
 
@@ -605,7 +610,8 @@ func _make_range_ring(u: RtsUnit) -> Node3D:
 ##   2. 美术侧给好的 美术/特效/选中圈.tscn（文档 §7 点名的资源）
 ##   3. 自己画一段贴地环形三角带（保证美术没到位也能看出选中了谁）
 func _make_ring(u: Node3D) -> Node3D:
-	var radius: float = maxf(_select_radius(u) * 1.35, 0.6)
+	# 1.22：贴着脚下轮廓，不像旧版 1.35 那样给每个兵套一个偏大的呼啦圈
+	var radius: float = maxf(_select_radius(u) * 1.22, 0.62)
 	# 选中圈颜色跟着**阵营显示色**走：自己的蓝、盟友的青、敌人的红/绿。
 	# 以前整圈一律用玩家蓝 —— 选中盟友时圈子和自己一模一样，"选中了谁"读不出来。
 	var color: Color = _ring_color(u)

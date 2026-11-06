@@ -514,7 +514,7 @@ func _die() -> void:
 		# 死在矿里（采集金矿时模型是沉下去且隐藏的）→ 先把模型升回来，
 		# 否则尸体会"隐形"躺在矿里，玩家看不到死亡反馈。
 		_mine_k = 0.0
-		visual.position.y = 0.0
+		visual.position = Vector3.ZERO
 		visual.scale = Vector3.ONE
 		visual.visible = true
 		visual.play_death()
@@ -1269,7 +1269,10 @@ func _tick_chop_fx(dt: float) -> void:
 		return
 	var p: Vector3 = _gather_node.global_position + Vector3(0.0, 0.55, 0.0)
 	if _carry_kind == RtsConst.Harvest.WOOD:
-		BUILD_FX.chips(p, Color(0.62, 0.44, 0.24), 5)
+		# ★ 2026-11-07 玩家口径「采木头则不需要那什么木渣，只需要树会摇晃」：
+		#   木屑粒子去掉，改成让树本体晃一下（可采集物.shake）。
+		if _gather_node.has_method("shake"):
+			_gather_node.call("shake", 1.0)
 	else:
 		BUILD_FX.dust(p, 3, 0.25, Color(0.86, 0.78, 0.48))
 
@@ -1281,6 +1284,18 @@ func _tick_chop_fx(dt: float) -> void:
 ##   ② 开工判据改成"到**墙面**的距离"，不再拿中心距（大本营 9m 宽，站墙根离中心 4.5m）；
 ##   ③ 已经在建造距离内就**直接干活、不重算路径** —— 被路过的人推一下不会清零进度，
 ##      只有真的被挤出墙外 1.3m 才走回来（配合分离锚定，实际几乎不会发生）。
+## 施工/修理的"够得着"判据（到墙面的距离，米）。
+##
+## ★ 2026-11-07 玩家口径「农民只能拍下一个地基，然后就没有然后」的根因：
+##   这里是**固定 1.35m**，而 `work_spot_for()` 给的站位被 `walkable_pos()` 吸附到
+##   **格子中心**，建筑占地外扩后最近的格心在墙面外 **1.50m** —— 永远差 15cm。
+##   于是每帧都判"太远"→ 再走一步 → 被墙顶住 → 下帧还是太远，进度一辈子是 0。
+##   现在按"本单位半径 + 余量"算，并且保证不小于 1.5（格子吸附的下限）。
+func _work_reach() -> float:
+	return maxf(1.5, get_radius() + 0.85)
+
+
+## 建造：走到工地旁 → 播 build 动画 → 推进进度（多农民叠加）
 func _order_build_tick(dt: float) -> void:
 	if _build_site == null or not is_instance_valid(_build_site):
 		order = RtsConst.Order.NONE
@@ -1294,9 +1309,10 @@ func _order_build_tick(dt: float) -> void:
 		state = RtsConst.State.IDLE
 		_work_spot_valid = false
 		return
-	# 够得着墙面就干活（1.35m ≈ 一个身位，农民手臂长度也在里面）
+	# 够得着墙面就干活（阈值随体型走，见 _work_reach 的注释）
+	var reach: float = _work_reach()
 	var d: float = site.distance_to_footprint(global_position)
-	if d <= 1.35:
+	if d <= reach:
 		_stop_moving()
 		state = RtsConst.State.BUILD
 		_face_pos(site.global_position, dt)
@@ -1312,7 +1328,7 @@ func _order_build_tick(dt: float) -> void:
 	state = RtsConst.State.MOVE
 	_go_to(_work_spot)
 	# 站位本身够不着墙面（地形/别的建筑卡住）→ 退而求其次，直接朝工地中心走
-	if not _moving and site.distance_to_footprint(global_position) > 1.35:
+	if not _moving and site.distance_to_footprint(global_position) > reach:
 		_go_to(site.global_position)
 
 
@@ -1330,7 +1346,7 @@ func _order_repair_tick(dt: float) -> void:
 		state = RtsConst.State.IDLE
 		_work_spot_valid = false
 		return
-	if b.distance_to_footprint(global_position) <= 1.35:
+	if b.distance_to_footprint(global_position) <= _work_reach():
 		_stop_moving()
 		state = RtsConst.State.BUILD
 		_face_pos(b.global_position, dt)
@@ -1344,7 +1360,7 @@ func _order_repair_tick(dt: float) -> void:
 		return
 	state = RtsConst.State.MOVE
 	_go_to(_work_spot)
-	if not _moving and b.distance_to_footprint(global_position) > 1.35:
+	if not _moving and b.distance_to_footprint(global_position) > _work_reach():
 		_go_to(b.global_position)
 
 
@@ -1971,7 +1987,13 @@ func _snap_ground(dt: float) -> void:
 ## 攻击能打到的距离。建筑**不加半径**：距离用的是"到墙面"（见 _target_gap）。
 func _attack_reach(t: Node3D) -> float:
 	var r: float = def.attack_range if def != null else 0.0
-	if t != null and not (t is RtsBuilding) and t.has_method("get_radius"):
+	if t is RtsBuilding:
+		# ★ 打建筑：占地外扩 1 格后最近的合法站位在墙面外 1.5m，
+		#   近战 reach 只有 1.35 → 每帧判"够不着"→ 贴墙抽动、不砍楼
+		#   （和建造卡死同一个病灶，2026-11-07 一并修）。
+		if r < 2.0:
+			r = maxf(r, 1.62)
+	elif t != null and t.has_method("get_radius"):
 		r += float(t.call("get_radius"))
 	return maxf(r, 0.3)
 
@@ -2423,16 +2445,30 @@ func _update_anim() -> void:
 	# ★ 只对**可移动单位**做（建筑不能进矿洞；而且建筑的 `visual.position.y`
 	#   被 建筑._install_pad 设成 PAD_LIFT=0.09 用来治 z-fighting，这里一重置就又闪了）。
 	if is_mobile():
-		var want_mine: float = 1.0 \
-				if (state == RtsConst.State.GATHER and _carry_kind == RtsConst.Harvest.GOLD) else 0.0
-		_mine_k = move_toward(_mine_k, want_mine, get_process_delta_time() * 3.4)
-		if _mine_k > 0.001:
-			visual.position.y = -0.95 * _mine_k
-			visual.scale = Vector3.ONE * (1.0 - 0.12 * _mine_k)
-			visual.visible = _mine_k < 0.97
-		elif visual.position.y != 0.0 or not visual.visible:
+		var mine: Node3D = _gather_node as Node3D
+		var can_enter: bool = state == RtsConst.State.GATHER \
+				and _carry_kind == RtsConst.Harvest.GOLD \
+				and mine != null and is_instance_valid(mine) \
+				and mine.has_method("mouth_point")
+		# ★ 2026-11-07 玩家口径「农民采矿直接没入地下，太奇怪了，要走进金矿」：
+		#   旧版是**纯竖直**沉 0.95m 再隐藏 —— 人往土里钻，而且站位离矿心 3.3m，
+		#   是在矿外的空地上入土。现在改成**朝矿口水平走进去**：
+		#   洞底本来就在 y≈0.04，人只要走平（只压 0.18m 做"进深"），
+		#   最后 0.55m 被矿口那块不透明暗板挡住，到 0.995 再隐藏兜底。
+		_mine_k = move_toward(_mine_k, 1.0 if can_enter else 0.0,
+				get_process_delta_time() * 2.0)
+		if can_enter and _mine_k > 0.001:
+			var mp: Vector3 = to_local(mine.call("mouth_point") as Vector3)
+			var flat := Vector2(mp.x, mp.z)
+			# 兜底：从矿背面/侧面来的人不许横穿 2.2m 石头
+			if flat.length() > 2.2:
+				flat = flat.normalized() * 2.2
+			visual.position = Vector3(flat.x * _mine_k, -0.18 * _mine_k, flat.y * _mine_k)
+			visual.scale = Vector3.ONE * (1.0 - 0.05 * _mine_k)
+			visual.visible = _mine_k < 0.995
+		elif visual.position != Vector3.ZERO or not visual.visible:
 			# 回来时恢复原样（不能只靠"小于阈值"分支，否则会留一个 -0.0001 的偏差）
-			visual.position.y = 0.0
+			visual.position = Vector3.ZERO
 			visual.scale = Vector3.ONE
 			visual.visible = true
 	match state:

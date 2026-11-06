@@ -131,9 +131,14 @@ static func selection_ring(parent: Node3D, radius: float = 1.0,
 				if smat.get_shader_parameter("team_color") != null:
 					var 副本 := smat.duplicate() as ShaderMaterial
 					副本.set_shader_parameter("team_color", color)
+					# ★ 线宽按**世界米**定，别让它随半径变粗：
+					#   面片是 2×2 缩放 s = radius/0.8，UV 线宽 w 对应世界宽度 w*s。
+					#   固定 0.055m → w = 0.055*0.8/radius（大本营 4.3m 也不会变成荧光带）。
+					副本.set_shader_parameter("ring_width",
+							clampf(0.044 / maxf(radius, 0.5), 0.012, 0.09))
 					mi.set_surface_override_material(i, 副本)
 	parent.add_child(inst)
-	inst.position.y = 0.02
+	inst.position.y = 0.05
 	return inst
 
 

@@ -752,7 +752,7 @@ static func builder_build_limit(builder_count: int) -> int:
 ## 满编 12 + 2 工位 → 采金 8 / 采木 2；15 + 3 工位 → 8 / 4；6 + 2 工位 → 4 / 0。
 ## 与 `peasant_gold_want()` 的差别：**先扣工位，再用软上限截断**，不做比例缩放。
 static func peasant_gold_want_dynamic(peasant_total: int, builder_count: int,
-		gold_cap: int = 8) -> int:
+		gold_cap: int = 5) -> int:
 	var n: int = maxi(peasant_total, 0)
 	var b: int = clampi(builder_count, 0, n)
 	var cap: int = maxi(gold_cap, 0)
