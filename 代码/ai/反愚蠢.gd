@@ -61,9 +61,13 @@ func update(ctx: Dictionary) -> void:
 		return
 	_last_check = now
 	_check_idle_workers(ctx)
-	_check_supply(ctx)
-	_check_production(ctx)
-	_check_gold_float(ctx)
+	# 空过期间**不许花钱**（2026-11-07 玩家口径）：
+	# 这三项会开新工地 / 训练 / 研究，属于"新开销"。空过时整块跳过，
+	# 但派工/接续/救火这些不花钱的仍然照跑。
+	if not bool(ctx.get("goal_noop", false)):
+		_check_supply(ctx)
+		_check_production(ctx)
+		_check_gold_float(ctx)
 	_check_army_response(ctx)
 	_check_stuck(ctx)
 	_check_construction(ctx)

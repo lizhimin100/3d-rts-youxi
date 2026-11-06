@@ -266,6 +266,12 @@ var dept_stats: Dictionary = {
 	"goal_truncated_cycles": 0,
 	# 2C-14 纯观测：次目标为空/非空周期数（2C-13 §4.2 只能从 L3 日志重算）
 	"goal_sub_empty_cycles": 0, "goal_sub_present_cycles": 0,
+	# 2C-15 纯观测：AI-only 达成率（修正口径：按期望值判、排除"开目标就已成立"）
+	#   · 副官（玩家阵营）不计入 —— 分母只算 AI 阵营的目标
+	#   · 只写计数，不进任何决策
+	"goal_metric_total": 0, "goal_metric_done": 0,
+	"goal_metric_strict_done": 0, "goal_ai_created": 0,
+	"goal_sub_refilled": 0, "goal_cd_skips": 0,
 	# 2C-13 §4.3：空过期间被挡下的花钱诉求（按动作分类）+ 1.5×G 退出次数
 	"noop_blocked": {}, "noop_aggressive_exits": 0,
 	"noop_aggressive_cycles": 0, "noop_gold_ge_1p5g_cycles": 0,
@@ -323,6 +329,10 @@ var goal_reserved: Dictionary = {"金币": 0, "木材": 0}
 var _goal_best: Dictionary = {}
 var _noop_aggressive: bool = true
 var _goal_thr: float = 0.6
+## 2026-11-07：目标结束后按 "动作|对象" 冷却，减少"3 秒内反复进出同一目标"。
+## 只影响**选目标**，不动 0.6 阈值，也不给空过开口子（冷却完还是空过就空过）。
+const GOAL_COOLDOWN_SEC: float = 4.0
+var _goal_cd: Dictionary = {}
 ## 2C-11 §3：最近 60 s 被拆建筑账本。只存时刻、不存对象引用，避免悬空。
 ## `_known_buildings` = 上一次思考时存活的建筑 instance_id 集合；
 ## 完工不会让 id 消失，所以「上次有、这次没了」只可能是被拆/被移除。
@@ -552,6 +562,10 @@ func _think_once(diff: DifficultyDef) -> void:
 		_maybe_expand()
 
 	# --- ⑦ 反愚蠢审计（最后跑，救火命令优先）---
+	# ★ 2026-11-07 玩家口径「空过期间不许花钱」：把 noop 传进审计，
+	#   让 _check_supply/_check_production/_check_gold_float 这三项花钱动作停手。
+	#   审计本身照跑：派工/接续/救火（不花钱的那部分）不受影响。
+	ctx["goal_noop"] = goal_noop
 	_sanity.update(ctx)
 
 	# --- ⑧ 真正发出去 ---
@@ -5001,9 +5015,28 @@ func _goal_select(props: Array, now: float, prev_id: String = "",
 		goal_main = goals_active[String(goal_main["id"])]
 		if goal_noop:
 			goal_noop = false
+		# ★ 2026-11-07：主目标还活着时也要把次目标补上。
+		#   老代码在这里直接 return，次目标一旦结束（晋升/达成/过期）就永久为空 ——
+		#   实测次目标空置率 89%，就是这么来的。
+		_goal_fill_sub(props, now)
 		_goal_note_main()
 		return
-	var sel: Dictionary = GL.select(props, _faction.gold, _goal_thr)
+	# ★ 冷却过滤：刚结束的「动作|对象」4 秒内不再被选回来。
+	#   注意：只过滤候选，不动 0.6 阈值；全被过滤 → 仍然走空过（不硬塞目标）。
+	var usable: Array = []
+	var skipped: int = 0
+	for p in props:
+		if not (p is Dictionary):
+			continue
+		var key: String = String((p as Dictionary).get("动作", "")) + "|" \
+				+ String((p as Dictionary).get("对象", ""))
+		if float(_goal_cd.get(key, -1.0)) > now:
+			skipped += 1
+			continue
+		usable.append(p)
+	if skipped > 0:
+		dept_stats["goal_cd_skips"] = int(dept_stats["goal_cd_skips"]) + skipped
+	var sel: Dictionary = GL.select(usable, _faction.gold, _goal_thr)
 	if bool(sel["空过"]):
 		if not goal_noop:
 			_goal_switch(prev_id, "", "进入空过", now)
@@ -5029,6 +5062,8 @@ func _goal_select(props: Array, now: float, prev_id: String = "",
 	goal_main = _goal_open(main_p, now)
 	goals_active[String(goal_main["id"])] = goal_main
 	dept_stats["goal_created"] = int(dept_stats["goal_created"]) + 1
+	if _faction != null and _faction.is_ai:
+		dept_stats["goal_ai_created"] = int(dept_stats["goal_ai_created"]) + 1
 	if int(sel.get("截断", 0)) > 0:
 		dept_stats["goal_truncated_cycles"] = \
 				int(dept_stats["goal_truncated_cycles"]) + 1
@@ -5040,6 +5075,75 @@ func _goal_select(props: Array, now: float, prev_id: String = "",
 		goals_active[String(goal_sub["id"])] = goal_sub
 		dept_stats["goal_created"] = int(dept_stats["goal_created"]) + 1
 	_goal_note_main()
+
+
+## 补一个 ≥ `_goal_thr` 的次目标（2026-11-07）。
+##
+## 背景：主目标存活期间老代码直接 return，次目标一旦结束就再也不补 ——
+## 实测次目标空置率 89%。现在每个 2s 周期都会尝试补位：
+##   · 与主目标「动作|对象」相同的不要；
+##   · 与现存活动目标重复的不要（按 动作|对象 比，不靠 id）；
+##   · 冷却中的不要（和主目标同一套 4s 冷却）；
+##   · 分数阈值仍然是 `_goal_thr`（0.6），一个字没改。
+func _goal_fill_sub(props: Array, now: float) -> void:
+	if _faction == null:
+		return
+	# 已有次目标且还活着 → 不动
+	if not goal_sub.is_empty():
+		var sid: String = String(goal_sub.get("id", ""))
+		if goals_active.has(sid):
+			return
+		goal_sub = {}
+	var main_key: String = String(goal_main.get("动作", "")) + "|" + String(goal_main.get("对象", ""))
+	var active_keys: Dictionary = {}
+	for k in goals_active.keys():
+		var g: Dictionary = goals_active[k]
+		active_keys[String(g.get("动作", "")) + "|" + String(g.get("对象", ""))] = true
+	var best: Dictionary = {}
+	for p in props:
+		if not (p is Dictionary):
+			continue
+		var g: Dictionary = p
+		if not GL.proposal_valid(g):
+			continue
+		if float(g.get("紧迫度", 0.0)) < _goal_thr:
+			continue
+		var key: String = String(g.get("动作", "")) + "|" + String(g.get("对象", ""))
+		if key == main_key or active_keys.has(key):
+			continue
+		if float(_goal_cd.get(key, -1.0)) > now:
+			continue
+		if best.is_empty() or float(g["紧迫度"]) > float(best["紧迫度"]) + 0.000001:
+			best = g
+	if best.is_empty():
+		return
+	# 用 "Sub_" 前缀另起 id：提案 id 每周期重编，直接落库可能和仍在执行的目标撞 id
+	var clone: Dictionary = best.duplicate(true)
+	clone["id"] = "Sub_" + String(clone.get("id", "0"))
+	goal_sub = _goal_open(clone, now)
+	goals_active[String(goal_sub["id"])] = goal_sub
+	dept_stats["goal_sub_refilled"] = int(dept_stats["goal_sub_refilled"]) + 1
+	dept_stats["goal_created"] = int(dept_stats["goal_created"]) + 1
+
+
+## 修正口径的达成判定（**纯观测**）：训练/建造按**期望值**算，不是"多了 1 个就算"。
+## 区域/到达/威胁三类无法回溯开目标时的状态，按原判定（返回 true）。
+func _goal_strict_ok(g: Dictionary) -> bool:
+	if _faction == null or g.is_empty():
+		return false
+	var cond: String = String(g.get("达成条件", ""))
+	var obj: String = String(g.get("对象", ""))
+	var want: int = maxi(1, int(g.get("期望值", 1)))
+	var base: int = int(g.get("_基数", 0))
+	match cond:
+		GL.DONE_BUILT:
+			return _faction.count_buildings(StringName(obj)) - base >= want
+		GL.DONE_TRAINED:
+			return _faction.count_units(StringName(obj)) - base >= want
+		GL.DONE_RESEARCHED:
+			return RtsCombat.research_maxed(_faction, StringName(obj))
+		_:
+			return true
 
 
 func _goal_note_main() -> void:
@@ -5134,6 +5238,18 @@ func _goal_tick(diff: DifficultyDef, now: float) -> void:
 		var reason: String = String(rd.get("原因", ""))
 		var rel: Dictionary = dept_stats["goal_release"]
 		rel[reason] = int(rel.get(reason, 0)) + 1
+		# ★ 2026-11-07 空过收敛：目标结束后同一「动作|对象」冷却 4 秒，
+		#   避免"结束→下一周期又选回来→再结束"的三秒进出。
+		var gkey: String = String(rd.get("动作", "")) + "|" + String(rd.get("对象", ""))
+		_goal_cd[gkey] = now + GOAL_COOLDOWN_SEC
+		# ★ AI-only 达成率（纯观测）：副官=玩家阵营，不计入分母。
+		if _faction != null and _faction.is_ai:
+			dept_stats["goal_metric_total"] = int(dept_stats["goal_metric_total"]) + 1
+			if reason == "达成":
+				dept_stats["goal_metric_done"] = int(dept_stats["goal_metric_done"]) + 1
+				if _goal_strict_ok(rd):
+					dept_stats["goal_metric_strict_done"] = \
+						int(dept_stats["goal_metric_strict_done"]) + 1
 		match reason:
 			"达成":
 				dept_stats["goal_done_events"] = int(dept_stats["goal_done_events"]) + 1
@@ -6076,6 +6192,13 @@ func _dept_log(now: float, plan: Dictionary) -> void:
 		"次目标动作": String(goal_sub.get("动作", "")),
 		"储备充足": int(ctx0.get("gold", 0)) >= float(dept_stats.get("saving_reserve_last", 0.0)),
 		"承诺表条数": _promise.size(),
+		# 2C-15 纯观测（只落盘）：AI-only 达成率 + 补选/冷却计数。
+		# 分母只算 AI 阵营（副官是玩家阵营，这两项对它恒 0）。
+		"AI达成率": snappedf(float(dept_stats.get("goal_metric_done", 0))
+			/ maxf(float(dept_stats.get("goal_metric_total", 0)), 1.0), 0.01),
+		"AI目标结束数": int(dept_stats.get("goal_metric_total", 0)),
+		"次目标补选": int(dept_stats.get("goal_sub_refilled", 0)),
+		"冷却跳过": int(dept_stats.get("goal_cd_skips", 0)),
 		"世界": {"字段": int(dept_stats.get("ws_fields_last", 0)),
 			"区域": int(dept_stats.get("ws_regions_last", 0))},
 	}

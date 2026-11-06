@@ -1173,6 +1173,12 @@ func _finish(reason: String) -> void:
 	var m_g_plan_steps: int = 0
 	var m_g_sub_empty: int = 0
 	var m_g_sub_present: int = 0
+	# 2C-15 纯观测：AI-only 达成率（副官=玩家阵营不计入，计数在 简单AI 内已过滤）
+	var m_g_metric_total: int = 0
+	var m_g_metric_done: int = 0
+	var m_g_metric_strict: int = 0
+	var m_g_sub_refill: int = 0
+	var m_g_cd_skips: int = 0
 	var m_ws_writes: int = 0
 	var m_ws_fields: int = 0
 	var m_ws_regions: int = 0
@@ -1183,6 +1189,11 @@ func _finish(reason: String) -> void:
 		m_g_sub_empty += int(dsg.get("goal_sub_empty_cycles", 0))
 		m_g_sub_present += int(dsg.get("goal_sub_present_cycles", 0))
 		m_g_created += int(dsg.get("goal_created", 0))
+		m_g_metric_total += int(dsg.get("goal_metric_total", 0))
+		m_g_metric_done += int(dsg.get("goal_metric_done", 0))
+		m_g_metric_strict += int(dsg.get("goal_metric_strict_done", 0))
+		m_g_sub_refill += int(dsg.get("goal_sub_refilled", 0))
+		m_g_cd_skips += int(dsg.get("goal_cd_skips", 0))
 		m_g_promote += int(dsg.get("goal_sub_promotions", 0))
 		m_g_done += int(dsg.get("goal_done_events", 0))
 		m_g_exp += int(dsg.get("goal_expire_events", 0))
@@ -1222,6 +1233,17 @@ func _finish(reason: String) -> void:
 		"次目标非空周期": m_g_sub_present,
 		"次目标为空占比": snappedf(float(m_g_sub_empty) / maxf(float(m_g_cycles), 1.0), 0.0001),
 		"次目标晋升次数": m_g_promote,
+		# 2C-15：AI-only 达成率（**纯观测**，不进决策）。
+		# 分母 = AI 阵营的目标结束次数（达成+过期+被抢占），副官不计；
+		# 「按期望值」= 训练/建造必须达到提案里的期望值，不是"多 1 个就算"。
+		"目标结束(AI-only)": m_g_metric_total,
+		"达成事件(AI-only)": m_g_metric_done,
+		"达成率(AI-only)": snappedf(float(m_g_metric_done)
+			/ maxf(float(m_g_metric_total), 1.0), 0.0001),
+		"达成率(AI-only,按期望值)": snappedf(float(m_g_metric_strict)
+			/ maxf(float(m_g_metric_total), 1.0), 0.0001),
+		"次目标补选次数": m_g_sub_refill,
+		"冷却跳过候选数": m_g_cd_skips,
 		"释放_达成": m_g_done, "释放_过期": m_g_exp, "释放_被抢占": m_g_pre,
 		"释放原因分布": m_g_rel,
 		"主目标分布": m_g_dist,
