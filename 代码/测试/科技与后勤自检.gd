@@ -174,8 +174,11 @@ func _test_dropoff_choice() -> void:
 		got == _hall, "大本营 %.0fm / 伐木场 %.0fm → 选了 %s" % [
 			d_hall, d_camp,
 			"大本营" if got == _hall else ("伐木场" if got == _camp else "其它")])
-	# 把农民挪到伐木场这边，同一份数据必须反过来选伐木场
+	# 把农民挪到伐木场这边，同一份数据必须反过来选伐木场。
+	# ⚠ 必须清掉 0.5s 缓存：`_nearest_dropoff` 是每帧调用的热点，带缓存
+	#   （`_dropoff_scan_cd`），直连测试传送完不刷缓存会一直拿到上一个大本营。
 	_peasant.global_position = _camp.global_position + Vector3(0.0, 0.0, 3.0)
+	_peasant.set("_dropoff_scan_cd", 0.0)
 	var got2: Variant = _peasant.call("_nearest_dropoff", H_WOOD)
 	_ok("站到伐木场旁边时选伐木场（同一个函数，只认距离）", got2 == _camp)
 	# 背金子时不能去伐木场（它不收金）
@@ -324,8 +327,11 @@ func _test_smith() -> void:
 		var spread: float = float(atk_def.get("attack_spread"))
 		# 只取"加成后的基础值"这一项：直接问战斗系统要，避免把随机 spread 也算进来
 		var eff: float = base_atk + float(_combat.call("attack_bonus", _faction, foot))
-		_ok("结算基础伤害 = 15 + 5 = 20（spread %.0f 之外不再有隐藏倍率）" % spread,
-			absf(eff - 20.0) < 0.001, "实测 %.1f" % eff)
+		# 卡上的基础攻击是 14（2C-6 起），别写死 15：断言的是"只有 +5 加成、
+		# 没有别的隐藏倍率"，所以按实际基础值算期望。
+		_ok("结算基础伤害 = %.0f + 5 = %.0f（spread %.0f 之外不再有隐藏倍率）"
+				% [base_atk, base_atk + 5.0, spread],
+			absf(eff - (base_atk + 5.0)) < 0.001, "实测 %.1f" % eff)
 
 
 # ===========================================================================
