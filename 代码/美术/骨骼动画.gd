@@ -93,7 +93,8 @@ func current_state() -> StringName:
 
 
 ## 主接口：与旧 程序动画.gd 的 set_state 完全一致
-func set_state(state: String, speed_ratio: float = 1.0) -> void:
+## force=true：无视"单次动作没播完"和"同名去重"，强制从第 0 帧重播。
+func set_state(state: String, speed_ratio: float = 1.0, force: bool = false) -> void:
 	if not _ready_ok:
 		return
 	var want := _resolve(StringName(state))
@@ -104,14 +105,15 @@ func set_state(state: String, speed_ratio: float = 1.0) -> void:
 	# ★ 但也不能"整段播完才放行"：attack 0.9s 比很多单位的反应窗口还长，
 	#   玩家点一下移动，兵要站满 0.9 秒才开始走 —— 手感上是"指令不跟手"。
 	#   现在放行阈值 = 55%：出手（伤害结算）在前摇里早完成了，剩下的是收势。
-	if _one_shot != &"" and _ap.is_playing() and _ap.current_animation == String(_one_shot) and is_loop:
+	if not force and _one_shot != &"" and _ap.is_playing() \
+			and _ap.current_animation == String(_one_shot) and is_loop:
 		var cur_len: float = 0.0
 		var cur_anim := _ap.get_animation(String(_one_shot))
 		if cur_anim != null:
 			cur_len = cur_anim.length
 		if cur_len <= 0.001 or _ap.current_animation_position < cur_len * 0.55:
 			return
-	if want == _current and is_loop:
+	if want == _current and is_loop and not force:
 		# 上限 3.0：walk 按真实地速播放（4.6m/s / 2.0m/s 步幅 ≈ 2.3x）
 		_speed = clampf(speed_ratio, 0.2, 3.0)
 		_ap.speed_scale = _speed
@@ -121,6 +123,9 @@ func set_state(state: String, speed_ratio: float = 1.0) -> void:
 	_ap.speed_scale = _speed if is_loop else 1.0
 	_one_shot = want if ONE_SHOT.has(want) else &""
 	_ap.play(String(want), BLEND_LOOP if is_loop else BLEND, 1.0)
+	if force:
+		# play() 对"正在播同一个动作"会续播而不是重头播 → 显式回到 0
+		_ap.seek(0.0, true)
 
 
 func _resolve(state: StringName) -> StringName:

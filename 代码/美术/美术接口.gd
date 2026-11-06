@@ -334,11 +334,13 @@ static func _find_anim_player(n: Node) -> AnimationPlayer:
 	return null
 
 
-static func set_anim(anim_node: Node, state: String, speed_ratio: float = 1.0) -> void:
+static func set_anim(anim_node: Node, state: String, speed_ratio: float = 1.0,
+		force: bool = false) -> void:
 	if anim_node == null or not is_instance_valid(anim_node):
 		return
 	if anim_node.has_method("set_state"):
-		anim_node.call("set_state", state, speed_ratio)
+		# 四参数调用：老脚本（程序动画）也接住了这个可选参数，不会报"参数过多"
+		anim_node.call("set_state", state, speed_ratio, force)
 
 
 # ===========================================================================

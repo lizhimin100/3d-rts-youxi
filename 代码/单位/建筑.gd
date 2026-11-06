@@ -170,6 +170,57 @@ func is_armed() -> bool:
 	return is_constructed and def != null and def.can_attack()
 
 
+## 到**占地矩形最近边**的水平距离（点在矩形内 → 0）。
+##
+## ★ 2026-11-06 玩家口径「近战打建筑会卡位」的根因就在这里：
+##   以前所有"够不够得着"都用**到建筑中心**的距离算。大本营 9m 宽，
+##   兵贴着墙根站，离中心还有 4.5m，而 reach = 攻击距离(1.35) + body_radius(3.0) = 4.35
+##   → 永远差 15cm → 每帧判"够不着"→ 再往中心走一步 → 被墙挡住 →
+##   下帧还是够不着。玩家看到的就是"贴墙挤、不攻击、动画也不播"。
+##   改成量到墙面，1.35m 的攻击距离在墙根一定够得着。
+func distance_to_footprint(p: Vector3) -> float:
+	if def == null:
+		return _flat_dist(p)
+	var hx: float = float(maxi(def.footprint.x, 1)) * 0.5
+	var hz: float = float(maxi(def.footprint.y, 1)) * 0.5
+	var l: Vector3 = to_local(p)
+	var ox: float = maxf(absf(l.x) - hx, 0.0)
+	var oz: float = maxf(absf(l.z) - hz, 0.0)
+	return sqrt(ox * ox + oz * oz)
+
+
+## 给一个农民分配**工地外圈的专属站位**（沿占地矩形外扩一圈，按实例 id 取周长位置）。
+##
+## 为什么要分格子：以前全队 `_go_to(工地中心)`，解析出的最近可站点是同一个，
+## 两个农民抢一格、互相推，谁都站不稳。现在一人一格，沿矩形均匀散开，
+## 而且**贴着墙**（外扩 0.55m），所以距离工地永远 ≤1m，不会绕到背面再走回来。
+func work_spot_for(u: Node3D) -> Vector3:
+	if def == null or u == null:
+		return global_position
+	var hx: float = float(maxi(def.footprint.x, 1)) * 0.5 + 0.55
+	var hz: float = float(maxi(def.footprint.y, 1)) * 0.5 + 0.55
+	var t: float = fposmod(float(u.get_instance_id() % 1000) * 0.6180339887, 1.0)
+	var per: float = 2.0 * (hx + hz)
+	var s: float = t * per
+	var lx: float = 0.0
+	var lz: float = 0.0
+	if s < 2.0 * hx:
+		lx = -hx + s
+		lz = -hz
+	elif s < 2.0 * hx + 2.0 * hz:
+		lx = hx
+		lz = -hz + (s - 2.0 * hx)
+	elif s < 4.0 * hx + 2.0 * hz:
+		lx = hx - (s - 2.0 * hx - 2.0 * hz)
+		lz = hz
+	else:
+		lx = -hx
+		lz = hz - (s - 4.0 * hx - 2.0 * hz)
+	var p: Vector3 = global_position + global_transform.basis * Vector3(lx, 0.0, lz)
+	p.y = global_position.y
+	return RtsWorld.walkable_pos(p)
+
+
 # ===========================================================================
 # 建造进度
 # ===========================================================================

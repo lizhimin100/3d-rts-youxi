@@ -289,12 +289,22 @@ func _build_combo(def: UnitDef) -> Node3D:
 ## 切动画。state: idle/move/attack/cast/gather/build/death/hurt
 ## speed_ratio 只对 move 有意义：**传进来的是 0~1 的速度比例**（`_speed / _max_speed()`），
 ## 这里换算成"动画该放多快"，见 ANIM_WALK_MPS 那段注释。
-func play(state: String, speed_ratio: float = 1.0) -> void:
+##
+## ★ force=true：**无视去重、无视受击拦截，强制从第 0 帧重播**。
+##   为什么必须有它（2026-11-06 玩家口径"近战在某个角度下不播攻击动画"）：
+##   老代码靠 `state == _anim_state` 去重，而 `_anim_state` 一旦被写成 "attack" 就
+##   只有切到别的状态才会变。单位站在建筑旁边连着挥砍时**状态一直是 ATTACK**，
+##   骨骼动画播完自己回 idle，但 `_anim_state` 还是 "attack" →
+##   之后每一次 `play("attack")` 都被去重挡掉 → 第一刀有动作，后面全程站着不动。
+func play(state: String, speed_ratio: float = 1.0, force: bool = false) -> void:
 	# 受伤动画优先，播完自动回到逻辑状态（由 _process 清缓存后重新推）
+	# force 例外：正在挨打也要把这一刀挥出去（否则被集火的兵永远不播攻击）
 	if _hurt_t > 0.0 and state != "death":
-		return
+		if not force:
+			return
+		_hurt_t = 0.0
 	# 无骨骼模型没有 set_state 可调，但"整体程序动作"仍然需要知道当前状态
-	if _static_anim and state != _motion_state:
+	if _static_anim and (state != _motion_state or force):
 		if state == "attack":
 			_lunge_t = MOTION_LUNGE_TIME
 		_motion_state = state
@@ -302,7 +312,7 @@ func play(state: String, speed_ratio: float = 1.0) -> void:
 		return
 	# idle 之外的状态切换都直接透传；move 要持续更新步频，不能去重
 	var loco: bool = state == "move" or state == "run" or state.begins_with("carry_")
-	if state == _anim_state and not loco:
+	if state == _anim_state and not loco and not force:
 		return
 	_anim_state = state
 	var scale: float = clampf(speed_ratio, 0.15, 3.0)
@@ -311,7 +321,7 @@ func play(state: String, speed_ratio: float = 1.0) -> void:
 		var top: float = _def.move_speed if _def != null else ANIM_WALK_MPS
 		var mps: float = maxf(top * clampf(speed_ratio, 0.0, 1.6), 0.15)
 		scale = clampf(mps / ANIM_WALK_MPS, ANIM_WALK_SCALE_MIN, ANIM_WALK_SCALE_MAX)
-	ArtKit.set_anim(_anim, state, scale)
+	ArtKit.set_anim(_anim, state, scale, force)
 
 
 ## 命中反馈：暖光脉冲 + 方向性顿挫 + 受伤动作（受伤动作限流，脉冲每次都打）

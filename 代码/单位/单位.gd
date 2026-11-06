@@ -102,6 +102,19 @@ const SEP_WALL_ZONE: float = 0.30
 ## 幅度上 → 推出去→走回来→再推出去，60Hz 进进出出。
 const ARRIVE_RESTART_HYST: float = 0.9
 ## 拥挤让位：距目标多近算“已经在目标区”
+## **锚定权重**：正在干活（建造/采集/修理）或正在挥砍的单位几乎推不动。
+##
+## 玩家口径（2026-11-06）：「部队跑到正在建筑的农民身边，把农民挤开、建造失败，
+## 手动拉开又挤回来」。根因不在避让，而在**分离是对称的** —— 一个站着的农民
+## 和一个走过来的兵被同等推开，农民就被顶出工地，于是建造进度归零、人再走回来，
+## 形成"拉开又挤回来"的往复。
+## 现在：干活的人 share 只占 13%，路过的人吃 87% 的推力 —— 人是被农民弹开的。
+const ANCHOR_WEIGHT: float = 0.15
+## 站位被同伴占用的判定：半径和 × 这个系数内算"这格有人了"
+const SLOT_OCCUPIED: float = 1.25
+## 找空位时向外扩的基准距离（米）
+const SLOT_PROBE: float = 1.15
+
 const CROWD_RADIUS: float = 4.5
 ## 拥挤让位：目标区内被同伴堵住、连续这么久没有更靠近 → 就地停（不再挤）
 const CROWD_PATIENCE: float = 0.9
@@ -265,6 +278,11 @@ var _was_gathering: bool = false
 
 # 建造
 var _build_site: Node3D = null
+## 本农民在工地外圈的**专属站位**（按实例 id 确定，进工地时算一次）。
+## 为什么要有它：以前所有农民都 `_go_to(工地中心)`，解析出的最近可站点是同一个 →
+## 两个农民抢同一格 → 互相推 → 谁都不在建造距离内。现在一人一格，天然不打架。
+var _work_spot: Vector3 = Vector3.ZERO
+var _work_spot_valid: bool = false
 ## 正在修理的己方建筑（Order.REPAIR 用）
 var _repair_target: Node3D = null
 ## 送资源要去的交汇点
@@ -781,6 +799,7 @@ func order_build(building_def: UnitDef, pos: Vector3, desired_yaw: float = 0.0) 
 	order = RtsConst.Order.BUILD
 	_flee_t = 0.0
 	_swinging = false
+	_work_spot_valid = false
 	_go_to(site.global_position, true)
 	return site
 
@@ -822,6 +841,7 @@ func order_build_site(site: Node3D) -> bool:
 	order = RtsConst.Order.BUILD
 	_flee_t = 0.0
 	_swinging = false
+	_work_spot_valid = false
 	_go_to(site.global_position, true)
 	return true
 
@@ -842,6 +862,7 @@ func order_repair(building: Node3D) -> bool:
 	target = null
 	_swinging = false
 	_flee_t = 0.0
+	_work_spot_valid = false
 	_go_to(b.global_position, true)
 	return true
 
@@ -1105,9 +1126,9 @@ func _order_attack(_dt: float) -> void:
 		order = RtsConst.Order.NONE
 		state = RtsConst.State.IDLE
 		return
-	if _flat_dist(target.global_position) > _attack_reach(target):
+	if _target_gap(target) > _attack_reach(target):
 		if is_mobile():
-			_go_to(target.global_position)
+			_go_to(_attack_spot(target) if target is RtsBuilding else target.global_position)
 			state = RtsConst.State.MOVE
 
 
@@ -1225,36 +1246,46 @@ func _enter_phase(ph: int) -> void:
 		_gather_phase = ph
 
 
-## 建造：走到工地 → 播 build 动画 → 推进度
+## 建造：走到**自己那一格** → 播 build 动画 → 推进度
+##
+## ★ 2026-11-06 重写（玩家口径"部队把农民挤开、建造失败，手动拉开又挤回来"）：
+##   ① 每个农民有自己的外圈站位（`RtsBuilding.work_spot_for`），不再全队抢工地中心；
+##   ② 开工判据改成"到**墙面**的距离"，不再拿中心距（大本营 9m 宽，站墙根离中心 4.5m）；
+##   ③ 已经在建造距离内就**直接干活、不重算路径** —— 被路过的人推一下不会清零进度，
+##      只有真的被挤出墙外 1.3m 才走回来（配合分离锚定，实际几乎不会发生）。
 func _order_build_tick(dt: float) -> void:
 	if _build_site == null or not is_instance_valid(_build_site):
 		order = RtsConst.Order.NONE
 		state = RtsConst.State.IDLE
+		_work_spot_valid = false
 		return
 	var site: RtsBuilding = _build_site as RtsBuilding
 	if site == null or site.is_constructed or not site.is_alive():
 		order = RtsConst.Order.NONE
 		_build_site = null
 		state = RtsConst.State.IDLE
+		_work_spot_valid = false
 		return
-	var d: float = _flat_dist(site.global_position)
-	var stand: float = _stand_off(site)
-	# ★ 开工判定不能只看"到工地中心的距离 > 站位阈值"。
-	#   关卡把建筑占地外扩 1 格写进寻路网格，最近的合法站位天然就在
-	#   `半宽 + 1 格 + 身体半径` 处，往往比 _stand_off 多出几厘米到几十厘米。
-	#   老逻辑于是每帧：太远 → _go_to(工地中心) → 目标闩锁（它已经站在落点上）
-	#   → 一步都不挪 → 下一帧还是"太远"。玩家看到：农民站在工地旁边发呆，进度 0.00。
-	#   现在多给一条"已经站在解析后的落点上"的放行条件。
-	var dg: float = _flat_dist(_goal) if _goal_valid else d
-	var at_stand: bool = dg <= ARRIVE_TOLERANCE + 0.45
-	if d > stand + BUILD_REACH_SLACK and not at_stand:
+	# 够得着墙面就干活（1.35m ≈ 一个身位，农民手臂长度也在里面）
+	var d: float = site.distance_to_footprint(global_position)
+	if d <= 1.35:
+		_stop_moving()
+		state = RtsConst.State.BUILD
+		_face_pos(site.global_position, dt)
+		site.advance_construction(dt, self)
+		return
+	# 太远：走自己那一格（第一次进来算一次，之后不再变）
+	if not _work_spot_valid:
+		_work_spot = site.work_spot_for(self)
+		_work_spot_valid = true
+		_go_to(_work_spot, true)
 		state = RtsConst.State.MOVE
-		_go_to(site.global_position)
 		return
-	_stop_moving()
-	state = RtsConst.State.BUILD
-	_face_pos(site.global_position, dt)
-	site.advance_construction(dt, self)
+	state = RtsConst.State.MOVE
+	_go_to(_work_spot)
+	# 站位本身够不着墙面（地形/别的建筑卡住）→ 退而求其次，直接朝工地中心走
+	if not _moving and site.distance_to_footprint(global_position) > 1.35:
+		_go_to(site.global_position)
 
 
 ## 修理：走到建筑旁 → 播 build 动画 → 让建筑按秒回血（木材由建筑侧扣）
@@ -1262,25 +1293,31 @@ func _order_repair_tick(dt: float) -> void:
 	if _repair_target == null or not is_instance_valid(_repair_target):
 		order = RtsConst.Order.NONE
 		state = RtsConst.State.IDLE
+		_work_spot_valid = false
 		return
 	var b := _repair_target as RtsBuilding
 	if b == null or not b.is_alive() or not b.can_repair():
 		order = RtsConst.Order.NONE
 		_repair_target = null
 		state = RtsConst.State.IDLE
+		_work_spot_valid = false
 		return
-	var d: float = _flat_dist(b.global_position)
-	var stand: float = _stand_off(b)
-	var dg: float = _flat_dist(_goal) if _goal_valid else d
-	var at_stand: bool = dg <= ARRIVE_TOLERANCE + 0.45
-	if d > stand + BUILD_REACH_SLACK and not at_stand:
+	if b.distance_to_footprint(global_position) <= 1.35:
+		_stop_moving()
+		state = RtsConst.State.BUILD
+		_face_pos(b.global_position, dt)
+		b.repair_step(dt, self)
+		return
+	if not _work_spot_valid:
+		_work_spot = b.work_spot_for(self)
+		_work_spot_valid = true
+		_go_to(_work_spot, true)
 		state = RtsConst.State.MOVE
-		_go_to(b.global_position)
 		return
-	_stop_moving()
-	state = RtsConst.State.BUILD
-	_face_pos(b.global_position, dt)
-	b.repair_step(dt, self)
+	state = RtsConst.State.MOVE
+	_go_to(_work_spot)
+	if not _moving and b.distance_to_footprint(global_position) > 1.35:
+		_go_to(b.global_position)
 
 
 ## 送资源：走到交汇点 → 入账 → 手上有活就回去接着干
@@ -1395,9 +1432,70 @@ func _standable_goal(want: Vector3) -> Vector3:
 	# 落点必须留出 GOAL_MARGIN 的余量：站定后还要被同伴推、被分离挤，
 	# 净空刚好 0.5 的落点一推就掉进阻挡判据，然后和 wall_pushout 对拉。
 	if pf.is_standable(want, r + GridPathfinder.GOAL_MARGIN):
-		return want
+		RtsUnit.dbg_sgoal += Time.get_ticks_usec() - _t_sg
+		return _spread_goal(want, r)
+	var near: Vector3 = pf.standable_near(want, global_position, r, GridPathfinder.GOAL_MARGIN)
 	RtsUnit.dbg_sgoal += Time.get_ticks_usec() - _t_sg
-	return pf.standable_near(want, global_position, r, GridPathfinder.GOAL_MARGIN)
+	return _spread_goal(near, r)
+
+
+## **目标点已经被同伴占了 → 往旁边挪一格**（2026-11-06 玩家口径"挤开"的根治）。
+##
+## 老行为：一支队伍右键同一个点，所有人的落点解析结果**完全相同**（纯几何、无占位判断），
+## 于是 12 个人抢一格，全靠分离互相顶 —— 顶出去的人再走回来，就是"进进出出"。
+## 更糟的一种：部队右键在工地/建筑旁边，解析出的最近可站点恰好是**农民站的那一格**，
+## 兵一脚把农民顶出工地，建造进度归零。
+##
+## 现在：落点周围先看有没有人（含正在干活的农民），有人就沿环上找一个空位。
+## 候选顺序按本单位实例 id 固定，所以**同一个兵每次算出来的空位是同一个**，
+## 不会每帧换位置（那是抖动的来源）。
+func _spread_goal(center: Vector3, r: float) -> Vector3:
+	if not is_mobile():
+		return center
+	if not _spot_taken(center, r):
+		return center
+	var pf := _pathfinder()
+	if pf == null:
+		return center
+	var ring: float = maxf(SLOT_PROBE, r * 2.0 + 0.25)
+	var base: float = fposmod(float(get_instance_id() % 997) * 0.0137, TAU)
+	var best: Vector3 = center
+	var best_score: float = INF
+	var steps: int = 10
+	for i in range(steps):
+		var a: float = base + TAU * float(i) / float(steps)
+		var cand: Vector3 = center + Vector3(cos(a), 0.0, sin(a)) * ring
+		if not pf.is_standable(cand, r + GridPathfinder.GOAL_MARGIN):
+			continue
+		if _spot_taken(cand, r):
+			continue
+		var score: float = _flat_dist(cand) + 0.6 * Vector2(cand.x - center.x, cand.z - center.z).length()
+		if score < best_score:
+			best_score = score
+			best = cand
+	return best
+
+
+## 这一格有没有**会动的友军/任何单位**站着（建筑由寻路网格管，不算）
+func _spot_taken(pos: Vector3, r: float) -> bool:
+	var hash: SpatialHash = _shared_hash()
+	if hash == null:
+		return false
+	var need: float = r + 0.45
+	for o in hash.query(pos, need + 1.6):
+		if o == self or o == null or not is_instance_valid(o):
+			continue
+		var u := o as RtsUnit
+		if u == null or u.def == null or not u.is_alive():
+			continue
+		if not u.is_mobile():
+			continue
+		var dx: float = pos.x - u.global_position.x
+		var dz: float = pos.z - u.global_position.z
+		var lim: float = (need + u.def.body_radius) * SLOT_OCCUPIED * 0.5
+		if dx * dx + dz * dz < lim * lim:
+			return true
+	return false
 
 
 ## 算路（带 0.25s 节流，绝不拿 A* 当饭吃）
@@ -1700,6 +1798,24 @@ func _flat_dist(pos: Vector3) -> float:
 	return sqrt(dx * dx + dz * dz)
 
 
+## 本帧的"推挤体重"：1.0 = 普通；ANCHOR_WEIGHT = 正在干活，几乎推不动。
+##
+## 玩家口径（2026-11-06）「部队把正在建筑的农民挤开」的直接解法。
+## 为什么不用"把农民锁死"：锁死会让人堆在工地里出不来，也会挡住别人走路。
+## 用权重，人和人还是能错开，只是**站着干活的那个基本不动**。
+func _anchor_weight() -> float:
+	if _dying:
+		return 1.0
+	# 正在抡锤 / 抡镐 / 挥刀：脚下生根
+	if state == RtsConst.State.BUILD or state == RtsConst.State.GATHER \
+			or state == RtsConst.State.ATTACK:
+		return ANCHOR_WEIGHT
+	if order == RtsConst.Order.BUILD or order == RtsConst.Order.REPAIR \
+			or order == RtsConst.Order.GATHER:
+		return ANCHOR_WEIGHT
+	return 1.0
+
+
 ## 单位分离：一重叠就互相推开，别挤成一坨
 func _update_separation(dt: float) -> void:
 	if def == null:
@@ -1709,6 +1825,7 @@ func _update_separation(dt: float) -> void:
 		return
 	var hash: SpatialHash = _shared_hash()
 	var my_r: float = def.body_radius
+	var my_w: float = _anchor_weight()
 	var push := Vector3.ZERO
 	var near: Array = hash.query(global_position, my_r * 6.0)
 	for o in near:
@@ -1728,13 +1845,19 @@ func _update_separation(dt: float) -> void:
 		if d2 >= min_d * min_d:
 			continue
 		var d: float = sqrt(d2)
+		# 双方各让一半；干活的一方只让 13%，走过来的一方吃剩下的推力。
+		var share: float = 1.0
+		if other.is_mobile():
+			var ow: float = other._anchor_weight()
+			if ow < 1.0 or my_w < 1.0:
+				share = clampf(2.0 * my_w / maxf(my_w + ow, 0.0001), 0.0, 1.0)
 		if d < 0.0001:
 			# 完全重合：按实例 ID 给个确定方向，别抖
 			var ang: float = float(get_instance_id() % 628) * 0.01
-			push += Vector3(cos(ang), 0.0, sin(ang)) * min_d
+			push += Vector3(cos(ang), 0.0, sin(ang)) * min_d * share
 			continue
 		var overlap: float = min_d - d
-		push += Vector3(dx / d, 0.0, dz / d) * overlap
+		push += Vector3(dx / d, 0.0, dz / d) * overlap * share
 
 	if push.length_squared() <= 0.000001:
 		return
@@ -1803,12 +1926,51 @@ func _snap_ground(dt: float) -> void:
 		_slope_mult = clampf(1.0 - slope * 0.55, 1.0, 1.22)          # 下坡：略快
 
 
-## 攻击能打到的距离（含目标半径）
+## 攻击能打到的距离。建筑**不加半径**：距离用的是"到墙面"（见 _target_gap）。
 func _attack_reach(t: Node3D) -> float:
 	var r: float = def.attack_range if def != null else 0.0
-	if t != null and t.has_method("get_radius"):
+	if t != null and not (t is RtsBuilding) and t.has_method("get_radius"):
 		r += float(t.call("get_radius"))
 	return maxf(r, 0.3)
+
+
+## 到目标的**有效间隙**：建筑量到墙面、单位量到身位边缘。
+##
+## 近战打建筑必须用这个，不能用中心距（见 建筑.distance_to_footprint 的注释）。
+func _target_gap(t: Node3D) -> float:
+	if t == null:
+		return INF
+	var b := t as RtsBuilding
+	if b != null:
+		return b.distance_to_footprint(global_position)
+	var d: float = _flat_dist(t.global_position)
+	if t.has_method("get_radius"):
+		d -= float(t.call("get_radius"))
+	return maxf(d, 0.0)
+
+
+## 打建筑时该站的**墙外一圈**的位置（按本单位 id 在朝向上散开 ±26°）。
+## 不分角度的话，一队近战会全挤在建筑正对着自己的那一面，互相顶。
+func _attack_spot(t: Node3D) -> Vector3:
+	var b := t as RtsBuilding
+	if b == null or b.def == null:
+		return t.global_position
+	var fp: Vector2i = b.def.footprint
+	var hx: float = float(maxi(fp.x, 1)) * 0.5
+	var hz: float = float(maxi(fp.y, 1)) * 0.5
+	var to: Vector3 = global_position - t.global_position
+	to.y = 0.0
+	if to.length_squared() < 0.0001:
+		to = Vector3(0.0, 0.0, 1.0)
+	to = to.normalized()
+	var jitter: float = (fposmod(float(get_instance_id() % 89) * 0.01, 1.0) - 0.5) * 0.9
+	var a: float = atan2(to.z, to.x) + jitter
+	var dir := Vector3(cos(a), 0.0, sin(a))
+	# 沿该方向射出，落到矩形边界外 0.55m
+	var tx: float = hx / maxf(absf(dir.x), 0.0001)
+	var tz: float = hz / maxf(absf(dir.z), 0.0001)
+	var out: float = minf(tx, tz) + 0.55
+	return t.global_position + dir * out
 
 
 ## 站位间隙（采集/建造用）：attack_range/2 + 双方半径 + 一点空隙
@@ -1865,7 +2027,7 @@ func _acquire(dt: float, radius_scale: float = 1.0) -> void:
 	if radius <= 0.0:
 		return
 	var cand: Node3D = Game.find_nearest_enemy(global_position, faction, radius)
-	if cand != null and not pursue and _flat_dist(cand.global_position) > _attack_reach(cand):
+	if cand != null and not pursue and _target_gap(cand) > _attack_reach(cand):
 		cand = null
 	target = cand
 
@@ -1895,7 +2057,7 @@ func _update_attack(dt: float) -> void:
 		return
 
 	var reach: float = _attack_reach(target)
-	var dist: float = _flat_dist(target.global_position)
+	var dist: float = _target_gap(target)
 
 	if dist > reach:
 		# 不在射程：会追的指令扑上去；待机/警戒/建筑直接**放掉锁定**。
@@ -1907,7 +2069,9 @@ func _update_attack(dt: float) -> void:
 		# 行军 / 攻击移动：原目的地先记下来，打完还要接着走
 		if order == RtsConst.Order.MOVE or order == RtsConst.Order.ATTACK_MOVE:
 			_interrupt_move_for_combat()
-		_go_to(target.global_position)
+		# ★ 打建筑走"墙外一圈的站位"，不走中心。
+		#   走中心 → 解析到最近可站点 → 全队抢同一格 → 贴墙互顶（2026-11-06 玩家口径）。
+		_go_to(_attack_spot(target) if target is RtsBuilding else target.global_position)
 		state = RtsConst.State.MOVE
 		return
 
@@ -1941,7 +2105,7 @@ func _target_in_reach() -> bool:
 		return false
 	if not target.is_alive():
 		return false
-	return _flat_dist(target.global_position) <= _attack_reach(target)
+	return _target_gap(target) <= _attack_reach(target)
 
 
 ## 起手：前摇 = 冷却 × attack_windup，这段放攻击动画
@@ -1956,7 +2120,9 @@ func _begin_swing() -> void:
 	_windup_t = _attack_cd * clampf(Cfg.game.attack_windup, 0.05, 0.95)
 	state = RtsConst.State.ATTACK
 	if visual != null:
-		visual.play("attack", 1.0)
+		# ★ 必须 force：连着砍同一栋楼时 state 一直是 ATTACK，
+		#   不去重的话第二刀起就没有挥砍动作了（2026-11-06 玩家报的"不播攻击动画"）。
+		visual.play("attack", 1.0, true)
 
 
 ## 出手：近战立刻结算，远程发投射物（伤害在落点）

@@ -122,12 +122,13 @@ func bind(root: Node3D) -> void:
 
 
 ## 切换状态。speed_ratio 影响相位推进速度（0.5 = 半速，1.6 = 快走）。
-func set_state(state: String, speed_ratio: float = 1.0) -> void:
+func set_state(state: String, speed_ratio: float = 1.0, force: bool = false) -> void:
 	var idx: int = 状态名.find(state)
 	if idx < 0:
 		idx = 状态.待机
 	_速度比 = clampf(speed_ratio, 0.05, 4.0)
-	if idx != _当前状态:
+	# force：强制从这一招的第 0 帧重来（连续挥砍要每一下都有动作）
+	if idx != _当前状态 or force:
 		_当前状态 = idx
 		_状态时间 = 0.0
 		_过渡 = 0.0
