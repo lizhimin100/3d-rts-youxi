@@ -134,6 +134,15 @@ func _ready() -> void:
 			level.spawn_props()
 			level.spawn_starting_forces()
 		_setup_map_watch(map_def)
+		# QA：`-- --qa-map-check` 在**有 autoload（Cfg/Game）的环境**里跑一遍地图校验。
+		# 为什么不在 --script 里跑：MapLoader 静态引用了 Cfg/Game，--script 模式下
+		# 这两个全局名没注册，整条校验链编译失败（实测报 "Identifier not found: Cfg"）。
+		if "--qa-map-check" in OS.get_cmdline_user_args():
+			var qa_r: Dictionary = MapValidator.validate(map_def)
+			print("[MAPCHECK] 地图=", map_def.resource_path)
+			print("[MAPCHECK] 错误=", qa_r.get("errors", []))
+			print("[MAPCHECK] 提醒=", qa_r.get("warnings", []))
+			print("[MAPCHECK] 统计=", qa_r.get("stats", {}))
 		_setup_fog()
 		if not _dump_mapdef.is_empty():
 			_dump_map_def(_dump_mapdef)
