@@ -122,9 +122,17 @@ func _run() -> void:
 
 	var ok: bool = true
 	var why: String = ""
-	if gold_gain < 150:
+	# ★ 2026-11-07：口径从"阵营金币净增长"改成"农民累计入库"。
+	#   旧口径会被副官/AI 同时花钱污染（DEPT 默认 on 以后净增长经常是负的，
+	#   采集明明在跑也会判失败 —— 这是测试口径错，不是采集错）。
+	var deposited: int = 0
+	for p in peasants:
+		if p != null and is_instance_valid(p):
+			deposited += int(p.get("deposit_gold_total"))
+	_report["累计入库金币"] = deposited
+	if deposited < 150:
 		ok = false
-		why = "金币增长不足（%d < 150），采集链路没跑通" % gold_gain
+		why = "累计入库不足（%d < 150），采集链路没跑通" % deposited
 	elif worst_still > STUCK_LIMIT:
 		ok = false
 		why = "有农民原地不动 %.1fs（>%.0fs）" % [worst_still, STUCK_LIMIT]

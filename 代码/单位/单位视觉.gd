@@ -324,6 +324,20 @@ func play(state: String, speed_ratio: float = 1.0, force: bool = false) -> void:
 	ArtKit.set_anim(_anim, state, scale, force)
 
 
+## 当前骨骼动作的播放进度 0~1（没有骨骼/没在播返回 -1）
+func anim_phase() -> float:
+	if _anim == null:
+		return -1.0
+	return float(_anim.call("phase"))
+
+
+## 某个状态对应动作的时长（秒，含降级链；没有返回 0）
+func anim_length(state: String) -> float:
+	if _anim == null:
+		return 0.0
+	return float(_anim.call("clip_length", state))
+
+
 ## 命中反馈：暖光脉冲 + 方向性顿挫 + 受伤动作（受伤动作限流，脉冲每次都打）
 ## from_pos 是攻击来源的世界坐标（可为 Vector3.ZERO：远程/脚本伤害没有方向）。
 func flash(from_pos: Vector3 = Vector3.ZERO) -> void:

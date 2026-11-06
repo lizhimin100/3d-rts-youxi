@@ -122,7 +122,10 @@ const CROWD_PATIENCE: float = 0.9
 const CROWD_NEIGHBOR: float = 1.08
 
 ## 采集内部阶段
-enum GatherPhase { SEEK = 0, TO_NODE = 1, HARVEST = 2, TO_DROP = 3 }
+## ★ 2026-11-07 新增 ENTER：到点后先放"采集技能"的起手（伐木举斧 / 采矿钻进矿洞），
+##   时长读 `代码/配置/技能表.gd`。以前 TO_NODE 一到位就直接开始计时采集，
+##   玩家看到的是"人刚到就原地飘着挥"。
+enum GatherPhase { SEEK = 0, TO_NODE = 1, ENTER = 4, HARVEST = 2, TO_DROP = 3 }
 
 # ===========================================================================
 # 共享空间哈希（全单位共用一份，见 Game.unit_hash()）
@@ -290,10 +293,23 @@ var _return_drop: Node3D = null
 ## 上一次送达的数量（提示文案用）
 var _carry_last_gold: int = 0
 var _carry_last_wood: int = 0
-## 采矿"钻进矿洞"的视觉下沉量 0~1（1 = 完全在洞里，模型隐藏）
+## 累计入库（只增不减，采集自检/统计用；不参与玩法）
+var deposit_gold_total: int = 0
+var deposit_wood_total: int = 0
+## 采矿"钻进矿洞"的视觉推进量 0~1（1 = 完全在洞里，模型隐藏）
 var _mine_k: float = 0.0
 ## 砍树/采矿的碎屑特效节流（秒）
 var _chop_fx_t: float = 0.0
+## 当前采集技能 id（chop_wood / mine_gold），数值全部读 技能表
+var _gather_skill: StringName = &""
+## 占用的载位号（-1 = 没占；换目标/采满/死亡必须让出来）
+var _gather_slot: int = -1
+## 采集技能起手剩余时间（ENTER 阶段）
+var _gather_enter_t: float = 0.0
+## 上一帧的采集动画进度（0~1），用来抓"挥到最低点"那一下
+var _chop_phase_prev: float = -1.0
+## 挥砍相位是否已经越过"落点"（每循环只触发一次震树）
+var _chop_armed: bool = false
 
 # 死亡
 var _dying: bool = false
@@ -504,6 +520,7 @@ func _die() -> void:
 	state = RtsConst.State.DEAD
 	target = null
 	order = RtsConst.Order.NONE
+	_release_gather_slot()
 	_swinging = false
 	_stop_moving()
 	_dead_t = Cfg.game.corpse_linger
@@ -727,23 +744,51 @@ func _tick_patrol() -> void:
 	_go_to(next, true)
 
 
-## 采集指定资源点
+## 采集指定资源点（**技能驱动**：伐木 / 采矿，见 代码/配置/技能表.gd）
 func order_gather(node: Node3D) -> void:
 	if _dying or node == null:
 		return
 	if def == null or not RtsWorld.is_worker_def(def):
 		return
-	order = RtsConst.Order.GATHER
-	target = null
+	if _gather_node != node:
+		_release_gather_slot()
 	_gather_node = node
 	var hk: Variant = node.get("harvest_kind")
 	if hk != null:
 		_carry_kind = int(hk)
+	# 技能 id 由资源种类决定；载位上限也来自资源点
+	_gather_skill = RtsSkills.TABLE.gather_skill_for(_carry_kind)
+	_gather_slot = -1
+	_chop_phase_prev = -1.0
+	_chop_armed = false
+	order = RtsConst.Order.GATHER
+	target = null
 	_gather_phase = GatherPhase.TO_NODE
 	_gather_t = 0.0
+	_gather_enter_t = 0.0
 	_flee_t = 0.0
 	_was_gathering = true
-	_go_to(node.global_position, true)
+	_go_to(_gather_spot(), true)
+
+
+## 采集站位：优先占一个载位（围着矿/树散开），没有就退回通用站位。
+func _gather_spot() -> Vector3:
+	if _gather_node == null or not is_instance_valid(_gather_node):
+		return global_position
+	if _gather_node.has_method("claim_slot"):
+		if _gather_slot < 0:
+			_gather_slot = int(_gather_node.call("claim_slot", self))
+		if _gather_slot >= 0 and _gather_node.has_method("slot_point"):
+			var p: Vector3 = _gather_node.call("slot_point", _gather_slot, global_position) as Vector3
+			return RtsWorld.walkable_pos(p)
+	return _gather_node.global_position
+
+
+func _release_gather_slot() -> void:
+	if _gather_node != null and is_instance_valid(_gather_node) and _gather_slot >= 0 \
+			and _gather_node.has_method("release_slot"):
+		_gather_node.call("release_slot", self)
+	_gather_slot = -1
 
 
 ## 建造：**幂等** —— 同一个点上已经有人开工，就只是"加入"，不再扣钱、不再新建。
@@ -1190,25 +1235,27 @@ func _order_gather(dt: float) -> void:
 	# 目标没了 / 被采空 → 换下一个
 	if _gather_node == null or not is_instance_valid(_gather_node) \
 			or bool(_gather_node.call("is_depleted")):
+		_release_gather_slot()
 		_gather_node = _find_harvestable(_carry_kind)
 		if _gather_node == null:
 			order = RtsConst.Order.NONE
 			state = RtsConst.State.IDLE
 			return
 		_gather_phase = GatherPhase.TO_NODE
-		_go_to(_gather_node.global_position, true)
+		_gather_slot = -1
+		_go_to(_gather_spot(), true)
 
 	# --- 卡死兜底：某阶段待太久且几乎没位移，就强制推进（十人挤矿时救命的保险丝）---
 	var moved_since: float = global_position.distance_to(_phase_pos)
 	_phase_t += dt
 	if _phase_t > PHASE_STUCK_TIME and moved_since < 0.55:
 		if _gather_phase == GatherPhase.TO_NODE or _gather_phase == GatherPhase.SEEK:
-			# 已经在资源附近却永远差一点到 -> 直接开采
+			# 已经在资源附近却永远差一点到 -> 直接进"起手"（起手完就开始采）
 			if _flat_dist(_gather_node.global_position) <= _stand_off(_gather_node) + ARRIVE_SLACK + 2.0:
 				_stop_moving()
-				_gather_phase = GatherPhase.HARVEST
+				_gather_enter_t = RtsSkills.cast_time(_gather_skill)
+				_enter_phase(GatherPhase.ENTER if _gather_enter_t > 0.0 else GatherPhase.HARVEST)
 				_gather_t = _harvest_time()
-				_enter_phase(GatherPhase.HARVEST)
 				return
 		elif _gather_phase == GatherPhase.TO_DROP:
 			_deposit()
@@ -1219,13 +1266,29 @@ func _order_gather(dt: float) -> void:
 	match _gather_phase:
 		GatherPhase.TO_NODE:
 			state = RtsConst.State.MOVE
-			_go_to(_gather_node.global_position)
+			# 走"自己那个载位"，不是矿心：三个人围着矿站，不叠在一个点上
+			var spot: Vector3 = _gather_spot()
+			_go_to(spot)
 			# 到点判定要带 ARRIVE_SLACK：A* 终点被吸附到最近可走格，
 			# 会比站位阈值远 0.3~0.5m，卡死就是这零点几米造成的
-			if _flat_dist(_gather_node.global_position) <= _stand_off(_gather_node) + ARRIVE_SLACK:
+			if _flat_dist(spot) <= ARRIVE_SLACK + 0.6:
 				_stop_moving()
-				_gather_phase = GatherPhase.HARVEST
+				_gather_enter_t = RtsSkills.cast_time(_gather_skill)
+				if _gather_enter_t > 0.0:
+					_enter_phase(GatherPhase.ENTER)
+				else:
+					_gather_t = _harvest_time()
+					_enter_phase(GatherPhase.HARVEST)
+		GatherPhase.ENTER:
+			# 技能起手：伐木举斧、采矿钻进矿洞。逻辑不推进产出，只是"进入状态"。
+			state = RtsConst.State.GATHER
+			_stop_moving()
+			_face_pos(_gather_node.global_position, dt)
+			_gather_enter_t -= dt
+			if _gather_enter_t <= 0.0:
 				_gather_t = _harvest_time()
+				_chop_phase_prev = -1.0
+				_chop_armed = false
 				_enter_phase(GatherPhase.HARVEST)
 		GatherPhase.HARVEST:
 			state = RtsConst.State.GATHER
@@ -1258,24 +1321,68 @@ func _enter_phase(ph: int) -> void:
 		_gather_phase = ph
 
 
-## 砍树 / 挖矿的落屑：每 0.55s 在资源点根部落一点木屑或石粉。
-## 为什么要有它：`gather` 动画现在是循环的，但"只有动画没有落屑"读起来像空挥；
-## 加一点碎屑，玩家一眼就知道这人在真砍、真挖（魔兽三也是这个套路）。
+## 采集动画的"落点"相位（0~1）：挥到最低点 / 镐头砸到矿壁那一下。
+## 农民用的是 attack 动作（1.57s），实测斧头在 40% 左右到位。
+const CHOP_IMPACT_PHASE: float = 0.42
+## 一次采集（一趟）里挥几下 —— 决定动画播放速度：越多越快、越利落。
+## 4 挥 / 4.0s = 1.57x（原来 1.0x 慢悠悠）；3 挖 / 3.2s = 1.47x。
+const CHOPS_WOOD: int = 4
+const CHOPS_GOLD: int = 3
+
+
+## 采集动画该放多快：一趟正好挥 N 下。
+## clip = 动作原长（农民 attack 1.57s），N = 本资源的下数，T = 一趟采集秒数。
+func _gather_anim_speed() -> float:
+	var clips: int = CHOPS_WOOD if _carry_kind == RtsConst.Harvest.WOOD else CHOPS_GOLD
+	var clip: float = 0.0
+	if visual != null and visual.has_method("anim_length"):
+		clip = float(visual.call("anim_length", "gather"))
+	if clip <= 0.01:
+		return 1.0
+	var t: float = maxf(_harvest_time(), 0.1)
+	# 0.55~2.6：再快就看不清是在砍树，再慢就回到"飘着挥"
+	return clampf(clip * float(clips) / t, 0.55, 2.6)
+
+
+## 砍树 / 挖矿的落点反馈。
+##
+## ★ 2026-11-07 玩家口径「木头的摇晃要和农民采集的动作对应上」：
+##   以前按 0.55s 定时晃树，和挥斧动作完全对不上（有时举着斧头树就抖了）。
+##   现在读采集动画的播放进度，**每次循环只在 42% 那一下**触发 shake：
+##   斧头落下 → 树抖，一下一下对得上。动画不可用时才退回定时器。
 func _tick_chop_fx(dt: float) -> void:
-	_chop_fx_t -= dt
-	if _chop_fx_t > 0.0:
-		return
-	_chop_fx_t = 0.55
 	if _gather_node == null or not is_instance_valid(_gather_node):
 		return
-	var p: Vector3 = _gather_node.global_position + Vector3(0.0, 0.55, 0.0)
-	if _carry_kind == RtsConst.Harvest.WOOD:
-		# ★ 2026-11-06 玩家口径「采木头则不需要那什么木渣，只需要树会摇晃」：
-		#   木屑粒子去掉，改成让树本体晃一下（可采集物.shake）。
+	if _carry_kind != RtsConst.Harvest.WOOD:
+		# 金矿：人已经钻进矿洞（模型隐藏），只在矿口按节奏冒石粉
+		_chop_fx_t -= dt
+		if _chop_fx_t > 0.0:
+			return
+		_chop_fx_t = 0.85
+		var pm: Vector3 = _gather_node.global_position + Vector3(0.0, 0.55, 0.0)
+		BUILD_FX.dust(pm, 3, 0.25, Color(0.86, 0.78, 0.48))
+		return
+
+	var ph: float = -1.0
+	if visual != null and visual.has_method("anim_phase"):
+		ph = float(visual.call("anim_phase"))
+	if ph < 0.0:
+		# 没有骨骼动画（静态模型）→ 退回定时晃树
+		_chop_fx_t -= dt
+		if _chop_fx_t > 0.0:
+			return
+		_chop_fx_t = 0.55
 		if _gather_node.has_method("shake"):
 			_gather_node.call("shake", 1.0)
-	else:
-		BUILD_FX.dust(p, 3, 0.25, Color(0.86, 0.78, 0.48))
+		return
+	# 动画回绕 = 新的一挥开始
+	if _chop_phase_prev >= 0.0 and ph < _chop_phase_prev:
+		_chop_armed = false
+	if not _chop_armed and ph >= CHOP_IMPACT_PHASE:
+		_chop_armed = true
+		if _gather_node.has_method("shake"):
+			_gather_node.call("shake", 1.0)
+	_chop_phase_prev = ph
 
 
 ## 建造：走到**自己那一格** → 播 build 动画 → 推进度
@@ -2385,6 +2492,10 @@ func _finish_harvest() -> void:
 	_carry = got
 	_gather_t = 0.0
 	_gather_phase = GatherPhase.TO_DROP
+	# 背着就走：载位立刻让出（去卸货的路上，别人可以占这个位置）
+	_release_gather_slot()
+	_chop_phase_prev = -1.0
+	_chop_armed = false
 	order = RtsConst.Order.GATHER
 
 
@@ -2451,6 +2562,8 @@ func _deposit_carry() -> bool:
 		if bonus > 0.0:
 			wood += int(round(float(wood) * bonus))
 	Game.add_resource(faction, gold, wood)
+	deposit_gold_total += gold
+	deposit_wood_total += wood
 	_carry_last_gold = gold
 	_carry_last_wood = wood
 	_carry = 0
@@ -2510,9 +2623,11 @@ func _update_anim() -> void:
 			# 兜底：从矿背面/侧面来的人不许横穿 2.2m 石头
 			if flat.length() > 2.2:
 				flat = flat.normalized() * 2.2
-			visual.position = Vector3(flat.x * _mine_k, -0.18 * _mine_k, flat.y * _mine_k)
-			visual.scale = Vector3.ONE * (1.0 - 0.05 * _mine_k)
-			visual.visible = _mine_k < 0.995
+			# ★ 2026-11-07：**只走平**，不再往下压 0.18m。
+			#   旧版"水平走 + 下沉 + 缩 5%" 叠在一起，走到一半看起来像半截人钻进土里。
+			#   现在完全水平推进到矿口，0.72 就隐藏（岩石本身是遮挡物，看不出"凭空消失"）。
+			visual.position = Vector3(flat.x * _mine_k, 0.0, flat.y * _mine_k)
+			visual.visible = _mine_k < 0.72
 		elif visual.position != Vector3.ZERO or not visual.visible:
 			# 回来时恢复原样（不能只靠"小于阈值"分支，否则会留一个 -0.0001 的偏差）
 			visual.position = Vector3.ZERO
@@ -2529,7 +2644,8 @@ func _update_anim() -> void:
 		RtsConst.State.ATTACK:
 			visual.play("attack", 1.0)
 		RtsConst.State.GATHER:
-			visual.play("gather", 1.0)
+			# 速度 = 一趟正好挥 N 下（见 _gather_anim_speed）；不是 1.0 的死板循环
+			visual.play("gather", _gather_anim_speed())
 		RtsConst.State.BUILD:
 			visual.play("build", 1.0)
 		RtsConst.State.CAST:

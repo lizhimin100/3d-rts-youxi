@@ -179,6 +179,17 @@ func _on_finished(anim: StringName) -> void:
 		set_state("idle")
 
 
+## 当前动作的播放进度 0~1（没有动画 / 没在播返回 -1）。
+## 采集用它抓"斧头落到最低点"那一下（见 单位._tick_chop_fx）。
+func phase() -> float:
+	if _ap == null or not _ap.is_playing():
+		return -1.0
+	var a := _ap.get_animation(_ap.current_animation)
+	if a == null or a.length <= 0.001:
+		return -1.0
+	return clampf(_ap.current_animation_position / a.length, 0.0, 1.0)
+
+
 ## 调试/验收用：某个动作的时长（秒）
 func clip_length(state: String) -> float:
 	if _ap == null:

@@ -119,6 +119,61 @@ func mouth_point(from_pos: Vector3) -> Vector3:
 
 
 # ===========================================================================
+# 载位（魔兽口径：一个矿/一棵树能同时站几个农民）
+# ===========================================================================
+## 采集者 id → 载位号。载位不是"排队名额"，而是**站桩位置**：
+## 三个人站矿的三个方向，不会叠在同一个点上互相推。
+var _slots: Dictionary = {}
+
+
+## 这个资源点有几个载位（金矿 3、树 2）。改数量改这里，技能表的 slots 只是说明。
+func max_slots() -> int:
+	return 3 if harvest_kind == RtsConst.Harvest.GOLD else 2
+
+
+## 占一个载位，返回编号（0..n-1）。满了返回 -1（调用方退回通用站位）。
+func claim_slot(unit: Node) -> int:
+	if unit == null or not is_instance_valid(unit):
+		return -1
+	var id: int = unit.get_instance_id()
+	if _slots.has(id):
+		return int(_slots[id])
+	var used: Dictionary = {}
+	for k in _slots:
+		used[int(_slots[k])] = true
+	for i in max_slots():
+		if not used.has(i):
+			_slots[id] = i
+			return i
+	return -1
+
+
+## 让出载位（离矿/换目标/死亡时必须调，否则位置会永久漏掉）
+func release_slot(unit: Node) -> void:
+	if unit == null or not is_instance_valid(unit):
+		return
+	_slots.erase(unit.get_instance_id())
+
+
+## 第 idx 个载位的世界坐标（围着矿/树散开）。
+func slot_point(idx: int, from_pos: Vector3) -> Vector3:
+	var d: Vector3 = from_pos - global_position
+	d.y = 0.0
+	if d.length_squared() < 0.0001:
+		d = Vector3(0.0, 0.0, 1.0)
+	d = d.normalized()
+	var n: int = max_slots()
+	var ang: float = (float(idx) - float(n - 1) * 0.5) * 0.62
+	var dir := Vector3(d.x * cos(ang) - d.z * sin(ang), 0.0,
+			d.x * sin(ang) + d.z * cos(ang))
+	if harvest_kind == RtsConst.Harvest.GOLD:
+		return global_position + dir * 1.45 + Vector3.UP * 0.55
+	# 树：站到树冠外一圈，y 交给调用方贴地（树本身有 _snap_ground）
+	var r: float = get_radius() + 0.95
+	return global_position + dir * r
+
+
+# ===========================================================================
 # 采集
 # ===========================================================================
 

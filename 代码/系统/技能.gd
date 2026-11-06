@@ -1,6 +1,6 @@
 class_name RtsSkills
 extends RefCounted
-## **技能系统**：目前实现「fireball 法师火球」。
+## **技能系统（雏形）**：数值住 `代码/配置/技能表.gd`，这里只做执行。
 ##
 ## 设计要点：施法**不做成 await 协程**，而是拆成"起手（begin_cast）→ 单位自己数前摇 →
 ## 出手（release）"。这样技能和单位是同一个时间步驱动的，无头测试里可以按固定 delta
@@ -8,11 +8,20 @@ extends RefCounted
 ##
 ## 数值来源：
 ##   - 冷却 / 技能 id  → `UnitDef.ability_cooldown` / `UnitDef.abilities`（Cfg 数据）
-##   - AOE 半径/伤害/减速 → 任务书冻结的规格，作为**本文件常量**集中一处
-##     （Cfg 里没有技能表，且不允许我改 Cfg，所以只能在这里定义，绝不散落到调用点）
+##   - 前摇 / 目标类型 / 载位数 → `代码/配置/技能表.gd`（唯一表）
+##   - AOE 半径/伤害/减速 → 任务书冻结的规格，仍是本文件常量（火球专属）
+##
+## 2026-11-07 扩成"表驱动"：新增技能 = 技能表加一条 + release 里加一个 case，
+## 不再需要改 `has/cast_time/unit_has` 三个函数。
+## 采集类（伐木/采矿）不进 `UnitDef.abilities`：它们是右键点资源触发的，
+## 由 `单位.gd` 的 GatherPhase 驱动，但前摇/载位仍然从这张表读 —— 这就是雏形的意义：
+## 以后要加"主动技能/被动技能/光环"，都往同一张表里塞。
 
 ## 火球技能 id
 const ID_FIREBALL: StringName = &"fireball"
+
+## 技能表（数值唯一真相源）
+const TABLE := preload("res://代码/配置/技能表.gd")
 
 ## 火球规格（任务书冻结）
 const FIREBALL_RADIUS: float = 3.5      ## AOE 半径（米）
@@ -27,18 +36,27 @@ const FIREBALL_SPEED: float = 22.0
 const FIREBALL_SHAKE: float = 0.30
 
 
-## 该技能是否已实现
+## 该技能是否已实现（表里有就算）
 static func has(id: StringName) -> bool:
-	return id == ID_FIREBALL
+	return TABLE.has(id)
 
 
 ## 施法前摇时长（秒）；未知技能返回 0
 static func cast_time(id: StringName) -> float:
-	match id:
-		ID_FIREBALL:
-			return FIREBALL_CAST_TIME
-		_:
-			return 0.0
+	var d: Dictionary = TABLE.get_def(id)
+	if d.is_empty():
+		return 0.0
+	return maxf(float(d.get("cast", 0.0)), 0.0)
+
+
+## 是不是"采集类"技能（伐木/采矿，不走 CAST 状态）
+static func is_gather(id: StringName) -> bool:
+	return TABLE.is_gather(id)
+
+
+## 技能定义（给界面/自检读）
+static func def_of(id: StringName) -> Dictionary:
+	return TABLE.get_def(id)
 
 
 ## 冷却时长（读单位的 UnitDef.ability_cooldown，不硬编码）
@@ -51,14 +69,21 @@ static func cooldown_of(unit: Node3D) -> float:
 	return maxf(d.ability_cooldown, 0.1)
 
 
-## 单位是否有这个技能（读 UnitDef.abilities）
+## 单位是否有这个技能。
+##   · 主动技能：读 `UnitDef.abilities`（卡上的 skills）；
+##   · 采集技能：**所有 worker 天生会**（`RtsWorld.is_worker_def`），不写进卡 ——
+##     写进去的话命令卡会把"伐木/采矿"当成火球术渲染成一排 Q 键按钮。
 static func unit_has(unit: Node3D, id: StringName) -> bool:
 	if unit == null or not is_instance_valid(unit):
 		return false
 	var d: UnitDef = unit.def
 	if d == null:
 		return false
-	return d.abilities.has(id)
+	if d.abilities.has(id):
+		return true
+	if is_gather(id):
+		return RtsWorld.is_worker_def(d)
+	return false
 
 
 ## 单位第一个已实现的技能 id（没有返回空）
@@ -69,7 +94,8 @@ static func first_ability(unit: Node3D) -> StringName:
 	if d == null:
 		return &""
 	for a in d.abilities:
-		if has(a):
+		# 只返回"主动"技能：采集技能不是按键释放的
+		if has(a) and not is_gather(a):
 			return a
 	return &""
 
@@ -84,6 +110,9 @@ static func begin_cast(unit: Node3D, id: StringName, pos: Vector3, target: Node3
 	if unit == null or not is_instance_valid(unit):
 		return false
 	if not unit_has(unit, id):
+		return false
+	# 采集类技能不进 CAST 状态机（它们由 GatherPhase 驱动，见 单位.gd）
+	if is_gather(id):
 		return false
 	if not unit.is_alive():
 		return false
