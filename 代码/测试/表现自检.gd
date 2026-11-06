@@ -200,34 +200,58 @@ func _test_site() -> void:
 		_ok("工地已立起", false, "place_building 返回 null")
 		return
 	_site_node = _site.get_node_or_null("工地")
-	var meshes: int = _count_meshes(_site_node)
-	_ok("工地节点挂上了（地基 / 料堆 / 脚手架）", _site_node != null and meshes >= 25,
-		"工地网格 %d 个" % meshes)
 	if _site_node == null:
+		_ok("工地已立起", false, "_site_fx 不存在")
 		return
+	var meshes: int = _count_meshes(_site_node)
+	# 两条路径：有 `_建造.glb` 的建筑网格少（地基 + 资产模型），程序化的多（≥25）
+	var asset: bool = bool(_site_node.call("has_build_model"))
+	_ok("工地节点挂上了（地基 + 资产建造模型 / 料堆 + 脚手架）",
+		meshes >= (12 if asset else 25), "工地网格 %d 个（资产路径=%s）" % [meshes, str(asset)])
 
 	_site_node.call("set_progress", 0.0)
 	var clip0: float = float(_site_node.call("cut_height"))
-	var post0: float = float(_site_node.call("post_height"))
 	var height: float = float(_bdef.get("height"))
 	_ok("进度 0：建筑被裁到近地面（clip 或纵向压缩兜底）", clip0 >= 0.0 and clip0 < 0.25,
 		"clip=%.2f（层高 %.1f）" % [clip0, height])
-	_ok("进度 0：脚手架只到脚踝", post0 <= 0.5, "立柱 %.2f m" % post0)
-	_ok("进度 0：一根横杆都不该出现", int(_site_node.call("visible_rails")) == 0,
-		"可见 %d 根" % int(_site_node.call("visible_rails")))
 
-	_site_node.call("set_progress", 0.35)
-	var clip1: float = float(_site_node.call("cut_height"))
-	var post1: float = float(_site_node.call("post_height"))
-	var rails1: int = int(_site_node.call("visible_rails"))
-	_ok("进度 35%：可见高度到一层楼", clip1 > height * 0.30 and clip1 < height * 0.45,
-		"clip=%.2f（应 ≈%.2f）" % [clip1, height * 0.35 + 0.06])
-	_ok("进度 35%：脚手架跟着长高", post1 > post0 + 0.8, "%.2f m → %.2f m" % [post0, post1])
-	_ok("进度 35%：横杆逐层出现", rails1 >= 4, "可见 %d 根" % rails1)
+	if asset:
+		# 资产路径：进度 = 动画时轴，成品模型藏起来
+		var len: float = float(_site_node.call("anim_length"))
+		var t0: float = float(_site_node.call("anim_position"))
+		_site_node.call("set_progress", 0.35)
+		var t1: float = float(_site_node.call("anim_position"))
+		_ok("进度 35%：建造动画被 seek 到 35%（不是自己播）",
+			len > 0.0 and absf(t1 - len * 0.35) < 0.05, "%.2f / %.2f s" % [t1, len])
+		_ok("进度 0 → 35%：建造动画时轴真的往前走了", t1 > t0 + 0.1,
+			"%.2f → %.2f s" % [t0, t1])
+		var vis: Node3D = _site.get("visual")
+		_ok("建造中：成品模型隐藏，只显示建造模型", vis != null and not vis.visible,
+			"visible=%s" % str(vis.visible if vis != null else "-"))
+		var clip1: float = float(_site_node.call("cut_height"))
+		_ok("进度 35%：可见高度到一层楼", clip1 > height * 0.30 and clip1 < height * 0.45,
+			"clip=%.2f（应 ≈%.2f）" % [clip1, height * 0.35])
+		_site_node.call("set_progress", 0.90)
+		var clip2: float = float(_site_node.call("cut_height"))
+		_ok("进度 90%：高度继续涨", clip2 > clip1 + 1.0, "%.2f m → %.2f m" % [clip1, clip2])
+	else:
+		var post0: float = float(_site_node.call("post_height"))
+		_ok("进度 0：脚手架只到脚踝", post0 <= 0.5, "立柱 %.2f m" % post0)
+		_ok("进度 0：一根横杆都不该出现", int(_site_node.call("visible_rails")) == 0,
+			"可见 %d 根" % int(_site_node.call("visible_rails")))
 
-	_site_node.call("set_progress", 0.90)
-	var rails2: int = int(_site_node.call("visible_rails"))
-	_ok("进度 90%：横杆基本到顶", rails2 > rails1, "%d 根 → %d 根" % [rails1, rails2])
+		_site_node.call("set_progress", 0.35)
+		var clip1: float = float(_site_node.call("cut_height"))
+		var post1: float = float(_site_node.call("post_height"))
+		var rails1: int = int(_site_node.call("visible_rails"))
+		_ok("进度 35%：可见高度到一层楼", clip1 > height * 0.30 and clip1 < height * 0.45,
+			"clip=%.2f（应 ≈%.2f）" % [clip1, height * 0.35 + 0.06])
+		_ok("进度 35%：脚手架跟着长高", post1 > post0 + 0.8, "%.2f m → %.2f m" % [post0, post1])
+		_ok("进度 35%：横杆逐层出现", rails1 >= 4, "可见 %d 根" % rails1)
+
+		_site_node.call("set_progress", 0.90)
+		var rails2: int = int(_site_node.call("visible_rails"))
+		_ok("进度 90%：横杆基本到顶", rails2 > rails1, "%d 根 → %d 根" % [rails1, rails2])
 
 	# 锤击节流：同一帧连点 5 次只成功 1 次
 	var hits: int = 0

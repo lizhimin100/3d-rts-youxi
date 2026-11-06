@@ -70,6 +70,9 @@ var _dlg_settings: AcceptDialog = null
 var _dlg_team: AcceptDialog = null
 var _dlg_surrender: ConfirmationDialog = null
 var _vol_slider: HSlider = null
+## 游戏速度（直接写 Engine.time_scale；见 _open_settings 里的说明）
+var _speed_slider: HSlider = null
+var _speed_label: Label = null
 var _adj_check: CheckButton = null
 ## 战争迷雾开关（设置面板），以及缓存的迷雾节点
 var _fog_check: CheckButton = null
@@ -1013,6 +1016,43 @@ func _open_settings() -> void:
 		_vol_slider.value_changed.connect(func(v: float) -> void:
 			AudioServer.set_bus_volume_db(0, linear_to_db(maxf(v, 0.0001))))
 		vb.add_child(_vol_slider)
+		# ---- 游戏速度（玩家口径 2026-11-06：「设置按钮添加：速度设置，可提高或减慢速度」）----
+		# 直接写 Engine.time_scale：它只缩放时间步长，不动任何玩法数值口径
+		# （射程/伤害/建造时长全是按游戏内秒算的），所以调速度不会让平衡变形。
+		vb.add_child(Spec.icon_label_row("gear", "游戏速度", 22.0, Spec.text_main(), Spec.FS_BODY))
+		var speed_row := HBoxContainer.new()
+		speed_row.add_theme_constant_override("separation", 10)
+		_speed_slider = HSlider.new()
+		_speed_slider.name = "游戏速度"
+		_speed_slider.min_value = 0.5
+		_speed_slider.max_value = 3.0
+		_speed_slider.step = 0.25
+		_speed_slider.custom_minimum_size = Vector2(210.0, 26.0)
+		_speed_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_speed_slider.value = clampf(Engine.time_scale, 0.5, 3.0)
+		_speed_label = Spec.label("×%.2f" % _speed_slider.value, Spec.FS_BODY, Spec.text_main())
+		_speed_label.name = "速度数值"
+		_speed_label.custom_minimum_size = Vector2(58.0, 0.0)
+		_speed_slider.value_changed.connect(func(v: float) -> void:
+			Engine.time_scale = v
+			if _speed_label != null:
+				_speed_label.text = "×%.2f" % v)
+		speed_row.add_child(_speed_slider)
+		speed_row.add_child(_speed_label)
+		vb.add_child(speed_row)
+		# 复位按钮：玩家很容易把速度调乱后不知道怎么回去（滑块本身看不出"1.0 在哪"）
+		var speed_reset := Button.new()
+		speed_reset.name = "恢复正常速度"
+		speed_reset.text = "恢复正常速度（×1.00）"
+		speed_reset.focus_mode = Control.FOCUS_NONE
+		speed_reset.add_theme_font_size_override("font_size", Spec.FS_CAPTION)
+		speed_reset.pressed.connect(func() -> void:
+			Engine.time_scale = 1.0
+			if _speed_slider != null:
+				_speed_slider.set_value_no_signal(1.0)
+			if _speed_label != null:
+				_speed_label.text = "×1.00")
+		vb.add_child(speed_reset)
 		_adj_check = CheckButton.new()
 		_adj_check.text = "副官接管"
 		_adj_check.add_theme_font_size_override("font_size", Spec.FS_BODY)

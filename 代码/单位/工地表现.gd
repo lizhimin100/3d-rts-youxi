@@ -5,19 +5,45 @@ extends Node3D
 ## 分工：本节点只负责"看起来在盖房子"，不碰任何玩法数据 ——
 ##   进度仍然由 RtsBuilding.advance_construction() 推进，本节点只在 set_progress() 里跟。
 ##
-## 四层结构（自下而上）：
-##   ① 地基：比占地略大的石台 + 四角角石（"这里已经放线了"）
+## **两条路径（优先资产、缺档回落程序化）**：
+##
+## ① 资产路径（9 座建筑）：`美术/模型/建造/<id>_build.glb` 内嵌 `build` 动画，
+##    自带脚手架 / 料堆 / 围挡。动画**不自己播**，由 `set_progress()` seek —— 多个农民
+##    同时建、停工、被拆，动画都跟真实进度走，不会跑偏。成品模型（`visual`）隐藏。
+## ② 程序化路径（营火 / 火堆 / 火把 / 火炬 等没有 `_建造.glb` 的）：
+##   下面这四层老结构原样保留，行为与以前一模一样。
+##
+## 程序化四层结构（自下而上）：
+##   ① 地基：比占地略大的石台 + 四角角石（"这里已经放线了"）—— 两条路径都建
 ##   ② 料堆：石料堆 / 木料堆 / 绳圈（越建越少）
 ##   ③ 脚手架：8 根立柱随进度长高 + 4 层横杆按高度显隐 + 平台 / 梯子 / 斜撑
 ##   ④ 主体：给建筑的每个材质副本塞 clip_height，墙从 0 长到层高（着色器逐片元丢弃）
 ##
 ## 锤击反馈由 RtsBuilding 在农民抡锤时调 strike()，**按工地**做 0.9s 节流，
-## 所以 3 个农民同时干也只是一工地一节奏，不会变成机关枪。
+## 所以 3 个农民同时干也只是一工地一节奏，不会变成机关枪。两条路径都有。
 
 ## 锤击最小间隔（秒）——任务书要求 0.7~1.2s 一次
 const STRIKE_INTERVAL: float = 0.9
+
+## 建造资产目录 + 编号 → 文件名（缺档的 id 不出现在表里 → 走程序化脚手架）
+const BUILD_MODEL_DIR: String = "res://美术/模型/建造/"
+const BUILD_ANIM: StringName = &"build"
+const BUILD_MODEL: Dictionary = {
+	&"townhall": "townhall_build.glb",
+	&"barracks": "barracks_build.glb",
+	&"farm": "farm_build.glb",
+	&"lumbercamp": "lumbercamp_build.glb",
+	&"watchtower": "watchtower_build.glb",
+	&"tower": "tower_build.glb",
+	&"blacksmith": "blacksmith_build.glb",
+	&"sanctum": "sanctum_build.glb",
+	&"workshop": "workshop_build.glb",
+}
 ## 表现层随机流（锤击方位 / 脚手架散落方向）。玩法随机仍走全局 randf，见 表现随机.gd
 const Fx := preload("res://代码/美术/表现随机.gd")
+## 建造显影 shader：把资产的 StandardMaterial3D 换成"世界高度裁剪"版本
+## （资产自带的 reveal_height shader 不在仓库里，见 美术/着色器/建造显影.gdshader 的注释）
+const CLIP_SHADER := preload("res://美术/着色器/建造显影.gdshader")
 ## 脚手架横杆层数与高度比例
 const RAIL_LEVELS: PackedFloat32Array = [0.26, 0.50, 0.74, 0.96]
 
@@ -45,6 +71,15 @@ var _clip: Array = []
 var _clip_ok: bool = false
 var _fallback_scale: bool = false
 
+## 资产建造模型（挂 `build` 动画的那个 holder；null = 走程序化脚手架）
+var _build_model: Node3D = null
+## 建造模型里"随进度长高"的主体网格（墙 + 屋顶；脚手架不动）
+var _body: Node3D = null
+var _ap: AnimationPlayer = null
+var _ap_len: float = 0.0
+## 报警只打一次（同一栋楼反复建不该刷屏）
+static var _warned: Dictionary = {}
+
 ## 锤击节流
 var _last_strike_ms: int = -10000
 var strike_count: int = 0
@@ -63,7 +98,7 @@ var _iron: StandardMaterial3D
 # ===========================================================================
 
 ## 挂到一栋"工地状态"的建筑上。必须在建筑的 visual 建好之后调（setup_construction 里）。
-func attach(b: Node3D, _team_color: Color) -> void:
+func attach(b: Node3D, team_color: Color = Color.WHITE) -> void:
 	building = b
 	name = "工地"
 	if b == null:
@@ -79,14 +114,111 @@ func attach(b: Node3D, _team_color: Color) -> void:
 	_hz = float(_fp.y) * 0.5 + 0.42
 
 	_make_materials()
+	# 夯土台两条路径都建：它负责遮住地形接缝，资产里的"施工场地"也压不住这道缝
 	_build_foundation()
-	_build_piles()
-	_build_scaffold()
-	_collect_clip()
+	# 优先用资产自带的施工动画；缺档 / 缺动画 / 实例化失败一律回落到程序化四层
+	if _try_attach_build_model(d, team_color):
+		_collect_clip_from(_build_model)
+	else:
+		_build_piles()
+		_build_scaffold()
+		_collect_clip()
 	set_progress(0.0)
 	# 工地落地的第一声（石料/木架/碎石）。完工音不在这里 —— 由 building_completed
 	# 信号统一交给 Sfx._on_built()，否则同一次完工会被播两遍。
 	Sfx.play_at("建造_放置", building.global_position, 0.0)
+
+
+## 资产建造模型：找到 → 挂上并按进度驱动；缺档 / 缺 `build` 动画 → 返回 false（回落旧路径）
+##
+## 三条硬规矩：
+##   ① transform 全盘照抄 `visual`（位置 / 旋转 / 缩放）—— 朝向由 building 的
+##      `建筑网格.DEFAULT_YAW` 决定，这里绝不自作主张转一个角度；
+##   ② `play("build")` → `speed_scale = 0` → `seek(0)`：动画时轴交给进度，
+##      3 个农民同时建 / 停工 / 被拆都不会和真实进度脱节；
+##   ③ 隐藏 `visual`，成品模型只在 finish() 里露脸。
+func _try_attach_build_model(d: UnitDef, team_color: Color) -> bool:
+	var fname: String = String(BUILD_MODEL.get(d.id, ""))
+	if fname.is_empty():
+		return false
+	var path: String = BUILD_MODEL_DIR + fname
+	if not ResourceLoader.exists(path):
+		_warn_once("缺档:" + fname, "[工地] 缺建造模型 %s，回落程序化脚手架" % path)
+		return false
+	var vis := building.get("visual") as Node3D
+	if vis == null:
+		return false
+	var model: Node3D = ArtKit.build_model(path, d.model_scale)
+	if model == null:
+		_warn_once("实例化:" + fname, "[工地] 建造模型实例化失败 %s，回落程序化脚手架" % path)
+		return false
+	var ap := _find_anim_player(model)
+	if ap == null or not ap.has_animation(BUILD_ANIM):
+		_warn_once("动画:" + fname, "[工地] %s 里没有 %s 动画，回落程序化脚手架" % [path, BUILD_ANIM])
+		model.free()
+		return false
+	var len: float = ap.get_animation(BUILD_ANIM).length
+	if len <= 0.001:
+		_warn_once("空动画:" + fname, "[工地] %s 的 %s 动画长度为 0，回落程序化脚手架" % [path, BUILD_ANIM])
+		model.free()
+		return false
+
+	# 阵营色：资产用 material 名 `team` / `team_trim` 当染色接口（与成品模型同一条路）
+	ArtKit.apply_team_color(model, team_color)
+
+	# holder 的 transform 直接抄 visual：这样建造模型和成品模型同原点、同朝向、同缩放
+	var holder := Node3D.new()
+	holder.name = "建造模型"
+	holder.transform = vis.transform
+	holder.add_child(model)
+	building.add_child(holder)
+
+	# 纵向生长的对象：资产里 `Building` 是静态主体（墙 + 屋顶），`SiteKit` 是脚手架。
+	# 只压主体、不压脚手架 —— 整模一起压的话，低进度时脚手架跟着被压成扁片，
+	# 现场图会读成"模型坏了"而不是"房子盖到一半"。（找不到主体就退回整模）
+	_body = _find_body(model)
+
+	_ap = ap
+	_ap_len = len
+	_ap.play(BUILD_ANIM)
+	_ap.speed_scale = 0.0
+	_ap.seek(0.0, true)
+	_build_model = holder
+	vis.visible = false
+	return true
+
+
+## 深度优先找第一个 AnimationPlayer（glb 里它挂在 BuildRig 同级）
+func _find_anim_player(root: Node) -> AnimationPlayer:
+	var ap := root as AnimationPlayer
+	if ap != null:
+		return ap
+	for c in root.get_children():
+		var found := _find_anim_player(c)
+		if found != null:
+			return found
+	return null
+
+
+## 资产里非蒙皮的 `Building` 主体（墙 + 屋顶）。找不到返回 null → 退回整模纵向压缩。
+## 只认 MeshInstance3D 且没有 skin：脚手架 SiteKit 是蒙皮的，动画在驱动它，绝不能动它。
+func _find_body(root: Node) -> Node3D:
+	var mi := root as MeshInstance3D
+	if mi != null and mi.name == "Building" and mi.skin == null and mi.mesh != null:
+		return mi
+	for c in root.get_children():
+		var found := _find_body(c)
+		if found != null:
+			return found
+	return null
+
+
+## 同一条告警只打一次（asset 缺档不该每建一次刷一条）
+static func _warn_once(key: String, msg: String) -> void:
+	if _warned.has(key):
+		return
+	_warned[key] = true
+	push_warning(msg)
 
 
 func _make_materials() -> void:
@@ -272,59 +404,156 @@ func _build_scaffold() -> void:
 	_ladder = _ladder_scale_root
 
 
-## ④ 剖切：给建筑每个材质面复制一份带 clip_height 的材质
+## ④ 剖切：给建筑的每个材质面复制一份带 clip_height 的材质
 func _collect_clip() -> void:
 	if building == null:
 		return
-	var vis := building.get("visual") as Node3D
-	if vis == null:
+	_collect_clip_from(building.get("visual") as Node3D)
+
+
+## 通用版：对任意模型子树做剖切（建造模型也走这里）。
+## 资产的 StandardMaterial3D 没有 clip_height → 落到 `_fallback_scale`（纵向压缩兜底）。
+func _collect_clip_from(root: Node3D) -> void:
+	_clip.clear()
+	_clip_ok = false
+	if root == null:
+		_fallback_scale = true
 		return
-	var meshes := _meshes_of(vis)
+	var meshes := _meshes_of(root)
 	for mi in meshes:
 		if mi.mesh == null:
+			continue
+		# material_override 的优先级高于 surface override：有它就必须整体换，
+		# 否则我们设了 surface 也看不见（glTF 导入的模型常常是这种）。
+		if mi.material_override != null:
+			var ov := _clip_material_of(mi.material_override)
+			if ov != null:
+				_clip.append({"mi": mi, "i": -1, "prev": mi.material_override,
+						"mat": ov["mat"], "world": ov["world"]})
+				mi.material_override = ov["mat"]
 			continue
 		for i in mi.mesh.get_surface_count():
 			var src: Material = mi.get_surface_override_material(i)
 			if src == null:
 				src = mi.mesh.surface_get_material(i)
-			var sm := src as ShaderMaterial
-			if sm == null:
+			var ov2 := _clip_material_of(src)
+			if ov2 == null:
 				continue
-			# 注意：不能拿 get_shader_parameter() 判空 —— 没写过的 uniform 返回 null，
-			# 但 shader 里其实有默认值。必须查 uniform 列表。
-			if not _shader_has(sm, "clip_height"):
-				continue
-			var dup := sm.duplicate() as ShaderMaterial
-			if dup == null:
-				continue
-			dup.set_shader_parameter("clip_height", 0.0)
-			_clip.append({"mi": mi, "i": i, "prev": mi.get_surface_override_material(i), "mat": dup})
-			mi.set_surface_override_material(i, dup)
+			_clip.append({"mi": mi, "i": i, "prev": mi.get_surface_override_material(i),
+					"mat": ov2["mat"], "world": ov2["world"]})
+			mi.set_surface_override_material(i, ov2["mat"])
 	_clip_ok = not _clip.is_empty()
-	# 一个面都没剖到（美术资产不是卡通着色器）→ 退化成"整体纵向拉伸"，至少能看出在长
+	# 一个面都没剖到（没有 clip_height 也不是标准材质）→ 退化成"纵向拉伸"，至少能看出在长
 	_fallback_scale = not _clip_ok
+
+
+## 把一份材质转成"可剖切"的副本。返回 `{mat, world}`；不支持返回 null。
+##   · 已经带 clip_height 的卡通 shader → duplicate 后直接用（world=false）
+##   · StandardMaterial3D（美术资产）→ 转成 建造显影.gdshader（world=true）
+func _clip_material_of(src: Material) -> Dictionary:
+	if src == null:
+		return {}
+	var sm := src as ShaderMaterial
+	if sm != null:
+		# 注意：不能拿 get_shader_parameter() 判空 —— 没写过的 uniform 返回 null，
+		# 但 shader 里其实有默认值。必须查 uniform 列表。
+		if not _shader_has(sm, "clip_height"):
+			return {}
+		var dup := sm.duplicate() as ShaderMaterial
+		if dup == null:
+			return {}
+		dup.set_shader_parameter("clip_height", 0.0)
+		return {"mat": dup, "world": false}
+	var std := src as StandardMaterial3D
+	if std == null:
+		return {}
+	var conv := _std_to_clip(std)
+	if conv == null:
+		return {}
+	return {"mat": conv, "world": true}
+
+
+## 工地所在地面的世界 Y（世界裁剪的基准）
+func _ground_y() -> float:
+	if building == null or not is_instance_valid(building):
+		return 0.0
+	return building.global_position.y
+
+
+## 把一份 StandardMaterial3D 转成"世界高度裁剪"的 ShaderMaterial（贴图原样搬过去）。
+## 拿不到任何贴图的极端情况（纯色材质）也接 —— albedo_color 本身就够看。
+func _std_to_clip(std: StandardMaterial3D) -> ShaderMaterial:
+	if std == null or CLIP_SHADER == null:
+		return null
+	var m := ShaderMaterial.new()
+	m.shader = CLIP_SHADER
+	m.set_shader_parameter("albedo_color", std.albedo_color)
+	m.set_shader_parameter("uv_scale", std.uv1_scale)
+	if std.albedo_texture != null:
+		m.set_shader_parameter("albedo_tex", std.albedo_texture)
+	if std.orm_texture != null:
+		m.set_shader_parameter("orm_tex", std.orm_texture)
+	m.set_shader_parameter("ao_strength", 1.0 if std.ao_enabled or std.orm_texture != null else 0.0)
+	m.set_shader_parameter("emission_color", std.emission)
+	m.set_shader_parameter("emission_energy", std.emission_energy_multiplier)
+	if std.emission_texture != null:
+		m.set_shader_parameter("emission_tex", std.emission_texture)
+	# 阵营色那两层（team / team_trim）不在这里改：阵营色由 铁誓建筑/ArtKit 侧注入，
+	# 我们只是把颜色搬过来，避免"建造模型是灰的、成品是蓝的"。
+	m.set_shader_parameter("clip_world_y", 1.0e9)
+	m.set_shader_parameter("edge_glow", 0.0)
+	return m
+
+
+## 当前"该显示的那个模型"：有建造模型就是它，否则是成品 visual。
+## 纵向压缩兜底必须作用在**正在显示**的那份上，否则玩家看到的模型不会长。
+func _shown_model() -> Node3D:
+	if _build_model != null and is_instance_valid(_build_model):
+		return _build_model
+	if building == null:
+		return null
+	return building.get("visual") as Node3D
+
+
+## 纵向压缩兜底真正作用的节点：
+##   资产路径 = 建造模型里的 `Building` 主体（脚手架保持原尺寸，工地才立得住）；
+##   程序化路径 = 成品 visual（与以前完全一致）。
+func _scale_target() -> Node3D:
+	if _body != null and is_instance_valid(_body):
+		return _body
+	return _shown_model()
 
 
 # ===========================================================================
 # 进度驱动
 # ===========================================================================
 
-## 每帧由 RtsBuilding 推进（0~1）；本节点只把它翻译成几何
+## 每帧由 RtsBuilding 推进（0~1）；本节点只把它翻译成几何 / 动画时轴
 func set_progress(p: float) -> void:
 	if _done or building == null:
 		return
 	_progress = clampf(p, 0.0, 1.0)
 	var grown: float = _height * _progress
 
+	# 资产建造动画：时轴 = 进度。speed_scale 恒为 0，所以动画永远不会自己往前跑
+	if _ap != null and is_instance_valid(_ap) and _ap_len > 0.0:
+		_ap.seek(_progress * _ap_len, true)
+
 	# 剖切高度：+0.06 让地面处也有一点厚度，否则进度 0 时连地基都看不见
 	if _clip_ok:
+		var world_cut: float = _ground_y() + grown + 0.06
 		for e in _clip:
 			var sm := e["mat"] as ShaderMaterial
-			sm.set_shader_parameter("clip_height", grown + 0.06)
+			if bool(e.get("world", false)):
+				# 资产材质：按**世界 Y** 切（模型自己怎么缩放/旋转都不影响切口水平）
+				sm.set_shader_parameter("clip_world_y", world_cut)
+				sm.set_shader_parameter("edge_glow", 0.45)
+			else:
+				sm.set_shader_parameter("clip_height", grown + 0.06)
 	elif _fallback_scale:
-		var vis := building.get("visual") as Node3D
-		if vis != null:
-			vis.scale = Vector3(1.0, clampf(_progress, 0.02, 1.0), 1.0)
+		var target := _scale_target()
+		if target != null:
+			target.scale = Vector3(1.0, clampf(_progress, 0.02, 1.0), 1.0)
 
 	# 立柱长高
 	var post_h: float = maxf(grown + 0.35, 0.35)
@@ -401,12 +630,13 @@ func strike(at: Vector3 = Vector3.ZERO) -> bool:
 # 完成 / 中途被拆
 # ===========================================================================
 
-## 完工：撤掉剖切 → 脚手架散落 → 尘土爆发 → 闪一下 → 自毁
+## 完工：撤掉剖切 → 收起建造模型、露出成品 → 脚手架散落 → 尘土爆发 → 闪一下 → 自毁
 func finish() -> void:
 	if _done:
 		return
 	_done = true
 	_restore_clip()
+	_release_build_model(true)
 	if building != null:
 		var vis: Node = building.get("visual")
 		if vis != null and vis.has_method("flash"):
@@ -429,12 +659,13 @@ func finish() -> void:
 	tm.start()
 
 
-## 工地还没完工就被拆：脚手架跟着倒
+## 工地还没完工就被拆：建造模型直接丢掉（不留半截资产脚手架），成品 mesh 露出来跟着倒
 func abort() -> void:
 	if _done:
 		return
 	_done = true
 	_restore_clip()
+	_release_build_model(true)
 	_collapse_scaffold()
 	var base: Vector3 = building.global_position if building != null else global_position
 	BuildFx.dust(base + Vector3.UP * 0.4, 14, 1.0, Color(0.66, 0.60, 0.48))
@@ -446,6 +677,24 @@ func abort() -> void:
 	tm.start()
 
 
+## 收掉资产建造模型；show_visual 决定要不要把成品模型露出来
+## （finish / abort 都要露出 —— abort 时整栋楼要跟着倒塌动画一起倒，藏起来就成了幽灵）
+func _release_build_model(show_visual: bool) -> void:
+	if _build_model != null:
+		if is_instance_valid(_build_model):
+			# 先隐藏再 queue_free：释放发生在帧末，否则会和 visual 同帧并存闪一下
+			_build_model.visible = false
+			_build_model.queue_free()
+		_build_model = null
+	_body = null
+	_ap = null
+	_ap_len = 0.0
+	if show_visual and building != null:
+		var vis := building.get("visual") as Node3D
+		if vis != null:
+			vis.visible = true
+
+
 ## 撤掉剖切材质（还原成 MatKit 原本那份共享材质）
 func _restore_clip() -> void:
 	for e in _clip:
@@ -453,14 +702,18 @@ func _restore_clip() -> void:
 		if mi == null or not is_instance_valid(mi):
 			continue
 		var i: int = int(e["i"])
+		# i == -1 表示换的是 material_override（整只网格一份材质）
+		if i < 0:
+			mi.material_override = e["prev"]
+			continue
 		if i >= mi.mesh.get_surface_count():
 			continue
 		mi.set_surface_override_material(i, e["prev"])
 	_clip.clear()
-	if _fallback_scale and building != null:
-		var vis := building.get("visual") as Node3D
-		if vis != null:
-			vis.scale = Vector3.ONE
+	if _fallback_scale:
+		var target := _scale_target()
+		if target != null:
+			target.scale = Vector3.ONE
 
 
 ## 脚手架散落：立柱向外倒、横杆掉地、平台翻下去（0.9s）
@@ -534,18 +787,65 @@ func clip_height() -> float:
 	return float(v) if v != null else -2.0
 
 
+## 自检用：当前剖切方式 —— "world"（资产材质，世界 Y 裁剪）/ "local"（卡通 shader）/
+## "scale"（都没有，纵向压缩兜底）
+func clip_mode() -> String:
+	if not _clip.is_empty():
+		return "world" if bool(_clip[0].get("world", false)) else "local"
+	if _fallback_scale:
+		return "scale"
+	return "none"
+
+
+## 自检用：世界裁剪面相对工地地面的高度（非 world 模式返回 -2）
+func clip_world_offset() -> float:
+	if _clip.is_empty() or not bool(_clip[0].get("world", false)):
+		return -2.0
+	var sm := _clip[0]["mat"] as ShaderMaterial
+	var v: Variant = sm.get_shader_parameter("clip_world_y")
+	if v == null:
+		return -2.0
+	return float(v) - _ground_y()
+
+
 ## 自检用：当前"可见建筑高度"。有 clip_height 着色器走剖切；没有则走纵向压缩兜底。
 ## 建筑资产是 StandardMaterial3D（硬约束，不能挂自定义 shader），所以后者是常态。
 func cut_height() -> float:
 	if _done:
 		return -2.0
 	if _clip_ok:
+		# 世界裁剪（资产材质）与本地 clip_height（卡通 shader）语义统一成
+		# "相对工地地面已经长到多高"，自检/调试只认这一个数。
+		if not _clip.is_empty() and bool(_clip[0].get("world", false)):
+			return clip_world_offset()
 		return clip_height()
-	if _fallback_scale and building != null:
-		var vis := building.get("visual") as Node3D
-		if vis != null:
-			return _height * vis.scale.y
+	if _fallback_scale:
+		var target := _scale_target()
+		if target != null:
+			return _height * target.scale.y
 	return -2.0
+
+
+## 自检用：是不是走了资产建造模型（false = 程序化脚手架）
+func has_build_model() -> bool:
+	return _build_model != null and is_instance_valid(_build_model)
+
+
+## 自检用：资产建造模型根节点（没有则 null）
+func build_model() -> Node3D:
+	return _build_model if has_build_model() else null
+
+
+## 自检用：建造动画当前时轴（没有动画器返回 -1）
+func anim_position() -> float:
+	if _ap == null or not is_instance_valid(_ap):
+		return -1.0
+	return _ap.current_animation_position
+
+
+## 自检用：建造动画总长（没有动画器返回 -1）
+func anim_length() -> float:
+	return _ap_len if _ap_len > 0.0 else -1.0
 
 
 ## 自检用：脚手架立柱当前高度（第一根）

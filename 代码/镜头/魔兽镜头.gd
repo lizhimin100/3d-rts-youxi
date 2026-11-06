@@ -47,6 +47,11 @@ var _shake_amp: float = 0.0
 ## 中键拖拽旋转中
 var _dragging: bool = false
 
+## 视角是否已固定（Y 键切换，见 set_locked / toggle_locked）
+## ★ 为什么要这个：玩家想停下来看阵型/截图时，鼠标一推到屏幕边镜头就跑，
+##   只能把鼠标死死停在中间 —— 体验非常别扭。锁定时整条输入与平滑链一起停。
+var locked: bool = false
+
 ## 鼠标是否已经在窗口里出现过（出现过才允许边缘滚动）
 ## 为什么要这个：启动瞬间光标可能停在屏幕角落（无头运行时更是固定 0,0），
 ## 没有这道闸，镜头会从开局第一帧就自己往角落里跑，截图与自动化全废。
@@ -134,11 +139,57 @@ func _process(delta: float) -> void:
 		return
 	_cache_siblings()
 	_track_mouse()
+	# ★ 锁定不能只是"不读输入"：边缘滚动没关系，但平移惯性、缩放阻尼、旋转插值
+	#   都还挂在 _focus/_dist/_yaw 上继续收敛，镜头会自己慢慢滑一小段 —— 那就不是"固定"了。
+	#   所以这里直接跳过整条更新链，只把当前位姿再写一次（地形保护仍要继续生效）。
+	if locked:
+		_apply_pose(cfg, delta)
+		return
 	_handle_home(cfg)
 	_update_lock(cfg, delta)
 	_update_rotation(cfg, delta)
 	_update_pan(cfg, delta)
 	_apply_pose(cfg, delta)
+
+
+## 视角是否固定（外部：自检 / 界面按钮读取用）
+func is_locked() -> bool:
+	return locked
+
+
+## 切换锁定（Y 键与外部按钮共用）
+func toggle_locked() -> void:
+	set_locked(not locked)
+
+
+## 设置锁定状态。
+##
+## 锁定时把"目标值"全部对齐到"当前值"、速度清零：
+## 这是为了解锁瞬间镜头**原地恢复手感**，不会因为锁定期间按住过 WASD 而突然窜出去，
+## 也不会把之前没走完的缩放/旋转插值补播一遍。
+func set_locked(on: bool) -> void:
+	if on == locked:
+		return
+	locked = on
+	_pan_vel = Vector3.ZERO
+	_dragging = false
+	if locked:
+		_focus_target = _focus
+		_dist_target = _dist
+		_yaw_target = _yaw
+		_toast("视角已固定（Y 解除）")
+	else:
+		_toast("视角已解锁")
+
+
+## 锁定时的一条提示（不弹窗，避免打断操作）
+func _toast(text: String) -> void:
+	if Game == null or not Game.has_method("toast"):
+		return
+	var col := Color(0.9, 0.85, 0.6)
+	if Cfg != null and Cfg.game != null:
+		col = Cfg.game.hud_accent
+	Game.toast(text, col)
 
 
 ## 当前相机到注视点的距离（小地图/界面判断视野用）
@@ -256,6 +307,9 @@ func _has_selection() -> bool:
 
 ## 空格：回自家基地（有选中则回到选中单位重心）
 func _handle_home(_cfg: GameConfig) -> void:
+	# 锁定期间空格也算"平移入口"：不然玩家按 Y 固定视角后再碰空格，镜头直接飞走
+	if locked:
+		return
 	if not Input.is_action_just_pressed(InputSetup.CAM_HOME):
 		return
 	if _has_selection():
@@ -568,8 +622,25 @@ func _edge_scroll_allowed() -> bool:
 # ===========================================================================
 
 func _unhandled_input(event: InputEvent) -> void:
+	# Y 键：固定 / 恢复视角。
+	# ★ 为什么不走 Input.is_action_pressed：项目里没有这个 action，为它改 project.godot
+	#   会和别人的按键配置打架；直接用 keycode 事件最省事。
+	# ★ 为什么放 _unhandled_input：和滚轮/中键拖拽同一层，界面输入框/弹窗吃掉键盘后
+	#   就不会误触发；同时这里必须先判 Y，再判 locked —— 否则锁上就解不开了。
+	if event is InputEventKey:
+		var ke := event as InputEventKey
+		if ke.pressed and not ke.echo and ke.keycode == KEY_Y:
+			toggle_locked()
+			get_viewport().set_input_as_handled()
+			return
+
 	var cfg: GameConfig = _config()
 	if cfg == null:
+		return
+	# 锁定期间滚轮/中键拖拽一律不响应：镜头姿态必须纹丝不动
+	if locked:
+		if event is InputEventMouseButton and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_MIDDLE:
+			_dragging = false
 		return
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
