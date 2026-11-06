@@ -47,6 +47,9 @@ func _run() -> void:
 		})
 	_check(CAMP_TABLE.for_den(&"creep_den") != null, "for_den(creep_den) 命中")
 	_check(CAMP_TABLE.for_den(&"watchtower") == null, "for_den(非营地建筑) 返回空")
+	# 2026-11-07：逐实例 camp_id 的查找入口（编辑器「应用到选中锚点」就写这个）
+	_check(CAMP_TABLE.by_id("camp_den") != null, "by_id(camp_den) 命中（逐实例配置入口）")
+	_check(CAMP_TABLE.by_id("没有这个营地") == null, "by_id(未知 id) 返回空")
 
 	# --- 2. 摆一座锚点建筑（模拟"玩家在编辑器里摆的"）---
 	var neutral: RtsFaction = Game.neutral_faction
@@ -92,6 +95,14 @@ func _run() -> void:
 		if f == null or int(f.team) != 0:
 			all_neutral = false
 	_check(all_neutral, "刷出的野怪全部 faction.team == 0（中立敌对）")
+	# 2026-11-07：营地归属跟锚点建筑走（把锚点摆成玩家 N，怪就替 N 守家）
+	var camp_fac: RtsFaction = null
+	for nd in get_tree().get_nodes_in_group("creep_camps"):
+		if nd != null and nd.has_method("camp_faction_of"):
+			camp_fac = nd.call("camp_faction_of", 0) as RtsFaction
+	_check(camp_fac != null and camp_fac == _den.faction,
+		"营地刷怪阵营 = 锚点建筑阵营（%s）" % (_den.faction.display_name if _den != null
+			and _den.faction != null else "?"))
 
 	var row: Dictionary = _camp_row(pos)
 	_check(not row.is_empty(), "camps() 里有这座营地")

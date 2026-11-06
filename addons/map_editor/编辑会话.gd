@@ -1212,6 +1212,30 @@ func replace_selection(type_id: StringName, category: int) -> void:
 		before, _snapshot_objects())
 
 
+## 把某份营地配置指派给**选中的锚点建筑**（逐实例，2026-11-07）。
+## 同时按配置里的 owner_slot 改锚点归属：
+##   -2 中立敌对（野怪）/ -1 中立（和平）/ N 归玩家 N。
+## 返回改了几座；没有选中建筑返回 0（界面据此提示）。
+func assign_camp_to_selection(camp_id: String, owner_slot: int) -> int:
+	var targets: Array = []
+	for o in selection:
+		if o != null and int(o.category) == MapObject.Category.BUILDING:
+			targets.append(o)
+	if targets.is_empty() or camp_id.is_empty():
+		return 0
+	var before: Array = _snapshot_objects()
+	for o in targets:
+		o.properties["camp_id"] = camp_id
+		o.owner = owner_slot
+	_push_action("指派营地「%s」给 %d 座锚点" % [camp_id, targets.size()],
+		[{"prop": "objects", "before": _objects_from(before),
+			"after": _objects_from(def.objects)}],
+		UndoRedo.MERGE_DISABLE, "objects_owner")
+	_emit_status("已把营地「%s」指派给 %d 座锚点（归属 %s）"
+		% [camp_id, targets.size(), owner_display_name(owner_slot)])
+	return targets.size()
+
+
 ## 设置归属。**走轻量 reason**（objects_owner）：视口只刷选中环/归属色，
 ## 不重建对象节点 —— 归属是个高频切换的属性，绝不能让点一下等三秒。
 func set_selection_owner(owner_id: int) -> void:

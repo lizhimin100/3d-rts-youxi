@@ -205,9 +205,8 @@ static func validate(m: MapDef) -> Dictionary:
 	if scaled_buildings > 0:
 		warnings.append("有 %d 座建筑用了非 1.0 缩放（占地仍按原始 footprint 算，可能和寻路格错位）"
 			% scaled_buildings)
-	# 野怪营地锚点：**必须是中立**（owner = -1）。
-	# 营地系统只扫中立阵营的建筑；锚点挂到玩家 1 身上 → 进图一只怪都不刷，
-	# 而且玩家完全看不出原因（玩家口径 2026-11-06「摆了营地但不刷怪」）。
+	# 野怪营地锚点：2026-11-07 起**允许任意归属**（归玩家 N 就替 N 守家），
+	# 只有一种情况要提醒：owner = -1（和平中立）→ 刷出来的怪不会主动打人。
 	var CAMP_TABLE := preload("res://代码/配置/野怪营地表.gd")
 	var wrong_owner: PackedStringArray = PackedStringArray()
 	for o in m.objects:
@@ -215,11 +214,12 @@ static func validate(m: MapDef) -> Dictionary:
 			continue
 		if CAMP_TABLE.for_den(o.type_id) == null:
 			continue
-		if o.owner >= 0:
+		if o.owner == -1:
 			wrong_owner.append("%s@(%.0f,%.0f)" % [String(o.type_id), o.position.x, o.position.z])
 	if not wrong_owner.is_empty():
-		warnings.append("有 %d 个野怪营地锚点不是中立（进图不会刷怪）：%s"
-			% [wrong_owner.size(), _head(wrong_owner, 4)])
+		warnings.append("有 %d 个营地锚点是「中立（和平）」—— 刷出来的怪不会主动打人；"
+			% wrong_owner.size()
+			+ "要野怪请摆成「中立敌对」，要替某玩家守家就摆成该玩家：%s" % _head(wrong_owner, 4))
 
 	# 旧版本编辑器曾把单位/建筑类型错放进「装饰」类：这里点出来（不拦保存，打开编辑器会自动分好层）
 	var misplaced_doodads: PackedStringArray = PackedStringArray()

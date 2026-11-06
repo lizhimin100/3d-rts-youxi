@@ -105,6 +105,10 @@ var _camp_count_box: VBoxContainer
 var _camp_radius: SpinBox
 var _camp_respawn: SpinBox
 var _camp_icon: LineEdit
+## 2026-11-07：归属 + 时间点
+var _camp_owner: OptionButton
+var _camp_first: SpinBox
+var _camp_interval: SpinBox
 var _camp_status: Label
 ## 当前正在编辑的营地 Resource（null = 还没选 / 刚删掉）
 var _camp_cur: Resource = null
@@ -763,6 +767,30 @@ func _build_camp_tab() -> Control:
 	_camp_icon = LineEdit.new()
 	_camp_icon.placeholder_text = "camp"
 	g.add_child(_camp_icon)
+
+	# --- 归属 + 时间点（玩家口径：这是哪个玩家的、几分钟刷）---
+	g.add_child(_label("归属"))
+	_camp_owner = OptionButton.new()
+	_camp_owner.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_camp_owner.add_item("中立敌对（野怪）")
+	_camp_owner.set_item_metadata(0, -2)
+	_camp_owner.add_item("中立（和平）")
+	_camp_owner.set_item_metadata(1, -1)
+	for i in range(12):
+		_camp_owner.add_item("玩家 %d" % (i + 1))
+		_camp_owner.set_item_metadata(_camp_owner.item_count - 1, i)
+	_hint(_camp_owner, "「应用到选中锚点」时连归属一起改；进图后以锚点建筑的归属为准。")
+	g.add_child(_camp_owner)
+
+	g.add_child(_label("首刷（分钟）"))
+	_camp_first = _spin(0.0, 120.0, 0.5)
+	_hint(_camp_first, "开局后第几分钟第一次刷。0 = 开局立刻刷。")
+	g.add_child(_camp_first)
+
+	g.add_child(_label("间隔（分钟）"))
+	_camp_interval = _spin(0.0, 60.0, 0.5)
+	_hint(_camp_interval, "每隔几分钟再刷一整波。0 = 只刷一次（之后只靠补满秒）。")
+	g.add_child(_camp_interval)
 	right.add_child(_label("补满秒填 0 = 永不补", false, &"EditorHint"))
 
 	right.add_child(HSeparator.new())
@@ -799,6 +827,9 @@ func _build_camp_tab() -> Control:
 	_add_small_button(brow, "删除", _camp_delete)
 	_add_small_button(brow, "保存", _camp_save)
 	right.add_child(brow)
+	var arow := _hbox()
+	_add_small_button(arow, "应用到选中锚点（可多选）", _camp_apply_to_selection)
+	right.add_child(arow)
 
 	_camp_status = _label("", true, &"EditorHint")
 	v.add_child(_camp_status)
@@ -871,12 +902,39 @@ func _load_camp(res: Resource) -> void:
 	_camp_radius.value = float(res.get("radius"))
 	_camp_respawn.value = float(res.get("respawn"))
 	_camp_icon.text = String(res.get("minimap_icon"))
+	_camp_first.value = float(res.get("first_spawn_min"))
+	_camp_interval.value = float(res.get("spawn_interval_min"))
+	_select_option_by_meta(_camp_owner, str(int(res.get("owner_slot"))))
 	_select_option_by_meta(_camp_den, String(res.get("den_building")))
 	_sync_camp_creep_list()
 	_rebuild_camp_counts()
 	_syncing = false
 	_camp_status.text = "正在编辑：%s" % (
 		res.resource_path.get_file() if not String(res.resource_path).is_empty() else "（未保存）")
+
+
+## 当前"归属"下拉的槽位号（-2 中立敌对 / -1 中立 / 0..11 玩家）
+func _camp_owner_id() -> int:
+	if _camp_owner == null or _camp_owner.selected < 0:
+		return -2
+	return int(_camp_owner.get_item_metadata(_camp_owner.selected))
+
+
+## 把当前配置（id + 归属）指派给视口里选中的锚点建筑（逐实例生效）
+func _camp_apply_to_selection() -> void:
+	if session == null or _camp_cur == null:
+		_camp_status.text = "先选一份营地配置"
+		return
+	if session.selection.is_empty():
+		_camp_status.text = "先在视口里选中锚点建筑（可 Shift 多选）"
+		return
+	var cid: String = String(_camp_cur.get("id"))
+	var n: int = session.assign_camp_to_selection(cid, _camp_owner_id())
+	if n <= 0:
+		_camp_status.text = "选中的不是建筑（只有建筑能当锚点）"
+		return
+	_camp_status.text = "已指派给 %d 座锚点：%s（归属 %s）" % [
+		n, cid, session.owner_display_name(_camp_owner_id())]
 
 
 ## 让多选列表的勾选状态跟 _camp_creeps 一致
@@ -1071,8 +1129,8 @@ func _camp_save() -> void:
 		if FileAccess.file_exists(path):
 			_camp_status.text = "已有 id 为「%s」的营地，换个 id 再存" % nid
 			return
-	# 一个锚点只能有一份营地（营地表按锚点反查，先到先得、后来的被忽略）。
-	# 不拦的话：新建一份选了已经用过的锚点 → 存进去也不会生效，玩家只会觉得"配了没用"。
+	# 2026-11-07：同一种锚点**允许多份配置**（逐实例用 camp_id 指定）。
+	# 只是提醒：不指定 camp_id 的锚点会落到"默认那份"（文件名排序第一）。
 	for other in CAMP_TABLE.all():
 		if other == null or other == _camp_cur:
 			continue
@@ -1081,9 +1139,8 @@ func _camp_save() -> void:
 			continue
 		if String(other.get("den_building")) != den:
 			continue
-		_camp_status.text = "锚点「%s」已被 %s 占用：一个锚点只能配一份营地" % [
-			den, opath.get_file()]
-		return
+		push_warning("[营地] 锚点 %s 已有一份默认配置 %s；这一份需要在锚点上指定 camp_id 才会生效"
+			% [den, opath.get_file()])
 	var creeps: Array[StringName] = []
 	var counts: Array[int] = []
 	for i in range(_camp_creeps.size()):
@@ -1097,6 +1154,9 @@ func _camp_save() -> void:
 	_camp_cur.set("radius", _camp_radius.value)
 	_camp_cur.set("respawn", _camp_respawn.value)
 	_camp_cur.set("minimap_icon", _camp_icon.text.strip_edges())
+	_camp_cur.set("owner_slot", _camp_owner_id())
+	_camp_cur.set("first_spawn_min", _camp_first.value)
+	_camp_cur.set("spawn_interval_min", _camp_interval.value)
 	var err: int = ResourceSaver.save(_camp_cur, path)
 	if err != OK:
 		_camp_status.text = "保存失败（错误码 %d）：%s" % [err, path]
@@ -1852,7 +1912,11 @@ func _on_wave_selected(index: int) -> void:
 
 func _select_option_by_meta(opt: OptionButton, value: String) -> void:
 	for i in range(opt.item_count):
-		if String(opt.get_item_metadata(i)) == value:
+		var md: Variant = opt.get_item_metadata(i)
+		if md == null:
+			continue
+		# str() 而不是 String()：String(null) 会直接抛 "Nonexistent 'String' constructor"
+		if str(md) == value:
 			opt.select(i)
 			return
 	if opt.item_count > 0:

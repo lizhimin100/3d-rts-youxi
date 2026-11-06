@@ -15,8 +15,10 @@ const CARD_DIR := "res://代码/配置/卡/野怪营地/"
 
 ## 全部营地定义（按文件名排序，保证同图每次刷新顺序一致）
 static var _all: Array = []
-## 锚点建筑 id（String）→ 营地定义
+## 锚点建筑 id（String）→ 营地定义（**默认**那份，逐实例可用 camp_id 覆盖）
 static var _by_den: Dictionary = {}
+## 营地 id（String）→ 营地定义（逐实例指定用）
+static var _by_id: Dictionary = {}
 static var _loaded: bool = false
 
 
@@ -34,6 +36,7 @@ static func reload() -> void:
 	_loaded = false
 	_all.clear()
 	_by_den.clear()
+	_by_id.clear()
 
 
 ## 按锚点建筑 id 反查营地定义；查不到返回 null
@@ -43,10 +46,18 @@ static func for_den(den_id: StringName) -> Resource:
 	return _by_den.get(String(den_id), null) as Resource
 
 
+## 按营地 id 取定义（地图对象 properties.camp_id 逐实例指定用）
+static func by_id(camp_id: String) -> Resource:
+	if not _loaded:
+		_reload()
+	return _by_id.get(camp_id, null) as Resource
+
+
 static func _reload() -> void:
 	_loaded = true
 	_all.clear()
 	_by_den.clear()
+	_by_id.clear()
 	var dir := DirAccess.open(CARD_DIR)
 	if dir == null:
 		push_warning("[野怪营地表] 目录打不开：%s（营地系统将不会刷任何怪）" % CARD_DIR)
@@ -66,8 +77,9 @@ static func _reload() -> void:
 			continue
 		# 同一个锚点只能有一份配置：否则"摆一座巢穴刷两套怪"，玩家根本对不出原因。
 		# 先到先得（文件名排序），后来的打警告但不覆盖。
-		if _by_den.has(den):
-			push_warning("[野怪营地表] 锚点「%s」重复配置（%s 被忽略）" % [den, f])
-			continue
 		_all.append(res)
+		_by_id[String(res.get("id"))] = res
+		if _by_den.has(den):
+			push_warning("[野怪营地表] 锚点「%s」重复默认配置（%s 只作为 camp_id 可选）" % [den, f])
+			continue
 		_by_den[den] = res

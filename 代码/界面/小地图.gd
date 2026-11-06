@@ -427,9 +427,8 @@ func _draw_grid(mr: Rect2) -> void:
 ##
 ## 迷雾口径：和"敌方建筑"一致 —— **探索过就留图标**。
 ##   营地是静态地图内容（不会跑），侦察过一次就该记住"那片林子里有窝"；
-##   按"当前可见"过滤的话，图标会随镜头一闪一闪，反而读不出地形信息。
-##   接口走 `_fog_explored()` → 战争迷雾的 `is_world_explored_pos()`；
-##   迷雾关闭 / 没有迷雾节点时它返回 true（不过滤），这里不需要再判一次。
+##   ★ 2026-11-07 起**不再按迷雾过滤**：营地图标是地图信息（和矿区同级），
+##     永久可见；否则开局迷雾全未探索，玩家会以为"图标功能没做"。
 func _draw_creep_camps() -> void:
 	var tree := get_tree()
 	if tree == null:
@@ -439,8 +438,10 @@ func _draw_creep_camps() -> void:
 			continue
 		for c in nd.call("camps"):
 			var pos3: Vector3 = c.get("pos", Vector3.ZERO)
-			if not _fog_explored(pos3):
-				continue
+			# ★ 2026-11-07 玩家口径「野怪营地要在小地图上有图标」：
+			#   取消"探索过才显示"的过滤 —— 迷雾初始全未探索，营地一片空白，
+			#   玩家只会判断"这功能没做"。营地图标是**地图信息**（和矿区一样），
+			#   不是战场情报，永久可见；真正进雾的敌人单位仍然不显示。
 			var p: Vector2 = _world_to_map(pos3)
 			var half: float = CAMP_ICON_PX * 0.5
 			var rect := Rect2(p - Vector2(half, half), Vector2(CAMP_ICON_PX, CAMP_ICON_PX))

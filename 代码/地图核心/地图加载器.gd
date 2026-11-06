@@ -426,6 +426,11 @@ static func spawn_map_objects(m: MapDef, level: RtsLevel) -> void:
 				if node == null:
 					continue
 				node.rotation.y = yaw
+				# 野怪营地：把地图对象上的逐实例配置（camp_id）交给建筑，
+				# 营地系统扫建筑时读这个 meta（同一种锚点可以摆多座、各配各的怪）。
+				var camp_id: String = String(o.properties.get("camp_id", ""))
+				if not camp_id.is_empty():
+					node.set_meta("camp_id", camp_id)
 				if int(o.category) == MapObject.Category.BUILDING:
 					# 建筑占地由 def.footprint 决定；视觉缩放会让占地和寻路格错位，
 					# 所以建筑统一忽略 scale（编辑器/校验也会修正旧数据）。

@@ -64,8 +64,8 @@ func setup(p_faction) -> void:
 		return
 	_scan_camps()
 	if _camps.is_empty():
-		print("[野怪营地] 没有识别到营地（中立阵营里没有 creep_den/creep_gate/creep_shell —— "
-			+ "在地图编辑器里摆一座即可）")
+		print("[野怪营地] 没有识别到营地（任何阵营里都没有带营地配置的 creep_den/creep_gate/creep_shell —— "
+			+ "在地图编辑器里摆一座锚点、再在「营地」页指派配置即可）")
 		return
 	var total: int = 0
 	for c in _camps:
@@ -74,51 +74,71 @@ func setup(p_faction) -> void:
 		% [_camps.size(), total, SPAWN_BATCH])
 
 
-## 扫中立阵营的建筑，命中营地表的当锚点
+## 扫**所有阵营**的建筑：带 camp_id（或 id 命中营地表的锚点建筑）就是一座营地。
+##
+## 2026-11-07 改写（玩家口径「由我自定义这是哪个玩家的营地」）：
+##   · 以前只扫中立阵营 → 锚点摆成"玩家 2"就永远不刷怪；
+##   · 现在归谁由**锚点建筑的 owner** 决定：中立敌对刷野怪、玩家 N 就替 N 守家。
+##   · 每座营地的配置优先读建筑上的 `camp_id`（编辑器逐实例指定），
+##     没有才退回"按锚点建筑 id 反查营地表"的老口径。
 func _scan_camps() -> void:
 	_camps.clear()
 	_queue.clear()
-	if faction == null:
-		return
-	var defs: Array = CAMP_TABLE.all()
-	if defs.is_empty():
-		return
-	for b in faction.buildings:
-		if b == null or not is_instance_valid(b):
+	var pools: Array = []
+	for f in Game.factions:
+		if f != null:
+			pools.append(f)
+	if Game.neutral_faction != null:
+		pools.append(Game.neutral_faction)
+	if Game.passive_faction != null:
+		pools.append(Game.passive_faction)
+	for fac in pools:
+		var ff: RtsFaction = fac
+		if ff == null:
 			continue
-		var bd = b.get("def")
-		if bd == null:
-			continue
-		# 锚点判据：建筑的 def.id 就是营地表里的 den_building
-		var d: Resource = CAMP_TABLE.for_den(bd.id)
-		if d == null:
-			continue
-		var total: int = 0
-		var counts: Array = d.get("counts")
-		for n in counts:
-			total += int(n)
-		if total <= 0:
-			continue
-		var camp: Dictionary = {
-			# 自己记下标：后面 _refill/_pump_spawn 都按它回查，不依赖 Array.find 的比较语义
-			"index": _camps.size(),
-			"def": d,
-			"anchor": b,
-			"pos": (b as Node3D).global_position,
-			"units": [],
-			"pending": 0,
-			"total": total,
-			"waiting": false,
-			"respawn_left": 0.0,
-			"spawn_seq": 0,
-			# 每座营地错开一个固定相位，几座营地不会刷出完全一样的站位
-			"seed": float(_camps.size()) * 0.7,
-		}
-		_camps.append(camp)
-		_refill(camp)
-		print("[野怪营地] 「%s」锚点 %s @ (%.0f, %.0f)，配置 %s"
-			% [String(d.get("display_name")), String(bd.id), camp["pos"].x, camp["pos"].z,
-				_preview(d)])
+		for b in ff.buildings:
+			if b == null or not is_instance_valid(b):
+				continue
+			var bd = b.get("def")
+			if bd == null:
+				continue
+			var cid: String = String(b.get_meta("camp_id", ""))
+			var d: Resource = CAMP_TABLE.by_id(cid) if not cid.is_empty() else null
+			if d == null:
+				d = CAMP_TABLE.for_den(bd.id)
+			if d == null:
+				continue
+			var total: int = 0
+			var counts: Array = d.get("counts")
+			for n in counts:
+				total += int(n)
+			if total <= 0:
+				continue
+			var first: float = maxf(float(d.get("first_spawn_min")), 0.0) * 60.0
+			var camp: Dictionary = {
+				"index": _camps.size(),
+				"def": d,
+				"anchor": b,
+				"faction": ff,
+				"pos": (b as Node3D).global_position,
+				"units": [],
+				"pending": 0,
+				"total": total,
+				"waiting": false,
+				"respawn_left": 0.0,
+				"spawn_seq": 0,
+				"next_wave": first,
+				"waves_done": 0,
+				"seed": float(_camps.size()) * 0.7,
+			}
+			_camps.append(camp)
+			# 开局就刷的营地立刻进队；有首次时间的等 _tick 到点
+			if first <= 0.01:
+				_refill(camp)
+				camp["waves_done"] = 1
+			print("[野怪营地]「%s」锚点 %s @ (%.0f, %.0f)，阵营 %s，配置 %s"
+				% [String(d.get("display_name")), String(bd.id), camp["pos"].x, camp["pos"].z,
+					ff.display_name, _preview(d)])
 
 
 ## 配置的简短可读串（日志用）
@@ -188,7 +208,8 @@ func _spawn_one(camp: Dictionary, id: StringName) -> void:
 	var parent: Node3D = level
 	if parent == null or not is_instance_valid(parent):
 		parent = self
-	var u: Node3D = Game.spawn_unit(faction, id, p, parent)
+	var cf: RtsFaction = camp.get("faction", null) as RtsFaction
+	var u: Node3D = Game.spawn_unit(cf if cf != null else faction, id, p, parent)
 	if u == null:
 		return
 	(camp["units"] as Array).append(u)
@@ -211,6 +232,25 @@ func _process(delta: float) -> void:
 
 func _tick(dt: float) -> void:
 	for camp in _camps:
+		# --- 时间点刷怪（2026-11-07）---
+		# `spawn_interval_min > 0` = 每 N 分钟刷一整波；= 0 只按 first 刷一次。
+		var d0: Resource = camp["def"]
+		var interval: float = maxf(float(d0.get("spawn_interval_min")), 0.0) * 60.0
+		var next_wave: float = float(camp.get("next_wave", 0.0))
+		if float(Game.elapsed) >= next_wave and int(camp["pending"]) <= 0:
+			if interval > 0.0:
+				camp["next_wave"] = next_wave + interval
+				if float(Game.elapsed) >= next_wave + 0.1:
+					# 不清 units：老的一波可能还活着，清掉就变成"没人统计的野怪"。
+					# 新一波直接追加，全灭判定仍然按 units 里所有活着的算。
+					_refill(camp)
+					camp["waves_done"] = int(camp.get("waves_done", 0)) + 1
+					print("[野怪营地]「%s」第 %d 波刷新（%.1f 分钟）"
+						% [String(d0.get("display_name")), int(camp["waves_done"]),
+							float(Game.elapsed) / 60.0])
+			elif int(camp.get("waves_done", 0)) == 0:
+				_refill(camp)
+				camp["waves_done"] = 1
 		var alive: int = _alive_units(camp).size()
 		# 还在分帧刷（队列没排完）时不算"全灭" —— 否则刚摆下的营地会自己进入倒计时
 		if int(camp["pending"]) > 0:
@@ -257,6 +297,13 @@ func _alive_units(camp: Dictionary) -> Array:
 # ===========================================================================
 # 对外查询（小地图 / 自检）
 # ===========================================================================
+
+## 第 idx 座营地的刷怪阵营（自检/调试用）
+func camp_faction_of(idx: int) -> RtsFaction:
+	if idx < 0 or idx >= _camps.size():
+		return null
+	return _camps[idx].get("faction", null) as RtsFaction
+
 
 ## 每座营地一行：{pos, name, icon, alive, total, respawn_left}
 func camps() -> Array:
