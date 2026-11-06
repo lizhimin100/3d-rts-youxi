@@ -79,6 +79,9 @@ class BoxOverlay extends Control:
 # ===========================================================================
 
 func _ready() -> void:
+	# 建筑升级（哨塔→箭塔）会把旧节点换掉：建筑侧靠这个组找到选择系统，
+	# 把选中跟着搬到新节点上（否则玩家面板会突然变空）。
+	add_to_group("selection_system")
 	_overlay = BoxOverlay.new()
 	_overlay.name = "拖框层"
 	_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE

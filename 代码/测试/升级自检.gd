@@ -153,7 +153,62 @@ func _run() -> void:
 	# --- 7. 哨塔 → 箭塔（建筑改造）：只补差价、血量比例继承、占地不残留 ---
 	_check_upgrade(pf)
 
+	# --- 8. 升级要**读条**（2026-11-06 玩家口径：不能一口气变成箭塔）---
+	_check_timed_upgrade(pf)
+
 	_finish()
+
+
+## 升级=读条：进状态 / 当场扣差价 / 进度随时间涨 / 读满才换型号 / 忙时拒训练。
+func _check_timed_upgrade(pf: RtsFaction) -> void:
+	const REFIT := preload("res://代码/系统/建筑改造.gd")
+	var wd: UnitDef = Cfg.unit(&"watchtower")
+	var td: UnitDef = Cfg.unit(&"tower")
+	_check(wd != null and td != null, "[读条] 哨塔/箭塔定义存在")
+	if wd == null or td == null:
+		return
+	var parent: Node = get_parent()
+	if parent == null:
+		return
+	pf.gold = 2000
+	pf.wood = 2000
+	var bt: RtsBuilding = RtsBuilding.new()
+	bt.name = "自检升级读条塔"
+	parent.add_child(bt)
+	bt.global_position = RtsWorld.snap_y(RtsWorld.base_center(pf) + Vector3(-16.0, 0.0, 16.0))
+	bt.setup(pf, wd)
+	bt.set_constructed(true)
+	Game.register(bt)
+	if Game.level != null and Game.level.has_method("mark_footprint"):
+		Game.level.call("mark_footprint", bt)
+	var at: Vector3 = bt.global_position
+	var cost: Vector2i = REFIT.upgrade_cost(&"watchtower", &"tower")
+	var g0: int = pf.gold
+	_check(REFIT.start(bt), "[读条] 升级能开始（校验+扣差价）")
+	_check(bt.is_upgrading(), "[读条] 进入升级状态")
+	_check(pf.gold == g0 - cost.x, "[读条] 升级费当场扣掉 %d 金" % cost.x)
+	_check(bt.upgrade_progress() < 0.01, "[读条] 刚点下去进度 0（不是瞬变）")
+	_check(not bt.queue_train(&"footman"), "[读条] 读条期间不能训练")
+	bt.call("_tick_upgrade", 1.0)
+	var p1: float = bt.upgrade_progress()
+	_check(p1 > 0.0 and p1 < 1.0, "[读条] 进度随时间涨（%.2f）" % p1)
+	bt.call("_tick_upgrade", 999.0)
+	var found: RtsBuilding = null
+	for b in pf.buildings:
+		if b == null or not is_instance_valid(b):
+			continue
+		var rb := b as RtsBuilding
+		if rb == null or rb.def == null or rb.def.id != &"tower":
+			continue
+		if rb.global_position.distance_to(at) < 1.5:
+			found = rb
+	_check(found != null, "[读条] 读满后原地换成箭塔")
+	if found != null:
+		_check(found.is_constructed, "[读条] 新塔是完工状态")
+		Game.unregister(found)
+		if Game.level != null and Game.level.has_method("clear_footprint"):
+			Game.level.call("clear_footprint", found)
+		found.queue_free()
 
 
 ## 哨塔升级箭塔：这是 2026-11-01 新增的玩家/AI 共用能力，

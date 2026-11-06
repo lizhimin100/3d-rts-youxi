@@ -41,6 +41,10 @@ const ADJ_PUSH_RATIO: float = 0.70
 const HINT_COOLDOWN: float = 30.0
 ## 进攻指令生效后，隔多久补一次增援命令（秒）
 const DIRECTIVE_REISSUE: float = 8.0
+## 空闲单位派活的间隔（秒）
+const IDLE_DISPATCH_GAP: float = 4.0
+## 部队集合点离基地多少米
+const ASSEMBLY_RADIUS: float = 12.0
 
 ## 是否启用（HUD 小地图下方的「副官 · 开/关」按钮控制；--no-adjutant 启动即关）
 var enabled: bool = true
@@ -337,7 +341,107 @@ func _think_once(diff: DifficultyDef) -> void:
 	super._think_once(diff)
 	if not enabled:
 		return
+	_manage_idle_dispatch()
 	_maybe_hint_request_control()
+
+
+# ===========================================================================
+# 空闲单位派活（2026-11-06 玩家口径）
+# ===========================================================================
+#
+# 玩家原话：「训练出的农民/部队待门口，没有集结点、不主动、也不会去执行
+# 智能决策目标层的目标」。
+#
+# 根因链（查过一遍，是结构性的，不是某一处写错）：
+#   · 目标层（代码/ai/目标层.gd）是**纯静态仲裁**，只产出"目标 + 诉求分"，
+#     全文件不接收也不返回任何单位 —— 根本没有"空闲单位领取目标"的入口；
+#   · 真正下令的是 `_issue_wave_plan()`，它被 `_next_wave_at` / `allow_attack` /
+#     `army >= min_wave_size` 三重门控挡着，凑不够人就不发；
+#   · 副官唯一"收拢闲兵"的重写 `_manage_waves()` 在默认 `dept=ON` 下是**死代码**
+#     （`简单AI._think_once` 走 `_dept_tick`，不再调 `_manage_waves`）。
+# 结果：新兵 `order == NONE` 之后就是终态，只有被动还手，永远不会自己找事做。
+#
+# 这里补上最后一块：**给闲着的单位派一件低风险、有产出的事**。
+#   · 农民 → 最近的金矿（没有金矿就砍树）：这是"有产出"的默认行为；
+#   · 战斗单位 → **集合点**（基地朝敌方 12m 处，或玩家指定的驻守点）。
+#     不直接推出去送死，但也绝不站在兵营门口。
+# 玩家正在微操的单位由 `Game.control.is_protected()` 剔除，不会被抢走。
+var _idle_next_at: float = 0.0
+var idle_dispatch_stats: Dictionary = {"worker": 0, "army": 0}
+
+
+func _manage_idle_dispatch() -> void:
+	if _faction == null:
+		return
+	var now: float = Game.elapsed
+	if now < _idle_next_at:
+		return
+	_idle_next_at = now + IDLE_DISPATCH_GAP
+
+	var base: Vector3 = RtsWorld.base_center(_faction)
+	var radius: float = Cfg.game.map_size * 0.75
+	var workers: Array = []
+	var army: Array = []
+	for u in _faction.units:
+		if u == null or not is_instance_valid(u) or not u.is_alive():
+			continue
+		if u.def == null or not u.is_idle_like():
+			continue
+		# 玩家刚点过的人（命令组生命周期 + 5s 宽限）一律不动
+		if Game.control != null and Game.control.is_protected(u):
+			continue
+		if RtsWorld.is_worker_def(u.def):
+			workers.append(u)
+		else:
+			army.append(u)
+
+	# --- 农民：闲着就去采 ---
+	if not workers.is_empty():
+		var drop: Vector3 = _wood_dropoff()
+		var kind: int = RtsConst.Harvest.WOOD if Game.is_night() else RtsConst.Harvest.GOLD
+		var pool: Node3D = null
+		for w in workers:
+			pool = null
+			if kind == RtsConst.Harvest.WOOD:
+				pool = _nearest_wood(w, drop)
+			if pool == null:
+				pool = Game.find_nearest_harvestable(w.global_position, kind, base, radius)
+			if pool == null:
+				pool = Game.find_nearest_harvestable(w.global_position,
+						RtsConst.Harvest.GOLD, base, radius)
+			if pool == null:
+				continue
+			_sched.gather([w], pool, "idle")
+			idle_dispatch_stats["worker"] = int(idle_dispatch_stats["worker"]) + 1
+
+	# --- 部队：往集合点收拢（家里挨打时不动，交给回防逻辑）---
+	if army.is_empty():
+		return
+	if float(metrics.get("base_threat", 0.0)) > 0.0:
+		return
+	var anchor: Vector3 = hold_point()
+	if anchor == Vector3.INF:
+		anchor = assembly_point()
+	if anchor == Vector3.INF:
+		return
+	_sched.move(army, anchor, "idle")
+	idle_dispatch_stats["army"] = int(idle_dispatch_stats["army"]) + 1
+
+
+## 部队集合点：基地朝敌方（或玩家指定进攻点）12m 处。
+## 放这么近是有意的 —— 玩家一眼能看到"我的兵在门口集结"，而不是散在地图中间。
+func assembly_point() -> Vector3:
+	if _faction == null:
+		return Vector3.INF
+	var base: Vector3 = RtsWorld.base_center(_faction)
+	var foe: Vector3 = _push_target()
+	if foe == Vector3.INF or foe == Vector3.ZERO:
+		return base
+	var d: Vector3 = foe - base
+	d.y = 0.0
+	if d.length() < 1.0:
+		return base
+	return RtsWorld.walkable_pos(base + d.normalized() * ASSEMBLY_RADIUS)
 
 
 ## 调试/自检：副官现在手里的指令

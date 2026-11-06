@@ -16,8 +16,64 @@ extends RefCounted
 ## 反向操作也走这里（暂时没有降级需求，但函数本身是通用的）
 
 
-## 把 `old` 换成 `new_id` 建筑。成功返回新节点，失败返回 null。
-## `keep_hp` = 血量比例是否继承（默认 true）。
+## **升级路线表：唯一出口**。以后加别的升级（大本营→要塞之类）只改这里。
+## 键 = 旧 id，值 = 新 id。
+const ROUTES := {
+	&"watchtower": &"tower",
+}
+
+
+## 这个建筑能升级成什么（不能升返回空）
+static func upgrade_target_of(id: StringName) -> StringName:
+	return ROUTES.get(id, &"")
+
+
+## 一步到位：校验 → 扣差价 → 进**升级读条**（不立刻换模型）。
+## AI 和命令卡共用这一个入口，价格/时长/退款口径就永远一致。
+## 返回 true = 已经开始读条（调用方可以 toast "正在升级"）。
+static func start(old: Node3D, new_id: StringName = &"") -> bool:
+	var b := old as RtsBuilding
+	if b == null or b.def == null or not b.is_alive():
+		return false
+	if new_id == &"":
+		new_id = upgrade_target_of(b.def.id)
+	if new_id == &"":
+		return false
+	if not b.is_constructed or b.is_upgrading():
+		return false
+	if not b.train_queue.is_empty() or b.is_researching():
+		return false
+	var fac: RtsFaction = b.faction
+	if fac == null:
+		return false
+	if not pay(fac, b.def.id, new_id):
+		return false
+	if not b.start_upgrade(new_id):
+		# 状态没收下（并发/正在忙）：原路退款，绝不吞钱
+		var c: Vector2i = upgrade_cost(b.def.id, new_id)
+		fac.add_res(c.x, c.y)
+		Game.resources_changed.emit(fac)
+		return false
+	return true
+
+
+## 取消升级：清读条 + **全额退差价**（和取消训练同一套口径）
+static func cancel(old: Node3D) -> bool:
+	var b := old as RtsBuilding
+	if b == null or b.def == null or not b.is_upgrading():
+		return false
+	var new_id: StringName = b.upgrade_target()
+	if not b.cancel_upgrade():
+		return false
+	if b.faction != null:
+		var c: Vector2i = upgrade_cost(b.def.id, new_id)
+		b.faction.add_res(c.x, c.y)
+		Game.resources_changed.emit(b.faction)
+	return true
+
+
+## 立刻换型号（升级读条读完时由建筑自己调；自检/关卡也用这条）。
+## 注意：这是**瞬时**的那一半，不再负责计时。
 static func replace(old: Node3D, new_id: StringName, keep_hp: bool = true) -> Node3D:
 	if old == null or not is_instance_valid(old):
 		return null

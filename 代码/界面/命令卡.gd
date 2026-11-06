@@ -303,18 +303,22 @@ func _build_entries() -> Array:
 		# 价格/实现都走 代码/系统/建筑改造.gd —— 和 AI 自动升级完全同一套口径。
 		if b.def.id == &"watchtower":
 			var uc: Vector2i = UPGRADE.upgrade_cost(&"watchtower", &"tower")
+			var busy: bool = b.is_upgrading()
 			out.append({
 				"label": "升级",
-				"hint": "把这座哨塔改造成箭塔（只补差价 %d 金 / %d 木）。\n改造后：%.0f 伤害 · %.0fm 射程；视野从 %.0fm 降到 12m。\n血量按当前比例继承，不能当回血手段。" % [
-					uc.x, uc.y,
-					float(Cfg.unit(&"tower").attack_damage if Cfg.unit(&"tower") != null else 0.0),
-					float(Cfg.unit(&"tower").attack_range if Cfg.unit(&"tower") != null else 0.0),
-					b.def.sight_range],
+				"hint": ("正在改造成箭塔：%d%%，还要 %.0f 秒。\n（读条期间不能训练/研究，被打断不退款）"
+						% [int(round(b.upgrade_progress() * 100.0)), b.upgrade_remaining()]) if busy \
+						else ("把这座哨塔改造成箭塔（只补差价 %d 金 / %d 木，工期 %.0f 秒）。\n改造后：%.0f 伤害 · %.0fm 射程；视野从 %.0fm 降到 12m。\n血量按当前比例继承，不能当回血手段。" % [
+							uc.x, uc.y, RtsBuilding.upgrade_time_for(&"tower"),
+							float(Cfg.unit(&"tower").attack_damage if Cfg.unit(&"tower") != null else 0.0),
+							float(Cfg.unit(&"tower").attack_range if Cfg.unit(&"tower") != null else 0.0),
+							b.def.sight_range]),
 				"color": Color(0.96, 0.72, 0.42),
 				"glyph": "升",
 				"icon": "upgrade",
-				"sub": "%d金 %d木" % [uc.x, uc.y],
+				"sub": ("%d%%" % int(round(b.upgrade_progress() * 100.0))) if busy else ("%d金 %d木" % [uc.x, uc.y]),
 				"hotkey": "",
+				"disabled": busy,
 				"action": func(): _call("request_upgrade_tower"),
 			})
 		out.append(_stop_entry())

@@ -195,7 +195,10 @@ func request_cancel_train_at(idx: int) -> void:
 ## "多余哨塔升级箭塔加强防御" —— 人机会自动升级，玩家这边也得有同一个入口。
 ##
 ## 只补差价（箭塔 130/70 − 哨塔 90/55 = 40 金 / 15 木），不是"再买一座塔"。
-## 数值口径唯一出口：`代码/系统/建筑改造.gd`（AI 走的是同一个函数）。
+## ★ 2026-11-06：升级**不再一瞬间完成**，改成和训练一样的读条
+##   （玩家口径「不能一口气就变成箭塔」）。进度条显示在中段面板，
+##   读满由建筑自己调 建筑改造.replace 换型号。
+## 数值口径唯一出口：`代码/系统/建筑改造.gd`（AI 走的是同一个入口）。
 func request_upgrade_tower() -> void:
 	var b := _primary_building()
 	if b == null or b.def == null:
@@ -206,28 +209,19 @@ func request_upgrade_tower() -> void:
 	if not b.is_constructed:
 		_toast("还没盖好，不能升级", _warn())
 		return
-	var old_id: StringName = &"watchtower"
-	var new_id: StringName = &"tower"
+	if b.is_upgrading():
+		_toast("正在升级（%d%%）" % int(round(b.upgrade_progress() * 100.0)), _warn())
+		return
 	var fac: RtsFaction = Game.player_faction
-	if not REFIT.can_pay(fac, old_id, new_id):
-		var c: Vector2i = REFIT.upgrade_cost(old_id, new_id)
+	if not REFIT.can_pay(fac, &"watchtower", &"tower"):
+		var c: Vector2i = REFIT.upgrade_cost(&"watchtower", &"tower")
 		_toast("资源不足：升级需要 %d 金 / %d 木" % [c.x, c.y], _warn())
 		return
-	if not REFIT.pay(fac, old_id, new_id):
-		_toast("资源不足：升级失败", _warn())
+	if not REFIT.start(b):
+		_toast("升级失败（塔忙着别的活）", _warn())
 		return
-	var n: Node3D = REFIT.replace(b, new_id, true)
-	if n == null:
-		_toast("升级失败（生成新塔时出错）", _warn())
-		return
-	# 选中跟着换过去：否则玩家会看到"面板突然空了"（旧节点已经被释放）
-	_cache_siblings()
-	if _selection_system != null and _selection_system.has_method("select_units"):
-		_selection_system.call("select_units", [n])
-	var td: UnitDef = Cfg.unit(new_id)
-	_toast("哨塔已升级为箭塔（%.0f 伤害 / %.0fm 射程）" % [
-		td.attack_damage if td != null else 0.0,
-		td.attack_range if td != null else 0.0], _accent())
+	_toast("开始升级：箭塔（%.0f 秒，中段显示进度）" % RtsBuilding.upgrade_time_for(&"tower"),
+			_accent())
 
 
 ## 研究一项铁匠铺升级（命令卡调用）：花费/上限全部读 Cfg 的研究定义。

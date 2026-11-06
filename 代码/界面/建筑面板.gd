@@ -744,13 +744,17 @@ func _sync_head() -> void:
 func _sync_mode() -> void:
 	var d: UnitDef = _target.def if _target != null and is_instance_valid(_target) else null
 	var can_train: bool = d != null and not d.trains.is_empty()
+	# ★ 升级读条时中段让给进度条（和"建造中"同一套位置），队列先让开
+	#   —— 玩家口径「升级和训练一样，都是有进度条的」。
+	var upgrading: bool = _target != null and _target.has_method("is_upgrading") \
+			and bool(_target.call("is_upgrading"))
 	var busy: bool = false
 	if can_train and _target != null:
 		busy = not _target.train_queue.is_empty() or _target.current_training() != &""
-	if _train_box.visible != (can_train and busy):
-		_train_box.visible = can_train and busy
-	if _stats.visible != (d != null and not (can_train and busy)):
-		_stats.visible = d != null and not (can_train and busy)
+	if _train_box.visible != (can_train and busy and not upgrading):
+		_train_box.visible = can_train and busy and not upgrading
+	if _stats.visible != (d != null and not (can_train and busy) and not upgrading):
+		_stats.visible = d != null and not (can_train and busy) and not upgrading
 	# 研究区只在**真的在研究中**出现（带进度条）。
 	# 空闲时那一行"武器锻造 0/5"和右边命令卡上的按钮完全重复，
 	# 摆在中间只会把"名字 + 数值"挤下去 —— 中段是信息栏，不是第二张命令卡。
@@ -762,6 +766,18 @@ func _sync_mode() -> void:
 
 
 func _sync_construction(d: UnitDef) -> void:
+	# ★ 升级读条：和建造共用这一个进度条（位置/样式一致，玩家不用学两套）
+	if _target != null and is_instance_valid(_target) and _target.has_method("is_upgrading") \
+			and bool(_target.call("is_upgrading")):
+		_build_box.visible = true
+		var up: float = clampf(_target.upgrade_progress(), 0.0, 1.0)
+		var rest: float = _target.upgrade_remaining()
+		var tgt: StringName = _target.upgrade_target()
+		var td: UnitDef = Cfg.unit(tgt) if tgt != &"" else null
+		_build_cap.text = "升级中 %d%%　·　剩余 %.0fs → %s" % [
+			int(round(up * 100.0)), rest, td.display_name if td != null else "箭塔"]
+		_build_bar.feed(up, Color(0.62, 0.86, 0.98), "")
+		return
 	var constructing: bool = not _target.is_constructed
 	_build_box.visible = constructing
 	if not constructing:

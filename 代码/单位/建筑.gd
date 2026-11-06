@@ -275,6 +275,10 @@ func _complete_construction() -> void:
 func queue_train(id: StringName) -> bool:
 	if def == null or not is_constructed:
 		return false
+	if is_upgrading():
+		if faction != null and faction.is_player:
+			Game.toast("正在升级，训练要等升级完成", Color(1, 0.6, 0.35))
+		return false
 	if not can_train(id):
 		return false
 	var d: UnitDef = Cfg.unit(id)
@@ -363,7 +367,13 @@ func _train_time_multiplier() -> float:
 	return maxf(Cfg.difficulty(Game.difficulty_index).train_time_multiplier, 0.1)
 
 
-## 出兵：在建筑正面 rally_spread 半径内生成，有集结点就走过去
+## 出兵：在建筑正面 rally_spread 半径内生成，**然后走到集结点**。
+##
+## ★ 2026-11-06 玩家口径「训练出的农民/部队待门口，没有集结点」：
+##   老代码只在 `has_rally` 为真时才下令，而 set_rally 全工程只由玩家右键触发，
+##   AI 从不设、开局也不设 —— 于是所有新兵出生就 `order = NONE`，全堆在门口。
+##   现在**没插旗也有默认集结点**（建筑正前方），新兵一律先走过去；
+##   插了旗就走旗。门口从此不会堵人。
 func _spawn_trained(id: StringName) -> void:
 	if faction == null:
 		return
@@ -374,8 +384,8 @@ func _spawn_trained(id: StringName) -> void:
 	var u: Node3D = Game.spawn_unit(faction, id, pos, world_parent)
 	if u == null:
 		return
-	if has_rally and u.has_method("order_move"):
-		u.call("order_move", RtsWorld.walkable_pos(rally_point))
+	if u.has_method("order_move"):
+		u.call("order_move", rally_destination())
 
 
 ## 出兵点：建筑正前方（-Z 侧）散开
@@ -398,6 +408,25 @@ func set_rally(pos: Vector3) -> void:
 	rally_point = RtsWorld.walkable_pos(pos)
 	has_rally = true
 	_refresh_rally_flag()
+
+
+## **默认集结点**（没插旗时新兵去的地方）：建筑正前方 body_radius + 2.6m。
+## 为什么不是"原地站"：兵营的出兵点在门口 1.2m，新兵站那里会挡住下一批兵的出生位，
+## 而且一队人挤在门口看着像"卡住了"。
+func default_rally_point() -> Vector3:
+	var fwd := -global_transform.basis.z
+	fwd.y = 0.0
+	if fwd.length_squared() < 0.0001:
+		fwd = Vector3(0.0, 0.0, 1.0)
+	fwd = fwd.normalized()
+	var front: float = (def.body_radius if def != null else 2.0) + 2.6
+	return RtsWorld.walkable_pos(global_position + fwd * front)
+
+
+## 当前有效的出兵集结点（有旗用旗，没旗用默认点）。
+## **唯一出口**：出兵、界面提示、自检都读它，别再各自判断 has_rally。
+func rally_destination() -> Vector3:
+	return rally_point if has_rally else default_rally_point()
 
 
 ## 拔掉集结点（命令卡的"取消集结点"用；旗子跟着消失）
@@ -486,6 +515,8 @@ func _build_rally_flag() -> Node3D:
 ## 返回 false 的原因由调用方用 research_block_reason() 解释（界面提示用）。
 func research(id: StringName) -> bool:
 	if def == null or not is_constructed:
+		return false
+	if is_upgrading():
 		return false
 	if not def.researches.has(id):
 		return false
@@ -645,15 +676,126 @@ func repair_step(dt: float, _worker: Node3D) -> void:
 # 每帧
 # ===========================================================================
 
-## 建筑只跑队列/研究；完工的箭塔靠 RtsUnit 的战斗逻辑自动开火
+## 建筑只跑队列/研究/升级；完工的箭塔靠 RtsUnit 的战斗逻辑自动开火
 func _tick_extra(dt: float) -> void:
 	if not is_constructed:
+		return
+	# 升级读条期间不训练、不研究（一座楼一次只干一件事）
+	if is_upgrading():
+		_tick_upgrade(dt)
+		_tick_aura(dt)
+		_tick_warning(dt)
 		return
 	_tick_train(dt)
 	_tick_research(dt)
 	_tick_aura(dt)
 	_tick_warning(dt)
 
+
+# ===========================================================================
+# 升级（哨塔 → 箭塔）：**和训练一样要读条**
+# ===========================================================================
+#
+# 玩家口径（2026-11-06）：「哨塔升级箭塔需要时间，不能一口气就变成箭塔 ——
+# 对建筑都设置相关的机制，升级和训练一样，都是有进度条的」。
+# 老实现是 `建筑改造.replace()` 一瞬间换模型：点一下、塔就变了，玩家没有"在施工"的实感，
+# 也没法被打断/被抢时间。现在拆成两段：
+#   · `建筑改造.begin()`  → 收款 + 进 upgrade 状态（本文件），显示进度条；
+#   · 读条满 → 本文件自己调 `建筑改造.replace()` 做真正的原地换型号。
+# 中途取消（`cancel_upgrade`）全额退差价 —— 和取消训练同一套口径。
+
+## 正在升级成的建筑 id（空 = 没在升级）
+var _upgrade_id: StringName = &""
+## 升级进度 0~1
+var _upgrade_t: float = 0.0
+## 本次升级总时长（秒）
+var _upgrade_total: float = 0.0
+## 升级读满后已经交给 replace（防重入：replace 会 queue_free 自己）
+var _upgrade_done: bool = false
+
+const REFIT := preload("res://代码/系统/建筑改造.gd")
+
+
+func is_upgrading() -> bool:
+	return _upgrade_id != &""
+
+
+func upgrade_target() -> StringName:
+	return _upgrade_id
+
+
+func upgrade_progress() -> float:
+	return clampf(_upgrade_t, 0.0, 1.0)
+
+
+## 剩余秒数（界面倒计时用）
+func upgrade_remaining() -> float:
+	return maxf(1.0 - clampf(_upgrade_t, 0.0, 1.0), 0.0) * _upgrade_total
+
+
+## 升级总秒数：按目标建筑的 train_time 折算（箭塔 25s → 约 14s），下限 6s。
+## 为什么用 train_time：UnitDef 只有这一个"工期"字段，和建造口径一致。
+static func upgrade_time_for(new_id: StringName) -> float:
+	var d: UnitDef = Cfg.unit(new_id)
+	if d == null:
+		return 12.0
+	return maxf(d.train_time * 0.55, 6.0)
+
+
+## 开始升级（**不收款**，钱由 建筑改造.begin / 指令系统 先扣）
+func start_upgrade(new_id: StringName) -> bool:
+	if def == null or not is_constructed or not is_alive():
+		return false
+	if is_upgrading() or _dying:
+		return false
+	if not train_queue.is_empty() or is_researching():
+		return false
+	_upgrade_id = new_id
+	_upgrade_t = 0.0
+	_upgrade_total = upgrade_time_for(new_id)
+	_upgrade_done = false
+	return true
+
+
+## 取消升级：清状态，调用方负责退款（指令系统/命令卡）
+func cancel_upgrade() -> bool:
+	if not is_upgrading():
+		return false
+	_upgrade_id = &""
+	_upgrade_t = 0.0
+	_upgrade_total = 0.0
+	return true
+
+
+func _tick_upgrade(dt: float) -> void:
+	if _upgrade_id == &"" or _upgrade_done:
+		return
+	if _upgrade_total <= 0.01:
+		_upgrade_total = upgrade_time_for(_upgrade_id)
+	_upgrade_t += dt / _upgrade_total
+	if _upgrade_t < 1.0:
+		return
+	var to: StringName = _upgrade_id
+	_upgrade_id = &""
+	_upgrade_t = 0.0
+	_upgrade_done = true
+	var was_selected: bool = is_selected
+	# replace 内部会 Game.unregister(self) + queue_free(self)。
+	# queue_free 是延迟的，这一帧剩下的逻辑仍然跑在有效节点上，安全。
+	var n: Node3D = REFIT.replace(self, to, true)
+	if n == null:
+		if faction != null and faction.is_player:
+			Game.toast("升级失败：%s" % (def.display_name if def != null else "建筑"),
+					Color(1.0, 0.5, 0.4))
+		return
+	# 选中跟着搬到新楼：玩家看到的是"这座塔升级完成了"，不是"面板突然空了"
+	if was_selected:
+		var tree := get_tree()
+		if tree != null:
+			for nd in tree.get_nodes_in_group("selection_system"):
+				if nd.has_method("select_units"):
+					nd.call("select_units", [n])
+					break
 
 # ===========================================================================
 # 新建筑的专属逻辑
@@ -767,6 +909,8 @@ func _abort_work() -> void:
 	train_progress = 0.0
 	_research_id = &""
 	_research_t = 0.0
+	_upgrade_id = &""
+	_upgrade_t = 0.0
 
 
 ## 受击反馈：墙根尘土 + 石屑 + 极轻震屏（按 HIT_FX_GAP 节流）

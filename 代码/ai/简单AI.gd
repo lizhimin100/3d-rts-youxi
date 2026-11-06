@@ -3951,21 +3951,24 @@ func _maybe_upgrade_tower() -> void:
 		return
 	if _faction.count_buildings(new_id) >= MAX_ARROW_TOWERS:
 		return
-	if not REFIT.can_pay(_faction, old_id, new_id):
-		return
+	# 已经有塔在升级：等它读完（升级现在是**读条**，不是瞬变）
+	for t in towers:
+		if t.is_upgrading():
+			return
 	# 挑"最靠外"的那座升级（越靠前越先挨打，最需要火力）
 	var pick: RtsBuilding = towers[0]
 	var home: Vector3 = RtsWorld.base_center(_faction)
 	for t in towers:
 		if t.global_position.distance_to(home) > pick.global_position.distance_to(home):
 			pick = t
-	if not REFIT.pay(_faction, old_id, new_id):
+	# ★ 走 建筑改造.start：校验 + 扣差价 + 进读条，和玩家命令卡同一个入口。
+	#   读满由建筑自己 replace —— AI 不再"一瞬间换一座塔"。
+	if not REFIT.start(pick, new_id):
 		return
-	var n: Node3D = REFIT.replace(pick, new_id, true)
 	_upgrade_cd = 12.0
-	if n != null:
-		_log("哨塔升级箭塔 @ (%.0f, %.0f)（哨塔 %d 座，目标 %d）" % [
-			pick.global_position.x, pick.global_position.z, towers.size(), prefer])
+	_log("哨塔开始升级箭塔 @ (%.0f, %.0f)（%.0f 秒，哨塔 %d 座，目标 %d）" % [
+		pick.global_position.x, pick.global_position.z,
+		RtsBuilding.upgrade_time_for(new_id), towers.size(), prefer])
 
 
 ## **大本营能不能建（2C-6 P4，扩张线预留接口）**：**固定 false**。
