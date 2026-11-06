@@ -360,7 +360,7 @@ func _run_selftest() -> void:
 	var passes: int = 0
 	print("========== 编辑器链路自检 ==========")
 
-	# Dock 布局断言：页签 7 页（地形/对象/区域/玩家/属性/校验/历史）、真的撑开了
+	# Dock 布局断言：页签 8 页（地形/对象/区域/玩家/属性/营地/校验/历史）、真的撑开了
 	# （不是被挤成一条 47px 的缝）
 	_open_dock()
 	for _i in range(4):
@@ -377,10 +377,10 @@ func _run_selftest() -> void:
 		fails.append("Dock 页签没切到前台")
 	print("  · Dock：%s ｜ %d 页 ｜ 当前页尺寸 %s" % [str(dock_size), _dock.get_tab_count(),
 		str(first.size if first != null else Vector2.ZERO)])
-	if _dock.get_tab_count() == 7 and dock_size.y > 200.0 and dock_size.x > 200.0:
+	if _dock.get_tab_count() == 8 and dock_size.y > 200.0 and dock_size.x > 200.0:
 		passes += 1
 	else:
-		fails.append("Dock 尺寸/页数不对（%s，%d 页，应为 7）" % [str(dock_size), _dock.get_tab_count()])
+		fails.append("Dock 尺寸/页数不对（%s，%d 页，应为 8）" % [str(dock_size), _dock.get_tab_count()])
 
 	# token → Theme 资源：主屏与 Dock 必须真的挂上同一个 .tres（不是空 Theme）
 	var main_theme: Theme = _main.theme

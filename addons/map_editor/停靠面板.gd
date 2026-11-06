@@ -1,11 +1,13 @@
 @tool
 extends TabContainer
-## **地图工具面板（Dock）** —— 仿魔兽「工具面板」的六页：
+## **地图工具面板（Dock）** —— 仿魔兽「工具面板」的八页：
 ##
 ##   地形   ：应用纹理（草/土/岩/沙）＋ 应用高度（抬升/降低/平滑/压平）＋ 水面 ＋ 刷子
 ##   对象   ：单位 / 建筑 / 装饰 / 资源 四个分类，装饰只收自然物并按子类筛选
 ##   区域   ：画圆/矩形/多边形 ＋ 用途 ＋ 玩家槽位 ＋ 波次
+##   玩家   ：玩家槽位（阵营/颜色/队伍/出生点/初始资源）＋ 队伍预设
 ##   属性   ：选中对象的数据
+##   营地   ：野怪营地卡（刷什么怪、几只、半径、补满时间），存回 代码/配置/卡/野怪营地/
 ##   校验   ：五关硬检查结果
 ##   历史   ：Tree 实现的撤销/重做面板（点一条直接跳步）
 ##
@@ -89,6 +91,29 @@ var _scale_spin: SpinBox
 var _val_text: RichTextLabel
 var _val_summary: Label
 
+# --- 营地页 ---
+## 营地卡目录 + 静态表（本工程惯例：不写 class_name，用 preload 常量调静态方法）
+const CAMP_TABLE := preload("res://代码/配置/野怪营地表.gd")
+## 营地定义脚本（新建时 .new() 一份空的 Resource）
+const CAMP_DEF := preload("res://代码/配置/野怪营地定义.gd")
+var _camp_list: ItemList
+var _camp_name: LineEdit
+var _camp_id: LineEdit
+var _camp_den: OptionButton
+var _camp_creep_list: ItemList
+var _camp_count_box: VBoxContainer
+var _camp_radius: SpinBox
+var _camp_respawn: SpinBox
+var _camp_icon: LineEdit
+var _camp_status: Label
+## 当前正在编辑的营地 Resource（null = 还没选 / 刚删掉）
+var _camp_cur: Resource = null
+## 编辑中的野怪 id 与只数（界面上的"真相"，保存时才写回 Resource）
+var _camp_creeps: Array = []
+var _camp_counts: Array = []
+## 刷新列表时要保住的那一行（按 .tres 路径比对，id 和文件名可能不一致）
+var _camp_sel_path: String = ""
+
 # --- 历史页（Tree：编辑器自带 UndoRedo 的可视化）---
 var _history_tree: Tree
 var _history_hint: Label
@@ -125,6 +150,7 @@ func _build() -> void:
 	_add_tab(_build_region_tab(), "区域")
 	_add_tab(_build_player_tab(), "玩家")
 	_add_tab(_build_prop_tab(), "属性")
+	_add_tab(_build_camp_tab(), "营地")
 	_add_tab(_build_validate_tab(), "校验")
 	_add_tab(_build_history_tab(), "历史")
 	tab_changed.connect(_on_tab_changed)
@@ -642,6 +668,431 @@ func _spin(min_v: float, max_v: float, step: float) -> SpinBox:
 	return s
 
 
+# ---------------------------------------------------------------- 营地页
+#
+# 为什么单开一页（玩家原话："地图编辑器里我没有找到野怪营地，同时我要的野怪营地，
+# 里面我自己可自定义配置弄什么野怪"）：
+#   营地是"地图内容"，刷什么怪写在一张 .tres 里，散落在 代码/配置/卡/野怪营地/。
+#   以前只能手改文本文件 —— 编辑器里没有任何入口，等于"找不到"。
+#   这里把那张表原样搬成界面：左列表选一份，右边勾野怪、填只数、存盘。
+#   保存后必须 CAMP_TABLE.reload()：否则玩家刚写的配置要重启 Godot 才生效。
+func _build_camp_tab() -> Control:
+	var v := _vbox()
+	v.add_child(_title("野怪营地"))
+
+	var split := _hbox()
+	v.add_child(split)
+
+	# --- 左：营地清单 ---
+	var left := _vbox()
+	left.custom_minimum_size = Vector2(104, 0)
+	split.add_child(left)
+	_camp_list = ItemList.new()
+	_camp_list.custom_minimum_size = Vector2(104, 220)
+	_camp_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_camp_list.item_selected.connect(_on_camp_selected)
+	left.add_child(_camp_list)
+	_hint(_camp_list, "选中一份营地配置 → 右边改刷什么怪、几只。\n每份配置对应一种锚点建筑（巢穴/入口/折壳营地），\n锚点建筑必须摆成「中立」才会被系统认出来。")
+
+	# --- 右：表单 ---
+	var right := _vbox()
+	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	split.add_child(right)
+	right.add_child(_title("营地配置"))
+	var g := GridContainer.new()
+	g.columns = 2
+	g.add_theme_constant_override("h_separation", 6)
+	g.add_theme_constant_override("v_separation", 4)
+	right.add_child(g)
+
+	g.add_child(_label("显示名"))
+	_camp_name = LineEdit.new()
+	_camp_name.placeholder_text = "豺狼人营地"
+	g.add_child(_camp_name)
+
+	g.add_child(_label("营地 id"))
+	_camp_id = LineEdit.new()
+	_camp_id.placeholder_text = "camp_den"
+	_hint(_camp_id, "新建时用它拼文件名（代码/配置/卡/野怪营地/<id>.tres）。\n已存在的营地按原本的文件路径写回，id 只作标识。")
+	g.add_child(_camp_id)
+
+	g.add_child(_label("锚点建筑"))
+	_camp_den = OptionButton.new()
+	_camp_den.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_hint(_camp_den, "地图里摆下这座建筑（归属=中立）时，这里配的怪才会刷出来。")
+	for a in MapAssets.of_category(MapObject.Category.BUILDING):
+		_camp_den.add_item(MapAssets.list_label(a))
+		_camp_den.set_item_metadata(_camp_den.item_count - 1, String(a["id"]))
+	g.add_child(_camp_den)
+
+	g.add_child(_label("半径 m"))
+	_camp_radius = _spin(1.0, 40.0, 0.5)
+	_hint(_camp_radius, "野怪在锚点建筑周围这个半径内出生。")
+	g.add_child(_camp_radius)
+
+	g.add_child(_label("补满秒"))
+	_camp_respawn = _spin(0.0, 600.0, 5.0)
+	_hint(_camp_respawn, "全灭后多久补满。0 = 永不补（打完就没了）。")
+	g.add_child(_camp_respawn)
+
+	g.add_child(_label("小地图图标"))
+	_camp_icon = LineEdit.new()
+	_camp_icon.placeholder_text = "camp"
+	g.add_child(_camp_icon)
+	right.add_child(_label("补满秒填 0 = 永不补", false, &"EditorHint"))
+
+	right.add_child(HSeparator.new())
+	right.add_child(_title("野怪清单"))
+	var csplit := _hbox()
+	right.add_child(csplit)
+	_camp_creep_list = ItemList.new()
+	_camp_creep_list.select_mode = ItemList.SELECT_MULTI
+	_camp_creep_list.custom_minimum_size = Vector2(96, 168)
+	_camp_creep_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_camp_creep_list.multi_selected.connect(_on_camp_creeps_multi)
+	# ItemList(multi) 的默认单击 = "只留这一个"（多选要 Ctrl），
+	# 玩家勾野怪的心智是"点一下勾上、再点取消"。所以自己接一手点击：
+	# gui_input 信号比 C++ 的默认处理先跑，accept_event() 之后默认行为不再执行。
+	_camp_creep_list.gui_input.connect(_on_camp_creep_list_input)
+	csplit.add_child(_camp_creep_list)
+	_hint(_camp_creep_list, "点一下=勾上（再点=取消），可以勾多只野怪。")
+	for a in MapAssets.of_category(MapObject.Category.UNIT):
+		_camp_creep_list.add_item(MapAssets.list_label(a))
+		_camp_creep_list.set_item_metadata(_camp_creep_list.item_count - 1, String(a["id"]))
+		# 列窄，名字会被省略号截断 —— 悬停看全名
+		_camp_creep_list.set_item_tooltip(_camp_creep_list.item_count - 1,
+			MapAssets.list_label(a))
+
+	_camp_count_box = _vbox()
+	_camp_count_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	csplit.add_child(_camp_count_box)
+	_hint(_camp_count_box, "每个已选野怪一行，填刷几只（1~12）。")
+
+	right.add_child(HSeparator.new())
+	var brow := _hbox()
+	_add_small_button(brow, "新建", _camp_new)
+	_add_small_button(brow, "复制", _camp_copy)
+	_add_small_button(brow, "删除", _camp_delete)
+	_add_small_button(brow, "保存", _camp_save)
+	right.add_child(brow)
+
+	_camp_status = _label("", true, &"EditorHint")
+	v.add_child(_camp_status)
+	return v
+
+
+## 重新扫一遍营地卡目录，并把当前选中的那一行保住
+func _refresh_camps() -> void:
+	if _camp_list == null:
+		return
+	_syncing = true
+	_camp_list.clear()
+	var sel: int = -1
+	for res in CAMP_TABLE.all():
+		if res == null:
+			continue
+		_camp_list.add_item("%s · %s" % [String(res.get("display_name")),
+			String(res.get("den_building"))])
+		_camp_list.set_item_metadata(_camp_list.item_count - 1, res)
+		_camp_list.set_item_tooltip(_camp_list.item_count - 1,
+			"%s（锚点 %s）" % [String(res.get("display_name")),
+				String(res.get("den_building"))])
+		if not _camp_sel_path.is_empty() and String(res.resource_path) == _camp_sel_path:
+			sel = _camp_list.item_count - 1
+	if sel < 0 and _camp_cur == null and _camp_list.item_count > 0:
+		sel = 0
+	if sel >= 0:
+		_camp_list.select(sel)
+		_syncing = false
+		_load_camp(_camp_list.get_item_metadata(sel) as Resource)
+		return
+	_syncing = false
+	# ⚠ 这里**不能**"没找到就退回第一份"：
+	#   刚建的草稿还没落盘、或者存了个表里不收的卡，选中一换，
+	#   下一次点「删除」删的就是别人那份文件（QA 里真踩到过）。
+	if _camp_list.item_count == 0:
+		_camp_cur = null
+		_camp_status.text = "还没有营地配置，点「新建」做一份"
+
+
+func _on_camp_selected(index: int) -> void:
+	if _syncing:
+		return
+	var res: Resource = _camp_list.get_item_metadata(index) as Resource
+	if res == null:
+		return
+	_camp_sel_path = String(res.resource_path)
+	_load_camp(res)
+
+
+## 把一份营地配置灌进右侧表单（creeps/counts 是界面的编辑副本）
+func _load_camp(res: Resource) -> void:
+	if res == null:
+		return
+	_camp_cur = res
+	_camp_creeps.clear()
+	_camp_counts.clear()
+	# 卡片是磁盘上的数据，可能被人手改坏 —— 取不到就当空
+	var raw: Variant = res.get("creeps")
+	if raw is Array:
+		for c in raw:
+			_camp_creeps.append(StringName(String(c)))
+	var counts: Variant = res.get("counts")
+	var cl: Array = counts if counts is Array else []
+	for i in range(_camp_creeps.size()):
+		_camp_counts.append(int(cl[i]) if i < cl.size() else 1)
+	_syncing = true
+	_camp_name.text = String(res.get("display_name"))
+	_camp_id.text = String(res.get("id"))
+	_camp_radius.value = float(res.get("radius"))
+	_camp_respawn.value = float(res.get("respawn"))
+	_camp_icon.text = String(res.get("minimap_icon"))
+	_select_option_by_meta(_camp_den, String(res.get("den_building")))
+	_sync_camp_creep_list()
+	_rebuild_camp_counts()
+	_syncing = false
+	_camp_status.text = "正在编辑：%s" % (
+		res.resource_path.get_file() if not String(res.resource_path).is_empty() else "（未保存）")
+
+
+## 让多选列表的勾选状态跟 _camp_creeps 一致
+func _sync_camp_creep_list() -> void:
+	if _camp_creep_list == null:
+		return
+	for i in range(_camp_creep_list.item_count):
+		var uid: StringName = StringName(String(_camp_creep_list.get_item_metadata(i)))
+		if _camp_creeps.has(uid):
+			_camp_creep_list.select(i, false)
+		else:
+			_camp_creep_list.deselect(i)
+
+
+## 按 _camp_creeps 重建右侧"每个野怪一行只数"
+func _rebuild_camp_counts() -> void:
+	if _camp_count_box == null:
+		return
+	for c in _camp_count_box.get_children():
+		_camp_count_box.remove_child(c)
+		c.free()
+	if _camp_creeps.is_empty():
+		_camp_count_box.add_child(_label("勾左边的野怪 → 这里出现只数", true, &"EditorHint"))
+		return
+	for i in range(_camp_creeps.size()):
+		var row := _hbox()
+		var nm: Label = _label(MapAssets.display_name(_camp_creeps[i]))
+		nm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		nm.clip_text = true
+		row.add_child(nm)
+		var sb: SpinBox = _spin(1, 12, 1)
+		sb.custom_minimum_size = Vector2(62, 0)
+		sb.size_flags_horizontal = Control.SIZE_SHRINK_END
+		sb.value = clampi(int(_camp_counts[i]) if i < _camp_counts.size() else 1, 1, 12)
+		# 循环变量在这里落成局部量：GDScript 的 lambda 按值捕获，
+		# 不落的话回调里拿到的是循环结束后的同一个 i（改哪一行都写到同一格）。
+		var idx: int = i
+		sb.value_changed.connect(func(v: float) -> void:
+			if idx < _camp_counts.size():
+				_camp_counts[idx] = int(v))
+		row.add_child(sb)
+		_camp_count_box.add_child(row)
+
+
+## 点击列表里的野怪 → 勾上 / 取消（自己接管，见 _build_camp_tab 里的说明）
+func _on_camp_creep_list_input(event: InputEvent) -> void:
+	if _syncing or _camp_creep_list == null:
+		return
+	var mb := event as InputEventMouseButton
+	if mb == null or not mb.pressed or mb.button_index != MOUSE_BUTTON_LEFT:
+		return
+	var idx: int = _camp_creep_list.get_item_at_position(mb.position, true)
+	if idx < 0:
+		return
+	_camp_creep_list.accept_event()
+	var on: bool = not _camp_creep_list.is_selected(idx)
+	_syncing = true
+	if on:
+		_camp_creep_list.select(idx, false)
+	else:
+		_camp_creep_list.deselect(idx)
+	_syncing = false
+	_apply_camp_creep_toggle(idx, on)
+
+
+## 兜底：键盘 / 其它途径改了选中状态时也同步数据
+func _on_camp_creeps_multi(index: int, selected: bool) -> void:
+	if _syncing:
+		return
+	_apply_camp_creep_toggle(index, selected)
+
+
+## 勾/取消一只野怪：同步 _camp_creeps/_camp_counts 两个数组
+func _apply_camp_creep_toggle(index: int, selected: bool) -> void:
+	if _camp_creep_list == null or index < 0 or index >= _camp_creep_list.item_count:
+		return
+	var uid: StringName = StringName(String(_camp_creep_list.get_item_metadata(index)))
+	if selected:
+		if not _camp_creeps.has(uid):
+			_camp_creeps.append(uid)
+			_camp_counts.append(1)
+	else:
+		var at: int = _camp_creeps.find(uid)
+		if at >= 0:
+			_camp_creeps.remove_at(at)
+			if at < _camp_counts.size():
+				_camp_counts.remove_at(at)
+	_rebuild_camp_counts()
+
+
+func _camp_new() -> void:
+	var base: String = "camp_new"
+	var nid: String = base
+	var n: int = 0
+	while FileAccess.file_exists(CAMP_TABLE.CARD_DIR + nid + ".tres"):
+		n += 1
+		nid = "%s%d" % [base, n]
+	var res: Resource = CAMP_DEF.new()
+	_camp_sel_path = ""
+	_load_camp(res)
+	_syncing = true
+	_camp_id.text = nid
+	_camp_status.text = "新建「%s」：填好后点「保存」才会写盘" % nid
+	_syncing = false
+	if _camp_list != null:
+		# 新配置还没落盘，列表里不该有它 —— 清掉选中，避免误以为已经存在
+		_syncing = true
+		_camp_list.deselect_all()
+		_syncing = false
+
+
+func _camp_copy() -> void:
+	if _camp_cur == null:
+		_camp_status.text = "先选一份营地再复制"
+		return
+	var base: String = String(_camp_cur.get("id")) + "_copy"
+	if base.is_empty():
+		base = "camp_copy"
+	var nid: String = base
+	var n: int = 0
+	while FileAccess.file_exists(CAMP_TABLE.CARD_DIR + nid + ".tres"):
+		n += 1
+		nid = "%s%d" % [base, n]
+	var res: Resource = CAMP_DEF.new()
+	res.set("id", StringName(nid))
+	res.set("display_name", String(_camp_cur.get("display_name")) + "（副本）")
+	res.set("den_building", StringName(String(_camp_cur.get("den_building"))))
+	var creeps: Array[StringName] = []
+	var counts: Array[int] = []
+	for i in range(_camp_creeps.size()):
+		creeps.append(StringName(String(_camp_creeps[i])))
+		counts.append(int(_camp_counts[i]) if i < _camp_counts.size() else 1)
+	res.set("creeps", creeps)
+	res.set("counts", counts)
+	res.set("radius", float(_camp_cur.get("radius")))
+	res.set("respawn", float(_camp_cur.get("respawn")))
+	res.set("minimap_icon", String(_camp_cur.get("minimap_icon")))
+	_camp_sel_path = ""
+	_load_camp(res)
+	_syncing = true
+	_camp_id.text = nid
+	_camp_status.text = "已复制为「%s」：点「保存」写盘" % nid
+	_syncing = false
+	if _camp_list != null:
+		_syncing = true
+		_camp_list.deselect_all()
+		_syncing = false
+
+
+func _camp_delete() -> void:
+	if _camp_cur == null:
+		_camp_status.text = "先选一份营地再删除"
+		return
+	var path: String = String(_camp_cur.resource_path)
+	if path.is_empty():
+		_camp_status.text = "这份营地还没保存过，没有文件可删"
+		return
+	var err: int = DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	if err != OK:
+		_camp_status.text = "删除失败（错误码 %d）：%s" % [err, path.get_file()]
+		return
+	CAMP_TABLE.reload()
+	_camp_cur = null
+	_camp_sel_path = ""
+	_refresh_camps()
+	_camp_status.text = "已删除 %s" % path.get_file()
+
+
+func _camp_save() -> void:
+	if _camp_cur == null:
+		_camp_status.text = "先「新建」或从左列表选一份营地"
+		return
+	var nm: String = _camp_name.text.strip_edges()
+	if nm.is_empty():
+		_camp_status.text = "显示名不能为空"
+		return
+	var nid: String = _camp_id.text.strip_edges().validate_filename()
+	if nid.is_empty():
+		_camp_status.text = "营地 id 不能为空（只允许文件名用的字符）"
+		return
+	var den: String = ""
+	if _camp_den.selected >= 0:
+		den = String(_camp_den.get_item_metadata(_camp_den.selected))
+	if den.is_empty():
+		_camp_status.text = "先选一个锚点建筑"
+		return
+	# 草稿（还没落盘）才按 id 拼路径；已有的配置一律写回它原本的文件，
+	# 因为 id 和文件名允许不一致，按 id 重拼会把老文件复制成第二份、锚点重复。
+	var path: String = String(_camp_cur.resource_path)
+	if path.is_empty():
+		path = CAMP_TABLE.CARD_DIR + nid + ".tres"
+		if FileAccess.file_exists(path):
+			_camp_status.text = "已有 id 为「%s」的营地，换个 id 再存" % nid
+			return
+	# 一个锚点只能有一份营地（营地表按锚点反查，先到先得、后来的被忽略）。
+	# 不拦的话：新建一份选了已经用过的锚点 → 存进去也不会生效，玩家只会觉得"配了没用"。
+	for other in CAMP_TABLE.all():
+		if other == null or other == _camp_cur:
+			continue
+		var opath: String = String(other.resource_path)
+		if opath == path or opath == String(_camp_cur.resource_path):
+			continue
+		if String(other.get("den_building")) != den:
+			continue
+		_camp_status.text = "锚点「%s」已被 %s 占用：一个锚点只能配一份营地" % [
+			den, opath.get_file()]
+		return
+	var creeps: Array[StringName] = []
+	var counts: Array[int] = []
+	for i in range(_camp_creeps.size()):
+		creeps.append(StringName(String(_camp_creeps[i])))
+		counts.append(int(_camp_counts[i]) if i < _camp_counts.size() else 1)
+	_camp_cur.set("id", StringName(nid))
+	_camp_cur.set("display_name", nm)
+	_camp_cur.set("den_building", StringName(den))
+	_camp_cur.set("creeps", creeps)
+	_camp_cur.set("counts", counts)
+	_camp_cur.set("radius", _camp_radius.value)
+	_camp_cur.set("respawn", _camp_respawn.value)
+	_camp_cur.set("minimap_icon", _camp_icon.text.strip_edges())
+	var err: int = ResourceSaver.save(_camp_cur, path)
+	if err != OK:
+		_camp_status.text = "保存失败（错误码 %d）：%s" % [err, path]
+		return
+	# 必须清缓存：营地表是静态缓存，不然刚存的配置要重启 Godot 才看得到
+	CAMP_TABLE.reload()
+	_camp_sel_path = path
+	_refresh_camps()
+	_camp_status.text = "已保存 %s（野怪：%s）" % [path.get_file(),
+		"、".join(_camp_creep_summary())]
+
+
+func _camp_creep_summary() -> PackedStringArray:
+	var out: PackedStringArray = PackedStringArray()
+	for i in range(_camp_creeps.size()):
+		out.append("%s×%d" % [MapAssets.display_name(_camp_creeps[i]),
+			int(_camp_counts[i]) if i < _camp_counts.size() else 1])
+	return out
+
+
 # ---------------------------------------------------------------- 历史页
 ## 撤销/重做面板：**用编辑器自带的 Tree 实现**，数据来自 EditorUndoRedoManager。
 ## 和魔兽编辑器一样：历史是"可见的"，点某一步就跳回那一步，而不是只能按 Ctrl+Z。
@@ -821,6 +1272,7 @@ func _sync_all() -> void:
 	_rebuild_owner_pills()
 	_rebuild_place_pills()
 	_sync_team_summary()
+	_refresh_camps()
 	_on_selection_changed()
 	_on_validation(session.validation)
 	_refresh_history()
