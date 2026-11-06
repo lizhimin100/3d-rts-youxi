@@ -1171,6 +1171,8 @@ func _finish(reason: String) -> void:
 	var m_g_block: Dictionary = {}
 	var m_g_switches: Array = []
 	var m_g_plan_steps: int = 0
+	var m_g_sub_empty: int = 0
+	var m_g_sub_present: int = 0
 	var m_ws_writes: int = 0
 	var m_ws_fields: int = 0
 	var m_ws_regions: int = 0
@@ -1178,6 +1180,8 @@ func _finish(reason: String) -> void:
 		var dsg: Dictionary = depts[fname_g] if depts[fname_g] is Dictionary else {}
 		m_g_cycles += int(dsg.get("goal_cycles", 0))
 		m_g_noop += int(dsg.get("goal_noop_cycles", 0))
+		m_g_sub_empty += int(dsg.get("goal_sub_empty_cycles", 0))
+		m_g_sub_present += int(dsg.get("goal_sub_present_cycles", 0))
 		m_g_created += int(dsg.get("goal_created", 0))
 		m_g_promote += int(dsg.get("goal_sub_promotions", 0))
 		m_g_done += int(dsg.get("goal_done_events", 0))
@@ -1214,6 +1218,9 @@ func _finish(reason: String) -> void:
 		"空过周期": m_g_noop,
 		"空过周期占比": snappedf(float(m_g_noop) / maxf(float(m_g_cycles), 1.0), 0.0001),
 		"目标创建数": m_g_created,
+		"次目标为空周期": m_g_sub_empty,
+		"次目标非空周期": m_g_sub_present,
+		"次目标为空占比": snappedf(float(m_g_sub_empty) / maxf(float(m_g_cycles), 1.0), 0.0001),
 		"次目标晋升次数": m_g_promote,
 		"释放_达成": m_g_done, "释放_过期": m_g_exp, "释放_被抢占": m_g_pre,
 		"释放原因分布": m_g_rel,

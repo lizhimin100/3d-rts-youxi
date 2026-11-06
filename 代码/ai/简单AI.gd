@@ -260,6 +260,8 @@ var dept_stats: Dictionary = {
 	"goal_preempt_events": 0, "goal_expire_events": 0,
 	"goal_done_events": 0, "goal_created": 0,
 	"goal_truncated_cycles": 0,
+	# 2C-14 纯观测：次目标为空/非空周期数（2C-13 §4.2 只能从 L3 日志重算）
+	"goal_sub_empty_cycles": 0, "goal_sub_present_cycles": 0,
 	# 2C-13 §4.3：空过期间被挡下的花钱诉求（按动作分类）+ 1.5×G 退出次数
 	"noop_blocked": {}, "noop_aggressive_exits": 0,
 	"noop_aggressive_cycles": 0, "noop_gold_ge_1p5g_cycles": 0,
@@ -5094,6 +5096,11 @@ func _goal_tick(diff: DifficultyDef, now: float) -> void:
 	_saving_last_unit_cost = unit_cost
 	var reserve: float = float(_model_call("saving_target", [Game.elapsed, unit_cost]))
 	dept_stats["saving_reserve_last"] = reserve
+	# 2C-14 纯观测修复：goal 路径补上「储备充足率」计数器（2C-13 §10.2 遗留）。
+	# 口径与 2C-12 完全一致：金币 >= 本周期 G(t)；分母 cycles 由共用的 _dept_execute 累加。
+	# 只写计数，不进任何决策（reserve 已在上方算好，未被改动）。
+	if float(_faction.gold) >= reserve:
+		dept_stats["saving_sufficient_cycles"] = int(dept_stats.get("saving_sufficient_cycles", 0)) + 1
 	dept_stats["saving_unit_cost_last"] = unit_cost
 	var hits: Array = _saving_urgency()
 	var urgent: bool = not hits.is_empty()
@@ -5140,6 +5147,11 @@ func _goal_tick(diff: DifficultyDef, now: float) -> void:
 		goal_sub = goals_active.get(sid, {}) if goals_active.has(sid) else {}
 	# --- ④ 选主/次（含空过）---
 	_goal_select(props, now, prev_main_id, had_preempt)
+	# 2C-14 纯观测：本周期有没有次目标（只写计数，不参与选目标/预留/执行）
+	if goal_sub.is_empty():
+		dept_stats["goal_sub_empty_cycles"] = int(dept_stats.get("goal_sub_empty_cycles", 0)) + 1
+	else:
+		dept_stats["goal_sub_present_cycles"] = int(dept_stats.get("goal_sub_present_cycles", 0)) + 1
 	# --- ⑤ 预留 + 计划（计划只描述，不动钱）---
 	goal_reserved = GL.reserve_left(goals_active)
 	dept_stats["goal_reserve_last"] = int(goal_reserved.get("金币", 0))
@@ -6051,6 +6063,12 @@ func _dept_log(now: float, plan: Dictionary) -> void:
 		"次目标": String(goal_sub.get("id", "")),
 		"预留": int(goal_reserved.get("金币", 0)),
 		"阈值": snappedf(float(_goal_thr), 0.01),
+		# 2C-14 纯观测字段（只落盘，不进决策）：支撑 A/B/C 三组逐周期归因
+		"决策路径": String(AIV.goal_mode()) if AIV.dept_on() else "dept_off",
+		"次目标空": goal_sub.is_empty(),
+		"次目标动作": String(goal_sub.get("动作", "")),
+		"储备充足": int(ctx0.get("gold", 0)) >= float(dept_stats.get("saving_reserve_last", 0.0)),
+		"承诺表条数": _promise.size(),
 		"世界": {"字段": int(dept_stats.get("ws_fields_last", 0)),
 			"区域": int(dept_stats.get("ws_regions_last", 0))},
 	}
