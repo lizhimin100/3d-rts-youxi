@@ -438,7 +438,11 @@ func _train_entry(b: RtsBuilding, id: StringName) -> Dictionary:
 		],
 		"color": Color(0.90, 0.90, 0.86) if ok else Color(0.55, 0.55, 0.52),
 		"glyph": label.substr(0, 1),
-		"icon": _icon_for_unit(id),
+		# ★ 2026-11-07 玩家口径「兵营等出兵建筑的训练单位图标换成正确的单位图标」：
+		#   以前这里一律给线描 SVG（hammer/sword/bow/staff），弩兵在训练格子里
+		#   只是一个"弓"的符号，跟底部选择栏的渲图头像是两套东西。
+		#   现在优先用 美术/图标/单位/<id>.png（和选择栏/队列同一张图），没有才退线描。
+		"icon": _train_icon(id),
 		"sub": cost,
 		"disabled": (not ok) or full or (not b.is_constructed),
 		"state": func() -> Dictionary:
@@ -668,13 +672,16 @@ func _make_button(e: Dictionary) -> Button:
 	# --- 图标（建筑渲图给 36：一格 142px 宽，够放；线条图标 28）---
 	var tex: Texture2D = _icon_tex(String(e.get("icon", "")))
 	if tex != null:
-		var is_bld: bool = String(e.get("icon", "")).begins_with("建筑/")
+		var icon_key: String = String(e.get("icon", ""))
+		var is_bld: bool = icon_key.begins_with("建筑/")
+		# 单位渲图（单位/<id>.png）按头像尺寸放：28px 看不清头盔和武器
+		var is_unit_png: bool = icon_key.begins_with("单位/")
 		var tr := TextureRect.new()
 		tr.name = "图标"
 		tr.texture = tex
 		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		var isz: float = 38.0 if is_bld else 28.0
+		var isz: float = 38.0 if is_bld else (34.0 if is_unit_png else 28.0)
 		tr.custom_minimum_size = Vector2(isz, isz)
 		tr.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		tr.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -875,7 +882,16 @@ static func _icon_tex(name: String) -> Texture2D:
 	return tex
 
 
-## 单位 → 图标
+## 训练格子用的图标：优先单位渲图（`单位/<id>.png`），没有才退线描 SVG。
+## `_icon_tex` 只认 `ICON_DIR + name + ".png"`，所以这里传 "单位/<id>"。
+static func _train_icon(id: StringName) -> String:
+	var key: String = "单位/" + String(id)
+	if ResourceLoader.exists(ICON_DIR + key + ".png"):
+		return key
+	return _icon_for_unit(id)
+
+
+## 单位 → 图标（线描兜底）
 static func _icon_for_unit(id: StringName) -> String:
 	match id:
 		&"peasant":
