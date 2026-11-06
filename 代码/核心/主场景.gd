@@ -185,6 +185,9 @@ func _ready() -> void:
 			_qa_hour, float(day_night.call("light_level"))])
 	# QA：--qa-spawn=<id>[,<id>…] 在玩家基地旁直接生成（验收新单位/建筑能不能跑起来）
 	_qa_spawn_stuff()
+	# QA：--qa-arrow 沿 +X 射一箭，10 帧后把箭身朝向打出来（验收"箭是不是歪的"）
+	if "--qa-arrow" in OS.get_cmdline_user_args():
+		_qa_arrow.call_deferred()
 
 	# 4.96 副官（玩家侧脚本 AI）：替玩家补农民/派采集/盖农场兵营，玩家下令即接管。
 	#      只碰农民，不碰任何战斗单位；`--no-adjutant` 可关。
@@ -455,6 +458,25 @@ func _mount_script(path: String, node_name: String) -> Node:
 	n.name = node_name
 	add_child(n)
 	return n
+
+
+## QA：--qa-arrow —— 朝 +X 射一箭，等 10 帧打印箭身的朝向基。
+## 正确的箭：-Z 轴（forward）≈ (-1,0,0)（箭头朝 +X 飞），歪的箭是 (0,0,-1)。
+func _qa_arrow() -> void:
+	var from := Vector3(0.0, 1.0, 0.0)
+	var to := Vector3(30.0, 1.0, 0.0)
+	RtsProjectile.fire(null, RtsConst.Projectile.ARROW, from, to, null, 26.0, {}, null)
+	var p: Node3D = null
+	for _i in 10:
+		await get_tree().process_frame
+		if p == null:
+			for c in RtsWorld.level().get_children():
+				if c is RtsProjectile:
+					p = c as Node3D
+	var fwd := Vector3.ZERO
+	if p != null:
+		fwd = -p.global_transform.basis.z
+	print("[QA箭] 位置=", p.global_position if p != null else "null", " 前向=", fwd)
 
 
 ## QA：--qa-spawn=<id>[,<id>…]

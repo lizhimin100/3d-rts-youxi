@@ -99,16 +99,23 @@ func selection_point() -> Vector3:
 	return global_position + Vector3.UP * h
 
 
-## 金矿洞口（世界坐标）。只有 goldmine 用；树没有这个函数，调用方用 has_method 探测。
+## "走进矿洞"的落点（世界坐标）。只有 goldmine 用；树没有这个函数，调用方用 has_method 探测。
 ##
-## 金矿 glb 的洞口是局部 z=-1.30 的一块 1.0×1.56m 暗板（M_cavity），
-## 关卡生成时把整只矿转了 180°（关卡.gd 的 `rotation.y = PI`），
-## 所以这个局部坐标落到世界是「朝向基地」的那一面 —— 农民正是从那一面过来的。
-## 往里再送 0.55m，人就躲到暗板后面（opaque + 深度测试），读起来就是"走进了矿洞"。
-const MOUTH_LOCAL := Vector3(0.0, 0.75, -1.85)
-
-func mouth_point() -> Vector3:
-	return to_global(MOUTH_LOCAL)
+## 为什么不用模型上那个真实洞口（glb 里局部 z=-1.30 的 M_cavity 暗板）：
+##   · 关卡把矿转了 180°（关卡.gd 的 `rotation.y = PI`），洞口落在**背对玩家**的那一面；
+##   · 玩家还可能在地图编辑器里把矿摆成任意朝向。
+##   写死一个局部坐标，总有一半矿是"人往石头背面飘"。
+##
+## 现在按**来访方向**取最近的岩壁：人朝矿走，1.35m 就进到岩石轮廓里
+## （矿体外包半宽约 1.95m），被不透明的岩石挡住 → 读起来就是"钻进矿洞"。
+## y 只抬 0.55m：洞口本身就在地表附近，不需要爬升。
+func mouth_point(from_pos: Vector3) -> Vector3:
+	var d: Vector3 = from_pos - global_position
+	d.y = 0.0
+	if d.length_squared() < 0.0001:
+		d = Vector3(0.0, 0.0, 1.0)
+	d = d.normalized()
+	return global_position + d * 1.35 + Vector3.UP * 0.55
 
 
 # ===========================================================================

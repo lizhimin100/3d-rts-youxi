@@ -203,6 +203,12 @@ const CREEP_IDS: Array[String] = ["gnoll_warrior", "gnoll_scout"]
 const ID_TAGS: Dictionary = {
 	"campfire": "夜间照明",
 	"营火": "仅装饰·不发光",
+	# ★ 2026-11-07 玩家反馈「地图编辑器里找不到野怪营地」：
+	#   锚点建筑本来就在「建筑」页，但名字是「豺狼人巢穴 / 失落入口 / 折壳营地」，
+	#   搜「野怪营地」0 条，也没人知道它必须放成中立。这里把话补全。
+	"creep_den": "野怪营地·中立锚点",
+	"creep_gate": "野怪营地·中立锚点",
+	"creep_shell": "野怪营地·中立锚点",
 }
 
 
@@ -254,7 +260,13 @@ static func of_category(cat: int) -> Array:
 ## 进图后由 `地图加载器` + `野怪.gd` 落到中立阵营上。
 ##
 ## ⚠ 地牢（dungeon）已按玩家要求删除；以后自己做的巢穴若也要中立，把 id 加进来。
-const NEUTRAL_OK: Array[String] = ["gnoll_warrior", "gnoll_scout"]
+const NEUTRAL_OK: Array[String] = [
+	"gnoll_warrior", "gnoll_scout",
+	# ★ 营地锚点建筑**必须**是中立：`野怪营地.gd` 只扫中立阵营的 buildings。
+	#   以前不在这份名单里 → 选「摆放归属=中立」摆下去会被回落成玩家 0，
+	#   进图后一只怪都不刷（玩家口径「找不到野怪营地 / 摆了没用」）。
+	"creep_den", "creep_gate", "creep_shell",
+]
 
 
 ## 这个类型能不能以"中立"身份放下

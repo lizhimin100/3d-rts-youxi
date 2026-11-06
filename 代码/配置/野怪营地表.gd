@@ -27,6 +27,15 @@ static func all() -> Array:
 	return _all
 
 
+## 让缓存失效（编辑器保存营地卡之后调用；运行时不用管）。
+## 没有这个的话，玩家在编辑器里新建一张营地卡必须重启 Godot 才看得到 ——
+## 而营地配置本来就是"编辑期数据"，重启一次等于把刚写的配置藏起来。
+static func reload() -> void:
+	_loaded = false
+	_all.clear()
+	_by_den.clear()
+
+
 ## 按锚点建筑 id 反查营地定义；查不到返回 null
 static func for_den(den_id: StringName) -> Resource:
 	if not _loaded:

@@ -2458,7 +2458,7 @@ func _update_anim() -> void:
 		_mine_k = move_toward(_mine_k, 1.0 if can_enter else 0.0,
 				get_process_delta_time() * 2.0)
 		if can_enter and _mine_k > 0.001:
-			var mp: Vector3 = to_local(mine.call("mouth_point") as Vector3)
+			var mp: Vector3 = to_local(mine.call("mouth_point", global_position) as Vector3)
 			var flat := Vector2(mp.x, mp.z)
 			# 兜底：从矿背面/侧面来的人不许横穿 2.2m 石头
 			if flat.length() > 2.2:
