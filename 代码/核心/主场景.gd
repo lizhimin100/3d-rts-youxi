@@ -343,6 +343,9 @@ func _mount_tests() -> void:
 		_mount_script("res://代码/测试/自动试玩.gd", "自动试玩")
 	if "--research-test" in args:
 		_mount_script("res://代码/测试/升级自检.gd", "升级自检")
+	# 野怪营地自检（营地依赖中立阵营 / 地图对象 / 寻路，必须在主场景里跑）
+	if "--camp-test" in args:
+		_mount_script("res://代码/测试/野怪营地自检.gd", "野怪营地自检")
 	if "--adjutant-test" in args:
 		_mount_script("res://代码/测试/副官自检.gd", "副官自检")
 	# AI 基准（固定条件真实对局 + 情况文本 dump）：只读量测，不改 AI 行为

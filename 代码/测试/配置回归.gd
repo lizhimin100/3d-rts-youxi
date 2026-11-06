@@ -544,8 +544,8 @@ func _case_2c4() -> void:
 	var bad: PackedStringArray = LW.validate_words(&"魔法兵种", [&"坦克"], [], &"普通", &"轻甲")
 	_record("2C4卡：词表校验拦下非法词", bad.size() >= 2, "%s" % str(bad))
 	var all_units: Dictionary = UT.build_units()
-	_record("2C4卡：build_units = 17 卡 + 6 可采集物 = 23",
-			all_units.size() == 23 and all_units.has(&"footman") and all_units.has(&"goldmine"),
+	_record("2C4卡：build_units = 20 卡 + 6 可采集物 = 26",
+			all_units.size() == 26 and all_units.has(&"footman") and all_units.has(&"goldmine"),
 			"size=%d" % all_units.size())
 	var tiers: Array = [LW.range_tier(1.0), LW.range_tier(2.0), LW.range_tier(5.0), LW.range_tier(9.0)]
 	_record("2C4卡：range_tier 四档单调",

@@ -1,0 +1,14 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://代码/配置/野怪营地定义.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"camp_den"
+display_name = "豺狼人营地"
+den_building = &"creep_den"
+creeps = Array[StringName]([&"gnoll_warrior", &"gnoll_scout"])
+counts = Array[int]([2, 1])
+radius = 6.0
+respawn = 90.0
+minimap_icon = "camp"

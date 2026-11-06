@@ -21,9 +21,9 @@ extends Node
 ##      正常路径下地图加载器已经直接给了中立阵营（见 地图加载器.spawn_map_objects），
 ##      这里只是防止旧图 / 别的生成路径漏掉 —— 幂等，重复调用无害。
 ##
-## ⚠ 以后要做的（本轮**不实现**，规格见 `文档/野怪营地.md`）：
-##   编辑器里的「野怪营地」点 = 一个可配置"刷哪几种野怪 / 各几只 / 间隔"的对象，
-##   小地图上带图标。等玩家定了数据格式再动，别在这里偷偷加回来。
+## ⚠ 营地已于 2026-11-06 接入：由 `代码/系统/野怪营地.gd` 负责，
+##   **仍然没有**"入夜总攻 / 定时补怪 / 自动撒营地" —— 营地必须是玩家在地图编辑器里
+##   摆下的锚点建筑（owner = -1）。代码只认建筑，不自己造营地。
 
 ## 中立阵营的 id / 显示名（`Game.neutral_faction` 就是它）
 const NEUTRAL_ID := 99
@@ -32,8 +32,14 @@ const NEUTRAL_COLOR := Color(0.72, 0.28, 0.18)
 ## 哪些 id 属于"野怪"（收编时以此为准；和编辑器的 CREEP_IDS 保持一致）
 const CREEP_IDS: Array[String] = ["gnoll_warrior", "gnoll_scout"]
 
+## 可配置营地系统（`代码/系统/野怪营地.gd`）。
+## 为什么预加载而不是 class_name：同 RtsCreeps 的理由 —— 别碰全局类缓存（AGENTS.md §二）。
+const CAMP_SCRIPT := preload("res://代码/系统/野怪营地.gd")
+
 var faction: RtsFaction = null
 var _level: Node3D = null
+## 营地系统节点（实际类型 = CAMP_SCRIPT）。只在这里挂一次，外部一律 `.call("…")`。
+var camp_system: Node3D = null
 
 
 # ===========================================================================
@@ -62,12 +68,24 @@ func setup(level: Node3D, _day: Node = null) -> void:
 	_level = level
 	ensure_faction()
 	_adopt_orphans()
+	# 营地在**收编之后**挂：收编只管"已经躺在地上的散兵"，
+	# 营地负责"按配置新刷出来的兵"，两件事不重叠（重复刷同一只也不会发生）。
+	_mount_camps()
 	var n: int = alive_count()
 	if n > 0:
-		print("[野怪] 中立阵营「%s」就绪：编辑器摆放 %d 只野怪" % [NEUTRAL_NAME, n])
+		print("[野怪] 中立阵营「%s」就绪：地图上共 %d 只野怪" % [NEUTRAL_NAME, n])
 	else:
 		print("[野怪] 中立阵营「%s」就绪（地图上还没有野怪 —— 在编辑器里摆即可）"
 			% NEUTRAL_NAME)
+
+
+## 挂营地系统（幂等：重复 setup 只重建识别结果，不叠第二个节点）
+func _mount_camps() -> void:
+	if camp_system == null or not is_instance_valid(camp_system):
+		camp_system = CAMP_SCRIPT.new()
+		camp_system.name = "野怪营地"
+		add_child(camp_system)
+	camp_system.call("setup", faction)
 
 
 ## 兜底收编：把"有野怪 id 但没有阵营"的单位挂到中立阵营上。

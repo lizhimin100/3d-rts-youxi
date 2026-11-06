@@ -57,6 +57,10 @@ const VIEW_LINE := Color(0.90, 0.98, 1.0, 0.42)
 ## 取景框角标长度（像素）：只做"方向提示"，不做相框
 const VIEW_TICK := 3.0
 
+## 野怪营地图标：边长（像素）/ 描边色（暗红 = 中立敌对，和蓝/青/红的阵营点分开）
+const CAMP_ICON_PX := 16.0
+const CAMP_EDGE := Color(0.44, 0.08, 0.06, 0.96)
+
 ## 世界边长（没关卡时从 Cfg 取）
 var world_size: float = 116.0
 
@@ -85,6 +89,8 @@ var _hover: bool = false
 var _frame: RingFrame = null
 ## 战争迷雾节点（运行时由 RtsFog 加入 "fog_system" 组；没有就退化成无迷雾）
 var _fog_node: Node = null
+## 营地图标纹理缓存（key = camps() 里的 icon 名；null 也缓存，缺图时不做每帧重试）
+var _camp_icons: Dictionary = {}
 
 
 ## 圆形外框：外黑边 + 金环 + 内阴影，画在子控件上（不受父级圆形裁剪影响）
@@ -326,6 +332,9 @@ func _draw() -> void:
 		if ft != null:
 			draw_texture_rect(ft, mr, false)
 
+	# --- 野怪营地（压在迷雾之上、单位点之下：先看"哪有营地"，再看"谁在那"）---
+	_draw_creep_camps()
+
 	# --- 单位/建筑 ---
 	var pl := Game.player_faction
 	if OS.has_environment("MM_DEBUG"):
@@ -412,6 +421,54 @@ func _draw_grid(mr: Rect2) -> void:
 ## 圆形裁剪说明（保留常量，方便后人改色）：
 ## 真正的圆形是材质 discard 出来的（见 CIRCLE_SHADER）；MASK_COLOR 只在
 ## "想退回方板 + 盖角"时才有用，别在这里再画一遍。
+
+
+## 野怪营地层：从组 `creep_camps` 取每座营地的锚点，画 16px 图标 + 暗红描边。
+##
+## 迷雾口径：和"敌方建筑"一致 —— **探索过就留图标**。
+##   营地是静态地图内容（不会跑），侦察过一次就该记住"那片林子里有窝"；
+##   按"当前可见"过滤的话，图标会随镜头一闪一闪，反而读不出地形信息。
+##   接口走 `_fog_explored()` → 战争迷雾的 `is_world_explored_pos()`；
+##   迷雾关闭 / 没有迷雾节点时它返回 true（不过滤），这里不需要再判一次。
+func _draw_creep_camps() -> void:
+	var tree := get_tree()
+	if tree == null:
+		return
+	for nd in tree.get_nodes_in_group("creep_camps"):
+		if nd == null or not is_instance_valid(nd) or not nd.has_method("camps"):
+			continue
+		for c in nd.call("camps"):
+			var pos3: Vector3 = c.get("pos", Vector3.ZERO)
+			if not _fog_explored(pos3):
+				continue
+			var p: Vector2 = _world_to_map(pos3)
+			var half: float = CAMP_ICON_PX * 0.5
+			var rect := Rect2(p - Vector2(half, half), Vector2(CAMP_ICON_PX, CAMP_ICON_PX))
+			# 暗红描边先画：图标本身是深色时也要有一圈"中立敌对"的辨识度
+			draw_rect(rect.grow(1.0), CAMP_EDGE, false, 1.6)
+			var tex: Texture2D = _camp_texture(String(c.get("icon", "camp")))
+			if tex != null:
+				draw_texture_rect(tex, rect, false)
+			else:
+				# 缺图（没 import / 被删 / 新 icon key 还没出图）→ 暗红圆点 + 白骨十字。
+				# 绝不 assert、绝不报错：小地图少一张图不该让整局崩。
+				draw_circle(p, half * 0.74, Color(0.46, 0.09, 0.08, 0.96))
+				var arm: float = half * 0.60
+				var bone := Color(0.93, 0.91, 0.84, 0.95)
+				draw_line(p + Vector2(-arm, -arm), p + Vector2(arm, arm), bone, 1.4)
+				draw_line(p + Vector2(-arm, arm), p + Vector2(arm, -arm), bone, 1.4)
+
+
+## 营地图标纹理（按 icon key 缓存；缺失返回 null，由调用方降级画圆点）
+func _camp_texture(key: String) -> Texture2D:
+	if _camp_icons.has(key):
+		return _camp_icons[key] as Texture2D
+	var tex: Texture2D = null
+	var path := "res://美术/图标/小地图/%s.png" % key
+	if ResourceLoader.exists(path):
+		tex = load(path) as Texture2D
+	_camp_icons[key] = tex
+	return tex
 
 
 ## 主色
