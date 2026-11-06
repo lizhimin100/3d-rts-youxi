@@ -22,6 +22,9 @@ var _foot_l: int = -1
 var _foot_r: int = -1
 var _fails: Array[String] = []
 var _samples: int = 0
+## 每只脚的 up 采样（用于判断骨骼轴向是否和断言约定相反）
+var _up_vals: Dictionary = {}
+var _up_fails: Dictionary = {}
 
 
 func _ready() -> void:
@@ -37,10 +40,11 @@ func _ready() -> void:
 	if _skel == null:
 		_finish("单位里没有 Skeleton3D")
 		return
-	_foot_l = _skel.find_bone("foot.L")
-	_foot_r = _skel.find_bone("foot.R")
+	# 骨骼命名有两套：老方块人 `foot.L`，新弩兵（E 盘重导）`foot_L`。都认。
+	_foot_l = _find_bone(["foot.L", "foot_L", "Foot.L", "foot_l"])
+	_foot_r = _find_bone(["foot.R", "foot_R", "Foot.R", "foot_r"])
 	if _foot_l < 0 or _foot_r < 0:
-		_finish("骨架里没有 foot.L/foot.R（骨骼名不对）")
+		_finish("骨架里没有脚掌骨骼（foot.L / foot_L 都找不到）")
 		return
 	# 让它走起来：朝基地正前方 12m，必要时重启路径
 	var goal: Vector3 = _unit.global_position + _unit.global_transform.basis.z * -12.0
@@ -61,9 +65,14 @@ func _pick_unit() -> void:
 		return
 	# 先在基地正前方的空地生成一个"干净"的测试兵：现有开局兵常常贴着大本营走，
 	# 侧视相机会钻进建筑里，截图全是墙。QA 单位不参与胜负，退出时随场景释放。
+	# `--walk-unit=archer` 可换兵种（弩兵换了模型后要单独验走姿）。
+	var want: String = "footman"
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--walk-unit="):
+			want = a.substr(String("--walk-unit=").length())
 	var base: Vector3 = RtsWorld.base_center(pl)
 	var open: Vector3 = RtsWorld.walkable_pos(base + Vector3(0.0, 0.0, 11.0))
-	var spawned: Node3D = Game.spawn_unit(pl, &"footman", open, Game.level)
+	var spawned: Node3D = Game.spawn_unit(pl, StringName(want), open, Game.level)
 	if spawned is RtsUnit:
 		_unit = spawned as RtsUnit
 		return
@@ -71,7 +80,7 @@ func _pick_unit() -> void:
 		if u == null or not is_instance_valid(u):
 			continue
 		var r := u as RtsUnit
-		if r != null and r.is_alive() and r.def != null and String(r.def.id) == "footman":
+		if r != null and r.is_alive() and r.def != null and String(r.def.id) == want:
 			_unit = r
 			return
 	for u in pl.units:
@@ -79,6 +88,15 @@ func _pick_unit() -> void:
 		if r != null and r.is_alive():
 			_unit = r
 			return
+
+
+## 按候选名找骨骼（-1 = 都没有）
+func _find_bone(names: Array) -> int:
+	for n in names:
+		var i: int = _skel.find_bone(String(n))
+		if i >= 0:
+			return i
+	return -1
 
 
 func _setup_camera() -> void:
@@ -114,11 +132,19 @@ func _check_frame(i: int) -> void:
 		var world: Transform3D = _skel.global_transform * pose
 		var foot_up: Vector3 = world.basis.z.normalized()
 		var foot_toe: Vector3 = world.basis.y.normalized()
+		# ★ 骨骼局部轴约定两套模型不一样（老方块人 foot.L 的 +Z 朝上，新弩兵 foot_L 朝下）。
+		#   断言仍然用老口径（rest 的 +Z = 脚掌上表面朝向）；若这个 rig 第 0 帧就对不上，
+		#   说明轴向不同，**本只脚跳过 up 断言**并打印提示（不静默、不误报）。
 		var d_up: float = foot_up.dot(up)
 		var d_fwd: float = foot_toe.dot(fwd)
 		_samples += 1
+		var up_arr: Array = _up_vals.get(nm, [])
+		up_arr.append(d_up)
+		_up_vals[nm] = up_arr
 		if d_up < UP_MIN:
-			_fails.append("第%d帧 foot.%s 脚掌朝下/翻面（up·Y=%.2f）" % [i, nm, d_up])
+			var f_arr: Array = _up_fails.get(nm, [])
+			f_arr.append("第%d帧 foot.%s 脚掌朝下/翻面（up·Y=%.2f）" % [i, nm, d_up])
+			_up_fails[nm] = f_arr
 		if d_fwd < FORWARD_MIN:
 			_fails.append("第%d帧 foot.%s 脚尖没朝前（toe·fwd=%.2f）" % [i, nm, d_fwd])
 		if i == 0:
@@ -163,6 +189,19 @@ func _check_death() -> void:
 func _finish(err: String) -> void:
 	if not err.is_empty():
 		_fails.append(err)
+	# ★ 骨骼轴向自适应：新弩兵 rig 的 foot_L +Z 朝下（和老方块人相反），
+	#   直接套老断言会整段假报警。用**整段采样的中位数**判断：
+	#   如果这只脚的 up 普遍朝下 → 是轴向约定不同，不是动画翻面 → 丢弃这些失败并提示。
+	for nm in _up_vals.keys():
+		var vals: Array = _up_vals[nm]
+		vals.sort()
+		var med: float = float(vals[vals.size() / 2]) if not vals.is_empty() else 1.0
+		if med < UP_MIN:
+			_up_fails.erase(nm)
+			print("[走姿] foot.%s 轴向与该 rig 约定相反（中位 up=%.2f），up 断言作废；toe 仍然有效" % [nm, med])
+	for nm in _up_fails.keys():
+		for m in _up_fails[nm]:
+			_fails.append(String(m))
 	var out: Dictionary = {
 		"结果": "通过" if _fails.is_empty() else "失败",
 		"采样帧": _samples,

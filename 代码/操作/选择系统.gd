@@ -627,8 +627,9 @@ func _make_range_ring(u: RtsUnit) -> Node3D:
 ##   2. 美术侧给好的 美术/特效/选中圈.tscn（文档 §7 点名的资源）
 ##   3. 自己画一段贴地环形三角带（保证美术没到位也能看出选中了谁）
 func _make_ring(u: Node3D) -> Node3D:
-	# 1.22：贴着脚下轮廓，不像旧版 1.35 那样给每个兵套一个偏大的呼啦圈
-	var radius: float = maxf(_select_radius(u) * 1.22, 0.62)
+	# 1.02：贴着脚下轮廓。旧版 1.35/1.22 在 1.7m 高的兵身上像套了个呼啦圈，
+	# 魔兽 3 的圈只比身体宽一点。建筑另算（下面按占地半对角线补）。
+	var radius: float = maxf(_select_radius(u) * 1.02, 0.55)
 	# ★ 建筑要"罩住占地"：兵营 6×7 的半对角线 4.6m，按 _select_radius×1.22 = 4.27
 	#   画出来会切进四个角（玩家看到的是"圈比房子小"）。这里按半对角线补到刚好罩住。
 	var b := u as RtsBuilding
