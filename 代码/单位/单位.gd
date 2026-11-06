@@ -1461,10 +1461,24 @@ func _standable_goal(want: Vector3) -> Vector3:
 	# 净空刚好 0.5 的落点一推就掉进阻挡判据，然后和 wall_pushout 对拉。
 	if pf.is_standable(want, r + GridPathfinder.GOAL_MARGIN):
 		RtsUnit.dbg_sgoal += Time.get_ticks_usec() - _t_sg
-		return _spread_goal(want, r)
+		return _spread_goal(want, r) if _spread_allowed() else want
 	var near: Vector3 = pf.standable_near(want, global_position, r, GridPathfinder.GOAL_MARGIN)
 	RtsUnit.dbg_sgoal += Time.get_ticks_usec() - _t_sg
-	return _spread_goal(near, r)
+	return _spread_goal(near, r) if _spread_allowed() else near
+
+
+## 只有"走位类"指令才做占位分散。
+##
+## 采集/送资源/建造/修理**不能**分散：它们各有自己的站位判据
+## （`_stand_off` 到资源点的间隙、`建筑.work_spot_for` 分好的格子），
+## 再被 `_spread_goal` 往外推一把，反而会推到判定边界外 → 多走一趟。
+## 2026-11-06 实测：采集压力测试的金币增量波动变大就是这个副作用。
+func _spread_allowed() -> bool:
+	match order:
+		RtsConst.Order.GATHER, RtsConst.Order.RETURN_RES, \
+		RtsConst.Order.BUILD, RtsConst.Order.REPAIR:
+			return false
+	return true
 
 
 ## **目标点已经被同伴占了 → 往旁边挪一格**（2026-11-06 玩家口径"挤开"的根治）。
@@ -2406,18 +2420,21 @@ func _update_anim() -> void:
 	#   所以寻路/碰撞/被攻击都还是老行为，不会有人卡在矿里出不来。
 	#   做法：采金那段把模型往下沉 0.95m 并缩 12%，沉到底就隐藏；
 	#   离开 HARVEST 自动升回来（move_toward 兜住一切异常中断）。
-	var want_mine: float = 1.0 \
-			if (state == RtsConst.State.GATHER and _carry_kind == RtsConst.Harvest.GOLD) else 0.0
-	_mine_k = move_toward(_mine_k, want_mine, get_process_delta_time() * 3.4)
-	if _mine_k > 0.001:
-		visual.position.y = -0.95 * _mine_k
-		visual.scale = Vector3.ONE * (1.0 - 0.12 * _mine_k)
-		visual.visible = _mine_k < 0.97
-	elif visual.position.y != 0.0 or not visual.visible:
-		# 回来时恢复原样（不能只靠"小于阈值"分支，否则会留一个 -0.0001 的偏差）
-		visual.position.y = 0.0
-		visual.scale = Vector3.ONE
-		visual.visible = true
+	# ★ 只对**可移动单位**做（建筑不能进矿洞；而且建筑的 `visual.position.y`
+	#   被 建筑._install_pad 设成 PAD_LIFT=0.09 用来治 z-fighting，这里一重置就又闪了）。
+	if is_mobile():
+		var want_mine: float = 1.0 \
+				if (state == RtsConst.State.GATHER and _carry_kind == RtsConst.Harvest.GOLD) else 0.0
+		_mine_k = move_toward(_mine_k, want_mine, get_process_delta_time() * 3.4)
+		if _mine_k > 0.001:
+			visual.position.y = -0.95 * _mine_k
+			visual.scale = Vector3.ONE * (1.0 - 0.12 * _mine_k)
+			visual.visible = _mine_k < 0.97
+		elif visual.position.y != 0.0 or not visual.visible:
+			# 回来时恢复原样（不能只靠"小于阈值"分支，否则会留一个 -0.0001 的偏差）
+			visual.position.y = 0.0
+			visual.scale = Vector3.ONE
+			visual.visible = true
 	match state:
 		RtsConst.State.MOVE, RtsConst.State.RETURN:
 			# 背着资源走路时用「搬运」动作（方块人_农民有 carry_gold / carry_wood 两段）；
