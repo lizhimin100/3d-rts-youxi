@@ -88,6 +88,21 @@ static func build_dust(pos: Vector3) -> void:
 ## 返回创建出来的节点（调用方负责 queue_free），失败也返回一个空 Node3D，绝不 null。
 static func selection_ring(parent: Node3D, radius: float = 1.0,
 		color: Color = Color(0.32, 1.0, 0.52)) -> Node3D:
+	if parent == null:
+		return Node3D.new()
+	# ★ 2026-11-07：优先走"贴地网格"实现（随坡面起伏 + 正常深度遮挡 + 收束动画）。
+	#   旧实现是水平方片贴图，斜坡上悬空/切土、还被 no_depth_test 画在所有东西前面。
+	var 贴地脚本: Script = load("res://代码/美术/选中圈贴地.gd") as Script
+	if 贴地脚本 != null and 贴地脚本.can_instantiate():
+		var 圈: Variant = 贴地脚本.call("attach", parent, parent, radius, color)
+		var 圈节点 := 圈 as Node3D
+		if 圈节点 != null:
+			return 圈节点
+	return _selection_ring_scene(parent, radius, color)
+
+
+## 旧路径（贴图方片）。只在贴地脚本加载失败时兜底，正常不会再走到。
+static func _selection_ring_scene(parent: Node3D, radius: float, color: Color) -> Node3D:
 	var 空节点 := Node3D.new()
 	空节点.name = "选中圈"
 	if parent == null:

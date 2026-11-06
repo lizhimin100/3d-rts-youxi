@@ -656,9 +656,14 @@ func _qa_select(id: String) -> void:
 		for u in picked:
 			u.set("is_selected", true)
 		Game.selection_changed.emit(picked)
-	if camera != null and camera.has_method("focus_on"):
+	# 显式 --cam 时不要抢镜头（否则 --select-id + --cam 永远是 select 赢，固定机位失效）
+	if camera != null and camera.has_method("focus_on") and _qa_cam_pos == Vector3.INF:
 		camera.call("focus_on", picked[0].global_position + Vector3(0.0, 0.0, 5.0))
 	print("[QA] 已选中 %d 个 %s" % [picked.size(), id])
+	# 截图定位用：把每个被选中对象的真实坐标打出来（省得靠猜镜头）
+	for u in picked:
+		if u != null and is_instance_valid(u):
+			print("[QA]   %s @ %.1f,%.1f" % [String(u.name), u.global_position.x, u.global_position.z])
 
 
 # ===========================================================================

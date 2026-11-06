@@ -19,9 +19,15 @@
 //     pulse_*      呼吸速度与幅度
 //     dash_count   刻度数（0 = 关闭）
 //     opacity      整体不透明度
+//
+//  ★ 2026-11-07（玩家口径「像贴图，一点透视和遮挡都没有」）：
+//    去掉 `depth_test_disabled` —— 圈现在**会被山体/建筑正常遮挡**，
+//    配合 `代码/美术/选中圈贴地.gd` 的贴地网格（逐顶点采样地形高度），
+//    才有了"投在地上"的透视感。面片本身仍然要画在单位脚下，所以保留
+//    `depth_draw_never`（不写深度，避免把单位自己的脚切掉）。
 // =============================================================================
 shader_type spatial;
-render_mode blend_mix, unshaded, cull_disabled, depth_draw_never, depth_test_disabled, shadows_disabled, fog_disabled;
+render_mode blend_mix, unshaded, cull_disabled, depth_draw_never, shadows_disabled, fog_disabled;
 
 uniform vec4  team_color : source_color = vec4(0.32, 1.0, 0.52, 1.0);
 uniform float ring_radius : hint_range(0.05, 1.0) = 0.80;

@@ -629,6 +629,13 @@ func _make_range_ring(u: RtsUnit) -> Node3D:
 func _make_ring(u: Node3D) -> Node3D:
 	# 1.22：贴着脚下轮廓，不像旧版 1.35 那样给每个兵套一个偏大的呼啦圈
 	var radius: float = maxf(_select_radius(u) * 1.22, 0.62)
+	# ★ 建筑要"罩住占地"：兵营 6×7 的半对角线 4.6m，按 _select_radius×1.22 = 4.27
+	#   画出来会切进四个角（玩家看到的是"圈比房子小"）。这里按半对角线补到刚好罩住。
+	var b := u as RtsBuilding
+	if b != null and b.def != null and b.def.footprint != Vector2i.ZERO:
+		var hx: float = float(maxi(b.def.footprint.x, 1)) * 0.5
+		var hz: float = float(maxi(b.def.footprint.y, 1)) * 0.5
+		radius = maxf(radius, sqrt(hx * hx + hz * hz) * 1.03)
 	# 选中圈颜色跟着**阵营显示色**走：自己的蓝、盟友的青、敌人的红/绿。
 	# 以前整圈一律用玩家蓝 —— 选中盟友时圈子和自己一模一样，"选中了谁"读不出来。
 	var color: Color = _ring_color(u)
