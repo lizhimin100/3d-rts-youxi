@@ -67,6 +67,8 @@ var _painting: bool = false
 var _dragging: bool = false
 var _drag_last: Vector3 = Vector3.ZERO
 var _boxing: bool = false
+## 这次按下点中的对象（松手时如果没拖动，就把多选塌成单选）
+var _clicked_obj: MapObject = null
 var _box_start: Vector2 = Vector2.ZERO
 var _ground: Vector3 = Vector3.INF
 var _previews: Dictionary = {}
@@ -1164,12 +1166,25 @@ func _on_left_down(pos: Vector2) -> void:
 	if not session.armed:
 		var hover: MapObject = _pick(pos)
 		if hover != null:
+			# ★ 2026-11-07 玩家口径「框选一堆以后只能一个一个搬」：
+			#   老代码非 Shift 一律 select_only(hover)，点任何一个已选中的成员都会
+			#   把整组塌成 1 个 → 根本拖不动整队。现在：
+			#   · 点**已在选中集合里**的对象 → 保持整组，直接开始拖（和魔兽一致）；
+			#   · 点没选中的 → 单选它；
+			#   · Shift → 加选/减选（toggle），不塌组。
 			if Input.is_key_pressed(KEY_SHIFT):
-				if not session.selection.has(hover):
+				if session.selection.has(hover):
+					session.selection.erase(hover)
+					session.selection_changed.emit()
+				else:
 					session.selection.append(hover)
 					session.selection_changed.emit()
+				_clicked_obj = hover
+			elif session.selection.has(hover):
+				_clicked_obj = hover
 			else:
 				session.select_only(hover)
+				_clicked_obj = null
 			_reveal_object_dock()
 			_dragging = true
 			_drag_last = g
@@ -1177,7 +1192,9 @@ func _on_left_down(pos: Vector2) -> void:
 			return
 		# 空地：框选（g == INF 表示点到天空，什么都不做）
 		if g != Vector3.INF:
-			session.clear_selection()
+			# Shift + 框 = 追加（老代码不论按不按 Shift 都先清空）
+			if not Input.is_key_pressed(KEY_SHIFT):
+				session.clear_selection()
 			_boxing = true
 			_box_start = pos
 			_set_box(pos, pos, true)
@@ -1196,11 +1213,17 @@ func _on_left_down(pos: Vector2) -> void:
 			var hit: MapObject = _pick(pos)
 			if hit != null:
 				if Input.is_key_pressed(KEY_SHIFT):
-					if not session.selection.has(hit):
+					if session.selection.has(hit):
+						session.selection.erase(hit)
+					else:
 						session.selection.append(hit)
-						session.selection_changed.emit()
+					session.selection_changed.emit()
+					_clicked_obj = hit
+				elif session.selection.has(hit):
+					_clicked_obj = hit
 				else:
 					session.select_only(hit)
+					_clicked_obj = null
 				_reveal_object_dock()
 				_dragging = true
 				_drag_last = g
@@ -1229,7 +1252,12 @@ func _on_left_up(pos: Vector2) -> void:
 		_dirty_helpers = true
 	if _dragging:
 		_dragging = false
-		session.end_drag()
+		var moved: bool = bool(session.end_drag())
+		# 点住已选中的成员松手、又没拖动 → 这才塌成单选。
+		# 拖动过就保持整组（玩家是在搬东西，不是在改选择）。
+		if not moved and _clicked_obj != null and session.selection.size() > 1:
+			session.select_only(_clicked_obj)
+		_clicked_obj = null
 	if _boxing:
 		_boxing = false
 		_set_box(pos, pos, false)
@@ -1391,6 +1419,13 @@ func _finish_box_select(pos: Vector2) -> void:
 		var sp: Vector2 = cam.unproject_position(wp)
 		if r.has_point(sp):
 			picked.append(o)
+	if Input.is_key_pressed(KEY_SHIFT):
+		# 追加：框选不清掉原来的选中（魔兽里 Shift 框选 = 并入）
+		for o in picked:
+			if not session.selection.has(o):
+				session.selection.append(o)
+		session.selection_changed.emit()
+		return
 	session.selection = picked
 	session.selected_region = null
 	session.selection_changed.emit()

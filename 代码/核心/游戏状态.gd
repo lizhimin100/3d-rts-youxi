@@ -63,6 +63,11 @@ var factions: Array[RtsFaction] = []
 ##   · 它没有大本营，放进 factions 会让"胜负判定 / 开局布阵 / AI 接管"全部误伤；
 ##   · 但它必须能被 `enemies_of()` 看到，否则单位永远索不到野怪（见下面的 append）。
 var neutral_faction: RtsFaction = null
+## **和平中立阵营**（地图编辑器里的「中立」，`owner = -1`）。
+## 和 `neutral_faction`（中立敌对，team 0 野怪）是两回事：
+## 和平中立对谁都不敌对，也不进 `factions`/胜负判定；地图上的中立装饰、商人、
+## 中立建筑都挂它。`passive = true` 让 `is_enemy_of()` 永远返回 false。
+var passive_faction: RtsFaction = null
 ## 关卡（由 主场景 挂上）
 var level: Node3D = null
 
@@ -172,15 +177,23 @@ func _process(delta: float) -> void:
 ##     （用户口径：同队同色分不出"我的 / 盟友的"，盟友必须能一眼认出来是青色。）
 ##   · 显示色落到模型上走的是资产自带的染色区（建筑的 team / team_trim、
 ##     单位的 M_<zone>_team），所以"按模型染色区变队色"是天然成立的。
-func setup_factions() -> void:
+## 建本局阵营。`slots_override` / `teams` 由主场景从**地图文件**里读出来传进来：
+##   · 地图编辑器现在支持 2~12 个槽位（魔兽式），只认 Cfg.match_slots=4 的话
+##     12 人图进游戏只剩 4 家，剩下的槽位对象全变成"没有阵营的死单位"。
+##   · 地图里的 team 是 1 起（`PlayerSlot.team`，编辑器写入）；旧图是 0 起，
+##     这里统一 max(1, team) —— 0 和 1 都当 1 队，不会把旧图的盟友拆散。
+func setup_factions(slots_override: int = 0, teams: Array = []) -> void:
 	var cfg: GameConfig = Cfg.game
 	factions.clear()
-	var slots: int = maxi(2, cfg.match_slots)
+	var slots: int = maxi(2, maxi(cfg.match_slots, slots_override))
+	slots = mini(slots, 12)
 	var human_slot: int = clampi(cfg.match_human_slot, 0, slots - 1)
 	var diff: DifficultyDef = Cfg.difficulty(difficulty_index)
 	for i in range(slots):
 		var f := RtsFaction.new()
 		var team: int = cfg.team_of_slot(i)
+		if i < teams.size():
+			team = maxi(1, int(teams[i]))
 		var human: bool = i == human_slot
 		var wealth: int = cfg.start_gold + (0 if human else diff.bonus_gold)
 		f.setup(i, human, cfg.slot_name(i, team), cfg.display_color_for_slot(i),

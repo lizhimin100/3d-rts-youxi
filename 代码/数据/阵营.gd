@@ -26,6 +26,11 @@ var team: int = 1
 var slot: int = 0
 ## 是否 AI 指挥（is_player 的补集）
 var is_ai: bool = true
+## **和平中立**（地图编辑器里的「中立」）：对任何人不敌对，也不参与胜负。
+## 和「中立敌对」（team 0 野怪）是两回事：
+##   · 中立：装饰性营地/商人/中立建筑，谁都别打它；
+##   · 中立敌对：野怪，所有人都能打，它也会打所有人。
+var passive: bool = false
 
 
 ## 是不是"我方阵营"（人类玩家本人的那个阵营）
@@ -43,6 +48,9 @@ func is_ally_of(other: RtsFaction) -> bool:
 ## 与另一个阵营是否敌对（不同队 = 敌人；中立（team 0）对所有人敌对）
 func is_enemy_of(other: RtsFaction) -> bool:
 	if other == null or other == self:
+		return false
+	# 和平中立：双向不敌对（`passive` 只在地图编辑器摆的「中立」阵营上为真）
+	if passive or other.passive:
 		return false
 	return team != other.team
 

@@ -70,6 +70,8 @@ var _qa_cam_yaw: float = NAN
 var _qa_select_id: String = ""
 ## 地图编辑器：--map=<路径> 直接加载 MapDef（地图编辑器 Test Map 用）
 var _map_path: String = ""
+## 开局提前读到的地图（阵营数量要用它，见 _ready 第 1 步）
+var _pending_map: MapDef = null
 ## --dump-mapdef=<路径>：把当前程序化地图导出成 MapDef（验证"统一口径"用）
 var _dump_mapdef: String = ""
 ## --no-map：无视 bound_map / 默认地图文件，强制程序化竞技场图（QA 对照组）
@@ -99,9 +101,20 @@ func _ready() -> void:
 	_qa_apply_yaw.call_deferred()
 
 	# 1) 全局状态与阵营
+	# ★ 先读地图：槽位数/队伍都来自 MapDef.players（编辑器支持 2~12 个槽位）。
+	#   老流程是"先建 4 家再看地图"，12 人图里 4 号以后的槽位对象会挂不上阵营。
 	Game.reset()
 	Game.difficulty_index = Cfg.game.default_difficulty
-	Game.setup_factions()
+	var early_map: MapDef = _load_map_arg()
+	_pending_map = early_map
+	var early_slots: int = 0
+	var early_teams: Array = []
+	if early_map != null:
+		early_slots = early_map.players.size()
+		for p in early_map.players:
+			if p != null:
+				early_teams.append(int(p.team))
+	Game.setup_factions(early_slots, early_teams)
 
 	# 2) 环境兜底（.tscn 里已经挂了 Environment 资源；万一丢了就现场造一个）
 	if 环境节点 != null and 环境节点.environment == null:
@@ -118,7 +131,7 @@ func _ready() -> void:
 		creeps.call("ensure_faction")
 	if level != null:
 		Game.level = level
-		var map_def: MapDef = _load_map_arg()
+		var map_def: MapDef = _pending_map if _pending_map != null else _load_map_arg()
 		if map_def != null:
 			if not MapLoader.apply_to_level(map_def, level):
 				push_error("[主场景] MapDef 建关失败，回退到默认地图")

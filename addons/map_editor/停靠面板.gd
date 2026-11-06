@@ -55,8 +55,8 @@ var _region_purpose: OptionButton
 var _player_opt: OptionButton
 var _player_faction: OptionButton
 ## 阵营下拉的值（顺序 = _player_faction 的项序）
-const FACTION_KEYS: Array[String] = ["player", "enemy", "neutral"]
-const FACTION_NAMES: Array[String] = ["己方（player）", "敌方（enemy）", "中立（neutral）"]
+const FACTION_KEYS: Array[String] = ["player", "enemy", "neutral", "neutral_hostile"]
+const FACTION_NAMES: Array[String] = ["己方（player）", "敌方（enemy）", "中立（neutral）", "中立敌对（neutral_hostile）"]
 var _player_color: ColorPickerButton
 var _player_team: SpinBox
 var _player_x: SpinBox
@@ -423,10 +423,10 @@ func _build_object_tab() -> Control:
 	v.add_child(HSeparator.new())
 	v.add_child(_title("选中对象"))
 
-	# ---------------------------------------------------------------
-	# 归属卡：**位置钉死在「选中对象」正下方，字号最大、色条最亮**
-	# ---------------------------------------------------------------
-	_build_owner_card(v)
+	# ★ 2026-11-07 去掉对象页这张归属卡：它和上面「摆放归属」那一排长得一模一样，
+	#   玩家反馈"按钮重复、繁琐"。归属是对象的属性 → 只留在「属性」页。
+	#   对象页这里只留一句提示，选中后去属性页改。
+	_hint(_obj_count, "选中对象后可在「属性」页改归属；上面那一排是**之后摆放**的归属。")
 
 	var r1 := _hbox()
 	_sel_buttons.append(_add_small_button(r1, "复制", func() -> void: session.copy_selection()))
@@ -435,27 +435,43 @@ func _build_object_tab() -> Control:
 	_sel_buttons.append(_add_small_button(r1, "删除", func() -> void: session.delete_selection()))
 	v.add_child(r1)
 
-	var r2 := _hbox()
-	_sel_buttons.append(_add_small_button(r2, "旋转 -15°", func() -> void: session.rotate_selection(-15.0)))
-	_sel_buttons.append(_add_small_button(r2, "旋转 +15°", func() -> void: session.rotate_selection(15.0)))
-	_sel_buttons.append(_add_small_button(r2, "随机朝向", func() -> void: session.randomize_rotation()))
-	v.add_child(r2)
-
-	var r3 := _hbox()
-	_sel_buttons.append(_add_small_button(r3, "缩小", func() -> void: session.scale_selection(0.9)))
-	_sel_buttons.append(_add_small_button(r3, "放大", func() -> void: session.scale_selection(1.1)))
-	_sel_buttons.append(_add_small_button(r3, "还原 1.0", func() -> void: _reset_scale()))
-	v.add_child(r3)
+	# 旋转 / 缩放：3 列网格，两行放完 6 个动作（以前两行各占一整行 hbox，面板拉得老长）
+	var grid := GridContainer.new()
+	grid.columns = 3
+	grid.add_theme_constant_override("h_separation", 4)
+	grid.add_theme_constant_override("v_separation", 4)
+	_sel_buttons.append(_add_grid_button(grid, "⟲ 15°", func() -> void: session.rotate_selection(-15.0)))
+	_sel_buttons.append(_add_grid_button(grid, "⟳ 15°", func() -> void: session.rotate_selection(15.0)))
+	_sel_buttons.append(_add_grid_button(grid, "随机朝向", func() -> void: session.randomize_rotation()))
+	_sel_buttons.append(_add_grid_button(grid, "缩小", func() -> void: session.scale_selection(0.9)))
+	_sel_buttons.append(_add_grid_button(grid, "放大", func() -> void: session.scale_selection(1.1)))
+	_sel_buttons.append(_add_grid_button(grid, "还原 1.0", func() -> void: _reset_scale()))
+	v.add_child(grid)
 
 	v.add_child(HSeparator.new())
 	v.add_child(_title("按类型替换"))
+	# 下拉 + 按钮同一行：少一行、少一次滚动
+	var rr := _hbox()
 	_replace_opt = OptionButton.new()
-	v.add_child(_replace_opt)
-	var br := Spec.editor_button("把选中对象换成上面的类型")
+	_replace_opt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	rr.add_child(_replace_opt)
+	var br := Spec.editor_button("替换")
+	br.custom_minimum_size = Vector2(64, 0)
 	br.pressed.connect(_on_replace_pressed)
-	v.add_child(br)
+	rr.add_child(br)
+	v.add_child(rr)
 	_sel_buttons.append(br)
 	return v
+
+
+## 网格里的小按钮（和 _add_small_button 一样，只是给 GridContainer 用）
+func _add_grid_button(parent: GridContainer, text: String, cb: Callable) -> Button:
+	var b := Spec.editor_button(text)
+	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	b.focus_mode = Control.FOCUS_NONE
+	b.pressed.connect(cb)
+	parent.add_child(b)
+	return b
 
 
 func _add_small_button(parent: HBoxContainer, text: String, cb: Callable) -> Button:
@@ -550,6 +566,14 @@ func _build_player_tab() -> Control:
 	v.add_child(_title("玩家槽位"))
 	_player_opt = OptionButton.new()
 	v.add_child(_player_opt)
+	# ★ 2026-11-07：槽位可增删（魔兽式 2~12 家）。以前只能改字段，
+	#   想加一家必须去别的工具重生成整张图。
+	var prow := _hbox()
+	_add_small_button(prow, "＋ 添加玩家", func() -> void: _edit_player_count(true))
+	prow.add_child(Control.new())
+	_add_small_button(prow, "－ 删除最后一位", func() -> void: _edit_player_count(false))
+	v.add_child(prow)
+	_hint(prow, "最多 12 家；删除只允许删最后一位，至少保留 2 家。都能 Ctrl+Z 撤。")
 
 	var pg := GridContainer.new()
 	pg.columns = 2
@@ -569,7 +593,7 @@ func _build_player_tab() -> Control:
 	pg.add_child(_player_color)
 
 	pg.add_child(_label("队伍"))
-	_player_team = _spin(1, 4, 1)
+	_player_team = _spin(1, 12, 1)
 	# 队伍 = 盟友分组：同队互为盟友，异队互相敌对（阵营决定 AI 行为，队伍决定敌我）
 	_player_team.tooltip_text = "队伍相同的玩家互为盟友；不同队伍互相敌对。\n队伍号从 1 起，改完立刻生效于胜负判定。"
 	pg.add_child(_player_team)
@@ -1492,7 +1516,8 @@ func _rebuild_place_pills() -> void:
 		b.focus_mode = Control.FOCUS_NONE
 		b.text = String(ch["name"])
 		# 定宽 + 不拉伸：4 人图 5 颗药丸要能折成两行，不能一颗吃掉整行
-		b.custom_minimum_size = Vector2(84, 30)
+		b.custom_minimum_size = Vector2(70, 26)
+		b.add_theme_font_size_override("font_size", 12)
 		b.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 		b.add_theme_color_override("font_color",
 			Color.from_hsv(col.h, clampf(col.s * 1.12, 0.0, 1.0), 1.0))
@@ -1720,6 +1745,20 @@ func _refresh_players() -> void:
 		_player_opt.select(sel_idx)
 	_syncing = false
 	_sync_player_fields()
+	_sync_team_summary()
+
+
+## 玩家页：加/删槽位 → 会话（带撤销）→ 三处归属药丸/列表一起刷
+func _edit_player_count(add: bool) -> void:
+	if _syncing or session == null or session.def == null:
+		return
+	if add:
+		session.add_player()
+	else:
+		session.remove_player()
+	_refresh_players()
+	_rebuild_place_pills()
+	_rebuild_owner_pills()
 	_sync_team_summary()
 
 

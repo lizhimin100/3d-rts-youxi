@@ -399,13 +399,16 @@ static func spawn_map_objects(m: MapDef, level: RtsLevel) -> void:
 					faction = Game.factions[o.owner]
 				elif o.owner >= 0:
 					faction = Game.player_faction if o.owner == 0 else Game.enemy_faction
-				else:
-					# ★ owner = -1（中立）：**单位和建筑也能是中立**。
-					#   玩家口径 2026-11-01："野怪我自己在编辑器里摆" ——
-					#   所以中立单位必须落到中立阵营上，否则它是"没有阵营的死单位"：
-					#   打不到人、不还手、小地图不显示、AI 也不认它是敌人。
-					#   （资源/装饰走别的分支，不受这里影响。）
+				elif o.owner == -2:
+					# ★ owner = -2 = **中立敌对**（野怪营地锚点、编辑器摆的野怪）。
+					#   team 0：对所有人敌对，也被所有人当敌人。
 					faction = Game.neutral_faction
+				else:
+					# ★ owner = -1 = **中立**（和平）：装饰性中立建筑/商人/中立单位。
+					#   2026-11-07 拆分：以前 -1 也落到 hostile 中立，于是
+					#   "中立"摆个农场会被野怪拆、被 AI 当目标；现在它是 passive 阵营。
+					faction = Game.passive_faction if Game.passive_faction != null \
+							else Game.neutral_faction
 				var gx: float = o.position.x
 				var gz: float = o.position.z
 				var yaw: float = o.rotation
@@ -777,7 +780,8 @@ static func new_map(p_size: int, player_count: int, p_seed: int, blank: bool = f
 				m.set_grid_height(gx, gz, h)
 
 	# --- 出生点：**所有尺寸共用一套方位规则**，2 人对角 / 3 人正三角 / 4 人四角 ---
-	var n_players: int = clampi(player_count, 2, 4)
+	# 2026-11-07：编辑器支持 2~12 个槽位（魔兽式）
+	var n_players: int = clampi(player_count, 2, 12)
 	var starts: Array[Vector2] = _spawn_points(m, n_players)
 	var colors: Array[Color] = _spawn_colors()
 	var teams: Array[int] = _spawn_teams(n_players)
@@ -857,10 +861,21 @@ static func _spawn_points(m: MapDef, n_players: int) -> Array[Vector2]:
 			out.append(Vector2(d, -d))
 			out.append(Vector2(d, d))
 			out.append(Vector2(-d, -d))
-		_:
+		2:
 			out.append(Vector2(-d, d))
 			out.append(Vector2(d, -d))
+		_:
+			# 5~12 人：均匀铺在半径 0.58×半图的圆上（角度从正上方开始，避免压到边界）
+			var r: float = m.half_size() * 0.58
+			for i in range(n_players):
+				var a: float = -PI * 0.5 + TAU * float(i) / float(n_players)
+				out.append(Vector2(cos(a) * r, sin(a) * r))
 	return out
+
+
+## 出生色表（公开入口，编辑器"添加玩家"也用它，避免两处各写一份）
+static func spawn_colors_static() -> Array[Color]:
+	return _spawn_colors()
 
 
 ## 四家四个色：蓝 / 红 / 青绿 / 金。出生区、区域填充、归属按钮全吃这一份。
@@ -870,19 +885,29 @@ static func _spawn_colors() -> Array[Color]:
 		Color(1.00, 0.32, 0.26),
 		Color(0.28, 0.82, 0.62),
 		Color(0.92, 0.78, 0.28),
+		Color(0.72, 0.46, 1.00),
+		Color(1.00, 0.62, 0.24),
+		Color(0.35, 0.86, 0.92),
+		Color(0.94, 0.42, 0.72),
+		Color(0.62, 0.86, 0.34),
+		Color(0.86, 0.86, 0.90),
+		Color(0.52, 0.60, 0.86),
+		Color(0.96, 0.86, 0.52),
 	]
 	return out
 
 
+## 默认分队（1 起：1 队/2 队；不要用 0，0 在运行时是"中立敌对"）。
+##   2 人：1v1；3 人：1 / 2 / 2（两边夹一家，和旧图一致）；其余：奇偶分两队。
 static func _spawn_teams(n_players: int) -> Array[int]:
 	var out: Array[int] = []
-	match n_players:
-		4:
-			out = [0, 1, 0, 1]
-		3:
-			out = [0, 1, 1]
-		_:
-			out = [0, 1]
+	if n_players == 3:
+		out = [1, 2, 2]
+	elif n_players == 2:
+		out = [1, 2]
+	else:
+		for i in range(n_players):
+			out.append(1 + i % 2)
 	return out
 
 

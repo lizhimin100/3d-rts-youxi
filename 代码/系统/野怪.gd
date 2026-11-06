@@ -59,7 +59,23 @@ func ensure_faction() -> RtsFaction:
 	faction.slot = -1         # 不占玩家槽位 → 不参与胜负判定
 	faction.is_ai = false     # 没有经济、没有大脑（野怪不会自己造东西）
 	Game.neutral_faction = faction
+	_ensure_passive()
 	return faction
+
+
+## 和平中立阵营（地图编辑器「中立」= owner -1）。
+## 只建一次；不放进 Game.factions（不参与胜负/开局布阵/AI 接管），
+## 靠 `RtsFaction.passive` 让 `is_enemy_of()` 双向返回 false。
+func _ensure_passive() -> void:
+	if Game.passive_faction != null and is_instance_valid(Game.passive_faction):
+		return
+	var p := RtsFaction.new()
+	p.setup(NEUTRAL_ID - 1, false, "中立", NEUTRAL_COLOR, 0, 0)
+	p.team = -1
+	p.slot = -1
+	p.is_ai = false
+	p.passive = true
+	Game.passive_faction = p
 
 
 ## 主场景在关卡建好之后调用。`day` 参数保留但不再使用（夜袭已删除），

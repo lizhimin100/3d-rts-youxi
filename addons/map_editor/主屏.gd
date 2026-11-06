@@ -337,8 +337,9 @@ func _build_wizard(parent: Control) -> void:
 
 	grid.add_child(_mk_label("玩家数"))
 	_w_players = OptionButton.new()
-	for n in [2, 3, 4]:
-		_w_players.add_item("%d 人（%s）" % [n, "对角" if n == 2 else ("正三角" if n == 3 else "四角")])
+	for n in [2, 3, 4, 6, 8, 12]:
+		var layout_name: String = "对角" if n == 2 else ("正三角" if n == 3 else ("四角" if n == 4 else "圆周均布"))
+		_w_players.add_item("%d 人（%s）" % [n, layout_name])
 		_w_players.set_item_metadata(_w_players.item_count - 1, n)
 	grid.add_child(_w_players)
 

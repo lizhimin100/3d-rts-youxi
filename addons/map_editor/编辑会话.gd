@@ -808,7 +808,12 @@ func is_armed() -> bool:
 ## 选"这次摆放归谁"（魔兽式：先选玩家几，再选摆什么）。
 ## 只影响之后新放的对象；已选中的对象要改归属请用归属卡（set_selection_owner）。
 func set_place_owner(owner_id: int) -> void:
-	var v: int = clampi(owner_id, -1, maxi(0, (def.players.size() if def != null else 1) - 1))
+	# -1 = 中立（和平） / -2 = 中立敌对（野怪） / 0..N-1 = 玩家槽位
+	var v: int = owner_id
+	if v >= 0:
+		v = clampi(v, 0, maxi(0, (def.players.size() if def != null else 1) - 1))
+	elif v < -2:
+		v = -1
 	if v == place_owner:
 		return
 	place_owner = v
@@ -981,11 +986,14 @@ func add_object(type_id: StringName, category: int, world_pos: Vector3) -> MapOb
 	# ★ **例外机制保留、名单当前为空**（`MapAssets.allows_neutral()`）：
 	#   白名单里的 id 允许以"中立"身份放下。以前只有 `dungeon` 在里面，
 	#   2026-11-01 地牢删除后名单清空 —— 玩家以后自己做地牢时把它加进去即可。
+	# 归属：-2 中立敌对 / -1 中立（和平，需白名单）/ 0..N 玩家槽位
 	var own: int = -1
 	if category == MapObject.Category.UNIT or category == MapObject.Category.BUILDING:
 		var max_slot: int = maxi(0, (def.players.size() if def != null else 1) - 1)
-		if place_owner < 0 and MapAssets.allows_neutral(type_id):
-			own = -1
+		if place_owner == -2:
+			own = -2
+		elif place_owner == -1:
+			own = -1 if MapAssets.allows_neutral(type_id) else 0
 		else:
 			own = clampi(place_owner, 0, max_slot)
 	var obj := MapObject.make(type_id, category, pos, yaw, 1.0, own)
@@ -1071,12 +1079,14 @@ func drag_selection_by(g: Vector3, y_of: Callable = Callable()) -> void:
 	def_changed.emit("objects_move")
 
 
-func end_drag() -> void:
+## 返回"是否真的移动过"（视口用它区分"点选"和"拖动"：
+## 框选一堆之后点住其中一个松手，没动 → 塌成单选；动了 → 保持整组）
+func end_drag() -> bool:
 	if not _drag_open:
-		return
+		return false
 	_drag_open = false
 	if selection.is_empty():
-		return
+		return false
 	# 只是"点了一下"没有实际位移：不提交撤销记录。
 	# 否则每点一次单位，历史里就多一条"移动 1 个对象"，撤销栈很快被点满。
 	var moved: bool = false
@@ -1086,9 +1096,10 @@ func end_drag() -> void:
 			moved = true
 			break
 	if not moved:
-		return
+		return false
 	_push_objects("移动 %d 个对象" % selection.size(), _drag_before, _snapshot_objects())
 	selection_changed.emit()
+	return true
 
 
 ## 拖动过程中直接改数据（不提交撤销）
@@ -1229,9 +1240,10 @@ func set_selection_owner(owner_id: int) -> void:
 ## 归属选项：中立 + 地图上**每一个**玩家槽位（2 人图 3 项 / 3 人图 4 项 / 4 人图 5 项）
 ## 返回 [{id:int, name:String, color:Color, tag:String}]
 func owner_choices() -> Array:
-	var out: Array = [{
-		"id": -1, "name": "中立", "color": Color(0.64, 0.70, 0.78), "tag": "无主",
-	}]
+	var out: Array = [
+		{"id": -1, "name": "中立", "color": Color(0.64, 0.70, 0.78), "tag": "和平"},
+		{"id": -2, "name": "中立敌对", "color": Color(0.78, 0.34, 0.30), "tag": "野怪"},
+	]
 	if def == null:
 		return out
 	for p in def.players:
@@ -1258,6 +1270,8 @@ func owner_color(owner_id: int) -> Color:
 ## 归属显示名（「玩家 1（你）」/「玩家 2（人机）」/「中立」）
 ## 玩家 0 就是你在游戏里操控的那一家；其余都是电脑。
 func owner_display_name(owner_id: int) -> String:
+	if owner_id == -2:
+		return "中立敌对"
 	if owner_id < 0:
 		return "中立"
 	if def != null:
@@ -1441,6 +1455,63 @@ func set_team_layout(kind: String) -> void:
 	dirty = true
 	dirty_changed.emit()
 	_emit_status("队伍已重排：%s" % team_summary())
+
+
+## 加一个玩家槽位（魔兽式：地图最多 12 家）。
+## 新槽位落在圆心朝外的圆周上（避让已有出生点），队伍接到最后一队，
+## 颜色取 `_spawn_colors` 里还没用过的一档。
+func add_player() -> void:
+	if def == null:
+		return
+	if def.players.size() >= 12:
+		_emit_status("最多 12 个玩家槽位（魔兽也是这个上限）")
+		return
+	var before: Array[PlayerSlot] = _players_copy()
+	var id: int = 0
+	var used: Dictionary = {}
+	for p in def.players:
+		if p != null:
+			used[int(p.id)] = true
+			id = maxi(id, int(p.id) + 1)
+	var ang: float = TAU * float(id) / 12.0
+	var r: float = float(def.size) * 0.30
+	var pos := Vector2(cos(ang) * r, sin(ang) * r)
+	var colors: Array = MapLoader.spawn_colors_static()
+	var col: Color = colors[id % colors.size()] if not colors.is_empty() else Color.WHITE
+	var nid: int = int(id)
+	var slot := PlayerSlot.make(nid, "enemy", col,
+		(1 if def.players.size() % 2 == 0 else 2), pos, 620, 380)
+	slot.start_yaw = ang
+	def.players.append(slot)
+	_push_action("添加玩家 %d" % (nid + 1), [{
+		"prop": "players", "before": before, "after": _players_copy(),
+	}], UndoRedo.MERGE_DISABLE)
+	def_changed.emit("all")
+	dirty = true
+	dirty_changed.emit()
+	_emit_status("已添加玩家 %d（共 %d 家）" % [nid + 1, def.players.size()])
+
+
+## 删掉最后一个玩家槽位（至少留 2 家）
+func remove_player() -> void:
+	if def == null or def.players.size() <= 2:
+		_emit_status("至少要留 2 个玩家槽位")
+		return
+	var before: Array[PlayerSlot] = _players_copy()
+	var gone: PlayerSlot = def.players[def.players.size() - 1]
+	def.players.remove_at(def.players.size() - 1)
+	# 删掉的槽位上的对象归还给 0 号玩家（不然它们会指向不存在的阵营）
+	if gone != null:
+		for o in def.objects:
+			if o != null and o.owner == gone.id:
+				o.owner = 0
+	_push_action("删除玩家 %d" % (gone.id + 1 if gone != null else 0), [{
+		"prop": "players", "before": before, "after": _players_copy(),
+	}], UndoRedo.MERGE_DISABLE)
+	def_changed.emit("all")
+	dirty = true
+	dirty_changed.emit()
+	_emit_status("已删除最后一个玩家槽位（剩 %d 家）" % def.players.size())
 
 
 ## 队伍一览（"队伍 1：玩家1、玩家2"），玩家页与状态栏共用
