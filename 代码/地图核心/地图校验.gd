@@ -207,7 +207,7 @@ static func validate(m: MapDef) -> Dictionary:
 			% scaled_buildings)
 	# 野怪营地锚点：**必须是中立**（owner = -1）。
 	# 营地系统只扫中立阵营的建筑；锚点挂到玩家 1 身上 → 进图一只怪都不刷，
-	# 而且玩家完全看不出原因（玩家口径 2026-11-07「摆了营地但不刷怪」）。
+	# 而且玩家完全看不出原因（玩家口径 2026-11-06「摆了营地但不刷怪」）。
 	var CAMP_TABLE := preload("res://代码/配置/野怪营地表.gd")
 	var wrong_owner: PackedStringArray = PackedStringArray()
 	for o in m.objects:

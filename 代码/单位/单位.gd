@@ -1269,7 +1269,7 @@ func _tick_chop_fx(dt: float) -> void:
 		return
 	var p: Vector3 = _gather_node.global_position + Vector3(0.0, 0.55, 0.0)
 	if _carry_kind == RtsConst.Harvest.WOOD:
-		# ★ 2026-11-07 玩家口径「采木头则不需要那什么木渣，只需要树会摇晃」：
+		# ★ 2026-11-06 玩家口径「采木头则不需要那什么木渣，只需要树会摇晃」：
 		#   木屑粒子去掉，改成让树本体晃一下（可采集物.shake）。
 		if _gather_node.has_method("shake"):
 			_gather_node.call("shake", 1.0)
@@ -1286,7 +1286,7 @@ func _tick_chop_fx(dt: float) -> void:
 ##      只有真的被挤出墙外 1.3m 才走回来（配合分离锚定，实际几乎不会发生）。
 ## 施工/修理的"够得着"判据（到墙面的距离，米）。
 ##
-## ★ 2026-11-07 玩家口径「农民只能拍下一个地基，然后就没有然后」的根因：
+## ★ 2026-11-06 玩家口径「农民只能拍下一个地基，然后就没有然后」的根因：
 ##   这里是**固定 1.35m**，而 `work_spot_for()` 给的站位被 `walkable_pos()` 吸附到
 ##   **格子中心**，建筑占地外扩后最近的格心在墙面外 **1.50m** —— 永远差 15cm。
 ##   于是每帧都判"太远"→ 再走一步 → 被墙顶住 → 下帧还是太远，进度一辈子是 0。
@@ -1990,7 +1990,7 @@ func _attack_reach(t: Node3D) -> float:
 	if t is RtsBuilding:
 		# ★ 打建筑：占地外扩 1 格后最近的合法站位在墙面外 1.5m，
 		#   近战 reach 只有 1.35 → 每帧判"够不着"→ 贴墙抽动、不砍楼
-		#   （和建造卡死同一个病灶，2026-11-07 一并修）。
+		#   （和建造卡死同一个病灶，2026-11-06 一并修）。
 		if r < 2.0:
 			r = maxf(r, 1.62)
 	elif t != null and t.has_method("get_radius"):
@@ -2450,7 +2450,7 @@ func _update_anim() -> void:
 				and _carry_kind == RtsConst.Harvest.GOLD \
 				and mine != null and is_instance_valid(mine) \
 				and mine.has_method("mouth_point")
-		# ★ 2026-11-07 玩家口径「农民采矿直接没入地下，太奇怪了，要走进金矿」：
+		# ★ 2026-11-06 玩家口径「农民采矿直接没入地下，太奇怪了，要走进金矿」：
 		#   旧版是**纯竖直**沉 0.95m 再隐藏 —— 人往土里钻，而且站位离矿心 3.3m，
 		#   是在矿外的空地上入土。现在改成**朝矿口水平走进去**：
 		#   洞底本来就在 y≈0.04，人只要走平（只压 0.18m 做"进深"），

@@ -134,7 +134,7 @@ func consume(amount: int) -> int:
 	return take
 
 
-## 被砍时晃一下（2026-11-07 玩家口径「采木头不要木渣，只需要树会摇晃」）。
+## 被砍时晃一下（2026-11-06 玩家口径「采木头不要木渣，只需要树会摇晃」）。
 ##
 ## 只转 `visual`（UnitVisual 外壳），不动本体：
 ##   · 本体的 rotation.y 是关卡给的朝向，rotation.z 被 _deplete_tree 的倒下动画占着；

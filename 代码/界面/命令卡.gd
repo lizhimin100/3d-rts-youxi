@@ -438,7 +438,7 @@ func _train_entry(b: RtsBuilding, id: StringName) -> Dictionary:
 		],
 		"color": Color(0.90, 0.90, 0.86) if ok else Color(0.55, 0.55, 0.52),
 		"glyph": label.substr(0, 1),
-		# ★ 2026-11-07 玩家口径「兵营等出兵建筑的训练单位图标换成正确的单位图标」：
+		# ★ 2026-11-06 玩家口径「兵营等出兵建筑的训练单位图标换成正确的单位图标」：
 		#   以前这里一律给线描 SVG（hammer/sword/bow/staff），弩兵在训练格子里
 		#   只是一个"弓"的符号，跟底部选择栏的渲图头像是两套东西。
 		#   现在优先用 美术/图标/单位/<id>.png（和选择栏/队列同一张图），没有才退线描。
