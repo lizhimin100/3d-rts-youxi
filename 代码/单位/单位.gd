@@ -290,6 +290,10 @@ var _return_drop: Node3D = null
 ## 上一次送达的数量（提示文案用）
 var _carry_last_gold: int = 0
 var _carry_last_wood: int = 0
+## 采矿"钻进矿洞"的视觉下沉量 0~1（1 = 完全在洞里，模型隐藏）
+var _mine_k: float = 0.0
+## 砍树/采矿的碎屑特效节流（秒）
+var _chop_fx_t: float = 0.0
 
 # 死亡
 var _dying: bool = false
@@ -507,6 +511,12 @@ func _die() -> void:
 	_sink_base_y = global_position.y
 
 	if visual != null:
+		# 死在矿里（采集金矿时模型是沉下去且隐藏的）→ 先把模型升回来，
+		# 否则尸体会"隐形"躺在矿里，玩家看不到死亡反馈。
+		_mine_k = 0.0
+		visual.position.y = 0.0
+		visual.scale = Vector3.ONE
+		visual.visible = true
 		visual.play_death()
 
 	var col: Color = faction.color if faction != null else Color(0.7, 0.3, 0.25)
@@ -1220,6 +1230,7 @@ func _order_gather(dt: float) -> void:
 			state = RtsConst.State.GATHER
 			_stop_moving()
 			_face_pos(_gather_node.global_position, dt)
+			_tick_chop_fx(dt)
 			_gather_t -= dt
 			if _gather_t <= 0.0:
 				_finish_harvest()
@@ -1244,6 +1255,23 @@ func _enter_phase(ph: int) -> void:
 	_phase_pos = global_position
 	if _gather_phase != ph:
 		_gather_phase = ph
+
+
+## 砍树 / 挖矿的落屑：每 0.55s 在资源点根部落一点木屑或石粉。
+## 为什么要有它：`gather` 动画现在是循环的，但"只有动画没有落屑"读起来像空挥；
+## 加一点碎屑，玩家一眼就知道这人在真砍、真挖（魔兽三也是这个套路）。
+func _tick_chop_fx(dt: float) -> void:
+	_chop_fx_t -= dt
+	if _chop_fx_t > 0.0:
+		return
+	_chop_fx_t = 0.55
+	if _gather_node == null or not is_instance_valid(_gather_node):
+		return
+	var p: Vector3 = _gather_node.global_position + Vector3(0.0, 0.55, 0.0)
+	if _carry_kind == RtsConst.Harvest.WOOD:
+		BUILD_FX.chips(p, Color(0.62, 0.44, 0.24), 5)
+	else:
+		BUILD_FX.dust(p, 3, 0.25, Color(0.86, 0.78, 0.48))
 
 
 ## 建造：走到**自己那一格** → 播 build 动画 → 推进度
@@ -2373,6 +2401,23 @@ func _update_anim() -> void:
 	var ms: float = _max_speed()
 	if ms > 0.01:
 		ratio = clampf(_speed / ms, 0.15, 1.6)
+	# ★ 采金矿：人"钻进矿洞"（2026-11-06 玩家口径「农民采集金矿换为要进入金矿」）。
+	#   只动**视觉**，逻辑点不动 —— 单位仍然站在矿边的可走格上，
+	#   所以寻路/碰撞/被攻击都还是老行为，不会有人卡在矿里出不来。
+	#   做法：采金那段把模型往下沉 0.95m 并缩 12%，沉到底就隐藏；
+	#   离开 HARVEST 自动升回来（move_toward 兜住一切异常中断）。
+	var want_mine: float = 1.0 \
+			if (state == RtsConst.State.GATHER and _carry_kind == RtsConst.Harvest.GOLD) else 0.0
+	_mine_k = move_toward(_mine_k, want_mine, get_process_delta_time() * 3.4)
+	if _mine_k > 0.001:
+		visual.position.y = -0.95 * _mine_k
+		visual.scale = Vector3.ONE * (1.0 - 0.12 * _mine_k)
+		visual.visible = _mine_k < 0.97
+	elif visual.position.y != 0.0 or not visual.visible:
+		# 回来时恢复原样（不能只靠"小于阈值"分支，否则会留一个 -0.0001 的偏差）
+		visual.position.y = 0.0
+		visual.scale = Vector3.ONE
+		visual.visible = true
 	match state:
 		RtsConst.State.MOVE, RtsConst.State.RETURN:
 			# 背着资源走路时用「搬运」动作（方块人_农民有 carry_gold / carry_wood 两段）；

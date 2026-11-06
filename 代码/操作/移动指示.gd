@@ -69,6 +69,16 @@ const CROWD_RADIUS: float = 2.2
 const BASE_ALPHA: float = 0.95
 ## 颜色：魔兽感亮绿 #3DFF72
 const DASH_COLOR: Color = Color(0.239, 1.0, 0.447, 1.0)
+## 攻击移动：橙红。玩家一眼就能分清"这队是走位还是压上去打"
+const ATTACK_COLOR: Color = Color(1.0, 0.55, 0.28, 1.0)
+## 送资源（RETURN_RES）：金黄，和"绿色普通移动"同亮度但色相拉开
+const RETURN_COLOR: Color = Color(1.0, 0.86, 0.42, 1.0)
+## 不可达落点画的叉号：正红。加的绿/蓝压到接近 0 —— 加色混合会叠上地面的暖色，
+## 留一点点绿蓝就会整体滑向橙色，"危险"的语义就弱了
+const BLOCK_COLOR: Color = Color(1.0, 0.10, 0.08, 1.0)
+## 判"落点站得住"用的净空半径（米）：约等于一个步兵的身位，
+## 比"格心可走"更严格 —— 指着墙根/树坑时该给红叉而不是画成能到
+const DEST_STAND_RADIUS: float = 0.55
 ## 着色器路径（独立 .gdshader 文件，绝不内联）
 const SHADER_PATH: String = "res://美术/着色器/移动指示.gdshader"
 
@@ -79,8 +89,18 @@ var _line_mi: MeshInstance3D = null
 var _ring_mi: MeshInstance3D = null
 var _line_mesh: ImmediateMesh = null
 var _ring_mesh: ImmediateMesh = null
+## 线和环各备三份材质：[0] 普通移动绿、[1] 攻击移动橙红、[2] 送资源金黄。
+## 为什么按材质分 surface：ImmediateMesh 一个 surface 只能挂一份材质，
+## 想让"同一网格里绿线橙线并存"就必须按颜色分组各开一个 surface。
+var _line_mats: Array = []
+var _ring_mats: Array = []
+## 不可达落点的红叉（环的第 4 种材质）
+var _ring_block_mat: Material = null
+## 兼容字段：默认（普通移动）材质，_build_visual 与淡出逻辑仍读它
 var _line_mat: Material = null
 var _ring_mat: Material = null
+## 着色器在不在：不在就整层退化成 material_override 的实线（surface 材质会被覆盖）
+var _shader_ok: bool = false
 ## 线 / 环当前有没有几何（空的时候别白 clear 一遍）
 var _has_line_geo: bool = false
 var _has_ring_geo: bool = false
@@ -132,6 +152,9 @@ func _exit_tree() -> void:
 	_ring_mesh = null
 	_line_mat = null
 	_ring_mat = null
+	_line_mats.clear()
+	_ring_mats.clear()
+	_ring_block_mat = null
 	_lines.clear()
 	_rings.clear()
 
@@ -195,7 +218,7 @@ func _on_order_issued(units: Array, order: int, target_pos: Vector3, target: Nod
 			continue
 		var node := u as Node3D
 		var dest: Vector3 = _dest_for(node, target_pos)
-		last_dest = _track(node, dest, group)
+		last_dest = _track(node, dest, group, order)
 		made += 1
 	if made <= 0:
 		return
@@ -206,7 +229,7 @@ func _on_order_issued(units: Array, order: int, target_pos: Vector3, target: Nod
 		anchor = target_pos
 		if target != null and is_instance_valid(target):
 			anchor = (target as Node3D).global_position
-	_add_ring(anchor, group)
+	_add_ring(anchor, group, order)
 
 
 func _on_game_over(_victory: bool) -> void:
@@ -230,7 +253,7 @@ func _is_move_order(order: int) -> bool:
 ## 同一单位已经有线时：
 ##   · 目的地没变（点了同一个点）→ 原地刷新 + 改挂到新组，不制造影子线；
 ##   · 目的地变了 → 旧线降级成"幽灵"淡出，新线立刻接上（0.2s 的心手交替）。
-func _track(u: Node3D, dest: Vector3, group: int) -> Vector3:
+func _track(u: Node3D, dest: Vector3, group: int, order: int) -> Vector3:
 	var pos: Vector3 = u.global_position
 	var active: Dictionary = {}
 	for e in _lines:
@@ -250,6 +273,8 @@ func _track(u: Node3D, dest: Vector3, group: int) -> Vector3:
 			active["fading"] = false
 			active["group"] = group
 			active["alpha"] = BASE_ALPHA
+			# 同一目的地换了指令类型（走位 → 攻击移动）也要跟着换色
+			active["order"] = order
 			return dest
 		active["fading"] = true
 	_prune_tracks()
@@ -263,6 +288,7 @@ func _track(u: Node3D, dest: Vector3, group: int) -> Vector3:
 		"group": group,
 		"crowd": 0.0,
 		"alpha": BASE_ALPHA,
+		"order": order,
 	})
 	return dest
 
@@ -375,10 +401,15 @@ func _tick_master_fade(delta: float) -> void:
 
 
 func _push_fade_uniform() -> void:
-	if _line_mat is ShaderMaterial:
-		(_line_mat as ShaderMaterial).set_shader_parameter("fade", _master_fade)
-	if _ring_mat is ShaderMaterial:
-		(_ring_mat as ShaderMaterial).set_shader_parameter("fade", _master_fade)
+	# 三份线材质 + 三份环材质 + 红叉都要跟着整层淡出，漏一个就会在胜负遮罩下留一条亮线
+	for m in _line_mats:
+		if m is ShaderMaterial:
+			(m as ShaderMaterial).set_shader_parameter("fade", _master_fade)
+	for m in _ring_mats:
+		if m is ShaderMaterial:
+			(m as ShaderMaterial).set_shader_parameter("fade", _master_fade)
+	if _ring_block_mat is ShaderMaterial:
+		(_ring_block_mat as ShaderMaterial).set_shader_parameter("fade", _master_fade)
 
 
 # ===========================================================================
@@ -416,7 +447,11 @@ func _rebuild_lines() -> void:
 	# 先算拥挤度再判断"能不能画"：两者用的必须是同一个 alpha，
 	# 否则会出现"判断能画、却一个顶点都没进"的空 surface（引擎会报错）
 	_apply_crowd()
-	if _lines.is_empty() or not _any_line_drawable():
+	var 可画: Array = []
+	for e in _lines:
+		if _line_drawable(e):
+			可画.append(e)
+	if 可画.is_empty():
 		if _has_line_geo:
 			_line_mesh.clear_surfaces()
 			_has_line_geo = false
@@ -425,29 +460,48 @@ func _rebuild_lines() -> void:
 		return
 	var inv: Transform3D = global_transform.affine_inverse()
 	_line_mesh.clear_surfaces()
-	_line_mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
-	for e in _lines:
-		_emit_line(e, inv)
-	_line_mesh.surface_end()
+	# 按指令类型分组：一个 surface 一份材质，绿线橙线才能同时出现在同一张网格里
+	for style in _line_mats.size():
+		var 有: bool = false
+		for e in 可画:
+			if _线型(e) == style:
+				有 = true
+				break
+		if not 有:
+			continue
+		_line_mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES,
+			_line_mats[style] if _shader_ok else null)
+		for e in 可画:
+			if _线型(e) == style:
+				_emit_line(e, inv)
+		_line_mesh.surface_end()
 	_has_line_geo = true
 	if _line_mi != null:
 		_line_mi.visible = true
 
 
-func _any_line_drawable() -> bool:
-	for e in _lines:
-		# 门槛和 _emit_line 完全一致（alpha > 0.01 且距离 > 0.10）：
-		# 判断"能画"就一定能画出顶点，绝不留下空 surface
-		if float(e["alpha"]) <= 0.01:
-			continue
-		var raw: Variant = e["unit"]
-		if not is_instance_valid(raw) or not (raw is Node3D):
-			continue
-		var u: Node3D = raw
-		if _flat(u.global_position, e["dest"]) <= 0.10:
-			continue
-		return true
-	return false
+## 这条线该用哪份材质：0 普通 / 1 攻击移动 / 2 送资源
+func _线型(e: Dictionary) -> int:
+	var order: int = int(e.get("order", RtsConst.Order.MOVE))
+	if order == RtsConst.Order.ATTACK_MOVE:
+		return 1
+	if order == RtsConst.Order.RETURN_RES:
+		return 2
+	return 0
+
+
+func _line_drawable(e: Dictionary) -> bool:
+	# 门槛和 _emit_line 完全一致（alpha > 0.01 且距离 > 0.10）：
+	# 判断"能画"就一定能画出顶点，绝不留下空 surface
+	if float(e["alpha"]) <= 0.01:
+		return false
+	var raw: Variant = e["unit"]
+	if not is_instance_valid(raw) or not (raw is Node3D):
+		return false
+	var u: Node3D = raw
+	if _flat(u.global_position, e["dest"]) <= 0.10:
+		return false
+	return true
 
 
 ## 把一条线拼成贴地带子（每段 6 个顶点；ImmediateMesh 没有索引缓冲，只能重复顶点）
@@ -508,13 +562,15 @@ func _emit_line(e: Dictionary, inv: Transform3D) -> void:
 # 几何：目的地圆环 + 十字准星
 # ===========================================================================
 
-func _add_ring(pos: Vector3, group: int) -> void:
+func _add_ring(pos: Vector3, group: int, order: int) -> void:
 	# 同一组只留一个标记（重下指令时旧的直接丢，线已经改挂到新组了）
 	for i in range(_rings.size() - 1, -1, -1):
 		if int(_rings[i]["group"]) == group:
 			_rings.remove_at(i)
 	if _rings.size() >= MAX_RINGS:
 		_rings.pop_front()
+	# 落点站不站得住：站不住就把环画成红叉（玩家一眼看出"这里到不了"），
+	# 而不是照样画一个漂亮圆环然后单位原地打转。
 	_rings.append({
 		"pos": pos,
 		"fade": 1.0,
@@ -522,13 +578,27 @@ func _add_ring(pos: Vector3, group: int) -> void:
 		"group": group,
 		"phase": float(group) * 0.37,
 		"age": 0.0,
+		"order": order,
+		"blocked": not _dest_reachable(pos),
 	})
+
+
+## 这个落点单位站得住吗（没有寻路器时认为可站，保证纯表现场景/自检不误报红叉）
+func _dest_reachable(pos: Vector3) -> bool:
+	var pf: GridPathfinder = RtsWorld.pathfinder()
+	if pf == null:
+		return true
+	return pf.is_standable(pos, DEST_STAND_RADIUS)
 
 
 func _rebuild_rings() -> void:
 	if _ring_mesh == null:
 		return
-	if _rings.is_empty() or not _any_ring_drawable():
+	var 可画: Array = []
+	for r in _rings:
+		if _ring_drawable(r):
+			可画.append(r)
+	if 可画.is_empty():
 		if _has_ring_geo:
 			_ring_mesh.clear_surfaces()
 			_has_ring_geo = false
@@ -537,23 +607,38 @@ func _rebuild_rings() -> void:
 		return
 	var inv: Transform3D = global_transform.affine_inverse()
 	_ring_mesh.clear_surfaces()
-	_ring_mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
-	for r in _rings:
-		_emit_ring(r, inv)
-	_ring_mesh.surface_end()
+	# 4 种环：绿 / 橙红 / 金黄 / 红叉，各自一个 surface
+	for style in 4:
+		var 有: bool = false
+		for r in 可画:
+			if _环型(r) == style:
+				有 = true
+				break
+		if not 有:
+			continue
+		var mat: Material = _ring_block_mat if style == 3 else _ring_mats[style]
+		_ring_mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES, mat if _shader_ok else null)
+		for r in 可画:
+			if _环型(r) == style:
+				_emit_ring(r, inv)
+		_ring_mesh.surface_end()
 	_has_ring_geo = true
 	if _ring_mi != null:
 		_ring_mi.visible = true
 
 
-func _any_ring_drawable() -> bool:
+## 环用哪种材质：3 = 不可达红叉，其余跟线一致
+func _环型(r: Dictionary) -> int:
+	if bool(r.get("blocked", false)):
+		return 3
+	return _线型(r)
+
+
+func _ring_drawable(r: Dictionary) -> bool:
 	if _master_fade <= 0.01:
 		return false
-	for r in _rings:
-		# 同 _emit_ring 的门槛：淡到看不见就别 begin 一个空 surface
-		if _ease01(float(r["fade"])) * _master_fade > 0.01:
-			return true
-	return false
+	# 同 _emit_ring 的门槛：淡到看不见就别 begin 一个空 surface
+	return _ease01(float(r["fade"])) * _master_fade > 0.01
 
 
 ## 一个目的地标记：脉动圆环（转动的刻度）+ 4 道十字准星（恒亮，不吃虚线相位）
@@ -562,6 +647,10 @@ func _emit_ring(r: Dictionary, inv: Transform3D) -> void:
 	if fade <= 0.01:
 		return
 	var pos: Vector3 = r["pos"]
+	# 不可达落点：不画脉动环，画红叉（"这里到不了"比"到了"更重要，必须一眼分辨）
+	if bool(r.get("blocked", false)):
+		_emit_blocked(pos, fade, r, inv)
+		return
 	var phase: float = float(r["phase"])
 	# 轻微脉动：半径 ±4.5%，和着色器的亮度脉冲错开相位，读起来是"活的"而不是闪烁
 	var pulse: float = 1.0 + 0.045 * sin(_time * 2.2 + phase * TAU)
@@ -614,6 +703,34 @@ func _ring_pt(center: Vector3, dir_x: float, dir_z: float, radius: float) -> Vec
 	var x: float = center.x + dir_x * radius
 	var z: float = center.z + dir_z * radius
 	return Vector3(x, _ground_y(x, z), z)
+
+
+## 不可达落点的红叉：两条对角线各摊成一个 RING_BAND 宽的四边形。
+## UV2.x = 1 让着色器跳过虚线，整段恒亮（叉号一闪一闪反而看错）。
+func _emit_blocked(pos: Vector3, fade: float, r: Dictionary, inv: Transform3D) -> void:
+	var col := Color(1.0, 1.0, 1.0, fade * 0.95)
+	var uv2 := Vector2(1.0, float(r.get("phase", 0.0)))
+	var half: float = RING_BAND * 0.5
+	var reach: float = RING_RADIUS * 0.78
+	for k in 2:
+		var ang: float = PI * 0.25 + PI * 0.5 * float(k)
+		var dx: float = cos(ang)
+		var dz: float = sin(ang)
+		var px: float = -dz * half
+		var pz: float = dx * half
+		# 两端分别取地形高度，横坡上叉号也不会插进土里
+		var a: Vector3 = _ring_pt(pos, dx, dz, -reach)
+		var b: Vector3 = _ring_pt(pos, dx, dz, reach)
+		var a0 := Vector3(a.x + px, a.y + 0.01, a.z + pz)
+		var a1 := Vector3(a.x - px, a.y + 0.01, a.z - pz)
+		var b0 := Vector3(b.x + px, b.y + 0.01, b.z + pz)
+		var b1 := Vector3(b.x - px, b.y + 0.01, b.z - pz)
+		_put(_ring_mesh, a0, Vector2(0.0, 0.0), uv2, col, inv)
+		_put(_ring_mesh, a1, Vector2(0.0, 1.0), uv2, col, inv)
+		_put(_ring_mesh, b1, Vector2(1.0, 1.0), uv2, col, inv)
+		_put(_ring_mesh, a0, Vector2(0.0, 0.0), uv2, col, inv)
+		_put(_ring_mesh, b1, Vector2(1.0, 1.0), uv2, col, inv)
+		_put(_ring_mesh, b0, Vector2(1.0, 0.0), uv2, col, inv)
 
 
 # ===========================================================================
@@ -699,8 +816,23 @@ func _unit_can_track(u: Variant) -> bool:
 func _build_visual() -> void:
 	_line_mesh = ImmediateMesh.new()
 	_ring_mesh = ImmediateMesh.new()
-	_line_mat = _make_material(false)
-	_ring_mat = _make_material(true)
+	_shader_ok = ResourceLoader.exists(SHADER_PATH)
+	# 线 / 环各三份材质：绿（移动）、橙红（攻击移动）、金黄（送资源）。
+	# 为什么不是"一份材质改颜色"：同一帧可能同时有好几批不同指令的线，
+	# 共用一份材质就只能有一种颜色，最后一条指令会改掉所有线的颜色。
+	_line_mats = [
+		_make_material(false, DASH_COLOR),
+		_make_material(false, ATTACK_COLOR),
+		_make_material(false, RETURN_COLOR),
+	]
+	_ring_mats = [
+		_make_material(true, DASH_COLOR),
+		_make_material(true, ATTACK_COLOR),
+		_make_material(true, RETURN_COLOR),
+	]
+	_ring_block_mat = _make_material(true, BLOCK_COLOR)
+	_line_mat = _line_mats[0]
+	_ring_mat = _ring_mats[0]
 	_line_mi = _make_layer("移动虚线", _line_mesh, _line_mat)
 	_ring_mi = _make_layer("目的地标记", _ring_mesh, _ring_mat)
 
@@ -709,7 +841,11 @@ func _make_layer(node_name: String, mesh: ImmediateMesh, mat: Material) -> MeshI
 	var mi := MeshInstance3D.new()
 	mi.name = node_name
 	mi.mesh = mesh
-	mi.material_override = mat
+	# 只在"没有着色器"的退化路径上挂 material_override：
+	# material_override 会把 per-surface 材质整个盖掉，着色器在时必须留空，
+	# 否则三种颜色的 surface 会全部变回同一份绿。
+	if not _shader_ok:
+		mi.material_override = mat
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	mi.visible = false
 	add_child(mi)
@@ -717,16 +853,18 @@ func _make_layer(node_name: String, mesh: ImmediateMesh, mat: Material) -> MeshI
 
 
 ## 建材质：优先用独立着色器；着色器缺失就退化成"实线绿带"（绝不崩、绝不内联 shader）
-func _make_material(is_ring: bool) -> Material:
+func _make_material(is_ring: bool, color: Color = DASH_COLOR) -> Material:
 	var sh: Shader = null
 	if ResourceLoader.exists(SHADER_PATH):
 		sh = load(SHADER_PATH) as Shader
 	if sh == null:
-		return _make_fallback_material()
+		return _make_fallback_material(color)
 	var m := ShaderMaterial.new()
 	m.shader = sh
 	m.render_priority = 1
-	m.set_shader_parameter("dash_color", DASH_COLOR)
+	# line_color 才是真正上屏的颜色；dash_color 留着给旧材质参数兜底
+	m.set_shader_parameter("line_color", color)
+	m.set_shader_parameter("dash_color", color)
 	m.set_shader_parameter("dash_scale", 1.0)
 	m.set_shader_parameter("fade", 1.0)
 	if is_ring:
@@ -753,14 +891,14 @@ func _make_material(is_ring: bool) -> Material:
 	return m
 
 
-## 着色器文件丢了的降级路径：实线绿带（没有虚线/流动，但指示照样看得见）
-func _make_fallback_material() -> Material:
+## 着色器文件丢了的降级路径：实线色带（没有虚线/流动，但指示照样看得见）
+func _make_fallback_material(color: Color = DASH_COLOR) -> Material:
 	var m := StandardMaterial3D.new()
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	m.cull_mode = BaseMaterial3D.CULL_DISABLED
 	m.vertex_color_use_as_albedo = true
-	m.albedo_color = Color(DASH_COLOR.r, DASH_COLOR.g, DASH_COLOR.b, 1.0)
+	m.albedo_color = Color(color.r, color.g, color.b, 1.0)
 	m.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
 	return m

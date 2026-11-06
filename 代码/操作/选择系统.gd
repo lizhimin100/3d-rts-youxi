@@ -484,6 +484,9 @@ func _sync_rings() -> void:
 		var ring := _make_ring(u)
 		if ring != null:
 			_rings[u] = ring
+			# 只在这一刻（从"没圈"变成"有圈"）放一次收束反馈：
+			# 取消选中、保持选中都不放，否则每次刷新都在闪，反而吵。
+			Vfx.selection_burst(u.global_position, _unit_radius(u), _ring_color(u))
 	_sync_range_rings()
 
 
@@ -605,9 +608,7 @@ func _make_ring(u: Node3D) -> Node3D:
 	var radius: float = maxf(_select_radius(u) * 1.35, 0.6)
 	# 选中圈颜色跟着**阵营显示色**走：自己的蓝、盟友的青、敌人的红/绿。
 	# 以前整圈一律用玩家蓝 —— 选中盟友时圈子和自己一模一样，"选中了谁"读不出来。
-	var fac := u.get("faction") as RtsFaction
-	var color: Color = fac.color if fac != null else (
-		Cfg.game.player_color if Cfg.game != null else Color(0.3, 0.62, 1.0))
+	var color: Color = _ring_color(u)
 	var ring: Node3D = ArtKit.vfx_ring(u, radius, color)
 	if ring == null:
 		ring = _ring_from_scene(radius, color)
@@ -619,6 +620,25 @@ func _make_ring(u: Node3D) -> Node3D:
 	if ring.get_parent() == null:
 		u.add_child(ring)
 	return ring
+
+
+## 选中圈/选中爆发的配色：跟**阵营显示色**走（自己蓝、盟友青、敌人红/绿）
+func _ring_color(u: Node) -> Color:
+	var fac := u.get("faction") as RtsFaction
+	if fac != null:
+		return fac.color
+	if Cfg.game != null:
+		return Cfg.game.player_color
+	return Color(0.3, 0.62, 1.0)
+
+
+## 选中爆发用的半径：单位用自己的碰撞半径；建筑等没有 get_radius 的退回拾取半径
+func _unit_radius(u: Node) -> float:
+	if u.has_method("get_radius"):
+		var r: float = float(u.call("get_radius"))
+		if r > 0.05:
+			return r
+	return maxf(_select_radius(u) * 0.75, 0.5)
 
 
 ## 美术侧给好的选中圈场景（有就用；缩放按半径调，颜色给 shader/material 尽量套）

@@ -25,6 +25,7 @@
 shader_type spatial;
 render_mode blend_add, unshaded, cull_disabled, depth_draw_never, shadows_disabled, fog_disabled;
 
+uniform vec4  line_color : source_color = vec4(0.42, 1.0, 0.55, 1.0);
 uniform vec4  dash_color : source_color = vec4(0.239, 1.0, 0.447, 1.0);
 uniform float dash_scale : hint_range(0.0, 8.0) = 1.0;
 uniform float scroll_speed : hint_range(-4.0, 4.0) = 0.75;
@@ -68,8 +69,10 @@ void fragment() {
     float light = core * core_power + halo * halo_power;
     float a = dash * light * base_opacity * v_col.a * fade * pulse;
 
-    // 加色混合：贡献 = ALBEDO * ALPHA。亮芯把绿推到 1.3 左右，
-    // 刚好够环境泛光(阈值 1.35)吃到一个不刺眼的光晕。
-    ALBEDO = dash_color.rgb * v_col.rgb * (0.75 + 0.70 * core);
+    // line_color 由脚本按指令类型换（普通移动绿 / 攻击移动橙红 / 送资源金黄）；
+    // 顶点色 v_col 只承担 alpha，这里不再乘 rgb，避免两色相乘发灰。
+    // 亮度系数从原来的 0.75+0.70×core 压到 0.62+0.55×core：
+    // 三色并存时 1.45 倍会把橙红/金黄一起推到接近白色，色相就分不出来了。
+    ALBEDO = line_color.rgb * (0.62 + 0.55 * core);
     ALPHA = clamp(a, 0.0, 1.0);
 }

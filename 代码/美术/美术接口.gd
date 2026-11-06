@@ -379,6 +379,14 @@ static func vfx_build(pos: Vector3) -> void:
 		s.call("build_dust", pos)
 
 
+## 受击血花（血滴 + 脚下一片血渍）。dir = 攻击者→目标的水平方向，可传 Vector3.ZERO
+static func vfx_blood(pos: Vector3, dir: Vector3 = Vector3.ZERO,
+		amount: float = 1.0) -> void:
+	var s := _vfx_api()
+	if s != null:
+		s.call("blood_spray", pos, dir, amount)
+
+
 ## 选中圈（返回节点，由调用方管理生命周期）
 static func vfx_ring(parent: Node3D, radius: float, color: Color) -> Node3D:
 	var s := _vfx_api()

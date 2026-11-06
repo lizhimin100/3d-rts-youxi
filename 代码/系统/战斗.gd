@@ -423,6 +423,23 @@ static func _apply(attacker: Node3D, target: Node3D, info: DamageInfo,
 	var hit_pos: Vector3 = target.global_position + Vector3.UP * HIT_VFX_HEIGHT
 	ArtKit.vfx_hit(hit_pos, c)
 
+	# 受击出血：只有"有血的东西"才喷血，建筑走尘土/裂缝（由建筑自己表现）。
+	# 为什么按 def.is_building() 判而不是 `is RtsBuilding`：战斗类是 static 上下文，
+	# 且建筑脚本反过来引用 RtsCombat，硬写类名会把解析顺序变成循环依赖。
+	var td: UnitDef = target.get("def") as UnitDef
+	if info.damage > 0.0 and (td == null or not td.is_building()):
+		var dir := Vector3.ZERO
+		if attacker != null and is_instance_valid(attacker):
+			dir = target.global_position - attacker.global_position
+			dir.y = 0.0
+			if dir.length_squared() > 0.0001:
+				dir = dir.normalized()
+		# 伤害 → 血量（20 点伤害 = 1.0 单位），暴击再放大 1.6 倍，读起来"这一下更重"
+		var amount: float = info.damage / 20.0
+		if info.is_crit:
+			amount *= 1.6
+		ArtKit.vfx_blood(hit_pos, dir, amount)
+
 	Game.combat_hit.emit(attacker, target, info.damage, info.is_crit)
 
 	# 只有玩家镜头附近的战斗才震屏（远处打架别晃玩家脑袋）

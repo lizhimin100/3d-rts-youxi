@@ -19,7 +19,12 @@ const NAME_MAP := {
 }
 
 ## 循环播放的动作
-const LOOPING: Array[StringName] = [&"idle", &"walk", &"wave", &"carry_gold", &"carry_wood"]
+## ★ 2026-11-06：`gather` / `build` 改成循环（玩家口径「采集木头变为不停做出采集动作」）。
+##   它们以前在 ONE_SHOT 里，播一遍就自动回 idle —— 玩家看到的是"砍一刀就站着发呆"，
+##   而采集/建造其实还在推进度。现在这两个状态只要不被切走就一直循环：
+##   砍树是连续挥斧、造房子是连续抡锤，和真实进度对得上。
+const LOOPING: Array[StringName] = [&"idle", &"walk", &"wave", &"carry_gold", &"carry_wood",
+		&"gather", &"build"]
 
 ## 缺动作时的降级链（第一个存在的就用）
 const FALLBACK := {
@@ -38,7 +43,8 @@ const FALLBACK := {
 }
 
 ## 单次动作（播完自动回 idle）；death 例外：停在最后一帧
-const ONE_SHOT: Array[StringName] = [&"attack", &"shoot", &"cast", &"gather", &"build", &"hurt", &"death"]
+## gather / build 不在里面 —— 它们是"持续动作"，见 LOOPING 的注释。
+const ONE_SHOT: Array[StringName] = [&"attack", &"shoot", &"cast", &"hurt", &"death"]
 
 const BLEND := 0.16
 ## 循环动作（walk）在高速播放时，0.16s 的淡入已经接近半个周期，会糊。
