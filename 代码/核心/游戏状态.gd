@@ -182,7 +182,7 @@ func _process(delta: float) -> void:
 ##     12 人图进游戏只剩 4 家，剩下的槽位对象全变成"没有阵营的死单位"。
 ##   · 地图里的 team 是 1 起（`PlayerSlot.team`，编辑器写入）；旧图是 0 起，
 ##     这里统一 max(1, team) —— 0 和 1 都当 1 队，不会把旧图的盟友拆散。
-func setup_factions(slots_override: int = 0, teams: Array = []) -> void:
+func setup_factions(slots_override: int = 0, teams: Array = [], colors: Array = []) -> void:
 	var cfg: GameConfig = Cfg.game
 	factions.clear()
 	var slots: int = maxi(2, maxi(cfg.match_slots, slots_override))
@@ -196,8 +196,13 @@ func setup_factions(slots_override: int = 0, teams: Array = []) -> void:
 			team = maxi(1, int(teams[i]))
 		var human: bool = i == human_slot
 		var wealth: int = cfg.start_gold + (0 if human else diff.bonus_gold)
-		f.setup(i, human, cfg.slot_name(i, team), cfg.display_color_for_slot(i),
-			wealth, cfg.start_wood)
+		# 颜色：0~3 号仍走 `display_color_for_slot()`（它负责"盟友显示青色"这条硬规则）；
+		# 4 号以后 cfg 的队表只有 4 项、会全部拿到同一个队色，这时用**地图槽位色**
+		# （编辑器 12 色表）。不要一刀切改用地图色 —— 会把盟友也染成敌方红。
+		var col: Color = cfg.display_color_for_slot(i)
+		if i >= 4 and i < colors.size() and colors[i] is Color:
+			col = colors[i]
+		f.setup(i, human, cfg.slot_name(i, team), col, wealth, cfg.start_wood)
 		f.team = team
 		f.slot = i
 		f.is_ai = not human

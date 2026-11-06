@@ -109,12 +109,22 @@ func _ready() -> void:
 	_pending_map = early_map
 	var early_slots: int = 0
 	var early_teams: Array = []
+	var early_colors: Array = []
 	if early_map != null:
 		early_slots = early_map.players.size()
+		# 老地图的队伍是 0 起（[0,1] / [0,1,0,1]），新地图是 1 起（[1,2,1,2]）。
+		# 判据：只要出现一个 0 就是老口径 → 全部 +1；否则原样用。
+		# 不做这一步的话，老 2 人图的 [0,1] 会被 max(1,·) 压成 [1,1] = 全员盟友。
+		var legacy_zero: bool = false
+		for p in early_map.players:
+			if p != null and int(p.team) == 0:
+				legacy_zero = true
+				break
 		for p in early_map.players:
 			if p != null:
-				early_teams.append(int(p.team))
-	Game.setup_factions(early_slots, early_teams)
+				early_teams.append(int(p.team) + (1 if legacy_zero else 0))
+				early_colors.append(p.color)
+	Game.setup_factions(early_slots, early_teams, early_colors)
 
 	# 2) 环境兜底（.tscn 里已经挂了 Environment 资源；万一丢了就现场造一个）
 	if 环境节点 != null and 环境节点.environment == null:
