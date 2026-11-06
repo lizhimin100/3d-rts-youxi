@@ -30,16 +30,21 @@ RAW_DIR = os.path.join(ROOT, "_qa", "图标原图_单位")
 OUT_DIR = os.path.join(ROOT, "美术", "图标", "单位")
 
 UNITS = [
-    ("peasant", "农民.glb"),
+    ("peasant", "方块人/方块人_农民.glb"),
     ("footman", "方块人/方块人_联盟步兵.glb"),
-    ("archer", "弓箭手.glb"),
+    ("archer", "方块人/方块人_弩兵.glb"),
     ("mage", "法师.glb"),
     ("steam_guard", "步兵.glb"),
 ]
 
+## 除 glb 自带的 unit_* 三块网格外，场景里多出来的网格一律删掉。
+## （Blender 装了建模类插件后 `import_scene.gltf` 会顺手塞一个 Icosphere 探针，
+##  它把包围盒撑成 2m³ → 机位按 2.7m 身高退到 8.6m，人只占画面一半。）
+_KEEP_MESH = ("unit_body", "unit_team", "unit_trim")
+
 SS = 512
 OUT = 256
-AZ_DEG = 34.0
+AZ_DEG = -32.0
 EL_DEG = 10.0
 FOCAL = 62.0
 MARGIN = 1.06
@@ -54,6 +59,11 @@ def _import(rel):
     if not os.path.exists(path):
         return None
     bpy.ops.import_scene.gltf(filepath=path)
+    # 插件探针（Icosphere 等）会污染包围盒，逐出
+    for ob in list(bpy.context.scene.objects):
+        if ob.type == 'MESH' and ob.name not in _KEEP_MESH:
+            print("  逐出杂项网格", ob.name)
+            bpy.data.objects.remove(ob, do_unlink=True)
     objs = [o for o in bpy.context.scene.objects if o.type == 'MESH']
     if not objs:
         return None
@@ -135,7 +145,7 @@ def _render():
     try:
         sc.view_settings.view_transform = 'Standard'
         sc.view_settings.look = 'None'
-        sc.view_settings.exposure = -0.25
+        sc.view_settings.exposure = 0.28
     except Exception:
         pass
 

@@ -24,8 +24,74 @@ OUT_DIR = os.path.join(ROOT, "美术", "图标", "单位")
 
 UNITS = ["peasant", "footman", "archer", "mage", "steam_guard"]
 OUT = 256
-BODY_RATIO = 0.88     # 人物高度占画布比例
-BOTTOM_PAD = 0.06     # 底部留白
+BODY_RATIO = 0.90     # 人物高度占画布比例（对齐美术资产包那批图标的取景）
+BOTTOM_PAD = 0.04     # 底部留白
+
+## 底版参照图：美术资产包出的那批图标（warm 渐变 + 暗角 + 金线描边）。
+## 取它的**干净边缘**（左列 / 顶行）反解出一张可分离的底版，
+## 这样新渲的图标和 peasant/footman/steam_guard 摆在一起是同一套底。
+PLATE_REF = os.path.join(ROOT, "美术", "图标", "单位", "peasant.png")
+PLATE_CACHE = os.path.join(ROOT, "_qa", "图标底版.png")
+
+
+def plate_from_reference(size=(OUT, OUT)):
+    """用参照图反解底版：plate = 角落色 × (顶行/左列 的相对亮度)。
+
+    为什么用乘法不用加法：底版是「渐变 + 暗角」的乘积关系，
+    加法会在底部中心把亮度算高 20+ 个色阶（实测 peach 底 (27,20,14) 会算成 (48,47,38)）。
+    """
+    if not os.path.exists(PLATE_REF):
+        return None
+    ref = Image.open(PLATE_REF).convert("RGB")
+    w, h = ref.size
+    if size != (w, h):
+        ref = ref.resize(size, Image.LANCZOS)
+    w, h = ref.size
+    # ★ 采样线必须躲开资产包图标自带的 1px 暗边 + 1px 金线（x<3 全是框），
+    #   否则整张底版会被解成近黑色（实测 corner 从 (88,80,68) 掉成 (34,34,36)）。
+    edge = 8
+    top = [ref.getpixel((x, edge)) for x in range(edge, w - edge)]
+    left = [ref.getpixel((edge, y)) for y in range(edge, h - edge)]
+    base = ref.getpixel((edge, edge))
+
+    def ratio(c, b):
+        return [max(0.02, c[i] / max(b[i], 1)) for i in range(3)]
+
+    fx = [ratio(c, top[0]) for c in top]
+    fy = [ratio(c, left[0]) for c in left]
+    fx = [fx[0]] * edge + fx + [fx[-1]] * edge
+    fy = [fy[0]] * edge + fy + [fy[-1]] * edge
+    fx, fy = fx[:w], fy[:h]
+    img = Image.new("RGB", (w, h))
+    px = img.load()
+    for y in range(h):
+        ry = fy[y]
+        for x in range(w):
+            rx = fx[x]
+            px[x, y] = (
+                max(0, min(255, int(base[0] * rx[0] * ry[0]))),
+                max(0, min(255, int(base[1] * rx[1] * ry[1]))),
+                max(0, min(255, int(base[2] * rx[2] * ry[2]))),
+            )
+    return img
+
+
+def plate(size=(OUT, OUT)):
+    """底版（带缓存）：_qa/图标底版.png 存在就直接用。"""
+    if os.path.exists(PLATE_CACHE):
+        try:
+            im = Image.open(PLATE_CACHE).convert("RGB")
+            if im.size == size:
+                return im
+        except Exception:
+            pass
+    im = plate_from_reference(size)
+    if im is None:
+        return None
+    os.makedirs(os.path.dirname(PLATE_CACHE), exist_ok=True)
+    im.save(PLATE_CACHE)
+    return im
+
 
 
 def backdrop(size):
@@ -84,11 +150,13 @@ def compose(key):
         tw, th = int(OUT * 0.94), max(1, int(round(bh * scale)))
     body = body.resize((tw, th), Image.LANCZOS)
 
-    canvas = backdrop((OUT, OUT))
+    canvas = plate((OUT, OUT))
+    if canvas is None:
+        # 兜底：没有参照图就走老的程序化底（暗蓝渐变 + 中心暖光）
+        canvas = vignette(backdrop((OUT, OUT)))
     x = (OUT - tw) // 2
     y = int(OUT * (1.0 - BOTTOM_PAD)) - th
     canvas.paste(body, (x, y), body)
-    canvas = vignette(canvas)
 
     # 1px 内描边（贴着画布边，和段底的金边呼应）
     d = ImageDraw.Draw(canvas)
@@ -102,11 +170,13 @@ def compose(key):
 
 
 def main():
+    want = sys.argv[1:]
     ok = 0
-    for k in UNITS:
+    todo = [k for k in UNITS if not want or k in want]
+    for k in todo:
         if compose(k):
             ok += 1
-    print("完成 %d / %d" % (ok, len(UNITS)))
+    print("完成 %d / %d" % (ok, len(todo)))
 
 
 main()
