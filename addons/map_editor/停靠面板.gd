@@ -455,13 +455,7 @@ func _build_object_tab() -> Control:
 			MapObject.Category.DOODAD, MapObject.Category.RESOURCE]:
 		# 按钮上带数量：玩家一眼知道"单位 7 / 建筑 11"，
 		# 不会因为列表只露出 6 行就以为"野怪不在里面"（2026-11-01 反馈）。
-		var b := 皮肤.tool_button(_cat_icon(c), "%s %d" % [
-			MapAssets.category_name(c), MapAssets.category_count(c)],
-			"只看「%s」类（右侧列表跟着换）" % MapAssets.category_name(c),
-			"normal", 皮肤.H_SMALL)
-		b.toggle_mode = true
-		b.focus_mode = Control.FOCUS_NONE
-		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var b := _mk_cat_button(c)
 		b.pressed.connect(func() -> void:
 			session.set_category(c)
 			session.set_mode(1))
@@ -557,6 +551,45 @@ func _build_object_tab() -> Control:
 	v.add_child(rr)
 	_sel_buttons.append(br)
 	return v
+
+
+## 分类按钮（单位 / 建筑 / 装饰 / 资源）：**自己排图标 + 文字**。
+##
+## 为什么不用 Button 自带的 text/icon：GridContainer 把按钮拉宽以后，
+## Button 会把文字重新排到中间，和左边的图标分家（两个 alignment 都钉成 LEFT 也按不住，
+## 2026-11-07 实测）。自己放一个 HBox 是唯一稳定的写法，顺带把计数牢牢贴在名字后面。
+func _mk_cat_button(cat: int) -> Button:
+	var b := Button.new()
+	b.theme_type_variation = &"EditorSmall"
+	b.toggle_mode = true
+	b.focus_mode = Control.FOCUS_NONE
+	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	b.custom_minimum_size = Vector2(0.0, 皮肤.H_SMALL)
+	b.tooltip_text = "只看「%s」类（右侧列表跟着换）" % MapAssets.category_name(cat)
+	var row := HBoxContainer.new()
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	row.offset_left = 8.0
+	row.offset_right = -8.0
+	row.add_theme_constant_override("separation", 7)
+	var ic := TextureRect.new()
+	ic.texture = 皮肤.icon(_cat_icon(cat))
+	ic.custom_minimum_size = Vector2(16.0, 16.0)
+	ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	ic.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	ic.modulate = Color(0.80, 0.76, 0.66)
+	ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(ic)
+	var lb := Label.new()
+	lb.text = "%s %d" % [MapAssets.category_name(cat), MapAssets.category_count(cat)]
+	lb.add_theme_font_size_override("font_size", 皮肤.Spec.FS_BODY)
+	lb.add_theme_color_override("font_color", 皮肤.TEXT)
+	lb.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	lb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(lb)
+	b.add_child(row)
+	return b
 
 
 ## 网格里的小按钮（和 _add_small_button 一样，只是给 GridContainer 用）
@@ -1547,6 +1580,11 @@ func _populate_assets() -> void:
 		_asset_list.add_item(MapAssets.list_label(a))
 		if ico != null:
 			_asset_list.set_item_icon(_asset_list.item_count - 1, ico)
+			# 没渲图的单位/建筑退回类型符号（剑/房子）——这类占位图标要**压暗**，
+			# 否则一排亮白的剑比真正的渲图头像还抢眼，列表读起来像"全是单位卡"。
+			if (cat == MapObject.Category.UNIT or cat == MapObject.Category.BUILDING) 					and _asset_icon_missing(a, cat):
+				_asset_list.set_item_icon_modulate(_asset_list.item_count - 1,
+					Color(0.62, 0.56, 0.46, 0.75))
 		_asset_list.set_item_metadata(_asset_list.item_count - 1, id)
 		_replace_opt.add_item(MapAssets.list_label(a))
 		if ico != null:
@@ -1575,6 +1613,16 @@ func _populate_assets() -> void:
 			_empty_hint.text = "装饰只收自然物（树/草/岩石/营地道具/残迹），单位和建筑请切自己的层。"
 		else:
 			_empty_hint.text = "这个分类没有匹配项（试试清空搜索框，或换一个分类）。"
+
+
+## 这一类资产有没有真正的渲图头像（没有 = 用的是线描占位符号）
+func _asset_icon_missing(a: Dictionary, cat: int) -> bool:
+	var id := StringName(String(a.get("id", "")))
+	if cat == MapObject.Category.UNIT:
+		return Spec.unit_icon(id) == null
+	if cat == MapObject.Category.BUILDING:
+		return Spec.building_icon(id) == null
+	return false
 
 
 ## 每行的类型图标：单位/建筑用渲图头像，装饰/资源用线描符号（按子类分）
