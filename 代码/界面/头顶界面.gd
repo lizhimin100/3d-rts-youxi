@@ -24,10 +24,16 @@ const MAX_DIST: float = 110.0
 const MAX_BARS: int = 64
 ## 最多画多少个状态图标
 const MAX_ICONS: int = 96
+## 最多画多少个"工地倒计时"（玩家 2026-11-07：世界里的工地头顶要有秒数）
+const MAX_SITES: int = 24
+## 工地倒计时的刷新间隔（秒）：秒数只到整秒，0.25s 足够，别每帧扫阵营
+const SITE_REFRESH: float = 0.25
 
 var _t: float = 0.0
 var _sel: Array = []
 var _guards: Array = []
+var _sites: Array = []
+var _site_t: float = 0.0
 
 const COL_HOLD := Color(0.55, 0.76, 1.0)
 const COL_OBSERVE := Color(0.42, 0.92, 0.86)
@@ -46,6 +52,10 @@ func set_selection(units: Array) -> void:
 
 func _process(delta: float) -> void:
 	_t -= delta
+	_site_t -= delta
+	if _site_t <= 0.0:
+		_site_t = SITE_REFRESH
+		_scan_sites()
 	if _t > 0.0:
 		queue_redraw()
 		return
@@ -54,24 +64,48 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 
+## 扫一遍"自己/盟友的未完工工地"——世界头顶要显示还剩多少秒。
+##
+## 玩家 2026-11-07 手绘图：「这个是农民正在建造的建筑工地，上面有显示多少多少秒」。
+## 只扫己方（含盟友）：敌方工地的进度属于侦察信息，不该白送。
+func _scan_sites() -> void:
+	_sites.clear()
+	if Game.player_faction == null:
+		return
+	for f in Game.factions:
+		if f == null or not Game.is_ally_of_player(f):
+			continue
+		for b in f.buildings:
+			if b == null or not is_instance_valid(b):
+				continue
+			if bool(b.get("is_constructed")):
+				continue
+			_sites.append(b)
+			if _sites.size() >= MAX_SITES:
+				return
+
+
 ## 扫一遍"有警戒姿态的己方/友军单位"（敌人不画：玩家管不着，只会挡视线）
 func _scan_guards() -> void:
 	_guards.clear()
 	if Game.player_faction == null:
 		return
-	for u in Game.all_units():
-		if u == null or not is_instance_valid(u):
+	# ★ 只遍历自己 + 盟友的阵营表，不再对全图单位做一次 O(n) 扫描
+	#   （3000 兵压测时这一步是 10 次/秒 × 全表）
+	for f in Game.factions:
+		if f == null or not Game.is_ally_of_player(f):
 			continue
-		if not u.has_method("is_alive") or not bool(u.call("is_alive")):
-			continue
-		var g: Variant = u.get("guard_mode")
-		if g == null or int(g) == 0:
-			continue
-		if not Game.is_ally_of_player(u.faction):
-			continue
-		_guards.append(u)
-		if _guards.size() >= MAX_ICONS:
-			return
+		for u in f.units:
+			if u == null or not is_instance_valid(u):
+				continue
+			if not u.has_method("is_alive") or not bool(u.call("is_alive")):
+				continue
+			var g: Variant = u.get("guard_mode")
+			if g == null or int(g) == 0:
+				continue
+			_guards.append(u)
+			if _guards.size() >= MAX_ICONS:
+				return
 
 
 func _draw() -> void:
@@ -80,6 +114,22 @@ func _draw() -> void:
 		return
 	var vp: Vector2 = get_viewport_rect().size
 	var cam_pos: Vector3 = cam.global_position
+
+	# --- ⓪ 在建工地：头顶那行"还剩多少秒"（玩家手绘图的要求）---
+	for b in _sites:
+		if b == null or not is_instance_valid(b):
+			continue
+		if bool(b.get("is_constructed")):
+			continue
+		var bp: Vector3 = _site_anchor(b)
+		if cam_pos.distance_to(bp) > MAX_DIST:
+			continue
+		if cam.is_position_behind(bp):
+			continue
+		var bsp: Vector2 = cam.unproject_position(bp)
+		if bsp.x < -80.0 or bsp.y < -80.0 or bsp.x > vp.x + 80.0 or bsp.y > vp.y + 80.0:
+			continue
+		_draw_site_timer(b, bsp)
 
 	# --- ① 选中单位的血条 / 蓝条 ---
 	var drawn: int = 0
@@ -118,6 +168,47 @@ func _draw() -> void:
 			continue
 		_draw_guard(u2, sp2 + Vector2(0.0, -16.0 * zoom))
 		icons += 1
+
+
+## 在建工地头顶的「剩余 N 秒」小牌。
+##
+## 版式口径：**秒数压在进度条上**是底栏的写法；世界里的工地没有底栏，
+## 所以做成一块小铭牌（深底 + 金边 + 底部一条真实进度线），
+## 字够大、读得清，但不会盖住建筑本身（贴在头顶锚点上方）。
+func _draw_site_timer(b: Node3D, sp: Vector2) -> void:
+	var d: UnitDef = b.def
+	var total: float = maxf(d.train_time, 0.5) if d != null else 1.0
+	var p: float = clampf(float(b.get("progress")), 0.0, 1.0)
+	var rest: int = int(ceil(maxf(1.0 - p, 0.0) * total))
+	var txt: String = "%d秒" % rest
+	var fs: int = maxi(int(round(17.0 * zoom)), 10)
+	var font: Font = ThemeDB.fallback_font
+	var ts: Vector2 = font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+	var pad_x: float = 7.0 * zoom
+	var pad_y: float = 3.0 * zoom
+	var w: float = ts.x + pad_x * 2.0
+	var h: float = ts.y + pad_y * 2.0
+	var box := Rect2(sp.x - w * 0.5, sp.y - h, w, h)
+	# 外投影（贴在亮天空上也能读）
+	draw_rect(Rect2(box.position - Vector2(1.0, 1.5) * zoom,
+		box.size + Vector2(2.0, 3.0) * zoom), Color(0.0, 0.0, 0.0, 0.45), true)
+	draw_rect(box, Color(0.052, 0.048, 0.040, 0.90), true)
+	draw_rect(box, Color(1.0, 0.82, 0.44, 0.62), false, 1.0 * zoom)
+	# 底部真实进度线：一眼看出"还剩多少"，不用读数字
+	if p > 0.001:
+		draw_rect(Rect2(box.position.x, box.end.y - 2.0 * zoom, box.size.x * p, 2.0 * zoom),
+			Color(0.96, 0.72, 0.30, 0.95), true)
+	var base := Vector2(box.position.x + pad_x, box.position.y + pad_y + ts.y * 0.82)
+	draw_string(font, base, txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(1.0, 0.94, 0.76))
+
+
+## 工地锚点：按**完工高度**再抬高一点，让秒数牌浮在楼顶上方而不是压在屋顶上
+## （工地是"从下往上长"的，用当前模型包围盒会一路往下跳）。
+func _site_anchor(b: Node3D) -> Vector3:
+	var h: float = 4.0
+	if b.def != null:
+		h = maxf(b.def.height, 1.0)
+	return b.global_position + Vector3(0.0, h * 1.02 + 0.85, 0.0)
 
 
 ## 头顶锚点：单位高度之上再留一点（血条不压脸）

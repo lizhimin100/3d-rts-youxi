@@ -62,19 +62,31 @@ class Bar extends Control:
 	var caption: String = ""
 	var _label: Label = null
 	var _fs: int = 14
+	## 外部在 `_ready` 之前设的字号（建造行用 FS_VALUE）。存起来，_ready 时再应用。
+	var _fs_want: int = 0
 
 	func _ready() -> void:
 		mouse_filter = Control.MOUSE_FILTER_PASS
 		_label = Label.new()
 		_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		if _fs_want > 0:
+			_fs = _fs_want
 		_label.add_theme_font_size_override("font_size", _fs)
-		_label.add_theme_color_override("font_color", Color(0.97, 0.95, 0.90))
-		_label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.90))
-		_label.add_theme_constant_override("outline_size", 3)
+		# 白字 + 4px 黑描边：压在亮金色填充上也读得清（玩家要求"秒数看得见"）
+		_label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0))
+		_label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.95))
+		_label.add_theme_constant_override("outline_size", 4)
 		_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_label.set_anchors_preset(Control.PRESET_FULL_RECT)
 		add_child(_label)
+
+	## 进度条内文字字号（建造行用 FS_VALUE，队列格用 FS_CAPTION）
+	func set_font_size(fs: int) -> void:
+		_fs_want = fs
+		_fs = fs
+		if _label != null:
+			_label.add_theme_font_size_override("font_size", fs)
 
 	## 喂数据（相同数值不重绘，避免每帧刷 draw call）
 	func feed(r: float, f: Color, cap: String = "") -> void:
@@ -151,19 +163,16 @@ var _research_bar: Bar = null
 
 # --- 建造 ---
 var _build_box: VBoxContainer = null
-var _build_cap: Label = null
 var _build_bar: Bar = null
-## 建造标题行（进度文字 + 农民头像条 + 取消建造按钮）
+## 建造行：`[农民头像][进度条（内嵌剩余秒数）][取消]` —— 玩家 2026-11-07 定的版式。
 var _build_row: HBoxContainer = null
-var _build_crew: HBoxContainer = null
-## 头像按钮（固定 CREW_ICONS 个，按里面人数显隐）
+## 唯一的农民头像按钮（**只能有一个**：玩家口径「不要多个农民图标」）
 var _crew_buttons: Array = []
-## 第 5 个以后的折叠标签「+N」
-var _crew_more: Label = null
 var _cancel_btn: Button = null
-## 头像条最多画几个（再多就折叠成 +N；魔兽也是最多 4~5 个）
-const CREW_ICONS: int = 4
-const CREW_ICON_PX: float = 34.0
+## 头像只有一个（2026-11-07 玩家口径：建造中只显示一个农民图标，不许堆一排）。
+## 图标放在**左边**、跟进度条同高，不要缩成右上角的小挂件。
+const CREW_ICONS: int = 1
+const CREW_ICON_PX: float = 46.0
 
 # --- 属性（不产兵 / 空闲时）---
 var _stats: RtsStatColumn = null
@@ -329,34 +338,32 @@ func _building_tip() -> Dictionary:
 # ---------------------------------------------------------------------------
 # 建造进度（未完工时出现）
 # ---------------------------------------------------------------------------
+## 玩家 2026-11-07 口述 + 手绘图，版式**只有这一种**：
+##
+## ```
+## ◆ 兵营                                  建造中 42%
+## [农民头像]  [========== 剩余 34s ==========]  [取消]
+## ```
+##
+##   · 农民头像**只能一个**（"只能有一个，不要多个农民"），摆在最左、和进度条同高；
+##   · 秒数写在**进度条里面**，不再挤在右上角（"不要放在进度条右上角，还很小"）；
+##   · 取消建造用图标（✕）挂在最右，不再用一块文字按钮把行撑歪。
 func _build_construction(parent: Node) -> void:
 	_build_box = VBoxContainer.new()
 	_build_box.name = "建造进度"
-	_build_box.add_theme_constant_override("separation", 3)
+	_build_box.add_theme_constant_override("separation", 2)
 	_build_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_build_box.visible = false
 	parent.add_child(_build_box)
 
-	# 标题行 = 「建造中 42%」+ 农民头像条 + 取消按钮（同一行，不额外占高）
 	_build_row = HBoxContainer.new()
-	_build_row.name = "建造标题行"
-	_build_row.add_theme_constant_override("separation", 6)
+	_build_row.name = "建造行"
+	_build_row.add_theme_constant_override("separation", 8)
+	_build_row.custom_minimum_size = Vector2(0.0, CREW_ICON_PX)
 	_build_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_build_box.add_child(_build_row)
 
-	_build_cap = Spec.label("建造中 0%", Spec.FS_VALUE, Color(0.99, 0.80, 0.44))
-	_build_cap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_build_cap.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_build_row.add_child(_build_cap)
-
-	# 农民图标条：**点一个头像就选中里面那个农民**（玩家口径 2026-11-07）。
-	# 为什么要图标而不是"直接点工地里"：农民钻进去以后模型是隐藏的，
-	# 世界里没有可点的东西；头像条是唯一入口。
-	_build_crew = HBoxContainer.new()
-	_build_crew.name = "农民头像条"
-	_build_crew.add_theme_constant_override("separation", 3)
-	_build_crew.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_build_row.add_child(_build_crew)
+	# 左：唯一一个农民头像 —— 点它 = 选中工地里的农民（世界点不到他，这是唯一入口）
 	for i in CREW_ICONS:
 		var b := Button.new()
 		b.name = "农民%d" % (i + 1)
@@ -366,34 +373,43 @@ func _build_construction(parent: Node) -> void:
 		b.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		b.focus_mode = Control.FOCUS_NONE
 		b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-		# 头像那么小，边框会吃掉大半张脸；用 ghost 皮肤 + 选中时描一圈暖橙
-		b.add_theme_stylebox_override("normal", Spec.button_style(Color(0, 0, 0, 0), Color(1, 0.72, 0.34, 0.55), null, 3, 1.0, 1.0))
-		b.add_theme_stylebox_override("hover", Spec.button_style(Color(1, 0.72, 0.34, 0.22), Color(1, 0.86, 0.52, 0.95), null, 3, 1.0, 1.0))
-		b.add_theme_stylebox_override("pressed", Spec.button_style(Color(1, 0.72, 0.34, 0.34), Color(1, 0.92, 0.66), null, 3, 1.0, 1.0))
+		b.add_theme_stylebox_override("normal", Spec.button_style(Color(0, 0, 0, 0), Color(1, 0.72, 0.34, 0.55), null, 4, 1.0, 1.0))
+		b.add_theme_stylebox_override("hover", Spec.button_style(Color(1, 0.72, 0.34, 0.22), Color(1, 0.86, 0.52, 0.95), null, 4, 1.0, 1.0))
+		b.add_theme_stylebox_override("pressed", Spec.button_style(Color(1, 0.72, 0.34, 0.34), Color(1, 0.92, 0.66), null, 4, 1.0, 1.0))
 		b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 		b.visible = false
 		b.pressed.connect(_on_crew_icon.bind(i))
-		_build_crew.add_child(b)
+		_build_row.add_child(b)
 		_crew_buttons.append(b)
 
-	_crew_more = Spec.label("", Spec.FS_CAPTION, Color(0.98, 0.90, 0.72))
-	_crew_more.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_crew_more.visible = false
-	_build_crew.add_child(_crew_more)
+	# 中：进度条本体（**秒数就在这条里面**）
+	_build_bar = Bar.new()
+	_build_bar.name = "建造条"
+	_build_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_build_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_build_bar.custom_minimum_size = Vector2(0.0, 26.0)
+	_build_bar.set_font_size(Spec.FS_VALUE)
+	_build_bar.fill = Color(0.96, 0.72, 0.30)
+	_build_row.add_child(_build_bar)
 
-	_cancel_btn = Spec.btn("取消建造", "danger")
+	# 右：取消建造（图标 + 气泡，不占宽度）
+	_cancel_btn = Button.new()
 	_cancel_btn.name = "取消建造"
-	_cancel_btn.tooltip_text = "拆掉这个工地并全额退还资源（里面的农民会走出来）"
-	_cancel_btn.custom_minimum_size = Vector2(0.0, CREW_ICON_PX)
+	_cancel_btn.custom_minimum_size = Vector2(CREW_ICON_PX, CREW_ICON_PX)
+	_cancel_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_cancel_btn.icon = Spec.icon_tex("cancel")
+	_cancel_btn.expand_icon = true
+	_cancel_btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_cancel_btn.focus_mode = Control.FOCUS_NONE
+	_cancel_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	_cancel_btn.tooltip_text = "取消建造：拆掉工地并全额退还资源（里面的农民会走出来）"
+	_cancel_btn.add_theme_stylebox_override("normal", Spec.button_style(Color(0, 0, 0, 0), Color(1.0, 0.42, 0.34, 0.45), null, 4, 1.0, 1.0))
+	_cancel_btn.add_theme_stylebox_override("hover", Spec.button_style(Color(0.72, 0.16, 0.12, 0.55), Color(1.0, 0.62, 0.46, 0.95), null, 4, 1.0, 1.0))
+	_cancel_btn.add_theme_stylebox_override("pressed", Spec.button_style(Color(0.52, 0.10, 0.08, 0.70), Color(1.0, 0.78, 0.58), null, 4, 1.0, 1.0))
+	_cancel_btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	_cancel_btn.visible = false
 	_cancel_btn.pressed.connect(_on_cancel_construction)
 	_build_row.add_child(_cancel_btn)
-
-	_build_bar = Bar.new()
-	_build_bar.custom_minimum_size = Vector2(0.0, 18.0)
-	_build_bar.fill = Color(0.96, 0.72, 0.30)
-	_build_box.add_child(_build_bar)
 
 
 # ---------------------------------------------------------------------------
@@ -840,79 +856,98 @@ func _sync_construction(d: UnitDef) -> void:
 		var rest: float = _target.upgrade_remaining()
 		var tgt: StringName = _target.upgrade_target()
 		var td: UnitDef = Cfg.unit(tgt) if tgt != &"" else null
-		_build_cap.text = "升级中 %d%%　·　剩余 %.0fs → %s" % [
-			int(round(up * 100.0)), rest, td.display_name if td != null else "箭塔"]
-		_build_bar.feed(up, Color(0.62, 0.86, 0.98), "")
+		# 升级不需要农民：头像和取消都收起来，整条让给进度条
+		_show_crew(false)
+		_build_bar.feed(up, Color(0.62, 0.86, 0.98),
+			"升级中 %d%%　·　剩余 %ds → %s" % [
+				int(round(up * 100.0)), int(ceil(rest)),
+				td.display_name if td != null else "箭塔"])
 		return
 	var constructing: bool = not _target.is_constructed
 	_build_box.visible = constructing
 	if not constructing:
+		_show_crew(false)
 		return
 	var p: float = clampf(_target.progress, 0.0, 1.0)
 	# ★ 建造时长就是 def.train_time（RtsBuilding 里同口径），UnitDef 没有 build_time 字段
 	var total: float = maxf(d.train_time, 0.5) if d != null else 0.0
 	var rest: float = maxf(1.0 - p, 0.0) * total
-	_build_cap.text = "建造中 %d%%　·　剩余 %.0fs" % [int(round(p * 100.0)), rest] if total > 0.0 \
-			else "建造中 %d%%" % int(round(p * 100.0))
-	_build_bar.feed(p, Color(0.96, 0.72, 0.30), "")
+	# 秒数写在进度条**里面**（玩家手绘图：「多少秒」就压在条上，不要右上角的小字）
+	_build_bar.feed(p, Color(0.96, 0.72, 0.30),
+		"剩余 %d 秒" % int(ceil(rest)) if total > 0.0 else "建造中 %d%%" % int(round(p * 100.0)))
 	_sync_crew()
 
 
-## 建造标题行：农民头像条 + 取消建造按钮。
+## 建造行里"人"的部分（头像 + 取消）显隐。
+## 升级读条 / 完工 / 敌方工地 → 全部收起（敌方工地没有"取消建造"权限）。
+func _show_crew(on: bool) -> void:
+	for b in _crew_buttons:
+		if b != null and is_instance_valid(b) and b.visible != on:
+			b.visible = on
+	if _cancel_btn != null and is_instance_valid(_cancel_btn):
+		var mine: bool = on and _target != null and is_instance_valid(_target) \
+				and _target.faction != null and _target.faction == Game.player_faction
+		if _cancel_btn.visible != mine:
+			_cancel_btn.visible = mine
+
+
+## 建造行左侧：**唯一一个**农民头像。
 ##
-## 玩家口径（2026-11-07）：「里面有一个进度条，旁边还有农民图标，点击这个图标才能选中农民」。
-## 头像 = 里面第 i 个农民；点它 → 选中那个农民（此时他无敌，可以按 S 停下来走出工地）。
+## 玩家口径（2026-11-07）：
+##   · 「只能有一个，不要多个农民」—— 不管里面塞了几个农民，图标就一个；
+##   · 「农民图标不要放在进度条右上角，还很小」—— 它在左边，和进度条同高。
+## 点它 = 选中工地里的**全部**农民（只有 1 个时就是单选）。
+## 为什么要图标而不是"直接点工地里"：农民钻进去以后模型是隐藏的，
+## 世界里没有可点的东西；头像是唯一入口。
 func _sync_crew() -> void:
 	var list: Array = []
 	if _target != null and is_instance_valid(_target) and _target.has_method("builder_units"):
 		list = _target.call("builder_units")
-	var n: int = mini(list.size(), CREW_ICONS)
-	for i in _crew_buttons.size():
-		var b: Button = _crew_buttons[i]
-		var show_it: bool = i < n
-		if b.visible != show_it:
-			b.visible = show_it
-		if not show_it:
-			continue
-		var u: Node3D = list[i]
-		var ud: UnitDef = u.get("def") as UnitDef
-		var tex: Texture2D = Spec.unit_icon(ud.id) if ud != null else null
+	var has: bool = not list.is_empty()
+	if _crew_buttons.is_empty():
+		_show_crew(has)
+		return
+	var b: Button = _crew_buttons[0]
+	if b.visible != has:
+		b.visible = has
+	var names: Array[String] = []
+	for u in list:
+		if u != null and is_instance_valid(u):
+			var ud: UnitDef = u.get("def") as UnitDef
+			names.append(ud.display_name if ud != null else "农民")
+	if has:
+		var first: Node3D = list[0]
+		var fd: UnitDef = first.get("def") as UnitDef
+		var tex: Texture2D = Spec.unit_icon(fd.id) if fd != null else null
 		if b.icon != tex:
 			b.icon = tex
-		b.tooltip_text = "选中工地里的%s（建造中无敌；选中后按 S 让他走出来）" % (
-			ud.display_name if ud != null else "农民")
-	# 第 5 个以后折叠成「+N」：不撑宽标题行
-	var extra: int = maxi(list.size() - CREW_ICONS, 0)
-	if _crew_more != null:
-		_crew_more.visible = extra > 0
-		if extra > 0:
-			_crew_more.text = "+%d" % extra
+		b.tooltip_text = "选中工地里的%s（%d 人，建造中无敌；选中后按 S 让他走出来）" \
+				% ["、".join(names), list.size()] if list.size() > 1 \
+				else "选中工地里的%s（建造中无敌；选中后按 S 让他走出来）" % names[0]
 	# 取消建造只给自己的工地（敌人的工地只能拆）
-	var mine: bool = _target != null and is_instance_valid(_target) \
-			and _target.faction != null and _target.faction == Game.player_faction
-	if _cancel_btn != null and _cancel_btn.visible != mine:
-		_cancel_btn.visible = mine
+	_show_crew(has)
 
 
-## 点农民头像 → 选中里面那个农民
-func _on_crew_icon(i: int) -> void:
+## 点农民头像 → 选中里面**所有**农民（一个图标 = 这一群人的入口）
+func _on_crew_icon(_i: int) -> void:
 	if _target == null or not is_instance_valid(_target):
 		return
 	if not _target.has_method("builder_units"):
 		return
 	var list: Array = _target.call("builder_units")
-	if i < 0 or i >= list.size():
-		return
-	var u: Node3D = list[i]
-	if u == null or not is_instance_valid(u) or not u.is_alive():
+	var pick: Array = []
+	for u in list:
+		if u != null and is_instance_valid(u) and bool(u.call("is_alive")):
+			pick.append(u)
+	if pick.is_empty():
 		return
 	var sel := _selection_system()
 	if sel != null and sel.has_method("select_units"):
 		# 建筑面板此刻还选中着工地；选中农民后 HUD 会切到单位面板。
 		# 农民在工地里，世界点不到他 —— 这条路是玩家唯一的入口。
-		sel.call("select_units", [u])
+		sel.call("select_units", pick)
 	else:
-		Game.selection_changed.emit([u])
+		Game.selection_changed.emit(pick)
 
 
 ## 取消建造（拆工地 + 全额退款 + 放人）
