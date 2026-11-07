@@ -54,6 +54,7 @@ func _运行() -> void:
 		_用例C_待机不锁射程外()
 		_用例D_自动施法不吞指令()
 		_用例E_射程口径()
+		_用例F_多近战围攻()
 	报告["失败项"] = 失败
 	报告["结果"] = "通过" if 失败.is_empty() else "失败"
 	报告["耗时(毫秒)"] = Time.get_ticks_msec() - 开始
@@ -145,6 +146,11 @@ func _一步() -> void:
 	var s: Script = load("res://代码/单位/单位.gd")
 	if s != null:
 		s.set("_sep_frame", -1)
+	# ★ 同理：`Game.unit_hash()` 也按引擎帧号缓存。手动步进时帧号永远是同一帧，
+	#   哈希会一直停在"第一次被查"的那一刻（通常是空表），于是 find_nearest_enemy
+	#   永远返回 null —— B（攻击移动打不死人）和 D（法师不自动开火）两条自检
+	#   就是这么一直红的。这里一并打回 -1，让两条用例真的在测战斗逻辑。
+	游戏.set("_unit_hash_frame", -1)
 	for u in 游戏.call("all_units"):
 		if u == null or not is_instance_valid(u) or u.is_queued_for_deletion():
 			continue
@@ -409,3 +415,66 @@ func _用例E_射程口径() -> void:
 	if 弓够9:
 		失败.append("E 射程：弩兵 9.2m（边缘 8.32）还能打到，射程超了")
 	_记("E_射程口径", 明细)
+
+
+# ===========================================================================
+# F · 多近战围攻（2026-11-07 玩家口径："多个近战靠近同一个敌人，只有一个在攻击"）
+# ===========================================================================
+
+## 四个步兵从四个方向围住一个血厚到打不死的目标，全体 `order_attack`，跑 8 秒。
+##
+## 判据用 `dbg_swings`（真的在射程内起手才 +1），不看动画也不看血量：
+##   · 老实现全队冲向敌人中心 → 互相顶开 → 只有最里面那个能稳定起手；
+##   · 现在按 instance id 分角度站到外圈，四个都应该打进节奏。
+## 另外顺带断言"没有人在射程外空挥"：起手次数上限 = 8s / 冷却 + 1，多出来就是口径破了。
+func _用例F_多近战围攻() -> void:
+	var 基: Vector3 = 关卡.call("base_center", 游戏.get("player_faction"))
+	var 心: Vector3 = 关卡.call("walkable_pos", 基 + Vector3(0.0, 0.0, 24.0))
+	var 靶 = _造单位("enemy_faction", &"archer", 心, 100000.0)
+	if 靶 == null:
+		return
+	var 兵们: Array = []
+	var 方位: Array = [Vector3(1.4, 0.0, 0.0), Vector3(-1.4, 0.0, 0.0),
+			Vector3(0.0, 0.0, 1.4), Vector3(0.0, 0.0, -1.4)]
+	for d in 方位:
+		var u = _造单位("player_faction", &"footman", 关卡.call("walkable_pos", 心 + d))
+		if u == null:
+			return
+		兵们.append(u)
+	# 先把起手计数清零（_造单位 可能已经打过）
+	for u in 兵们:
+		u.set("dbg_swings", 0)
+	for u in 兵们:
+		u.call("order_attack", 靶)
+	_走(8.0)
+
+	var 起手: Array = []
+	var 总计: int = 0
+	for u in 兵们:
+		var s: int = int(u.get("dbg_swings"))
+		起手.append(s)
+		总计 += s
+	var 参战人数: int = 0
+	for s in 起手:
+		if int(s) > 0:
+			参战人数 += 1
+	# 冷却 1.75s → 8 秒最多 5 下；留一点余量给起手时间
+	var 上限: int = 6
+	var 超限: bool = false
+	for s in 起手:
+		if int(s) > 上限:
+			超限 = true
+
+	var 明细: Dictionary = {
+		"四人起手次数": str(起手),
+		"起手总计": 总计,
+		"参战人数": "%d/4" % 参战人数,
+		"敌人剩余血量": "%.0f" % float(靶.hp),
+	}
+	if 参战人数 < 4:
+		失败.append("F 围攻：只有 %d/4 个近战能打到同一个目标（起手 %s）" % [参战人数, str(起手)])
+	if 总计 < 8:
+		失败.append("F 围攻：8 秒总共只起手 %d 次，攻击节奏没起来" % 总计)
+	if 超限:
+		失败.append("F 围攻：有人起手 %s 次，超过冷却理论上限（在射程外空挥）" % str(起手))
+	_记("F_多近战围攻", 明细)

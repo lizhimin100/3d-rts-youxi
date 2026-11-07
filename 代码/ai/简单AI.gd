@@ -631,7 +631,14 @@ func _workers() -> Array:
 
 ## 全部战斗单位（不含农民；include_workers=true 时连农民一起给，用于卡死扫描）
 func _army_units() -> Array:
-	return _combat_units(false)
+	# ★ 撤退中的人不进军队池（2026-11-07）：否则 `_manage_waves` / `_manage_patrol`
+	#   下一轮就把他重新拉去进攻 —— 表现是"残血兵撤到半路又冲回前线"，永远回不了家。
+	var out: Array = []
+	for u in _combat_units(false):
+		if u.has_method("is_retreating") and bool(u.call("is_retreating")):
+			continue
+		out.append(u)
+	return out
 
 func _combat_units(include_workers: bool) -> Array:
 	var out: Array = []
@@ -2371,19 +2378,24 @@ func _manage_retreat() -> void:
 		return
 	var home: Vector3 = RtsWorld.base_center(_faction)
 	var wounded: Array = []
-	for u in _army_units():
+	# ★ 用 _combat_units 而不是 _army_units：后者已经剔掉"撤退中"的人，
+	#   而撤退令需要能重复下发（比如半路被自己的另一条命令打断后要补一次）。
+	for u in _combat_units(false):
 		if u == null or not is_instance_valid(u) or u.def == null:
 			continue
 		if u.def.max_hp <= 0.0:
 			continue
 		if u.hp > u.def.max_hp * RETREAT_HP:
 			continue
+		if u.has_method("is_retreating") and bool(u.call("is_retreating")):
+			continue    # 已经在撤了，别每轮都重发
 		if u.global_position.distance_to(home) < 12.0:
 			continue    # 已经在家的圈子里，别再刷命令
 		wounded.append(u)
 	if wounded.is_empty():
 		return
-	_sched.move(wounded, home, "retreat")
+	# ★ 走 `retreat` 而不是 `move`：撤退途中完全不索敌，见 命令调度.retreat 的注释。
+	_sched.retreat(wounded, home, "retreat")
 
 ## 回防：只在"有敌人压到建筑门口"时触发，按 defend_ratio 抽人。
 ## 标签用 defend —— 调度器对防守命令不做重发节流（节流会直接导致基地被拆）。

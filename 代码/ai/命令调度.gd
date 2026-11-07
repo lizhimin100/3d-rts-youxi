@@ -221,6 +221,25 @@ func repair(builder, building: Node3D, label: String = "repair") -> bool:
 	return true
 
 
+## 残血撤退：走 `RtsUnit.order_retreat` 而不是普通 move。
+##
+## 为什么单独一个口（2026-11-07 玩家反馈「一被打就撤退，撤一半又冲回来」）：
+##   普通 move 在行军途中还有 45% 索敌半径，撤退的残血兵会被路过的敌人
+##   反复拽回去还手 → AI 下一轮又判它残血 → 再撤退，来回拉锯。
+##   `order_retreat` 会立一个 `_retreat` 标记，撤退途中**完全不索敌**。
+## 同样从本 tick 队列摘掉，避免后面的进攻/巡逻命令覆盖。
+func retreat(units: Array, point: Vector3, label: String = "retreat") -> void:
+	var ok: Array = available(units)
+	for u in ok:
+		if not u.has_method("order_retreat"):
+			continue
+		_queue.erase(u.get_instance_id())
+		u.call("order_retreat", point)
+		if Game.control != null:
+			Game.control.claim_ai([u])
+		_sent += 1
+
+
 # ===========================================================================
 # 真正发出
 # ===========================================================================

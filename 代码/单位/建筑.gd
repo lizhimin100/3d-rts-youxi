@@ -222,6 +222,55 @@ func work_spot_for(u: Node3D) -> Vector3:
 
 
 # ===========================================================================
+# 工地内部（魔兽兽族苦工口径，2026-11-07）
+# ===========================================================================
+## 正在工地**内部**干活的农民。外面的模型已隐藏、没有体积、不可被索敌。
+##
+## 为什么改成"进去建"：老实现要求农民站到占地外圈那一格，人多互相顶、
+## 贴墙/窄地站不上，进度就永远 0.00（玩家原话「以防无法建造建筑」）。
+## 现在只要走到墙面够得着就钻进来，位置判定彻底不参与成败。
+var builders_inside: Array = []
+
+
+## 农民钻进来（单位侧 `_enter_build_site` 调）
+func admit_builder(u: Node3D) -> void:
+	if u == null or not is_instance_valid(u):
+		return
+	if builders_inside.has(u):
+		return
+	builders_inside.append(u)
+
+
+## 单个农民离开（单位侧主动离开时调，只擦名单不回调）
+func release_builder(u: Node3D) -> void:
+	builders_inside.erase(u)
+
+
+## 把里面所有人都放出来（完工 / 被摧毁 / 工地作废）。
+##
+## 放进来的落点用 `work_spot_for()`：占格外圈的一格，按实例 id 分散，
+## 不会一群人叠在同一个点上；解析不到可走点时有 `walkable_pos` 兜底。
+func release_builders() -> void:
+	if builders_inside.is_empty():
+		return
+	var list: Array = builders_inside.duplicate()
+	builders_inside.clear()
+	for u in list:
+		if u == null or not is_instance_valid(u):
+			continue
+		# 落点用 work_spot_for（只要 def 还在就能算）。**不要**用 is_alive() 判：
+		# 被拆的工地也要把人放到墙外，否则农民从废墟中心冒出来。
+		var at: Vector3 = work_spot_for(u) if def != null else global_position
+		if u.has_method("exit_build_site"):
+			u.call("exit_build_site", at)
+
+
+## 里面有几个农民（诊断/UI 用；进度叠加已经是每帧各调一次 advance_construction）
+func builders_inside_count() -> int:
+	return builders_inside.size()
+
+
+# ===========================================================================
 # 建造进度
 # ===========================================================================
 
@@ -255,6 +304,9 @@ func _complete_construction() -> void:
 	progress = 1.0
 	_last_progress = 1.0
 	hp = minf(maxf(hp, def.max_hp * CONSTRUCTION_START_HP), def.max_hp)
+	# ★ 先把里面干活的农民放出来，再放完工特效：
+	#   否则他们会保持"模型隐藏"站在原地，玩家以为农民没了。
+	release_builders()
 	if visual != null:
 		visual.play("idle", 1.0)
 	# 完工表现：脚手架散落 + 尘土爆发 + 相机轻震 + 高光闪一下（都在 BuildSite 里）
@@ -874,6 +926,7 @@ func _die() -> void:
 	if _dying:
 		return
 	_abort_work()
+	release_builders()
 	super._die()
 	RtsWorld.clear_footprint(self)
 	# 还没盖完就被拆：脚手架跟着倒，别留一副好端端的架子立在那里

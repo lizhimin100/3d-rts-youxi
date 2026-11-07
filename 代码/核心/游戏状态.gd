@@ -456,6 +456,9 @@ func find_nearest_enemy(from: Vector3, faction: RtsFaction, radius: float) -> No
 			continue
 		if not other.is_alive():
 			continue
+		# 钻进工地内部的农民不可被锁定（魔兽口径：房子才是目标）
+		if other.has_method("can_be_targeted") and not bool(other.call("can_be_targeted")):
+			continue
 		var d: float = from.distance_squared_to(other.global_position)
 		if d < best_d:
 			best_d = d

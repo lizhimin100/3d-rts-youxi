@@ -228,6 +228,9 @@ var dbg_push_frames: int = 0
 var dbg_repath_count: int = 0
 ## 拥挤让位次数（目标区被同伴占满 → 就地停）。**不是**卡死兜底，是正常的让位行为
 var dbg_crowd_settles: int = 0
+## 起手次数（每 `_begin_swing` +1）。战斗自检用它验证"多个近战能同时攻击"，
+## 比看动画/看血量更直接：只有真的在射程内起手才会加。
+var dbg_swings: int = 0
 ## 全局兜底吸附次数（**必须为 0**；非 0 就是“多帧无解”了，日志会指名道姓）
 static var dbg_snap_fallbacks: int = 0
 
@@ -286,6 +289,20 @@ var _build_site: Node3D = null
 ## 两个农民抢同一格 → 互相推 → 谁都不在建造距离内。现在一人一格，天然不打架。
 var _work_spot: Vector3 = Vector3.ZERO
 var _work_spot_valid: bool = false
+## **已经钻进工地内部的建筑**（魔兽兽族苦工口径，2026-11-07）。
+##
+## 玩家口径：「农民建造改成兽族那样直接进建筑里面建造，以防无法建造」。
+## 老实现要求农民精确站到占地外圈那一格，人多/地形窄/被兵顶一下就永远差 30cm，
+## 进度一辈子 0.00 —— 玩家看到的是「农民站在工地旁边不动，房子不长」。
+## 现在：走到墙面够得着（_work_reach）就直接进去，模型隐藏、不参与分离/贴地，
+## 建筑完工 / 被拆 / 玩家改令时再放出来（见 `建筑.release_builders()`）。
+var _inside_site: Node3D = null
+
+# 撤退（AI 残血收队）
+## 正在撤退：撤退途中**不索敌、不还手**，一路跑回家。
+## 为什么单独一个状态：MOVE 分支默认有 45% 索敌半径，撤退中的兵会被路过的敌人
+## 反复拽回去还手（玩家看到的就是「一被打就撤退，撤一半又冲回来」）。
+var _retreat: bool = false
 ## 正在修理的己方建筑（Order.REPAIR 用）
 var _repair_target: Node3D = null
 ## 送资源要去的交汇点
@@ -406,6 +423,21 @@ func is_mobile() -> bool:
 	return def != null and def.kind == RtsConst.Kind.UNIT
 
 
+## 是否钻在工地内部（兽族苦工口径）。里面的人**没有体积、不可被索敌**。
+func is_inside_build() -> bool:
+	return _inside_site != null
+
+
+## 能不能被敌人锁定：钻进工地的农民不算（房子才是目标）。
+func can_be_targeted() -> bool:
+	return _inside_site == null and is_alive()
+
+
+## 是否正在撤退（AI 残血收队）。撤退途中不索敌、不还手，免得"撤一半又冲回去"。
+func is_retreating() -> bool:
+	return _retreat
+
+
 ## 是否闲着（AI 派活用）
 func is_idle_like() -> bool:
 	return not _dying and order == RtsConst.Order.NONE
@@ -476,7 +508,9 @@ func take_damage(amount: float, _type: int, from: Node3D) -> void:
 	# ★ 挨打立刻还手（2026-11-01）：清掉"刚下过移动令"的免索敌宽限，
 	#   并把攻击者锁成目标 —— 但只在**够得着**的时候锁，
 	#   否则撤退中的兵会被一次流弹拽回去追人（手感比"不还手"更差）。
-	if from != null and is_instance_valid(from):
+	# ★ 撤退中不还手（见 `order_retreat`）：残血兵被流弹擦一下就把整条撤退命令丢掉，
+	#   玩家看到的就是"一被打就撤、撤两步又冲回去"。
+	if from != null and is_instance_valid(from) and not _retreat:
 		var tf: RtsFaction = from.get("faction") as RtsFaction
 		if tf != null and faction != null and faction.is_enemy_of(tf) \
 				and Game.is_node_visible_to(faction, from):
@@ -513,10 +547,59 @@ func _flee(_from: Node3D) -> void:
 	order = RtsConst.Order.NONE
 
 
+# ===========================================================================
+# 撤退（AI 残血收队）
+# ===========================================================================
+
+## 到家判定（米）：进这个圈就算收队完成，可被 AI 重新编入进攻队列
+const RETREAT_ARRIVE: float = 6.0
+## 回血后重新参战的门槛（最大血比例）。低于它就继续待在家。
+const RETREAT_RECOVER: float = 0.62
+## 基地圈内的回血速度（每秒最大血比例）。没有这层，"残血→撤退→又残血"会无限循环：
+## AI 每次把 32% 血的兵拉去进攻，打两下又撤，玩家看到的是整支部队在原地打转。
+const HOME_REGEN: float = 0.06
+
+## AI 叫这个单位撤退回家。
+##
+## 为什么不是简单一条 `order_move(home)`：MOVE 分支默认还有 45% 索敌，
+## 撤退中的兵会被路过敌人反复拽回去还手。这里把 `_retreat` 立起来，
+## `_update_order` 的 MOVE 分支会完全跳过索敌（见那里的注释）。
+func order_retreat(home: Vector3) -> void:
+	if _dying:
+		return
+	order_move(home)          # order_move 会清 _retreat，所以下面再立一次
+	_retreat = true
+	_acquire_grace = maxf(_acquire_grace, 3.0)
+	_swinging = false
+	target = null
+
+
+## 撤退中的每帧维护：到家 / 血回来了 → 解除。基地圈内缓慢回血。
+func _tick_retreat(dt: float) -> void:
+	if def == null or faction == null:
+		_retreat = false
+		return
+	var home: Vector3 = RtsWorld.base_center(faction)
+	if _flat_dist(home) <= RETREAT_ARRIVE:
+		# 在自家圈里：回血（只回到门槛，不白送满血）
+		var cap: float = def.max_hp * RETREAT_RECOVER
+		if hp < cap:
+			hp = minf(cap, hp + def.max_hp * HOME_REGEN * dt)
+		if hp >= cap * 0.999:
+			_retreat = false
+			_acquire_grace = 0.0
+			if order == RtsConst.Order.MOVE:
+				order = RtsConst.Order.NONE
+				state = RtsConst.State.IDLE
+
+
 func _die() -> void:
 	if _dying:
 		return
 	_dying = true
+	# 死在工地里（模型是隐藏的）：先把自己从工地名单里摘掉并恢复可见，
+	# 否则建筑完工时会对着一个已 free 的引用 release。
+	_leave_inside_site()
 	state = RtsConst.State.DEAD
 	target = null
 	order = RtsConst.Order.NONE
@@ -603,6 +686,7 @@ func order_move(pos: Vector3) -> void:
 		return
 	order = RtsConst.Order.MOVE
 	target = null
+	_retreat = false
 	_flee_t = 0.0
 	_move_interrupted = false
 	_cancel_swing()
@@ -652,9 +736,10 @@ func order_attack(t: Node3D) -> void:
 		return
 	order = RtsConst.Order.ATTACK
 	target = t
+	_retreat = false
 	_flee_t = 0.0
 	_move_interrupted = false
-	_go_to(t.global_position, true)
+	_go_to(_attack_spot(t), true)
 
 
 ## 攻击移动：路上遇敌就打，打完继续推进
@@ -1035,6 +1120,12 @@ func _process_inner(delta: float) -> void:
 
 	_tick_timers(dt)
 
+	# ★ 钻在工地内部：只推进建造进度，移动/分离/贴地/动画全部跳过
+	#   （模型已经隐藏，还让它参与分离力会把旁边的兵顶开 —— 人在房子里不该有体积）。
+	if _inside_site != null and order == RtsConst.Order.BUILD:
+		_tick_inside_build(dt)
+		return
+
 	# 施法中：只数前摇，别的都不做
 	if state == RtsConst.State.CAST:
 		_update_cast(dt)
@@ -1047,6 +1138,12 @@ func _process_inner(delta: float) -> void:
 	var _q0: int = Time.get_ticks_usec()
 	_update_order(dt)
 	RtsUnit.dbg_order += Time.get_ticks_usec() - _q0
+	# ★ 刚刚在这一帧钻进工地：后面的移动/分离/贴地全部跳过。
+	#   不跳的话，`_update_anim` 里"离开矿洞就把模型显示回来"的兜底会立刻
+	#   把刚隐藏的模型顶回可见（建造自检抓到的 `隐藏 0/4`）。
+	if _inside_site != null and order == RtsConst.Order.BUILD:
+		_update_anim()
+		return
 	_q0 = Time.get_ticks_usec()
 	_update_move(dt)
 	_update_attack(dt)
@@ -1099,11 +1196,19 @@ func _tick_extra(_dt: float) -> void:
 # ===========================================================================
 
 func _update_order(dt: float) -> void:
+	# 指令已经不是 BUILD 了 → 先从工地里出来（玩家中途点了移动/攻击）
+	if _inside_site != null and order != RtsConst.Order.BUILD:
+		_leave_inside_site()
+
 	# --- 逃跑优先（农民往基地跑）---
 	if _flee_t > 0.0:
 		state = RtsConst.State.MOVE
 		_go_to(RtsWorld.base_center(faction))
 		return
+
+	# --- 撤退（AI 残血收队）：一路跑，不索敌、不还手 ---
+	if _retreat:
+		_tick_retreat(dt)
 
 	# 巡逻往返：到了端点就掉头
 	_tick_patrol()
@@ -1114,7 +1219,11 @@ func _update_order(dt: float) -> void:
 			# 打完 / 敌人跑出射程就继续走完原指令。
 			# ★ 半径只给 45%：满额 11m 会让"撤退"变成"走两步又折回去打"，
 			#   玩家感受就是"指令不跟手、被旧攻击牵扯"。
-			_acquire_timed(dt, 0.45)
+			# ★ 撤退中完全不索敌（2026-11-07）：否则残血兵一路被路过的敌人
+			#   反复拽回去还手，玩家看到的就是"一被打就撤退、撤一半又冲回来"。
+			if not _retreat:
+				_acquire_timed(dt, 0.45)
+
 			if _moving:
 				state = RtsConst.State.MOVE
 			elif _move_interrupted:
@@ -1147,12 +1256,16 @@ func _update_order(dt: float) -> void:
 			_order_return_res_tick(dt)
 		RtsConst.Order.HOLD:
 			state = RtsConst.State.IDLE
-			_acquire_timed(dt)
+			if not _retreat:
+				_acquire_timed(dt)
 		_:
 			# 待机：挨打时自己还手（不主动跑出去找架打）
 			if target == null or not is_instance_valid(target) or not target.is_alive():
 				target = null
-			_acquire_timed(dt)
+			# 撤退中（已经到家、血还没回满）不主动索敌：
+			# 否则它会在自家门口又盯上一个路过的敌人，转头冲出去 —— 又是一次"撤了又回来"。
+			if not _retreat:
+				_acquire_timed(dt)
 
 
 ## **状态归约（每帧唯一出口）**：把前面各分支零散写的 `state` 收一次口。
@@ -1184,7 +1297,10 @@ func _order_attack(_dt: float) -> void:
 		return
 	if _target_gap(target) > _attack_reach(target):
 		if is_mobile():
-			_go_to(_attack_spot(target) if target is RtsBuilding else target.global_position)
+			# 同 _update_attack：落定在射程外一点点时必须强制重走最后半步
+			var reach: float = _attack_reach(target)
+			var dist: float = _target_gap(target)
+			_go_to(_attack_spot(target), _arrived_goal and dist <= reach + 1.2)
 			state = RtsConst.State.MOVE
 
 
@@ -1403,28 +1519,36 @@ func _work_reach() -> float:
 	return maxf(1.5, get_radius() + 0.85)
 
 
-## 建造：走到工地旁 → 播 build 动画 → 推进进度（多农民叠加）
+## 建造：走到工地旁 → **钻进工地内部** → 播 build 动画 → 推进进度（多农民叠加）
+##
+## ★ 2026-11-07 玩家口径：改成魔兽兽族苦工那样"直接进建筑里面建"。
+##   老实现（站在占地外圈抡锤）在两个地方必然失败：
+##     ① 人多：两个农民互相顶，谁都站不到判定圈里，进度永远 0.00；
+##     ② 地形窄/贴墙：`work_spot_for` 解析出的落点根本站不上去。
+##   现在只要走到「墙面够得着」就直接进去：模型隐藏、没有体积、不参与分离，
+##   里面的人稳稳推进度。完工/被拆/改令时由 `建筑.release_builders()` 放出来。
 func _order_build_tick(dt: float) -> void:
 	if _build_site == null or not is_instance_valid(_build_site):
+		_leave_inside_site()
 		order = RtsConst.Order.NONE
 		state = RtsConst.State.IDLE
 		_work_spot_valid = false
 		return
 	var site: RtsBuilding = _build_site as RtsBuilding
 	if site == null or site.is_constructed or not site.is_alive():
+		_leave_inside_site()
 		order = RtsConst.Order.NONE
 		_build_site = null
 		state = RtsConst.State.IDLE
 		_work_spot_valid = false
 		return
-	# 够得着墙面就干活（阈值随体型走，见 _work_reach 的注释）
+	# 够得着墙面就直接钻进去（阈值随体型走，见 _work_reach 的注释）
 	var reach: float = _work_reach()
 	var d: float = site.distance_to_footprint(global_position)
 	if d <= reach:
-		_stop_moving()
-		state = RtsConst.State.BUILD
-		_face_pos(site.global_position, dt)
-		site.advance_construction(dt, self)
+		if _inside_site != site:
+			_enter_build_site(site)
+		_tick_inside_build(dt)
 		return
 	# 太远：走自己那一格（第一次进来算一次，之后不再变）
 	if not _work_spot_valid:
@@ -1438,6 +1562,75 @@ func _order_build_tick(dt: float) -> void:
 	# 站位本身够不着墙面（地形/别的建筑卡住）→ 退而求其次，直接朝工地中心走
 	if not _moving and site.distance_to_footprint(global_position) > reach:
 		_go_to(site.global_position)
+
+
+# ===========================================================================
+# 工地内部（兽族苦工口径）
+# ===========================================================================
+
+## 钻进工地：登记 + 隐藏模型 + 停掉一切移动表现。
+func _enter_build_site(site: RtsBuilding) -> void:
+	if site == null or not is_instance_valid(site):
+		return
+	_leave_inside_site()
+	_inside_site = site
+	_stop_moving()
+	_swinging = false
+	_windup_t = 0.0
+	state = RtsConst.State.BUILD
+	if site.has_method("admit_builder"):
+		site.call("admit_builder", self)
+	# 用 visible 而不是 scale=0：缩放到 0 会让部分模型法线退化，恢复时闪一下。
+	if visual != null:
+		visual.visible = false
+
+
+## 从工地里出来（本单位主动离开：改令 / 工地没了）。
+func _leave_inside_site() -> void:
+	if _inside_site == null:
+		return
+	var site: Node3D = _inside_site
+	_inside_site = null
+	if site != null and is_instance_valid(site) and site.has_method("release_builder"):
+		site.call("release_builder", self)
+	_restore_after_inside()
+
+
+## **被建筑反向叫出来**（完工 / 被拆）：建筑那边已经把名单清了，这里只做本单位收尾。
+## `at` = 放出来的落点（建筑给的占格外圈一格）；零向量 = 就地找可站点。
+func exit_build_site(at: Vector3) -> void:
+	var was_inside: bool = _inside_site != null
+	_inside_site = null
+	_restore_after_inside()
+	var p: Vector3 = at if at != Vector3.ZERO else global_position
+	global_position = RtsWorld.ground(RtsWorld.walkable_pos(p))
+	if was_inside:
+		# 工地已经完工/没了：手上的 BUILD 指令到此为止，别下一帧又去钻一栋没了的房子
+		if _build_site == null or not is_instance_valid(_build_site):
+			order = RtsConst.Order.NONE
+			state = RtsConst.State.IDLE
+
+
+func _restore_after_inside() -> void:
+	if visual != null:
+		visual.visible = true
+	_stop_moving()
+	_work_spot_valid = false
+	_speed = 0.0
+
+
+## 在工地内部：每帧只推进进度。移动/分离/贴地/动画全部跳过（模型已隐藏）。
+func _tick_inside_build(dt: float) -> void:
+	var site: RtsBuilding = _inside_site as RtsBuilding
+	if site == null or not is_instance_valid(site) or site.is_constructed or not site.is_alive():
+		_leave_inside_site()
+		order = RtsConst.Order.NONE
+		_build_site = null
+		state = RtsConst.State.IDLE
+		return
+	_stop_moving()
+	state = RtsConst.State.BUILD
+	site.advance_construction(dt, self)
 
 
 ## 修理：走到建筑旁 → 播 build 动画 → 让建筑按秒回血（木材由建筑侧扣）
@@ -1655,6 +1848,11 @@ func _spot_taken(pos: Vector3, r: float) -> bool:
 		if u == null or u.def == null or not u.is_alive():
 			continue
 		if not u.is_mobile():
+			continue
+		# ★ 敌人不算"占位"（2026-11-07）：这条判据的语义是"友军已经站了这格，我换一格"，
+		#   而攻击站位本来就该贴到敌人身上。把敌人算进来会让包围点被推到 1.15m 外，
+		#   近战于是又落在射程外 —— 这是"多个近战只有一个能打"的第三个根因。
+		if faction != null and u.faction != null and faction.is_enemy_of(u.faction):
 			continue
 		var dx: float = pos.x - u.global_position.x
 		var dz: float = pos.z - u.global_position.z
@@ -2002,6 +2200,9 @@ func _update_separation(dt: float) -> void:
 		var other: RtsUnit = o
 		if other.def == null:
 			continue
+		# 钻进工地里的农民没有体积：别让旁边的兵被一个"看不见的人"顶开
+		if other.is_inside_build():
+			continue
 		var min_d: float = (my_r + other.def.body_radius) * SEPARATION_FACTOR
 		if min_d <= 0.0001:
 			continue
@@ -2015,8 +2216,11 @@ func _update_separation(dt: float) -> void:
 		var share: float = 1.0
 		if other.is_mobile():
 			var ow: float = other._anchor_weight()
-			if ow < 1.0 or my_w < 1.0:
-				share = clampf(2.0 * my_w / maxf(my_w + ow, 0.0001), 0.0, 1.0)
+			# ★ 自己承担的位移比例 = 自己的权重 / 双方权重之和。
+			#   老实现写的是 `2.0 * my_w / (my_w + ow)` —— 两个普通兵会各推 100%，
+			#   合计 200%，一重叠就超调弹开，形成"顶出射程 → 走回来 → 再顶出去"的往复。
+			#   这是"多个近战只有一个能打到人"的第二个根因（第一个是全员冲向目标中心）。
+			share = clampf(my_w / maxf(my_w + ow, 0.0001), 0.0, 1.0)
 		if d < 0.0001:
 			# 完全重合：按实例 ID 给个确定方向，别抖
 			var ang: float = float(get_instance_id() % 628) * 0.01
@@ -2133,11 +2337,22 @@ func _target_gap(t: Node3D) -> float:
 	return maxf(d, 0.0)
 
 
-## 打建筑时该站的**墙外一圈**的位置（按本单位 id 在朝向上散开 ±26°）。
-## 不分角度的话，一队近战会全挤在建筑正对着自己的那一面，互相顶。
+## 交战站位：**不要所有人都冲向敌人中心**，而是沿目标外圈各站一边。
+##
+## 建筑：墙面外扩一圈，按实例 id 在朝向上散开 ±26°（一队近战不会全挤在同一面墙）。
+##
+## 单位（2026-11-07 新增）：玩家口径「多个近战靠近同一个敌人，只有一个能正常攻击」。
+##   根因是所有兵都 `_go_to(敌人中心)`，解析出的落点完全重叠 → 分离力把外圈的人
+##   顶出射程 → 它再往中心挤 → 又被顶出去。只有最里面那个能稳定贴着。
+##   现在每个人站到自己**来向**那一侧的外圈（中心距 = 目标半径 + 自身半径 + 射程×0.85），
+##   天然围成一圈；同一方向来的两个兵再按 id 错开一点角度。
 func _attack_spot(t: Node3D) -> Vector3:
+	if t == null or not is_instance_valid(t):
+		return global_position
 	var b := t as RtsBuilding
-	if b == null or b.def == null:
+	if b == null:
+		return _surround_spot(t)
+	if b.def == null:
 		return t.global_position
 	var fp: Vector2i = b.def.footprint
 	var hx: float = float(maxi(fp.x, 1)) * 0.5
@@ -2155,6 +2370,34 @@ func _attack_spot(t: Node3D) -> Vector3:
 	var tz: float = hz / maxf(absf(dir.z), 0.0001)
 	var out: float = minf(tx, tz) + 0.55
 	return t.global_position + dir * out
+
+
+## 单位目标的外圈站位（包围点）。
+##
+## ★ 半径必须把 `_update_move` 的到点容差算进去（这是"近战站在敌人旁边不动手"的真凶）：
+##   单位在离落点 ARRIVE_TOLERANCE(0.35m) 时就 `_settle()` 落定，落定后闩锁不允许重启。
+##   如果站位点正好压在射程边缘，落定位置就必然落在射程**外** 0.35m，
+##   于是每帧算出来"还差 5cm 够不着"，但既不攻击也不移动 —— 玩家看到的是集体罚站。
+##   所以要把落点往目标怀里收 `ARRIVE_TOLERANCE + 0.08`，让"最远的落定位置"仍在射程内。
+func _surround_spot(t: Node3D) -> Vector3:
+	if t == null or not is_instance_valid(t):
+		return global_position
+	var tr: float = 0.0
+	if t.has_method("get_radius"):
+		tr = float(t.call("get_radius"))
+	var reach: float = _attack_reach(t)
+	# 想要的"边缘间隙"：扣掉到点容差后仍有余量；近战会收到 ≈0.02，靠分离力自然分开
+	var gap_want: float = clampf(reach - ARRIVE_TOLERANCE - 0.08, 0.02, maxf(reach * 0.9, 0.02))
+	var want: float = tr + get_radius() + gap_want
+	var to_self: Vector3 = global_position - t.global_position
+	to_self.y = 0.0
+	if to_self.length_squared() < 0.0001:
+		# 完全重合：按 id 给一个确定方向（同一帧不会全挤在 0°）
+		var a0: float = float(get_instance_id() % 628) * 0.01
+		to_self = Vector3(cos(a0), 0.0, sin(a0))
+	var side: float = (fposmod(float(get_instance_id() % 97) * 0.01, 1.0) - 0.5) * 0.55
+	var dir: Vector3 = to_self.normalized().rotated(Vector3.UP, side)
+	return t.global_position + dir * want
 
 
 ## 站位间隙（采集/建造用）：attack_range/2 + 双方半径 + 一点空隙
@@ -2242,10 +2485,10 @@ func _acquire(dt: float, radius_scale: float = 1.0) -> void:
 func _update_attack(dt: float) -> void:
 	if def == null or not def.can_attack():
 		return
-	# 干活 / 逃跑时不打
+	# 干活 / 逃跑 / 撤退时不打
 	if order == RtsConst.Order.GATHER or order == RtsConst.Order.BUILD:
 		return
-	if _flee_t > 0.0:
+	if _flee_t > 0.0 or _retreat:
 		return
 
 	# 前摇中：数到点就出手
@@ -2278,9 +2521,18 @@ func _update_attack(dt: float) -> void:
 		# 行军 / 攻击移动：原目的地先记下来，打完还要接着走
 		if order == RtsConst.Order.MOVE or order == RtsConst.Order.ATTACK_MOVE:
 			_interrupt_move_for_combat()
-		# ★ 打建筑走"墙外一圈的站位"，不走中心。
-		#   走中心 → 解析到最近可站点 → 全队抢同一格 → 贴墙互顶（2026-11-06 玩家口径）。
-		_go_to(_attack_spot(target) if target is RtsBuilding else target.global_position)
+		# ★ 打建筑走"墙外一圈的站位"，打单位走"包围点"，都不走中心。
+		#   走中心 → 全队抢同一格 → 互相顶开 → 只有最里面那个能持续攻击
+		#   （2026-11-06 打建筑的玩家口径 / 2026-11-07 打单位的玩家口径）。
+		#
+		# ★★ **最后一小步必须强制重走**（2026-11-07，这是"近战站在敌人旁边不动手"的真凶）：
+		#   `_update_move` 的到点容差是 0.35m，而到点闩锁又会把"离目标 0.9m 内"的
+		#   重新起步全部拦掉。于是单位在离敌人 0.3m（射程外一点点）处落定，
+		#   之后每帧算出来"还差 0.05m 够不着"，但 `_go_to` 被闩锁挡住 → 永远挥空。
+		#   这里对"已经落定、但只差一点点"的情况给一次强制：真的迈完最后半步。
+		var spot: Vector3 = _attack_spot(target)
+		var last_step: bool = _arrived_goal and dist <= reach + 1.2
+		_go_to(spot, last_step)
 		state = RtsConst.State.MOVE
 		return
 
@@ -2326,6 +2578,7 @@ func _begin_swing() -> void:
 		return
 	_swinging = true
 	_attack_cd = maxf(def.attack_cooldown, 0.1)
+	dbg_swings += 1
 	_windup_t = _attack_cd * clampf(Cfg.game.attack_windup, 0.05, 0.95)
 	state = RtsConst.State.ATTACK
 	if visual != null:
@@ -2592,6 +2845,12 @@ func _deposit() -> void:
 
 func _update_anim() -> void:
 	if visual == null or def == null:
+		return
+	# ★ 钻在工地里：模型必须一直是隐藏的。
+	#   下面"离开矿洞 → visual.visible = true"的兜底判据是 `not visual.visible`，
+	#   它会把人从房子里"显示"出来（建造自检的 `隐藏 0/4` 就是它）。
+	if _inside_site != null:
+		visual.visible = false
 		return
 	var ratio: float = 1.0
 	var ms: float = _max_speed()
