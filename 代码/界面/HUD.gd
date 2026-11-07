@@ -22,7 +22,8 @@ extends CanvasLayer
 ##      **必须保证中文能显示**，否则一屏方块，验收直接不过。
 ##
 ## 显隐：`F9` 一键收起/放出整层 HUD（录视频、看战场用），菜单里也有同一条；
-##       `--ui-hidden` 开局就是干净的。
+##       `--ui-hidden` 开局就收起界面（**保留鼠标光标**：拍视频还要靠它拖镜头）；
+##       `--all-hidden` 界面 + 鼠标光标全隐藏（成片/干净截图用）。
 
 const Spec := preload("res://代码/界面/界面规格.gd")
 
@@ -128,6 +129,8 @@ var _slide_tw: Dictionary = {}
 const SLIDE_DUR := 0.22
 ## 整层 HUD 是否显示（F9 切换；录视频时收起）
 var _hud_on: bool = true
+## 鼠标光标是否要一直藏着（`--all-hidden` 置位；每帧兜一次，防窗口失焦被系统放出来）
+var _cursor_hidden: bool = false
 ## 隐藏 HUD 后那条 2 秒淡出的提示（挂在 CanvasLayer 上，不在 root 里，
 ## 否则它会跟着一起被藏掉，玩家不知道按什么恢复）
 var _hide_hint: Label = null
@@ -235,11 +238,32 @@ func _ready() -> void:
 	_refresh_card(true)
 	_qa_select_hook()
 	_qa_extra_hooks()
-	# --ui-hidden：开局就把整层界面收起来（录演示视频用，不需要手动按 F9）
-	if "--ui-hidden" in OS.get_cmdline_user_args():
-		set_hud_visible(false, false)
+	# --- 录演示视频的两种"干净画面"口径（2026-11-07 玩家要求）---
+	#   --ui-hidden  ：只收界面，**保留鼠标光标**。拍摄时还要靠鼠标拖镜头 / 滚轮缩放，
+	#                  光标藏了就不知道自己指在哪 —— 这是拍摄的默认档。
+	#   --all-hidden ：界面 + 光标全隐藏。成片 / 干净截图用，画面里一个杂质都不留。
+	#   两个参数可以同时写（等价于 --all-hidden）；单独写 --all-hidden 也是全隐藏。
+	_apply_film_flags()
 	if OS.has_environment("UI_AUDIT"):
 		_ui_audit()
+
+
+## 录视频用的显隐开关。**光标口径只在这里定**，别处不要再碰 Input.set_mouse_mode
+## （否则 F9 一按、窗口一失焦就会被改回去，现场表现为"录着录着鼠标又冒出来"）。
+func _apply_film_flags() -> void:
+	var args := OS.get_cmdline_user_args()
+	var hide_ui: bool = "--ui-hidden" in args or "--all-hidden" in args
+	var hide_cursor: bool = "--all-hidden" in args
+	if hide_ui:
+		set_hud_visible(false, false)
+	_cursor_hidden = hide_cursor
+	Input.set_mouse_mode(Input.MOUSE_MODE_HIDDEN if hide_cursor
+		else Input.MOUSE_MODE_VISIBLE)
+	if hide_ui:
+		# 读回来再报：日志里写的是**实际生效**的光标状态，不是我们"希望"的状态。
+		var m: int = Input.get_mouse_mode()
+		print("[HUD] 拍摄模式：界面已收起，鼠标光标%s" % (
+			"已隐藏" if m == Input.MOUSE_MODE_HIDDEN else "可见（保留，可拖镜头）"))
 
 
 ## 临时版面审计（本机 QA 用，UI_AUDIT=1 才跑）：越界 / 溢出父容器 / 文字被裁，全打出来
@@ -280,6 +304,10 @@ static var dbg_usec: int = 0
 
 func _process(delta: float) -> void:
 	var _t0: int = Time.get_ticks_usec()
+	# 光标兜底：`--all-hidden` 下窗口失焦/切回来会被系统重新放出光标，
+	# 只在这里纠一次（正常帧是一次整数比较，量不出开销）。
+	if _cursor_hidden and Input.get_mouse_mode() != Input.MOUSE_MODE_HIDDEN:
+		Input.set_mouse_mode(Input.MOUSE_MODE_HIDDEN)
 	_process_inner(delta)
 	RtsHud.dbg_usec += Time.get_ticks_usec() - _t0
 
