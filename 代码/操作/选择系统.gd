@@ -740,6 +740,10 @@ func _selectable_units() -> Array:
 			continue
 		if not (n as RtsUnit).is_alive():
 			continue
+		# ★ 钻在工地里的农民不参与世界点选（玩家口径 2026-11-07）：
+		#   模型是隐藏的，用鼠标点它等于在点空气；只能点建筑面板上的农民图标选中。
+		if (n as RtsUnit).is_inside_build():
+			continue
 		out.append(n)
 	for h in Game.all_harvestables():
 		if h == null or not is_instance_valid(h):
@@ -786,6 +790,9 @@ static func is_box_unit(n: Node, player: RtsFaction) -> bool:
 	if u.def.kind != RtsConst.Kind.UNIT:
 		return false
 	if not u.is_alive():
+		return false
+	# 工地里的农民不能框选：他在房子里，框到他会让玩家以为「选中了一队农民」却在原地不动
+	if u.is_inside_build():
 		return false
 	return u.faction == player
 

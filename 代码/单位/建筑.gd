@@ -270,6 +270,48 @@ func builders_inside_count() -> int:
 	return builders_inside.size()
 
 
+## 里面还在干活的农民（UI 的「农民图标条」用）。**返回副本**：
+## 界面会拿它去选择/画图标，不能让它和 `release_builders` 抢同一个数组。
+func builder_units() -> Array:
+	var out: Array = []
+	for u in builders_inside:
+		if u != null and is_instance_valid(u) and u.is_alive():
+			out.append(u)
+	return out
+
+
+## 这栋楼是不是「还没盖完的工地」（UI / 命令卡判断入口）
+func is_under_construction() -> bool:
+	return not is_constructed and not _dying
+
+
+## **取消建造**（玩家口径 2026-11-07：点建造中的楼 → 可以取消这栋楼）。
+##
+## 和「被摧毁」走同一套收尾，但**不当作死亡**：不退尸体、不发 unit_died（不参与胜负）、
+## 全额退款（魔兽口径：取消工地 = 把木料搬回去），里面的农民原地放出来。
+##
+## 调用方：建筑面板的「取消建造」按钮 / 指令系统；返回是否真的取消了。
+func cancel_construction() -> bool:
+	if not is_under_construction():
+		return false
+	if faction != null and def != null:
+		Game.add_resource(faction, def.gold_cost, def.wood_cost)
+	# 先把人放出来（release_builders 会给每人算一个占格外圈的落点）
+	release_builders()
+	_abort_work()
+	# 工地表现：脚手架拆掉（abort 是「塌」，这里也是同一套拆架子）
+	if _site_fx != null and is_instance_valid(_site_fx):
+		_site_fx.call("abort")
+		_site_fx = null
+	RtsWorld.clear_footprint(self)
+	Game.unregister(self)
+	if faction != null and faction.is_player:
+		Game.toast("已取消建造：%s（资源已退还）" % (def.display_name if def != null else "建筑"),
+				Color(0.92, 0.88, 0.62))
+	queue_free()
+	return true
+
+
 # ===========================================================================
 # 建造进度
 # ===========================================================================

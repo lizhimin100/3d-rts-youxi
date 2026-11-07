@@ -98,6 +98,7 @@ static func pathfinder() -> GridPathfinder:
 
 
 ## 取一条路径（**已带地形高度**）。不可达返回空数组。
+## radius < 0 = 寻路器的默认身位；大身位单位应传自己的净空（见 关卡.find_path 注释）。
 ## 性能计数（`--perf-long` 的探针读它）：这一局一共算了几次路、花了多少微秒。
 ## 为什么放在这里：`find_path` 是**全项目唯一的寻路入口**，A* 的开销只有在这里量得准。
 static var dbg_path_calls: int = 0
@@ -129,25 +130,25 @@ static func take_path_budget() -> bool:
 	return true
 
 
-static func find_path(from: Vector3, to: Vector3) -> PackedVector3Array:
+static func find_path(from: Vector3, to: Vector3, radius: float = -1.0) -> PackedVector3Array:
 	var t0: int = Time.get_ticks_usec()
 	dbg_path_calls += 1
-	var r: PackedVector3Array = _find_path_impl(from, to)
+	var r: PackedVector3Array = _find_path_impl(from, to, radius)
 	dbg_path_usec += Time.get_ticks_usec() - t0
 	return r
 
 
-static func _find_path_impl(from: Vector3, to: Vector3) -> PackedVector3Array:
+static func _find_path_impl(from: Vector3, to: Vector3, radius: float = -1.0) -> PackedVector3Array:
 	var lv: Node3D = level()
 	if lv != null and lv.has_method("find_path"):
-		var out: Variant = lv.call("find_path", from, to)
+		var out: Variant = lv.call("find_path", from, to, radius)
 		if out is PackedVector3Array:
 			return out
 		return PackedVector3Array()
 	var pf: GridPathfinder = pathfinder()
 	if pf != null:
 		# 兜底：自己按地形补 y
-		var raw: PackedVector3Array = pf.find_path(from, to)
+		var raw: PackedVector3Array = pf.find_path(from, to, radius)
 		var fixed := PackedVector3Array()
 		for p in raw:
 			fixed.append(snap_y(p))
@@ -276,6 +277,16 @@ static func clear_footprint(building: Node3D) -> void:
 	if d == null:
 		return
 	pf.mark_blocked_rect(pf.world_to_cell(building.global_position), d.footprint, false)
+
+
+## 释放一个道具/建筑的占格（**树砍倒 / 建筑拆除必须走这里**，不要自己 mark_blocked）。
+##
+## 关卡侧按"格子引用计数"放：同一格被邻树/岩石/建筑/陡坡占着时不会一起打开。
+## 没关卡（自检环境）就什么都不做 —— 宁可不放，也不要凭空开出一条穿树通道。
+static func release_prop(n: Node) -> void:
+	var lv: Node3D = level()
+	if lv != null and lv.has_method("release_prop"):
+		lv.call("release_prop", n)
 
 
 ## 最近的可采集物（走 Game 的资源注册表，不遍历场景）

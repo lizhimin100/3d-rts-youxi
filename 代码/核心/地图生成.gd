@@ -36,6 +36,9 @@ const EDGE_MARGIN: float = 16.0
 const EDGE_START: float = 82.0            ## 外圈山脊起点（切比雪夫距离）
 const POND_RADIUS: float = 7.0            ## 峡谷水潭半径
 
+## ★ 道具占格的**唯一口径**（和 地图加载器 / 关卡 共用，见 代码/寻路/占格规则.gd）
+const 占格 := preload("res://代码/寻路/占格规则.gd")
+
 
 ## 生成结果
 class MapData:
@@ -1443,12 +1446,13 @@ static func _decor_size(data: MapData, kind: String) -> int:
 ## 道具阻挡 + 最终连通性
 ## ===========================================================================
 static func _apply_prop_blocks(data: MapData) -> void:
+	var w: int = int(data.size)
 	for t in data.trees:
-		_block_circle(data, t, 0.95)
+		占格.apply_to_mask(data.walkable, 占格.tree_cells(w, t))
 	for m in data.mines:
-		_block_rect_cells(data, m, 4, 4)
+		占格.apply_to_mask(data.walkable, 占格.rect_cells(w, m, 占格.MINE_CELLS.x, 占格.MINE_CELLS.y))
 	for r in data.rocks:
-		_block_circle(data, r["pos"], 1.05 * float(r["scale"]))
+		占格.apply_to_mask(data.walkable, 占格.rock_cells(w, r["pos"], float(r["scale"])))
 
 
 ## 把没有可走邻格的树删掉（森林内部被自己封死的树，农民够不到）
@@ -1629,36 +1633,6 @@ static func _near_rocks(rocks: Array, p: Vector2, radius: float) -> bool:
 			return true
 	return false
 
-
-static func _block_circle(data: MapData, pos: Vector2, radius: float) -> void:
-	var w: int = int(data.size)
-	var half: float = data.size * 0.5
-	var cx0: int = int(pos.x + half)
-	var cz0: int = int(pos.y + half)
-	var r: int = ceili(radius)
-	for dz in range(-r, r + 1):
-		for dx in range(-r, r + 1):
-			if dx * dx + dz * dz > r * r:
-				continue
-			var cx: int = cx0 + dx
-			var cz: int = cz0 + dz
-			if cx < 0 or cz < 0 or cx >= w or cz >= w:
-				continue
-			data.walkable[cz * w + cx] = 0
-
-
-static func _block_rect_cells(data: MapData, pos: Vector2, sx: int, sz: int) -> void:
-	var w: int = int(data.size)
-	var half: float = data.size * 0.5
-	var cx0: int = int(pos.x + half) - sx / 2
-	var cz0: int = int(pos.y + half) - sz / 2
-	for dz in range(sz):
-		for dx in range(sx):
-			var cx: int = cx0 + dx
-			var cz: int = cz0 + dz
-			if cx < 0 or cz < 0 or cx >= w or cz >= w:
-				continue
-			data.walkable[cz * w + cx] = 0
 
 # ===========================================================================
 # 竞技场地图（多队 · 4 出生点 · 四重旋转对称 · 魔兽 3 式地块）

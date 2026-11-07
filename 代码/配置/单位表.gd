@@ -69,6 +69,15 @@ static func ensure_index() -> void:
 			_tier_index[tier].append(id)
 
 
+## 让卡缓存失效（编辑器改完 .tres 之后调；运行时不用管）。
+## 没有它，改完数值必须重启 Godot 才生效 —— 卡本来就是编辑期数据。
+## 索引（_tier_index）也要一起清：range 一改，范围档可能就变了。
+static func reload_cards() -> void:
+	_cards.clear()
+	_tier_index.clear()
+	ensure_index()
+
+
 ## 按卡 id（= 单位 id）取卡；查不到返回 null
 static func get_card(id: StringName) -> EntityCard:
 	ensure_index()
@@ -248,7 +257,10 @@ static func _build_harvestables(out: Dictionary) -> void:
 	tree.footprint = Vector2i(2, 2)
 	tree.height = 5.5
 	tree.harvest_kind = RtsConst.Harvest.WOOD
-	tree.resource_amount = 260
+	# ★ 玩家口径（2026-11-07）：一棵树 = **20 次采集**（采一次扣一次，不是按木料吨位）。
+	#   一次采集 = 农民走到树边做完动作、拿到 carry_capacity 木头的那个循环；
+	#   扣次数发生在「动作完成」那一拍（可采集物.consume_charge），不是卸货那一拍。
+	tree.resource_amount = 20
 	tree.body_radius = 0.9
 	tree.selection_radius = 1.4
 	tree.sight_range = 4.0

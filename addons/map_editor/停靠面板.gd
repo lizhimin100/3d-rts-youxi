@@ -137,6 +137,19 @@ func show_tab(title: String) -> void:
 			return
 
 
+## 营地弹窗保存后让「营地」页跟上（两处编辑同一份数据，不能一边新一边旧）。
+## 列表按 .tres 路径保住当前行，所以玩家不会因为保存一次就被踢回第一行。
+func refresh_camp_page() -> void:
+	_refresh_camps()
+
+
+## 单位卡 / 建筑卡改完之后让「对象」页跟上：
+## 显示名、模型、成本都可能变了，不重扫的话列表还是旧名字。
+func refresh_after_card_edit() -> void:
+	_populate_assets()
+	_refresh_camps()
+
+
 # ===========================================================================
 # 布局
 # ===========================================================================
@@ -404,7 +417,7 @@ func _build_object_tab() -> Control:
 	v.add_child(_group_row)
 
 	_asset_search = LineEdit.new()
-	_asset_search.placeholder_text = "搜索装饰（名字 / id）…"
+	_asset_search.placeholder_text = "搜索单位 / 建筑 / 装饰 / 资源（名字或 id）…"
 	_asset_search.clear_button_enabled = true
 	_asset_search.text_changed.connect(func(_t: String) -> void: _populate_assets())
 	v.add_child(_asset_search)
@@ -720,7 +733,7 @@ func _build_camp_tab() -> Control:
 	_camp_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_camp_list.item_selected.connect(_on_camp_selected)
 	left.add_child(_camp_list)
-	_hint(_camp_list, "选中一份营地配置 → 右边改刷什么怪、几只。\n每份配置对应一种锚点建筑（巢穴/入口/折壳营地），\n锚点建筑必须摆成「中立」才会被系统认出来。")
+	_hint(_camp_list, "选中一份营地配置 → 右边改刷什么怪、几只。\n每份配置对应一种锚点建筑（巢穴/入口/折壳营地），\n锚点建筑必须摆成「中立」才会被系统认出来。\n★ 视口里手型状态下单击锚点建筑，也能直接弹出配置窗。")
 
 	# --- 右：表单 ---
 	var right := _vbox()
@@ -1165,6 +1178,11 @@ func _camp_save() -> void:
 	CAMP_TABLE.reload()
 	_camp_sel_path = path
 	_refresh_camps()
+	# 弹窗如果正开着同一份配置，把它的表单也刷成刚存的值（两边编辑同一份数据）
+	if session != null and session.camp_dialog != null \
+			and is_instance_valid(session.camp_dialog) \
+			and session.camp_dialog.has_method("reload_if"):
+		session.camp_dialog.call("reload_if", path)
 	_camp_status.text = "已保存 %s（野怪：%s）" % [path.get_file(),
 		"、".join(_camp_creep_summary())]
 
@@ -1405,7 +1423,7 @@ func _sync_object_filters() -> void:
 	if _group_row == null or session == null:
 		return
 	_group_row.visible = int(session.asset_category) == MapObject.Category.DOODAD
-	_asset_search.placeholder_text = "搜索装饰（名字 / id）…" \
+	_asset_search.placeholder_text = "搜索单位 / 建筑 / 装饰 / 资源（名字或 id）…" \
 		if int(session.asset_category) == MapObject.Category.DOODAD else "搜索类型…"
 
 

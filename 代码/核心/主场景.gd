@@ -372,6 +372,9 @@ func _mount_tests() -> void:
 			break
 	if "--gather-test" in args:
 		_mount_script("res://代码/测试/采集自检.gd", "采集自检")
+	# 木材专项：树按次数扣（20 次/棵）+ 砍完必须自己换树（-- --wood-test）
+	if "--wood-test" in args:
+		_mount_script("res://代码/测试/木材自检.gd", "木材自检")
 	if "--feel-test" in args:
 		_mount_script("res://代码/测试/手感自检.gd", "手感自检")
 	if "--autotest" in args:
@@ -397,6 +400,11 @@ func _mount_tests() -> void:
 		_mount_script("res://代码/测试/地图编辑器自检.gd", "地图编辑器自检")
 	if not _qa_select_id.is_empty():
 		_qa_select.call_deferred(_qa_select_id)
+	# 压测：--stress-units=8000 在基地附近塞 N 个待命兵（性能排查用，默认不开）
+	for a in args:
+		if a.begins_with("--stress-units="):
+			call_deferred("_qa_stress_units", int(a.get_slice("=", 1)))
+			break
 	if "--qa-guard" in args:
 		_qa_guard.call_deferred()
 	if "--qa-terrain" in args:
@@ -537,6 +545,29 @@ func _qa_spawn_stuff() -> void:
 			if n.has_method("set_constructed"):
 				n.call("set_constructed", true)
 		print("[QA] --qa-spawn：%s @ (%.0f, %.0f)" % [id, p.x, p.z])
+
+
+## QA 压测：在玩家基地外圈塞 N 个**待命**战斗单位。
+##
+## 用途（2026-11-07 性能排查）：复现「8000 单位时单位逻辑吃多少 CPU」，
+## 配合 `--perf-long` 拿到可复现的 PERF2 数字（改前/改后同一行参数对比）。
+## 为什么要塞待命兵：待命兵是**最省**的状态，如果连待命都卡，说明是每帧固定开销
+## （计时点 / 分离 / 贴地 / 动画）而不是某段业务逻辑。
+func _qa_stress_units(n: int) -> void:
+	if n <= 0 or level == null:
+		return
+	var base: Vector3 = RtsWorld.base_center(Game.player_faction)
+	var t0: int = Time.get_ticks_msec()
+	var spawned: int = 0
+	for i in n:
+		# 螺旋铺开：半径按 sqrt 增长，免得全叠在一个点上（分离力会把它们炸开）
+		var ang: float = float(i) * 2.39996323
+		var r: float = 6.0 + 0.55 * sqrt(float(i))
+		var p := base + Vector3(cos(ang) * r, 0.0, sin(ang) * r)
+		p = RtsWorld.snap_y(RtsWorld.walkable_pos(p))
+		if Game.spawn_unit(Game.player_faction, &"footman", p, level) != null:
+			spawned += 1
+	print("[压测] 生成 %d 个单位（用时 %d ms）" % [spawned, Time.get_ticks_msec() - t0])
 
 
 ## QA：地形体检 —— 出生点是否严格水平、建筑占地高差是否为 0、可走性如何。

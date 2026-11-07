@@ -51,7 +51,13 @@ const GOAL_MARGIN: float = 0.15
 const PATH_ROOM_MIN: int = 6
 
 ## 单位身体半径（米）：find_path 的路径平滑/终点按这个净空判定。
-## 0.5 = 步兵 body_radius，也是任务书 §3.1 要求的“至少 0.5m 净空”。
+##
+## ★ 2026-11-07：仍然是 0.5（步兵身位），但**调用方应该传本单位自己的净空**
+##   （`RtsWorld.find_path(from, to, radius)`，单位侧一般传 `get_radius()*0.98`）。
+##   为什么不直接把默认值改成最大兵种 0.57：118² 噪声图实测 A* 展开数从 272 涨到 2226
+##   （单次 2.5ms → 9.2ms），因为「净空恰好 0.5m」的格子正好是贴墙可行走带，
+##   一旦把门槛抬到 0.57，整条带子被排除、地图碎成一堆窄道。默认值必须按**典型身位**取，
+##   特殊大身位由调用方传参，才不会拿全局性能换个别兵种。
 ## 传 0 可退回旧行为（只查格心），供老测试/老调用方使用。
 var agent_radius: float = 0.5
 
@@ -73,9 +79,16 @@ var _open3: PackedByteArray = PackedByteArray()
 ## 于是“站得住却走不动”，卡死窗口一路刷到几百个。A* 必须优先走有空间的格子。
 var _room3: PackedByteArray = PackedByteArray()
 ## 可站立点缓存：key = 量化坐标 + 半径 → 落点。建筑增删时清空。
-## 为什么需要：目标压在建筑里时“找最近可站立点”是环形搜索，
+## 为什么需要：目标压在建筑里时"找最近可站立点"是环形搜索，
 ## 追击/采集每 0.25s 都要算一次，不缓存会白烧 CPU。
 var _stand_cache: Dictionary = {}
+## 每格「格心到最近阻挡格矩形」的距离（米），预计算。
+##
+## 为什么需要：A* 的两遍搜索里，第二遍（兜底）`min_room = 0` 会把**1 格宽的缝**
+## 也当成可走 —— 那种格净空恰好 0.5m，0.58 身体半径的兵根本挤不进去。
+## A* 于是反复给出同一条"走不通的路"，单位在缝口顶死。
+## 有了这张表，A* 只用 O(1) 就能拒绝"身体放不下"的格，和 `_steer` 的判据同源。
+var _clear: PackedFloat32Array = PackedFloat32Array()
 
 # --- A* 工作区（复用以减少分配）---
 var _g: PackedFloat32Array = PackedFloat32Array()
@@ -120,6 +133,7 @@ func build(size: float, walkable: PackedByteArray) -> void:
 	_heap_size = 0
 	_stand_cache.clear()
 	_rebuild_open3()
+	_rebuild_clear()
 
 
 ## 把网格恢复成"只有静态阻挡"的状态（重建建筑会用到）
@@ -127,6 +141,7 @@ func reset_to_static() -> void:
 	_walk = _static_blocked.duplicate()
 	_stand_cache.clear()
 	_rebuild_open3()
+	_rebuild_clear()
 
 
 ## 标记某格是否阻挡（建筑占地 / 树木砍掉）
@@ -139,6 +154,7 @@ func mark_blocked(cell: Vector2i, blocked: bool) -> void:
 	_stand_cache.clear()
 	_refresh_open3(cell.x, cell.y)
 	_refresh_room3(cell.x, cell.y)
+	_refresh_clear(cell.x, cell.y)
 
 
 ## 标记一个矩形区域（建筑占地，按格）
@@ -292,6 +308,52 @@ func _refresh_room3(cx: int, cz: int) -> void:
 			if x < 0 or x >= _w:
 				continue
 			_room3[z * _w + x] = _room_at(x, z)
+
+
+## 重建每格净空表（build / reset 时一次）
+func _rebuild_clear() -> void:
+	_clear.resize(_w * _h)
+	for z in range(_h):
+		for x in range(_w):
+			_clear[z * _w + x] = _clear_at_cell(x, z)
+
+
+## 只刷新 (cx,cz) 周围 3×3 个格子的净空（其中每个的 3×3 邻域都包含被改的格子）
+func _refresh_clear(cx: int, cz: int) -> void:
+	if _clear.size() != _w * _h:
+		return
+	for z in range(cz - 1, cz + 2):
+		if z < 0 or z >= _h:
+			continue
+		for x in range(cx - 1, cx + 2):
+			if x < 0 or x >= _w:
+				continue
+			_clear[z * _w + x] = _clear_at_cell(x, z)
+
+
+## 格心到最近阻挡格矩形的距离（米）。和 clearance_at_xy 同一套几何，
+## 只是预先算在格心上，给 A* 做 O(1) 判据用。
+func _clear_at_cell(x: int, z: int) -> float:
+	var px: float = (float(x) + 0.5) * CELL - _half
+	var pz: float = (float(z) + 0.5) * CELL - _half
+	var best: float = 99.0
+	for dz in range(-1, 2):
+		var gz: int = z + dz
+		var row_ok: bool = gz >= 0 and gz < _h
+		for dx in range(-1, 2):
+			var gx: int = x + dx
+			if row_ok and gx >= 0 and gx < _w and _walk[gz * _w + gx] != 0:
+				continue
+			var ccx: float = (float(gx) + 0.5) * CELL - _half
+			var ccz: float = (float(gz) + 0.5) * CELL - _half
+			var ex: float = maxf(absf(px - ccx) - CELL * 0.5, 0.0)
+			var ez: float = maxf(absf(pz - ccz) - CELL * 0.5, 0.0)
+			var d: float = sqrt(ex * ex + ez * ez)
+			if d < best:
+				best = d
+				if best <= 0.0:
+					return 0.0
+	return best
 
 
 ## 同 clearance_at，但直接吃 xz（避免每帧构造 Vector3）
@@ -562,6 +624,12 @@ func find_path(from: Vector3, to: Vector3, radius: float = -1.0) -> PackedVector
 				if _closed[ni] != 0 or _walk[ni] == 0:
 					continue
 				if _room3[ni] < min_room:
+					continue
+				# 身体放不下就不许规划（净空判据和 单位._steer 的 is_standable 同源）。
+				# 只查预计算表，O(1)；r <= 0 时退回旧的"格心可走"口径。
+				# 起终点格豁免：落点本身已经过 standable_point 的精确净空校验，
+				# 格心净空比落点差一点是正常的（落点可以落在格子里的任意位置）。
+				if r > 0.0 and ni != goal_i and _clear[ni] + CLEAR_EPS < r:
 					continue
 				# 禁止切角：斜向走时两个正交邻格都必须可走
 				var diag: bool = dx != 0 and dz != 0

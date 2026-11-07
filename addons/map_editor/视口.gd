@@ -22,6 +22,11 @@ const MODE_OBJECT: int = 1
 const MODE_REGION: int = 2
 const MODE_SELECT: int = 3
 
+## 野怪营地锚点建筑的 id（玩家点它们要弹营地配置窗）。
+## 固定这三条是因为营地卡的 den_building 就是它们（见 代码/配置/卡/野怪营地/）；
+## 另外 properties 里带 camp* 键的建筑也认（以后加新锚点不用改这里）。
+const CAMP_ANCHOR_IDS: Array[String] = ["creep_den", "creep_gate", "creep_shell"]
+
 var session = null
 
 var vp: SubViewport
@@ -69,6 +74,9 @@ var _drag_last: Vector3 = Vector3.ZERO
 var _boxing: bool = false
 ## 这次按下点中的对象（松手时如果没拖动，就把多选塌成单选）
 var _clicked_obj: MapObject = null
+## 左键按下时命中的营地锚点（松手时"没拖动"才弹配置窗）。
+## 为什么不按下就弹：按住拖动是移动对象，按下即弹窗会跟拖动抢同一个键。
+var _camp_click_obj: MapObject = null
 var _box_start: Vector2 = Vector2.ZERO
 var _ground: Vector3 = Vector3.INF
 var _previews: Dictionary = {}
@@ -317,6 +325,7 @@ func reset_interaction_state() -> void:
 	_poly.clear()
 	_ground = Vector3.INF
 	_previews.clear()
+	_camp_click_obj = null
 	if sel_box != null:
 		sel_box.visible = false
 	if brush_mi != null:
@@ -1154,6 +1163,36 @@ func _reveal_object_dock() -> void:
 	dock.show_tab("对象")
 
 
+## 这座建筑是不是"野怪营地锚点"（单击它要弹配置窗）。
+## 判据两条：
+##   ① id 是营地表的三种锚点建筑；
+##   ② properties 里已经带了 camp* 键（玩家以前指派过，或以后新加的锚点类型）。
+func is_camp_anchor(o: MapObject) -> bool:
+	if o == null or int(o.category) != MapObject.Category.BUILDING:
+		return false
+	if CAMP_ANCHOR_IDS.has(String(o.type_id)):
+		return true
+	for k in o.properties.keys():
+		if String(k).begins_with("camp"):
+			return true
+	return false
+
+
+## 打开营地配置窗。窗口住在主屏（由 session 持有引用），视口不自己造 UI。
+func _open_camp_dialog(o: MapObject) -> void:
+	if session == null:
+		return
+	var dlg = session.camp_dialog
+	# Window 是 Node：插件重载后旧引用可能已经 freed，直接 has_method 会报错
+	if dlg == null or not is_instance_valid(dlg):
+		return
+	if dlg.has_method("open_for"):
+		dlg.call("open_for", session, o)
+	else:
+		# 兜底：窗口没装好也至少让玩家找得到旧入口（停靠面板的营地页）
+		session.call("push_status", "营地窗口不可用，请在右侧「营地」页配置")
+
+
 func _on_left_down(pos: Vector2) -> void:
 	var g: Vector3 = _ray_ground(pos)
 	_ground = g
@@ -1186,6 +1225,11 @@ func _on_left_down(pos: Vector2) -> void:
 				session.select_only(hover)
 				_clicked_obj = null
 			_reveal_object_dock()
+			# 点的是营地锚点就先记下来，等松手确认"没拖动"再弹配置窗。
+			# Shift 是加选/减选，玩家在凑一组对象，这时候弹窗会打断操作。
+			_camp_click_obj = null
+			if not Input.is_key_pressed(KEY_SHIFT) and is_camp_anchor(hover):
+				_camp_click_obj = hover
 			_dragging = true
 			_drag_last = g
 			session.begin_drag(g)
@@ -1252,12 +1296,17 @@ func _on_left_up(pos: Vector2) -> void:
 		_dirty_helpers = true
 	if _dragging:
 		_dragging = false
+		var camp_obj: MapObject = _camp_click_obj
+		_camp_click_obj = null
 		var moved: bool = bool(session.end_drag())
 		# 点住已选中的成员松手、又没拖动 → 这才塌成单选。
 		# 拖动过就保持整组（玩家是在搬东西，不是在改选择）。
 		if not moved and _clicked_obj != null and session.selection.size() > 1:
 			session.select_only(_clicked_obj)
 		_clicked_obj = null
+		# 手型模式下"单击没拖动"的营地锚点 → 弹营地配置窗（拖动仍然是移动对象）
+		if not moved and camp_obj != null:
+			_open_camp_dialog(camp_obj)
 	if _boxing:
 		_boxing = false
 		_set_box(pos, pos, false)

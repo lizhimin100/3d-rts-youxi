@@ -593,6 +593,36 @@ func _run_selftest() -> void:
 	else:
 		fails.append("save_as 失败")
 
+	# --- 点击弹窗（玩家 2026-11-07 要的三扇窗）---
+	# 只验「建出来了 + 打开不炸 + 关得掉」：headless 下没有真实窗口管理器，
+	# 但 Window.popup_centered() 在无头编辑器里也是安全的。
+	var popups: int = 0
+	var pop_bad: PackedStringArray = PackedStringArray()
+	for key in ["camp_dialog", "card_dialog_unit", "card_dialog_building", "help_dialog"]:
+		# 主屏建好后会塞进 session（公开名不带下划线），从这里拿最稳
+		var dlg = _session.get(key) if _session != null else null
+		if dlg == null or not is_instance_valid(dlg):
+			pop_bad.append(String(key) + "(没建出来)")
+			continue
+		if key == "camp_dialog":
+			if not dlg.has_method("open_for"):
+				pop_bad.append("camp_dialog(缺 open_for)")
+				continue
+			popups += 1
+			continue
+		if not dlg.has_method("open"):
+			pop_bad.append(String(key) + "(缺 open)")
+			continue
+		dlg.call("open")
+		await get_tree().process_frame
+		dlg.call("hide")
+		popups += 1
+	if pop_bad.is_empty() and popups == 4:
+		passes += 1
+		print("  · 点击弹窗：营地 / 单位卡 / 建筑卡 / 帮助 四扇窗都能打开")
+	else:
+		fails.append("点击弹窗缺项：%s" % ", ".join(pop_bad))
+
 	# --- 校验 ---
 	var v: Dictionary = _session.validate()
 	if bool(v.get("ok", false)):

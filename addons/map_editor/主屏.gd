@@ -22,6 +22,12 @@ const VIEWPORT_SCRIPT := "res://addons/map_editor/视口.gd"
 const Spec := preload("res://代码/界面/界面规格.gd")
 ## token 编译出来的正经 Theme 资源（生成命令见 工具/生成编辑器主题.gd）
 const EDITOR_THEME := preload("res://addons/map_editor/编辑器主题.tres")
+## 两套"点击弹窗配置"窗口：营地（点视口里的锚点建筑弹出）+ 卡编辑器（快捷条按钮打开）。
+## 不写 class_name，按本工程惯例用 preload 常量 + .call()。
+const CAMP_DIALOG_SCRIPT := preload("res://addons/map_editor/营地弹窗.gd")
+const CARD_DIALOG_SCRIPT := preload("res://addons/map_editor/卡片弹窗.gd")
+## 功能索引窗（人类/agent 都能一键查「这个按钮在哪、实现写在哪」）
+const HELP_DIALOG_SCRIPT := preload("res://addons/map_editor/帮助窗.gd")
 
 const MODE_TERRAIN := 0
 const MODE_OBJECT := 1
@@ -54,6 +60,12 @@ var _w_swatch: PanelContainer
 var _w_seed: SpinBox
 var _open_dialog: EditorFileDialog
 var _save_dialog: EditorFileDialog
+## 点击弹窗：营地配置（视口点锚点触发）/ 单位卡 / 建筑卡（快捷条按钮触发）
+var _camp_dialog = null
+var _card_dialog_unit = null
+var _card_dialog_building = null
+## 功能索引窗
+var _help_dialog = null
 var _grid_on: bool = true
 var _regions_on: bool = true
 var _tick: float = 0.0
@@ -190,6 +202,10 @@ func _build_menu_and_quickbar() -> void:
 	quick.add_child(VSeparator.new())
 	_qbtn(quick, "校验", "跑 MapValidator", 31)
 	_qbtn(quick, "测试地图", "保存临时地图并启动游戏（不阻塞编辑器）", 5)
+	quick.add_child(VSeparator.new())
+	_qbtn(quick, "单位卡", "编辑 代码/配置/卡/单位/ 下的数值卡（改完保存即刻生效，进图前无需重启）", 41)
+	_qbtn(quick, "建筑卡", "编辑 代码/配置/卡/建筑/ 下的数值卡", 42)
+	_qbtn(quick, "帮助", "功能索引：每个按钮做什么、在哪个文件实现", 43)
 	quick.add_child(VSeparator.new())
 	_qbtn(quick, "俯视", "俯视", 21)
 	_qbtn(quick, "斜视", "斜视", 22)
@@ -454,6 +470,47 @@ func _build_dialogs() -> void:
 	_save_dialog.file_selected.connect(_on_save_selected)
 	add_child(_save_dialog)
 
+	# --- 点击弹窗配置：营地 / 单位卡 / 建筑卡 ---
+	# Window 不是 Control，挂在 VBox 下不会被当子控件排版；它们自己弹自己的。
+	# 建好后把引用塞进会话：视口（点锚点）和快捷条（开卡编辑器）都要拿得到，
+	# 不靠名字 find_node —— 这是本插件的既有做法（session.dock / session.viewport）。
+	_camp_dialog = CAMP_DIALOG_SCRIPT.new()
+	_camp_dialog.setup(session)
+	add_child(_camp_dialog)
+	if session != null:
+		session.camp_dialog = _camp_dialog
+
+	_help_dialog = HELP_DIALOG_SCRIPT.new()
+	_help_dialog.call("setup", session)
+	add_child(_help_dialog)
+	if session != null:
+		session.help_dialog = _help_dialog
+
+	_card_dialog_unit = CARD_DIALOG_SCRIPT.new()
+	_card_dialog_unit.setup(session, "unit")
+	add_child(_card_dialog_unit)
+
+	_card_dialog_building = CARD_DIALOG_SCRIPT.new()
+	_card_dialog_building.setup(session, "building")
+	add_child(_card_dialog_building)
+
+	if session != null:
+		session.card_dialog_unit = _card_dialog_unit
+		session.card_dialog_building = _card_dialog_building
+
+	# 切到别的编辑器主屏时，这两扇窗不该浮在地图编辑器上面
+	visibility_changed.connect(_on_main_visibility_changed)
+
+
+## 主屏被切换走（点脚本编辑器/2D 视图）时收起弹窗。
+## Window 是独立子窗口，不会跟着 Control 的 visible 一起藏，必须手动收。
+func _on_main_visibility_changed() -> void:
+	if visible:
+		return
+	for d in [_camp_dialog, _card_dialog_unit, _card_dialog_building, _help_dialog]:
+		if d != null and is_instance_valid(d) and d.visible:
+			d.hide()
+
 
 func _mk_label(t: String) -> Label:
 	return Spec.editor_label(t)
@@ -541,6 +598,31 @@ func _on_menu(id: int) -> void:
 			_focus_dock("区域")
 		33:
 			_focus_dock("区域")
+		41:
+			_open_card_editor("unit")
+		42:
+			_open_card_editor("building")
+		43:
+			_open_help()
+
+
+## 打开功能索引（帮助窗）
+func _open_help() -> void:
+	if _help_dialog == null or not is_instance_valid(_help_dialog):
+		_on_status("帮助窗还没建好（编辑器插件加载异常）")
+		return
+	if _help_dialog.has_method("open"):
+		_help_dialog.call("open")
+
+
+## 打开卡编辑器（"unit" / "building"）。窗口是按类型建好的单例，重复点只是重新弹出来。
+func _open_card_editor(kind: String) -> void:
+	var dlg = _card_dialog_unit if kind == "unit" else _card_dialog_building
+	if dlg == null or not is_instance_valid(dlg):
+		_on_status("卡编辑器还没建好（编辑器插件加载异常）")
+		return
+	if dlg.has_method("open"):
+		dlg.call("open")
 
 
 func _on_layer(mode: int, dock_tab: String, cat: int) -> void:

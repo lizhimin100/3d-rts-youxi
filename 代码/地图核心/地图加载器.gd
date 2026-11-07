@@ -14,6 +14,10 @@ extends RefCounted
 const WALK_SLOPE_LIMIT_DEG: float = 40.0
 ## 边界不可走内缩（米）：防止单位走出世界
 const EDGE_KEEP_OUT: float = 3.0
+## ★ 占格规则的**唯一实现**（挡格 / 释放都走它，见 代码/寻路/占格规则.gd）
+const 占格 := preload("res://代码/寻路/占格规则.gd")
+## 树的占格半径（米）。对外只暴露这一个数，避免各处再写字面量 0.95。
+const TREE_BLOCK_RADIUS: float = 占格.TREE_RADIUS
 
 ## UnitDef 缓存（编辑器里也能安全调用 UnitTable.build_units）
 static var _unit_cache: Dictionary = {}
@@ -36,6 +40,7 @@ static func type_def(type_id: StringName) -> UnitDef:
 
 
 ## 对象的占地半径（可走性阻挡用）。单位不挡路（会动），返回 0。
+## **必须和 build_walkable_mask 的挡格口径一致**：树 0.95、岩石 1.05×scale、矿 4×4。
 static func object_block_radius(o: MapObject) -> float:
 	if o == null:
 		return 0.0
@@ -43,14 +48,14 @@ static func object_block_radius(o: MapObject) -> float:
 		MapObject.Category.RESOURCE:
 			# tree / tree_春 / tree_夏 / tree_秋 / tree_冬 都是"树"，占地一个口径
 			if String(o.type_id).begins_with("tree"):
-				return 1.05 * maxf(0.2, o.scale)
+				return 占格.TREE_RADIUS
 			if o.type_id == &"goldmine":
-				return 2.6 * maxf(0.2, o.scale)
-			return 1.0 * maxf(0.2, o.scale)
+				return 2.6 * maxf(占格.MIN_SCALE, o.scale)
+			return 1.0 * maxf(占格.MIN_SCALE, o.scale)
 		MapObject.Category.DOODAD:
 			# 只有石头类挡路；木桶/栅栏这类小装饰不挡路（和原版一致：装饰不进 walkable）
 			if String(o.type_id) == "岩石" or bool(o.properties.get("blocks", false)):
-				return 1.05 * maxf(0.2, o.scale)
+				return 占格.ROCK_RADIUS * maxf(占格.MIN_SCALE, o.scale)
 			return 0.0
 		MapObject.Category.BUILDING:
 			var d: UnitDef = type_def(o.type_id)
@@ -58,6 +63,35 @@ static func object_block_radius(o: MapObject) -> float:
 				return float(maxi(d.footprint.x, d.footprint.y)) * 0.5
 			return 2.0
 	return 0.0
+
+
+## 一个对象挡住的格子（**唯一出口**）。
+## 编辑器校验 / 游戏加载 / 砍树释放 三处都调它，所以"挡"和"放"严格互逆。
+## p_include_buildings = false 时建筑返回空（游戏口径：建筑占地交给 关卡.mark_footprint）。
+static func object_block_cells(o: MapObject, w: int, p_include_buildings: bool = true) -> PackedInt32Array:
+	if o == null or w <= 0:
+		return PackedInt32Array()
+	var p := Vector2(o.position.x, o.position.z)
+	match int(o.category):
+		MapObject.Category.BUILDING:
+			if not p_include_buildings:
+				return PackedInt32Array()
+			var d: UnitDef = type_def(o.type_id)
+			var fp := Vector2i(4, 4)
+			if d != null and d.footprint.x > 0:
+				fp = d.footprint
+			return 占格.rect_cells_symmetric(w, p, fp.x + 2, fp.y + 2)
+		MapObject.Category.RESOURCE:
+			if String(o.type_id).begins_with("tree"):
+				return 占格.tree_cells(w, p)
+			if o.type_id == &"goldmine":
+				return 占格.rect_cells(w, p, 占格.MINE_CELLS.x, 占格.MINE_CELLS.y)
+			var r: float = object_block_radius(o)
+			return 占格.circle_cells(w, p, r) if r > 0.0 else PackedInt32Array()
+		MapObject.Category.DOODAD:
+			if String(o.type_id) == "岩石" or bool(o.properties.get("blocks", false)):
+				return 占格.rock_cells(w, p, o.scale)
+	return PackedInt32Array()
 
 
 # ===========================================================================
@@ -95,91 +129,23 @@ static func build_walkable_mask(m: MapDef, p_include_buildings: bool = true) -> 
 				continue
 			if m.is_water_at(p):
 				out[i] = 0
-	# 对象占地。**口径必须和 MapGenerator._apply_prop_blocks 完全一致**：
-	#   树 0.95m 圆、金矿 4×4 格矩形、岩石 1.05×scale 圆、建筑 fp+2 矩形。
-	# 旧版对树用 1.05（ceili 变成 2 格半径 → 每棵多挡 8 格，668 棵 ≈ 5300 格），
-	# 结果是"从文件读回来的地图比原图少走 10% 的地方" —— 玩家会觉得单位莫名绕路。
+	# 对象占地。**唯一口径在 代码/寻路/占格规则.gd**（object_block_cells）：
+	#   树 0.95m 圆（格心判据）、金矿 4×4 格矩形、岩石 1.05×scale 圆、建筑 fp+2 矩形。
+	# 程序化地图（MapGenerator._apply_prop_blocks）、编辑器校验（地图校验）、
+	# 砍树释放（关卡.release_prop）全部调同一套函数，所以"挡"和"放"严格互逆。
 	for o in m.objects:
 		if o == null:
 			continue
-		var cat: int = int(o.category)
-		if cat == MapObject.Category.BUILDING:
-			if not p_include_buildings:
-				continue
-			var d: UnitDef = type_def(o.type_id)
-			var fp := Vector2i(4, 4)
-			if d != null and d.footprint.x > 0:
-				fp = d.footprint
-			_block_rect(out, w, o.position, fp.x + 2, fp.y + 2)
-		elif cat == MapObject.Category.RESOURCE:
-			var p := Vector2(o.position.x, o.position.z)
-			if String(o.type_id).begins_with("tree"):
-				_block_circle(out, w, p, 0.95)
-			elif o.type_id == &"goldmine":
-				_block_rect_cells(out, w, p, 4, 4)
-			else:
-				var r: float = object_block_radius(o)
-				if r > 0.0:
-					_block_circle(out, w, p, r)
-		elif cat == MapObject.Category.DOODAD:
-			if String(o.type_id) == "岩石" or bool(o.properties.get("blocks", false)):
-				_block_circle(out, w, Vector2(o.position.x, o.position.z),
-					1.05 * maxf(0.2, o.scale))
+		占格.apply_to_mask(out, object_block_cells(o, w, p_include_buildings))
 	# ground 里的岩石（走 MultiMesh 合批、不进 objects 的那批）同样要挡
 	if m.ground is Dictionary:
 		var rocks: Variant = (m.ground as Dictionary).get("rocks", [])
 		if rocks is Array:
 			for rk in rocks:
 				if rk is Dictionary:
-					_block_circle(out, w, rk.get("pos", Vector2.ZERO),
-						1.05 * maxf(0.2, float(rk.get("scale", 1.0))))
+					占格.apply_to_mask(out, 占格.rock_cells(w,
+						rk.get("pos", Vector2.ZERO), float(rk.get("scale", 1.0))))
 	return out
-
-
-## 逐格矩形的"原版口径"（与 地图生成._block_rect_cells 一字不差）：
-## 中心格 = int(pos+half)，再向左上各退 sx/2、sz/2 格。
-static func _block_rect_cells(mask: PackedByteArray, w: int, p: Vector2,
-		sx: int, sz: int) -> void:
-	var half: float = float(w) * 0.5
-	var cx0: int = int(p.x + half) - sx / 2
-	var cz0: int = int(p.y + half) - sz / 2
-	for dz in range(sz):
-		for dx in range(sx):
-			var cx: int = cx0 + dx
-			var cz: int = cz0 + dz
-			if cx < 0 or cz < 0 or cx >= w or cz >= w:
-				continue
-			mask[cz * w + cx] = 0
-
-
-static func _block_circle(mask: PackedByteArray, w: int, p: Vector2, radius: float) -> void:
-	var half: float = float(w) * 0.5
-	var cx: int = int(floor(p.x + half))
-	var cz: int = int(floor(p.y + half))
-	var rad: int = ceili(radius)
-	for dz in range(-rad, rad + 1):
-		for dx in range(-rad, rad + 1):
-			if dx * dx + dz * dz > rad * rad:
-				continue
-			var gx: int = cx + dx
-			var gz: int = cz + dz
-			if gx < 0 or gz < 0 or gx >= w or gz >= w:
-				continue
-			mask[gz * w + gx] = 0
-
-
-static func _block_rect(mask: PackedByteArray, w: int, center: Vector3,
-		sx: int, sz: int) -> void:
-	var half: float = float(w) * 0.5
-	var x0: int = floori(center.x - float(sx) * 0.5 + half)
-	var x1: int = ceili(center.x + float(sx) * 0.5 + half)
-	var z0: int = floori(center.z - float(sz) * 0.5 + half)
-	var z1: int = ceili(center.z + float(sz) * 0.5 + half)
-	for gz in range(z0, z1):
-		for gx in range(x0, x1):
-			if gx < 0 or gz < 0 or gx >= w or gz >= w:
-				continue
-			mask[gz * w + gx] = 0
 
 
 ## 最近可走格（螺旋外扩）；找不到返回 (-1,-1)
@@ -992,7 +958,7 @@ static func _prune_unreachable_trees(m: MapDef) -> void:
 	var seen: PackedByteArray = reachable_mask(mask, w, start)
 	var drop: Array = []
 	for o in m.objects:
-		if o == null or o.type_id != &"tree":
+		if o == null or not String(o.type_id).begins_with("tree"):
 			continue
 		var p := Vector2(o.position.x, o.position.z)
 		var c: Vector2i = nearest_walkable(mask, w, world_cell(m, p), 6)
@@ -1099,7 +1065,7 @@ static func _ensure_tree_counts(m: MapDef) -> void:
 		var want: int = tree_target_count(m, pi)
 		var have: int = 0
 		for o in m.objects:
-			if o == null or o.type_id != &"tree":
+			if o == null or not String(o.type_id).begins_with("tree"):
 				continue
 			var p := Vector2(o.position.x, o.position.z)
 			if p.distance_to(slot.start_pos) > tree_dist * 1.30:
@@ -1129,7 +1095,7 @@ static func _ensure_tree_counts(m: MapDef) -> void:
 			for o2 in m.objects:
 				if o2 == null:
 					continue
-				if o2.type_id != &"tree" and o2.type_id != &"goldmine":
+				if not String(o2.type_id).begins_with("tree") and o2.type_id != &"goldmine":
 					continue
 				if Vector2(o2.position.x, o2.position.z).distance_to(p2) < 4.0:
 					ok = false

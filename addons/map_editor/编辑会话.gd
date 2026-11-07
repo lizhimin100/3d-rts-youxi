@@ -41,6 +41,13 @@ var plugin: EditorPlugin = null
 ## 主屏的 3D 视口 / Dock 面板（插件装配时塞进来，省得靠名字到处找节点）
 var viewport = null
 var dock = null
+## 点场景里的营地锚点弹出来的配置窗（主屏建好塞进来，视口点它就调用）
+var camp_dialog = null
+## 单位卡 / 建筑卡编辑器窗口（主屏建好塞进来，快捷条按钮打开它们）
+var card_dialog_unit = null
+var card_dialog_building = null
+## 功能索引窗（主屏建好塞进来）
+var help_dialog = null
 var def: MapDef = null
 var path: String = ""
 var dirty: bool = false
@@ -1236,6 +1243,29 @@ func assign_camp_to_selection(camp_id: String, owner_slot: int) -> int:
 	return targets.size()
 
 
+## 把一份营地配置落到**某一座锚点**上（点建筑弹窗、保存时调用）。
+##
+## 和 assign_camp_to_selection 的区别：那个是"选中一批、整批指派"，
+## 这个是"我点的是哪一座，就只改哪一座" —— 玩家在视口里点着 A 座巢穴改的配置，
+## 绝不能顺手把 B 座同型号巢穴也改掉。
+## 只写 properties.camp_id 与 owner → 走 objects_owner 轻量刷新，不重建模型。
+func apply_camp_to_object(o: MapObject, camp_id: String, owner_slot: int) -> void:
+	if def == null or o == null or camp_id.is_empty():
+		return
+	var old_id: String = String(o.properties.get("camp_id", ""))
+	if old_id == camp_id and o.owner == owner_slot:
+		return
+	var before: Array = _snapshot_objects()
+	o.properties["camp_id"] = camp_id
+	o.owner = owner_slot
+	_push_action("营地配置：%s ← 「%s」（归属 %s）" % [
+		String(o.type_id), camp_id, owner_display_name(owner_slot)],
+		[{"prop": "objects", "before": _objects_from(before),
+			"after": _objects_from(def.objects)}],
+		UndoRedo.MERGE_DISABLE, "objects_owner")
+	_emit_status("这座锚点已改用营地「%s」（归属 %s）" % [camp_id, owner_display_name(owner_slot)])
+
+
 ## 设置归属。**走轻量 reason**（objects_owner）：视口只刷选中环/归属色，
 ## 不重建对象节点 —— 归属是个高频切换的属性，绝不能让点一下等三秒。
 func set_selection_owner(owner_id: int) -> void:
@@ -1668,6 +1698,12 @@ static func _asset_info(type_id: StringName) -> Dictionary:
 
 func _emit_status(text: String) -> void:
 	status_changed.emit(text)
+
+
+## 给弹窗之类的"外部界面"用的公开提示入口。
+## 它们不该直接调 _emit_status（私有命名），但都需要把结果送到同一条状态栏。
+func push_status(text: String) -> void:
+	_emit_status(text)
 
 
 func _emit_all(text: String) -> void:

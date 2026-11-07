@@ -92,7 +92,8 @@ static func validate(m: MapDef) -> Dictionary:
 		if o == null or int(o.category) != MapObject.Category.RESOURCE:
 			continue
 		var is_mine: bool = o.type_id == &"goldmine"
-		var is_tree: bool = o.type_id == &"tree"
+		# 四季树（tree_春/夏/秋/冬）和 tree 是同一类占格口径，判据必须用前缀
+		var is_tree: bool = String(o.type_id).begins_with("tree")
 		if is_mine:
 			mines += 1
 		elif is_tree:

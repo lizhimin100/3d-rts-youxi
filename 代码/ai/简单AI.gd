@@ -101,8 +101,15 @@ const BUILD_SEARCH_ANGLES: int = 14
 ## 防守感知半径（米）：敌方战斗单位进到这个圈里就算"压家"。
 ## 取 18 的依据：大本营视野 15m、箭塔 14m，18 让 AI 比玩家早半步反应。
 const DEFENSE_RADIUS: float = 18.0
-## 残血撤退阈值（血量比例）
-const RETREAT_HP: float = 0.32
+## 残血撤退阈值（血量比例）。
+##
+## ★ 2026-11-07 玩家口径：「既然在战斗中，那就应该一直战斗啊，除非说血量真的很低才需要撤退」。
+##   0.32 是「掉三分之一血就往后跑」—— 近战每次换血都过线，玩家看到的就是整支部队
+##   一被碰就撤退、撤一半又被下一波命令拉回来。现在只有「再打就送」的 15% 才撤。
+##   配合 `_manage_retreat` 的「贴脸交战豁免」（血量还 > 8% 就先打完这一架）。
+const RETREAT_HP: float = 0.15
+## 已经贴脸交战时，血量高于这个比例就**不许拉走**（8% = 真的快死了）
+const RETREAT_COMBAT_HP: float = 0.08
 ## 巡逻间隔（秒）
 const PATROL_INTERVAL: float = 9.0
 ## 派兵清野怪的最低兵力（副官会调高：它动的是玩家的兵）
@@ -602,6 +609,8 @@ func _build_ctx(diff: DifficultyDef, now: float) -> Dictionary:
 		"workers": workers,
 		"idle_workers": idle,
 		"threat_units": _threat_units(),
+		# 只算「玩家对手」的压家单位：战略层判断能不能出门，不能把野怪算进去
+		"war_threat_units": _threat_units(true),
 		"under_attack": _under_attack(),
 		"defend_point": _defend_point(),
 		"combat": _combat,
@@ -821,12 +830,19 @@ func _ranked_war_foes() -> Array:
 	out.sort_custom(func(a, b): return int(a["n"]) > int(b["n"]))
 	return out
 
-## 压在我方建筑 DEFENSE_RADIUS 内的敌方战斗单位（跨全部敌对阵营）
-func _threat_units() -> Array:
+## 压在我方建筑 DEFENSE_RADIUS 内的敌方战斗单位（跨全部敌对阵营）。
+##
+## ★ p_war_only = true 时**只算玩家对手**（不含野怪）。
+##   为什么必须分开（2026-11-07 玩家反馈「附近的野怪副官会派兵打，打敌人玩家却不出兵」）：
+##   `Game.enemies_of()` 按设计会把中立野怪也算成敌人（单位/箭塔要会自动还手），
+##   于是野怪只要溜达到基地圈里，`base_threat > 0` 就永久成立 →
+##   `战略导演._compute_allow_attack` 的「家里挨打」否决一直挂着 → **一整局不出一波**。
+##   野怪该由防守/清野解决，不该冻结战略进攻。
+func _threat_units(p_war_only: bool = false) -> Array:
 	var out: Array = []
 	if _faction == null:
 		return out
-	var foes: Array = Game.enemies_of(_faction)
+	var foes: Array = _war_foes() if p_war_only else Game.enemies_of(_faction)
 	if foes.is_empty():
 		return out
 	var anchors: Array = []
@@ -2391,11 +2407,34 @@ func _manage_retreat() -> void:
 			continue    # 已经在撤了，别每轮都重发
 		if u.global_position.distance_to(home) < 12.0:
 			continue    # 已经在家的圈子里，别再刷命令
+		# ★ 贴脸交战豁免（2026-11-07）：正在打的近战不要被拽走。
+		#   判据取单位自己的 target（已经锁定、还在射程内）+ 血量 > 8%。
+		#   没有这条，前排会被「撤→回→再撤」来回拉扯，玩家看到部队在原地打转。
+		if u.hp > u.def.max_hp * RETREAT_COMBAT_HP and _engaged_in_combat(u):
+			continue
 		wounded.append(u)
 	if wounded.is_empty():
 		return
 	# ★ 走 `retreat` 而不是 `move`：撤退途中完全不索敌，见 命令调度.retreat 的注释。
 	_sched.retreat(wounded, home, "retreat")
+
+## 这个单位是不是「正在打」（已经锁定目标、目标还活着、且在 1.6 倍射程内）。
+##
+## 用途：撤退豁免。**不能只看 target != null** —— 追击时目标可能在 30m 外，
+## 那不算交战，该撤还是要撤。
+func _engaged_in_combat(u) -> bool:
+	if u == null or not is_instance_valid(u):
+		return false
+	var t = u.get("target")
+	if t == null or not is_instance_valid(t):
+		return false
+	if t.has_method("is_alive") and not bool(t.call("is_alive")):
+		return false
+	var reach: float = 8.0
+	if u.has_method("_attack_reach"):
+		reach = float(u.call("_attack_reach", t))
+	return u.global_position.distance_to(t.global_position) <= reach * 1.6 + 1.0
+
 
 ## 回防：只在"有敌人压到建筑门口"时触发，按 defend_ratio 抽人。
 ## 标签用 defend —— 调度器对防守命令不做重发节流（节流会直接导致基地被拆）。
@@ -2436,7 +2475,13 @@ func _issue_defend(p: Dictionary) -> bool:
 		return false
 	var point: Vector3 = p.get("point", RtsWorld.base_center(_faction))
 	var before: int = int(_sched.stats().get("queued", 0))
-	_sched.attack_move(army.slice(0, n), point, "defend")
+	# ★ 散开回防（2026-11-07 玩家口径「不要挤在一起、更不要挤在基地门口」）：
+	#   老实现把 n 个兵全派到**同一个点**（掉血最多那座建筑的中心），
+	##  一群人挤在门口/墙根互相顶，既打不动也卡路。现在按圆周均分散到建筑周围 7m。
+	var squad: Array = army.slice(0, n)
+	var spots: Array = _spread_targets(squad, point, 7.0, 61)
+	for i in range(squad.size()):
+		_sched.attack_move([squad[i]], spots[i], "defend")
 	# 只在"真的登记了命令"时才打日志：否则每 4 秒一行同样的字，
 	# 看起来像在疯狂下令，其实早就在路上了（到达判定已经拦掉了）。
 	if int(_sched.stats().get("queued", 0)) > before:
@@ -3707,6 +3752,9 @@ func _issue_wave_plan(p: Dictionary) -> bool:
 	var goal: Dictionary = p.get("goal", {})
 	var targets: Array = _scatter_targets(army.slice(0, push_n), target)
 	var home: Vector3 = RtsWorld.base_center(_faction)
+	# 留守散点：base 外 20m 一圈（比 16 更靠外，避开门口那条路），按人数算弧长
+	var rest_units: Array = army.slice(push_n)
+	var rest_pts: Array = _spread_targets(rest_units, home, 20.0, _wave_index * 3 + 1)
 	var sent: Array = []
 	for i in range(army.size()):
 		var u: RtsUnit = army[i]
@@ -3717,9 +3765,9 @@ func _issue_wave_plan(p: Dictionary) -> bool:
 			sent.append(u)
 		else:
 			# 留守的人散在基地外圈，别全站在大本营里堵路。
-			# 同样是"纯散开" → 确定性伪随机，不消费全局流（见 _dhash01）。
-			var ang: float = _dhash01(hash(u.name), _wave_index * 31 + 11) * TAU
-			_sched.move([u], home + Vector3(cos(ang) * 16.0, 0.0, sin(ang) * 16.0), "wave")
+			# ★ 2026-11-07：改成真正的圆周均分（老实现是一个半径 16m 的环，
+			#   人一多弧长不够 → 挤在门口/门口那条路上；见 _spread_targets）。
+			_sched.move([u], rest_pts[i - push_n], "wave")
 
 	# ★ 记录表在这里开（`_open_wave` 里自增 `_wave_index`，所以日志与记录同号）
 	_open_wave(sent, target, foe, goal)
@@ -3795,15 +3843,19 @@ func _manage_night(_diff: DifficultyDef) -> void:
 	_night_seq += 1
 	var home: Vector3 = RtsWorld.base_center(_faction)
 	var moved: int = 0
+	var recall: Array = []
 	for u in _army_units():
 		if u == null or not is_instance_valid(u):
 			continue
 		# 已经在家里圈内就别折腾它（不然每 6 秒重下一次命令，兵一直原地踏步）
 		if u.global_position.distance_to(home) <= DEFENSE_RADIUS + 6.0:
 			continue
-		var ang: float = _dhash01(hash(u.name), _night_seq * 37 + 5) * TAU
-		var p: Vector3 = home + Vector3(cos(ang), 0.0, sin(ang)) * (DEFENSE_RADIUS * 0.8)
-		_sched.attack_move([u], p, "night")
+		recall.append(u)
+	# ★ 散开收队（2026-11-07）：老实现是同一半径的环，人多了弧长不够就挤成一坨。
+	#   现在按人数算弧长（_spread_targets），一圈站不下就自动外扩。
+	var pts: Array = _spread_targets(recall, home, DEFENSE_RADIUS * 0.8, _night_seq * 37 + 5)
+	for i in range(recall.size()):
+		_sched.attack_move([recall[i]], pts[i], "night")
 		moved += 1
 	if moved > 0:
 		_log("入夜收队：%d 兵回防（基地 %.0fm 圈）" % [moved, DEFENSE_RADIUS])
@@ -4149,6 +4201,39 @@ func _scatter_targets(units: Array, center: Vector3) -> Array:
 		var q := Vector3(center.x + cos(ang) * r, 0.0, center.z + sin(ang) * r)
 		if pf != null:
 			q = pf.standable_point(q, 0.5, 0.15)
+		out.append(RtsWorld.snap_y(q))
+	return out
+
+
+## **按圆周均分**把一批单位散到 center 周围（玩家口径 2026-11-07：「不要挤在一起，
+## 更不要挤在基地门口」）。
+##
+## 和 `_scatter_targets` 的分工：
+##   · `_scatter_targets` 是「无条件螺旋」，用于**行军**（路上本来就该按身位铺开，
+##     一波 12 个兵铺成 9m 的盘，到点后各自索敌）；
+##   · 这个函数是「有明确半径的驻防/集合」，按人数算周长，保证相邻两人间距 >= gap，
+##     所以 20 个兵不会在基地门口叠成一坨。
+##
+## 落点仍过 `standable_point`：贴着建筑/树的一侧会被吸到可站格上，不会挤进墙里。
+func _spread_targets(units: Array, center: Vector3, radius: float, salt: int,
+		gap: float = 2.4) -> Array:
+	var out: Array = []
+	var n: int = units.size()
+	if n <= 0:
+		return out
+	var pf: GridPathfinder = RtsWorld.pathfinder()
+	# 人数多时圆周半径要跟着放大，否则相邻两人间距 < 身位，分离力互相顶
+	var r: float = maxf(radius, gap * float(n) / TAU)
+	for i in range(n):
+		var u = units[i]
+		# 每个单位自己的角度抖动：同一批人两次下令不会完全重合，又不会挤在一起
+		var jitter: float = 0.0
+		if u != null and is_instance_valid(u):
+			jitter = (_dhash01(hash(u.name), salt * 131 + 7) - 0.5) * 0.16
+		var ang: float = TAU * (float(i) / float(n) + jitter)
+		var q := Vector3(center.x + cos(ang) * r, 0.0, center.z + sin(ang) * r)
+		if pf != null:
+			q = pf.standable_point(q, 0.6, 0.2)
 		out.append(RtsWorld.snap_y(q))
 	return out
 

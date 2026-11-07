@@ -48,6 +48,8 @@ const ARRIVE_SLACK: float = 1.4
 const CROWD_PENALTY: float = 7.0
 ## 卡死兜底：某阶段停留超过这个秒数且几乎没位移，就强制推进
 const PHASE_STUCK_TIME: float = 2.8
+## 找不到资源后每隔多久重搜一次（秒）。见 _order_gather 的 SEEK 分支。
+const GATHER_RETRY_SEC: float = 3.0
 ## 农民被打后逃跑持续时间（秒）
 const FLEE_TIME: float = 3.0
 ## 转向时允许的最低速度占比（背身=0 先转身，侧身还能蹭一点）
@@ -238,6 +240,8 @@ var _attack_cd: float = 0.0
 var _windup_t: float = 0.0
 var _swinging: bool = false
 var _think_t: float = 0.0
+## 空闲单位的隔帧开关（见 _process_inner 的空闲降频）
+var _idle_skip: int = 0
 ## 新指令下达后的"免索敌"宽限期（秒）。见 order_move 的注释。
 var _acquire_grace: float = 0.0
 
@@ -278,6 +282,8 @@ var _patrol_a: Vector3 = Vector3.ZERO
 var _patrol_b: Vector3 = Vector3.ZERO
 var _patrol_at_b: bool = true
 var _phase_pos: Vector3 = Vector3.ZERO
+## 找不到资源时的重找节流（秒）。见 _order_gather 的 SEEK 分支。
+var _gather_retry_t: float = 0.0
 var _carry_kind: int = RtsConst.Harvest.GOLD
 var _flee_t: float = 0.0
 var _was_gathering: bool = false
@@ -494,6 +500,11 @@ func _accel() -> float:
 ## 受到伤害。amount 是**已结算完**的最终伤害（护甲/克制/暴击由 RtsCombat 算好）。
 func take_damage(amount: float, _type: int, from: Node3D) -> void:
 	if not is_alive():
+		return
+	# ★ 钻在工地里的农民**无敌**（玩家 2026-11-07 口径）：
+	#   房子里的人既不能被索敌（can_be_targeted=false），也不吃任何漏网伤害
+	#   （范围技/脚本直伤/旧存档里的残留目标）。要打他，先把房子拆了。
+	if _inside_site != null:
 		return
 	hp -= amount
 	if visual != null:
@@ -1089,18 +1100,31 @@ static var dbg_amove: int = 0
 static var dbg_goto: int = 0
 static var dbg_sgoal: int = 0
 static var dbg_goto_n: int = 0
+## 性能探针计时总开关（2026-11-07）。**默认关**：
+##
+## 为什么必须关：`Time.get_ticks_usec()` 一次 ~40ns，而单位每帧要打 10~16 个点
+## （process/order/move/sep/ground/goto/sgoal/acquire…）。8090 单位 60fps 下
+## 就是 500 万次/秒 —— 光「量自己有多慢」就能吃掉一格 CPU。
+## 只有 `--perf` / `--perf-long` 才打开（见 性能探针.gd）。
+static var dbg_perf: bool = false
 ## 指令分布普查（每次采样清零重算）：key = order 枚举值，value = 单位数
 static var dbg_order_hist: Dictionary = {}
 
 
 ## 带计时的索敌（`_update_order` 里的调用点统一走它）
 func _acquire_timed(dt: float, radius_scale: float = 1.0) -> void:
+	if not RtsUnit.dbg_perf:
+		_acquire(dt, radius_scale)
+		return
 	var t0: int = Time.get_ticks_usec()
 	_acquire(dt, radius_scale)
 	RtsUnit.dbg_acquire += Time.get_ticks_usec() - t0
 
 func _process(delta: float) -> void:
 	if def == null:
+		return
+	if not RtsUnit.dbg_perf:
+		_process_inner(delta)
 		return
 	var _t0: int = Time.get_ticks_usec()
 	_process_inner(delta)
@@ -1126,6 +1150,16 @@ func _process_inner(delta: float) -> void:
 		_tick_inside_build(dt)
 		return
 
+	# ★ 空闲单位逻辑降频（2026-11-07 性能排查）。
+	#   判据很严：可移动 + 没指令 + 没目标 + 没在动 + 不在施法/撤退/逃跑/工地里。
+	#   这种单位每帧唯一要做的事就是「别和同伴重叠」（分离），隔一帧做一次在
+	#   玩家眼里完全看不出来；而 8000 待命兵的场景里这一条能砍掉近一半的单位逻辑。
+	#   ⚠ 建筑不能跳：训练队列 / 塔的索敌都在 `_update_order`/`_tick_extra` 里。
+	if _is_fully_idle():
+		_idle_skip = (_idle_skip + 1) & 1
+		if _idle_skip == 1:
+			return
+
 	# 施法中：只数前摇，别的都不做
 	if state == RtsConst.State.CAST:
 		_update_cast(dt)
@@ -1134,30 +1168,48 @@ func _process_inner(delta: float) -> void:
 		_update_anim()
 		return
 
-	# ---- 分项计时（只给 性能探针 读；每帧多 6 次 ticks_usec，可忽略）----
-	var _q0: int = Time.get_ticks_usec()
+	# ---- 分项计时（只给 性能探针 读；`dbg_perf` 关着时零开销）----
+	var perf: bool = RtsUnit.dbg_perf
+	var _q0: int = 0
+	if perf:
+		_q0 = Time.get_ticks_usec()
 	_update_order(dt)
-	RtsUnit.dbg_order += Time.get_ticks_usec() - _q0
+	if perf:
+		RtsUnit.dbg_order += Time.get_ticks_usec() - _q0
 	# ★ 刚刚在这一帧钻进工地：后面的移动/分离/贴地全部跳过。
 	#   不跳的话，`_update_anim` 里"离开矿洞就把模型显示回来"的兜底会立刻
 	#   把刚隐藏的模型顶回可见（建造自检抓到的 `隐藏 0/4`）。
 	if _inside_site != null and order == RtsConst.Order.BUILD:
 		_update_anim()
 		return
-	_q0 = Time.get_ticks_usec()
+	if perf:
+		_q0 = Time.get_ticks_usec()
 	_update_move(dt)
 	_update_attack(dt)
 	_update_auto_cast(dt)
 	_settle_state()
-	RtsUnit.dbg_move += Time.get_ticks_usec() - _q0
-	_q0 = Time.get_ticks_usec()
+	if perf:
+		RtsUnit.dbg_move += Time.get_ticks_usec() - _q0
+	if perf:
+		_q0 = Time.get_ticks_usec()
 	_update_separation(dt)
 	_update_wall_pushout(dt)
-	RtsUnit.dbg_sep += Time.get_ticks_usec() - _q0
-	_q0 = Time.get_ticks_usec()
+	if perf:
+		RtsUnit.dbg_sep += Time.get_ticks_usec() - _q0
+	if perf:
+		_q0 = Time.get_ticks_usec()
 	_snap_ground(dt)
 	_update_anim()
-	RtsUnit.dbg_ground += Time.get_ticks_usec() - _q0
+	if perf:
+		RtsUnit.dbg_ground += Time.get_ticks_usec() - _q0
+
+
+## 是否「彻底闲着」：可移动、没指令、没目标、没在动、不在施法/撤退/逃跑/工地里。
+## 只有这种单位允许隔帧跑一次逻辑（见 _process_inner 的空闲降频）。
+func _is_fully_idle() -> bool:
+	return is_mobile() and order == RtsConst.Order.NONE and target == null \
+			and not _moving and _speed < 0.02 and _flee_t <= 0.0 \
+			and _inside_site == null and _cast_id == &"" and not _retreat and _dying == false
 
 
 ## 各种计时器
@@ -1349,14 +1401,25 @@ func _order_gather(dt: float) -> void:
 		return
 
 	# 目标没了 / 被采空 → 换下一个
+	#
+	# ★ 2026-11-07 玩家口径「部分农民采完木头就停在伐木场/基地附近，甚至停在刚倒下的树旁边」：
+	#   老实现在这里直接 `order = NONE; state = IDLE` —— 找不到下一棵树就地罚站，
+	#   玩家看到的就是「农民不动了」。现在改成：
+	#     ① 换目标立刻搜一次（不节流）；
+	#     ② 真的一棵都没有 → 进 SEEK，走回最近的交汇点，每 GATHER_RETRY_SEC 再搜；
+	#        （全图树砍光之前一定会重新找到，AI 补种的树/新开的分矿也能自动接上）
 	if _gather_node == null or not is_instance_valid(_gather_node) \
 			or bool(_gather_node.call("is_depleted")):
 		_release_gather_slot()
-		_gather_node = _find_harvestable(_carry_kind)
+		_gather_node = null
+		_gather_retry_t -= dt
+		if _gather_retry_t <= 0.0:
+			_gather_retry_t = GATHER_RETRY_SEC
+			_gather_node = _find_harvestable(_carry_kind)
 		if _gather_node == null:
-			order = RtsConst.Order.NONE
-			state = RtsConst.State.IDLE
+			_enter_phase(GatherPhase.SEEK)
 			return
+		_gather_retry_t = 0.0
 		_gather_phase = GatherPhase.TO_NODE
 		_gather_slot = -1
 		_go_to(_gather_spot(), true)
@@ -1367,7 +1430,9 @@ func _order_gather(dt: float) -> void:
 	if _phase_t > PHASE_STUCK_TIME and moved_since < 0.55:
 		if _gather_phase == GatherPhase.TO_NODE or _gather_phase == GatherPhase.SEEK:
 			# 已经在资源附近却永远差一点到 -> 直接进"起手"（起手完就开始采）
-			if _flat_dist(_gather_node.global_position) <= _stand_off(_gather_node) + ARRIVE_SLACK + 2.0:
+			# SEEK 时 _gather_node 是 null（附近没资源）—— 这里要挡住，别解引用空引用
+			if _gather_node != null and is_instance_valid(_gather_node) \
+					and _flat_dist(_gather_node.global_position) <= _stand_off(_gather_node) + ARRIVE_SLACK + 2.0:
 				_stop_moving()
 				_gather_enter_t = RtsSkills.cast_time(_gather_skill)
 				_enter_phase(GatherPhase.ENTER if _gather_enter_t > 0.0 else GatherPhase.HARVEST)
@@ -1380,6 +1445,17 @@ func _order_gather(dt: float) -> void:
 		_enter_phase(_gather_phase)
 
 	match _gather_phase:
+		GatherPhase.SEEK:
+			# 附近真的没有可采资源：走回最近的交汇点等着（每 GATHER_RETRY_SEC 重搜一次）。
+			# 玩家看到的必须是「农民回家了」，不是「农民站在刚倒下的树旁边不动」。
+			state = RtsConst.State.MOVE
+			var home: Node3D = _nearest_dropoff()
+			var dest: Vector3 = home.global_position if home != null \
+					else RtsWorld.base_center(faction)
+			_go_to(dest)
+			if _flat_dist(dest) <= 3.0:
+				_stop_moving()
+				state = RtsConst.State.IDLE
 		GatherPhase.TO_NODE:
 			state = RtsConst.State.MOVE
 			# 走"自己那个载位"，不是矿心：三个人围着矿站，不叠在一个点上
@@ -1586,6 +1662,9 @@ func _enter_build_site(site: RtsBuilding) -> void:
 
 
 ## 从工地里出来（本单位主动离开：改令 / 工地没了）。
+##
+## ★ 必须**落到墙外**（2026-11-07）：住进去的时候人是站在占地里的，直接原地现身
+##   会卡在建筑的挡格里（A* 认为他在墙里，走出不来）。落点走 work_spot_for（占格外圈一格）。
 func _leave_inside_site() -> void:
 	if _inside_site == null:
 		return
@@ -1593,6 +1672,11 @@ func _leave_inside_site() -> void:
 	_inside_site = null
 	if site != null and is_instance_valid(site) and site.has_method("release_builder"):
 		site.call("release_builder", self)
+	if site != null and is_instance_valid(site):
+		var at: Vector3 = global_position
+		if site.has_method("work_spot_for"):
+			at = site.call("work_spot_for", self)
+		global_position = RtsWorld.ground(RtsWorld.walkable_pos(at))
 	_restore_after_inside()
 
 
@@ -1621,7 +1705,8 @@ func _restore_after_inside() -> void:
 
 ## 在工地内部：每帧只推进进度。移动/分离/贴地/动画全部跳过（模型已隐藏）。
 func _tick_inside_build(dt: float) -> void:
-	var site: RtsBuilding = _inside_site as RtsBuilding
+	# 同样不能用 `as RtsBuilding`：工地在拆掉的那一帧会被 free（见 _update_anim 的注释）
+	var site = _inside_site
 	if site == null or not is_instance_valid(site) or site.is_constructed or not site.is_alive():
 		_leave_inside_site()
 		order = RtsConst.Order.NONE
@@ -1728,6 +1813,9 @@ func _resume_after_flee() -> void:
 ##      60Hz 反复起停：速度曲线锯齿、动画 walk/idle 闪、每 0.25s 白算一次全量 A*。
 ##   ③ 被挤开才重启：分离/推挤把单位挤离目标超过半个身位才重新走。
 func _go_to(pos: Vector3, force: bool = false) -> void:
+	if not RtsUnit.dbg_perf:
+		_go_to_impl(pos, force)
+		return
 	RtsUnit.dbg_goto_n += 1
 	var _t_go: int = Time.get_ticks_usec()
 	_go_to_impl(pos, force)
@@ -1772,15 +1860,18 @@ func _standable_goal(want: Vector3) -> Vector3:
 	var pf := _pathfinder()
 	if pf == null:
 		return want
-	var _t_sg: int = Time.get_ticks_usec()
+	var perf: bool = RtsUnit.dbg_perf
+	var _t_sg: int = Time.get_ticks_usec() if perf else 0
 	var r: float = get_radius() * CLEAR_SAFETY
 	# 落点必须留出 GOAL_MARGIN 的余量：站定后还要被同伴推、被分离挤，
 	# 净空刚好 0.5 的落点一推就掉进阻挡判据，然后和 wall_pushout 对拉。
 	if pf.is_standable(want, r + GridPathfinder.GOAL_MARGIN):
-		RtsUnit.dbg_sgoal += Time.get_ticks_usec() - _t_sg
+		if perf:
+			RtsUnit.dbg_sgoal += Time.get_ticks_usec() - _t_sg
 		return _spread_goal(want, r) if _spread_allowed() else want
 	var near: Vector3 = pf.standable_near(want, global_position, r, GridPathfinder.GOAL_MARGIN)
-	RtsUnit.dbg_sgoal += Time.get_ticks_usec() - _t_sg
+	if perf:
+		RtsUnit.dbg_sgoal += Time.get_ticks_usec() - _t_sg
 	return _spread_goal(near, r) if _spread_allowed() else near
 
 
@@ -1893,8 +1984,16 @@ func _request_path() -> void:
 			if _stuck_count % 2 == 0:
 				side = -side
 			goal = _goal + side * (1.2 + 0.5 * float(mini(_stuck_count, 5)))
-	# 走 RtsWorld：它负责把 y 贴到地形高度；净空半径由 GridPathfinder.agent_radius（0.5m）兜住
-	_path = RtsWorld.find_path(global_position, goal)
+	# 走 RtsWorld：它负责把 y 贴到地形高度。
+	# ★ 2026-11-07：**大身位要自己报净空**。默认 agent_radius=0.5 是步兵身位；
+	#   0.58 的蒸汽重步兵拿 0.5 的净空去规划，A* 会给出「1 格宽的缝」，
+	#   到了缝口被 `_steer` 的清空判据顶死 = 玩家看到的「卡在树/墙边不动」。
+	#   但门槛抬太高会让 A* 展开数爆炸（118² 实测 272 → 2226），
+	#   所以只给**真的超过默认身位**的兵种传参，普通兵继续吃默认值（零性能代价）。
+	var pr: float = -1.0
+	if def != null and def.body_radius > 0.52:
+		pr = def.body_radius * 0.98
+	_path = RtsWorld.find_path(global_position, goal, pr)
 	_path_i = 0
 	# 注意：这里**不重置** _direct_t。空路径时会被每 0.3s 重问一次，
 	# 若每次都清零，"1.5s 无解收工"的计时永远不会到，单位会一直朝墙直行。
@@ -2736,7 +2835,14 @@ func _finish_harvest() -> void:
 	var cap: int = def.carry_capacity
 	if cap <= 0:
 		cap = Cfg.game.harvest_carry
-	var got: int = int(_gather_node.call("consume", cap))
+	# ★ 树按「次数」扣（玩家口径 2026-11-07）：这一趟采完 = 扣 1 次，拿满 cap 木头。
+	#   金矿仍然按吨位扣（3200 金一次搬 10）。两种口径分开见 可采集物.consume_charge。
+	var got: int = 0
+	if _gather_node.has_method("is_charge_based") \
+			and bool(_gather_node.call("is_charge_based")):
+		got = int(_gather_node.call("consume_charge", cap))
+	else:
+		got = int(_gather_node.call("consume", cap))
 	if got <= 0:
 		_gather_phase = GatherPhase.TO_NODE
 		return
@@ -2864,7 +2970,12 @@ func _update_anim() -> void:
 	# ★ 只对**可移动单位**做（建筑不能进矿洞；而且建筑的 `visual.position.y`
 	#   被 建筑._install_pad 设成 PAD_LIFT=0.09 用来治 z-fighting，这里一重置就又闪了）。
 	if is_mobile():
-		var mine: Node3D = _gather_node as Node3D
+		# ⚠ **不能写 `var mine: Node3D = _gather_node as Node3D`**（2026-11-07 抓到）：
+		#   树被砍倒后节点会 free，而 `as` 对已释放对象会抛
+		#   "Trying to cast a freed object" 并**中断整个 _update_anim** ——
+		#   表现是伐木工每帧刷一条 ERROR、动画/shake 全停（日志里几万条）。
+		#   无类型 var 接住 + is_instance_valid 判据（和 _find_harvestable 的注释同一条规矩）。
+		var mine = _gather_node
 		var can_enter: bool = state == RtsConst.State.GATHER \
 				and _carry_kind == RtsConst.Harvest.GOLD \
 				and mine != null and is_instance_valid(mine) \

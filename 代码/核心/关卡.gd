@@ -48,6 +48,22 @@ var _props_root: Node3D = null
 ## 本关生成的可采集物（树 / 金矿）
 var _harvestables: Array = []
 
+## ★ 道具占格的引用计数（"这格到底还有谁占着"）。
+## 为什么必须有：`GridPathfinder.mark_blocked(cell, false)` 只知道"这格现在可走"，
+## 不知道是**谁**挡的。砍树时如果无脑放开 2×2/圆里的所有格，会把邻树、岩石、
+## 甚至水面/建筑的格子一起打开 —— 于是 A* 认为能穿树，单位真的走进树冠后停住。
+## 现在：cell 索引 → 占着它的实体数量；只有计数归零、且不是地形/水/边界挡的，
+## 才真正放开。
+var _prop_owner: Dictionary = {}
+## 实体实例 id → 它注册过的格子（释放时按同一份格子退，保证互逆）
+var _prop_cells_of: Dictionary = {}
+## 与树同序的占格（`_rebuild_prop_owners` 算一次，`spawn_props` 按序取用）
+var _pending_tree_cells: Array = []
+## 与道具无关的阻挡（地形陡坡 / 水面 / 边界）：这些格**永远不许**被 release 打开
+var _base_blocked: PackedByteArray = PackedByteArray()
+## 占格规则的唯一实现
+const 占格 := preload("res://代码/寻路/占格规则.gd")
+
 
 ## 建关（主场景调用；不要用 _ready 自动建，方便测试按需构建）
 ##
@@ -168,6 +184,8 @@ func _build_world(cfg: GameConfig) -> void:
 	# --- 3. 寻路网格 ---
 	pathfinder = GridPathfinder.new()
 	pathfinder.build(world_size, map_data.walkable)
+	# 建完立即统计"每格被哪个道具占着"：砍树释放要靠它做引用计数。
+	_rebuild_prop_owners()
 
 	# --- 3.5 崖脚碎石（纯装饰，追加在寻路网格建好之后，不影响可走性） ---
 	_append_cliff_scree()
@@ -474,6 +492,86 @@ func _count_walkable(a: PackedByteArray) -> int:
 	return c
 
 
+# ===========================================================================
+# 道具占格：注册 / 释放（树砍倒的唯一出口）
+# ===========================================================================
+
+## 建好寻路网格之后立刻统计"每格被哪个道具占着"，同时固化与道具无关的阻挡。
+##
+## 数据源和 `地图生成._apply_prop_blocks` / `地图加载器.build_walkable_mask(cells)`
+## 是**同一个** `占格规则`，所以这里统计出的格子必然等于掩码里被道具压掉的那些 ——
+## 否则 release 会多放或少放（多放 = 穿树，少放 = 隐形墙）。
+func _rebuild_prop_owners() -> void:
+	_prop_owner.clear()
+	_prop_cells_of.clear()
+	_pending_tree_cells.clear()
+	if map_data == null or pathfinder == null:
+		return
+	var w: int = maxi(8, int(round(world_size)))
+	for t in map_data.trees:
+		var cells := 占格.tree_cells(w, t)
+		_count_prop_cells(cells)
+		_pending_tree_cells.append(cells)
+	for m in map_data.mines:
+		_count_prop_cells(占格.rect_cells(w, m, 占格.MINE_CELLS.x, 占格.MINE_CELLS.y))
+	for r in map_data.rocks:
+		_count_prop_cells(占格.rock_cells(w, r["pos"], float(r.get("scale", 1.0))))
+	# 与道具无关的阻挡（陡坡 / 水面 / 边界）：任何道具释放都不许打开它们
+	var walk: PackedByteArray = map_data.walkable
+	_base_blocked.resize(walk.size())
+	for i in range(walk.size()):
+		_base_blocked[i] = 1 if (walk[i] == 0 and not _prop_owner.has(i)) else 0
+
+
+func _count_prop_cells(cells: PackedInt32Array) -> void:
+	for i in cells:
+		_prop_owner[i] = int(_prop_owner.get(i, 0)) + 1
+
+
+## 登记一个实体的占格。
+## ★ 分两种：`_prop_owner` 的初始计数是**按 map_data 预统计**的（那时还没有节点），
+##   所以树/矿 spawn 时只能"记住自己的格子"，**不能再计数一次**（会变成 2，释放永远放不掉）；
+##   建筑是运行期新增的，才需要 `register_prop_cells` 计数。
+func _store_prop_cells(n: Node, p_cells: PackedInt32Array) -> void:
+	if n == null or not is_instance_valid(n):
+		return
+	_prop_cells_of[n.get_instance_id()] = p_cells.duplicate()
+
+
+## 登记并计数（只给运行期新增的实体用：建筑）
+func register_prop_cells(n: Node, p_cells: PackedInt32Array) -> void:
+	if n == null or not is_instance_valid(n):
+		return
+	_store_prop_cells(n, p_cells)
+	_count_prop_cells(p_cells)
+
+
+## **释放一个实体的占格**（树砍倒 / 建筑拆除的唯一出口）。
+##
+## 只放开"引用计数归零、且不是地形/水/边界"的格子 —— 这是"可走性与实际一致"的关键：
+## 以前 `mark_blocked(cell, false)` 无脑放 2×2，会把邻树/岩石/水面一起开出来。
+## 返回是否真的释放过（没登记过返回 false，调用方可走兜底）。
+func release_prop(n: Node) -> bool:
+	if n == null or not is_instance_valid(n) or pathfinder == null:
+		return false
+	var key: int = n.get_instance_id()
+	if not _prop_cells_of.has(key):
+		return false
+	var cells: PackedInt32Array = _prop_cells_of[key]
+	_prop_cells_of.erase(key)
+	var w: int = pathfinder.grid_size().x
+	for i in cells:
+		var left: int = int(_prop_owner.get(i, 0)) - 1
+		if left > 0:
+			_prop_owner[i] = left
+			continue
+		_prop_owner.erase(i)
+		if i >= 0 and i < _base_blocked.size() and _base_blocked[i] != 0:
+			continue
+		pathfinder.mark_blocked(Vector2i(i % w, i / w), false)
+	return true
+
+
 ## 关键目标连通性回执（带"谁不可达"，方便定位是校验太严还是生成器本身断路）
 ##
 ## 目标集合（按 Lead 2026-10-18 的口径收窄，避免把"森林内部树心/外圈山脊"当必须可达）：
@@ -729,14 +827,18 @@ func grid_pathfinder() -> GridPathfinder:
 
 ## 带地形高度的路径（签名不变；内部做"贴地加密"）
 ##
+## radius < 0 = 用寻路器的默认身位（0.5m）。**大身位单位（如 0.58 的蒸汽重步兵）
+## 应该把自己的净空传进来**，否则 A* 可能规划出"1 格宽的缝"——它挤不进去，
+## 到了缝口就被 `_steer` 判死，表现为"卡住不动"。
+##
 ## 为什么还要加密：A* 只保证**途经格可走**，路径平滑后相邻两个路点可能隔十几米；
 ## 一条直线段跨过圆润的坡顶/坡脚时，中段会离地 1~3m（单位脚下贴地，但转向轨迹会飘）。
 ## 这里按 0.75m 采样，凡中段与线性插值高差 >0.35m 就插入一个贴地中点（最多递归 3 层），
 ## 让路点真的贴着坡面走。坡道/台地边缘的"贴地"就是这么补出来的。
-func find_path(from: Vector3, to: Vector3) -> PackedVector3Array:
+func find_path(from: Vector3, to: Vector3, radius: float = -1.0) -> PackedVector3Array:
 	if pathfinder == null:
 		return PackedVector3Array()
-	var raw: PackedVector3Array = pathfinder.find_path(from, to)
+	var raw: PackedVector3Array = pathfinder.find_path(from, to, radius)
 	if raw.is_empty():
 		return PackedVector3Array()
 	var start: Vector3 = snap_to_ground(from)
@@ -871,15 +973,24 @@ func footprint_height_range(pos: Vector3, footprint: Vector2i) -> float:
 
 
 ## 把建筑占地写进寻路网格（建成/放下时调用）
+##
+## ★ **必须幂等**（2026-11-07）：`建筑.setup()` 里标过一次，调用方
+## （`order_build` 落工地 / `建筑改造.replace`）落成后又会再标一次。
+## 改成引用计数以后，标两次 = 计数 2，`clear_footprint` 只减一次 →
+## 拆掉建筑后原地永远留一个"看不见的禁建区"（升级自检 41 项里唯一红的那个）。
 func mark_footprint(building: Node3D) -> void:
 	if building == null or pathfinder == null:
 		return
 	var def: UnitDef = building.def
 	if def == null or def.footprint == Vector2i.ZERO:
 		return
+	var key: int = building.get_instance_id()
+	if _footprint_cells.has(key):
+		return
 	var rect: Rect2i = _footprint_cell_rect(building, def, 1)
 	_apply_footprint_rect(rect, true)
-	_footprint_cells[building.get_instance_id()] = rect
+	register_prop_cells(building, _rect_cells(rect))
+	_footprint_cells[key] = rect
 	if not _buildings.has(building):
 		_buildings.append(building)
 
@@ -895,9 +1006,25 @@ func clear_footprint(building: Node3D) -> void:
 	var rect: Rect2i = _footprint_cells.get(key, Rect2i())
 	if rect.size.x <= 0 or rect.size.y <= 0:
 		rect = _footprint_cell_rect(building, def, 1)
-	_apply_footprint_rect(rect, false)
+	# 走引用计数释放：建筑格如果同时被树/岩石/陡坡占着，不能一起打开。
+	# （没登记过的老建筑退回按矩形清，保证不会留下"拆不掉的占地"）
+	if not release_prop(building):
+		_apply_footprint_rect(rect, false)
 	_footprint_cells.erase(key)
-	_buildings.erase(building)
+	if _buildings.has(building):
+		_buildings.erase(building)
+
+
+## 格矩形 → 格索引数组（和 pathfinder / 掩码同一套索引）
+func _rect_cells(rect: Rect2i) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	if pathfinder == null or rect.size.x <= 0 or rect.size.y <= 0:
+		return out
+	var w: int = pathfinder.grid_size().x
+	for z in range(rect.position.y, rect.position.y + rect.size.y):
+		for x in range(rect.position.x, rect.position.x + rect.size.x):
+			out.append(z * w + x)
+	return out
 
 
 ## 建筑占地在 **1m 寻路网格** 上的格子矩形（含净空）。
@@ -937,9 +1064,11 @@ func spawn_props() -> void:
 	if map_data == null:
 		return
 	# 金矿
+	var mw: int = maxi(8, int(round(world_size)))
 	for m in map_data.mines:
 		var p := snap_to_ground(Vector3(m.x, 0.0, m.y))
-		_spawn_harvestable(&"goldmine", p)
+		var mine_cells: PackedInt32Array = 占格.rect_cells(mw, m, 占格.MINE_CELLS.x, 占格.MINE_CELLS.y)
+		_spawn_harvestable(&"goldmine", p, {}, mine_cells)
 	# 树：位置 + 程序化外观参数（品种 / 种子 / 朝向）。
 	# 程序化地图没存种子时留空 —— 由 树库.proc_at(落点) 反推，同一棵每次进游戏都长一样。
 	#
@@ -965,7 +1094,10 @@ func spawn_props() -> void:
 			proc = map_data.trees_proc[i]
 		# 品种由 id 决定：编辑器摆的是 tree_秋 就长秋树；程序化地图统一 tree（混生）。
 		var id := StringName(String(proc.get("id", "tree")))
-		_spawn_harvestable(id, p, proc)
+		var cells: PackedInt32Array = PackedInt32Array()
+		if i < _pending_tree_cells.size():
+			cells = _pending_tree_cells[i]
+		_spawn_harvestable(id, p, proc, cells)
 	# 每棵树 1 个 surface / 1 个材质（旧管线是 5 个材质 = 5 次 draw call）。
 	# 一行日志方便以后回归时看数量级：树 150 棵 ≈ 150 draw call，面数走三档 LOD。
 	var 池: Dictionary = TreeLibrary.stats()
@@ -978,10 +1110,15 @@ func spawn_props() -> void:
 
 
 ## 生成一个可采集物
-func _spawn_harvestable(id: StringName, pos: Vector3, proc: Dictionary = {}) -> Node3D:
+## p_cells：它在寻路网格上挡住的格子（来自 `占格规则`，和掩码同一份）。
+## 砍倒时 `可采集物._free_footprint` 会走 `release_prop` 按这份格子做引用计数释放。
+func _spawn_harvestable(id: StringName, pos: Vector3, proc: Dictionary = {},
+		p_cells: PackedInt32Array = PackedInt32Array()) -> Node3D:
 	var n: Node3D = Game.spawn_unit(null, id, pos, _props_root, proc)
 	if n == null:
 		return null
+	if not p_cells.is_empty():
+		_store_prop_cells(n, p_cells)
 	if id == &"goldmine":
 		# 资产约定：模型正面朝 -Z；而镜头从南往北看，矿洞门/矿车在背面。
 		# 金矿转 180°，让"值钱的一面"（金脉/木门/矿车）朝向玩家。

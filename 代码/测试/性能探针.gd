@@ -22,6 +22,8 @@ var _sys: Dictionary = {}
 
 
 func _ready() -> void:
+	# ★ 探针要读单位的分项计时，必须打开计时开关（默认关，见 RtsUnit.dbg_perf）
+	RtsUnit.dbg_perf = true
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--perf-long="):
 			interval = maxf(1.0, float(a.get_slice("=", 1)))

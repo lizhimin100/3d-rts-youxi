@@ -371,10 +371,7 @@ func _tick_constructing() -> void:
 			var v = w.get("visual")
 			if v != null and is_instance_valid(v) and not bool(v.get("visible")):
 				hidden += 1
-		for w in _crew:
-			var vv = w.get("visual")
-			if vv != null and is_instance_valid(vv) and not bool(vv.get("visible")):
-				hidden += 1
+		# ⚠ 这里以前是同一段循环写了两遍（hidden 被数成 8/4，常红）。
 		_ok("农民钻进工地内部（模型隐藏、不参与碰撞）",
 				inside == _crew.size() and hidden == _crew.size(),
 				"内部 %d/%d，隐藏 %d/%d" % [inside, _crew.size(), hidden, _crew.size()])

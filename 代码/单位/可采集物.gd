@@ -177,6 +177,28 @@ func slot_point(idx: int, from_pos: Vector3) -> Vector3:
 # 采集
 # ===========================================================================
 
+## 这个资源点是「按次数」还是「按数量」计消耗。
+##
+## 树 = 按次数（玩家口径 2026-11-07：一棵树 20 次，采一次扣一次）；
+## 金矿 = 按吨位（3200 金 / 一次搬 10）。两种口径分开，UI 也就能分别显示「剩 12 次」/「剩 43%」。
+func is_charge_based() -> bool:
+	return harvest_kind == RtsConst.Harvest.WOOD
+
+
+## **按次采集**：扣 1 次，返回这一趟拿到的产量（per_action = 农民的载重）。
+##
+## 为什么要单独一个入口（而不是复用 consume）：`consume(10)` 会扣 10 次，
+## 一棵 20 次的树只能采两趟 —— 玩家要的是「采 20 趟」。
+func consume_charge(per_action: int) -> int:
+	if remaining <= 0 or per_action <= 0:
+		return 0
+	remaining -= 1
+	if remaining <= 0:
+		remaining = 0
+		_deplete()
+	return per_action
+
+
 ## 采走 amount，返回**实际采到的数量**（不足就采完为止）
 func consume(amount: int) -> int:
 	if amount <= 0 or remaining <= 0:
@@ -264,40 +286,16 @@ func _darken(n: Node, factor: float) -> void:
 		_darken(c, factor)
 
 
-## 把树占的寻路格子放出来（只放"没有被别的活物占着"的格子，避免打通出隐形通道）
+## 把树占的寻路格子放出来 —— **唯一出口**：关卡的道具占格引用计数。
+##
+## 旧实现（已删）：按 `def.footprint`（2×2）逐格 `mark_blocked(false)`，和挡格用的
+## 0.95m 圆（5 格）根本不是一回事 ——
+##   · 圆的 5 格只放了 2~4 格 → **留 2 个隐形阻挡格**（单位绕空气）；
+##   · 放出来的 2×2 还可能是邻树 / 岩石 / 建筑的格子 → A* 认为能过，
+##     单位真的走进旁边那棵活树的树冠，然后被净空判据顶住 = "被树卡住"。
+## 现在档格和释放都走 `占格规则` 的同一份格子，并做引用计数：
+## 只有"没有任何别的道具占着、也不是地形/水/边界"的格子才真正恢复可走。
 func _free_footprint() -> void:
-	var pf: GridPathfinder = RtsWorld.pathfinder()
-	if pf == null or def == null:
+	if def == null:
 		return
-	var fp: Vector2i = def.footprint
-	if fp == Vector2i.ZERO:
-		fp = Vector2i(1, 1)
-	var center: Vector2i = pf.world_to_cell(global_position)
-	var half_x: int = fp.x / 2
-	var half_z: int = fp.y / 2
-	var span_x: int = maxi(fp.x % 2, 1)
-	var span_z: int = maxi(fp.y % 2, 1)
-
-	# 先收集"别人还占着"的格子
-	var occupied: Dictionary = {}
-	for h in Game.all_harvestables():
-		if h == null or not is_instance_valid(h) or h == self:
-			continue
-		var hd: UnitDef = h.def
-		if hd == null:
-			continue
-		if h.has_method("is_depleted") and bool(h.call("is_depleted")):
-			continue
-		var hc: Vector2i = pf.world_to_cell(h.global_position)
-		var hx: int = hd.footprint.x / 2
-		var hz: int = hd.footprint.y / 2
-		for dz in range(-hz, hz + maxi(hd.footprint.y % 2, 1)):
-			for dx in range(-hx, hx + maxi(hd.footprint.x % 2, 1)):
-				occupied[Vector2i(hc.x + dx, hc.y + dz)] = true
-
-	for dz in range(-half_z, half_z + span_z):
-		for dx in range(-half_x, half_x + span_x):
-			var cell := Vector2i(center.x + dx, center.y + dz)
-			if occupied.has(cell):
-				continue
-			pf.mark_blocked(cell, false)
+	RtsWorld.release_prop(self)

@@ -84,6 +84,7 @@ func update(ctx: Dictionary) -> Dictionary:
 		"ratio_mode": AIW.mode(),
 		"attack_locked_sec": _locked_sec,
 		"base_threat": threat,
+		"war_threat": float(m.get("war_threat", threat)),
 		"army_ratio": float(m["army_ratio"]),
 		"metrics": m,
 	}
@@ -100,6 +101,9 @@ func build_metrics(ctx: Dictionary) -> Dictionary:
 	var workers: Array = ctx.get("workers", [])
 	var idle_workers: Array = ctx.get("idle_workers", [])
 	var threat_units: Array = ctx.get("threat_units", [])
+	# 只算战争对手（不含野怪）的压家单位。见 简单AI._threat_units 的注释：
+	# 野怪溜进基地圈不该冻结「主动出击」。
+	var war_threat_units: Array = ctx.get("war_threat_units", threat_units)
 	var combat = ctx.get("combat")
 	var now: float = float(ctx.get("now", 0.0))
 
@@ -163,6 +167,8 @@ func build_metrics(ctx: Dictionary) -> Dictionary:
 		"food_cap": cap,
 		"food_headroom": cap - used,
 		"base_threat": float(threat_units.size()),
+		# 战略层的「家里挨打」只看这一项（野怪不算）。
+		"war_threat": float(war_threat_units.size()),
 		"under_attack": 1.0 if bool(ctx.get("under_attack", false)) else 0.0,
 		"buildings": float(faction.count_buildings()) if faction != null else 0.0,
 		"enemy_static_defense": static_def,
@@ -277,7 +283,10 @@ func _attack_ratio_needed() -> float:
 ## `attack_ratio` 仍然算、仍然进 metrics/posture，但**只记录、不判断**，
 ## 供报告与反馈线（波次记录表的投入产出比 / 状态机）使用。
 func _compute_allow_attack(m: Dictionary, aggression: float) -> bool:
-	if float(m.get("base_threat", 0.0)) > 0.0:
+	# ★ 2026-11-07：只看**战争对手**压家（war_threat），不看野怪（base_threat）。
+	#   老实现用 base_threat，而 base_threat 把中立野怪算进来了 ——
+	#   一只豺狼人溜达到基地圈里，这局 AI 就再也不出兵打玩家（玩家实测到的就是这个）。
+	if float(m.get("war_threat", 0.0)) > 0.0:
 		return false
 	if aggression < 0.30:
 		return false
