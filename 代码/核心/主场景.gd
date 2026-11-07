@@ -753,7 +753,7 @@ func _qa_build_ui() -> void:
 	# --- 端到端验收「点农民头像 → 选中里面的农民」（玩家 2026-11-07 口径）---
 	for i in 20:
 		await get_tree().process_frame
-	var hudn: Node = get_node_or_null("HUD")
+	var hudn: Node = hud
 	var panel = hudn.get("_building_panel") if hudn != null else null
 	if panel != null and panel.has_method("_on_crew_icon"):
 		panel.call("_on_crew_icon", 0)
