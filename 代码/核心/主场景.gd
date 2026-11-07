@@ -399,6 +399,11 @@ func _mount_tests() -> void:
 		_mount_script("res://代码/测试/农民测试.gd", "农民测试")
 	if "--walk-test" in args:
 		_mount_script("res://代码/测试/走姿验收.gd", "走姿验收")
+	# 动作截图：待机/走/攻击/举盾 各拍一张近景（人眼验收动画到底有没有播）
+	for a in args:
+		if a == "--anim-shots" or a.begins_with("--anim-shots="):
+			_mount_script("res://代码/测试/动作截图.gd", "动作截图")
+			break
 	if "--map-editor-test" in args:
 		_mount_script("res://代码/测试/地图编辑器自检.gd", "地图编辑器自检")
 	if not _qa_select_id.is_empty():

@@ -1,0 +1,10 @@
+[gd_resource type="Resource" format=3 uid="uid://b3i2g3xkvw101"]
+
+[ext_resource type="Script" uid="uid://c7l1ljjfq8ojh" path="res://代码/配置/野怪营地定义.gd" id="1_4hj8k"]
+
+[resource]
+script = ExtResource("1_4hj8k")
+id = &"camp_creep_den_1"
+display_name = "豺狼人巢穴（自定义）"
+first_spawn_min = 120.0
+spawn_interval_min = 60.0

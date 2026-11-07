@@ -555,20 +555,39 @@ func _case_2c4() -> void:
 	_record("2C4卡：range_tier 四档单调",
 			String(tiers[0]) == "近战" and String(tiers[1]) == "中程"
 			and String(tiers[2]) == "远程" and String(tiers[3]) == "超远程", str(tiers))
-	# ★ 2026-11-07 玩家口径：「近战的攻击范围 1 是基准，其他单位和防御塔要跟着对标，
-	#   并且写清楚 —— 基准变了，其他要同步」。这里逐张卡比对 `档位 × 基准`。
-	var RB = load("res://代码/配置/射程基准.gd")
+	# ★ 2026-11-07 玩家口径（第二次纠正，把「档位」彻底废掉）：
+	#   「我从来不是想整什么档位……我要的是能调整的数值」。
+	#   射程就是**米数**：卡上填 1.0 就是"身位边缘往外 1 米"，填 10 就是 10 米，
+	#   中间**不再有"档位 × 基准"这层乘法**，也不存在"基准变了要同步全表"。
+	#   这里只守两条底线，不管具体数字（数字归玩家在卡上调）：
+	#     ① 能攻击的单位 range 必须 > 0（0 = 谁都打不到，一定是填漏了）；
+	#     ② 近战（无投射物）不该超过 MELEE_MAX_SHORT，超了多半是把中心距当间隙填了。
+	const MELEE_MAX_SHORT: float = 3.0
 	var bad_range: Array = []
-	for cid in RB.TIERS.keys():
-		var card = UT.call("get_card", cid)
-		if card == null:
+	var melee_n: int = 0
+	var ranged_n: int = 0
+	var all_cards: Dictionary = UT.call("load_cards")
+	for cid: String in all_cards.keys():
+		var card = all_cards[cid]
+		if card == null or not (card is UnitCard):
+			continue
+		var atk: int = int(card.get("attack"))
+		if atk <= 0:
 			continue
 		var rng: float = float(card.get("range"))
-		var why: String = RB.call("check_card", cid, rng)
-		if not why.is_empty():
-			bad_range.append(why)
-	_record("射程基准：%d 张卡的 range = 档位 × 基准(%.2f)" % [RB.TIERS.size(), RB.MELEE_BASE],
-			bad_range.is_empty(), "全部一致" if bad_range.is_empty() else str(bad_range))
+		var proj: int = int(card.get("projectile"))
+		if rng <= 0.0:
+			bad_range.append("%s range=%.2f（能攻击却打不到任何东西）" % [cid, rng])
+			continue
+		if proj == 0:
+			melee_n += 1
+			if rng > MELEE_MAX_SHORT:
+				bad_range.append("%s 是近战但 range=%.2f > %.1f（口径是边缘间隙，不是中心距）"
+						% [cid, rng, MELEE_MAX_SHORT])
+		else:
+			ranged_n += 1
+	_record("射程口径：近战 %d 张 / 远程 %d 张，range 就是米数（无档位）" % [melee_n, ranged_n],
+			bad_range.is_empty(), "全部合理" if bad_range.is_empty() else str(bad_range))
 
 
 # ===========================================================================

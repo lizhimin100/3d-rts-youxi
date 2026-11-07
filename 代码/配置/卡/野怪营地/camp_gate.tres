@@ -1,6 +1,6 @@
-[gd_resource type="Resource" load_steps=2 format=3]
+[gd_resource type="Resource" format=3 uid="uid://b054pc8bd54iy"]
 
-[ext_resource type="Script" path="res://代码/配置/野怪营地定义.gd" id="1"]
+[ext_resource type="Script" uid="uid://c7l1ljjfq8ojh" path="res://代码/配置/野怪营地定义.gd" id="1"]
 
 [resource]
 script = ExtResource("1")
@@ -9,6 +9,6 @@ display_name = "失落入口营地"
 den_building = &"creep_gate"
 creeps = Array[StringName]([&"gnoll_warrior"])
 counts = Array[int]([3])
-radius = 6.0
 respawn = 75.0
-minimap_icon = "camp"
+first_spawn_min = 120.0
+spawn_interval_min = 60.0

@@ -554,7 +554,12 @@ func _用例H_最大射程() -> void:
 		表.append({"中心距": "%.2f" % float(d), "间隙": "%.2f" % gap, "reach": "%.2f" % reach, "够": ok})
 	var 自身半径: float = float(兵.call("get_radius"))
 	var 靶半径: float = float(靶.call("get_radius"))
-	var 圈半径: float = float(兵.call("_attack_reach", 靶)) + 自身半径
+	# ★ 圈半径要和**玩家真的看到的那个圈**同一个公式：读选择系统的常量，
+	#   别在这里另写一套 —— 以前这里漏了 RING_TARGET_RADIUS，于是自检报
+	#   "圈外还能打 0.50m"，其实圈早就画到 2.0m 了，白查半天。
+	var sel_script: Script = load("res://代码/操作/选择系统.gd")
+	var 圈半径: float = float(兵.call("_attack_reach", 靶)) + 自身半径 \
+			+ float(sel_script.get("RING_TARGET_RADIUS"))
 	_记("H_最大射程", {
 		"表": 表,
 		"自身半径(米)": "%.2f" % 自身半径,

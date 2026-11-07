@@ -1,16 +1,9 @@
-[gd_resource type="Resource" script_class="UnitCard" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="UnitCard" format=3 uid="uid://bnfsx0xga0ovj"]
 
-[ext_resource type="Script" path="res://代码/配置/单位卡.gd" id="1"]
+[ext_resource type="Script" uid="uid://cngswbdkw8fn5" path="res://代码/配置/单位卡.gd" id="1"]
 
 [resource]
 script = ExtResource("1")
-card_id = "steam_guard"
-display_name = "蒸汽重步兵"
-icon = ""
-description = "蒸汽车坊出的重装单位，攻城伤害。（废弃待重做）"
-cost_gold = 190
-cost_wood = 45
-unit_class = &"陆军"
 roles = Array[StringName]([&"承伤"])
 counters = Array[StringName]([&"建筑"])
 range = 1.5
@@ -18,15 +11,10 @@ attack = 26
 attack_type = &"攻城"
 defense = 9
 defense_type = &"重甲"
-power = -1
-skills = Array[StringName]([])
 max_hp = 640.0
 attack_spread = 4.0
 attack_cooldown = 1.7
-projectile = 0
-projectile_speed = 20.0
 acquire_range = 10.0
-sight_range = 10.0
 move_speed = 3.9
 turn_speed = 7.0
 body_radius = 0.58
@@ -34,15 +22,12 @@ selection_radius = 0.92
 food_cost = 3
 train_time = 26.0
 height = 1.98
-gather_rate = 0.0
-carry_capacity = 10
-max_mana = 0.0
-mana_regen = 0.0
-mana_cost = 0.0
-ability_cooldown = 8.0
 model_path = "res://美术/模型/步兵.glb"
 model_scale = 1.12
-anim_set = 1
 def_role = &"frontline"
 def_tags = Array[StringName]([&"heavy", &"siege"])
-design_power = 0.0
+card_id = "steam_guard"
+display_name = "蒸汽重步兵"
+description = "蒸汽车坊出的重装单位，攻城伤害。（废弃待重做）"
+cost_gold = 190
+cost_wood = 45

@@ -31,6 +31,10 @@ window/size/window_height_override=900
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 
+[dotnet]
+
+project/assembly_name="铁血战歌·简易rts"
+
 [editor_plugins]
 
 enabled=PackedStringArray("res://addons/map_editor/plugin.cfg")

@@ -359,22 +359,35 @@ func _tick_constructing() -> void:
 	if not _saw_working and pr > 0.01:
 		_saw_working = true
 		_ok("农民走到工地并开始施工（进度已起）", pr > 0.0 and pr < 1.0, "进度 %.2f" % pr)
-		# ★ 2026-11-07 兽族苦工口径：干活的农民应该是**钻进工地里**的
-		#   （模型隐藏、没有体积、不可被索敌），而不是站在墙外抡锤。
-		var inside: int = 0
-		var hidden: int = 0
-		for w in _crew:
-			if w == null or not is_instance_valid(w):
-				continue
-			if w.has_method("is_inside_build") and bool(w.call("is_inside_build")):
-				inside += 1
-			var v = w.get("visual")
-			if v != null and is_instance_valid(v) and not bool(v.get("visible")):
-				hidden += 1
-		# ⚠ 这里以前是同一段循环写了两遍（hidden 被数成 8/4，常红）。
-		_ok("农民钻进工地内部（模型隐藏、不参与碰撞）",
-				inside == _crew.size() and hidden == _crew.size(),
-				"内部 %d/%d，隐藏 %d/%d" % [inside, _crew.size(), hidden, _crew.size()])
+	# ★ 2026-11-07 玩家口径（修正）：干活的农民应该**站在工地正中心、模型可见**，
+	#   而不是"钻进房子、模型隐藏"。同时验"建造锁"：在工地里时 order_move 无效。
+	var inside: int = 0
+	var shown: int = 0
+	var at_center: int = 0
+	var locked: int = 0
+	var c: Vector3 = (_site as Node3D).global_position
+	for w in _crew:
+		if w == null or not is_instance_valid(w):
+			continue
+		if w.has_method("is_inside_build") and bool(w.call("is_inside_build")):
+			inside += 1
+		var v = w.get("visual")
+		if v != null and is_instance_valid(v) and bool(v.get("visible")):
+			shown += 1
+		if (w as Node3D).global_position.distance_to(c) <= 0.8:
+			at_center += 1
+		# 建造锁：在工地里点移动必须被挡回去（位置不变、仍在工地里）
+		var before: Vector3 = (w as Node3D).global_position
+		w.call("order_move", before + Vector3(4.0, 0.0, 0.0))
+		if (w as Node3D).global_position.distance_to(before) <= 0.01 \
+				and bool(w.call("is_inside_build")):
+			locked += 1
+	_ok("农民在工地里：模型可见 + 站在正中心 + 拉不走",
+			inside == _crew.size() and shown == _crew.size() \
+			and at_center == _crew.size() and locked == _crew.size(),
+			"内部 %d/%d，可见 %d/%d，正中心 %d/%d，锁住 %d/%d" % [
+				inside, _crew.size(), shown, _crew.size(),
+				at_center, _crew.size(), locked, _crew.size()])
 	if bool(_site.get("is_constructed")) or pr >= 1.0:
 		_next_phase(1)
 	elif _phase_frames > 1200:

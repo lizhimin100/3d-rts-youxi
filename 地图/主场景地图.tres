@@ -3228,7 +3228,10 @@ type_id = &"creep_den"
 category = 1
 position = Vector3(-1.5, 0.254557, -91.5)
 rotation = -3.141592653589793
-owner = 0
+owner = -2
+properties = {
+"camp_id": "camp_creep_den_1"
+}
 
 [sub_resource type="Resource" id="Resource_8qnul"]
 script = ExtResource("1_1nx3f")
@@ -3237,6 +3240,9 @@ category = 1
 position = Vector3(-2.5, 0.28765124, 88.5)
 rotation = -3.141592653589793
 owner = -2
+properties = {
+"camp_id": "camp_den"
+}
 
 [sub_resource type="Resource" id="Resource_gccoh"]
 script = ExtResource("1_1nx3f")
@@ -3245,6 +3251,9 @@ category = 1
 position = Vector3(103, 0.14321548, 0)
 rotation = -3.141592653589793
 owner = -2
+properties = {
+"camp_id": "camp_gate"
+}
 
 [sub_resource type="Resource" id="Resource_dd6b6"]
 script = ExtResource("1_1nx3f")
@@ -3253,6 +3262,9 @@ category = 1
 position = Vector3(-94, 0.07239757, -18)
 rotation = -3.141592653589793
 owner = -2
+properties = {
+"camp_id": "camp_shell"
+}
 
 [sub_resource type="Resource" id="Resource_ud0u2"]
 script = ExtResource("2_r02i6")

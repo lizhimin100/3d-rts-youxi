@@ -589,6 +589,8 @@ const HOME_REGEN: float = 0.06
 ## 撤退中的兵会被路过敌人反复拽回去还手。这里把 `_retreat` 立起来，
 ## `_update_order` 的 MOVE 分支会完全跳过索敌（见那里的注释）。
 func order_retreat(home: Vector3) -> void:
+	if is_building_locked():
+		return
 	if _dying:
 		return
 	order_move(home)          # order_move 会清 _retreat，所以下面再立一次
@@ -704,8 +706,40 @@ func _unregister_now() -> void:
 # 指令（条令 §6）
 # ===========================================================================
 
+## **建造锁**：在工地里干活的农民，除"停止 / 取消建造"外不接受任何新指令。
+##
+## ★ 2026-11-07 玩家口径：「农民建造时……不能直接被拉走，只能由取消命令
+##   或建筑工地被摧毁才能停止建造。」
+##   以前右键点地就能把人拽出来（还常常拽到一半又被 AI 派回去），玩家看到的是
+##   "工地进度条卡住、农民在墙边来回走"。现在**在工地里就锁死**：
+##   · 玩家点移动/攻击/采集 → 不收，弹一条提示（每秒最多一条，不刷屏）；
+##   · 按 X（停止）或点工地的「取消建造」→ 才算取消；
+##   · 工地完工 / 被摧毁 / 被取消 → `release_builders()` 主动放人。
+## 注意：**走到工地途中还没进去**时不锁 —— 半路反悔是正常操作。
+var _lock_tip_cd: float = 0.0
+static var _lock_tip_global: float = 0.0
+
+func is_building_locked() -> bool:
+	return _inside_site != null
+
+
+## 被建造锁挡下时的反馈（只给玩家阵营弹，且全局限流 1.2s）
+func _reject_while_building() -> void:
+	if faction == null or not faction.is_player:
+		return
+	var now: float = float(Time.get_ticks_msec()) * 0.001
+	if now - _lock_tip_global < 1.2:
+		return
+	_lock_tip_global = now
+	Game.toast("农民正在工地里建造：按 X 停止（或点工地上的「取消建造」）才能拉走",
+			Color(0.95, 0.86, 0.62))
+
+
 ## 移动到指定点（编队时 CommandSystem 会给每个单位各自的目标点）
 func order_move(pos: Vector3) -> void:
+	if is_building_locked():
+		_reject_while_building()
+		return
 	if _dying:
 		return
 	order = RtsConst.Order.MOVE
@@ -752,6 +786,9 @@ func _cancel_swing() -> void:
 ##   以前这里不做敌我判定：光标在盟友身上显示红剑（已修），右键还会真的打友军 ——
 ##   队友 AI 的兵被玩家亲手打死，玩家只会觉得"这游戏在坑我"。
 func order_attack(t: Node3D) -> void:
+	if is_building_locked():
+		_reject_while_building()
+		return
 	if _dying or t == null:
 		return
 	var tf: RtsFaction = t.get("faction") as RtsFaction
@@ -768,6 +805,9 @@ func order_attack(t: Node3D) -> void:
 
 ## 攻击移动：路上遇敌就打，打完继续推进
 func order_attack_move(pos: Vector3) -> void:
+	if is_building_locked():
+		_reject_while_building()
+		return
 	if _dying:
 		return
 	order = RtsConst.Order.ATTACK_MOVE
@@ -801,6 +841,9 @@ func order_stop() -> void:
 
 ## 保持原地警戒（不追，但打进范围的敌人）
 func order_hold() -> void:
+	if is_building_locked():
+		_reject_while_building()
+		return
 	if _dying:
 		return
 	order = RtsConst.Order.HOLD
@@ -814,6 +857,9 @@ func order_hold() -> void:
 
 ## 原地**观察**：战斗逻辑与驻守完全一致，只是头顶图标不同。
 func order_observe() -> void:
+	if is_building_locked():
+		_reject_while_building()
+		return
 	order_hold()
 	guard_mode = Guard.OBSERVE
 
@@ -825,6 +871,9 @@ func is_patrolling() -> bool:
 
 ## 巡逻：在"当前位置 ↔ 目标点"之间往返，路上遇敌就打（ATTACK_MOVE 的往返版）
 func order_patrol(pos: Vector3) -> void:
+	if is_building_locked():
+		_reject_while_building()
+		return
 	if _dying:
 		return
 	_patrol_a = global_position
@@ -855,6 +904,9 @@ func _tick_patrol() -> void:
 
 ## 采集指定资源点（**技能驱动**：伐木 / 采矿，见 代码/配置/技能表.gd）
 func order_gather(node: Node3D) -> void:
+	if is_building_locked():
+		_reject_while_building()
+		return
 	if _dying or node == null:
 		return
 	if def == null or not RtsWorld.is_worker_def(def):
@@ -928,6 +980,9 @@ func _release_gather_slot() -> void:
 ## 朝向写在 `setup_construction` **之前**：RtsUnit.setup 会把 rotation.y 记进 _yaw，
 ## 建筑不可移动、之后没人再改它，所以工地和完工后的朝向必然一致。
 func order_build(building_def: UnitDef, pos: Vector3, desired_yaw: float = 0.0) -> Node3D:
+	if is_building_locked():
+		_reject_while_building()
+		return null
 	if _dying or building_def == null:
 		return null
 	if def == null or not RtsWorld.is_worker_def(def) or faction == null:
@@ -1013,6 +1068,10 @@ func _find_open_site(building_def: UnitDef, pos: Vector3) -> Node3D:
 ## 不新建、不扣费、也不再查地形 —— 活儿直接接着干，进度按人头叠加。
 ## 返回是否真的接上了（地块已完成 / 已被拆就返回 false）。
 func order_build_site(site: Node3D) -> bool:
+	# 已经在某个工地里 → 不接第二份（想换工地先按 X 取消）
+	if is_building_locked() and _inside_site != site:
+		_reject_while_building()
+		return false
 	if _dying or site == null or not is_instance_valid(site):
 		return false
 	if def == null or not RtsWorld.is_worker_def(def):
@@ -1034,6 +1093,9 @@ func order_build_site(site: Node3D) -> bool:
 ## 修理一栋己方受损建筑（右键建筑 / 命令卡「修理」都走这里）。
 ## 规则见 RtsBuilding.repair_step：吃木材、按秒推进、多农民叠加。
 func order_repair(building: Node3D) -> bool:
+	if is_building_locked():
+		_reject_while_building()
+		return false
 	if _dying or building == null or not is_instance_valid(building):
 		return false
 	if def == null or not RtsWorld.is_worker_def(def) or faction == null:
@@ -1056,6 +1118,9 @@ func order_repair(building: Node3D) -> bool:
 ## 以前这个接口是空的 —— 右键自家建筑，农民走过去站着，钱照旧挂在身上。
 ## 现在：到点 _deposit_carry()；送完如果还有采集点，自己回去接着采。
 func order_return_res(drop: Node3D = null) -> void:
+	if is_building_locked():
+		_reject_while_building()
+		return
 	if _dying or faction == null:
 		return
 	if def == null or not RtsWorld.is_worker_def(def):
@@ -1086,6 +1151,9 @@ func _alive_node(n: Node3D) -> bool:
 
 ## 释放技能
 func order_cast(ability: StringName, pos: Vector3, t: Node3D = null) -> void:
+	if is_building_locked():
+		_reject_while_building()
+		return
 	if _dying or def == null:
 		return
 	if not RtsSkills.has(ability):
@@ -1729,7 +1797,13 @@ func _order_build_tick(dt: float) -> void:
 # 工地内部（兽族苦工口径）
 # ===========================================================================
 
-## 钻进工地：登记 + 隐藏模型 + 停掉一切移动表现。
+## 钻进工地：登记 + **搬到工地正中心** + 停掉一切移动表现。
+##
+## ★ 2026-11-07 玩家口径（第三次修正，推翻"兽族苦工钻进房子"那套）：
+##   「农民建造时，模型要待在建筑工地正中心、且不能直接被拉走，
+##    只能由取消命令或建筑工地被摧毁才能停止建造。」
+##   所以现在**不隐藏模型**，而是把人真的搬到占地中心（逻辑点也搬），
+##   让他站在地基正中抡锤。离开时由 `_leave_inside_site` 统一丢回墙外一格。
 func _enter_build_site(site: RtsBuilding) -> void:
 	if site == null or not is_instance_valid(site):
 		return
@@ -1741,9 +1815,10 @@ func _enter_build_site(site: RtsBuilding) -> void:
 	state = RtsConst.State.BUILD
 	if site.has_method("admit_builder"):
 		site.call("admit_builder", self)
-	# 用 visible 而不是 scale=0：缩放到 0 会让部分模型法线退化，恢复时闪一下。
-	if visual != null:
-		visual.visible = false
+	# 搬到正中心（Y 贴地）。占地内部是不可走区，但这一段逻辑里
+	# `_process_inner` 只跑 `_update_anim`，不寻路、不分离，所以不会有人卡在墙里。
+	global_position = RtsWorld.ground(site.global_position)
+	_speed = 0.0
 
 
 ## 从工地里出来（本单位主动离开：改令 / 工地没了）。
@@ -3079,11 +3154,16 @@ func _deposit() -> void:
 func _update_anim() -> void:
 	if visual == null or def == null:
 		return
-	# ★ 钻在工地里：模型必须一直是隐藏的。
-	#   下面"离开矿洞 → visual.visible = true"的兜底判据是 `not visual.visible`，
-	#   它会把人从房子里"显示"出来（建造自检的 `隐藏 0/4` 就是它）。
+	# ★ 在工地里：**模型不隐藏了**，站在工地正中心一直播建造动作。
+	#   2026-11-07 玩家口径改成「模型要待在建筑工地正中心」——
+	#   旧版是"钻进房子、模型隐藏"（兽族苦工那套），玩家看不到人在干活，
+	#   还以为农民丢了。现在人明明在里面，位置也由 _enter_build_site 搬到正中心。
+	#   注意这里必须**提前 return**：下面采金那段会按 `_gather_node` 挪 visual.position，
+	#   而工地状态下不该有任何位移。
 	if _inside_site != null:
-		visual.visible = false
+		visual.visible = true
+		visual.position = Vector3.ZERO
+		visual.play("build", 1.0)
 		return
 	var ratio: float = 1.0
 	var ms: float = _max_speed()
