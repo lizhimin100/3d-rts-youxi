@@ -4235,6 +4235,32 @@ func _spread_targets(units: Array, center: Vector3, radius: float, salt: int,
 		if pf != null:
 			q = pf.standable_point(q, 0.6, 0.2)
 		out.append(RtsWorld.snap_y(q))
+	# ★ 二次散开（2026-11-07）：`standable_point` 会把落在建筑里的点吸到最近的空地上，
+	#   而「离基地 7m」这一圈在多数地图上正好穿过大本营 —— 吸附后几个人会压到同一格。
+	#   这里做 3 轮轻量互斥：太近就把后一个沿两点连线推开再吸附。人数是个位/十位数，很便宜。
+	# 互斥只对小队做：n 大时 O(n²) 会拖慢思考（100 人 = 1.5 万次距离）
+	if pf != null and n <= 32:
+		# 互斥间距取整格 gap（2.4m）：吸附会吃掉一部分，留足余量才不会再挤回 1.7m
+		var min_gap: float = gap
+		for _iter in 3:
+			var moved: bool = false
+			for a in range(n):
+				for b in range(a + 1, n):
+					var pa: Vector3 = out[a]
+					var pb: Vector3 = out[b]
+					var dv: Vector3 = pb - pa
+					dv.y = 0.0
+					var dd: float = dv.length()
+					if dd >= min_gap:
+						continue
+					if dd < 0.01:
+						dv = Vector3(1.0, 0.0, 0.0)
+						dd = 0.0
+					var push: Vector3 = dv.normalized() * (min_gap - dd + 0.05)
+					out[b] = RtsWorld.snap_y(pf.standable_point(out[b] + push, 0.6, 0.2))
+					moved = true
+			if not moved:
+				break
 	return out
 
 ## 进攻落点：**优先离我方最近的那座敌方建筑**，没有就扑敌方基地中心。

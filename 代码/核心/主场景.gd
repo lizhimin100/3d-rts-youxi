@@ -407,6 +407,9 @@ func _mount_tests() -> void:
 			break
 	if "--qa-guard" in args:
 		_qa_guard.call_deferred()
+	# 干活农民/建造进度条截图用：开一块工地，两个农民钻进去，选中工地
+	if "--qa-build-ui" in args:
+		_qa_build_ui.call_deferred()
 	if "--qa-terrain" in args:
 		_qa_terrain.call_deferred()
 	if "--qa-map" in args:
@@ -684,6 +687,95 @@ func _qa_guard() -> void:
 	if camera != null and camera.has_method("focus_on"):
 		camera.call("focus_on", pool[0].global_position)
 	print("[QA] 驻守/观察/路径 已下达，选中 %d 个" % picked.size())
+
+
+## QA：搭一块「正在施工的兵营 + 里面的农民」，选中工地并把镜头对过去。
+##
+## 用途（2026-11-07 玩家口径）：验收建筑面板的「建造进度条 + 农民头像 + 取消建造」，
+## 以及农民钻进工地后模型隐藏。凭空看截图看不出这块，必须真的跑到施工中状态。
+func _qa_build_ui() -> void:
+	for i in 8:
+		await get_tree().process_frame
+	if Game.level == null or Game.player_faction == null:
+		return
+	var pf: RtsFaction = Game.player_faction
+	var d: UnitDef = Cfg.unit(&"barracks")
+	if d == null:
+		return
+	var base: Vector3 = RtsWorld.base_center(pf)
+	var pos: Vector3 = base + Vector3(11.0, 0.0, 7.0)
+	pos = RtsWorld.snap_y(建筑网格.snap_point(pos, d.footprint))
+	var workers: Array = []
+	for u in pf.units:
+		if u == null or not is_instance_valid(u) or not u.is_alive() or u.def == null:
+			continue
+		if RtsWorld.is_worker_def(u.def):
+			workers.append(u)
+		if workers.size() >= 2:
+			break
+	if workers.is_empty():
+		print("[QA] --qa-build-ui：没有农民")
+		return
+	var site: Node3D = workers[0].call("order_build", d, pos)
+	if site == null:
+		print("[QA] --qa-build-ui：工地没立起来（钱不够 / 地形不行）")
+		return
+	for i in range(1, workers.size()):
+		workers[i].call("order_build_site", site)
+	# 等农民走过去钻进来（每帧都跑，最多 3 秒）
+	for i in 600:
+		await get_tree().process_frame
+		if i % 60 == 0:
+			for w in workers:
+				if w == null or not is_instance_valid(w):
+					continue
+				var wp: Vector3 = (w as Node3D).global_position
+				var gv: Variant = w.get("_goal")
+				var sv: Variant = w.get("_work_spot")
+				var g3: Vector3 = gv if gv is Vector3 else Vector3.ZERO
+				var s3: Vector3 = sv if sv is Vector3 else Vector3.ZERO
+				var pv: Variant = w.get("_path")
+				var pl: int = (pv as PackedVector3Array).size() if pv is PackedVector3Array else -1
+				var pi: int = int(w.get("_path_i"))
+				var p0: Vector3 = (pv as PackedVector3Array)[mini(pi, pl - 1)] if pv is PackedVector3Array and pl > 0 else Vector3.ZERO
+				if i == 0 and pv is PackedVector3Array:
+					print("[QA-P] %s 路径=%s" % [w.name, str(pv)])
+				print("[QA-T] f=%d %s pos=(%.1f,%.1f) d=%.2f mv=%s path=%d pi=%d p0=(%.1f,%.1f) goal=(%.1f,%.1f) spd=%.2f" % [
+					i, w.name, wp.x, wp.z,
+					float(site.call("distance_to_footprint", wp)),
+					str(w.get("_moving")), pl, pi, p0.x, p0.z, g3.x, g3.z, float(w.get("_speed"))])
+		if site.has_method("builders_inside_count") and int(site.call("builders_inside_count")) > 0:
+			break
+	if selection_system != null and selection_system.has_method("select_units"):
+		selection_system.call("select_units", [site])
+	if camera != null and camera.has_method("focus_on"):
+		camera.call("focus_on", (site as Node3D).global_position)
+	# --- 端到端验收「点农民头像 → 选中里面的农民」（玩家 2026-11-07 口径）---
+	for i in 20:
+		await get_tree().process_frame
+	var hudn: Node = get_node_or_null("HUD")
+	var panel = hudn.get("_building_panel") if hudn != null else null
+	if panel != null and panel.has_method("_on_crew_icon"):
+		panel.call("_on_crew_icon", 0)
+		await get_tree().process_frame
+		var sel: Array = selection_system.call("selected_units") if selection_system != null else []
+		var ok_unit: bool = sel.size() == 1 and sel[0] != null and is_instance_valid(sel[0]) \
+				and bool(sel[0].call("is_inside_build"))
+		print("[QA] 点农民头像 → 选中 %d 个；是工地里的农民=%s" % [sel.size(), str(ok_unit)])
+		# 截图要的是工地面板，重新选回工地
+		if selection_system != null:
+			selection_system.call("select_units", [site])
+	for w in workers:
+		if w != null and is_instance_valid(w) and w.has_method("_work_reach"):
+			print("[QA] 农民 %s 距墙 %.2fm（阈值 %.2f）order=%d state=%d" % [
+				w.name, float(site.call("distance_to_footprint", (w as Node3D).global_position)),
+				float(w.call("_work_reach")), int(w.get("order")), int(w.get("state"))])
+	print("[QA] 工地位置=(%.1f,%.1f) 朝向=%.0f°" % [
+		(site as Node3D).global_position.x, (site as Node3D).global_position.z,
+		rad_to_deg((site as Node3D).rotation.y)])
+	print("[QA] --qa-build-ui：工地 %s 进度 %.2f 里面 %d 人" % [
+		site.name, float(site.get("progress")),
+		int(site.call("builders_inside_count")) if site.has_method("builders_inside_count") else -1])
 
 
 ## QA：选中指定 id 的全部己方单位（截图验收命令卡用）

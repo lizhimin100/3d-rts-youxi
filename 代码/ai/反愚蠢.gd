@@ -301,8 +301,15 @@ func _check_trickle(ctx: Dictionary) -> void:
 			if u.global_position.distance_to(e.global_position) <= 20.0:
 				near_enemy = true
 				break
-		if near_enemy:
-			forward.append(u)
+		if not near_enemy:
+			continue
+		# ★ 2026-11-07 玩家口径「既然在战斗中，那就应该一直战斗」：
+		#   正在贴脸交战的单位不许被「收拢」命令拽回家。老实现在这里无条件 append，
+		#   小股部队每次接敌都会被 regroup 拉走 → 撤一半又冲回来 → 反复拉锯。
+		#   判据沿用 简单AI._engaged_in_combat 的口径（有活目标 + 在 1.6 倍射程内）。
+		if _is_fighting(u):
+			continue
+		forward.append(u)
 	var on: bool = forward.size() > 0 and forward.size() <= TRICKLE_MIN_GROUP
 	_episode("trickle", on, ctx)
 	if not on or not _can_fix("trickle", ctx):
@@ -311,6 +318,22 @@ func _check_trickle(ctx: Dictionary) -> void:
 	if sched != null:
 		sched.attack_move(forward, home, "sanity:regroup")
 		_fix("trickle", ctx)
+
+
+## 这个单位是不是正在贴脸交战（有活目标 + 在 1.6 倍射程内）。
+## 用于豁免「收拢 / 别送」类命令：正在打的兵拉走只会来回拉锯。
+func _is_fighting(u) -> bool:
+	if u == null or not is_instance_valid(u):
+		return false
+	var t = u.get("target")
+	if t == null or not is_instance_valid(t):
+		return false
+	if t.has_method("is_alive") and not bool(t.call("is_alive")):
+		return false
+	var reach: float = 8.0
+	if u.has_method("_attack_reach"):
+		reach = float(u.call("_attack_reach", t))
+	return (u as Node3D).global_position.distance_to((t as Node3D).global_position) <= reach * 1.6 + 1.0
 
 
 # ===========================================================================

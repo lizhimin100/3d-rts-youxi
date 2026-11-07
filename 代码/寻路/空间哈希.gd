@@ -50,14 +50,27 @@ func rebuild(items: Array) -> void:
 ## 查询圆形范围内的对象（结果可能略多于真实半径内的，调用方自己再精确过滤）
 func query(pos: Vector3, radius: float) -> Array:
 	var out: Array = []
+	query_into(pos, radius, out)
+	return out
+
+
+## **查询并写入调用方给的数组**（不分配新数组）。
+##
+## 为什么要有它（2026-11-07 性能排查）：`_update_separation` 是每单位每帧都要调的，
+## 老 `query()` 每次都 `var out := []` + 9 次 `append_array` —— 3000 单位就是
+## 每秒十几次万次数组分配 + GC。分离查询的结果只在下一次查询前有效，
+## 所以复用同一个缓冲区完全安全（调用方自己保证不跨帧持有）。
+func query_into(pos: Vector3, radius: float, out: Array) -> void:
+	out.clear()
 	var r: int = ceili(radius / cell_size)
 	var base := key_of(pos)
 	for dx in range(-r, r + 1):
+		var bx: int = base.x + dx
 		for dz in range(-r, r + 1):
-			var k := Vector2i(base.x + dx, base.y + dz)
-			var bucket: Array = _buckets.get(k, [])
-			out.append_array(bucket)
-	return out
+			var k := Vector2i(bx, base.y + dz)
+			# ⚠ 不能写 `_buckets.get(k, [])`：默认参数 `[]` 每次都会分配一个新数组
+			if _buckets.has(k):
+				out.append_array(_buckets[k])
 
 
 ## 查询最近的若干对象（按距离排序）

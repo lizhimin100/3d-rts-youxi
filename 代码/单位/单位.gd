@@ -242,6 +242,8 @@ var _swinging: bool = false
 var _think_t: float = 0.0
 ## 空闲单位的隔帧开关（见 _process_inner 的空闲降频）
 var _idle_skip: int = 0
+## 分离查询的复用缓冲（见 _update_separation；不要跨帧持有）
+var _near_buf: Array = []
 ## 新指令下达后的"免索敌"宽限期（秒）。见 order_move 的注释。
 var _acquire_grace: float = 0.0
 
@@ -864,7 +866,15 @@ func order_gather(node: Node3D) -> void:
 	_gather_enter_t = 0.0
 	_flee_t = 0.0
 	_was_gathering = true
+	_gather_spot_valid = false
 	_go_to(_gather_spot(), true)
+
+
+## 采集站位（**缓存**）：TO_NODE 阶段以前每帧都调 `_gather_spot()` ——
+## 里面一次 `claim_slot` 字典遍历 + 一次 `slot_point` 三角 + 一次 `walkable_pos` 网格查询。
+## 几十个农民同时采木时，这一项比 A* 还贵。载位在进入/离开阶段时变，缓存到下次阶段切换即可。
+var _gather_spot_cache: Vector3 = Vector3.ZERO
+var _gather_spot_valid: bool = false
 
 
 ## 采集站位：优先占一个载位（围着矿/树散开），没有就退回通用站位。
@@ -877,7 +887,14 @@ func _gather_spot() -> Vector3:
 		if _gather_slot >= 0 and _gather_node.has_method("slot_point"):
 			var p: Vector3 = _gather_node.call("slot_point", _gather_slot, global_position) as Vector3
 			return RtsWorld.walkable_pos(p)
-	return _gather_node.global_position
+	# ★ 载位满了（8 个人抢 3 个坑）：**按实例 id 绕资源站一圈**，不能全挤矿心。
+	#   直接返回矿心有两个问题：① 矿心在岩石里，`_go_to` 会吸到墙外、到点判定却拿矿心距离
+	#   （永远差 2.9m > 2.0 → 一直「没到」，顶着矿壁推）；② 5 个人抢同一个格互相顶。
+	#   现在每人一个稳定角度、半径 = 身位 + 采集间距，既是可站格又天然散开。
+	var ang: float = float(get_instance_id() % 628) * 0.01
+	var rr: float = maxf(_stand_off(_gather_node) + get_radius() * 0.5, 1.2)
+	var p2: Vector3 = _gather_node.global_position + Vector3(cos(ang), 0.0, sin(ang)) * rr
+	return RtsWorld.walkable_pos(p2)
 
 
 func _release_gather_slot() -> void:
@@ -951,8 +968,11 @@ func order_build(building_def: UnitDef, pos: Vector3, desired_yaw: float = 0.0) 
 	order = RtsConst.Order.BUILD
 	_flee_t = 0.0
 	_swinging = false
-	_work_spot_valid = false
-	_go_to(site.global_position, true)
+	# ★ 直接去**自己那一格**（墙面外 0.55m），不要去工地中心：
+	#   中心在占格里，A* 的终点会被顶到墙外，路径还会绕建筑转一圈。
+	_work_spot = site.work_spot_for(self)
+	_work_spot_valid = true
+	_go_to(_work_spot, true)
 	return site
 
 
@@ -993,8 +1013,10 @@ func order_build_site(site: Node3D) -> bool:
 	order = RtsConst.Order.BUILD
 	_flee_t = 0.0
 	_swinging = false
-	_work_spot_valid = false
-	_go_to(site.global_position, true)
+	# 同 order_build：直接去墙外的自己那一格
+	_work_spot = b.work_spot_for(self)
+	_work_spot_valid = true
+	_go_to(_work_spot, true)
 	return true
 
 
@@ -1156,8 +1178,8 @@ func _process_inner(delta: float) -> void:
 	#   玩家眼里完全看不出来；而 8000 待命兵的场景里这一条能砍掉近一半的单位逻辑。
 	#   ⚠ 建筑不能跳：训练队列 / 塔的索敌都在 `_update_order`/`_tick_extra` 里。
 	if _is_fully_idle():
-		_idle_skip = (_idle_skip + 1) & 1
-		if _idle_skip == 1:
+		_idle_skip += 1
+		if _idle_skip % 3 != 0:
 			return
 
 	# 施法中：只数前摇，别的都不做
@@ -1459,11 +1481,20 @@ func _order_gather(dt: float) -> void:
 		GatherPhase.TO_NODE:
 			state = RtsConst.State.MOVE
 			# 走"自己那个载位"，不是矿心：三个人围着矿站，不叠在一个点上
-			var spot: Vector3 = _gather_spot()
+			# ★ 载位算一次就缓存（见 _gather_spot_cache 的注释），不每帧重算
+			if not _gather_spot_valid:
+				_gather_spot_cache = _gather_spot()
+				_gather_spot_valid = true
+			var spot: Vector3 = _gather_spot_cache
 			_go_to(spot)
 			# 到点判定要带 ARRIVE_SLACK：A* 终点被吸附到最近可走格，
 			# 会比站位阈值远 0.3~0.5m，卡死就是这零点几米造成的
-			if _flat_dist(spot) <= ARRIVE_SLACK + 0.6:
+			# ★ 「站住 2 秒就算到了」兜底（2026-11-07）：
+			#   载位/落点被占位吸附过后可能永远差 0.2m，`_go_to` 的到点闩锁又会让它
+			#   一直停在原地 —— 于是农民在矿边站一整局（采集自检「原地不动 21s」）。
+			#   人已经不再移动 + 这个阶段待了 2s，就直接开工：采集不依赖精确站位。
+			if _flat_dist(spot) <= ARRIVE_SLACK + 0.6 \
+					or (not _moving and _phase_t > 2.0):
 				_stop_moving()
 				_gather_enter_t = RtsSkills.cast_time(_gather_skill)
 				if _gather_enter_t > 0.0:
@@ -1511,6 +1542,8 @@ func _enter_phase(ph: int) -> void:
 	_phase_pos = global_position
 	if _gather_phase != ph:
 		_gather_phase = ph
+		# 换阶段 = 站位可能要重算（载位是围着资源点按来访方向分的）
+		_gather_spot_valid = false
 
 
 ## 采集动画的"落点"相位（0~1）：挥到最低点 / 镐头砸到矿壁那一下。
@@ -1592,7 +1625,13 @@ func _tick_chop_fx(dt: float) -> void:
 ##   于是每帧都判"太远"→ 再走一步 → 被墙顶住 → 下帧还是太远，进度一辈子是 0。
 ##   现在按"本单位半径 + 余量"算，并且保证不小于 1.5（格子吸附的下限）。
 func _work_reach() -> float:
-	return maxf(1.5, get_radius() + 0.85)
+	# ★ 2026-11-07 再放宽 0.7m（实测仍进不去）：
+	#   `work_spot_for()` 给的站位贴着墙（外扩 0.55m），但 `walkable_pos()` 会把它
+	#   吸附到最近可走格心 —— 建筑占地按 1 格膨胀，最近格心在墙面外 **1.50m**。
+	#   旧阈值恰好 1.5，浮点比较等于「永远差一点点」→ 农民站在墙边一动不动、进度 4%。
+	#   现在 2.2 起步：宁可站远一点就进去（人一进去模型就隐藏，看不出来），
+	#   也不要再出现「拍下地基然后就没有然后」。
+	return maxf(2.2, get_radius() + 1.5)
 
 
 ## 建造：走到工地旁 → **钻进工地内部** → 播 build 动画 → 推进进度（多农民叠加）
@@ -1833,6 +1872,12 @@ func _go_to_impl(pos: Vector3, force: bool = false) -> void:
 		_arrived_goal = false
 		_moving = true
 		_direct_t = 0.0
+		# ★ force = 目标换了（玩家新指令 / 工地站位 / 追击目标移动）：**必须立刻重算**。
+		#   以前会被 `_repath_cd`（0.8s 节流）挡住，于是单位沿着**上一条旧路径**继续走：
+		#   建造时旧路径的终点是「工地中心」（在占地里），农民绕建筑跑一大圈、
+		#   看着像「农民站在工地旁边不动/乱走，进度不涨」。
+		if force:
+			_repath_cd = 0.0
 		_request_path()
 		return
 	# 同一个目标：到点闩锁（被挤开一段距离才重新走）
@@ -2290,19 +2335,33 @@ func _update_separation(dt: float) -> void:
 	var my_r: float = def.body_radius
 	var my_w: float = _anchor_weight()
 	var push := Vector3.ZERO
-	var near: Array = hash.query(global_position, my_r * 6.0)
+	# ★ 复用查询缓冲（2026-11-07）：分离是每单位每帧的最大单点，
+	#   老 `hash.query()` 每次新建数组 + append_array，3000 单位 ≈ 每秒十几万次分配。
+	#   缓冲区只在这个函数里用、用完即弃，不存在跨帧引用。
+	hash.query_into(global_position, my_r * 6.0, _near_buf)
+	var near: Array = _near_buf
+	if near.is_empty():
+		return
+	# 预乘 SEPARATION_FACTOR：min_d = (a + b) * f ≡ a*f + b*f，内层少一次乘法
+	var my_rf: float = my_r * SEPARATION_FACTOR
 	for o in near:
-		if o == self or o == null or not is_instance_valid(o):
+		if o == self:
+			continue
+		# 顺序很重要：先 is_instance_valid 再 `is` 再带类型赋值 ——
+		# 对已 free 的对象做 `var x: RtsUnit = o` 会抛 "Trying to cast a freed object"。
+		if not is_instance_valid(o):
 			continue
 		if not o is RtsUnit:
 			continue
 		var other: RtsUnit = o
-		if other.def == null:
+		var odef: UnitDef = other.def
+		if odef == null:
 			continue
-		# 钻进工地里的农民没有体积：别让旁边的兵被一个"看不见的人"顶开
-		if other.is_inside_build():
+		# 钻进工地里的农民没有体积：别让旁边的兵被一个"看不见的人"顶开。
+		# 直接读字段（等价 is_inside_build()）——这是内层循环，少一次函数调用就够喝一壶。
+		if other._inside_site != null:
 			continue
-		var min_d: float = (my_r + other.def.body_radius) * SEPARATION_FACTOR
+		var min_d: float = my_rf + odef.body_radius * SEPARATION_FACTOR
 		if min_d <= 0.0001:
 			continue
 		var dx: float = global_position.x - other.global_position.x
@@ -2313,7 +2372,7 @@ func _update_separation(dt: float) -> void:
 		var d: float = sqrt(d2)
 		# 双方各让一半；干活的一方只让 13%，走过来的一方吃剩下的推力。
 		var share: float = 1.0
-		if other.is_mobile():
+		if odef.kind == RtsConst.Kind.UNIT:
 			var ow: float = other._anchor_weight()
 			# ★ 自己承担的位移比例 = 自己的权重 / 双方权重之和。
 			#   老实现写的是 `2.0 * my_w / (my_w + ow)` —— 两个普通兵会各推 100%，

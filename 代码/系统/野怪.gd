@@ -28,7 +28,11 @@ extends Node
 ## 中立阵营的 id / 显示名（`Game.neutral_faction` 就是它）
 const NEUTRAL_ID := 99
 const NEUTRAL_NAME := "豺狼人"
-const NEUTRAL_COLOR := Color(0.72, 0.28, 0.18)
+## 中立敌对（野怪）：玩家口径「灰色偏红」（2026-11-07）。
+const NEUTRAL_COLOR := Color(0.64, 0.40, 0.36)
+## 和平中立（地图编辑器「中立」，owner = -1）：**纯灰**。
+## 和敌对中立的区别必须一眼能看出来：一个是「别惹我」，一个是「我要打你」。
+const PASSIVE_COLOR := Color(0.66, 0.67, 0.70)
 ## 哪些 id 属于"野怪"（收编时以此为准；和编辑器的 CREEP_IDS 保持一致）
 const CREEP_IDS: Array[String] = ["gnoll_warrior", "gnoll_scout"]
 
@@ -70,7 +74,7 @@ func _ensure_passive() -> void:
 	if Game.passive_faction != null and is_instance_valid(Game.passive_faction):
 		return
 	var p := RtsFaction.new()
-	p.setup(NEUTRAL_ID - 1, false, "中立", NEUTRAL_COLOR, 0, 0)
+	p.setup(NEUTRAL_ID - 1, false, "中立", PASSIVE_COLOR, 0, 0)
 	p.team = -1
 	p.slot = -1
 	p.is_ai = false

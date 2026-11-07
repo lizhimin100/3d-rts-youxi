@@ -65,9 +65,14 @@ func update(ctx: Dictionary) -> Dictionary:
 	var params: Dictionary = chosen.get("params", {})
 
 	var threat: float = float(m["base_threat"])
+	# ★ 2026-11-07：压制侵略性的判据也必须是**战争对手**（war_threat），不能是野怪。
+	#   老实现用 base_threat，而 base_threat 含中立野怪：一只豺狼人溜达到基地圈 →
+	#   aggr 被压到 0.15 → `_compute_allow_attack` 的「aggression < 0.30」再否决一次
+	#   → 整局 AI 不出兵打玩家（玩家实测到的就是这条链路）。
+	var war_threat: float = float(m.get("war_threat", threat))
 	var aggr: float = float(params.get("aggression", 0.5))
-	# 家里在挨打时，任何计划都不许"冲动"（先回防，别送）
-	if threat > 0.0:
+	# 家里真的被玩家压着时，任何计划都不许"冲动"（先回防，别送）
+	if war_threat > 0.0:
 		aggr = minf(aggr, 0.15)
 
 	return {
@@ -286,7 +291,9 @@ func _compute_allow_attack(m: Dictionary, aggression: float) -> bool:
 	# ★ 2026-11-07：只看**战争对手**压家（war_threat），不看野怪（base_threat）。
 	#   老实现用 base_threat，而 base_threat 把中立野怪算进来了 ——
 	#   一只豺狼人溜达到基地圈里，这局 AI 就再也不出兵打玩家（玩家实测到的就是这个）。
-	if float(m.get("war_threat", 0.0)) > 0.0:
+	# 默认回落到 base_threat：老调用方/自检只造 base_threat 时行为不变。
+	var wt: float = float(m.get("war_threat", m.get("base_threat", 0.0)))
+	if wt > 0.0:
 		return false
 	if aggression < 0.30:
 		return false

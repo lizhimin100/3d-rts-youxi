@@ -189,34 +189,38 @@ func distance_to_footprint(p: Vector3) -> float:
 	return sqrt(ox * ox + oz * oz)
 
 
-## 给一个农民分配**工地外圈的专属站位**（沿占地矩形外扩一圈，按实例 id 取周长位置）。
+## 给一个农民分配**工地外圈的专属站位**：取「离他最近的那面墙」，再沿墙错开 0.7m。
 ##
 ## 为什么要分格子：以前全队 `_go_to(工地中心)`，解析出的最近可站点是同一个，
-## 两个农民抢一格、互相推，谁都站不稳。现在一人一格，沿矩形均匀散开，
-## 而且**贴着墙**（外扩 0.55m），所以距离工地永远 ≤1m，不会绕到背面再走回来。
+## 两个农民抢一格、互相推，谁都站不稳。
+##
+## ★ 2026-11-07 重写（玩家口径「以防无法建造建筑」）：
+##   旧版按实例 id 的黄金比例直接取**周长上的随机一点** —— 两个农民从西边跑过来，
+##   很可能被分到东/北面的格子，于是他们**绕着工地走一大圈**才到位，
+##   玩家看到的就是「农民在房子外面绕圈、进度一直 0」。
+##   现在：先夹到矩形最近点（一定是朝向自己的那一面），再沿这一面错开 0.7m，
+##   保证两个同向来的农民不会抢同一格，但谁都不用绕到背面。
 func work_spot_for(u: Node3D) -> Vector3:
 	if def == null or u == null:
 		return global_position
 	var hx: float = float(maxi(def.footprint.x, 1)) * 0.5 + 0.55
 	var hz: float = float(maxi(def.footprint.y, 1)) * 0.5 + 0.55
-	var t: float = fposmod(float(u.get_instance_id() % 1000) * 0.6180339887, 1.0)
-	var per: float = 2.0 * (hx + hz)
-	var s: float = t * per
-	var lx: float = 0.0
-	var lz: float = 0.0
-	if s < 2.0 * hx:
-		lx = -hx + s
-		lz = -hz
-	elif s < 2.0 * hx + 2.0 * hz:
-		lx = hx
-		lz = -hz + (s - 2.0 * hx)
-	elif s < 4.0 * hx + 2.0 * hz:
-		lx = hx - (s - 2.0 * hx - 2.0 * hz)
-		lz = hz
+	var l: Vector3 = to_local(u.global_position)
+	var cx: float = clampf(l.x, -hx, hx)
+	var cz: float = clampf(l.z, -hz, hz)
+	# 人在矩形内部（理论上不会，被挤进来时）：按最近的一条边推出去
+	if absf(l.x) < hx - 0.01 and absf(l.z) < hz - 0.01:
+		if hx - absf(l.x) <= hz - absf(l.z):
+			cx = hx if l.x >= 0.0 else -hx
+		else:
+			cz = hz if l.z >= 0.0 else -hz
+	# 沿这一面错开 0.7m（按实例 id 定方向），两个农民不同格
+	var slot: float = 0.7 if (u.get_instance_id() & 1) == 0 else -0.7
+	if absf(cx) >= hx - 0.001:
+		cz = clampf(cz + slot, -hz, hz)
 	else:
-		lx = -hx
-		lz = hz - (s - 4.0 * hx - 2.0 * hz)
-	var p: Vector3 = global_position + global_transform.basis * Vector3(lx, 0.0, lz)
+		cx = clampf(cx + slot, -hx, hx)
+	var p: Vector3 = global_position + global_transform.basis * Vector3(cx, 0.0, cz)
 	p.y = global_position.y
 	return RtsWorld.walkable_pos(p)
 

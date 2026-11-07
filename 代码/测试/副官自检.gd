@@ -40,6 +40,7 @@ func _run() -> void:
 	await _test_stop_hold()
 	await _test_sanity_stalled_site()
 	await _test_negative_control()
+	_test_spacing()
 	_finish()
 
 
@@ -74,6 +75,15 @@ func _test_director() -> void:
 	var threatened: bool = d._compute_allow_attack(
 		_m({"army_ratio": 1.7, "army_food": 12.0, "base_threat": 1.0}), 0.5)
 	_ok("导演：家在挨打时收回出击许可", not threatened)
+	# ★ 2026-11-07 玩家口径：「附近的野怪，副官能派兵打，为什么打敌人玩家却不能？」
+	#   根因是 base_threat 把中立野怪也算进来了 → 一只豺狼人溜达到基地圈，这局就不出兵。
+	#   现在战略层只看 war_threat（玩家对手）。
+	var creep_only: bool = d._compute_allow_attack(
+		_m({"base_threat": 3.0, "war_threat": 0.0}), 0.5)
+	_ok("导演：只有野怪压家时**仍然出击**（野怪不该冻结进攻）", creep_only)
+	var player_home: bool = d._compute_allow_attack(
+		_m({"base_threat": 3.0, "war_threat": 2.0}), 0.5)
+	_ok("导演：玩家压家时才收回出击许可", not player_home)
 
 
 func _m(over: Dictionary = {}) -> Dictionary:
@@ -316,6 +326,38 @@ func _test_negative_control() -> void:
 	_ok("对照：副官确实给空闲部队下了命令",
 		int(target.order) == RtsConst.Order.ATTACK_MOVE or int(target.order) == RtsConst.Order.MOVE,
 		"order=%d owner=%d" % [int(target.order), int(target.order_owner)])
+
+
+# ===========================================================================
+# F. 站位：驻防/留守必须散开（玩家口径：不要挤在一起、更不要挤在基地门口）
+# ===========================================================================
+func _test_spacing() -> void:
+	var army: Array = _pick_units(20)
+	if not _ok("站位：场上有 >= 8 个战斗单位可测", army.size() >= 8, "%d 个" % army.size()):
+		return
+	var center: Vector3 = RtsWorld.base_center(Game.player_faction)
+	var pts: Array = _adj.call("_spread_targets", army, center, 7.0, 61)
+	_ok("站位：散点数量与人数一致", pts.size() == army.size(),
+		"%d / %d" % [pts.size(), army.size()])
+	# 两两最近距离：按 gap=2.4m 算弧长，允许 standable_point 吸附吃掉 0.35m
+	var min_d: float = 999.0
+	var dup: int = 0
+	for i in range(pts.size()):
+		for j in range(i + 1, pts.size()):
+			var d: float = (pts[i] as Vector3).distance_to(pts[j] as Vector3)
+			min_d = minf(min_d, d)
+			if d < 0.05:
+				dup += 1
+	_ok("站位：20 人散点最近间距 >= 2.0m（不叠在一起）", min_d >= 2.0,
+		"最近 %.2fm" % min_d)
+	_ok("站位：没有两个落点完全重合", dup == 0, "重合对 %d" % dup)
+	# 落点必须在基地圈上（不是全压在基地中心）
+	var near_center: int = 0
+	for p in pts:
+		if (p as Vector3).distance_to(center) < 3.0:
+			near_center += 1
+	_ok("站位：没有落点压在基地中心 3m 内（不堵门口）", near_center == 0,
+		"压中心 %d 个" % near_center)
 
 
 # ===========================================================================

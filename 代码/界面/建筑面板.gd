@@ -163,7 +163,7 @@ var _crew_more: Label = null
 var _cancel_btn: Button = null
 ## 头像条最多画几个（再多就折叠成 +N；魔兽也是最多 4~5 个）
 const CREW_ICONS: int = 4
-const CREW_ICON_PX: float = 26.0
+const CREW_ICON_PX: float = 34.0
 
 # --- 属性（不产兵 / 空闲时）---
 var _stats: RtsStatColumn = null
