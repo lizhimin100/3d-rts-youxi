@@ -17,7 +17,7 @@ const EDITOR_THEME := preload("res://addons/map_editor/编辑器主题.tres")
 ## ⚠ 新增按钮/页面时**顺手加一行**，否则这张表会变成谎言。
 const ROWS: Array = [
 	["地图", "新建 / 打开 / 保存", "菜单栏 文件；Ctrl+S 保存", "主屏.gd -> _on_menu / 编辑会话.gd"],
-	["地图", "测试地图", "快捷条「测试地图」：先存临时图再启动游戏", "编辑会话.gd -> test_map"],
+	["地图", "试玩（测试地图）", "快捷条「试玩」：先存临时图再启动游戏", "编辑会话.gd -> test_map"],
 	["地图", "校验", "快捷条「校验」：出生点 / 可达性 / 占位体检", "代码/地图核心/地图校验.gd"],
 	["对象", "摆放归属（先选玩家）", "对象页顶部药丸：先点玩家，再摆单位 / 建筑", "停靠面板.gd -> _build_object_tab"],
 	["对象", "放置分类 / 搜索", "对象页：单位 / 建筑 / 装饰 / 资源 + 搜索框", "停靠面板.gd -> _populate_assets"],
@@ -38,7 +38,9 @@ const ROWS: Array = [
 	["区域", "画圆 / 矩形 / 多边形", "区域页工具 + 左键绘制", "停靠面板.gd -> _build_region_tab"],
 	["属性", "改选中对象的归属 / 坐标 / 缩放", "「属性」页（选中对象后）", "停靠面板.gd -> _refresh_props"],
 	["主题", "改编辑器配色 / 字号", "改 界面规格.gd 后跑 工具/生成编辑器主题.gd", "工具/生成编辑器主题.gd"],
-	["自检", "编辑器链路自检（21 项）", "godot --headless --editor --path . -- --map-editor-selftest", "主屏.gd -> _selftest"],
+	["工具栏", "加 / 改 / 重排顶部按钮或左侧层栏", "只改 按钮表.gd 的 GROUPS / LAYERS（图标走 美术/图标/）", "addons/map_editor/按钮表.gd"],
+	["工具栏", "按钮图标缺失 / 想换图标", "在 美术/图标/ 放同名 SVG（64×64，白色路径），跑 --import", "代码/界面/界面规格.gd -> icon_button"],
+	["自检", "编辑器链路自检（24 项）", "godot --headless --editor --path . -- --map-editor-selftest", "主屏.gd -> _selftest"],
 	["自检", "地图数据自检（167 项）", "godot --headless --path . --quit-after 200 -- --map-editor-test", "代码/测试/地图编辑器自检.gd"],
 ]
 

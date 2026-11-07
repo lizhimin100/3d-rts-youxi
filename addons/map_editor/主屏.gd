@@ -20,6 +20,8 @@ extends VBoxContainer
 const VIEWPORT_SCRIPT := "res://addons/map_editor/视口.gd"
 ## 全套设计令牌（配色/字号/样式工厂）——编辑器只用 editor_ 那一档冷色
 const Spec := preload("res://代码/界面/界面规格.gd")
+## 工具栏/层栏的按钮定义（表驱动，加按钮只改这张表）
+const 按钮表 := preload("res://addons/map_editor/按钮表.gd")
 ## token 编译出来的正经 Theme 资源（生成命令见 工具/生成编辑器主题.gd）
 const EDITOR_THEME := preload("res://addons/map_editor/编辑器主题.tres")
 ## 两套"点击弹窗配置"窗口：营地（点视口里的锚点建筑弹出）+ 卡编辑器（快捷条按钮打开）。
@@ -191,28 +193,18 @@ func _build_menu_and_quickbar() -> void:
 	quick.name = "快捷条"
 	quick.add_theme_constant_override("separation", 4)
 	add_child(quick)
-	_qbtn(quick, "新建", "新建地图（先选尺寸/人数/种子）", 1)
-	_qbtn(quick, "打开", "打开 .tres / .json", 2)
-	_qbtn(quick, "保存", "保存", 3)
-	_qbtn(quick, "另存为", "另存为", 4)
-	quick.add_child(VSeparator.new())
-	_qbtn(quick, "撤销", "撤销", 11)
-	_qbtn(quick, "重做", "重做", 12)
-	_qbtn(quick, "历史", "打开编辑历史（点一条跳回那一步）", 17)
-	quick.add_child(VSeparator.new())
-	_qbtn(quick, "校验", "跑 MapValidator", 31)
-	_qbtn(quick, "测试地图", "保存临时地图并启动游戏（不阻塞编辑器）", 5)
-	quick.add_child(VSeparator.new())
-	_qbtn(quick, "单位卡", "编辑 代码/配置/卡/单位/ 下的数值卡（改完保存即刻生效，进图前无需重启）", 41)
-	_qbtn(quick, "建筑卡", "编辑 代码/配置/卡/建筑/ 下的数值卡", 42)
-	_qbtn(quick, "帮助", "功能索引：每个按钮做什么、在哪个文件实现", 43)
-	quick.add_child(VSeparator.new())
-	_qbtn(quick, "俯视", "俯视", 21)
-	_qbtn(quick, "斜视", "斜视", 22)
-	_qbtn(quick, "复位", "复位镜头", 23)
-	var hint := Spec.editor_label("　手型/工具二选一　・　拿工具前左键只转视角　・　右侧面板切工具",
-		&"EditorHint")
-	quick.add_child(hint)
+	# 快捷条**全部由 按钮表.gd 生成**：加/改/重排按钮只改那张表，不碰这里。
+	for gi in 按钮表.GROUPS.size():
+		if gi > 0:
+			quick.add_child(VSeparator.new())
+		var g: Dictionary = 按钮表.GROUPS[gi]
+		for it in (g["items"] as Array):
+			var d: Dictionary = it
+			_qbtn(quick, String(d["text"]), String(d["tip"]), int(d["id"]),
+				String(d["icon"]), String(d.get("kind", "normal")))
+	# ★ 这里不再放长句提示：视口左上角已经有一条同样的操作提示，
+	#   两条并列只会把顶部工具条撑宽、把右侧 Dock 挤成一条缝（2026-11-07 实测）。
+	#   要加说明请写进按钮的 tooltip，或去 帮助窗.gd 的 ROWS。
 
 
 func _mk_menu(parent: Node, title: String, items: Array) -> MenuButton:
@@ -233,44 +225,68 @@ func _mk_menu(parent: Node, title: String, items: Array) -> MenuButton:
 	return m
 
 
-func _qbtn(parent: Node, text: String, tip: String, id: int) -> Button:
-	var b := Spec.editor_button(text)
-	b.tooltip_text = tip
+## 工具栏按钮：**图标 + 两个字**（玩家 2026-11-07 口径：能上图标就不写整句）。
+## 图标缺失时 `Spec.icon_button` 会静默退回纯文字，不会变成空白方块。
+func _qbtn(parent: Node, text: String, tip: String, id: int, icon: String = "",
+		kind: String = "normal") -> Button:
+	var b := Spec.icon_button(icon, text, tip, kind, 30.0)
 	b.pressed.connect(func() -> void: _on_menu(id))
 	parent.add_child(b)
 	return b
 
 
 ## 左侧「层」工具栏：点哪个层，右边 Dock 就切到哪个面板
+##
+## 每个层一个图标（hand / terrain / sword / house / doodad / coin / region），
+## 文字只留两个字，按钮 80×48 —— 一行一个，扫一眼就知道点哪个。
 func _build_rail() -> void:
 	# 手型放最上面：不拿工具时左键拖动 = 转视角，点对象能选中
-	_hand_button = Spec.editor_tool_button("手型\n浏览",
-		"不拿工具：左键按住拖动转视角，点对象选中（H / Esc）")
-	_hand_button.custom_minimum_size = Vector2(80, 46)
+	_hand_button = Spec.icon_button("hand", "手型",
+		"不拿工具：左键按住拖动转视角，点对象选中（H / Esc）", "normal", 46.0)
+	_hand_button.custom_minimum_size = Vector2(84.0, 46.0)
 	_hand_button.toggle_mode = true
 	_hand_button.toggled.connect(func(on: bool) -> void:
 		if on and session != null:
 			session.disarm())
 	_rail.add_child(_hand_button)
 	_rail.add_child(HSeparator.new())
-	_rail.add_child(_mk_layer_button("地形", MODE_TERRAIN, "地形", -1))
-	_rail.add_child(_mk_layer_button("单位", MODE_OBJECT, "对象", MapObject.Category.UNIT))
-	_rail.add_child(_mk_layer_button("建筑", MODE_OBJECT, "对象", MapObject.Category.BUILDING))
-	_rail.add_child(_mk_layer_button("装饰", MODE_OBJECT, "对象", MapObject.Category.DOODAD))
-	_rail.add_child(_mk_layer_button("资源", MODE_OBJECT, "对象", MapObject.Category.RESOURCE))
-	_rail.add_child(_mk_layer_button("区域", MODE_REGION, "区域", -1))
+	# 层按钮也走 按钮表.gd：顺序 / 文案 / 图标都只改表；`layer` 键在这里映射到真实模式。
+	for it in 按钮表.LAYERS:
+		var L: Dictionary = it
+		match String(L["layer"]):
+			"terrain":
+				_rail.add_child(_mk_layer_button(String(L["text"]), MODE_TERRAIN,
+					"地形", -1, String(L["icon"]), String(L["tip"])))
+			"unit":
+				_rail.add_child(_mk_layer_button(String(L["text"]), MODE_OBJECT,
+					"对象", MapObject.Category.UNIT, String(L["icon"]), String(L["tip"])))
+			"building":
+				_rail.add_child(_mk_layer_button(String(L["text"]), MODE_OBJECT,
+					"对象", MapObject.Category.BUILDING, String(L["icon"]), String(L["tip"])))
+			"doodad":
+				_rail.add_child(_mk_layer_button(String(L["text"]), MODE_OBJECT,
+					"对象", MapObject.Category.DOODAD, String(L["icon"]), String(L["tip"])))
+			"resource":
+				_rail.add_child(_mk_layer_button(String(L["text"]), MODE_OBJECT,
+					"对象", MapObject.Category.RESOURCE, String(L["icon"]), String(L["tip"])))
+			"region":
+				_rail.add_child(_mk_layer_button(String(L["text"]), MODE_REGION,
+					"区域", -1, String(L["icon"]), String(L["tip"])))
 	var sp := Control.new()
 	sp.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_rail.add_child(sp)
-	var vb := Spec.editor_tool_button("视角\n复位", "镜头回到地图中心（F 对准选中对象）")
-	vb.custom_minimum_size = Vector2(80, 46)
+	var vb := Spec.icon_button("view_reset", "复位",
+		"镜头回到地图中心（F 对准选中对象）", "normal", 46.0)
+	vb.custom_minimum_size = Vector2(84.0, 46.0)
 	vb.pressed.connect(func() -> void: _on_menu(23))
 	_rail.add_child(vb)
 
 
-func _mk_layer_button(text: String, mode: int, dock_tab: String, cat: int) -> Button:
-	var b := Spec.editor_tool_button(text)
-	b.custom_minimum_size = Vector2(80, 46)
+func _mk_layer_button(text: String, mode: int, dock_tab: String, cat: int,
+		icon: String = "", tip: String = "") -> Button:
+	var b := Spec.icon_button(icon, text,
+		tip if not tip.is_empty() else "切到「%s」层（右侧面板同步）" % text, "normal", 46.0)
+	b.custom_minimum_size = Vector2(84.0, 46.0)
 	b.toggle_mode = true
 	b.pressed.connect(func() -> void: _on_layer(mode, dock_tab, cat))
 	_rail_buttons[text] = b

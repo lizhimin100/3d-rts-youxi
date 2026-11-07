@@ -701,6 +701,41 @@ static func tool_button(text: String, tip: String = "") -> Button:
 	return b
 
 
+## 编辑器**图标按钮**：图标 + 可选文字，尺寸统一。
+##
+## 玩家 2026-11-07：「编辑器图标按钮按同一套逻辑重排，既要美观直观，也要方便操作」。
+## 规矩（和 文档/UI风格.md 一致）：
+##   · 能上图标就不写整句；文字只做副标题，2~4 个字；
+##   · 同一条工具条上的按钮**同高**（默认 32），纯图标按钮是正方形；
+##   · `kind`：normal / primary / danger / ghost（danger 用于删除这类不可逆操作）；
+##   · **必须有 tooltip**（图标认不出来时，鼠标停一下就能知道）。
+static func icon_button(icon_name: String, text: String = "", tip: String = "",
+		kind: String = "normal", h: float = 32.0) -> Button:
+	var b := btn(text, kind)
+	b.tooltip_text = tip
+	b.focus_mode = Control.FOCUS_NONE
+	b.add_theme_constant_override("h_separation", 5)
+	b.add_theme_constant_override("icon_max_width", int(round(h * 0.62)))
+	var tex := icon_tex(icon_name)
+	if tex != null:
+		b.icon = tex
+	if text.is_empty():
+		b.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		b.custom_minimum_size = Vector2(h, h)
+	else:
+		# 图标贴左、文字紧随其后（Button 会把 text 排在 icon 之后）。
+		# 拉伸型按钮（EXPAND_FILL）还要把 `alignment` 也设成 LEFT，
+		# 否则文字会单独居中、看起来和图标分家 —— 见 `_add_small_button`。
+		b.icon_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		b.custom_minimum_size = Vector2(0.0, h)
+	# 单色 SVG 靠 modulate 上色：默认跟字色，按下用强调色
+	b.add_theme_color_override("icon_normal_color", editor_text())
+	b.add_theme_color_override("icon_hover_color", Color(1.0, 1.0, 1.0))
+	b.add_theme_color_override("icon_pressed_color", editor_accent_soft())
+	b.add_theme_color_override("icon_disabled_color", editor_text_dim(0.55))
+	return b
+
+
 ## 一条 1px 的分隔线（主色，alpha 控制强弱）
 static func rule(alpha: float = 0.45) -> ColorRect:
 	var r := ColorRect.new()

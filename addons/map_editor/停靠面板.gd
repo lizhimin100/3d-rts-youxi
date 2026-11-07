@@ -446,10 +446,13 @@ func _build_object_tab() -> Control:
 	_hint(_obj_count, "选中对象后可在「属性」页改归属；上面那一排是**之后摆放**的归属。")
 
 	var r1 := _hbox()
-	_sel_buttons.append(_add_small_button(r1, "复制", func() -> void: session.copy_selection()))
+	_sel_buttons.append(_add_small_button(r1, "复制", func() -> void: session.copy_selection(),
+		"copy", "复制选中对象（Ctrl+C）"))
 	# 粘贴不需要选中，单独一个，别跟着"无选中"一起灰掉
-	_add_small_button(r1, "粘贴", func() -> void: session.paste_clipboard())
-	_sel_buttons.append(_add_small_button(r1, "删除", func() -> void: session.delete_selection()))
+	_add_small_button(r1, "粘贴", func() -> void: session.paste_clipboard(),
+		"paste", "粘贴到当前鼠标位置（Ctrl+V）")
+	_sel_buttons.append(_add_small_button(r1, "删除", func() -> void: session.delete_selection(),
+		"delete", "删除选中对象（Delete，可撤销）", "danger"))
 	v.add_child(r1)
 
 	# 旋转 / 缩放：3 列网格，两行放完 6 个动作（以前两行各占一整行 hbox，面板拉得老长）
@@ -457,12 +460,18 @@ func _build_object_tab() -> Control:
 	grid.columns = 3
 	grid.add_theme_constant_override("h_separation", 4)
 	grid.add_theme_constant_override("v_separation", 4)
-	_sel_buttons.append(_add_grid_button(grid, "⟲ 15°", func() -> void: session.rotate_selection(-15.0)))
-	_sel_buttons.append(_add_grid_button(grid, "⟳ 15°", func() -> void: session.rotate_selection(15.0)))
-	_sel_buttons.append(_add_grid_button(grid, "随机朝向", func() -> void: session.randomize_rotation()))
-	_sel_buttons.append(_add_grid_button(grid, "缩小", func() -> void: session.scale_selection(0.9)))
-	_sel_buttons.append(_add_grid_button(grid, "放大", func() -> void: session.scale_selection(1.1)))
-	_sel_buttons.append(_add_grid_button(grid, "还原 1.0", func() -> void: _reset_scale()))
+	_sel_buttons.append(_add_grid_button(grid, "−15°", func() -> void: session.rotate_selection(-15.0),
+		"rotate_l", "逆时针转 15°（Q）"))
+	_sel_buttons.append(_add_grid_button(grid, "+15°", func() -> void: session.rotate_selection(15.0),
+		"rotate_r", "顺时针转 15°（E）"))
+	_sel_buttons.append(_add_grid_button(grid, "随机", func() -> void: session.randomize_rotation(),
+		"rotate_rand", "随机朝向"))
+	_sel_buttons.append(_add_grid_button(grid, "缩小", func() -> void: session.scale_selection(0.9),
+		"scale_down", "缩到 90%"))
+	_sel_buttons.append(_add_grid_button(grid, "放大", func() -> void: session.scale_selection(1.1),
+		"scale_up", "放大到 110%"))
+	_sel_buttons.append(_add_grid_button(grid, "还原", func() -> void: _reset_scale(),
+		"scale_reset", "缩放还原为 1.0"))
 	v.add_child(grid)
 
 	v.add_child(HSeparator.new())
@@ -482,18 +491,24 @@ func _build_object_tab() -> Control:
 
 
 ## 网格里的小按钮（和 _add_small_button 一样，只是给 GridContainer 用）
-func _add_grid_button(parent: GridContainer, text: String, cb: Callable) -> Button:
-	var b := Spec.editor_button(text)
+## `icon` 为空 → 纯文字（老调用点不用改）。
+func _add_grid_button(parent: GridContainer, text: String, cb: Callable,
+		icon: String = "", tip: String = "", kind: String = "normal") -> Button:
+	var b := Spec.icon_button(icon, text, tip, kind, 30.0)
 	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# 拉伸按钮：图标和文字都从左开始排（CENTER 会让文字脱离图标单独居中）
+	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	b.focus_mode = Control.FOCUS_NONE
 	b.pressed.connect(cb)
 	parent.add_child(b)
 	return b
 
 
-func _add_small_button(parent: HBoxContainer, text: String, cb: Callable) -> Button:
-	var b := Spec.editor_button(text)
+func _add_small_button(parent: HBoxContainer, text: String, cb: Callable,
+		icon: String = "", tip: String = "", kind: String = "normal") -> Button:
+	var b := Spec.icon_button(icon, text, tip, kind, 30.0)
 	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	b.focus_mode = Control.FOCUS_NONE
 	b.pressed.connect(cb)
 	parent.add_child(b)
