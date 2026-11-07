@@ -422,6 +422,12 @@ func _mount_tests() -> void:
 		_qa_terrain.call_deferred()
 	if "--qa-map" in args:
 		_qa_map_fingerprint.call_deferred()
+	# 开发日志拍摄导演（--demo-shot=<dawn|dusk|raid|after|bench|list>）：
+	# 拨时钟 + 接管镜头 + 按剧本演夜袭，**只服务录视频**，正常开局不会挂。
+	for a in args:
+		if a.begins_with("--demo-shot="):
+			_mount_script("res://代码/测试/演示导演.gd", "演示导演")
+			break
 
 
 ## 每支 AI 阵营一个大脑。
