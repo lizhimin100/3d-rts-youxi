@@ -18,13 +18,15 @@ const NAME_MAP := {
 	&"run": &"walk",
 }
 
-## 循环播放的动作
-## ★ 2026-11-06：`gather` / `build` 改成循环（玩家口径「采集木头变为不停做出采集动作」）。
-##   它们以前在 ONE_SHOT 里，播一遍就自动回 idle —— 玩家看到的是"砍一刀就站着发呆"，
-##   而采集/建造其实还在推进度。现在这两个状态只要不被切走就一直循环：
-##   砍树是连续挥斧、造房子是连续抡锤，和真实进度对得上。
-const LOOPING: Array[StringName] = [&"idle", &"walk", &"wave", &"carry_gold", &"carry_wood",
-		&"gather", &"build"]
+## 一次性动作：播完自动回 idle（death 例外，停在最后一帧）。
+##
+## ★ 2026-11-07 玩家口径「不要整什么白名单黑名单」：
+##   以前是**白名单**（只允许播推导出来的几个）＋**循环名单**（只有列出来的才循环），
+##   两张表都要人工维护，新加一个动作忘了登记就变成"播一下就停"或者"播不出来"。
+##   现在反过来：**除了下面这几个一次性动作，其余全部按循环播**。
+##   于是 `gather` / `build` / `carry_*` / 技能持续动作（`shield_hold`）自动就是循环，
+##   新动作进资产即生效，代码零改动。
+const ONE_SHOT: Array[StringName] = [&"attack", &"shoot", &"cast", &"hurt", &"death", &"reload"]
 
 ## 缺动作时的降级链（第一个存在的就用）
 const FALLBACK := {
@@ -43,8 +45,7 @@ const FALLBACK := {
 }
 
 ## 单次动作（播完自动回 idle）；death 例外：停在最后一帧
-## gather / build 不在里面 —— 它们是"持续动作"，见 LOOPING 的注释。
-const ONE_SHOT: Array[StringName] = [&"attack", &"shoot", &"cast", &"hurt", &"death"]
+## （名单本身见文件顶部的 ONE_SHOT）
 
 ## 打完一发接的"装填"动作（弩兵/火枪这类）。纯视觉：不参与伤害时序，
 ## 只是让玩家看见「射一箭要上一次弦」，而不是凭空连发。
@@ -63,12 +64,14 @@ var _one_shot: StringName = &""
 var _reloading: bool = false
 var _speed: float = 1.0
 var _ready_ok: bool = false
-## **动作白名单**（空 = 不限制）。见 set_allowed 的注释。
-var _allowed: Dictionary = {}
-## 已经被白名单裁掉的动作名（审计用）
-var _dropped: Array[String] = []
-## 全局只打印一次：同一套模型会实例化几百个，逐个 println 会把 3000 兵压测的日志刷爆
-static var _dropped_reported: Dictionary = {}
+## 待机动作池：资产里所有以 `idle` 开头的动作（idle / idle_b / idle_scratch / idle_stretch …）。
+## 玩家 2026-11-07 口径：**待机可以随机多个不同动画，移动/攻击/举盾只用一个**。
+## 所以只有 idle 走随机，其他状态一律按名字取那唯一一个。
+var _idle_pool: Array[StringName] = []
+## 上一次随机到的待机（避免连着两次同一个）
+var _last_idle: StringName = &""
+## 表现层随机流（不要用全局 randf —— 会让"重放同一场"的战斗结果跟着变）
+const Fx := preload("res://代码/美术/表现随机.gd")
 
 
 ## 绑定到模型根节点（ArtKit.attach_anim 调用）
@@ -80,12 +83,22 @@ func bind(root: Node3D) -> void:
 	_ap.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_IDLE
 	if not _ap.animation_finished.is_connected(_on_finished):
 		_ap.animation_finished.connect(_on_finished)
-	# 循环动作强制设循环（glTF 导入默认是一次性，旗子会"飘一下就停"）
-	for n in LOOPING:
-		if _ap.has_animation(String(n)):
-			var a := _ap.get_animation(String(n))
-			if a != null:
-				a.loop_mode = Animation.LOOP_LINEAR
+	# ★ 除了 ONE_SHOT，全部设成循环。
+	#   为什么必须显式设：glTF 导入的动作默认是**一次性**（loop_mode = NONE），
+	#   不设的话"待机 4.5 秒后定格""走路走一步就停""举着盾 0.6 秒自己放下"。
+	for n in _ap.get_animation_list():
+		if ONE_SHOT.has(StringName(n)):
+			continue
+		var a := _ap.get_animation(n)
+		if a != null:
+			a.loop_mode = Animation.LOOP_LINEAR
+	# 待机动作池（随机用）。只有 1 个 = 不随机，行为和以前完全一样。
+	_idle_pool.clear()
+	for n in _ap.get_animation_list():
+		if String(n).begins_with("idle"):
+			_idle_pool.append(StringName(n))
+	if _idle_pool.is_empty():
+		_idle_pool.append(&"idle")
 	set_state("idle")
 
 
@@ -107,52 +120,6 @@ func has_state(state: String) -> bool:
 	return _resolve(StringName(state)) != &""
 
 
-## **动作白名单**：只允许播这些 clip 名（`walk` / `attack` / `shoot` …）。
-##
-## 为什么要有它（2026-11-07 玩家口径「用不到的、和当前表现形式不搭的动作不要播出来」）：
-##   模型里常带着做实验时留下的动作（`idle_b` / `idle_scratch` / `idle_stretch` /
-##   没技能的兵身上的 `cast`）。只要降级链能落到它，就会在某个状态里突然播出来，
-##   看起来就是"这个兵怎么还有第二种攻击/第二种待机"。
-##   白名单由 `单位视觉` 按 UnitDef 推导（有没有技能、是不是远程、是不是农民），
-##   推导不出来的动作一律不播 —— 宁可不播，也不要播错。
-## 白名单之外，额外标记为"循环"的动作（技能持续动作，如 shield_hold）
-var _extra_loops: Dictionary = {}
-
-
-## 白名单（见上）。
-func set_allowed(names: Array, loop_extra: Array = []) -> void:
-	_allowed.clear()
-	for n in names:
-		_allowed[StringName(n)] = true
-	_extra_loops.clear()
-	for n in loop_extra:
-		_extra_loops[StringName(n)] = true
-	_dropped.clear()
-	if _ap == null:
-		return
-	# 额外循环动作：glTF 导入默认一次性，不设循环的话"举着盾"会 0.4s 后自己放下
-	for n in _extra_loops.keys():
-		if _ap.has_animation(String(n)):
-			var a := _ap.get_animation(String(n))
-			if a != null:
-				a.loop_mode = Animation.LOOP_LINEAR
-	for a in _ap.get_animation_list():
-		if _allowed.has(StringName(a)) or _allowed.has(StringName(NAME_MAP.get(StringName(a), a))):
-			continue
-		_dropped.append(a)
-	if not _dropped.is_empty():
-		var sig: String = ",".join(_dropped) + "|" + ",".join(PackedStringArray(_allowed.keys().map(func(k): return String(k))))
-		if not _dropped_reported.has(sig):
-			_dropped_reported[sig] = true
-			print("[动画] 裁掉未使用动作：%s（允许：%s）" % [
-				", ".join(_dropped), sig.get_slice("|", 1)])
-
-
-## 被裁掉的动作（审计用）
-func dropped_clips() -> Array[String]:
-	return _dropped.duplicate()
-
-
 func current_state() -> StringName:
 	return _current
 
@@ -165,7 +132,10 @@ func set_state(state: String, speed_ratio: float = 1.0, force: bool = false) -> 
 	var want := _resolve(StringName(state))
 	if want == &"":
 		return
-	var is_loop := LOOPING.has(want) or _extra_loops.has(want)
+	# 待机：从池子里随机挑一个（不连着重复）。别的状态一律用唯一那个动作。
+	if want == &"idle" and _idle_pool.size() > 1:
+		want = _pick_idle()
+	var is_loop: bool = not ONE_SHOT.has(want)
 	# 单次动作没播完就别被循环动作打断（否则攻击永远只出头两帧）。
 	# ★ 但也不能"整段播完才放行"：attack 0.9s 比很多单位的反应窗口还长，
 	#   玩家点一下移动，兵要站满 0.9 秒才开始走 —— 手感上是"指令不跟手"。
@@ -205,13 +175,27 @@ func _resolve(state: StringName) -> StringName:
 	return &""
 
 
-## 这个 clip 存在、且在白名单里（白名单为空 = 不限制）
+## 这个 clip 存在吗（没有白名单，只有"资产里有没有"这一条）
 func _playable(n: StringName) -> bool:
-	if n == &"" or not _ap.has_animation(String(n)):
+	if n == &"":
 		return false
-	if _allowed.is_empty():
-		return true
-	return _allowed.has(n)
+	return _ap.has_animation(String(n))
+
+
+## 待机随机：从 `idle*` 池里挑一个，**不连着重复**。
+## 只有 1 个待机时根本不会走到这里（见 set_state 的判据）。
+func _pick_idle() -> StringName:
+	if _idle_pool.is_empty():
+		return &"idle"
+	if _idle_pool.size() == 1:
+		return _idle_pool[0]
+	for _i in 4:
+		var pick: StringName = _idle_pool[Fx.rand_index(_idle_pool.size())]
+		if pick != _last_idle:
+			_last_idle = pick
+			return pick
+	_last_idle = _idle_pool[Fx.rand_index(_idle_pool.size())]
+	return _last_idle
 
 
 func _on_finished(anim: StringName) -> void:

@@ -33,8 +33,6 @@ const HIT_NUDGE: float = 0.075
 const HIT_NUDGE_TIME: float = 0.12
 ## 表现层随机流（受击方向的兜底角度）。玩法随机仍走全局 randf，见 表现随机.gd
 const Fx := preload("res://代码/美术/表现随机.gd")
-## 技能表：动作白名单要读技能卡里填的 anim_*（举盾/连发都靠它）
-const TBL := preload("res://代码/配置/技能表.gd")
 
 ## 模型根
 var _model: Node3D = null
@@ -158,12 +156,6 @@ func build(def: UnitDef, team_color: Color, proc: Dictionary = {}) -> void:
 		if not 程序化树 and not 组合件:
 			ArtKit.apply_team_color(_model, team_color)
 			_anim = ArtKit.attach_anim(_model)
-			# ★ 动作白名单：这个兵**真的会进入**的状态才允许播。
-			#   模型里做实验留下的 idle_b / idle_scratch / 无技能单位的 cast，
-			#   一旦被降级链落到，就会变成"这个兵还有第二种动作"。
-			#   （玩家 2026-11-07：「用不到的、和当前表现形式不搭的不要播出来」）
-			if _anim != null and _anim.has_method("set_allowed"):
-				_anim.call("set_allowed", _allowed_anims(def), _hold_anims(def))
 		_collect_meshes(_model)
 		_add_ground_shadow(def)
 		_nudge_base = _model.position
@@ -192,61 +184,6 @@ func build(def: UnitDef, team_color: Color, proc: Dictionary = {}) -> void:
 	else:
 		_flash_dur = FLASH_TIME_UNIT
 		_flash_peak = FLASH_PEAK_UNIT
-
-
-## 这个 UnitDef 允许播哪些动作（白名单，喂给 `SkeletonAnim.set_allowed`）。
-##
-## 口径（2026-11-07 玩家要求"一个单位一套动作"）：
-##   · 一定会用到：idle / walk / hurt / death；
-##   · 能攻击才给 attack；有投射物才给 shoot（有 reload clip 才播装填）；
-##   · 有主动技能才给 cast；
-##   · 只有农民才给 gather / build / carry_*。
-## 除此之外的 clip（idle_b / idle_scratch / 无技能单位的 cast …）一律裁掉，不播。
-static func _allowed_anims(def: UnitDef) -> Array:
-	var out: Array = [&"idle", &"walk", &"hurt", &"death"]
-	if def.kind == RtsConst.Kind.BUILDING:
-		if def.can_attack():
-			out.append(&"attack")
-			if def.projectile != RtsConst.Projectile.NONE:
-				out.append(&"shoot")
-				out.append(&"reload")
-		return out
-	if def.can_attack():
-		out.append(&"attack")
-	if def.projectile != RtsConst.Projectile.NONE:
-		out.append(&"shoot")
-		out.append(&"reload")
-	if not def.abilities.is_empty():
-		# 只有"要按出去"的技能才需要施法动作；被动（三连发）和采集不算
-		for a in def.abilities:
-			if TBL.has(a) and not TBL.is_passive(a) and not TBL.is_gather(a):
-				out.append(&"cast")
-				break
-	if def.is_worker():
-		out.append(&"gather")
-		out.append(&"build")
-		out.append(&"carry_gold")
-		out.append(&"carry_wood")
-	# 技能自己的动作：技能卡里填了什么就放行什么（加技能不用回来改这里）
-	for a in def.abilities:
-		var anim: Dictionary = TBL.anim_of(a)
-		for k in ["on", "hold", "off"]:
-			var c: StringName = StringName(anim.get(k, &""))
-			if c != &"" and not out.has(c):
-				out.append(c)
-	return out
-
-
-## 技能里"持续按住"的动作（举盾的 shield_hold）：要单独设循环，
-## 否则 glTF 导入的默认一次性会让盾举 0.4 秒就自己放下。
-static func _hold_anims(def: UnitDef) -> Array:
-	var out: Array = []
-	for a in def.abilities:
-		var anim: Dictionary = TBL.anim_of(a)
-		var h: StringName = StringName(anim.get("hold", &""))
-		if h != &"" and not out.has(h):
-			out.append(h)
-	return out
 
 
 ## 动画器是不是"绑不上"的静态模型（没有骨骼 / 没有 Body/Torso 关节）
