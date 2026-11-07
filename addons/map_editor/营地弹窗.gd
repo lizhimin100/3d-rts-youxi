@@ -19,6 +19,8 @@ extends Window
 
 const Spec := preload("res://代码/界面/界面规格.gd")
 const EDITOR_THEME := preload("res://addons/map_editor/编辑器主题.tres")
+## 皮肤（深铁石底 + 金线）：在 .tres 实例上就地改写，资源路径不变
+const 皮肤 := preload("res://addons/map_editor/编辑器皮肤.gd")
 const CAMP_TABLE := preload("res://代码/配置/野怪营地表.gd")
 const CAMP_DEF := preload("res://代码/配置/野怪营地定义.gd")
 
@@ -70,6 +72,7 @@ func setup(p_session) -> void:
 
 
 func _build() -> void:
+	皮肤.apply(EDITOR_THEME)
 	theme = EDITOR_THEME
 	var panel := PanelContainer.new()
 	add_child(panel)

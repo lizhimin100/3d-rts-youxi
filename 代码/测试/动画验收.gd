@@ -126,11 +126,13 @@ func _max_delta(a: Array, b: Array) -> float:
 	return m
 
 
+## ⚠ 不能按"帧数 × 1/60"记时间：无头引擎不受帧率限制（实测 ~150fps），
+## 那样"等 1 秒"其实只等了 0.4 秒，0.9s 的 attack 当然还没播完 —— 假红就是这么来的。
 func _wait(sec: float) -> void:
-	var t := 0.0
-	while t < sec:
+	var t0: int = Time.get_ticks_msec()
+	var ms: int = int(round(sec * 1000.0))
+	while Time.get_ticks_msec() - t0 < ms:
 		await process_frame
-		t += 1.0 / 60.0
 
 
 # ===========================================================================

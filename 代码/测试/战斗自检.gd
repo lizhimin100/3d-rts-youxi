@@ -56,6 +56,7 @@ func _运行() -> void:
 		_用例E_射程口径()
 		_用例F_多近战围攻()
 		_用例G_近战打建筑()
+		_用例G2_多近战围楼()
 		_用例H_最大射程()
 	报告["失败项"] = 失败
 	报告["结果"] = "通过" if 失败.is_empty() else "失败"
@@ -528,6 +529,71 @@ func _用例G_近战打建筑() -> void:
 		失败.append("G 近战打建筑：起手了但建筑没掉血")
 
 
+
+# ===========================================================================
+# G2 · 多近战围攻同一栋建筑（玩家口径：多个打一个也要能正常打，不许被卡）
+# ===========================================================================
+
+## 四个步兵从四个方向包一栋楼：每个人都必须起手，楼必须掉血。
+## 这条和 F（四个围一个单位）是一对 —— 打人走 _surround_spot，打楼走 _attack_spot 的墙面散开，
+## 两条路径都要能同时站下 4 个人。
+func _用例G2_多近战围楼() -> void:
+	var 基: Vector3 = 关卡.call("base_center", 游戏.get("player_faction"))
+	var 心: Vector3 = 关卡.call("walkable_pos", 基 + Vector3(0.0, 0.0, -34.0))
+	var 楼 = _造单位("enemy_faction", &"barracks", 心)
+	if 楼 == null:
+		return
+	var 初血: float = float(楼.get("hp"))
+	var 兵们: Array = []
+	var 起点表: Array = [
+		Vector3(6.0, 0.0, 0.0), Vector3(-6.0, 0.0, 0.0),
+		Vector3(0.0, 0.0, 6.0), Vector3(0.0, 0.0, -6.0),
+	]
+	for off in 起点表:
+		var p: Vector3 = 关卡.call("walkable_pos", 心 + (off as Vector3))
+		var b = _造单位("player_faction", &"footman", p)
+		if b == null:
+			continue
+		b.set("dbg_swings", 0)
+		b.call("order_attack", 楼)
+		兵们.append(b)
+	_走(14.0)
+	var 起手表: Array = []
+	for b in 兵们:
+		起手表.append(int(b.get("dbg_swings")))
+	var 末血: float = float(楼.get("hp"))
+	var 全员起手: bool = true
+	for n in 起手表:
+		if int(n) <= 0:
+			全员起手 = false
+	# 诊断：每个人最后停在哪、离墙面多远、什么状态（用来区分"走不到"和"走到了不打"）
+	var 诊断: Array = []
+	for b in 兵们:
+		var bp: Vector3 = (b as Node3D).global_position
+		var spot: Vector3 = b.call("_attack_spot", 楼)
+		var snapped: Vector3 = 关卡.call("walkable_pos", spot)
+		诊断.append({
+			"起手": int(b.get("dbg_swings")),
+			"状态": str(b.get("state")),
+			"指令": int(b.get("order")),
+			"距墙面": "%.2f" % float(楼.call("distance_to_footprint", bp)),
+			"位置": "%.1f,%.1f" % [bp.x, bp.z],
+			"站位距墙": "%.2f" % float(楼.call("distance_to_footprint", spot)),
+			"吸附后距墙": "%.2f" % float(楼.call("distance_to_footprint", snapped)),
+			"路点": "%.1f,%.1f" % [(b.get("_goal") as Vector3).x, (b.get("_goal") as Vector3).z],
+			"reach": "%.2f" % float(b.call("_attack_reach", 楼)),
+		})
+	_记("G2_多近战围楼", {
+		"四人起手": str(起手表),
+		"诊断": 诊断,
+		"建筑初血": "%.0f" % 初血,
+		"建筑末血": "%.0f" % 末血,
+		"打掉血量": "%.0f" % (初血 - 末血),
+	})
+	if not 全员起手:
+		失败.append("G2 多近战围楼：有人一次都没起手（被挡住/被挤开）—— %s" % str(起手表))
+	if 末血 >= 初血:
+		失败.append("G2 多近战围楼：楼没掉血")
 # ===========================================================================
 # H · 最大可打距离（范围圈口径的实测基线）
 # ===========================================================================

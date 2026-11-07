@@ -374,7 +374,8 @@ func _tick_constructing() -> void:
 		var v = w.get("visual")
 		if v != null and is_instance_valid(v) and bool(v.get("visible")):
 			shown += 1
-		if (w as Node3D).global_position.distance_to(c) <= 0.8:
+		# 0.9m：第 0 个人站正中，其余按花瓣散开 0.65m（见 单位._builder_slot_offset）
+		if (w as Node3D).global_position.distance_to(c) <= 0.9:
 			at_center += 1
 		# 建造锁：在工地里点移动必须被挡回去（位置不变、仍在工地里）
 		var before: Vector3 = (w as Node3D).global_position
@@ -382,12 +383,15 @@ func _tick_constructing() -> void:
 		if (w as Node3D).global_position.distance_to(before) <= 0.01 \
 				and bool(w.call("is_inside_build")):
 			locked += 1
-	_ok("农民在工地里：模型可见 + 站在正中心 + 拉不走",
-			inside == _crew.size() and shown == _crew.size() \
-			and at_center == _crew.size() and locked == _crew.size(),
-			"内部 %d/%d，可见 %d/%d，正中心 %d/%d，锁住 %d/%d" % [
-				inside, _crew.size(), shown, _crew.size(),
-				at_center, _crew.size(), locked, _crew.size()])
+	# ★ 只在"还没完工"的帧上判：完工那一帧建筑会把所有人放出来（release_builders），
+	#   再拿"人在里面"去断言就是拿结束状态判过程，必然假红。
+	if not bool(_site.get("is_constructed")):
+		_ok("农民在工地里：模型可见 + 站在正中心 + 拉不走",
+				inside == _crew.size() and shown == _crew.size() \
+				and at_center == _crew.size() and locked == _crew.size(),
+				"内部 %d/%d，可见 %d/%d，正中心 %d/%d，锁住 %d/%d" % [
+					inside, _crew.size(), shown, _crew.size(),
+					at_center, _crew.size(), locked, _crew.size()])
 	if bool(_site.get("is_constructed")) or pr >= 1.0:
 		_next_phase(1)
 	elif _phase_frames > 1200:

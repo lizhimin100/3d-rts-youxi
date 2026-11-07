@@ -23,6 +23,49 @@ extends Node3D
 # ===========================================================================
 ## 到达路径点的容差（米）
 const ARRIVE_TOLERANCE: float = 0.35
+## 「再顶半步」：进射程后如果只是刚刚够着（余量 < 0.12m），继续往前顶到站位点再开打。
+## 为什么需要：到点容差 0.35m 会让不同兵停在射程边缘的不同侧，边界目标就会
+## "一半人在打、一半人干瞪眼"（战斗自检 G2 抓到的就是它）。
+const CLOSE_IN_MARGIN: float = 0.12
+## 「再顶半步」的最长时间（秒）：超时就地开打，绝不无限追。
+const CLOSE_IN_MAX_T: float = 1.2
+## 贴墙时身体边缘到墙面至少留这么多（米），再近就是把自己塞进楼里了
+const WALL_HUG_EPS: float = 0.02
+## 本次"再顶半步"已经顶了多久
+var _close_in_t: float = 0.0
+## **正在砍这栋楼**（见 _step_direct / _update_wall_pushout）。
+## 非 null 时给它两条例外：
+##   ① 允许走进建筑占格外那 1 格"绕行净空"（寻路用它防止贴墙卡角，
+##      但"我就是要上去砍墙"本来就该贴上去）；
+##   ② 墙内推挤对它豁免，否则刚贴上去就被顶回 2.5m 外，永远砍不到。
+var _wall_approach: Node3D = null
+
+
+## 直接朝一个点顶一小步（**绕过**寻路的格子吸附与到点闩锁），落点仍要 is_standable。
+## 返回是否真的挪了；挪不动（阻挡格）返回 false，调用方改走正常寻路。
+## 为什么需要：寻路的落点是格子中心，最后一个格子离墙还有 0.3~0.5m 走不到，
+## 近战 range=1 时这点差额就变成"站在楼边砍不到"。
+func _step_direct(pos: Vector3, dt: float) -> bool:
+	var to: Vector3 = pos - global_position
+	to.y = 0.0
+	var d: float = to.length()
+	if d < 0.01:
+		return false
+	var step: float = minf(maxf(_max_speed(), 1.0) * dt, d)
+	var nx: Vector3 = global_position + to / d * step
+	var pf := _pathfinder()
+	if pf != null and not pf.is_standable(nx, get_radius() * CLEAR_SAFETY):
+		# 砍楼例外：只要没真的走进楼里、且本来就贴着这栋楼，就允许贴近墙面。
+		# 「本来就贴着」这条把例外的影响面钉死在 3m 内：别的地方照旧严格走寻路。
+		var b := _wall_approach as RtsBuilding
+		if b == null or not is_instance_valid(b):
+			return false
+		if b.distance_to_footprint(global_position) > 3.0:
+			return false
+		if b.distance_to_footprint(nx) < get_radius() + WALL_HUG_EPS:
+			return false
+	global_position = RtsWorld.ground(nx)
+	return true
 ## 起 / 停缓动时间（秒）：0→满速、满速→0 都用这个时长
 const SPEED_EASE_TIME: float = 0.12
 ## A* 节流间隔（秒）：同一单位这时间内不重复算路
@@ -1817,8 +1860,23 @@ func _enter_build_site(site: RtsBuilding) -> void:
 		site.call("admit_builder", self)
 	# 搬到正中心（Y 贴地）。占地内部是不可走区，但这一段逻辑里
 	# `_process_inner` 只跑 `_update_anim`，不寻路、不分离，所以不会有人卡在墙里。
-	global_position = RtsWorld.ground(site.global_position)
+	# ★ 多个人同时建：**第一个站正中，其余按花瓣位散开 0.65m**。
+	#   全部落在同一点会让 4 个农民模型互相穿插（z-fighting + 看不出有几个人），
+	#   0.65m 仍然在"工地正中心"这一团里，肉眼读起来还是"人在楼心干活"。
+	global_position = RtsWorld.ground(site.global_position) + _builder_slot_offset(site)
 	_speed = 0.0
+
+
+## 工地内站位偏移（第 0 个 = 正中；1~6 按六瓣花散开，之后再循环）
+func _builder_slot_offset(site: Node3D) -> Vector3:
+	var idx: int = 0
+	var arr: Variant = site.get("builders_inside")
+	if arr is Array:
+		idx = maxi((arr as Array).find(self), 0)
+	if idx <= 0:
+		return Vector3.ZERO
+	var ang: float = TAU * float(idx - 1) / 6.0
+	return Vector3(cos(ang), 0.0, sin(ang)) * 0.65
 
 
 ## 从工地里出来（本单位主动离开：改令 / 工地没了）。
@@ -2592,11 +2650,14 @@ func _snap_ground(dt: float) -> void:
 ##   所以墙面余量必须 ≥ 1.5，否则"贴着楼站着却砍不到"。
 ##   ★ 这个值跟"近战 range = 1"是两个口径：range 管打人，START 这里管打楼。
 ##   旧值 1.15 是按"墙面 1.50m"估的，实测偏小 0.35，这就是玩家报的"打不到建筑"。
-const BUILDING_REACH: float = 1.60
+## ★ 2026-11-07 二次修正：这个"打楼专用余量"**已经删掉**。
+##   它存在的唯一理由是「寻路把建筑占格外扩 1 格，兵只能站在墙面外 2.0~2.5m」，
+##   于是必须给近战塞一个比 range 更大的隐形 reach 才砍得到楼 —— 结果是
+##   玩家在卡上把近战填 1.0，打人贴身、打楼隔空挥，两个口径永远对不上。
+##   现在建筑占格不再外扩（见 关卡.BUILDING_BLOCK_CLEARANCE = 0），
+##   近战可以走到墙面外 0.5~1.0m，**range 填多少就是多少，打人和打楼同一把尺**。
 func _attack_reach(t: Node3D) -> float:
 	var r: float = def.attack_range if def != null else 0.0
-	if t is RtsBuilding:
-		r = maxf(r, BUILDING_REACH)
 	return maxf(r, 0.05)
 
 
@@ -2792,6 +2853,11 @@ func _update_attack(dt: float) -> void:
 
 	var reach: float = _attack_reach(target)
 	var dist: float = _target_gap(target)
+	# 贴墙例外只在"正在打这栋楼、且已经在它附近"时生效
+	if target is RtsBuilding and dist <= reach + 1.8:
+		_wall_approach = target
+	elif _wall_approach != null and _wall_approach != target:
+		_wall_approach = null
 
 	if dist > reach:
 		# 不在射程：会追的指令扑上去；待机/警戒/建筑直接**放掉锁定**。
@@ -2814,6 +2880,19 @@ func _update_attack(dt: float) -> void:
 		#   这里对"已经落定、但只差一点点"的情况给一次强制：真的迈完最后半步。
 		var spot: Vector3 = _attack_spot(target)
 		var last_step: bool = _arrived_goal and dist <= reach + 1.2
+		# ★ 已经走到路点上了、只差最后半步：直接顶过去。
+		#   寻路的落点是 1m 格子的中心，最后那 0.3~0.5m 它永远走不到；
+		#   而这点差额正好是"贴着楼却砍不到"的全部原因。
+		# ★ 砍楼：最后 1.5m 一律直顶。寻路在这段的落点是格子中心 + 四周 1 格净空，
+		#   它永远走不到墙面；直顶有「没进楼里 + 本来就贴着这栋楼」两条硬判据兜着，
+		#   不会变成无视障碍的穿墙。
+		if target is RtsBuilding and dist <= reach + 1.5 and _step_direct(spot, dt):
+			state = RtsConst.State.MOVE
+			return
+		# 非建筑目标：站在路点上了再直顶（打人时站位点本来就在包围圈上）
+		if _arrived_goal and _step_direct(spot, dt):
+			state = RtsConst.State.MOVE
+			return
 		_go_to(spot, last_step)
 		state = RtsConst.State.MOVE
 		return
@@ -2822,6 +2901,22 @@ func _update_attack(dt: float) -> void:
 	if order == RtsConst.Order.MOVE or order == RtsConst.Order.ATTACK_MOVE:
 		# 收到移动/攻击移动的部队只"停下还手"，打完要继续走（不能把指令吃掉）
 		_interrupt_move_for_combat()
+	# ★ 2026-11-07「再顶半步」：到点容差 0.35m 会让兵停在射程边缘 ±5cm，
+	#   于是同一排兵里总有一两个卡在"差 2cm 够不着"的位置，玩家看到的是"有人在打、
+	#   有人站着"。只要**还在走**且只是刚刚够着，就先往站位点再顶半步；
+	#   顶了 CLOSE_IN_MAX_T 秒还没进去（站位点被挡），就照打 —— 绝不死循环。
+	if dist > reach - CLOSE_IN_MARGIN and _may_pursue() \
+			and _close_in_t < CLOSE_IN_MAX_T:
+		_close_in_t += dt
+		# ① 先试"直接朝站位点顶一小步"：寻路把落点吸附到格子中心，最后那 0.3~0.5m
+		#    它永远走不到（到点闩锁 + 格子吸附），而这一小段恰好就是"够不着"的全部差额。
+		#    这一小步仍然走 is_standable 判据，不会顶进阻挡格。
+		if not _step_direct(_attack_spot(target), dt):
+			# ② 顶不动（前面是墙/水）：退回正常寻路（可能绕到另一面）
+			_go_to(_attack_spot(target), true)
+		state = RtsConst.State.MOVE
+		return
+	_close_in_t = 0.0
 	_stop_moving()
 	_face_pos(target.global_position, dt)
 	# 连发技能（弩兵三连发）：装填没完 / 上一轮还没打完时，不开新一轮攻击
@@ -3350,6 +3445,13 @@ func _update_wall_pushout(dt: float) -> void:
 		return
 	var r: float = _clear_radius()
 	if pf.is_standable(global_position, r):
+		_pushout_t = 0.0
+		_pushout_has = false
+		return
+	# 砍楼贴墙例外：正在砍的那栋楼，只要没进楼里就不推
+	var hug := _wall_approach as RtsBuilding
+	if hug != null and is_instance_valid(hug) \
+			and hug.distance_to_footprint(global_position) >= get_radius() + WALL_HUG_EPS:
 		_pushout_t = 0.0
 		_pushout_has = false
 		return

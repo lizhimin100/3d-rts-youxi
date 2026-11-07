@@ -19,6 +19,8 @@ var _syncing: bool = false
 const Spec := preload("res://代码/界面/界面规格.gd")
 ## token 编译出来的正经 Theme 资源（主屏同源）
 const EDITOR_THEME := preload("res://addons/map_editor/编辑器主题.tres")
+## 皮肤（深铁石底 + 金线）：在 .tres 实例上就地改写，资源路径不变
+const 皮肤 := preload("res://addons/map_editor/编辑器皮肤.gd")
 
 # --- 地形页 ---
 var _biome_opt: OptionButton
@@ -156,7 +158,9 @@ func refresh_after_card_edit() -> void:
 
 func _build() -> void:
 	name = "地图工具"
-	# 一次挂主题；按钮/页签/Tree/ItemList/输入框全部继承，控件上不再写样式
+	# 一次挂主题；按钮/页签/Tree/ItemList/输入框全部继承，控件上不再写样式。
+	# 皮肤在这里再盖一层（深铁底 + 金线 + 金色选中条），二次重做 2026-11-07。
+	皮肤.apply(EDITOR_THEME)
 	theme = EDITOR_THEME
 	custom_minimum_size = Vector2(330, 260)
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -185,7 +189,7 @@ func _add_tab(content: Control, title: String) -> void:
 
 func _vbox() -> VBoxContainer:
 	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 6)
+	v.add_theme_constant_override("separation", 8)
 	return v
 
 
@@ -197,8 +201,26 @@ func _label(t: String, wrap: bool = false, variation: StringName = &"") -> Label
 	return l
 
 
-func _title(t: String) -> Label:
-	return Spec.editor_label(t, &"EditorTitle")
+## 分节标题：12px 金字 + 一条金线（前缀命中 _section_icon 时再带一个 16px 图标）。
+## 以前这里只是一行金色 Label —— 八页内容全靠这行字分隔，玩家读不出"一段一段"。
+func _title(t: String) -> Control:
+	return 皮肤.section(t, _section_icon(t))
+
+
+## 分节标题的图标：按标题前缀认（标题本身是给人读的，不用为了配图标改文案）
+func _section_icon(t: String) -> String:
+	const TAGS: Array = [
+		["地形类型", "terrain"], ["应用纹理", "paint"], ["应用高度", "mountain"],
+		["刷子", "brush"], ["镜头", "eye"], ["摆放归属", "team"],
+		["放置分类", "grid"], ["选中对象", "sword"], ["按类型替换", "replace"],
+		["画区域", "region"], ["用途", "flag"], ["玩家槽位", "team"],
+		["队伍", "team"], ["对象属性", "gear"], ["野怪营地", "tent"],
+		["校验", "check"], ["历史", "history"], ["波次", "wave"],
+	]
+	for pair in TAGS:
+		if t.begins_with(String(pair[0])):
+			return String(pair[1])
+	return ""
 
 
 ## 说明文本不再占版面：只挂 tooltip，鼠标停上去才出现。
@@ -211,7 +233,7 @@ func _hint(node: Control, text: String) -> void:
 
 func _hbox() -> HBoxContainer:
 	var h := HBoxContainer.new()
-	h.add_theme_constant_override("separation", 4)
+	h.add_theme_constant_override("separation", 8)
 	return h
 
 
@@ -245,8 +267,8 @@ func _build_terrain_tab() -> Control:
 	grid.add_child(_mk_color_tool("泥土", MapDef.SPLAT_DIRT, Color(0.44, 0.32, 0.18), 5))
 	grid.add_child(_mk_color_tool("岩石", MapDef.SPLAT_ROCK, Color(0.42, 0.43, 0.46), 6))
 	grid.add_child(_mk_color_tool("沙地", MapDef.SPLAT_SAND, Color(0.72, 0.64, 0.42), 7))
-	grid.add_child(_mk_plain_tool("擦除地表", 9))
-	grid.add_child(_mk_plain_tool("水面", 8))
+	grid.add_child(_mk_plain_tool("擦除", 9, "return", "把刷过的地方退回原生地表色"))
+	grid.add_child(_mk_plain_tool("水面", 8, "water", "刷水面（只改颜色，不改高度）"))
 
 	v.add_child(HSeparator.new())
 	v.add_child(_title("应用高度（只改起伏，不改地表）"))
@@ -304,9 +326,12 @@ func _build_terrain_tab() -> Control:
 	v.add_child(HSeparator.new())
 	v.add_child(_title("镜头"))
 	var crow := _hbox()
-	_add_small_button(crow, "俯视", func() -> void: _vp_call("set_view_top"))
-	_add_small_button(crow, "斜视", func() -> void: _vp_call("set_view_iso"))
-	_add_small_button(crow, "复位", func() -> void: _vp_call("reset_camera"))
+	_add_small_button(crow, "俯视", func() -> void: _vp_call("set_view_top"),
+		"view_top", "俯视：看布局")
+	_add_small_button(crow, "斜视", func() -> void: _vp_call("set_view_iso"),
+		"view_iso", "等轴斜视：默认工作视角")
+	_add_small_button(crow, "复位", func() -> void: _vp_call("reset_camera"),
+		"view_reset", "镜头回到地图中心")
 	v.add_child(crow)
 	return v
 
@@ -319,7 +344,7 @@ func _mk_color_tool(text: String, _value: int, _color: Color, tool_id: int) -> B
 	b.button_group = _splat_group
 	b.focus_mode = Control.FOCUS_NONE
 	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	b.custom_minimum_size = Vector2(0, 30)
+	b.custom_minimum_size = Vector2(0, 34)
 	# 色块皮肤由 Theme 的 EditorSplat* 类型变体提供（颜色也是 token，不在控件里手写）
 	match text:
 		"草地":
@@ -338,13 +363,13 @@ func _mk_color_tool(text: String, _value: int, _color: Color, tool_id: int) -> B
 	return b
 
 
-func _mk_plain_tool(text: String, tool_id: int) -> Button:
-	var b := Spec.editor_button(text)
+func _mk_plain_tool(text: String, tool_id: int, icon: String = "", tip: String = "") -> Button:
+	var b := 皮肤.tool_button(icon, text, tip, "normal", 皮肤.H_SMALL)
 	b.toggle_mode = true
 	b.button_group = _splat_group
 	b.focus_mode = Control.FOCUS_NONE
 	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	b.custom_minimum_size = Vector2(0, 30)
+	b.custom_minimum_size = Vector2(0, 34)
 	b.toggled.connect(func(on: bool) -> void:
 		if on and not _syncing:
 			session.set_tool(tool_id)
@@ -354,18 +379,53 @@ func _mk_plain_tool(text: String, tool_id: int) -> Button:
 
 
 func _mk_height_tool(text: String, tool_id: int) -> Button:
-	var b := Spec.editor_button(text)
+	var b := 皮肤.tool_button(_height_icon(tool_id), text, _height_tip(tool_id),
+		"normal", 皮肤.H_SMALL)
 	b.toggle_mode = true
 	b.button_group = _height_group
 	b.focus_mode = Control.FOCUS_NONE
 	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	b.custom_minimum_size = Vector2(0, 30)
+	b.custom_minimum_size = Vector2(0, 34)
 	b.toggled.connect(func(on: bool) -> void:
 		if on and not _syncing:
 			session.set_tool(tool_id)
 			session.set_mode(0))
 	_height_buttons.append(b)
 	return b
+
+
+## 分类按钮的图标（和左下角层栏同一套符号，一眼对得上）
+func _cat_icon(c: int) -> String:
+	match c:
+		MapObject.Category.UNIT:
+			return "sword"
+		MapObject.Category.BUILDING:
+			return "house"
+		MapObject.Category.DOODAD:
+			return "doodad"
+	return "mine"
+
+
+func _height_icon(tool_id: int) -> String:
+	match tool_id:
+		0:
+			return "upgrade"
+		1:
+			return "return"
+		2:
+			return "wave"
+	return "grid"
+
+
+func _height_tip(tool_id: int) -> String:
+	match tool_id:
+		0:
+			return "抬升：按住左键，越按越高"
+		1:
+			return "降低：按住左键，越按越低"
+		2:
+			return "平滑：把坑洼抹平（不改整体高度）"
+	return "压平：把笔刷范围内压成同一高度"
 
 
 # ---------------------------------------------------------------- 对象页
@@ -386,22 +446,28 @@ func _build_object_tab() -> Control:
 	_hint(_place_owner_row, "选中哪一家，之后在视口里放的**单位和建筑**就归它。装饰/资源永远中立。")
 
 	v.add_child(_title("放置分类"))
-	var cat_row := _hbox()
+	# 2×2 而不是一排 4 个：28px 图标 + 中文名 + 数量挤在一排会溢出版心
+	var cat_grid := GridContainer.new()
+	cat_grid.columns = 2
+	cat_grid.add_theme_constant_override("h_separation", 8)
+	cat_grid.add_theme_constant_override("v_separation", 8)
 	for c in [MapObject.Category.UNIT, MapObject.Category.BUILDING,
 			MapObject.Category.DOODAD, MapObject.Category.RESOURCE]:
 		# 按钮上带数量：玩家一眼知道"单位 7 / 建筑 11"，
 		# 不会因为列表只露出 6 行就以为"野怪不在里面"（2026-11-01 反馈）。
-		var b := Spec.editor_button("%s %d" % [
-			MapAssets.category_name(c), MapAssets.category_count(c)])
+		var b := 皮肤.tool_button(_cat_icon(c), "%s %d" % [
+			MapAssets.category_name(c), MapAssets.category_count(c)],
+			"只看「%s」类（右侧列表跟着换）" % MapAssets.category_name(c),
+			"normal", 皮肤.H_SMALL)
 		b.toggle_mode = true
 		b.focus_mode = Control.FOCUS_NONE
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		b.pressed.connect(func() -> void:
 			session.set_category(c)
 			session.set_mode(1))
-		cat_row.add_child(b)
+		cat_grid.add_child(b)
 		_cat_buttons[c] = b
-	v.add_child(cat_row)
+	v.add_child(cat_grid)
 
 	# 魔兽 Doodad 面板也是按类别分页/过滤的：植被 / 岩石 / 营地 / 残迹 / 杂物。
 	# 这里只在「装饰」层显示；单位/建筑/资源各自有自己的层，不混进来。
@@ -427,6 +493,9 @@ func _build_object_tab() -> Control:
 	# 150 → 210：足够露出 8~9 行（单位 7 项能一屏看完，建筑 11 项只差两行）
 	_asset_list.custom_minimum_size = Vector2(0, 210)
 	_asset_list.auto_height = false
+	# 每行左边一个 28px 的类型图标（单位/建筑是渲图，装饰/资源是线描符号）
+	_asset_list.fixed_icon_size = Vector2i(28, 28)
+	_asset_list.icon_mode = ItemList.ICON_MODE_LEFT
 	_asset_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	v.add_child(_asset_list)
 
@@ -494,7 +563,7 @@ func _build_object_tab() -> Control:
 ## `icon` 为空 → 纯文字（老调用点不用改）。
 func _add_grid_button(parent: GridContainer, text: String, cb: Callable,
 		icon: String = "", tip: String = "", kind: String = "normal") -> Button:
-	var b := Spec.icon_button(icon, text, tip, kind, 30.0)
+	var b := 皮肤.tool_button(icon, text, tip, kind, 皮肤.H_SMALL)
 	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	# 拉伸按钮：图标和文字都从左开始排（CENTER 会让文字脱离图标单独居中）
 	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -506,7 +575,7 @@ func _add_grid_button(parent: GridContainer, text: String, cb: Callable,
 
 func _add_small_button(parent: HBoxContainer, text: String, cb: Callable,
 		icon: String = "", tip: String = "", kind: String = "normal") -> Button:
-	var b := Spec.icon_button(icon, text, tip, kind, 30.0)
+	var b := 皮肤.tool_button(icon, text, tip, kind, 皮肤.H_SMALL)
 	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	b.focus_mode = Control.FOCUS_NONE
@@ -520,9 +589,12 @@ func _build_region_tab() -> Control:
 	var v := _vbox()
 	v.add_child(_title("画区域"))
 	_shape_row = _hbox()
-	_add_small_button(_shape_row, "圆", func() -> void: _begin_region(RegionDef.Shape.CIRCLE))
-	_add_small_button(_shape_row, "矩形", func() -> void: _begin_region(RegionDef.Shape.RECT))
-	_add_small_button(_shape_row, "多边形", func() -> void: _begin_region(RegionDef.Shape.POLYGON))
+	_add_small_button(_shape_row, "圆", func() -> void: _begin_region(RegionDef.Shape.CIRCLE),
+		"circle", "画圆形区域")
+	_add_small_button(_shape_row, "矩形", func() -> void: _begin_region(RegionDef.Shape.RECT),
+		"square", "画矩形区域")
+	_add_small_button(_shape_row, "多边形", func() -> void: _begin_region(RegionDef.Shape.POLYGON),
+		"polygon", "逐点画多边形区域")
 	v.add_child(_shape_row)
 	var prow := _hbox()
 	prow.add_child(_label("用途"))
@@ -547,8 +619,8 @@ func _build_region_tab() -> Control:
 	rid.add_child(_region_id)
 	v.add_child(rid)
 	var rrow := _hbox()
-	_add_small_button(rrow, "应用修改", _apply_region)
-	_add_small_button(rrow, "删除区域", _delete_region)
+	_add_small_button(rrow, "应用修改", _apply_region, "check", "把改过的范围/用途写回地图")
+	_add_small_button(rrow, "删除区域", _delete_region, "delete", "删掉选中区域（可撤销）", "danger")
 	v.add_child(rrow)
 
 	v.add_child(HSeparator.new())
@@ -557,8 +629,8 @@ func _build_region_tab() -> Control:
 	_wave_list.custom_minimum_size = Vector2(0, 96)
 	v.add_child(_wave_list)
 	var wrow := _hbox()
-	_add_small_button(wrow, "新增波次", func() -> void: _add_wave())
-	_add_small_button(wrow, "删除波次", func() -> void: _delete_wave())
+	_add_small_button(wrow, "新增波次", func() -> void: _add_wave(), "plus", "在当前时间点加一波")
+	_add_small_button(wrow, "删除波次", func() -> void: _delete_wave(), "delete", "删掉选中的那一波", "danger")
 	v.add_child(wrow)
 	var wg := GridContainer.new()
 	wg.columns = 2
@@ -601,9 +673,11 @@ func _build_player_tab() -> Control:
 	# ★ 2026-11-07：槽位可增删（魔兽式 2~12 家）。以前只能改字段，
 	#   想加一家必须去别的工具重生成整张图。
 	var prow := _hbox()
-	_add_small_button(prow, "＋ 添加玩家", func() -> void: _edit_player_count(true))
+	_add_small_button(prow, "添加玩家", func() -> void: _edit_player_count(true),
+		"plus", "加一个玩家槽位（最多 12 家）")
 	prow.add_child(Control.new())
-	_add_small_button(prow, "－ 删除最后一位", func() -> void: _edit_player_count(false))
+	_add_small_button(prow, "删最后一位", func() -> void: _edit_player_count(false),
+		"minus", "删掉最后一个槽位（至少保留 2 家）")
 	v.add_child(prow)
 	_hint(prow, "最多 12 家；删除只允许删最后一位，至少保留 2 家。都能 Ctrl+Z 撤。")
 
@@ -647,7 +721,7 @@ func _build_player_tab() -> Control:
 	pg.add_child(_player_wood)
 
 	var frow := _hbox()
-	_add_small_button(frow, "镜头对准该出生点", _focus_player)
+	_add_small_button(frow, "镜头对准出生点", _focus_player, "eye", "把编辑器镜头移到这家的出生点")
 	v.add_child(frow)
 
 	v.add_child(HSeparator.new())
@@ -657,12 +731,15 @@ func _build_player_tab() -> Control:
 	_hint(_team_summary, "同队伍的玩家互为盟友（不互相攻击、视野共享）；不同队伍互相敌对。")
 
 	var t1 := _hbox()
-	_add_small_button(t1, "各自为战", func() -> void: _team_preset("solo"))
+	_add_small_button(t1, "各自为战", func() -> void: _team_preset("solo"), "sword",
+		"每家一个队伍：全员互相敌对")
 	t1.add_child(Control.new())
-	_add_small_button(t1, "两队对抗", func() -> void: _team_preset("two"))
+	_add_small_button(t1, "两队对抗", func() -> void: _team_preset("two"), "team",
+		"按奇偶拆成两队：同队盟友")
 	v.add_child(t1)
 	var t2 := _hbox()
-	_add_small_button(t2, "全部同盟", func() -> void: _team_preset("all"))
+	_add_small_button(t2, "全部同盟", func() -> void: _team_preset("all"), "shield",
+		"全部放进同一队")
 	v.add_child(t2)
 	_hint(t2, "预设只是批量改队伍号，改完仍可逐个槽位微调；都能 Ctrl+Z 撤。")
 	return v
@@ -850,13 +927,14 @@ func _build_camp_tab() -> Control:
 
 	right.add_child(HSeparator.new())
 	var brow := _hbox()
-	_add_small_button(brow, "新建", _camp_new)
-	_add_small_button(brow, "复制", _camp_copy)
-	_add_small_button(brow, "删除", _camp_delete)
-	_add_small_button(brow, "保存", _camp_save)
+	_add_small_button(brow, "新建", _camp_new, "file_new", "新建一张营地卡")
+	_add_small_button(brow, "复制", _camp_copy, "copy", "复制成新的一张")
+	_add_small_button(brow, "删除", _camp_delete, "delete", "删掉这张营地卡", "danger")
+	_add_small_button(brow, "保存", _camp_save, "file_save", "写回 .tres（立刻生效）", "primary")
 	right.add_child(brow)
 	var arow := _hbox()
-	_add_small_button(arow, "应用到选中锚点（可多选）", _camp_apply_to_selection)
+	_add_small_button(arow, "应用到选中锚点", _camp_apply_to_selection, "check",
+		"把这张营地卡套到选中的锚点建筑上（可多选）")
 	right.add_child(arow)
 
 	_camp_status = _label("", true, &"EditorHint")
@@ -1231,9 +1309,10 @@ func _build_history_tab() -> Control:
 	_history_tree.item_selected.connect(_on_history_selected)
 	v.add_child(_history_tree)
 	var row := _hbox()
-	_add_small_button(row, "撤销一步", func() -> void: session.undo())
-	_add_small_button(row, "重做一步", func() -> void: session.redo())
-	_add_small_button(row, "回到初始", func() -> void: session.jump_history(-1))
+	_add_small_button(row, "撤销一步", func() -> void: session.undo(), "undo", "撤销（Ctrl+Z）")
+	_add_small_button(row, "重做一步", func() -> void: session.redo(), "redo", "重做（Ctrl+Y）")
+	_add_small_button(row, "回到初始", func() -> void: session.jump_history(-1), "history",
+		"跳回这张图的第 0 步")
 	v.add_child(row)
 	_history_hint = _label("", true, &"EditorHint")
 	v.add_child(_history_hint)
@@ -1464,9 +1543,14 @@ func _populate_assets() -> void:
 		if not needle.is_empty() and not (nm.to_lower().contains(needle)
 				or id.to_lower().contains(needle)):
 			continue
+		var ico: Texture2D = _asset_icon(a, cat)
 		_asset_list.add_item(MapAssets.list_label(a))
+		if ico != null:
+			_asset_list.set_item_icon(_asset_list.item_count - 1, ico)
 		_asset_list.set_item_metadata(_asset_list.item_count - 1, id)
 		_replace_opt.add_item(MapAssets.list_label(a))
+		if ico != null:
+			_replace_opt.set_item_icon(_replace_opt.item_count - 1, ico)
 		_replace_opt.set_item_metadata(_replace_opt.item_count - 1, id)
 		shown += 1
 	# 只有当前 asset_id 还在过滤结果里才保留选中；否则选第一条，避免"列表里没有却在放"
@@ -1491,6 +1575,33 @@ func _populate_assets() -> void:
 			_empty_hint.text = "装饰只收自然物（树/草/岩石/营地道具/残迹），单位和建筑请切自己的层。"
 		else:
 			_empty_hint.text = "这个分类没有匹配项（试试清空搜索框，或换一个分类）。"
+
+
+## 每行的类型图标：单位/建筑用渲图头像，装饰/资源用线描符号（按子类分）
+func _asset_icon(a: Dictionary, cat: int) -> Texture2D:
+	var id := StringName(String(a.get("id", "")))
+	match cat:
+		MapObject.Category.UNIT:
+			var u: Texture2D = Spec.unit_icon(id)
+			return u if u != null else 皮肤.icon("sword")
+		MapObject.Category.BUILDING:
+			var b: Texture2D = Spec.building_icon(id)
+			return b if b != null else 皮肤.icon("house")
+		MapObject.Category.RESOURCE:
+			return 皮肤.icon("mine") if String(id).contains("金") else 皮肤.icon("tree")
+	var group: String = String(a.get("group", ""))
+	match group:
+		"植被":
+			return 皮肤.icon("tree")
+		"岩石":
+			return 皮肤.icon("rock")
+		"营地":
+			return 皮肤.icon("tent")
+		"残迹":
+			return 皮肤.icon("bones")
+		"杂物":
+			return 皮肤.icon("crate")
+	return 皮肤.icon("doodad")
 
 
 func _on_asset_selected(index: int) -> void:

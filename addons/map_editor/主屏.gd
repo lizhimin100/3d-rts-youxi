@@ -24,6 +24,9 @@ const Spec := preload("res://代码/界面/界面规格.gd")
 const 按钮表 := preload("res://addons/map_editor/按钮表.gd")
 ## token 编译出来的正经 Theme 资源（生成命令见 工具/生成编辑器主题.gd）
 const EDITOR_THEME := preload("res://addons/map_editor/编辑器主题.tres")
+## 皮肤：把上面那个 Theme **就地**换成「深铁石底 + 金线」（二次重做，见 编辑器皮肤.gd）。
+## 不断链：resource_path 仍是 编辑器主题.tres，自检里"主屏与 Dock 同资源"照旧。
+const 皮肤 := preload("res://addons/map_editor/编辑器皮肤.gd")
 ## 两套"点击弹窗配置"窗口：营地（点视口里的锚点建筑弹出）+ 卡编辑器（快捷条按钮打开）。
 ## 不写 class_name，按本工程惯例用 preload 常量 + .call()。
 const CAMP_DIALOG_SCRIPT := preload("res://addons/map_editor/营地弹窗.gd")
@@ -78,6 +81,10 @@ var _wizard_dirty: bool = true
 ## 向导/状态栏的 Tween（全编辑器统一走 Tween，不自造动画框架）
 var _wizard_tween: Tween = null
 var _status_tween: Tween = null
+## 快捷条所在的那一行 + 每个按钮的原文案（窄屏时切成纯图标，见 _fit_quickbar）
+var _quick_row: HBoxContainer = null
+var _quick_items: Array = []
+var _quick_compact: bool = false
 
 
 func setup(p_session) -> void:
@@ -102,7 +109,9 @@ func setup(p_session) -> void:
 
 func _build() -> void:
 	name = "地图编辑器主屏"
-	# 一次挂主题，所有子控件继承；不再每个按钮塞 StyleBoxOverride
+	# 一次挂主题，所有子控件继承；不再每个按钮塞 StyleBoxOverride。
+	# 皮肤在 .tres 实例上就地改写 —— 资源路径不变，改的是"长什么样"。
+	皮肤.apply(EDITOR_THEME)
 	theme = EDITOR_THEME
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -159,10 +168,21 @@ func _build() -> void:
 
 
 func _build_menu_and_quickbar() -> void:
+	# 整条页头 = 一块"深铁条"（菜单与快捷条同底同宽），不再是两排彼此无关的按钮
+	var head := PanelContainer.new()
+	head.name = "页头"
+	head.theme_type_variation = &"EditorTopBar"
+	head.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	add_child(head)
+	var hv := VBoxContainer.new()
+	hv.name = "页头列"
+	hv.add_theme_constant_override("separation", 8)
+	head.add_child(hv)
+
 	var bar := HBoxContainer.new()
 	bar.name = "菜单栏"
-	bar.add_theme_constant_override("separation", 4)
-	add_child(bar)
+	bar.add_theme_constant_override("separation", 2)
+	hv.add_child(bar)
 
 	_menu_file = _mk_menu(bar, "文件", [
 		["新建地图…", 1], ["打开地图…", 2], ["保存", 3], ["另存为…", 4],
@@ -189,28 +209,44 @@ func _build_menu_and_quickbar() -> void:
 	_tool_badge = Spec.editor_label("未打开地图", &"EditorAccent")
 	bar.add_child(_tool_badge)
 
-	var quick := HBoxContainer.new()
-	quick.name = "快捷条"
-	quick.add_theme_constant_override("separation", 4)
-	add_child(quick)
-	# 快捷条**全部由 按钮表.gd 生成**：加/改/重排按钮只改那张表，不碰这里。
+	# 快捷条：**全部由 按钮表.gd 生成**。每个分组 = 12px 金标题 + 一排 40 高的工具按钮，
+	# 组间一条竖直分隔线 —— 不用读说明书也知道"这五个是文件、那三个是视角"。
+	# 窄屏（Dock/场景树一挤）自动收成"纯图标"，见 _fit_quickbar()。
+	_quick_row = HBoxContainer.new()
+	_quick_row.name = "快捷条"
+	_quick_row.add_theme_constant_override("separation", 12)
+	hv.add_child(_quick_row)
+	_quick_items.clear()
 	for gi in 按钮表.GROUPS.size():
 		if gi > 0:
-			quick.add_child(VSeparator.new())
+			var vsep := VSeparator.new()
+			vsep.custom_minimum_size = Vector2(1, 0)
+			_quick_row.add_child(vsep)
 		var g: Dictionary = 按钮表.GROUPS[gi]
+		var gv := VBoxContainer.new()
+		gv.add_theme_constant_override("separation", 4)
+		var cap := Label.new()
+		cap.text = String(g["name"])
+		cap.theme_type_variation = &"EditorGroupCaption"
+		gv.add_child(cap)
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 6)
+		gv.add_child(row)
 		for it in (g["items"] as Array):
 			var d: Dictionary = it
-			_qbtn(quick, String(d["text"]), String(d["tip"]), int(d["id"]),
+			var b: Button = _qbtn(row, String(d["text"]), String(d["tip"]), int(d["id"]),
 				String(d["icon"]), String(d.get("kind", "normal")))
+			_quick_items.append({"btn": b, "text": String(d["text"])})
+		_quick_row.add_child(gv)
 	# ★ 这里不再放长句提示：视口左上角已经有一条同样的操作提示，
 	#   两条并列只会把顶部工具条撑宽、把右侧 Dock 挤成一条缝（2026-11-07 实测）。
-	#   要加说明请写进按钮的 tooltip，或去 帮助窗.gd 的 ROWS。
 
 
 func _mk_menu(parent: Node, title: String, items: Array) -> MenuButton:
 	var m := MenuButton.new()
 	m.text = title
 	m.flat = true
+	m.theme_type_variation = &"EditorMenu"
 	m.focus_mode = Control.FOCUS_NONE
 	parent.add_child(m)
 	var popup: PopupMenu = m.get_popup()
@@ -229,7 +265,7 @@ func _mk_menu(parent: Node, title: String, items: Array) -> MenuButton:
 ## 图标缺失时 `Spec.icon_button` 会静默退回纯文字，不会变成空白方块。
 func _qbtn(parent: Node, text: String, tip: String, id: int, icon: String = "",
 		kind: String = "normal") -> Button:
-	var b := Spec.icon_button(icon, text, tip, kind, 30.0)
+	var b := 皮肤.tool_button(icon, text, tip, kind, 皮肤.H_QUICK)
 	b.pressed.connect(func() -> void: _on_menu(id))
 	parent.add_child(b)
 	return b
@@ -241,9 +277,9 @@ func _qbtn(parent: Node, text: String, tip: String, id: int, icon: String = "",
 ## 文字只留两个字，按钮 80×48 —— 一行一个，扫一眼就知道点哪个。
 func _build_rail() -> void:
 	# 手型放最上面：不拿工具时左键拖动 = 转视角，点对象能选中
-	_hand_button = Spec.icon_button("hand", "手型",
-		"不拿工具：左键按住拖动转视角，点对象选中（H / Esc）", "normal", 46.0)
-	_hand_button.custom_minimum_size = Vector2(84.0, 46.0)
+	_hand_button = 皮肤.tool_button("hand", "手型",
+		"不拿工具：左键按住拖动转视角，点对象选中（H / Esc）", "normal", 皮肤.H_LAYER)
+	_hand_button.custom_minimum_size = Vector2(84.0, 皮肤.H_LAYER)
 	_hand_button.toggle_mode = true
 	_hand_button.toggled.connect(func(on: bool) -> void:
 		if on and session != null:
@@ -275,18 +311,18 @@ func _build_rail() -> void:
 	var sp := Control.new()
 	sp.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_rail.add_child(sp)
-	var vb := Spec.icon_button("view_reset", "复位",
-		"镜头回到地图中心（F 对准选中对象）", "normal", 46.0)
-	vb.custom_minimum_size = Vector2(84.0, 46.0)
+	var vb := 皮肤.tool_button("view_reset", "复位",
+		"镜头回到地图中心（F 对准选中对象）", "normal", 皮肤.H_LAYER)
+	vb.custom_minimum_size = Vector2(84.0, 皮肤.H_LAYER)
 	vb.pressed.connect(func() -> void: _on_menu(23))
 	_rail.add_child(vb)
 
 
 func _mk_layer_button(text: String, mode: int, dock_tab: String, cat: int,
 		icon: String = "", tip: String = "") -> Button:
-	var b := Spec.icon_button(icon, text,
-		tip if not tip.is_empty() else "切到「%s」层（右侧面板同步）" % text, "normal", 46.0)
-	b.custom_minimum_size = Vector2(84.0, 46.0)
+	var b := 皮肤.tool_button(icon, text,
+		tip if not tip.is_empty() else "切到「%s」层（右侧面板同步）" % text, "normal", 皮肤.H_LAYER)
+	b.custom_minimum_size = Vector2(84.0, 皮肤.H_LAYER)
 	b.toggle_mode = true
 	b.pressed.connect(func() -> void: _on_layer(mode, dock_tab, cat))
 	_rail_buttons[text] = b
@@ -449,10 +485,14 @@ func _mk_overlay_label(parent: Control, pos: Vector2, badge: bool) -> Label:
 
 
 func _build_statusbar() -> void:
+	var strip := PanelContainer.new()
+	strip.name = "状态栏"
+	strip.theme_type_variation = &"EditorStatusBar"
+	strip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	add_child(strip)
 	var bar := HBoxContainer.new()
-	bar.name = "状态栏"
 	bar.add_theme_constant_override("separation", 16)
-	add_child(bar)
+	strip.add_child(bar)
 	_map_label = Spec.editor_label("未打开地图")
 	bar.add_child(_map_label)
 	_coord_label = Spec.editor_label("X —　Z —　高度 —", &"EditorHint")
@@ -530,6 +570,36 @@ func _on_main_visibility_changed() -> void:
 
 func _mk_label(t: String) -> Label:
 	return Spec.editor_label(t)
+
+
+## 快捷条自适应：一行放不下（Dock/场景树把主屏挤窄）就把文字收掉，只留 28px 图标。
+## 为什么不是换行：换行会把"页头"撑成两排，视口顶部被吃掉一块；
+## 图标 + tooltip + 左边 12px 分组标题已经够认（魔兽世界编辑器就是这么做的）。
+func _fit_quickbar() -> void:
+	if _quick_row == null or _quick_items.is_empty():
+		return
+	var avail: float = _quick_row.size.x
+	if avail <= 1.0:
+		return
+	var want: float = _quick_row.get_combined_minimum_size().x
+	var compact: bool = want > avail + 0.5
+	if compact == _quick_compact:
+		return
+	_quick_compact = compact
+	for it in _quick_items:
+		var b: Button = it["btn"]
+		if b == null or not is_instance_valid(b):
+			continue
+		if compact:
+			b.text = ""
+			b.custom_minimum_size = Vector2(44.0, 皮肤.H_QUICK)
+			b.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			b.alignment = HORIZONTAL_ALIGNMENT_CENTER
+		else:
+			b.text = String(it["text"])
+			b.custom_minimum_size = Vector2(0.0, 皮肤.H_QUICK)
+			b.icon_alignment = HORIZONTAL_ALIGNMENT_LEFT
+			b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 
 
 # ===========================================================================
@@ -882,6 +952,7 @@ func _tool_text() -> String:
 
 
 func _process(delta: float) -> void:
+	_fit_quickbar()
 	if session == null:
 		return
 	# ★ 必须 has_method 探一下：编辑会话.gd 一旦编译失败（例如存盘写到一半被编辑器读到），

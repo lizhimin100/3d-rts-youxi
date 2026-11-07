@@ -978,6 +978,13 @@ func footprint_height_range(pos: Vector3, footprint: Vector2i) -> float:
 ## （`order_build` 落工地 / `建筑改造.replace`）落成后又会再标一次。
 ## 改成引用计数以后，标两次 = 计数 2，`clear_footprint` 只减一次 →
 ## 拆掉建筑后原地永远留一个"看不见的禁建区"（升级自检 41 项里唯一红的那个）。
+## 建筑占格在寻路网格上**额外外扩几格**。
+##
+## ★ 保持 1 格外扩（绕行走位要靠它：A/B 实测改 0 会让"沿外墙走 20m"卡住）。
+##   "近战砍楼"的问题**不在这里解决**，而是给攻击者一条**贴墙例外**：
+##   见 单位._wall_approach / _step_direct / _update_wall_pushout ——
+##   只有"正在砍这栋楼"的单位才允许走进这圈，而且绝不会走进楼里。
+const BUILDING_BLOCK_CLEARANCE: int = 1
 func mark_footprint(building: Node3D) -> void:
 	if building == null or pathfinder == null:
 		return
@@ -987,7 +994,7 @@ func mark_footprint(building: Node3D) -> void:
 	var key: int = building.get_instance_id()
 	if _footprint_cells.has(key):
 		return
-	var rect: Rect2i = _footprint_cell_rect(building, def, 1)
+	var rect: Rect2i = _footprint_cell_rect(building, def, BUILDING_BLOCK_CLEARANCE)
 	_apply_footprint_rect(rect, true)
 	register_prop_cells(building, _rect_cells(rect))
 	_footprint_cells[key] = rect
@@ -1005,7 +1012,7 @@ func clear_footprint(building: Node3D) -> void:
 	var key: int = building.get_instance_id()
 	var rect: Rect2i = _footprint_cells.get(key, Rect2i())
 	if rect.size.x <= 0 or rect.size.y <= 0:
-		rect = _footprint_cell_rect(building, def, 1)
+		rect = _footprint_cell_rect(building, def, BUILDING_BLOCK_CLEARANCE)
 	# 走引用计数释放：建筑格如果同时被树/岩石/陡坡占着，不能一起打开。
 	# （没登记过的老建筑退回按矩形清，保证不会留下"拆不掉的占地"）
 	if not release_prop(building):

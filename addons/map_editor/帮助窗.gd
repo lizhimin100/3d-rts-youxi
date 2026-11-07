@@ -12,6 +12,8 @@ extends Window
 
 const Spec := preload("res://代码/界面/界面规格.gd")
 const EDITOR_THEME := preload("res://addons/map_editor/编辑器主题.tres")
+## 皮肤（深铁石底 + 金线）：在 .tres 实例上就地改写，资源路径不变
+const 皮肤 := preload("res://addons/map_editor/编辑器皮肤.gd")
 
 ## 功能表：[分类, 功能, 怎么用, 代码位置]
 ## ⚠ 新增按钮/页面时**顺手加一行**，否则这张表会变成谎言。
@@ -61,6 +63,7 @@ func setup(p_session) -> void:
 	transient = true
 	min_size = Vector2i(720, 520)
 	close_requested.connect(func() -> void: hide())
+	皮肤.apply(EDITOR_THEME)
 	theme = EDITOR_THEME
 	var panel := PanelContainer.new()
 	add_child(panel)
