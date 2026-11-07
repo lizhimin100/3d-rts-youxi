@@ -127,6 +127,16 @@ func _build() -> void:
 	body.custom_minimum_size = Vector2(0, 240)
 	add_child(body)
 
+	# 层栏底：一整块比视口更深的石板，给左栏一条物理边界。
+	# 没有它，按钮是"浮在视口背景上"的，地图一动、按钮边缘就和地形糊成一片。
+	var rail_bg := Panel.new()
+	rail_bg.name = "层栏底"
+	rail_bg.theme_type_variation = &"EditorRailBack"
+	rail_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.add_child(rail_bg)
+	rail_bg.set_anchors_and_offsets_preset(Control.PRESET_LEFT_WIDE)
+	rail_bg.offset_right = 88
+
 	_rail = VBoxContainer.new()
 	_rail.name = "工具层"
 	_rail.custom_minimum_size = Vector2(88, 0)
@@ -176,7 +186,7 @@ func _build_menu_and_quickbar() -> void:
 	add_child(head)
 	var hv := VBoxContainer.new()
 	hv.name = "页头列"
-	hv.add_theme_constant_override("separation", 8)
+	hv.add_theme_constant_override("separation", 5)
 	head.add_child(hv)
 
 	var bar := HBoxContainer.new()
@@ -206,6 +216,8 @@ func _build_menu_and_quickbar() -> void:
 	spacer.custom_minimum_size = Vector2(8, 0)
 	bar.add_child(spacer)
 
+	# 页头右上角 = 文件身份（名字 + 未保存点）。这里是"我在改哪个文件"，
+	# 视口底右角才是"这张图多大 / 摆了多少东西"，两者分工不重复。
 	_tool_badge = Spec.editor_label("未打开地图", &"EditorAccent")
 	bar.add_child(_tool_badge)
 
@@ -214,7 +226,9 @@ func _build_menu_and_quickbar() -> void:
 	# 窄屏（Dock/场景树一挤）自动收成"纯图标"，见 _fit_quickbar()。
 	_quick_row = HBoxContainer.new()
 	_quick_row.name = "快捷条"
-	_quick_row.add_theme_constant_override("separation", 12)
+	# 组间距 10 + 分隔线：眼睛靠"空隙"分块，不靠一条粗线，所以 10 就够；
+	# 以前 12 加上组内 6 的按钮间距，整条带子比窗外框还松散。
+	_quick_row.add_theme_constant_override("separation", 10)
 	hv.add_child(_quick_row)
 	_quick_items.clear()
 	for gi in 按钮表.GROUPS.size():
@@ -224,13 +238,14 @@ func _build_menu_and_quickbar() -> void:
 			_quick_row.add_child(vsep)
 		var g: Dictionary = 按钮表.GROUPS[gi]
 		var gv := VBoxContainer.new()
-		gv.add_theme_constant_override("separation", 4)
+		# 组标题与按钮之间只留 3px：标题是"贴纸"，不是"第二行内容"。
+		gv.add_theme_constant_override("separation", 3)
 		var cap := Label.new()
 		cap.text = String(g["name"])
 		cap.theme_type_variation = &"EditorGroupCaption"
 		gv.add_child(cap)
 		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 6)
+		row.add_theme_constant_override("separation", 4)
 		gv.add_child(row)
 		for it in (g["items"] as Array):
 			var d: Dictionary = it
@@ -285,7 +300,14 @@ func _build_rail() -> void:
 		if on and session != null:
 			session.disarm())
 	_rail.add_child(_hand_button)
-	_rail.add_child(HSeparator.new())
+	# 金线分隔（HSeparator 的默认皮肤在深底上是一条灰杠，读起来像"坏掉的框"）
+	var sep := MarginContainer.new()
+	sep.add_theme_constant_override("margin_top", 6)
+	sep.add_theme_constant_override("margin_bottom", 6)
+	sep.add_theme_constant_override("margin_left", 6)
+	sep.add_theme_constant_override("margin_right", 6)
+	sep.add_child(皮肤.hairline(0.20))
+	_rail.add_child(sep)
 	# 层按钮也走 按钮表.gd：顺序 / 文案 / 图标都只改表；`layer` 键在这里映射到真实模式。
 	for it in 按钮表.LAYERS:
 		var L: Dictionary = it
@@ -493,8 +515,8 @@ func _build_statusbar() -> void:
 	var bar := HBoxContainer.new()
 	bar.add_theme_constant_override("separation", 16)
 	strip.add_child(bar)
-	_map_label = Spec.editor_label("未打开地图")
-	bar.add_child(_map_label)
+	# ★ 地图身份（文件名 / 尺寸 / 未保存）已挪到页头右上角 —— 这里不再重复一遍。
+	#   UI风格 R1：一条信息只许出现一次；状态栏只负责"坐标 / 瞬时提示 / 校验"。
 	_coord_label = Spec.editor_label("X —　Z —　高度 —", &"EditorHint")
 	bar.add_child(_coord_label)
 	_tool_label = Spec.editor_label("", &"EditorHint")
@@ -912,18 +934,20 @@ func _refresh_status() -> void:
 	if session == null:
 		return
 	var nm: String = session.path.get_file() if not session.path.is_empty() else "未命名地图"
-	if _map_label != null:
+	if _tool_badge != null:
 		if session.def == null:
-			_map_label.text = "未打开地图"
+			_tool_badge.text = "未打开地图"
 		else:
-			_map_label.text = "%s ｜ %d×%d%s" % [nm, session.def.size, session.def.size,
-				"  ●未保存" if session.dirty else ""]
-	_tool_badge.text = _tool_text()
+			# 文件名是主角，"●未保存"只是一个点：
+			# 这里写四个字"未保存"会跟下面的校验结果抢注意力。
+			_tool_badge.text = "%s%s" % [nm, "  ●" if session.dirty else ""]
+			_tool_badge.tooltip_text = "%s ｜ %d×%d%s" % [nm, session.def.size, session.def.size,
+				"（有未保存修改）" if session.dirty else "（已保存）"]
 	if _overlay_tool != null:
 		_overlay_tool.text = _tool_text()
 	if _overlay_map != null:
 		if session.def != null:
-			_overlay_map.text = "%s ｜ %d×%d ｜ 对象 %d" % [nm, session.def.size, session.def.size,
+			_overlay_map.text = "%d×%d ｜ 对象 %d" % [session.def.size, session.def.size,
 				session.def.objects.size()]
 		else:
 			_overlay_map.text = ""

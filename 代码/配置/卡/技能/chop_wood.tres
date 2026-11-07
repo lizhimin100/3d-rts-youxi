@@ -6,7 +6,7 @@
 script = ExtResource("1")
 id = &"chop_wood"
 display_name = "伐木"
-icon = "axe"
+icon = "技能/chop_wood"
 note = "对树木使用：贴身挥斧，每一下都让树晃；4 挥装满一背。"
 kind = "采集"
 target = "资源"

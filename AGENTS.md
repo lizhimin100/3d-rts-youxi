@@ -45,7 +45,9 @@
 ## 三、改完怎么验（都在工程根目录跑）
 
 ```powershell
-$g = 'D:/youxi/anzhuang/steamapps/common/Godot Engine/godot.windows.opt.tools.64.exe'
+$g = 'E:/Program Files (x86)/Steam/steamapps/common/Godot Engine/godot.windows.opt.tools.64.exe'
+# ↑ 2026-11-07 更正：D 盘那套 Steam 已经不在本机了。备份路径（本机另装的 4.7.2）：
+#   E:/编辑器/tools/godot/Godot_v4.7.2-stable_mono_win64/Godot_v4.7.2-stable_mono_win64_console.exe
 & $g --headless --path . --quit-after 200 -- --qa-terrain          # 地形/出生点体检
 & $g --headless --path . --script 代码/测试/界面自检.gd             # UI 8 项
 & $g --headless --path . --script 代码/测试/建造自检.gd             # 建造 23 项

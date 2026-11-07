@@ -809,12 +809,23 @@ static func unit_icon(id: StringName) -> Texture2D:
 	return tex
 
 
+## 图标名支持三种写法（2026-11-07 加"技能/"）：
+##   `shield`            → 美术/图标/shield.svg（线描符号）
+##   `单位/footman`      → 美术/图标/单位/footman.png（渲图头像）
+##   `技能/shield_up`    → 美术/图标/技能/shield_up.png（技能渲图）
 static func icon_tex(name: String) -> Texture2D:
 	if name.is_empty():
 		return null
 
 	if _icon_cache.has(name):
 		return _icon_cache[name] as Texture2D
+	# 带前缀的渲图（单位/建筑/技能）：直接找 PNG，找不到再退回同名符号
+	if name.contains("/"):
+		var png_path := ICON_DIR + name + ".png"
+		if ResourceLoader.exists(png_path):
+			var png_tex := load(png_path) as Texture2D
+			_icon_cache[name] = png_tex
+			return png_tex
 	var path := ICON_DIR + name + ".svg"
 	var tex: Texture2D = null
 	if ResourceLoader.exists(path):

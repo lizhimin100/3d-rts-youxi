@@ -22,7 +22,9 @@ const GROUPS: Array = [
 	{"name": "文件", "items": [
 		{"id": 1, "text": "新建", "icon": "file_new", "tip": "新建地图（先选尺寸 / 人数 / 种子）"},
 		{"id": 2, "text": "打开", "icon": "file_open", "tip": "打开 .tres / .json（Ctrl+O）"},
-		{"id": 3, "text": "保存", "icon": "file_save", "tip": "保存到当前文件（Ctrl+S）"},
+		# 保存是这条工具带上唯一的"主操作"：整条带子里只有一个按钮是金底，
+		# 玩家（和 Agent）一眼就知道"这个和别的不是一回事"。
+		{"id": 3, "text": "保存", "icon": "file_save", "tip": "保存到当前文件（Ctrl+S）", "kind": "primary"},
 		{"id": 4, "text": "另存", "icon": "file_save_as", "tip": "另存为…（换个路径/名字）"},
 	]},
 	{"name": "编辑", "items": [

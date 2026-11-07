@@ -1626,11 +1626,14 @@ func _refresh_obj_count() -> void:
 	if session == null or session.def == null:
 		_obj_count.text = ""
 		return
-	# 左边是"图里已经摆了几个"，右边是"这一类能摆几种" —— 两个数字都有人要查
-	_obj_count.text = "全图 %d 个 ｜ 本类已摆 %d ｜ 可选 %d 种" % [
+	# 左边是"图里已经摆了几个"，右边是"这一类能摆几种" —— 两个数字都有人要查。
+	# ★ 二轮：Dock 只有 ~290px 宽，长句会被裁成"可选 …"（实测）。
+	#   压成三段短数字 + 自动换行，窄了折行也不丢字。
+	_obj_count.text = "全图 %d ｜ 已摆 %d ｜ 可选 %d" % [
 		session.def.objects.size(),
 		session.def.objects_of(int(session.asset_category)).size(),
 		MapAssets.category_count(int(session.asset_category))]
+	_obj_count.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 
 
 # --- 归属卡 ---
@@ -1683,7 +1686,7 @@ func _rebuild_owner_pills() -> void:
 			b.focus_mode = Control.FOCUS_NONE
 			b.text = "● " + String(ch["name"])
 			b.tooltip_text = "把选中对象改成「%s」" % String(ch["name"])
-			b.custom_minimum_size = Vector2(0, 34)
+			b.custom_minimum_size = Vector2(0, 30)
 			b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			b.add_theme_color_override("font_color",
 				Color.from_hsv(col.h, clampf(col.s * 1.12, 0.0, 1.0), 1.0))
@@ -1751,18 +1754,28 @@ func _sync_place_pills() -> void:
 		b.set_pressed_no_signal(int(b.get_meta("owner_id", -99)) == int(session.place_owner))
 
 
+## 归属药丸：**方角石板**（radius 3），不是胶囊。
+##
+## ★ 2026-11-07 二轮：原来 radius 12 + 选中填满本色（玩家 1 = 一整块亮蓝），
+##   在通篇深石板 + 哑金的界面里像一颗贴上去的糖果。
+##   现在：底 = 本色压到 1/4（变成深靛/深绛），描边 = 本色满亮，
+##   选中靠"描边亮 + 底色深一号 + 左侧 3px 竖条"表达，
+##   既保住"一家一色"的识别，又不破坏整体色温。
+##   边框宽两种状态**都是 2px**：一变宽，整排药丸会跟着横跳 1px。
 func _owner_pill_style(col: Color, solid: bool) -> StyleBoxFlat:
-	var k: float = 0.44 if solid else 0.26
+	var k: float = 0.30 if solid else 0.13
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = Color(col.r * k, col.g * k, col.b * k, 1.0)
-	sb.border_color = Color(col.r, col.g, col.b, 1.0 if solid else 0.70)
-	sb.set_border_width_all(2 if solid else 1)
-	sb.set_corner_radius_all(12)
-	sb.corner_detail = 8
-	sb.content_margin_left = 10.0
-	sb.content_margin_right = 10.0
-	sb.content_margin_top = 6.0
-	sb.content_margin_bottom = 6.0
+	sb.border_color = Color(col.r, col.g, col.b, 1.0 if solid else 0.38)
+	sb.set_border_width_all(2)
+	if solid:
+		sb.border_width_left = 3
+	sb.set_corner_radius_all(3)
+	sb.corner_detail = 4
+	sb.content_margin_left = 8.0
+	sb.content_margin_right = 8.0
+	sb.content_margin_top = 4.0
+	sb.content_margin_bottom = 4.0
 	return sb
 
 

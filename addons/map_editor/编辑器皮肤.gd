@@ -42,12 +42,28 @@ const RED := Color(0.702, 0.271, 0.235)
 const RED_DIM := Color(0.376, 0.157, 0.137)
 const RED_HI := Color(0.910, 0.545, 0.502)
 
-## 控件尺寸（8px 栅格）：顶部快捷条 40 / 左侧层栏 44 / Dock 内 34
-const H_QUICK := 40.0
-const H_LAYER := 44.0
-const H_SMALL := 34.0
-## 图标只走 28 这一档（界面规格 R4 的"行内小图标"）
-const ICON := 28.0
+## 控件尺寸（8px 栅格）：顶部快捷条 34 / 左侧层栏 46 / Dock 内 30
+##
+## ★ 2026-11-07 二轮：快捷条 40 → 34。40 高的格子里塞 14px 字 + 28px 图标，
+##   每一格都是"字浮在盒子里"；34 之后一条工具带读起来像**一行命令**，
+##   而不是"十三个并排的盒子"，纵向还白给视口 6px。
+const H_QUICK := 34.0
+const H_LAYER := 46.0
+const H_SMALL := 30.0
+## 图标三档（不是随手填的，比例 = 按钮高 × 0.55，照 HUD 命令卡量的）：
+##   快捷条 20 —— 图标只做识别锚点，视觉重量让给文字；
+##   层栏 24 —— 层是大分类，图标要在扫视时先被认出来；
+##   Dock 16 —— 行首类型标记，够认就行。
+const ICON := 20.0
+const ICON_LAYER := 24.0
+const ICON_SMALL := 16.0
+
+## 按钮静息边 = 金的 28%。纯灰线（旧的 LINE）在深底上会读成"没画完的框"；
+## 一条暖线才像"石头压着金边"——这就是「深石板 + 金浮雕」里"金"的最小剂量。
+const LINE_GOLD := Color(0.784, 0.639, 0.302, 0.28)
+## 按下 / 选中：整块填金褐，而不是只换描边色。
+## 工具条上十几个盒子长得一样时，只有"整块变色"能在余光里分辨当前工具。
+const BG_CHECKED := Color(0.267, 0.224, 0.128)
 
 static var _tex_cache: Dictionary = {}
 
@@ -112,11 +128,11 @@ static func _panels(th: Theme) -> void:
 # --- 按钮 ---
 static func _buttons(th: Theme) -> void:
 	# 基础 Button：深铁底 + 哑金细边；hover 亮底金边；pressed 压暗亮金边
-	var normal := _box(BG_CTRL, LINE, 1, 4, 10.0, 6.0)
-	var hover := _box(BG_HOVER, GOLD_DIM, 1, 4, 10.0, 6.0)
-	var pressed := _box(BG_PRESS, GOLD, 1, 4, 10.0, 6.0)
+	var normal := _box(BG_CTRL, LINE_GOLD, 1, 3, 9.0, 5.0)
+	var hover := _box(BG_HOVER, GOLD_DIM, 1, 3, 9.0, 5.0)
+	var pressed := _box(BG_CHECKED, GOLD, 1, 3, 9.0, 5.0)
 	var disabled := _box(Color(BG_CTRL.r, BG_CTRL.g, BG_CTRL.b, 0.55),
-		Color(LINE.r, LINE.g, LINE.b, 0.45), 1, 4, 10.0, 6.0)
+		Color(LINE.r, LINE.g, LINE.b, 0.35), 1, 3, 9.0, 5.0)
 	th.set_stylebox("normal", "Button", normal)
 	th.set_stylebox("hover", "Button", hover)
 	th.set_stylebox("pressed", "Button", pressed)
@@ -334,12 +350,12 @@ static func _misc(th: Theme) -> void:
 # --- 类型变体 ---
 static func _variations(th: Theme) -> void:
 	# ① 顶部快捷条 / 左侧层栏 / Dock 小按钮：三档尺寸同一套语言
-	_tool_variation(th, &"EditorTool", H_QUICK, 10.0, 6.0)
-	_tool_variation(th, &"EditorLayer", H_LAYER, 10.0, 7.0)
-	_tool_variation(th, &"EditorSmall", H_SMALL, 8.0, 4.0)
-	_danger_variation(th, &"EditorDanger", H_QUICK, 10.0, 6.0)
+	_tool_variation(th, &"EditorTool", H_QUICK, 9.0, 5.0, ICON)
+	_tool_variation(th, &"EditorLayer", H_LAYER, 9.0, 6.0, ICON_LAYER)
+	_tool_variation(th, &"EditorSmall", H_SMALL, 8.0, 4.0, ICON_SMALL)
+	_danger_variation(th, &"EditorDanger", H_QUICK, 9.0, 5.0)
 	_danger_variation(th, &"EditorSmallDanger", H_SMALL, 8.0, 4.0)
-	_primary_variation(th, &"EditorPrimary", H_QUICK, 10.0, 6.0)
+	_primary_variation(th, &"EditorPrimary", H_QUICK, 9.0, 5.0)
 	_primary_variation(th, &"EditorSmallPrimary", H_SMALL, 8.0, 4.0)
 
 	# ② 顶部菜单：扁平文字，hover 才浮出金底
@@ -373,6 +389,13 @@ static func _variations(th: Theme) -> void:
 	top.border_width_left = 0
 	top.border_width_right = 0
 	th.set_stylebox("panel", "EditorTopBar", top)
+	# 层栏底的整块石板：比视口深一档 + 右侧一条极淡金线，
+	# 让左栏和视口"分开"但不抢眼（视口才是主角）。
+	th.set_type_variation("EditorRailBack", "Panel")
+	var railb := _box(Color(0.058, 0.058, 0.066), Color(GOLD.r, GOLD.g, GOLD.b, 0.14), 0, 0, 0.0, 0.0)
+	railb.border_width_right = 1
+	th.set_stylebox("panel", "EditorRailBack", railb)
+
 	th.set_type_variation("EditorStatusBar", "PanelContainer")
 	var stat := _box(Color(0.055, 0.055, 0.063), Color(GOLD.r, GOLD.g, GOLD.b, 0.14), 1, 0, 12.0, 5.0)
 	stat.border_width_bottom = 0
@@ -407,9 +430,10 @@ static func _variations(th: Theme) -> void:
 
 	# ⑥ 归属药丸：中性深底 + 细金边（球员本色仍由控件自己的 override 覆盖）
 	th.set_type_variation("EditorOwnerPill", "Button")
-	var pill := _box(Color(0.09, 0.09, 0.098, 0.92), LINE, 1, 12, 10.0, 4.0)
-	var pill_h := _box(BG_HOVER, GOLD_DIM, 1, 12, 10.0, 4.0)
-	var pill_p := _box(STONE, GOLD, 1, 12, 10.0, 4.0)
+	# 方角（radius 3）：胶囊是全界面唯一的长圆形，放在一片方角石板里像外来件。
+	var pill := _box(Color(0.09, 0.09, 0.098, 0.92), LINE_GOLD, 1, 3, 8.0, 4.0)
+	var pill_h := _box(BG_HOVER, GOLD_DIM, 1, 3, 8.0, 4.0)
+	var pill_p := _box(BG_CHECKED, GOLD, 1, 3, 8.0, 4.0)
 	th.set_stylebox("normal", "EditorOwnerPill", pill)
 	th.set_stylebox("hover", "EditorOwnerPill", pill_h)
 	th.set_stylebox("pressed", "EditorOwnerPill", pill_p)
@@ -428,12 +452,15 @@ static func _variations(th: Theme) -> void:
 	_splat(th, &"EditorSplatSand", Color(0.72, 0.64, 0.42))
 
 
-static func _tool_variation(th: Theme, name: StringName, h: float, px: float, py: float) -> void:
+static func _tool_variation(th: Theme, name: StringName, h: float, px: float, py: float,
+		icon_px: float = ICON) -> void:
 	th.set_type_variation(name, "Button")
-	var n := _box(BG_CTRL, LINE, 1, 4, px, py)
-	var hv := _box(BG_HOVER, GOLD_DIM, 1, 4, px, py)
-	var pv := _box(BG_PRESS, GOLD, 1, 4, px, py)
-	var ds := _box(Color(BG_CTRL.r, BG_CTRL.g, BG_CTRL.b, 0.5), Color(LINE.r, LINE.g, LINE.b, 0.4), 1, 4, px, py)
+	# 四态只改"亮度和金量"，不改圆角/边框宽 —— 边框一宽一窄，按下去的瞬间
+	# 文字会横跳 1px，整条工具带跟着抖，这是最廉价也最刺眼的毛病。
+	var n := _box(BG_CTRL, LINE_GOLD, 1, 3, px, py)
+	var hv := _box(BG_HOVER, GOLD_DIM, 1, 3, px, py)
+	var pv := _box(BG_CHECKED, GOLD, 1, 3, px, py)
+	var ds := _box(Color(BG_CTRL.r, BG_CTRL.g, BG_CTRL.b, 0.5), Color(LINE.r, LINE.g, LINE.b, 0.3), 1, 3, px, py)
 	th.set_stylebox("normal", name, n)
 	th.set_stylebox("hover", name, hv)
 	th.set_stylebox("pressed", name, pv)
@@ -446,17 +473,24 @@ static func _tool_variation(th: Theme, name: StringName, h: float, px: float, py
 	th.set_color("font_hover_pressed_color", name, GOLD_HI)
 	th.set_color("font_disabled_color", name, TEXT_DIM)
 	th.set_font_size("font_size", name, Spec.FS_BODY)
-	th.set_constant("h_separation", name, 8)
-	th.set_constant("icon_max_width", name, int(h * 0.7))
+	th.set_constant("h_separation", name, 7)
+	th.set_constant("icon_max_width", name, int(icon_px))
+	# 图标统一上暖色（旧的是纯白，13 个白图标并排 = 一片噪点）。
+	# 单色 SVG 走 modulate 上色，这是 UI风格 R4 要求的唯一着色方式。
+	th.set_color("icon_normal_color", name, Color(0.80, 0.76, 0.66))
+	th.set_color("icon_hover_color", name, GOLD_HI)
+	th.set_color("icon_pressed_color", name, GOLD_HI)
+	th.set_color("icon_hover_pressed_color", name, GOLD_HI)
+	th.set_color("icon_disabled_color", name, Color(TEXT_DIM.r, TEXT_DIM.g, TEXT_DIM.b, 0.7))
 
 
 static func _danger_variation(th: Theme, name: StringName, h: float, px: float, py: float) -> void:
 	th.set_type_variation(name, "Button")
-	th.set_stylebox("normal", name, _box(Color(0.145, 0.086, 0.082), RED_DIM, 1, 4, px, py))
-	th.set_stylebox("hover", name, _box(Color(0.243, 0.114, 0.102), RED, 1, 4, px, py))
-	th.set_stylebox("pressed", name, _box(Color(0.114, 0.055, 0.051), RED_HI, 1, 4, px, py))
-	th.set_stylebox("hover_pressed", name, _box(Color(0.114, 0.055, 0.051), RED_HI, 1, 4, px, py))
-	th.set_stylebox("disabled", name, _box(Color(0.114, 0.09, 0.086, 0.6), Color(RED_DIM.r, RED_DIM.g, RED_DIM.b, 0.5), 1, 4, px, py))
+	th.set_stylebox("normal", name, _box(Color(0.145, 0.086, 0.082), RED_DIM, 1, 3, px, py))
+	th.set_stylebox("hover", name, _box(Color(0.243, 0.114, 0.102), RED, 1, 3, px, py))
+	th.set_stylebox("pressed", name, _box(Color(0.26, 0.12, 0.10), RED_HI, 1, 3, px, py))
+	th.set_stylebox("hover_pressed", name, _box(Color(0.26, 0.12, 0.10), RED_HI, 1, 3, px, py))
+	th.set_stylebox("disabled", name, _box(Color(0.114, 0.09, 0.086, 0.6), Color(RED_DIM.r, RED_DIM.g, RED_DIM.b, 0.5), 1, 3, px, py))
 	th.set_stylebox("focus", name, StyleBoxEmpty.new())
 	th.set_color("font_color", name, Color(0.85, 0.72, 0.69))
 	th.set_color("font_hover_color", name, RED_HI)
@@ -469,11 +503,11 @@ static func _danger_variation(th: Theme, name: StringName, h: float, px: float, 
 
 static func _primary_variation(th: Theme, name: StringName, h: float, px: float, py: float) -> void:
 	th.set_type_variation(name, "Button")
-	th.set_stylebox("normal", name, _box(Color(0.145, 0.125, 0.078), GOLD_DIM, 1, 4, px, py))
-	th.set_stylebox("hover", name, _box(Color(0.196, 0.169, 0.098), GOLD, 1, 4, px, py))
-	th.set_stylebox("pressed", name, _box(Color(0.106, 0.09, 0.055), GOLD_HI, 1, 4, px, py))
-	th.set_stylebox("hover_pressed", name, _box(Color(0.106, 0.09, 0.055), GOLD_HI, 1, 4, px, py))
-	th.set_stylebox("disabled", name, _box(Color(0.118, 0.118, 0.129, 0.6), Color(LINE.r, LINE.g, LINE.b, 0.4), 1, 4, px, py))
+	th.set_stylebox("normal", name, _box(Color(0.165, 0.140, 0.080), Color(GOLD.r, GOLD.g, GOLD.b, 0.55), 1, 3, px, py))
+	th.set_stylebox("hover", name, _box(Color(0.216, 0.184, 0.104), GOLD, 1, 3, px, py))
+	th.set_stylebox("pressed", name, _box(Color(0.106, 0.09, 0.055), GOLD_HI, 1, 3, px, py))
+	th.set_stylebox("hover_pressed", name, _box(Color(0.106, 0.09, 0.055), GOLD_HI, 1, 3, px, py))
+	th.set_stylebox("disabled", name, _box(Color(0.118, 0.118, 0.129, 0.6), Color(LINE.r, LINE.g, LINE.b, 0.4), 1, 3, px, py))
 	th.set_stylebox("focus", name, StyleBoxEmpty.new())
 	th.set_color("font_color", name, GOLD_HI)
 	th.set_color("font_hover_color", name, Color(1.0, 0.94, 0.76))
@@ -559,14 +593,14 @@ static func dot(col: Color, px: int = 14) -> Texture2D:
 ## 工具按钮：图标（28）+ 两个字，高度决定用哪档皮肤。
 ## kind: normal / primary / danger
 static func tool_button(icon_name: String, text: String, tip: String,
-		kind: String = "normal", h: float = H_QUICK) -> Button:
+		kind: String = "normal", h: float = H_QUICK, icon_px: float = -1.0) -> Button:
 	var b := Button.new()
 	b.text = text
 	b.tooltip_text = tip
 	b.focus_mode = Control.FOCUS_NONE
 	b.custom_minimum_size = Vector2(0.0, h)
-	b.add_theme_constant_override("h_separation", 8)
-	b.add_theme_constant_override("icon_max_width", int(ICON))
+	b.add_theme_constant_override("h_separation", 7)
+	b.add_theme_constant_override("icon_max_width", int(icon_size_for(h) if icon_px <= 0.0 else icon_px))
 	var tex := icon(icon_name)
 	if tex != null:
 		b.icon = tex
@@ -577,13 +611,26 @@ static func tool_button(icon_name: String, text: String, tip: String,
 	return b
 
 
+## 高度 → 皮肤变体。三档，**按真实高度判**，不要只分"大/小"两档：
+## 层栏 46 和快捷条 34 的图标/内边距本来就不一样，混用会让左栏比顶栏"肥一圈"。
+static func icon_size_for(h: float) -> float:
+	if h >= H_LAYER - 0.5:
+		return ICON_LAYER
+	if h >= H_QUICK - 0.5:
+		return ICON
+	return ICON_SMALL
+
+
 static func _var_for(kind: String, h: float) -> StringName:
+	var layer: bool = h >= H_LAYER - 0.5
 	var big: bool = h >= H_QUICK - 0.5
 	match kind:
 		"primary":
 			return &"EditorPrimary" if big else &"EditorSmallPrimary"
 		"danger":
 			return &"EditorDanger" if big else &"EditorSmallDanger"
+	if layer:
+		return &"EditorLayer"
 	return &"EditorTool" if big else &"EditorSmall"
 
 

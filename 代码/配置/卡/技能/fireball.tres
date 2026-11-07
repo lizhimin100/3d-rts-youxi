@@ -6,7 +6,7 @@
 script = ExtResource("1")
 id = &"fireball"
 display_name = "火球术"
-icon = "fire"
+icon = "技能/fireball"
 note = "丢出一颗火球，落点 3.5m 内 55 伤害并减速 40%（2.5 秒）。"
 kind = "主动"
 target = "单位"

@@ -3451,6 +3451,7 @@ func _update_wall_pushout(dt: float) -> void:
 	# 砍楼贴墙例外：正在砍的那栋楼，只要没进楼里就不推
 	var hug := _wall_approach as RtsBuilding
 	if hug != null and is_instance_valid(hug) \
+			and hug.distance_to_footprint(global_position) <= 3.0 \
 			and hug.distance_to_footprint(global_position) >= get_radius() + WALL_HUG_EPS:
 		_pushout_t = 0.0
 		_pushout_has = false

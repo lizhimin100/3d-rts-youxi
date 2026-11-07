@@ -18,7 +18,7 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
-$godot = 'D:\youxi\anzhuang\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe'
+$godot = 'E:\Program Files (x86)\Steam\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe'
 if (-not (Test-Path $godot)) {
     $found = Get-ChildItem 'C:\Program Files','D:\','E:\' -Filter 'godot*.exe' -Recurse -Depth 6 -ErrorAction SilentlyContinue |
         Select-Object -First 1

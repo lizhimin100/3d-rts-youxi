@@ -6,7 +6,7 @@
 script = ExtResource("1")
 id = &"shield_up"
 display_name = "举盾"
-icon = "shield"
+icon = "技能/shield_up"
 note = "举盾防御：受到伤害 -15%，受到穿刺伤害再 -35%；移动速度 -45%，攻击速度 -50%。再点一次放下。"
 kind = "开关"
 target = "无"

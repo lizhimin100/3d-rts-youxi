@@ -395,8 +395,9 @@ func _build_entries() -> Array:
 
 	if unit != null and unit.def != null:
 		for ab in unit.def.abilities:
-			if RtsSkills.is_passive(ab):
-				continue  # 被动技能没有按钮（三连发是自动生效的）
+			# ★ 2026-11-07 玩家口径：「弩兵三连发被动也是要有按钮」。
+			#   被动照样出一格（图标 + 名字 + "被动 · 自动生效"），点了不执行任何指令，
+			#   但鼠标悬停能看说明 —— 玩家得知道这个兵身上挂了什么。
 			out.append(_ability_entry(ab, unit))
 
 	if worker:
@@ -560,29 +561,38 @@ func _ability_entry(ab: StringName, unit: Node3D = null) -> Dictionary:
 	var d: Dictionary = RtsSkills.def_of(ab)
 	var label: String = String(d.get("name", String(ab)))
 	var icon: String = String(d.get("icon", "staff"))
+	# 技能渲图优先：美术/图标/技能/<id>.png（和单位/建筑头像同一套渲图流程）。
+	# 卡上写 "技能/<id>" 也行，这里再兜一层：卡漏了也能自动命中。
+	if ResourceLoader.exists(ICON_DIR + "技能/" + String(ab) + ".png"):
+		icon = "技能/" + String(ab)
 	var note: String = String(d.get("note", ""))
 	var is_toggle: bool = RtsSkills.is_toggle(ab)
+	var passive: bool = RtsSkills.is_passive(ab)
 	var hot: String = String(d.get("hotkey", ""))
-	if hot.is_empty():
+	if hot.is_empty() and not passive:
 		hot = "Q"
-	var sub: String = "开启 / 关闭" if is_toggle else "施放"
+	# 副行必须能在 142px 的格子里**不省略**地放下（图标占 34px + 间距）。
+	# 所以用短词：被动=被动生效 / 开关=开关 / 主动=施放。长解释一律进 tooltip。
+	var sub: String = "被动生效" if passive else ("开关" if is_toggle else "施放")
 	var entry := {
 		"label": label,
 		"hint": note if not note.is_empty() else "%s（%s）" % [label, hot],
-		"color": Color(0.72, 0.80, 1.0),
+		"color": Color(0.66, 0.74, 0.92) if passive else Color(0.72, 0.80, 1.0),
 		"glyph": label.substr(0, 1),
 		"icon": icon,
-		"hotkey": hot,
+		"hotkey": "" if passive else hot,
 		"sub": sub,
-		"action": func(): _call("request_ability", ab),
 	}
+	# 被动：不给 action（点下去什么都不发生），也不标 disabled（不然悬停说明出不来）
+	if not passive:
+		entry["action"] = func(): _call("request_ability", ab)
 	# 开关类：副行跟着"开/关"实时变（HUD 每 0.12s 调 sync_states，就地刷新）
 	if is_toggle:
 		entry["state"] = func() -> Dictionary:
 			var live: bool = unit != null and is_instance_valid(unit) \
 					and unit.has_method("skill_active") and bool(unit.call("skill_active", ab))
 			return {
-				"sub": "已开启 · 再点放下" if live else "开启 / 关闭",
+				"sub": "已开启" if live else "开关",
 				"sub_color": Color(0.72, 1.0, 0.78) if live else Spec.text_dim(),
 			}
 	return entry
@@ -698,17 +708,19 @@ func _make_button(e: Dictionary) -> Button:
 		var is_bld: bool = icon_key.begins_with("建筑/")
 		# 单位渲图（单位/<id>.png）按头像尺寸放：28px 看不清头盔和武器
 		var is_unit_png: bool = icon_key.begins_with("单位/")
+		# 技能渲图（技能/<id>.png）：同上，且**保持原色**（它自带美术配色）
+		var is_skill_png: bool = icon_key.begins_with("技能/")
 		var tr := TextureRect.new()
 		tr.name = "图标"
 		tr.texture = tex
 		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		var isz: float = 38.0 if is_bld else (34.0 if is_unit_png else 28.0)
+		var isz: float = 38.0 if is_bld else (34.0 if (is_unit_png or is_skill_png) else 28.0)
 		tr.custom_minimum_size = Vector2(isz, isz)
 		tr.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		tr.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		# 建筑渲图本身带颜色：保持原色（禁用时的整体压暗由 _refresh 里统一做）
-		if is_bld:
+		if is_bld or is_skill_png:
 			tr.modulate = Color(1, 1, 1, 1)
 		else:
 			tr.modulate = Color(col.r, col.g, col.b, 0.98)
