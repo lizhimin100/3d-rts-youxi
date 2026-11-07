@@ -221,29 +221,41 @@ func _compute_visibility() -> void:
 	_apply_visibility()
 
 
-## 一个阵营（含自己）的所有眼位：单位 + 建筑，按 sight_range 点亮圆盘
+## 同一"粗格"内的眼位只点亮一次（2026-11-07 性能）。
+##
+## 为什么（3000 兵压测）：`_mark_faction` 以前对**每个单位**点一个视野圆盘，
+## 3000 个挤在一起的步兵 = 3000 个几乎完全重合的圆（每个约 100 格），
+## 每秒 10 次重算 → 三百万次格子写入，占 250 ms/s，比 AI 还贵。
+## 现在按 4m 粗格去重：同一格只保留**半径最大**的那个眼位点亮，
+## 迷雾是"能不能看见"的近似，4m 的偏差在画面上看不出来。
+const MARK_COARSE: float = 4.0
+
 func _mark_faction(f: RtsFaction) -> void:
-	var stack: Array = []
-	stack.append_array(f.units)
-	stack.append_array(f.buildings)
-	for e in stack:
+	var seen: Dictionary = {}
+	for e in f.units:
 		if e == null or not is_instance_valid(e):
 			continue
-		var n := e as Node3D
-		if n == null:
+		if not e.is_alive() or e.def == null:
 			continue
-		if n is RtsUnit and not (n as RtsUnit).is_alive():
+		var r: float = maxf(e.def.sight_range, MIN_SIGHT)
+		_mark_one(e.global_position, r, seen)
+	for b in f.buildings:
+		if b == null or not is_instance_valid(b):
 			continue
-		if n is RtsBuilding and not (n as RtsBuilding).is_alive():
+		if not b.is_alive() or b.def == null:
 			continue
-		var def: UnitDef = n.get("def") as UnitDef
-		var r: float = MIN_SIGHT
-		if def != null:
-			r = maxf(def.sight_range, MIN_SIGHT)
-		# 世界坐标直接用：迷雾网格是"以原点为中心的正方形"，地形节点本身在原点。
-		# （旧版先 to_local 再查，查询侧却没转 —— 一旦地形有位移就会整体错位。）
-		var wp: Vector3 = n.global_position
-		_mark_disk(wp.x, wp.z, r)
+		var r2: float = maxf(b.def.sight_range, MIN_SIGHT)
+		_mark_one(b.global_position, r2, seen)
+
+
+## 单点眼位：粗格去重后再点亮圆盘
+func _mark_one(wp: Vector3, r: float, seen: Dictionary) -> void:
+	var key: int = int(floorf(wp.x / MARK_COARSE)) * 100003 + int(floorf(wp.z / MARK_COARSE))
+	var prev: float = float(seen.get(key, -1.0))
+	if r <= prev:
+		return
+	seen[key] = r
+	_mark_disk(wp.x, wp.z, r)
 
 
 func _mark_disk(cx: float, cz: float, r: float) -> void:

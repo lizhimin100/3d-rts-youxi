@@ -50,6 +50,12 @@ func _process(delta: float) -> void:
 		"u.sep": RtsUnit.dbg_sep,
 		"u.ground": RtsUnit.dbg_ground,
 		"ai": SimpleAI.dbg_usec,
+		"ai.ctx": SimpleAI.dbg_ctx,
+		"ai.mid": SimpleAI.dbg_mid,
+		"ai.econ": SimpleAI.dbg_econ,
+		"ai.mil": SimpleAI.dbg_mil,
+		"ai.san": SimpleAI.dbg_san,
+		"ai.flush": SimpleAI.dbg_flush,
 		"fog": RtsFog.dbg_usec,
 		"hud": RtsHud.dbg_usec,
 		# u.order 的子项：把"这一大块到底谁在吃"拆开

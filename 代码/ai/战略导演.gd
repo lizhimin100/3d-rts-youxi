@@ -125,13 +125,18 @@ func build_metrics(ctx: Dictionary) -> Dictionary:
 		var atk_army: Array = ctx.get("ratio_enemy_army", enemy_army)
 		if atk_army == null:
 			atk_army = enemy_army
-		ratio = combat.ratio(army, plan_army)
+		# ★ 敌方画像由 ctx 带进来（0.6s 共享缓存）。3000 兵时 `profile` 一次
+		#   就是 3000 次 def 访问，这里以前一个 tick 要重建 3 遍。
+		var plan_profile: Dictionary = ctx.get("enemy_profile", {})
+		if plan_profile.is_empty():
+			plan_profile = combat.profile(plan_army)
+		ratio = combat.ratio_with_profile(army, plan_army, plan_profile)
 		if ratio < 0.0:
 			ratio = CLEARED_RATIO if army.size() >= 3 else UNKNOWN_RATIO
-		atk_ratio = ratio if atk_army == plan_army else combat.ratio(army, atk_army)
+		atk_ratio = ratio if atk_army == plan_army else combat.ratio_with_profile(army, atk_army, plan_profile)
 		if atk_ratio < 0.0:
 			atk_ratio = CLEARED_RATIO if army.size() >= 3 else UNKNOWN_RATIO
-		my_value = combat.army_value(army, combat.profile(plan_army))
+		my_value = combat.army_value(army, plan_profile)
 
 	var army_food: float = 0.0
 	for u in army:

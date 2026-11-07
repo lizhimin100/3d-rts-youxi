@@ -1728,24 +1728,45 @@ static func judge_bin_counts(rows: Array, key: String) -> Dictionary:
 # 队伍
 # ===========================================================================
 
-## 一支队伍的总战力（对着对面那支队伍的画像估值）
+## 一支队伍的总战力（对着对面那支队伍的画像估值）。
+##
+## ★ 2026-11-07 性能：按 **def.id** 缓存单兵价值。
+##   `value_of` 只依赖 (def, profile, 两个倍率)，与实例无关 —— 3000 个步兵
+##   其实是同一个数加 3000 次。3000 兵时这一条把 army_value 从「3000 次
+##   dps/ehp 计算」压成「3~5 次计算 + 3000 次查表」。
 func army_value(units: Array, enemy_profile: Dictionary,
 		atk_mult: float = 1.0, armor_mult: float = 1.0) -> float:
 	var total: float = 0.0
+	var cache: Dictionary = {}
 	for u in units:
 		if u == null or not is_instance_valid(u):
 			continue
-		if u.def == null:
+		var d: UnitDef = u.def
+		if d == null:
 			continue
-		if u.def.kind != RtsConst.Kind.UNIT:
+		if d.kind != RtsConst.Kind.UNIT:
 			continue
-		total += value(u.def, enemy_profile, atk_mult, armor_mult)
+		var v: float = float(cache.get(d.id, NAN))
+		if is_nan(v):
+			v = value(d, enemy_profile, atk_mult, armor_mult)
+			cache[d.id] = v
+		total += v
 	return total
 
 
 ## 战力比 = 我方 / 敌方。双方用**同一套**画像互相估值，所以是可比数。
 ## 敌方为空时返回 -1（表示"没有情报"），由调用方决定怎么处理。
 func ratio(mine: Array, theirs: Array) -> float:
+	return ratio_with_profile(mine, theirs, profile(theirs))
+
+
+## 同上，但**敌方画像由调用方给**（可以是缓存过的）。
+##
+## ★ 2026-11-07 性能：3000 兵时 `profile(theirs)` 一次 = 3000 次 def 访问，
+##   而一个 tick 里 ratio 会被调 2 次、best_counter 1 次、army_value 2 次，
+##   4 个 AI 加起来每秒二十多遍全表。把画像缓存 0.5 秒（跨 AI 共享）之后
+##   只剩"算战力"这一遍必须遍历。
+func ratio_with_profile(mine: Array, theirs: Array, their_profile: Dictionary) -> float:
 	if theirs.is_empty():
 		return -1.0
 	var mine_fac: RtsFaction = _faction_of(mine)
@@ -1754,7 +1775,7 @@ func ratio(mine: Array, theirs: Array) -> float:
 	var my_arm: float = RtsCombat.armor_mult(mine_fac)
 	var their_atk: float = RtsCombat.attack_mult(their_fac)
 	var their_arm: float = RtsCombat.armor_mult(their_fac)
-	var my_value: float = army_value(mine, profile(theirs), my_atk, my_arm)
+	var my_value: float = army_value(mine, their_profile, my_atk, my_arm)
 	var their_value: float = army_value(theirs, profile(mine), their_atk, their_arm)
 	if their_value <= 0.0:
 		return 8.0

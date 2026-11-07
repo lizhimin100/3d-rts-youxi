@@ -136,6 +136,24 @@ var log_prefix: String = LOG_PREFIX
 
 var _faction: RtsFaction = null
 var _think: float = 0.0
+## 思考序号：每 `_think_once` +1。所有"本 tick 世界快照"用它做失效判断。
+var _snap_seq: int = 0
+## 敌方军力普查缓存：{seq, by:{faction->Array}, ranked:Array}
+var _census: Dictionary = {}
+var _census_seq: int = -1
+## 普查的**跨 AI 共享**缓存：faction 实例 id → {t, c}
+## 3000 兵时一次普查要遍历三千个单位，4 个 AI 各扫一遍就是四倍；
+## 0.5 秒内的军力变化对决策没有意义，所以直接共享。
+static var _census_share: Dictionary = {}
+const CENSUS_TTL: float = 0.5
+## 敌方画像缓存：数组实例 id → {t, p}。普查数组在 TTL 内稳定，所以这里能命中。
+static var _prof_share: Dictionary = {}
+const PROF_TTL: float = 0.6
+## 威胁单位缓存（false/true 两种口径各一份）
+var _threat_cache: Array = []
+var _threat_seq: int = -1
+var _war_threat_cache: Array = []
+var _war_threat_seq: int = -1
 ## 巡逻/撤退节流
 var _patrol_cd: float = 0.0
 ## 巡逻轮次（确定性伪随机的"序号"输入，见 _dhash01）
@@ -442,6 +460,13 @@ func _init_wave_clock() -> void:
 
 ## 性能计时（探针读它）
 static var dbg_usec: int = 0
+## 分项（2026-11-07：AI 在 3000 兵时是第二大开销，先量再改）
+static var dbg_ctx: int = 0      ## _build_ctx + 导演
+static var dbg_mid: int = 0      ## 卡死扫描 + 收入/波次
+static var dbg_econ: int = 0     ## 经济/生产（_dept_tick 或旧顺序那一大段）
+static var dbg_mil: int = 0      ## 军事（撤退/防守/巡逻/清野/波次/维持）
+static var dbg_san: int = 0      ## 反愚蠢审计
+static var dbg_flush: int = 0    ## 命令真正发出去
 
 func _process(delta: float) -> void:
 	var _t0: int = Time.get_ticks_usec()
@@ -491,7 +516,14 @@ func _process_inner(delta: float) -> void:
 
 ## 一次完整的思考。抽成函数是为了让自检可以"手动推一帧"。
 func _think_once(diff: DifficultyDef) -> void:
+	# ★ 每 tick 一次"世界快照"：本 tick 内所有全表扫描都走缓存。
+	#   为什么（2026-11-07 性能）：一个 tick 里 `_enemy_army` / `_ratio_foe_army` /
+	#   `_threat_units` ×2 / `_combat.profile` 会各自把敌方 3000 个单位扫一遍，
+	#   同一份数据扫 6~8 次；4 个 AI 就是 20~30 次。这里只要自增一个序号，
+	#   下游按序号判断"这个 tick 算过没有"。
+	_snap_seq += 1
 	var now: float = Game.elapsed
+	var _t0: int = Time.get_ticks_usec()
 	# 2C-11 §3：建筑被拆账本（dept on/off 都跑，纯观测，不进决策）
 	_track_building_losses(now)
 	# 2C-11 §4：建造停滞恢复（每 5 s 扫一次，不是每帧）。
@@ -509,8 +541,10 @@ func _think_once(diff: DifficultyDef) -> void:
 	metrics = _director.build_metrics(ctx)
 	posture = _director.update(ctx)
 	posture["metrics"] = metrics
+	SimpleAI.dbg_ctx += Time.get_ticks_usec() - _t0
 
 	# --- ② 卡死退避：先扫一遍，后面所有移动命令都会避开它们 ---
+	_t0 = Time.get_ticks_usec()
 	_sched.refresh_stuck(_combat_units(true))
 
 	# --- ②.5 反馈线：收入采样 + 在途波次结算 ---
@@ -520,8 +554,10 @@ func _think_once(diff: DifficultyDef) -> void:
 	# 2C-7 P2：投资占比采样（60 s 一次；只记录，不参与任何决策）
 	_track_invest(now)
 	_tick_wave(now)
+	SimpleAI.dbg_mid += Time.get_ticks_usec() - _t0
 
 	# --- ③ 经济 ---
+	_t0 = Time.get_ticks_usec()
 	if AIV.dept_on():
 		# 2C-9：三条线部门化。L2 诉求每 2 s 全量重建 → 主部门动作级仲裁 → 按分数顺序执行。
 		# 旧顺序（农场急建 → 农场 → 军队 → 科技 → 军事 → upkeep）整段被替换，
@@ -536,6 +572,7 @@ func _think_once(diff: DifficultyDef) -> void:
 			_maybe_upgrade_tower()
 			_manage_research(diff)
 			_maybe_expand()            # 扩展线"最小可用"桩，2C-9 未纳入仲裁
+		SimpleAI.dbg_econ += Time.get_ticks_usec() - _t0
 	else:
 		_manage_peasants(diff)
 		# 2C-8 P2：先结算"农场工地被拆"（在建→消失），再跑本 tick 的建农场决策
@@ -552,11 +589,13 @@ func _think_once(diff: DifficultyDef) -> void:
 		# 2C-8 P2：训练队列排不满的归因（60 s 一次，只记录）
 		_sample_train_block(diff)
 		_manage_research(diff)
+		SimpleAI.dbg_econ += Time.get_ticks_usec() - _t0
 
 		# --- ⑥ 军事 ---
 		# ★ 2026-11-01 昼夜分流（玩家口径）：
 		#   白天 → 出门打敌对玩家 + **清野怪营地**；夜里 → 守家、营火、农民采木。
 		#   分流的唯一判据是 `Game.is_night()`（别在这里自己算小时）。
+		_t0 = Time.get_ticks_usec()
 		_manage_retreat()
 		_manage_defense(diff)
 		if Game.is_night():
@@ -567,16 +606,21 @@ func _think_once(diff: DifficultyDef) -> void:
 			_manage_waves(diff)
 		_manage_upkeep(diff)
 		_maybe_expand()
+		SimpleAI.dbg_mil += Time.get_ticks_usec() - _t0
 
 	# --- ⑦ 反愚蠢审计（最后跑，救火命令优先）---
 	# ★ 2026-11-07 玩家口径「空过期间不许花钱」：把 noop 传进审计，
 	#   让 _check_supply/_check_production/_check_gold_float 这三项花钱动作停手。
 	#   审计本身照跑：派工/接续/救火（不花钱的那部分）不受影响。
 	ctx["goal_noop"] = goal_noop
+	_t0 = Time.get_ticks_usec()
 	_sanity.update(ctx)
+	SimpleAI.dbg_san += Time.get_ticks_usec() - _t0
 
 	# --- ⑧ 真正发出去 ---
+	_t0 = Time.get_ticks_usec()
 	_sched.flush()
+	SimpleAI.dbg_flush += Time.get_ticks_usec() - _t0
 
 # ===========================================================================
 # 上下文 / 查询
@@ -600,6 +644,8 @@ func _build_ctx(diff: DifficultyDef, now: float) -> Dictionary:
 		"dt": maxf(diff.think_interval * think_scale, 0.1),
 		"army": army,
 		"enemy_army": enemy_army,
+		# 敌方画像（带 0.6s 共享缓存）：导演算战力比直接用它，不再自己 profile 一遍
+		"enemy_profile": _enemy_profile(),
 		# 出击门槛的**分母专用**敌军队列（A/B/C 开关只改这一条，不改选兵/战术）。
 		# 单独一个键是为了让 B 模式换分母时，兵种克制画像仍看"最强的那家"——
 		# 否则 A/B 两组的生产决策会一起变，数字没法归因到"门槛"上。
@@ -674,16 +720,91 @@ func _combat_units(include_workers: bool) -> Array:
 ##      四队图里每家只占全场 1/4，把其余三家求和，任何一家都不可能超过 1.0，
 ##      于是三家 AI 谁也不出门。RTS 里"能不能打出去"问的是"我 vs 最能打的那家"。
 func _enemy_army() -> Array:
-	return _combat_units_of(_strongest_foe())
+	var c: Dictionary = _foe_census()
+	var ranked: Array = c.get("ranked", [])
+	if ranked.is_empty():
+		return []
+	var by: Dictionary = c.get("by", {})
+	return by.get(ranked[0]["faction"], [])
+
+
+## **本 tick 的敌方军力普查**（一次遍历，四处共用）。
+##
+## 产出：
+##   `by`     : { faction: Array[战斗单位] } —— 只含"会打过来"的阵营（不含野怪）
+##   `ranked` : [{faction, n}, …] 按 n 降序
+##
+## 为什么集中做（2026-11-07）：`_enemy_army` / `_strongest_foe` / `_ratio_foe_army` /
+## `_ranked_war_foes` 四个函数以前各自 `for u in f.units` 扫一遍，
+## 敌方 3000 兵时一个 tick 就是 4~6 遍全表。现在只扫一遍，其余读缓存。
+func _foe_census() -> Dictionary:
+	var t: float = float(Time.get_ticks_msec()) * 0.001
+	var fid: int = _faction.get_instance_id() if _faction != null else 0
+	if fid != 0:
+		var hit: Variant = _census_share.get(fid, null)
+		if hit is Dictionary and float((hit as Dictionary).get("t", -1e9)) + CENSUS_TTL > t:
+			_census = (hit as Dictionary)["c"]
+			return _census
+	var by: Dictionary = {}
+	var ranked: Array = []
+	for f in _war_foes():
+		if f == null:
+			continue
+		var arr: Array = _combat_units_of(f)
+		by[f] = arr
+		ranked.append({"faction": f, "n": arr.size()})
+	ranked.sort_custom(func(a, b): return int(a["n"]) > int(b["n"]))
+	_census = {"by": by, "ranked": ranked}
+	if fid != 0:
+		_census_share[fid] = {"t": t, "c": _census}
+		if _census_share.size() > 32:
+			_census_share.clear()
+	return _census
+
+
+## 敌方军团的**战力画像**（护甲/伤害类型分布 + 总血），带跨 AI 共享缓存。
+##
+## 为什么单独缓存（2026-11-07）：`profile` 对 3000 人要做 3000 次 def 访问，
+## 而一个 tick 里 ratio/best_counter/army_value 会问它 3~5 次。
+func _enemy_profile() -> Dictionary:
+	var army: Array = _enemy_army()
+	if _combat == null or army.is_empty():
+		return {}
+	var t: float = float(Time.get_ticks_msec()) * 0.001
+	# ★ key 用「最强那家的 id + 时间桶」：`army.hash()` 本身就是 O(3000)，
+	#   拿它当 key 等于再扫一遍全表（2026-11-07 实测到这一层）。
+	var sf: RtsFaction = _strongest_foe()
+	var fid: int = sf.get_instance_id() if sf != null else 0
+	var key: int = fid * 100000 + int(t / PROF_TTL)
+	var hit: Variant = _prof_share.get(key, null)
+	if hit is Dictionary and float((hit as Dictionary).get("t", -1e9)) + PROF_TTL > t:
+		return (hit as Dictionary)["p"]
+	var p: Dictionary = _combat.profile(army)
+	_prof_share[key] = {"t": t, "p": p}
+	if _prof_share.size() > 48:
+		_prof_share.clear()
+	return p
 
 
 ## 某阵营的"能打的人"（不含农民、不含建筑）。
 ## 抽出来是因为 _enemy_army / _strongest_foe / _ratio_foe_army 三处**必须同一把尺**，
 ## 否则"最强的那家"和"门槛的分母"会指向不同的队伍，A/B 对照就不可信了。
+##
+## ★ 2026-11-07 性能：结果按「阵营 + 0.4s」**跨 AI 共享**缓存。
+##   3000 兵时一次构造要遍历三千个单位，7 个 AI 各建一遍就是两万次属性访问；
+##   而现在每 0.4 秒只有一次是真的在扫。
+static var _combat_share: Dictionary = {}
+const COMBAT_TTL: float = 0.4
+
 func _combat_units_of(f: RtsFaction) -> Array:
-	var out: Array = []
 	if f == null:
-		return out
+		return []
+	var t: float = float(Time.get_ticks_msec()) * 0.001
+	var fid: int = f.get_instance_id()
+	var hit: Variant = _combat_share.get(fid, null)
+	if hit is Dictionary and float((hit as Dictionary).get("t", -1e9)) + COMBAT_TTL > t:
+		return (hit as Dictionary)["a"]
+	var out: Array = []
 	for u in f.units:
 		if u == null or not is_instance_valid(u):
 			continue
@@ -694,6 +815,9 @@ func _combat_units_of(f: RtsFaction) -> Array:
 		if RtsWorld.is_worker_def(u.def):
 			continue
 		out.append(u)
+	_combat_share[fid] = {"t": t, "a": out}
+	if _combat_share.size() > 48:
+		_combat_share.clear()
 	return out
 
 
@@ -809,26 +933,23 @@ func _core_building_ids(diff: DifficultyDef) -> Array:
 func _ratio_foe_army() -> Array:
 	if _faction == null:
 		return []
-	var ranked: Array = _ranked_war_foes()
+	var c: Dictionary = _foe_census()
+	var ranked: Array = c.get("ranked", [])
 	if ranked.is_empty():
 		return []
+	var by: Dictionary = c.get("by", {})
 	if AIW.mode() == AIW.MODE_SECOND and ranked.size() >= 2:
 		var top_n: int = int(ranked[0]["n"])
 		var second_n: int = int(ranked[1]["n"])
 		if top_n > 0 and float(second_n) >= float(top_n) * AIW.SECOND_GATE:
-			return _combat_units_of(ranked[1]["faction"])
-	return _combat_units_of(ranked[0]["faction"])
+			return by.get(ranked[1]["faction"], [])
+	return by.get(ranked[0]["faction"], [])
 
 
-## 敌对阵营按"活着的战斗单位数"降序（口径与 _strongest_foe 完全一致）
+## 敌对阵营按"活着的战斗单位数"降序（口径与 _strongest_foe 完全一致）。
+## 读本 tick 的普查缓存（见 `_foe_census`）。
 func _ranked_war_foes() -> Array:
-	var out: Array = []
-	for f in _war_foes():
-		if f == null:
-			continue
-		out.append({"faction": f, "n": _combat_units_of(f).size()})
-	out.sort_custom(func(a, b): return int(a["n"]) > int(b["n"]))
-	return out
+	return _foe_census().get("ranked", [])
 
 ## 压在我方建筑 DEFENSE_RADIUS 内的敌方战斗单位（跨全部敌对阵营）。
 ##
@@ -839,6 +960,13 @@ func _ranked_war_foes() -> Array:
 ##   `战略导演._compute_allow_attack` 的「家里挨打」否决一直挂着 → **一整局不出一波**。
 ##   野怪该由防守/清野解决，不该冻结战略进攻。
 func _threat_units(p_war_only: bool = false) -> Array:
+	# 本 tick 算过就直接给（`_build_ctx` / `_defense_plan` / `_dept_tick` 都会问）
+	if p_war_only:
+		if _war_threat_seq == _snap_seq:
+			return _war_threat_cache
+	else:
+		if _threat_seq == _snap_seq:
+			return _threat_cache
 	var out: Array = []
 	if _faction == null:
 		return out
@@ -851,6 +979,16 @@ func _threat_units(p_war_only: bool = false) -> Array:
 			anchors.append(b.global_position)
 	if anchors.is_empty():
 		return out
+	# ★ AABB 预筛（2026-11-07 性能）：3000 个敌人逐个对 5~10 个锚点算平方距离，
+	#   一个 tick 就是 1.5~3 万次；而绝大多数敌人离基地十万八千里。
+	#   先把锚点集合的外接矩形（外扩 DEFENSE_RADIUS）算出来，只对盒内的做精确判定。
+	var lo := Vector3(INF, 0.0, INF)
+	var hi := Vector3(-INF, 0.0, -INF)
+	for a in anchors:
+		lo.x = minf(lo.x, a.x - DEFENSE_RADIUS)
+		lo.z = minf(lo.z, a.z - DEFENSE_RADIUS)
+		hi.x = maxf(hi.x, a.x + DEFENSE_RADIUS)
+		hi.z = maxf(hi.z, a.z + DEFENSE_RADIUS)
 	var r2: float = DEFENSE_RADIUS * DEFENSE_RADIUS
 	for foe in foes:
 		for e in foe.units:
@@ -858,13 +996,21 @@ func _threat_units(p_war_only: bool = false) -> Array:
 				continue
 			if e.def.kind != RtsConst.Kind.UNIT:
 				continue
-			var hit: bool = false
+			var ep: Vector3 = e.global_position
+			if ep.x < lo.x or ep.x > hi.x or ep.z < lo.z or ep.z > hi.z:
+				continue
 			for a in anchors:
-				if e.global_position.distance_squared_to(a) <= r2:
-					hit = true
+				var dx: float = ep.x - a.x
+				var dz: float = ep.z - a.z
+				if dx * dx + dz * dz <= r2:
+					out.append(e)
 					break
-			if hit:
-				out.append(e)
+	if p_war_only:
+		_war_threat_cache = out
+		_war_threat_seq = _snap_seq
+	else:
+		_threat_cache = out
+		_threat_seq = _snap_seq
 	return out
 
 ## 有没有自己的建筑在掉血
@@ -2026,7 +2172,7 @@ func _classify_train_block(diff: DifficultyDef) -> String:
 ##   不是难度档里的 id 列表 —— 用户新增一个 role=ranged 的兵，下一 tick 就能被选到；
 ##   删掉 archer，配比自动重排，不崩。
 func _pick_army_unit(b: RtsBuilding, diff: DifficultyDef) -> StringName:
-	var prof: Dictionary = _combat.profile(_enemy_army())
+	var prof: Dictionary = _enemy_profile()
 	var atk_mult: float = RtsCombat.attack_mult(_faction)
 	var arm_mult: float = RtsCombat.armor_mult(_faction)
 	var rw: Dictionary = _role_weights(diff)
@@ -4313,16 +4459,10 @@ func _foe_faction() -> RtsFaction:
 ## 最能打的那个敌对阵营（按"活着的战斗单位数"排）。
 ## 战略层的对手口径：不打野怪、也不把三家求和（理由见 `_enemy_army()`）。
 func _strongest_foe() -> RtsFaction:
-	var best: RtsFaction = null
-	var best_n: int = -1
-	for f in _war_foes():
-		if f == null:
-			continue
-		var n: int = _combat_units_of(f).size()
-		if n > best_n:
-			best_n = n
-			best = f
-	return best
+	var ranked: Array = _ranked_war_foes()
+	if ranked.is_empty():
+		return null
+	return ranked[0]["faction"] as RtsFaction
 
 
 ## **会"打过来"的敌对阵营** —— 战略层口径，**剔除中立野怪**。
