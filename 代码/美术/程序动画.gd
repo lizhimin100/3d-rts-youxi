@@ -229,7 +229,11 @@ func _做攻击() -> void:
 	var 打: float = maxf(0.01, 攻击打击)
 	var 收: float = maxf(0.01, 攻击回收)
 	var 总: float = 蓄 + 打 + 收
-	var 循环时间: float = fmod(t, 总)
+	# ★ 一次攻击只挥**一刀**（2026-11-07 玩家口径：不要"快速砍两刀三刀"）。
+	#   旧版用 fmod(t, 总) → 只要 state 停在 ATTACK 就一直循环挥砍，
+	#   攻击间隔比动作长时会连着挥 2~3 刀，看起来像"这个兵有好几种攻击"。
+	#   现在钳到 [0, 总]：挥完就停在收势，等下一次 _begin_swing 的 force 重播。
+	var 循环时间: float = clampf(t, 0.0, 总)
 	var 臂角: float = 0.0
 	var 腰角: float = 0.0
 	if 循环时间 < 蓄:

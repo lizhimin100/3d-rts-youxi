@@ -156,6 +156,12 @@ func build(def: UnitDef, team_color: Color, proc: Dictionary = {}) -> void:
 		if not 程序化树 and not 组合件:
 			ArtKit.apply_team_color(_model, team_color)
 			_anim = ArtKit.attach_anim(_model)
+			# ★ 动作白名单：这个兵**真的会进入**的状态才允许播。
+			#   模型里做实验留下的 idle_b / idle_scratch / 无技能单位的 cast，
+			#   一旦被降级链落到，就会变成"这个兵还有第二种动作"。
+			#   （玩家 2026-11-07：「用不到的、和当前表现形式不搭的不要播出来」）
+			if _anim != null and _anim.has_method("set_allowed"):
+				_anim.call("set_allowed", _allowed_anims(def))
 		_collect_meshes(_model)
 		_add_ground_shadow(def)
 		_nudge_base = _model.position
@@ -184,6 +190,38 @@ func build(def: UnitDef, team_color: Color, proc: Dictionary = {}) -> void:
 	else:
 		_flash_dur = FLASH_TIME_UNIT
 		_flash_peak = FLASH_PEAK_UNIT
+
+
+## 这个 UnitDef 允许播哪些动作（白名单，喂给 `SkeletonAnim.set_allowed`）。
+##
+## 口径（2026-11-07 玩家要求"一个单位一套动作"）：
+##   · 一定会用到：idle / walk / hurt / death；
+##   · 能攻击才给 attack；有投射物才给 shoot（有 reload clip 才播装填）；
+##   · 有主动技能才给 cast；
+##   · 只有农民才给 gather / build / carry_*。
+## 除此之外的 clip（idle_b / idle_scratch / 无技能单位的 cast …）一律裁掉，不播。
+static func _allowed_anims(def: UnitDef) -> Array:
+	var out: Array = [&"idle", &"walk", &"hurt", &"death"]
+	if def.kind == RtsConst.Kind.BUILDING:
+		if def.can_attack():
+			out.append(&"attack")
+			if def.projectile != RtsConst.Projectile.NONE:
+				out.append(&"shoot")
+				out.append(&"reload")
+		return out
+	if def.can_attack():
+		out.append(&"attack")
+	if def.projectile != RtsConst.Projectile.NONE:
+		out.append(&"shoot")
+		out.append(&"reload")
+	if not def.abilities.is_empty():
+		out.append(&"cast")
+	if def.is_worker():
+		out.append(&"gather")
+		out.append(&"build")
+		out.append(&"carry_gold")
+		out.append(&"carry_wood")
+	return out
 
 
 ## 动画器是不是"绑不上"的静态模型（没有骨骼 / 没有 Body/Torso 关节）

@@ -63,6 +63,12 @@ var _one_shot: StringName = &""
 var _reloading: bool = false
 var _speed: float = 1.0
 var _ready_ok: bool = false
+## **动作白名单**（空 = 不限制）。见 set_allowed 的注释。
+var _allowed: Dictionary = {}
+## 已经被白名单裁掉的动作名（审计用）
+var _dropped: Array[String] = []
+## 全局只打印一次：同一套模型会实例化几百个，逐个 println 会把 3000 兵压测的日志刷爆
+static var _dropped_reported: Dictionary = {}
 
 
 ## 绑定到模型根节点（ArtKit.attach_anim 调用）
@@ -99,6 +105,38 @@ func _find_player(root: Node) -> AnimationPlayer:
 ## 有没有这个动作（含降级链）
 func has_state(state: String) -> bool:
 	return _resolve(StringName(state)) != &""
+
+
+## **动作白名单**：只允许播这些 clip 名（`walk` / `attack` / `shoot` …）。
+##
+## 为什么要有它（2026-11-07 玩家口径「用不到的、和当前表现形式不搭的动作不要播出来」）：
+##   模型里常带着做实验时留下的动作（`idle_b` / `idle_scratch` / `idle_stretch` /
+##   没技能的兵身上的 `cast`）。只要降级链能落到它，就会在某个状态里突然播出来，
+##   看起来就是"这个兵怎么还有第二种攻击/第二种待机"。
+##   白名单由 `单位视觉` 按 UnitDef 推导（有没有技能、是不是远程、是不是农民），
+##   推导不出来的动作一律不播 —— 宁可不播，也不要播错。
+func set_allowed(names: Array) -> void:
+	_allowed.clear()
+	for n in names:
+		_allowed[StringName(n)] = true
+	_dropped.clear()
+	if _ap == null:
+		return
+	for a in _ap.get_animation_list():
+		if _allowed.has(StringName(a)) or _allowed.has(StringName(NAME_MAP.get(StringName(a), a))):
+			continue
+		_dropped.append(a)
+	if not _dropped.is_empty():
+		var sig: String = ",".join(_dropped) + "|" + ",".join(PackedStringArray(_allowed.keys().map(func(k): return String(k))))
+		if not _dropped_reported.has(sig):
+			_dropped_reported[sig] = true
+			print("[动画] 裁掉未使用动作：%s（允许：%s）" % [
+				", ".join(_dropped), sig.get_slice("|", 1)])
+
+
+## 被裁掉的动作（审计用）
+func dropped_clips() -> Array[String]:
+	return _dropped.duplicate()
 
 
 func current_state() -> StringName:
@@ -145,12 +183,21 @@ func _resolve(state: StringName) -> StringName:
 	if _ap == null:
 		return &""
 	var mapped: StringName = NAME_MAP.get(state, state)
-	if _ap.has_animation(String(mapped)):
+	if _playable(mapped):
 		return mapped
 	for alt in FALLBACK.get(mapped, []):
-		if _ap.has_animation(String(alt)):
+		if _playable(alt):
 			return StringName(alt)
 	return &""
+
+
+## 这个 clip 存在、且在白名单里（白名单为空 = 不限制）
+func _playable(n: StringName) -> bool:
+	if n == &"" or not _ap.has_animation(String(n)):
+		return false
+	if _allowed.is_empty():
+		return true
+	return _allowed.has(n)
 
 
 func _on_finished(anim: StringName) -> void:
@@ -168,7 +215,7 @@ func _on_finished(anim: StringName) -> void:
 	if ONE_SHOT.has(anim):
 		# 弩兵：射完接一段上弦（资产里有 reload 才播）
 		var nxt: StringName = RELOAD_AFTER.get(anim, &"")
-		if nxt != &"" and _ap.has_animation(String(nxt)):
+		if nxt != &"" and _playable(nxt):
 			_reloading = true
 			_current = nxt
 			_one_shot = nxt
