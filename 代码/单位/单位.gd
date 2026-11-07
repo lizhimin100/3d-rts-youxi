@@ -2849,6 +2849,7 @@ func _update_attack(dt: float) -> void:
 	#   否则会出现"对着空气挥砍/放箭"（玩家 2026-11-06 反馈）。
 	if not Game.is_node_visible_to(faction, target):
 		target = null
+		_wall_approach = null
 		return
 
 	var reach: float = _attack_reach(target)
@@ -2865,6 +2866,7 @@ func _update_attack(dt: float) -> void:
 		# 既不打也不走 —— 这就是"待机单位看到 9m 外敌人却一动不动"的根因。
 		if not _may_pursue():
 			target = null
+			_wall_approach = null
 			return
 		# 行军 / 攻击移动：原目的地先记下来，打完还要接着走
 		if order == RtsConst.Order.MOVE or order == RtsConst.Order.ATTACK_MOVE:

@@ -169,8 +169,23 @@ func _build() -> void:
 	_overlay_map.position = Vector2(-190, -34)
 	_overlay_hint = _mk_overlay_label(overlay, Vector2(10, 0), false)
 	_overlay_hint.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	_overlay_hint.position = Vector2(10, -32)
-	_overlay_hint.text = "手型：左键拖动转视角、点对象选中　｜　中键拖：转视角　右键拖：平移　滚轮：缩放　H/Esc：收工具　｜　建筑放置：R 转 90°"
+	_overlay_hint.position = Vector2(10, -34)
+	# ★ 提示条要**自带底板**：直接压在绿地上的一行白字，无论描边多厚都读不清，
+	#   而且会和地形抢注意力。给它一块"深石板 + 极淡金边"的条，就等于把它降成"状态"。
+	var hint_sb := StyleBoxFlat.new()
+	hint_sb.bg_color = Color(0.038, 0.038, 0.044, 0.74)
+	hint_sb.border_color = Color(0.784, 0.639, 0.302, 0.22)
+	hint_sb.set_border_width_all(1)
+	hint_sb.set_corner_radius_all(3)
+	hint_sb.corner_detail = 4
+	hint_sb.content_margin_left = 8.0
+	hint_sb.content_margin_right = 8.0
+	hint_sb.content_margin_top = 3.0
+	hint_sb.content_margin_bottom = 3.0
+	_overlay_hint.add_theme_stylebox_override("normal", hint_sb)
+	_overlay_hint.add_theme_color_override("font_color", Color(0.72, 0.70, 0.64))
+	# 只留"看不出怎么操作"的那五个键位；左键/点选属于常识，不占这行。
+	_overlay_hint.text = "中键转视角 · 右键平移 · 滚轮缩放 · H 收工具 · R 转向"
 
 	_build_wizard(body)
 	_build_statusbar()

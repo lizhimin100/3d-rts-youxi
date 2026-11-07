@@ -372,7 +372,9 @@ static func _variations(th: Theme) -> void:
 
 	# ③ 分节标题（12px 金字）
 	_label_var(th, &"EditorSection", GOLD, Spec.FS_CAPTION)
-	_label_var(th, &"EditorGroupCaption", Color(GOLD_DIM.r, GOLD_DIM.g, GOLD_DIM.b, 0.95), Spec.FS_CAPTION)
+	# 组标题（"文件 / 编辑 / 检查 …"）：旧值是 GOLD_DIM(0.478,0.388,0.180)，
+	# 在深底上实测"看得见但读不清"。抬到 0.62 的暖金，比正文暗、比装饰亮。
+	_label_var(th, &"EditorGroupCaption", Color(0.62, 0.53, 0.31), Spec.FS_CAPTION)
 	_label_var(th, &"EditorTitle", GOLD_HI, Spec.FS_BODY)
 	_label_var(th, &"EditorHint", TEXT_DIM, Spec.FS_CAPTION)
 	_label_var(th, &"EditorAccent", GOLD_HI, Spec.FS_BODY)

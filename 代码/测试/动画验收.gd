@@ -97,6 +97,16 @@ func _find_ap(n: Node) -> AnimationPlayer:
 	return null
 
 
+## 让单位不再被主循环驱动（本项目自检的通用做法），只留动画节点自己跑
+func _静默(u) -> void:
+	if u == null:
+		return
+	u.set_process(false)
+	var v = u.get("visual")
+	if v != null and is_instance_valid(v):
+		v.set_process(false)
+
+
 func _anim_of(unit) -> Node:
 	var v = unit.get("visual")
 	if v == null:
@@ -126,13 +136,10 @@ func _max_delta(a: Array, b: Array) -> float:
 	return m
 
 
-## ⚠ 不能按"帧数 × 1/60"记时间：无头引擎不受帧率限制（实测 ~150fps），
-## 那样"等 1 秒"其实只等了 0.4 秒，0.9s 的 attack 当然还没播完 —— 假红就是这么来的。
+## ⚠ 不能用"帧数 × 1/60"，也不能用墙钟：引擎可能跑 fixed-fps（每帧进 1/60 秒游戏时间，
+## 但真实耗时只有 1ms），墙钟 0.2 秒能跑掉 3 秒动画。只有 SceneTreeTimer 走的是**游戏时间**。
 func _wait(sec: float) -> void:
-	var t0: int = Time.get_ticks_msec()
-	var ms: int = int(round(sec * 1000.0))
-	while Time.get_ticks_msec() - t0 < ms:
-		await process_frame
+	await create_timer(sec).timeout
 
 
 # ===========================================================================
@@ -191,6 +198,9 @@ func _用例D_真在动() -> void:
 	var u = _造(&"footman", Vector3(6.0, 0.0, 0.0))
 	if u == null:
 		return
+	# 关掉单位自己的 _process：否则 _update_anim 每帧把动画推回 idle，
+	# 手动 set_state 的这一段活不过一帧（实测会随机假红）。
+	_静默(u)
 	var sk := _find_skel(u)
 	var a := _anim_of(u)
 	if sk == null or a == null:
@@ -213,6 +223,7 @@ func _用例E_一刀() -> void:
 	var u = _造(&"footman", Vector3(8.0, 0.0, 0.0))
 	if u == null:
 		return
+	_静默(u)
 	var a := _anim_of(u)
 	if a == null:
 		return
