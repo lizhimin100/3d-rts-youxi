@@ -1,48 +1,27 @@
-[gd_resource type="Resource" script_class="UnitCard" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="UnitCard" format=3 uid="uid://ddjbpqqneue07"]
 
-[ext_resource type="Script" path="res://代码/配置/单位卡.gd" id="1"]
+[ext_resource type="Script" uid="uid://cngswbdkw8fn5" path="res://代码/配置/单位卡.gd" id="1"]
 
 [resource]
 script = ExtResource("1")
-card_id = "peasant"
-display_name = "农民"
-icon = ""
-description = "经济核心：采集、建造、修理，弱鸡战斗力。"
-cost_gold = 25
-cost_wood = 0
-unit_class = &"陆军"
-roles = Array[StringName]([])
-counters = Array[StringName]([])
-range = 0.45
+range = 1.0
 attack = 6
-attack_type = &"普通"
-defense = 0
 defense_type = &"无"
-power = -1
-skills = Array[StringName]([])
 max_hp = 190.0
-attack_spread = 0.0
 attack_cooldown = 3.0
-projectile = 0
-projectile_speed = 20.0
 acquire_range = 9
 sight_range = 9.0
 move_speed = 4.3
 turn_speed = 9.0
 body_radius = 0.42
 selection_radius = 0.72
-food_cost = 0
-train_time = 11.0
+train_time = 11.1
 height = 1.62
 gather_rate = 3.0
-carry_capacity = 10
-max_mana = 0.0
-mana_regen = 0.0
-mana_cost = 0.0
-ability_cooldown = 8.0
 model_path = "res://美术/模型/方块人/方块人_农民.glb"
-model_scale = 1.0
 anim_set = 0
 def_role = &"worker"
-def_tags = Array[StringName]([])
-design_power = 0.0
+card_id = "peasant"
+display_name = "联盟农民"
+description = "众多王国中勤劳而勇敢的农民们可开采黄金和砍伐木材，还能建造和修理建筑物，他们是联盟必不可少的一份子。"
+cost_gold = 25

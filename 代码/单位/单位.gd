@@ -233,6 +233,8 @@ var dbg_crowd_settles: int = 0
 ## 起手次数（每 `_begin_swing` +1）。战斗自检用它验证"多个近战能同时攻击"，
 ## 比看动画/看血量更直接：只有真的在射程内起手才会加。
 var dbg_swings: int = 0
+## 真正打出去的投射物发数（每 `_fire_projectile` +1）。技能自检用它数"三连发"。
+var dbg_shots: int = 0
 ## 全局兜底吸附次数（**必须为 0**；非 0 就是“多帧无解”了，日志会指名道姓）
 static var dbg_snap_fallbacks: int = 0
 
@@ -256,6 +258,9 @@ var _cast_id: StringName = &""
 var _cast_pos: Vector3 = Vector3.ZERO
 var _cast_target: Node3D = null
 var _cast_t: float = 0.0
+## **技能运行时**（开关类修正 / 连发 / 装填 / 技能动作与特效）
+## 它为 null 表示这个单位没有任何技能（绝大多数兵），此时所有查询都是 1.0 的常数。
+var skills_rt: RtsSkillRt = null
 ## 施法结束后要恢复的指令（自动施法不能把部队的攻击/移动指令吃掉）
 var _cast_return_order: int = RtsConst.Order.NONE
 
@@ -369,6 +374,9 @@ func setup(p_faction: RtsFaction, p_def: UnitDef) -> void:
 	hp = def.max_hp
 	mana = def.max_mana
 	_ability_cd = 0.0
+	# 技能运行时：只有真的挂了技能才建（不挂的单位保持 null，查询零开销）
+	if not def.abilities.is_empty():
+		skills_rt = RtsSkillRt.new(self)
 	_ensure_visual()
 	_yaw = rotation.y
 	# 决策分片错开，避免所有单位同一帧一起索敌
@@ -485,14 +493,17 @@ func speed_multiplier() -> float:
 func _max_speed() -> float:
 	if def == null:
 		return 0.0
-	return maxf(def.move_speed * speed_multiplier(), 0.0)
+	var skill: float = skills_rt.move_speed_mult() if skills_rt != null else 1.0
+	return maxf(def.move_speed * speed_multiplier() * skill, 0.0)
 
 
 ## 加速度（让 0→满速刚好用 SPEED_EASE_TIME 秒）
 func _accel() -> float:
 	if def == null:
 		return 0.0
-	return def.move_speed / SPEED_EASE_TIME
+	# 举盾走路：起速也跟着慢下来，否则"移速 -45%"只体现在最高速上，手感很怪
+	var skill: float = skills_rt.move_speed_mult() if skills_rt != null else 1.0
+	return def.move_speed * skill / SPEED_EASE_TIME
 
 
 # ===========================================================================
@@ -1257,7 +1268,42 @@ func _tick_timers(dt: float) -> void:
 		mana = minf(max_mana(), mana + def.mana_regen * dt)
 	if _dropoff_scan_cd > 0.0:
 		_dropoff_scan_cd -= dt
+	if skills_rt != null:
+		_tick_skills(dt)
 	_tick_extra(dt)
+
+
+## 技能运行时每帧：冷却 / 连发节拍 / 装填。
+##
+## 为什么连发放在这里而不是 `_release_attack`：一次攻击只"起手"一次，
+## 后面 3 发要靠时间推进逐发打出去；放在计时器里才能吃到 dt（时间减速/加速都对）。
+func _tick_skills(dt: float) -> void:
+	skills_rt.tick(dt)
+	if skills_rt.burst_left > 0 and skills_rt.tick_burst():
+		_fire_projectile()
+
+
+## 切换开关技能（由 RtsSkills.release 调用；也可被 UI/自检直接调）
+func skill_toggle(id: StringName) -> bool:
+	if skills_rt == null:
+		return false
+	if not def.abilities.has(id):
+		return false
+	var on: bool = skills_rt.toggle(id)
+	# 举盾时站住不动会立刻"走起来"：让当前移动指令重新算一次速度上限
+	_anim_state_reset()
+	return on
+
+
+## 开关技能现在是不是开着
+func skill_active(id: StringName) -> bool:
+	return skills_rt != null and skills_rt.is_on(id)
+
+
+## 动画状态缓存清空（修正改了之后要允许同状态重播）
+func _anim_state_reset() -> void:
+	if visual != null:
+		visual.set("_anim_state", "")
 
 
 ## 子类扩展点（建筑用它跑训练队列/研究）
@@ -2465,10 +2511,13 @@ func _snap_ground(dt: float) -> void:
 ##   现在：`_attack_reach` 只返回 attack_range，`_target_gap` 把**双方**半径都扣掉。
 ##   于是"贴身必中"= attack_range ≥ 0.2 就一定成立（0 = 两具身体正好贴住）。
 ##
-##   建筑目标例外：寻路把占地外扩 1 格，最近的合法站位离墙 1.50m（见 AGENTS/memory），
-##   扣掉自身半径 0.5 后边缘间隙仍有 1.0m —— 近战给 `BUILDING_REACH` 的墙面余量，
-##   否则"贴到墙边也砍不到楼"。
-const BUILDING_REACH: float = 1.15
+##   建筑目标例外：寻路把占地外扩 1 格，**实测**最近的落定位置在墙面外 2.00m
+##   （2026-11-07 用 战斗自检 G 组量出来：兵走到墙外 2.00m 就不再靠近，因为
+##   可走格按"占地 + 1 格 + 单位半径"算）。扣掉自身半径 0.5 后边缘间隙 1.5m，
+##   所以墙面余量必须 ≥ 1.5，否则"贴着楼站着却砍不到"。
+##   ★ 这个值跟"近战 range = 1"是两个口径：range 管打人，START 这里管打楼。
+##   旧值 1.15 是按"墙面 1.50m"估的，实测偏小 0.35，这就是玩家报的"打不到建筑"。
+const BUILDING_REACH: float = 1.60
 func _attack_reach(t: Node3D) -> float:
 	var r: float = def.attack_range if def != null else 0.0
 	if t is RtsBuilding:
@@ -2700,7 +2749,8 @@ func _update_attack(dt: float) -> void:
 		_interrupt_move_for_combat()
 	_stop_moving()
 	_face_pos(target.global_position, dt)
-	if _attack_cd <= 0.0:
+	# 连发技能（弩兵三连发）：装填没完 / 上一轮还没打完时，不开新一轮攻击
+	if _attack_cd <= 0.0 and (skills_rt == null or skills_rt.can_fire()):
 		_begin_swing()
 
 
@@ -2735,7 +2785,9 @@ func _begin_swing() -> void:
 	if def == null:
 		return
 	_swinging = true
-	_attack_cd = maxf(def.attack_cooldown, 0.1)
+	# 攻击间隔吃技能修正：举盾时 attack_cooldown ×2（攻速 -50%）
+	var skill: float = skills_rt.attack_cooldown_mult() if skills_rt != null else 1.0
+	_attack_cd = maxf(def.attack_cooldown * skill, 0.1)
 	dbg_swings += 1
 	_windup_t = _attack_cd * clampf(Cfg.game.attack_windup, 0.05, 0.95)
 	state = RtsConst.State.ATTACK
@@ -2770,6 +2822,22 @@ func _release_attack() -> void:
 		RtsCombat.resolve_hit(self, target)
 		return
 
+	# 连发技能：这一下不直接发箭，而是开启一轮连发；后面的每一发由 _tick_skills 按
+	# `burst_interval` 打出去（弩兵三连发 = 3 发 + 2s 装填）。
+	if skills_rt != null and skills_rt.begin_burst():
+		return
+	_fire_projectile()
+
+
+## 打出一发投射物（连发/单发共用）
+func _fire_projectile() -> void:
+	if def == null or target == null or not is_instance_valid(target):
+		return
+	if not target.is_alive():
+		return
+	if not Game.is_node_visible_to(faction, target):
+		return
+	dbg_shots += 1
 	var snap: Dictionary = RtsCombat.make_snapshot(self)
 	var aim: Vector3 = target.global_position + Vector3.UP * RtsProjectile.AIM_HEIGHT
 	RtsProjectile.fire_from(self, def.projectile, aim, target,
@@ -3080,7 +3148,13 @@ func _update_anim() -> void:
 		RtsConst.State.CAST:
 			visual.play("cast", 1.0)
 		_:
-			visual.play("idle", 1.0)
+			# 开关技能开启时用它的"持续动作"覆盖待机（举盾 = shield_hold）。
+			# 没有这个动作的单位照旧播 idle —— 技能卡里 anim_hold 留空即可。
+			var hold: StringName = skills_rt.hold_anim() if skills_rt != null else &""
+			if hold != &"":
+				visual.play(String(hold), 1.0)
+			else:
+				visual.play("idle", 1.0)
 
 
 ## 共享空间哈希：**直接复用 Game.unit_hash()**（每帧只重建一次，全工程一份）。

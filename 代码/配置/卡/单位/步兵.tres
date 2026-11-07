@@ -1,30 +1,17 @@
-[gd_resource type="Resource" script_class="UnitCard" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="UnitCard" format=3 uid="uid://c7ii2mpwa78xq"]
 
-[ext_resource type="Script" path="res://代码/配置/单位卡.gd" id="1"]
+[ext_resource type="Script" uid="uid://cngswbdkw8fn5" path="res://代码/配置/单位卡.gd" id="1"]
 
 [resource]
 script = ExtResource("1")
-card_id = "footman"
-display_name = "步兵"
-icon = ""
-description = "前排肉盾，重甲高血，打建筑慢。"
-cost_gold = 125
-cost_wood = 0
-unit_class = &"陆军"
 roles = Array[StringName]([&"承伤"])
 counters = Array[StringName]([&"轻甲"])
-range = 0.45
+range = 1.0
 attack = 14
-attack_type = &"普通"
 defense = 2
 defense_type = &"重甲"
-power = -1
-skills = Array[StringName]([])
 max_hp = 400.0
-attack_spread = 0.0
 attack_cooldown = 1.75
-projectile = 0
-projectile_speed = 20.0
 acquire_range = 11
 sight_range = 11.0
 move_speed = 4.6
@@ -32,17 +19,13 @@ turn_speed = 10.0
 body_radius = 0.5
 selection_radius = 0.82
 food_cost = 2
-train_time = 15.0
+train_time = 15.1
 height = 1.78
-gather_rate = 0.0
-carry_capacity = 10
-max_mana = 0.0
-mana_regen = 0.0
-mana_cost = 0.0
-ability_cooldown = 8.0
 model_path = "res://美术/模型/方块人/方块人_联盟步兵.glb"
-model_scale = 1.0
-anim_set = 1
 def_role = &"frontline"
 def_tags = Array[StringName]([&"heavy"])
-design_power = 0.0
+card_id = "footman"
+display_name = "联盟步兵"
+skills = Array[StringName]([&"shield_up"])
+description = "多年来，联盟军队的庞大队伍已经缩减，然而，许多勇敢的联盟公民自愿作为步兵来保卫他们的土地。尽管这些战士缺乏前辈那闪亮的板甲和专门训练，但他们仍在战场上带着勇气和荣誉作战。"
+cost_gold = 125

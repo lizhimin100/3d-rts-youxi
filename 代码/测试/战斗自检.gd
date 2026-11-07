@@ -55,6 +55,8 @@ func _运行() -> void:
 		_用例D_自动施法不吞指令()
 		_用例E_射程口径()
 		_用例F_多近战围攻()
+		_用例G_近战打建筑()
+		_用例H_最大射程()
 	报告["失败项"] = 失败
 	报告["结果"] = "通过" if 失败.is_empty() else "失败"
 	报告["耗时(毫秒)"] = Time.get_ticks_msec() - 开始
@@ -392,9 +394,16 @@ func _用例E_射程口径() -> void:
 	# 隔 2.2m：边缘间隙 1.26
 	var 远间隙: float = float(兵.call("_target_gap", 靶2))
 	var 远够: bool = 远间隙 <= float(兵.call("_attack_reach", 靶2))
-	# 弩兵 vs 另一个靶：8.8 / 9.2（另外造两个点，直接用同一对单位算）
-	var 弓够8: bool = (8.8 - 0.44 - 0.44) <= float(弓.call("_attack_reach", 靶))
-	var 弓够9: bool = (9.2 - 0.44 - 0.44) <= float(弓.call("_attack_reach", 靶))
+	# 弩兵：阈值**从卡的 range 派生**，不写死数字。
+	# 旧版硬编码 8.8 / 9.2（range=8 时代），玩家把 range 改成 10 之后
+	# 这条就一直红 —— 自检测的是"口径"，不是"某一次的数值"。
+	var 弓射程: float = float(弓.call("_attack_reach", 靶))
+	var 弓半径: float = float(弓.call("get_radius"))
+	var 靶半径: float = float(靶.call("get_radius"))
+	var 边界: float = 弓射程 + 弓半径 + 靶半径
+	# 边界内 0.1m 必须够得着；边界外 0.1m 必须够不着
+	var 弓够近: bool = (边界 - 0.1 - 弓半径 - 靶半径) <= 弓射程
+	var 弓够远: bool = (边界 + 0.1 - 弓半径 - 靶半径) <= 弓射程
 
 	var 明细: Dictionary = {
 		"步兵贴身间隙(米)": "%.2f" % 贴身间隙,
@@ -402,18 +411,19 @@ func _用例E_射程口径() -> void:
 		"贴身够得着": 贴身够,
 		"隔2.2m间隙(米)": "%.2f" % 远间隙,
 		"隔2.2m够得着": 远够,
-		"弩兵8.8m够": 弓够8,
-		"弩兵9.2m够": 弓够9,
-		"弩兵攻击距离(米)": "%.2f" % float(弓.call("_attack_reach", 靶)),
+		"弩兵射程(米)": "%.2f" % 弓射程,
+		"弩兵最大中心距(米)": "%.2f" % 边界,
+		"边界内0.1m够": 弓够近,
+		"边界外0.1m不够": not 弓够远,
 	}
 	if not 贴身够:
 		失败.append("E 射程：步兵贴身还打不到（间隙 %.2f > 射程）" % 贴身间隙)
 	if 远够:
 		失败.append("E 射程：步兵隔 2.2m 还能打到（间隙 %.2f ≤ 射程，旧口径残留）" % 远间隙)
-	if not 弓够8:
-		失败.append("E 射程：弩兵 8.8m（边缘 7.92）打不到，射程被压小了")
-	if 弓够9:
-		失败.append("E 射程：弩兵 9.2m（边缘 8.32）还能打到，射程超了")
+	if not 弓够近:
+		失败.append("E 射程：弩兵在最大中心距内 0.1m 就打不到，射程被压小了")
+	if 弓够远:
+		失败.append("E 射程：弩兵超出最大中心距 0.1m 还能打到，射程超了")
 	_记("E_射程口径", 明细)
 
 
@@ -478,3 +488,80 @@ func _用例F_多近战围攻() -> void:
 	if 超限:
 		失败.append("F 围攻：有人起手 %s 次，超过冷却理论上限（在射程外空挥）" % str(起手))
 	_记("F_多近战围攻", 明细)
+
+
+# ===========================================================================
+# G · 近战打建筑（2026-11-07 玩家口径："近战单位打不到建筑"）
+# ===========================================================================
+
+## 判据不看动画、不看体感：`dbg_swings > 0` 且建筑真的掉血。
+## 还要打一行"贴着墙面还差多少"，方便判断是射程不够还是压根走不到墙边。
+func _用例G_近战打建筑() -> void:
+	var 基: Vector3 = 关卡.call("base_center", 游戏.get("player_faction"))
+	var 心: Vector3 = 关卡.call("walkable_pos", 基 + Vector3(0.0, 0.0, 30.0))
+	var 楼 = _造单位("enemy_faction", &"barracks", 心)
+	if 楼 == null:
+		return
+	var 起点: Vector3 = 关卡.call("walkable_pos", 心 + Vector3(5.0, 0.0, 0.0))
+	var 兵 = _造单位("player_faction", &"footman", 起点)
+	if 兵 == null:
+		return
+	var 初血: float = float(楼.get("hp"))
+	兵.set("dbg_swings", 0)
+	兵.call("order_attack", 楼)
+	_走(12.0)
+	var 起手: int = int(兵.get("dbg_swings"))
+	var 末血: float = float(楼.get("hp"))
+	var 贴墙: float = float(楼.call("distance_to_footprint", (兵 as Node3D).global_position))
+	var 明细: Dictionary = {
+		"起手次数": 起手,
+		"建筑初血": "%.0f" % 初血,
+		"建筑末血": "%.0f" % 末血,
+		"打掉血量": "%.0f" % (初血 - 末血),
+		"最终距墙面(米)": "%.2f" % 贴墙,
+		"兵最终位置": "%.1f,%.1f" % [(兵 as Node3D).global_position.x, (兵 as Node3D).global_position.z],
+	}
+	_记("G_近战打建筑", 明细)
+	if 起手 <= 0:
+		失败.append("G 近战打建筑：12 秒内一次都没起手（打不到楼）")
+	elif 末血 >= 初血:
+		失败.append("G 近战打建筑：起手了但建筑没掉血")
+
+
+# ===========================================================================
+# H · 最大可打距离（范围圈口径的实测基线）
+# ===========================================================================
+
+## 把靶子摆在若干中心距上，直接问 `_target_gap <= _attack_reach`。
+## 输出「中心距 → 边缘间隙 / 射程 / 够不够」，用来对齐"圈画多大"。
+## 同时算出"圈半径"（选择系统用的值），检查"圈外一点点还能打"到底差多少。
+func _用例H_最大射程() -> void:
+	var 基: Vector3 = 关卡.call("base_center", 游戏.get("player_faction"))
+	var 位: Vector3 = 关卡.call("walkable_pos", 基 + Vector3(-10.0, 0.0, 10.0))
+	var 兵 = _造单位("player_faction", &"footman", 位)
+	var 靶 = _造单位("enemy_faction", &"footman", 位 + Vector3(1.6, 0.0, 0.0), 100000.0)
+	if 兵 == null or 靶 == null:
+		return
+	var 表: Array = []
+	var 最远: float = 0.0
+	for d in [1.6, 1.8, 2.0, 2.05, 2.1, 2.2, 2.4]:
+		(靶 as Node3D).global_position = (兵 as Node3D).global_position + Vector3(float(d), 0.0, 0.0)
+		var gap: float = float(兵.call("_target_gap", 靶))
+		var reach: float = float(兵.call("_attack_reach", 靶))
+		var ok: bool = gap <= reach
+		if ok:
+			最远 = float(d)
+		表.append({"中心距": "%.2f" % float(d), "间隙": "%.2f" % gap, "reach": "%.2f" % reach, "够": ok})
+	var 自身半径: float = float(兵.call("get_radius"))
+	var 靶半径: float = float(靶.call("get_radius"))
+	var 圈半径: float = float(兵.call("_attack_reach", 靶)) + 自身半径
+	_记("H_最大射程", {
+		"表": 表,
+		"自身半径(米)": "%.2f" % 自身半径,
+		"目标半径(米)": "%.2f" % 靶半径,
+		"最远可打中心距(米)": "%.2f" % 最远,
+		"当前圈半径(米)": "%.2f" % 圈半径,
+		"圈外还能打的余量(米)": "%.2f" % (最远 - 圈半径),
+	})
+	if 最远 <= 0.0:
+		失败.append("H 最大射程：连 1.6m 都打不到")

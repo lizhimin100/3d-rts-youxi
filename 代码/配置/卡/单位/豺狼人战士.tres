@@ -1,48 +1,24 @@
-[gd_resource type="Resource" script_class="UnitCard" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="UnitCard" format=3 uid="uid://baqi7j3t1in4b"]
 
-[ext_resource type="Script" path="res://代码/配置/单位卡.gd" id="1"]
+[ext_resource type="Script" uid="uid://cngswbdkw8fn5" path="res://代码/配置/单位卡.gd" id="1"]
 
 [resource]
 script = ExtResource("1")
-card_id = "gnoll_warrior"
-display_name = "豺狼人战士"
-icon = ""
-description = "中立野怪：对任何玩家/盟友敌对，没有大本营。"
-cost_gold = 0
-cost_wood = 0
-unit_class = &"陆军"
 roles = Array[StringName]([&"承伤"])
 counters = Array[StringName]([&"轻甲"])
-range = 0.525
+range = 1.0
 attack = 15
-attack_type = &"普通"
 defense = 2
-defense_type = &"轻甲"
-power = -1
-skills = Array[StringName]([])
 max_hp = 340.0
-attack_spread = 0.0
-attack_cooldown = 1.5
-projectile = 0
-projectile_speed = 20.0
 acquire_range = 10
-sight_range = 10.0
 move_speed = 4.1
-turn_speed = 8.0
 body_radius = 0.55
 selection_radius = 0.9
-food_cost = 0
-train_time = 10.0
+train_time = 10.1
 height = 1.98
-gather_rate = 0.0
-carry_capacity = 10
-max_mana = 0.0
-mana_regen = 0.0
-mana_cost = 0.0
-ability_cooldown = 8.0
 model_path = "res://美术/模型/野怪/豺狼人战士.glb"
-model_scale = 1.0
-anim_set = 1
 def_role = &"frontline"
 def_tags = Array[StringName]([&"light"])
-design_power = 0.0
+card_id = "gnoll_warrior"
+display_name = "豺狼人战士"
+description = "中立野怪：对任何玩家/盟友敌对，没有大本营。"

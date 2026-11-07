@@ -54,19 +54,41 @@ static func is_gather(id: StringName) -> bool:
 	return TABLE.is_gather(id)
 
 
+## 是不是"开关类"技能（举盾：点一下开、再点一下关）
+static func is_toggle(id: StringName) -> bool:
+	return TABLE.is_toggle(id)
+
+
+## 是不是"被动"技能（三连发：不需要操作，自动生效）
+static func is_passive(id: StringName) -> bool:
+	return TABLE.is_passive(id)
+
+
+## 要不要按键释放（主动 + 开关 = 有按钮；被动/采集 = 没按钮）
+static func is_button_skill(id: StringName) -> bool:
+	return TABLE.has(id) and not is_gather(id) and not is_passive(id)
+
+
 ## 技能定义（给界面/自检读）
 static func def_of(id: StringName) -> Dictionary:
 	return TABLE.get_def(id)
 
 
-## 冷却时长（读单位的 UnitDef.ability_cooldown，不硬编码）
-static func cooldown_of(unit: Node3D) -> float:
+## 冷却时长：**技能卡上填了就用卡**，没填才退回 UnitDef.ability_cooldown。
+## 为什么要改（2026-11-07）：开关技能的冷却只有 0.4s（防连点），
+## 再读单位卡上的 8s 会让"举盾"点一次要等 8 秒。
+static func cooldown_of(unit: Node3D, id: StringName = &"") -> float:
+	if id != &"":
+		var d: Dictionary = TABLE.get_def(id)
+		var cd: float = float(d.get("cooldown", 0.0))
+		if cd > 0.0:
+			return cd
 	if unit == null or not is_instance_valid(unit):
 		return 0.0
-	var d: UnitDef = unit.def
-	if d == null:
+	var ud: UnitDef = unit.def
+	if ud == null:
 		return 0.0
-	return maxf(d.ability_cooldown, 0.1)
+	return maxf(ud.ability_cooldown, 0.1)
 
 
 ## 单位是否有这个技能。
@@ -86,7 +108,8 @@ static func unit_has(unit: Node3D, id: StringName) -> bool:
 	return false
 
 
-## 单位第一个已实现的技能 id（没有返回空）
+## 单位第一个"可以按键释放"的技能 id（没有返回空）。
+## 开关 / 被动 / 采集都不算：它们不该被"自动施法"拿去乱放。
 static func first_ability(unit: Node3D) -> StringName:
 	if unit == null or not is_instance_valid(unit):
 		return &""
@@ -94,8 +117,7 @@ static func first_ability(unit: Node3D) -> StringName:
 	if d == null:
 		return &""
 	for a in d.abilities:
-		# 只返回"主动"技能：采集技能不是按键释放的
-		if has(a) and not is_gather(a):
+		if is_button_skill(a) and not is_toggle(a):
 			return a
 	return &""
 
@@ -124,15 +146,23 @@ static func begin_cast(unit: Node3D, id: StringName, pos: Vector3, target: Node3
 	unit.set("_cast_target", target)
 	unit.set("_cast_t", cast_time(id))
 	unit.set("state", RtsConst.State.CAST)
-	unit.call("_start_ability_cooldown", cooldown_of(unit))
+	unit.call("_start_ability_cooldown", cooldown_of(unit, id))
 	return true
 
 
-## 出手：前摇走完，真正把火球扔出去（此时才扣血）。
+## 出手：前摇走完，真正把效果打出去。
+##
+## 开关类技能**不需要 case**：任何 `kind = 开关` 的技能，出手就是"切一下"，
+## 由单位身上的 `RtsSkillRt` 统一处理（修正倍率 + 动作 + 特效）。
+## 这就是"加技能不改代码"的落点。
 static func release(unit: Node3D, id: StringName, pos: Vector3, target: Node3D) -> void:
 	if unit == null or not is_instance_valid(unit):
 		return
 	if not unit.is_alive():
+		return
+	if TABLE.is_toggle(id):
+		if unit.has_method("skill_toggle"):
+			unit.call("skill_toggle", id)
 		return
 	match id:
 		ID_FIREBALL:

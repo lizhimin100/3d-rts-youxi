@@ -68,6 +68,9 @@ var _qa_cam_dist: float = -1.0
 ## QA：从命令行强制镜头朝向（度）。用于"同一场景多角度"截图验收。
 var _qa_cam_yaw: float = NAN
 var _qa_select_id: String = ""
+## QA：选中之后立刻对这个单位放一个技能（截图验收举盾/连发用）。
+## 用法：`--select-id=footman --qa-skill=shield_up --shot=...`
+var _qa_skill: StringName = &""
 ## 地图编辑器：--map=<路径> 直接加载 MapDef（地图编辑器 Test Map 用）
 var _map_path: String = ""
 ## 开局提前读到的地图（阵营数量要用它，见 _ready 第 1 步）
@@ -806,6 +809,17 @@ func _qa_select(id: String) -> void:
 	if camera != null and camera.has_method("focus_on") and _qa_cam_pos == Vector3.INF:
 		camera.call("focus_on", picked[0].global_position + Vector3(0.0, 0.0, 5.0))
 	print("[QA] 已选中 %d 个 %s" % [picked.size(), id])
+	# 截图验收：选中后立刻放一个技能（举盾 / 火球 …），用来拍"技能生效中"的样子
+	if _qa_skill != &"":
+		var cast_n: int = 0
+		for u in picked:
+			if u != null and is_instance_valid(u) and u.has_method("order_cast"):
+				# 先站住：走路状态会播 walk，技能动作看不出来
+				if u.has_method("order_stop"):
+					u.call("order_stop")
+				u.call("order_cast", _qa_skill, (u as Node3D).global_position, null)
+				cast_n += 1
+		print("[QA] 释放技能 %s ×%d" % [_qa_skill, cast_n])
 	# 截图定位用：把每个被选中对象的真实坐标打出来（省得靠猜镜头）
 	for u in picked:
 		if u != null and is_instance_valid(u):
@@ -840,6 +854,8 @@ func _parse_cmdline() -> void:
 			_quit_after_shot = true
 		elif arg.begins_with("--select-id="):
 			_qa_select_id = arg.substr(12)
+		elif arg.begins_with("--qa-skill="):
+			_qa_skill = StringName(arg.substr(11))
 		elif arg.begins_with("--cam="):
 			var parts := arg.substr(6).split(",")
 			if parts.size() == 3:

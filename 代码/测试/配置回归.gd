@@ -555,6 +555,20 @@ func _case_2c4() -> void:
 	_record("2C4卡：range_tier 四档单调",
 			String(tiers[0]) == "近战" and String(tiers[1]) == "中程"
 			and String(tiers[2]) == "远程" and String(tiers[3]) == "超远程", str(tiers))
+	# ★ 2026-11-07 玩家口径：「近战的攻击范围 1 是基准，其他单位和防御塔要跟着对标，
+	#   并且写清楚 —— 基准变了，其他要同步」。这里逐张卡比对 `档位 × 基准`。
+	var RB = load("res://代码/配置/射程基准.gd")
+	var bad_range: Array = []
+	for cid in RB.TIERS.keys():
+		var card = UT.call("get_card", cid)
+		if card == null:
+			continue
+		var rng: float = float(card.get("range"))
+		var why: String = RB.call("check_card", cid, rng)
+		if not why.is_empty():
+			bad_range.append(why)
+	_record("射程基准：%d 张卡的 range = 档位 × 基准(%.2f)" % [RB.TIERS.size(), RB.MELEE_BASE],
+			bad_range.is_empty(), "全部一致" if bad_range.is_empty() else str(bad_range))
 
 
 # ===========================================================================

@@ -1,0 +1,35 @@
+[gd_resource type="Resource" script_class="SkillCard" format=3]
+
+[ext_resource type="Script" path="res://代码/配置/技能卡.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"shield_up"
+display_name = "举盾"
+icon = "shield"
+note = "举盾防御：受到伤害 -15%，受到穿刺伤害再 -35%；移动速度 -45%，攻击速度 -50%。再点一次放下。"
+kind = "开关"
+target = "无"
+cast = 0.2
+cooldown = 0.4
+range = 0.0
+hotkey = "Q"
+mods = [{
+"mul": 0.85,
+"stat": "damage_taken"
+}, {
+"mul": 0.65,
+"stat": "damage_taken",
+"when": "穿刺"
+}, {
+"mul": 0.55,
+"stat": "move_speed"
+}, {
+"mul": 2.0,
+"stat": "attack_cooldown"
+}]
+anim_on = &"shield_up"
+anim_hold = &"shield_hold"
+anim_off = &"shield_down"
+vfx_on = &"weapon_glint"
+vfx_off = &"weapon_glint"

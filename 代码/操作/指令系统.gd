@@ -262,10 +262,30 @@ func request_build(building_id: StringName) -> void:
 
 ## 选择技能（命令卡/数字键调用）
 func request_ability(ability_id: StringName) -> void:
+	# ★ 无目标技能（举盾这种开关）：立刻对自己放，不进"等左键点落点"。
+	#   旧版一律进 Pending.CAST，玩家点一下举盾之后界面一直提示"左键选择技能目标点"，
+	#   而举盾根本不需要目标 —— 玩家只会以为技能坏了。
+	var d: Dictionary = RtsSkills.def_of(ability_id)
+	var tgt: StringName = StringName(d.get("target", &""))
+	if tgt == &"" or tgt == &"无":
+		_cast_self(ability_id)
+		return
 	pending = Pending.CAST
 	pending_ability = ability_id
 	pending_build = &""
 	_free_ghost()
+
+
+## 对自己/对全队施放一个无目标技能（开关类）
+func _cast_self(ability_id: StringName) -> void:
+	var n: int = 0
+	for u in _selected_units():
+		if u == null or not is_instance_valid(u) or not u.has_method("order_cast"):
+			continue
+		u.call("order_cast", ability_id, (u as Node3D).global_position, null)
+		n += 1
+	if n == 0:
+		_toast("没有单位能使用这个技能", Color(0.95, 0.62, 0.45))
 
 
 ## 全部停止

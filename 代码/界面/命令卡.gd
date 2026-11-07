@@ -395,7 +395,9 @@ func _build_entries() -> Array:
 
 	if unit != null and unit.def != null:
 		for ab in unit.def.abilities:
-			out.append(_ability_entry(ab))
+			if RtsSkills.is_passive(ab):
+				continue  # 被动技能没有按钮（三连发是自动生效的）
+			out.append(_ability_entry(ab, unit))
 
 	if worker:
 		# 农民必须有一个"看得见"的建造入口：B 键能切页，但第一级界面上没有入口时，
@@ -551,19 +553,39 @@ func _build_entry(bid: StringName) -> Dictionary:
 	}
 
 
-## 技能按钮
-func _ability_entry(ab: StringName) -> Dictionary:
-	var label: String = "火球术" if ab == &"fireball" else String(ab)
-	return {
+## 技能按钮 —— 名字 / 图标 / 状态全部从技能卡读（不在界面里写死某个技能）。
+##
+## 开关类（举盾）额外显示当前状态：`开` 时按钮变亮 + 副标题写"已举盾 · 再点放下"。
+func _ability_entry(ab: StringName, unit: Node3D = null) -> Dictionary:
+	var d: Dictionary = RtsSkills.def_of(ab)
+	var label: String = String(d.get("name", String(ab)))
+	var icon: String = String(d.get("icon", "staff"))
+	var note: String = String(d.get("note", ""))
+	var is_toggle: bool = RtsSkills.is_toggle(ab)
+	var hot: String = String(d.get("hotkey", ""))
+	if hot.is_empty():
+		hot = "Q"
+	var sub: String = "开启 / 关闭" if is_toggle else "施放"
+	var entry := {
 		"label": label,
-		"hint": "%s（Q / 1）" % label,
+		"hint": note if not note.is_empty() else "%s（%s）" % [label, hot],
 		"color": Color(0.72, 0.80, 1.0),
 		"glyph": label.substr(0, 1),
-		"icon": "fire" if ab == &"fireball" else "staff",
-		"hotkey": "Q",
-		"sub": "范围伤害",
+		"icon": icon,
+		"hotkey": hot,
+		"sub": sub,
 		"action": func(): _call("request_ability", ab),
 	}
+	# 开关类：副行跟着"开/关"实时变（HUD 每 0.12s 调 sync_states，就地刷新）
+	if is_toggle:
+		entry["state"] = func() -> Dictionary:
+			var live: bool = unit != null and is_instance_valid(unit) \
+					and unit.has_method("skill_active") and bool(unit.call("skill_active", ab))
+			return {
+				"sub": "已开启 · 再点放下" if live else "开启 / 关闭",
+				"sub_color": Color(0.72, 1.0, 0.78) if live else Spec.text_dim(),
+			}
+	return entry
 
 
 ## 停止按钮

@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="SkillCard" format=3]
+
+[ext_resource type="Script" path="res://代码/配置/技能卡.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"mine_gold"
+display_name = "采矿"
+icon = "pick"
+note = "对金矿使用：走进矿洞（占一个载位），装满一背再出来。"
+kind = "采集"
+target = "资源"
+cast = 0.35
+cooldown = 0.0
+range = 1.4
+slots = 3

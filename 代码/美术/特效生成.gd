@@ -290,6 +290,44 @@ static func blood_splat(pos: Vector3, radius: float = 0.35) -> void:
 	槽["tween"] = tw
 
 
+## **切换武器特效**：武器上泛起一层极淡的白光，0.3 秒散掉。
+##
+## 玩家口径（2026-11-07）：「单位会有一个武器变白的特效……程度不能太白，
+## 稍微带点白就行……只能是单位手中武器的特效」，名字就叫「切换武器特效」。
+## 所以：尺寸小（0.34m）、颜色压到 0.9 左右的白、ADD 混合、0.22 秒淡出。
+## `tint` 别给纯白（1,1,1）—— 纯白 + ADD 在金属武器上会过曝成一坨光斑。
+static func weapon_glint(pos: Vector3, tint: Color = Color(0.90, 0.94, 1.0),
+		size: float = 0.34) -> void:
+	var 容器 := _容器()
+	if 容器 == null:
+		return
+	var mi := MeshInstance3D.new()
+	var q := QuadMesh.new()
+	q.size = Vector2(size, size)
+	mi.mesh = q
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	mat.albedo_color = Color(tint.r, tint.g, tint.b, 0.0)
+	mi.material_override = mat
+	容器.add_child(mi)
+	if mi.is_inside_tree():
+		mi.global_position = pos
+	else:
+		mi.position = pos
+	mi.scale = Vector3.ONE * 0.55
+	var tw: Tween = mi.create_tween()
+	tw.set_parallel(true)
+	tw.tween_method(func(a: float) -> void: mat.albedo_color.a = a, 0.0, 0.5, 0.07)
+	tw.tween_property(mi, "scale", Vector3.ONE * 1.15, 0.09) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.chain().tween_method(func(a: float) -> void: mat.albedo_color.a = a, 0.5, 0.0, 0.19)
+	_自动回收(mi, 0.34)
+
+
 ## 刚被选中那一下：贴地圆环从 1.6 倍收到 1.05 倍，0.28s 内淡掉。
 ## 用 ImmediateMesh 现场拼 32 段三角带 —— 不依赖任何贴图或 shader，
 ## 选中圈本体（玩家口径定过的样式）保持不动，这里只加"被选中"的瞬时反馈。

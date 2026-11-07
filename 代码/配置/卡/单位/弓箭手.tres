@@ -1,27 +1,16 @@
-[gd_resource type="Resource" script_class="UnitCard" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="UnitCard" format=3 uid="uid://drgshg664uqum"]
 
-[ext_resource type="Script" path="res://代码/配置/单位卡.gd" id="1"]
+[ext_resource type="Script" uid="uid://cngswbdkw8fn5" path="res://代码/配置/单位卡.gd" id="1"]
 
 [resource]
 script = ExtResource("1")
-card_id = "archer"
-display_name = "弩兵"
-icon = ""
-description = "远程穿刺，脆皮，克制轻甲。"
-cost_gold = 115
-cost_wood = 25
-unit_class = &"陆军"
 roles = Array[StringName]([&"输出"])
 counters = Array[StringName]([&"轻甲"])
-range = 8
-attack = 16
+range = 10.0
+attack = 18
 attack_type = &"穿刺"
 defense = 1
-defense_type = &"轻甲"
-power = -1
-skills = Array[StringName]([])
-max_hp = 290.0
-attack_spread = 0.0
+max_hp = 280.0
 attack_cooldown = 1.95
 projectile = 1
 projectile_speed = 26.0
@@ -32,17 +21,15 @@ turn_speed = 10.0
 body_radius = 0.44
 selection_radius = 0.75
 food_cost = 2
-train_time = 18.0
+train_time = 18.1
 height = 1.72
-gather_rate = 0.0
-carry_capacity = 10
-max_mana = 0.0
-mana_regen = 0.0
-mana_cost = 0.0
-ability_cooldown = 8.0
 model_path = "res://美术/模型/方块人/方块人_弩兵.glb"
-model_scale = 1.0
 anim_set = 2
 def_role = &"ranged"
 def_tags = Array[StringName]([&"light"])
-design_power = 0.0
+card_id = "archer"
+display_name = "弩兵"
+skills = Array[StringName]([&"triple_shot"])
+description = "勇敢的弩兵向联盟献上了自己的忠诚和技能。弩兵们使用可连射的弩箭，是出色的射手，可以射击地面和空中的敌人。"
+cost_gold = 105
+cost_wood = 15

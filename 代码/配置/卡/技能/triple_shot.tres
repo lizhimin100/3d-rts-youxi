@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="SkillCard" format=3]
+
+[ext_resource type="Script" path="res://代码/配置/技能卡.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"triple_shot"
+display_name = "三连发"
+icon = "bow"
+note = "被动：每次攻击快速射出 3 支弩矢（间隔 0.12 秒），打完后装填 2 秒。"
+kind = "被动"
+target = "无"
+cast = 0.0
+cooldown = 0.0
+range = 0.0
+burst_shots = 3
+burst_interval = 0.12
+reload = 2.0
+anim_on = &"reload"
+vfx_on = &""
+vfx_off = &""

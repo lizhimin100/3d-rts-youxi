@@ -563,6 +563,16 @@ func _sync_range_rings() -> void:
 ## ★ 2026-11-07 半径口径 = `attack_range + 自身半径`（建筑换成占地半宽）。
 ##   attack_range 本身是"身位边缘→目标边缘"的间隙，圈画在自身中心就得多加自己的半径，
 ##   这样圈的边缘 = 真正够得着的边界（玩家反馈"实际射程比圈大"就是这里少了这半步）。
+## 范围圈半径（玩家看到的那个圆）。
+##
+## ★ 2026-11-07 加"标准目标半径"（玩家口径：「敌人整个模型都在圈外一些却仍然能打到」）：
+##   射程是**边缘对边缘**的间隙，所以能打到的最大中心距 =
+##   `attack_range + 自身半径 + 目标半径`。旧圈只画到 `attack_range + 自身半径`，
+##   于是敌人的**中心**站在圈外 0.5m 时仍然够得着 —— 视觉上就是"人在圈外挨打"。
+##   现在把"一个标准体型单位（半径 0.5m）"的半径也画进去：
+##   **圈边 = 标准体型的敌人中心能站到的最远处**，圈外就是真的打不到。
+const RING_TARGET_RADIUS: float = 0.5
+
 func _range_ring_radius(u: RtsUnit) -> float:
 	var r: float = u.def.attack_range
 	if u is RtsBuilding:
@@ -573,7 +583,7 @@ func _range_ring_radius(u: RtsUnit) -> float:
 			r += float(u.call("get_radius")) if u.has_method("get_radius") else 0.0
 	elif u.has_method("get_radius"):
 		r += float(u.call("get_radius"))
-	return r
+	return r + RING_TARGET_RADIUS
 
 
 func _make_range_ring(u: RtsUnit) -> Node3D:

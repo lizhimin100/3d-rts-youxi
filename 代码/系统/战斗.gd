@@ -326,8 +326,31 @@ static func resolve_hit(attacker: Node3D, target: Node3D) -> DamageInfo:
 		base, ad.attack_spread, ad.attack_type,
 		effective_armor(target), td.armor_type
 	)
+	# ★ 技能修正（2026-11-07）：攻击方的"造成伤害倍率" × 目标的"受到伤害倍率"。
+	#   举盾 = 全伤害 ×0.85、穿刺再 ×0.65。两者都走连乘，顺序无关。
+	info.damage *= damage_dealt_mult(attacker) * damage_taken_mult(target, info.attack_type)
 	_apply(attacker, target, info)
 	return info
+
+
+## 攻击方的"造成伤害"倍率（技能修正；没有技能 = 1.0）
+static func damage_dealt_mult(attacker: Node3D) -> float:
+	if attacker == null or not is_instance_valid(attacker):
+		return 1.0
+	var rt: Variant = attacker.get("skills_rt")
+	if rt == null:
+		return 1.0
+	return float(rt.call("damage_dealt_mult"))
+
+
+## 目标受到某种伤害类型的倍率（技能修正；没有技能 = 1.0）
+static func damage_taken_mult(target: Node3D, attack_type: int) -> float:
+	if target == null or not is_instance_valid(target):
+		return 1.0
+	var rt: Variant = target.get("skills_rt")
+	if rt == null:
+		return 1.0
+	return float(rt.call("damage_taken_mult", attack_type))
 
 
 ## 攻击快照：投射物飞行途中射手可能已经死了，伤害按**出手瞬间**的数值结算。
@@ -362,6 +385,9 @@ static func resolve_from_snapshot(snap: Dictionary, target: Node3D, source: Node
 		effective_armor(target), td.armor_type,
 		float(snap.get("attack_mult", 1.0))
 	)
+	info.damage *= damage_taken_mult(target, info.attack_type)
+	if source != null and is_instance_valid(source):
+		info.damage *= damage_dealt_mult(source)
 	_apply(source, target, info, Color(snap.get("vfx_color", COLOR_HIT)))
 	return info
 
@@ -377,6 +403,9 @@ static func deal_damage(source: Node3D, target: Node3D, base: float, attack_type
 	if target.has_method("is_alive") and not bool(target.call("is_alive")):
 		return null
 	var info := compute(base, 0.0, attack_type, effective_armor(target), td.armor_type, attack_mult)
+	info.damage *= damage_taken_mult(target, attack_type)
+	if source != null and is_instance_valid(source):
+		info.damage *= damage_dealt_mult(source)
 	_apply(source, target, info, _vfx_color(attack_type))
 	return info
 

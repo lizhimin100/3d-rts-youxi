@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="SkillCard" format=3]
+
+[ext_resource type="Script" path="res://代码/配置/技能卡.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"chop_wood"
+display_name = "伐木"
+icon = "axe"
+note = "对树木使用：贴身挥斧，每一下都让树晃；4 挥装满一背。"
+kind = "采集"
+target = "资源"
+cast = 0.2
+cooldown = 0.0
+range = 1.4
+slots = 2

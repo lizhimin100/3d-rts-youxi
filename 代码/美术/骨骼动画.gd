@@ -115,13 +115,27 @@ func has_state(state: String) -> bool:
 ##   看起来就是"这个兵怎么还有第二种攻击/第二种待机"。
 ##   白名单由 `单位视觉` 按 UnitDef 推导（有没有技能、是不是远程、是不是农民），
 ##   推导不出来的动作一律不播 —— 宁可不播，也不要播错。
-func set_allowed(names: Array) -> void:
+## 白名单之外，额外标记为"循环"的动作（技能持续动作，如 shield_hold）
+var _extra_loops: Dictionary = {}
+
+
+## 白名单（见上）。
+func set_allowed(names: Array, loop_extra: Array = []) -> void:
 	_allowed.clear()
 	for n in names:
 		_allowed[StringName(n)] = true
+	_extra_loops.clear()
+	for n in loop_extra:
+		_extra_loops[StringName(n)] = true
 	_dropped.clear()
 	if _ap == null:
 		return
+	# 额外循环动作：glTF 导入默认一次性，不设循环的话"举着盾"会 0.4s 后自己放下
+	for n in _extra_loops.keys():
+		if _ap.has_animation(String(n)):
+			var a := _ap.get_animation(String(n))
+			if a != null:
+				a.loop_mode = Animation.LOOP_LINEAR
 	for a in _ap.get_animation_list():
 		if _allowed.has(StringName(a)) or _allowed.has(StringName(NAME_MAP.get(StringName(a), a))):
 			continue
@@ -151,7 +165,7 @@ func set_state(state: String, speed_ratio: float = 1.0, force: bool = false) -> 
 	var want := _resolve(StringName(state))
 	if want == &"":
 		return
-	var is_loop := LOOPING.has(want)
+	var is_loop := LOOPING.has(want) or _extra_loops.has(want)
 	# 单次动作没播完就别被循环动作打断（否则攻击永远只出头两帧）。
 	# ★ 但也不能"整段播完才放行"：attack 0.9s 比很多单位的反应窗口还长，
 	#   玩家点一下移动，兵要站满 0.9 秒才开始走 —— 手感上是"指令不跟手"。
