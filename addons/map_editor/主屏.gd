@@ -32,6 +32,8 @@ const 皮肤 := preload("res://addons/map_editor/编辑器皮肤.gd")
 const CAMP_DIALOG_SCRIPT := preload("res://addons/map_editor/营地弹窗.gd")
 const CARD_DIALOG_SCRIPT := preload("res://addons/map_editor/卡片弹窗.gd")
 const SKILL_DIALOG_SCRIPT := preload("res://addons/map_editor/技能弹窗.gd")
+## 地图尺寸缩放（每边加 N 米）。2026-11-08 玩家要求
+const MAP_SCALE := preload("res://代码/地图核心/地图缩放.gd")
 ## 功能索引窗（人类/agent 都能一键查「这个按钮在哪、实现写在哪」）
 const HELP_DIALOG_SCRIPT := preload("res://addons/map_editor/帮助窗.gd")
 
@@ -71,6 +73,9 @@ var _camp_dialog = null
 var _card_dialog_unit = null
 ## 技能卡编辑器（三层积木 + 配方卡）—— 2026-11-08
 var _skill_dialog: Window = null
+## 「扩图」对话框（每边加 N 米）
+var _resize_dialog: ConfirmationDialog = null
+var _resize_spin: SpinBox = null
 var _card_dialog_building = null
 ## 功能索引窗
 var _help_dialog = null
@@ -590,6 +595,8 @@ func _build_dialogs() -> void:
 	_card_dialog_building.setup(session, "building")
 	add_child(_card_dialog_building)
 
+	_build_resize_dialog()
+
 	_skill_dialog = SKILL_DIALOG_SCRIPT.new()
 	_skill_dialog.call("setup", session)
 	add_child(_skill_dialog)
@@ -735,8 +742,61 @@ func _on_menu(id: int) -> void:
 			_open_card_editor("building")
 		44:
 			_open_skill_editor()
+		45:
+			_open_resize_dialog()
 		43:
 			_open_help()
+
+
+## 「扩图」对话框：每边加 N 米（8 的倍数）
+func _build_resize_dialog() -> void:
+	_resize_dialog = ConfirmationDialog.new()
+	_resize_dialog.title = "扩大地图"
+	_resize_dialog.ok_button_text = "扩大"
+	_resize_dialog.cancel_button_text = "取消"
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 8)
+	box.custom_minimum_size = Vector2(320, 0)
+	box.add_child(Spec.editor_label("每边各加多少米（高度场/地表/地块/对象一起扩）", &"EditorHint"))
+	_resize_spin = SpinBox.new()
+	_resize_spin.min_value = 8
+	_resize_spin.max_value = 192
+	_resize_spin.step = 8
+	_resize_spin.value = 32
+	_resize_spin.suffix = "米"
+	box.add_child(_resize_spin)
+	box.add_child(Spec.editor_label(
+			"扩大后：小地图缩放 / 镜头边界 / 寻路分块都会跟着新的边长重建；\n旧内容按中心锚点整体内移，地形四周多出一圈（沿用边缘高度）。",
+			&"EditorHint"))
+	_resize_dialog.add_child(box)
+	_resize_dialog.confirmed.connect(_apply_resize)
+	add_child(_resize_dialog)
+
+
+func _open_resize_dialog() -> void:
+	if _resize_dialog == null or session == null or session.def == null:
+		_on_status("还没有打开地图，先新建或打开一张")
+		return
+	_resize_dialog.popup_centered()
+
+
+func _apply_resize() -> void:
+	if session == null or session.def == null or _resize_spin == null:
+		return
+	var add: int = int(_resize_spin.value)
+	var before: int = int(session.def.size)
+	# 静态函数直接点调用（preload 的 Script 上 .call() 会被判成非静态 → 编译失败）
+	if not MAP_SCALE.expand(session.def, add):
+		_on_status("扩大失败：每边 %d 米（只支持 8~192，且必须是 8 的倍数）" % add)
+		return
+	if session.has_method("mark_dirty"):
+		session.call("mark_dirty")
+	viewport.rebuild_all()
+	viewport.reset_camera()
+	if session.dock != null and session.dock.has_method("refresh_after_card_edit"):
+		session.dock.call("refresh_after_card_edit")
+	_on_status("地图 %d → %d 米（每边 +%d）：地形/对象已重排，小地图与镜头边界自动跟随"
+			% [before, int(session.def.size), add])
 
 
 ## 打开技能卡编辑器（配方卡：三层积木 + 触发）

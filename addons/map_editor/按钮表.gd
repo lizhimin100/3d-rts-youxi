@@ -26,6 +26,7 @@ const GROUPS: Array = [
 		# 玩家（和 Agent）一眼就知道"这个和别的不是一回事"。
 		{"id": 3, "text": "保存", "icon": "file_save", "tip": "保存到当前文件（Ctrl+S）", "kind": "primary"},
 		{"id": 4, "text": "另存", "icon": "file_save_as", "tip": "另存为…（换个路径/名字）"},
+		{"id": 45, "text": "扩图", "icon": "terrain", "tip": "地图每边加 N 米（高度场/地表/地块/对象一起扩，小地图与镜头边界跟着变）"},
 	]},
 	{"name": "编辑", "items": [
 		{"id": 11, "text": "撤销", "icon": "undo", "tip": "撤销上一步（Ctrl+Z）"},

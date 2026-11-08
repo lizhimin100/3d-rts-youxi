@@ -118,6 +118,12 @@ func _build() -> void:
 	save.tooltip_text = "写回这张 .tres，并刷新卡缓存"
 	save.pressed.connect(_save)
 	brow.add_child(save)
+	# ★ 2026-11-08 玩家口径：「编辑器内可新建单位/建筑配置卡，名字、各字段我自己填；
+	#   卡本身就是单位数据介绍，模型/美术/音频到位直接填，新单位就出现。不用改代码。」
+	var newb := Spec.editor_button("新建")
+	newb.tooltip_text = "新建一张空卡（自动起 id），填完模型路径保存就进对象页"
+	newb.pressed.connect(_create_card)
+	brow.add_child(newb)
 	var test := Spec.editor_button("测试地图")
 	test.tooltip_text = "保存后启动游戏试玩（有未保存改动会先提醒）"
 	test.pressed.connect(_test)
@@ -609,6 +615,69 @@ func _save() -> void:
 	if session != null and session.has_method("push_status"):
 		session.call("push_status", "卡「%s」已保存，重开测试地图生效%s" % [
 			String(_card.get("display_name")), tail])
+
+
+## **新建一张卡**（玩家 2026-11-08 第 13 条）。
+##
+## 口径：
+##   · 文件名 = id，id 自动起 `new_unit_1` / `new_building_1`，**名字和所有字段都由人填**；
+##   · 只填"能让它立刻存在"的最小集合：id / 名字 / 分类 / 0 花费 / 一句说明；
+##   · 模型留空 —— 美术到位之后在表单里填 `model_path`，保存即进对象页；
+##   · 保存后重扫目录 + 选中新卡，并让对象页刷新（和保存走同一条链路）。
+func _create_card() -> void:
+	var dir_path: String = _dir()
+	var prefix: String = "new_unit_" if _kind == "unit" else "new_building_"
+	var n: int = 1
+	while FileAccess.file_exists(dir_path + prefix + str(n) + ".tres"):
+		n += 1
+	var id: String = prefix + str(n)
+	var res: Resource = null
+	if _kind == "unit":
+		res = preload("res://代码/配置/单位卡.gd").new()
+		res.set("card_id", id)
+		res.set("display_name", "新单位 " + str(n))
+		res.set("description", "（自己写：这个兵是谁、干什么用的）")
+		res.set("max_hp", 200.0)
+		res.set("attack", 10)
+		res.set("range", 90.0)
+		res.set("attack_cooldown", 1.5)
+		res.set("move_speed", 4.2)
+		res.set("cost_gold", 100)
+		res.set("volume", 1.0)
+		res.set("race", &"联盟")
+	else:
+		res = preload("res://代码/配置/建筑卡.gd").new()
+		res.set("card_id", id)
+		res.set("display_name", "新建筑 " + str(n))
+		res.set("description", "（自己写：这座楼干什么用的）")
+		res.set("max_hp", 800.0)
+		res.set("cost_gold", 150)
+		res.set("cost_wood", 50)
+		res.set("footprint", Vector2i(3, 3))
+		res.set("height", 4.0)
+		res.set("race", &"联盟")
+	var path: String = dir_path + id + ".tres"
+	var err: int = ResourceSaver.save(res, path)
+	if err != OK:
+		_status.text = "新建失败（错误码 %d）：%s" % [err, path]
+		return
+	# 重扫 + 让新卡成为当前选中的那张
+	_cards = []
+	for e in _load_dir(dir_path):
+		_cards.append({
+			"path": String(e["path"]), "card": e["card"],
+			"name": String((e["card"] as Resource).get("display_name")),
+			"id": String((e["card"] as Resource).get("card_id")),
+		})
+	_card = res
+	_dirty = false
+	_sync_list()
+	_rebuild_form()
+	UNIT_TABLE.reload_cards()
+	MapAssets.clear_cache()
+	if session != null and session.dock != null and session.dock.has_method("refresh_after_card_edit"):
+		session.dock.call("refresh_after_card_edit")
+	_status.text = "已新建 %s —— 填名字 / 数值 / 模型路径后点「保存」，对象页就能摆它了" % path.get_file()
 
 
 ## 把"这个单位由哪些建筑训练"同步到建筑卡的 trains 数组。
