@@ -301,6 +301,28 @@ func _build_entries() -> Array:
 		# **哨塔 → 箭塔**（玩家口径 2026-11-01："多余哨塔升级箭塔加强防御"）。
 		# 做成可点按钮（不是信息格）：花不花这笔钱是玩家的决定。
 		# 价格/实现都走 代码/系统/建筑改造.gd —— 和 AI 自动升级完全同一套口径。
+		# **大本营 → 联盟要塞（二本）**（2026-11-08 升本机制）
+		if b.def.id == &"townhall":
+			var uc2: Vector2i = UPGRADE.upgrade_cost(&"townhall", &"townhall_2")
+			var busy2: bool = b.is_upgrading()
+			var tgt: UnitDef = Cfg.unit(&"townhall_2")
+			out.append({
+				"label": "升本",
+				"hint": ("正在升二本：%d%%，还要 %.0f 秒。\n（读条期间不能训练/研究）"
+						% [int(round(b.upgrade_progress() * 100.0)), b.upgrade_remaining()]) if busy2 \
+						else ("把大本营升为「%s」（二本，补差价 %d 金 / %d 木，工期 %.0f 秒）。\n升完：%.0f 血 · 人口 +%d · 兵营解锁矮人火枪手。\n美术沿用同一张模型（等下周素材）。" % [
+							tgt.display_name if tgt != null else "联盟要塞", uc2.x, uc2.y,
+							RtsBuilding.upgrade_time_for(&"townhall_2"),
+							tgt.max_hp if tgt != null else 2400.0,
+							tgt.food_provided if tgt != null else 32]),
+				"color": Color(1.0, 0.86, 0.42),
+				"glyph": "二",
+				"icon": "upgrade",
+				"sub": ("%d%%" % int(round(b.upgrade_progress() * 100.0))) if busy2 else ("%d金 %d木" % [uc2.x, uc2.y]),
+				"hotkey": "",
+				"disabled": busy2,
+				"action": func(): _call("request_upgrade_townhall"),
+			})
 		if b.def.id == &"watchtower":
 			var uc: Vector2i = UPGRADE.upgrade_cost(&"watchtower", &"tower")
 			var busy: bool = b.is_upgrading()
@@ -430,14 +452,22 @@ func _train_entry(b: RtsBuilding, id: StringName) -> Dictionary:
 	var d: UnitDef = Cfg.unit(id)
 	var label: String = d.display_name if d != null else String(id)
 	var cost: String = _cost_text(d)
-	var ok: bool = d != null and Game.can_afford(Game.player_faction, id)
+	# ★ 2026-11-08 升本门槛：兵种卡 require_tier 比主城等级大 → 灰掉并说明原因
+	var tier_ok: bool = true
+	if d != null and d.require_tier > 0:
+		tier_ok = int(Game.call("faction_tier", Game.player_faction)) >= d.require_tier
+	var ok: bool = d != null and tier_ok and Game.can_afford(Game.player_faction, id)
 	# ★ 队列上限只有一处口径（指令系统.TRAIN_QUEUE_MAX = 10）。
 	#   这里以前写死 5，于是"面板说队列 6/10，命令卡却已经禁用了"——玩家只会觉得是 bug。
 	var full: bool = b.train_queue.size() >= QUEUE_MAX
+	var tier_hint: String = ""
+	if not tier_ok:
+		tier_hint = "\n需要主城升到 %d 本（大本营 → 联盟要塞）才能训练。" % (d.require_tier if d != null else 0)
 	return {
 		"label": label,
-		"hint": "%s  花费 %s  人口 %d  训练 %.0fs" % [
-			label, cost, d.food_cost if d != null else 0, d.train_time if d != null else 0.0
+		"hint": "%s  花费 %s  人口 %d  训练 %.0fs%s" % [
+			label, cost, d.food_cost if d != null else 0, d.train_time if d != null else 0.0,
+			tier_hint
 		],
 		"color": Color(0.90, 0.90, 0.86) if ok else Color(0.55, 0.55, 0.52),
 		"glyph": label.substr(0, 1),

@@ -579,6 +579,25 @@ func _kill_log_on() -> bool:
 	return false
 
 
+## **阵营当前主城等级**（升本机制的唯一出口）。
+##
+## 取该阵营**所有建筑里最高的 tier**（大本营 1 = 一本 / 2 = 二本），
+## 没有大本营时按 1 算（不至于把兵营直接锁死）。
+## 兵种卡 `require_tier` 与它比大小 —— 不要在别处再写一遍这个判断。
+func faction_tier(f: RtsFaction) -> int:
+	if f == null:
+		return 1
+	var best: int = 1
+	for b in f.buildings:
+		if b == null or not is_instance_valid(b):
+			continue
+		var d: UnitDef = b.get("def") as UnitDef
+		if d == null:
+			continue
+		best = maxi(best, maxi(int(d.tier), 1))
+	return best
+
+
 ## 能不能造
 func can_afford(faction: RtsFaction, unit_id: StringName) -> bool:
 	var d: UnitDef = Cfg.unit(unit_id)

@@ -354,7 +354,7 @@ func _test_asset_catalog() -> void:
 		ids[String(a["id"])] = true
 	# 这批是"必须能被地图作者摆出来"的最小集合（新加东西就往这里补一行）
 	var must: Array[String] = [
-		"footman", "archer", "peasant", "mage", "steam_guard",
+		"footman", "archer", "peasant", "mage", "dwarf_musketeer",
 		"gnoll_warrior", "gnoll_scout", "campfire",
 		"townhall", "barracks", "farm", "tower", "watchtower",
 		"blacksmith", "sanctum", "workshop", "lumbercamp",

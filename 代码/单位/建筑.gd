@@ -155,8 +155,19 @@ func is_training() -> bool:
 
 
 ## 该建筑能不能造这个单位
+## 能不能训练某个单位。
+##
+## ★ 2026-11-08 升本机制：除了"这栋楼的 trains 里有它"，还要看**主城等级**：
+##   兵种卡上的 `require_tier`（0 = 一本就能出）必须 ≤ 阵营当前 tier。
+##   例：矮人火枪手 require_tier = 2，大本营升到二本（联盟要塞）之后兵营才出得来。
 func can_train(id: StringName) -> bool:
-	return def != null and def.trains.has(id)
+	if def == null or not def.trains.has(id):
+		return false
+	var ud: UnitDef = Cfg.unit(id)
+	if ud != null and ud.require_tier > 0:
+		if Game.has_method("faction_tier") and int(Game.call("faction_tier", faction)) < ud.require_tier:
+			return false
+	return true
 
 
 ## 这个交汇点收不收某种资源（RtsConst.Harvest）：大本营金木全收，伐木场只收木材

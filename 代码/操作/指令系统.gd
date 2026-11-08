@@ -224,6 +224,32 @@ func request_upgrade_tower() -> void:
 			_accent())
 
 
+## **升二本**（大本营 → 联盟要塞）。和哨塔升级同一套：补差价 + 读条 + 施工中模型。
+func request_upgrade_townhall() -> void:
+	var b := _primary_building()
+	if b == null or b.def == null:
+		return
+	if b.def.id != &"townhall":
+		_toast("只有大本营能升本", _warn())
+		return
+	if not b.is_constructed:
+		_toast("还没盖好，不能升本", _warn())
+		return
+	if b.is_upgrading():
+		_toast("正在升级（%d%%）" % int(round(b.upgrade_progress() * 100.0)), _warn())
+		return
+	var fac: RtsFaction = Game.player_faction
+	if not REFIT.can_pay(fac, &"townhall", &"townhall_2"):
+		var c: Vector2i = REFIT.upgrade_cost(&"townhall", &"townhall_2")
+		_toast("资源不足：升二本需要 %d 金 / %d 木" % [c.x, c.y], _warn())
+		return
+	if not REFIT.start(b, &"townhall_2"):
+		_toast("升本失败（大本营忙着别的活）", _warn())
+		return
+	_toast("开始升本：联盟要塞（%.0f 秒，中段显示进度）"
+			% RtsBuilding.upgrade_time_for(&"townhall_2"), _accent())
+
+
 ## 研究一项铁匠铺升级（命令卡调用）：花费/上限全部读 Cfg 的研究定义。
 func request_research(research_id: StringName) -> void:
 	var b := _primary_building()

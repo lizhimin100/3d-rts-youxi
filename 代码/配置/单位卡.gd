@@ -61,6 +61,10 @@ extends EntityCard
 @export var drop_gold: int = 0
 @export var drop_wood: int = 0
 
+## **训练门槛：需要几本主城**（0 = 一本就能出）。
+## 判据在 建筑.can_train() → 阵营里最高 tier 的大本营。2026-11-08 升本机制。
+@export var require_tier: int = 0
+
 # ---------------------------------------------------------------------------
 # 引擎数值镜像（照抄 UnitDef —— 单位表.gd 用它重建 UnitDef，零差异校验对它做）
 # 名字与 UnitDef 一一对应，方便逐项搬与逐项比对。

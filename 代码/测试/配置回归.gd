@@ -400,14 +400,14 @@ func _case_resilience() -> void:
 func _case_roles() -> void:
 	var foot: UnitDef = _cfg.unit(&"footman")
 	var arch: UnitDef = _cfg.unit(&"archer")
-	var steam: UnitDef = _cfg.unit(&"steam_guard")
+	var musk: UnitDef = _cfg.unit(&"dwarf_musketeer")
 	_record("角色：is_frontline(步兵)=true", bool(_model.call("is_frontline", foot)),
 			"role=%s" % String(foot.role) if foot != null else "null")
 	_record("角色：is_backline(弓箭手)=true", bool(_model.call("is_backline", arch)),
 			"role=%s" % String(arch.role) if arch != null else "null")
-	_record("角色：has_tag(蒸汽重步兵, siege)=true",
-			bool(_model.call("has_tag", steam, &"siege")),
-			"tags=%s" % str(steam.tags) if steam != null else "null")
+	_record("角色：has_tag(矮人火枪手, light)=true",
+			bool(_model.call("has_tag", musk, &"light")),
+			"tags=%s" % str(musk.tags) if musk != null else "null")
 
 
 # ===========================================================================
@@ -525,16 +525,15 @@ func _case_2c4() -> void:
 			and String((foot_card as UnitCard).icon) == "",
 			"power=%d icon='%s'" % [(foot_card as UnitCard).power if foot_card != null else -99,
 				String((foot_card as UnitCard).icon) if foot_card != null else "?"])
-	_record("2C4卡：职能承伤含 步兵/蒸汽重步兵/豺狼人战士",
+	_record("2C4卡：职能承伤含 步兵/豺狼人战士（蒸汽重步兵已删）",
 			UT.find_by_role(&"承伤").any(func(c): return c.card_id == "footman")
-			and UT.find_by_role(&"承伤").any(func(c): return c.card_id == "steam_guard")
 			and UT.find_by_role(&"承伤").any(func(c): return c.card_id == "gnoll_warrior"),
 			"承伤=%d 张" % UT.find_by_role(&"承伤").size())
 	# ★ 2026-11-07 射程口径统一后（attack_range = 身位边缘→目标边缘的间隙）：
 	#   步兵 0.2 / 蒸汽重步兵 0.35 都是近战；弩兵 8.0 是超远程（阈值 6m）。
-	_record("2C4卡：范围档派生 步兵=近战(0.2) / 蒸汽重步兵=近战(0.35) / 弩兵=超远程(8.0)",
+	_record("2C4卡：范围档派生 步兵=近战(1.35) / 火枪手=超远程(8.25) / 弩兵=超远程(9.75)",
 			UT.find_by_range_tier(&"近战").any(func(c): return c.card_id == "footman")
-			and UT.find_by_range_tier(&"近战").any(func(c): return c.card_id == "steam_guard")
+			and UT.find_by_range_tier(&"超远程").any(func(c): return c.card_id == "dwarf_musketeer")
 			and UT.find_by_range_tier(&"超远程").any(func(c): return c.card_id == "archer"),
 			"阈值 1.5/3.0/6.0")
 	var fake_def: UnitDef = UnitDef.new()
@@ -549,8 +548,9 @@ func _case_2c4() -> void:
 	var bad: PackedStringArray = LW.validate_words(&"魔法兵种", [&"坦克"], [], &"普通", &"轻甲")
 	_record("2C4卡：词表校验拦下非法词", bad.size() >= 2, "%s" % str(bad))
 	var all_units: Dictionary = UT.build_units()
-	_record("2C4卡：build_units = 20 卡 + 6 可采集物 = 26",
-			all_units.size() == 26 and all_units.has(&"footman") and all_units.has(&"goldmine"),
+	_record("2C4卡：build_units = 21 卡 + 6 可采集物 = 27（删蒸汽重步兵、加火枪手/联盟要塞）",
+			all_units.size() >= 25 and all_units.has(&"footman") and all_units.has(&"goldmine")
+			and all_units.has(&"dwarf_musketeer") and all_units.has(&"townhall_2"),
 			"size=%d" % all_units.size())
 	# 阈值是 2.5 / 4.0 / 8.0 米（见 定位词表 TIER_*），取样点跟着阈值走，别写死旧档位
 	var tiers: Array = [LW.range_tier(1.0), LW.range_tier(3.0), LW.range_tier(6.0), LW.range_tier(9.0)]

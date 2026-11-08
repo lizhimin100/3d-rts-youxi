@@ -20,6 +20,8 @@ extends RefCounted
 ## 键 = 旧 id，值 = 新 id。
 const ROUTES := {
 	&"watchtower": &"tower",
+	# 2026-11-08 升本：大本营 → 联盟要塞（二本）。美术沿用同一张模型，只改名/数值。
+	&"townhall": &"townhall_2",
 }
 
 

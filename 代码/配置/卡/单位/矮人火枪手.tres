@@ -1,0 +1,36 @@
+[gd_resource type="Resource" script_class="UnitCard" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://代码/配置/单位卡.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+roles = Array[StringName]([&"输出"])
+counters = Array[StringName]([&"重甲"])
+range = 550
+attack = 26
+attack_type = &"穿刺"
+defense = 3
+defense_type = &"轻甲"
+skills = Array[StringName]([])
+max_hp = 320.0
+attack_cooldown = 2.2
+projectile = 1
+projectile_speed = 40.0
+acquire_range = 12
+sight_range = 12.0
+move_speed = 4.0
+turn_speed = 9.0
+volume = 1.0
+food_cost = 3
+train_time = 22.0
+height = 1.8
+model_path = "res://美术/模型/步兵.glb"
+def_role = &"ranged"
+def_tags = Array[StringName]([&"light"])
+card_id = "dwarf_musketeer"
+display_name = "矮人火枪手"
+description = "二本兵营出的远程火枪手：射程 8.25 米、单发伤害高、射速慢。需要大本营升到二本（联盟要塞）。"
+cost_gold = 140
+cost_wood = 40
+race = &"联盟"
+require_tier = 2

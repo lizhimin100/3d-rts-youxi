@@ -97,6 +97,10 @@ extends Resource
 @export var food_cost: int = 0
 ## 训练 / 建造耗时（秒）
 @export var train_time: float = 10.0
+## **主城等级**（建筑用）：1 = 一本 / 2 = 二本。只有大本营有意义。
+@export var tier: int = 1
+## **训练门槛**（兵种用）：需要几本主城才出得来（0 = 一本）。
+@export var require_tier: int = 0
 ## 该建筑可训练的单位 id 列表
 @export var trains: Array[StringName] = []
 ## 该建筑可研究的升级 id 列表
