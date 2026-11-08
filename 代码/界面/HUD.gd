@@ -26,8 +26,6 @@ extends CanvasLayer
 ##       `--all-hidden` 界面 + 鼠标光标全隐藏（成片/干净截图用）。
 
 const Spec := preload("res://代码/界面/界面规格.gd")
-## 词条（悬停说明）：经验条/资源条的气泡文案都从这里取
-const Lex := preload("res://代码/界面/词条.gd")
 
 ## 界面刷新间隔（秒）：不跟渲染帧空转
 const REFRESH_INTERVAL := 0.12
@@ -35,6 +33,13 @@ const REFRESH_INTERVAL := 0.12
 const TOAST_MAX := 3
 ## 提示消息淡出时长（秒）
 const TOAST_FADE := 0.55
+## 据点倒计时播报条（顶部第一行）的宽 / 高。
+## 两处共用：`_apply_layout` 摆它、`_place_toasts` 让位给它 —— 改一处两边同步。
+## ★ 高度只是**下限**：实际高度还要跟 `get_combined_minimum_size()` 取大值
+##   （28px 字号 + stylebox 内边距一旦超过它，控件会被最小尺寸顶高，
+##   按固定值算的"让位"就不够了 → 两条播报会贴在一起）。
+const CRATE_BANNER_W := 460.0
+const CRATE_BANNER_H := 46.0
 
 ## 建筑面板脚本（用 preload 而不是直接写 class_name：新类还没进全局 class 缓存时也能跑）
 const BUILDING_PANEL_SCRIPT := preload("res://代码/界面/建筑面板.gd")
@@ -116,8 +121,6 @@ var _glyph: RtsGlyphCursor = null
 
 ## 底栏底板（一整条奇幻石金板，见 浮雕底板.gd）
 var _band_plate: RtsOrnatePlate = null
-## 底栏左缘的竖版经验条（单选一个兵时出现；2026-11-08）
-var _exp_bar: RtsExpBar = null
 ## 可弹出式说明文本层（见 说明气泡.gd）
 var _tips: RtsTipLayer = null
 ## 上一次用的底栏高度（内容变化时用来发现"该重摆了"）
@@ -220,15 +223,6 @@ func _ready() -> void:
 	_sync_root_size()
 
 	_build_band_plate()
-	# 经验条：贴在底栏最左缘，两种形态（紧凑/展开）都跟着底板走
-	_exp_bar = RtsExpBar.new()
-	_exp_bar.visible = false
-	root.add_child(_exp_bar)
-	RtsTipLayer.bind(self, _exp_bar, func() -> Dictionary:
-		var arr: Array = _valid_selection()
-		if arr.size() != 1:
-			return {}
-		return Lex.exp(arr[0] as Node3D))
 	_build_tip_layer()
 	_build_stats()
 	_build_toasts()
@@ -536,10 +530,13 @@ func _apply_layout() -> void:
 		_place(_stats_panel, 0.5, 0.0, 0.5, 0.0,
 				-_mets.stats_w * 0.5, m, _mets.stats_w * 0.5, m + _mets.stats_h)
 	# 小地图：左上（圆盘 + 下方图例条）
-	# 据点提示：资源条正下方居中（宽度固定 300，和资源条同一条竖轴）
+	# 据点提示：资源条正下方居中（**顶部播报的第一行**，宽高见 CRATE_BANNER_*）
 	if _crate_banner != null and _crate_banner.visible:
+		var cbw: float = CRATE_BANNER_W * 0.5
+		var cty: float = m + _mets.stats_h + 6.0
+		var cbh: float = _crate_banner_height()
 		_place(_crate_banner, 0.5, 0.0, 0.5, 0.0,
-				-150.0, m + _mets.stats_h + 6.0, 150.0, m + _mets.stats_h + 6.0 + 26.0)
+				-cbw, cty, cbw, cty + cbh)
 	if _minimap != null:
 		# 正方形：圆盘 = 控件内切圆，图例浮在圆内底部（不再额外占高度）
 		_place(_minimap, 0.0, 0.0, 0.0, 0.0,
@@ -671,12 +668,6 @@ func _apply_layout() -> void:
 		_band_plate.show_medallion = (not compact) and gap_w >= 260.0
 		if _band_plate.show_medallion:
 			_band_plate.medallion_x = (gap_x0 + gap_x1) * 0.5 - plate_left
-
-	# 经验条：贴底板左缘外侧（比底板矮 16px，读起来像"挂在板子边上的标尺"）
-	if _exp_bar != null:
-		var eb_left: float = plate_left - 15.0
-		var eb_top: float = top_y + 8.0
-		_place_smooth(_exp_bar, Rect2(eb_left, eb_top, RtsExpBar.W, maxf(inner_h - 16.0, 24.0)), animate)
 
 	_place_toasts()
 	# 气泡层铺满整个 root：**必须显式摆**，光靠 full-rect 锚点在这套
@@ -836,18 +827,28 @@ func _build_stats() -> void:
 	hb.alignment = BoxContainer.ALIGNMENT_CENTER
 	_stats_panel.add_child(hb)
 
-	# 据点资源箱提示条：贴在资源条正下方（居中），平时隐藏
+	# 据点资源箱提示条：贴在资源条正下方（居中），平时隐藏。
+	# 2026-11-08 玩家口径：「据点刷新的 UI 和字体做大点」——
+	# 字号 FS_TITLE(24) → FS_HERO(28)，条高 34 → 42，宽 380 → 460，
+	# 边框从"细边"改成"上下两道金线"，读起来是一条真正的**播报条**。
 	_crate_banner = PanelContainer.new()
 	_crate_banner.name = "据点提示"
 	_crate_banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var sb2 := Spec.panel_style(5, 0.92, 0.40, 10.0)
-	sb2.border_width_top = 1
-	sb2.border_color = Color(0.98, 0.78, 0.36, 0.75)
+	var sb2 := Spec.panel_style(5, 0.94, 0.46, 10.0)
+	# 上下内边距收窄：一条播报只要"字 + 一点呼吸"，10px 会把它撑成 60 高
+	sb2.content_margin_top = 3.0
+	sb2.content_margin_bottom = 3.0
+	sb2.border_width_top = 2
+	sb2.border_width_bottom = 2
+	sb2.border_color = Color(0.98, 0.80, 0.40, 0.88)
 	_crate_banner.add_theme_stylebox_override("panel", sb2)
 	_crate_banner.visible = false
 	root.add_child(_crate_banner)
-	_crate_label = Spec.label("", Spec.FS_BODY, Color(1.0, 0.88, 0.56))
+	_crate_label = Spec.label("", Spec.FS_HERO, Color(1.0, 0.90, 0.60))
 	_crate_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_crate_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_crate_label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.72))
+	_crate_label.add_theme_constant_override("outline_size", 4)
 	_crate_banner.add_child(_crate_label)
 
 	_gold_label = _stat_pill(hb, "金币", Spec.gold(), false, "coin")
@@ -979,9 +980,23 @@ func _place_toasts() -> void:
 	if _toast_box == null or _mets == null:
 		return
 	var w: float = minf(680.0, _mets.vw * 0.62)
-	# 资源条现在占着顶部正中，提示条统一让到它下面（永不互压）
+	# 资源条占着顶部正中；据点提示是"第一行播报"，普通提示从它下面开始 ——
+	# 2026-11-08 玩家口径：「新的 UI 提示要放在据点刷新的下面、不要覆盖，弄上下播报形式」。
+	# 所以这里把据点条**整段 + 12px 间隔**让出来（高度取实测值，见 _crate_banner_height）。
 	var top: float = _mets.margin + _mets.stats_h + _mets.gap
+	if _crate_banner != null and _crate_banner.visible:
+		# 播报条：top = 资源条下沿 + 6，高 H → 普通提示从它下面 12px 开始
+		top = _mets.margin + _mets.stats_h + 6.0 + _crate_banner_height() + 12.0
 	_place(_toast_box, 0.5, 0.0, 0.5, 0.0, -w * 0.5, top, w * 0.5, top + 260.0)
+
+
+## 据点播报条的**实际高度**：下限 CRATE_BANNER_H，真撑起来比它高就按真高算。
+## 单独一个函数是因为 `_apply_layout` 和 `_place_toasts` 必须用同一个数，
+## 否则"让位"和"摆位"各说各话，两条播报就会叠在一起。
+func _crate_banner_height() -> float:
+	if _crate_banner == null:
+		return CRATE_BANNER_H
+	return maxf(CRATE_BANNER_H, _crate_banner.get_combined_minimum_size().y)
 
 
 ## 左下小地图
@@ -1913,7 +1928,6 @@ func _refresh_stats() -> void:
 	if _pop_bar != null:
 		_pop_bar.set_ratio(float(used) / maxf(float(cap), 1.0), full)
 	_sync_crate_banner()
-	_sync_exp_bar()
 
 
 ## 据点资源箱的顶部倒计时（刷新前 30 秒出现）。
@@ -1937,32 +1951,6 @@ func _sync_crate_banner() -> void:
 		_apply_layout()
 	if show_it:
 		_set_label(_crate_label, txt)
-
-
-## 经验条：**只在单选一个兵**时出现（多选没有"这个单位多少经验"这回事）。
-##
-## 玩家 2026-11-08：「选中单个单位后，在下面左侧的信息面板的左边做竖版的经验条 UI，
-## 鼠标悬停会显示当前单位有多少经验值、还需多少经验值升级。」
-func _sync_exp_bar() -> void:
-	if _exp_bar == null:
-		return
-	var arr: Array = _valid_selection()
-	var show_it: bool = arr.size() == 1
-	var u: Node3D = arr[0] as Node3D if show_it else null
-	if show_it and u != null:
-		var d: UnitDef = u.get("def") as UnitDef
-		if d == null or d.kind != RtsConst.Kind.UNIT:
-			show_it = false
-	if _exp_bar.visible != show_it:
-		_exp_bar.visible = show_it
-		_apply_layout()
-	if not show_it:
-		return
-	var star: int = int(u.get("star_level")) if u.get("star_level") != null else 0
-	var cur: float = float(u.get("exp_value")) if u.get("exp_value") != null else 0.0
-	var need: float = float(u.call("exp_need")) if u.has_method("exp_need") else 60.0
-	var r: float = 1.0 if star >= 3 else clampf((cur - float(star) * need) / maxf(need, 1.0), 0.0, 1.0)
-	_exp_bar.set_state(r, star, Spec.accent())
 
 
 ## 幂等写 Label：文本没变就一个字节都不写（避免 8Hz 重排）

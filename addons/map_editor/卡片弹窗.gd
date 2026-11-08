@@ -316,8 +316,11 @@ func _build_unit_form() -> void:
 	_fields["attack"] = _num(g, "攻击力 attack", _f("attack"), 0.0, 9999.0, 1.0)
 	_fields["attack_cooldown"] = _num(g, "攻击间隔（秒）", _f("attack_cooldown", 1.5), 0.05, 60.0, 0.05,
 		"每次攻击之间的冷却（秒 / 次）")
-	_fields["range"] = _num(g, "攻击范围 range", _f("range"), 0.0, 80.0, 0.1,
-		"自身碰撞圆边缘 → 目标边缘的间隙（米）")
+	# ★ 2026-11-08 玩家实测「弩兵/步兵的攻击范围显示 80」：上限原来写死 80，
+	#   650 / 90 一进表单就被夹成 80 —— 而且**保存时会把这个 80 写回卡里**。
+	#   现在上限 3000（箭塔 870 的 3 倍），步进 5，提示直接算成米。
+	_fields["range"] = _num(g, "攻击范围 range（游戏数值）", _f("range"), 0.0, 3000.0, 5.0,
+		"游戏射程数值：米数 = 这个值 × 0.015。步兵 90 = 1.35m、火枪手 550 = 8.25m、弩兵 650 = 9.75m、箭塔 870 = 13.05m。")
 
 	_section("防御 / 移动")
 	g = _grid()
@@ -386,7 +389,7 @@ func _build_building_form() -> void:
 	_section("攻击 / 视野")
 	g = _grid()
 	_fields["attack"] = _num(g, "攻击力 attack", _f("attack"), 0.0, 9999.0, 1.0, "0 = 不能攻击（如农场/哨塔）")
-	_fields["range"] = _num(g, "射程 range", _f("range"), 0.0, 80.0, 0.1)
+	_fields["range"] = _num(g, "射程 range（游戏数值）", _f("range"), 0.0, 3000.0, 5.0)
 	_fields["attack_cooldown"] = _num(g, "攻击间隔（秒）", _f("attack_cooldown", 1.5), 0.05, 60.0, 0.05)
 	_fields["sight_range"] = _num(g, "视野 sight_range", _f("sight_range", 10.0), 0.0, 120.0, 0.5)
 

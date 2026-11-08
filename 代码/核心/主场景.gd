@@ -223,6 +223,10 @@ func _ready() -> void:
 		sp.call("setup", mid)
 		Game.strongpoint = sp
 		# QA：--qa-crate 立刻把资源箱刷出来（不用等 3 分钟），镜头对准据点
+		# --qa-crate-near：把倒计时拨到 20 秒（验收"刷新前 30s 的顶部提示"）
+		if "--qa-crate-near" in OS.get_cmdline_user_args():
+			sp.set("_countdown", 20.0)
+			print("[QA] 据点倒计时 → 20 秒（顶部提示应出现）")
 		if "--qa-crate" in OS.get_cmdline_user_args():
 			sp.call("_spawn_crate")
 			if camera != null and camera.has_method("focus_on"):

@@ -21,11 +21,14 @@ const PAD := 0.0
 const LEGEND_H := 24.0
 ## 圆盘遮罩色（= 面板底色）
 const MASK_COLOR := Color(0.035, 0.041, 0.052, 0.96)
-## 迷雾在小地图上的**最大不透明度**（2026-11-08）。
+## 迷雾在小地图上的**最大不透明度**（2026-11-08，第三轮调整）。
 ## 3D 战场里未探索是纯黑（alpha 1.0），但小地图不行：那会把地形底图整片吃掉，
-## 玩家看到的是"圆盘缺了一块"。压到 0.62 之后：未探索 = 暗但能看出山脉/路口，
+## 玩家看到的是"圆盘缺了一块"。
+## 上一版压到 0.62 —— 实测还是太黑：地形底图本身是深绿（0.15,0.29,0.11），
+## 乘 0.38 之后和纯黑没有区别，玩家第三次报「左边还是部分地区显示不全」。
+## 现在压到 0.30：未探索 = 明显压暗但**山脉/路口/矿脉轮廓仍读得出**，
 ## 已探索 = 轻微压暗，当前视野 = 完全不受影响（那格 alpha 本来就是 0）。
-const FOG_MINIMAP_ALPHA := 0.62
+const FOG_MINIMAP_ALPHA := 0.30
 
 ## 圆形裁剪用的 canvas_item 着色器。
 ## 为什么不用"画四个角盖住"：底盘和遮罩同色，盖了等于没盖，仍旧是一块方板；
@@ -114,8 +117,10 @@ class RingFrame extends Control:
 		# 金环：显式边框
 		draw_arc(ctr, rad - 2.0, 0.0, TAU, 160,
 			Color(accent_color.r, accent_color.g, accent_color.b, emph), 3.5, true)
-		# 内阴影：读起来像"嵌进去"
-		draw_arc(ctr, rad - 6.5, 0.0, TAU, 160, Color(0.0, 0.0, 0.0, 0.40), 4.0, true)
+		# 内阴影：读起来像"嵌进去"。
+		# ★ 2026-11-08：原来 4px α0.40 画在 rad-6.5，正好压在地图内容边缘 ——
+		#   玩家看到的是"圆盘内沿有一圈黑边，左侧像缺了一块"。现在收窄到 2px α0.26。
+		draw_arc(ctr, rad - 5.0, 0.0, TAU, 160, Color(0.0, 0.0, 0.0, 0.26), 2.0, true)
 		# 四向刻度（方向感，不是装饰）
 		for i in 4:
 			var a: float = TAU * float(i) / 4.0 - PI * 0.5
@@ -154,7 +159,8 @@ func _update_material() -> void:
 	var ctr: Vector2 = mr.position + mr.size * 0.5
 	_mat.set_shader_parameter("size_px", size)
 	_mat.set_shader_parameter("center_px", ctr)
-	_mat.set_shader_parameter("radius_px", minf(mr.size.x, mr.size.y) * 0.5 - 1.0)
+	# +1：让遮罩边界落在圆盘外沿之外，圆边不会被自己的 discard 削掉一圈
+	_mat.set_shader_parameter("radius_px", minf(mr.size.x, mr.size.y) * 0.5 + 1.0)
 
 
 ## 图例：圆盘下方一条横排（我方 / 敌军 / 金矿 / 树林）。
@@ -234,8 +240,10 @@ func _sync_world_size() -> void:
 ## 旧版留 4px 边 + 底部图例占 34px，于是圆盘比控件小一圈、还偏上 ——
 ## 玩家看到的"小地图没对齐圆圈"就是这两件事叠起来的。
 func _map_rect() -> Rect2:
-	# 四周留 7px 给边框：地形不再顶到控件边缘，圆形裁剪也就不会把内容切出"毛边"
-	var side: float = maxf(16.0, minf(size.x, size.y) - 14.0)
+	# 四周只留 4px 给边框：**圆盘必须铺满金环**。
+	# 2026-11-08 玩家第三次反馈「左边还是部分地区显示不全」——真凶是这里留了 14px，
+	# 圆盘半径比金环小 6px，加上 RingFrame 的内阴影，左侧看起来像被啃掉一条。
+	var side: float = maxf(16.0, minf(size.x, size.y) - 8.0)
 	# ★ 2026-11-08 玩家报「小地图圆形右侧区域不显示」：
 	#   旧版固定从 (7,7) 起画，控件一旦不是正方形（布局过渡帧 / 换分辨率），
 	#   圆盘就贴在左边，金环却按控件中心画 —— 右边那半圈看着就是"空的"。
@@ -349,6 +357,8 @@ func _draw() -> void:
 
 	# --- 野怪营地（压在迷雾之上、单位点之下：先看"哪有营地"，再看"谁在那"）---
 	_draw_creep_camps()
+	# --- 据点（地图中心）：常驻一个金色菱形；箱子在场时里面多一颗亮点 ---
+	_draw_strongpoint()
 
 	# --- 单位/建筑 ---
 	var pl := Game.player_faction
@@ -452,6 +462,10 @@ func _draw_creep_camps() -> void:
 		if nd == null or not is_instance_valid(nd) or not nd.has_method("camps"):
 			continue
 		for c in nd.call("camps"):
+			# ★ 2026-11-08 玩家口径：失落阵营的窝被拆掉 → 小地图图标必须消失。
+			#   判据是营地锚点建筑还活着（`anchor_alive`，由 野怪营地.camps() 提供）。
+			if not bool(c.get("anchor_alive", true)):
+				continue
 			var pos3: Vector3 = c.get("pos", Vector3.ZERO)
 			# ★ 2026-11-07 玩家口径「野怪营地要在小地图上有图标」：
 			#   取消"探索过才显示"的过滤 —— 迷雾初始全未探索，营地一片空白，
@@ -473,6 +487,31 @@ func _draw_creep_camps() -> void:
 				var bone := Color(0.93, 0.91, 0.84, 0.95)
 				draw_line(p + Vector2(-arm, -arm), p + Vector2(arm, arm), bone, 1.4)
 				draw_line(p + Vector2(-arm, arm), p + Vector2(arm, -arm), bone, 1.4)
+
+
+## **据点**（2026-11-08 玩家口径：「据点要在小地图上有显示」）。
+##
+## 常驻画一个小金菱形（地图信息，和营地图标同级：不按迷雾过滤）；
+## 资源箱在场时菱形里多一颗亮心 + 一圈脉冲环，一眼看出"现在能去抢"。
+func _draw_strongpoint() -> void:
+	var sp: Node = Game.strongpoint
+	if sp == null or not is_instance_valid(sp):
+		return
+	var p: Vector2 = _world_to_map(sp.get("center") as Vector3)
+	var r: float = 5.2
+	var outer := PackedVector2Array([
+		p + Vector2(0.0, -r), p + Vector2(r, 0.0), p + Vector2(0.0, r), p + Vector2(-r, 0.0)])
+	var active: bool = bool(sp.get("crate_active"))
+	var col: Color = Color(1.0, 0.84, 0.36, 0.96) if active else Color(0.80, 0.72, 0.50, 0.90)
+	# 黑底先铺：亮草地上也咬得住
+	_fill_poly_uv(outer, Color(0.0, 0.0, 0.0, 0.62))
+	var inner := PackedVector2Array()
+	for q in outer:
+		inner.append(p + (q - p) * 0.72)
+	_fill_poly_uv(inner, col)
+	if active:
+		_dot_uv(p, 2.2, Color(1.0, 0.98, 0.86, 0.95))
+		draw_arc(p, r + 3.0, 0.0, TAU, 24, Color(1.0, 0.86, 0.40, 0.55), 1.2, true)
 
 
 ## 营地图标纹理（按 icon key 缓存；缺失返回 null，由调用方降级画圆点）

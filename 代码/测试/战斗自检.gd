@@ -58,6 +58,7 @@ func _运行() -> void:
 		_用例G_近战打建筑()
 		_用例G2_多近战围楼()
 		_用例H_最大射程()
+		_用例I_挨打找敌人()
 	报告["失败项"] = 失败
 	报告["结果"] = "通过" if 失败.is_empty() else "失败"
 	报告["耗时(毫秒)"] = Time.get_ticks_msec() - 开始
@@ -655,3 +656,41 @@ func _用例H_最大射程() -> void:
 	(靶 as Node3D).global_position = (兵 as Node3D).global_position + Vector3(超远, 0.0, 0.0)
 	if float(兵.call("_target_gap", 靶)) <= 攻击圈:
 		失败.append("H 攻击圈：中心距 %.2fm（边界外 0.4m）还能打到" % 超远)
+
+# ===========================================================================
+# I · 挨打找敌人（2026-11-08 玩家口径）
+# ===========================================================================
+
+## 「单位要有索敌机制，范围和视野一致；如果视野内没有敌人仍然被攻击，
+##   就随机向一个方向移动一段距离寻找可能的敌人（范围不要超过原先的视野范围）。」
+##
+## 判据：
+##   ① 伤害来自 20m 外（远于视野 11m）→ 必须转入 MOVE 并真的走起来；
+##   ② 走的距离 ≤ 视野半径（不许"一挨打跑半张图"）；
+##   ③ 视野内**有**敌人时不许乱跑（那是还击，不是找人）。
+func _用例I_挨打找敌人() -> void:
+	var 基: Vector3 = 关卡.call("base_center", 游戏.get("player_faction"))
+	var 位: Vector3 = 关卡.call("walkable_pos", 基 + Vector3(-14.0, 0.0, 22.0))
+	var 兵 = _造单位("player_faction", &"footman", 位)
+	if 兵 == null:
+		return
+	# 远在视野外的敌人（只用来当"攻击来源"，不参与索敌）
+	var 远 = _造单位("enemy_faction", &"archer", 位 + Vector3(20.0, 0.0, 0.0), 99999.0)
+	if 远 == null:
+		return
+	var 视: float = float(兵.def.sight_range)
+	var 起: Vector3 = (兵 as Node3D).global_position
+	兵.set("order", 指令.get("NONE", 0))
+	兵.set("order_owner", 0)
+	兵.call("take_damage", 5.0, 0, 远)
+	_走(2.0)
+	var 末: Vector3 = (兵 as Node3D).global_position
+	var 位移: float = _平面距(起, 末)
+	var 指令名2: String = _指令名(int(兵.order))
+	_记("I_挨打找敌人", {
+		"视野(米)": "%.1f" % 视, "位移(米)": "%.2f" % 位移, "当前指令": 指令名2,
+	})
+	if 位移 < 0.8:
+		失败.append("I 挨打找敌人：视野外挨打后原地不动（位移 %.2f）" % 位移)
+	if 位移 > 视 + 1.5:
+		失败.append("I 挨打找敌人：走的距离 %.1f 超过视野 %.1f" % [位移, 视])

@@ -305,14 +305,21 @@ func camp_faction_of(idx: int) -> RtsFaction:
 	return _camps[idx].get("faction", null) as RtsFaction
 
 
-## 每座营地一行：{pos, name, icon, alive, total, respawn_left}
+## 每座营地一行：{pos, name, icon, alive, total, respawn_left, anchor_alive}
+##
+## `anchor_alive` = 营地那座锚点建筑还活着没有。小地图靠它决定"图标画不画"：
+## 失落阵营的窝被拆了，图标必须跟着消失（2026-11-08 玩家口径）。
 func camps() -> Array:
 	var out: Array = []
 	for camp in _camps:
 		var d: Resource = camp["def"]
 		var left: float = float(camp["respawn_left"]) if bool(camp["waiting"]) else 0.0
+		var anchor: Node = camp.get("anchor", null)
+		var anchor_alive: bool = anchor != null and is_instance_valid(anchor) \
+				and (not anchor.has_method("is_alive") or bool(anchor.call("is_alive")))
 		out.append({
 			"pos": camp["pos"],
+			"anchor_alive": anchor_alive,
 			"name": String(d.get("display_name")),
 			"icon": String(d.get("minimap_icon")),
 			"alive": _alive_units(camp).size(),

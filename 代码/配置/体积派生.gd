@@ -34,6 +34,13 @@ const SAMPLES: Array[float] = [0.6, 0.8, 0.9, 1.0, 1.1, 1.2, 1.4, 1.8, 2.4]
 ## 体积下限：小于它的体积一定是填错了（0 = 没填，走回退）
 const VOLUME_MIN := 0.2
 
+## **判定圈贴体余量**（2026-11-08 玩家拍板：选模式 2，但圈要"更贴切"）。
+##
+## 模式 2 的半径 = 体积 ÷ 2 = 旧 body_radius，正好压在模型轮廓上：
+## 方块人的肩/披风比碰撞圆宽一点，圈画在 0.50 时会切进模型边缘。
+## 乘 1.08 之后（步兵 0.54）圈刚好贴住轮廓 —— 圈内一定打得中、圈外看起来也说得通。
+const JUDGE_MARGIN := 1.08
+
 
 ## **模型缩放**：体积就是"相对标准体型的倍数"，1.0 = 模型原尺寸。
 ## 这条三种模式都一样 —— 玩家要的是"体积大了模型就大"。
@@ -70,7 +77,8 @@ static func radius_for_mode(volume: float, mode: int, separate_radius: float = 0
 		MODE_RADIUS_EQUALS_VOLUME:
 			return clampf(volume, 0.1, 4.0)
 		MODE_RADIUS_IS_HALF:
-			return clampf(volume * 0.5, 0.1, 4.0)
+			# 模式 2：体积写"直径"，半径 = 体积 ÷ 2，再乘贴体余量（见 JUDGE_MARGIN）
+			return clampf(volume * 0.5 * JUDGE_MARGIN, 0.1, 4.0)
 		_:
 			return maxf(separate_radius, 0.1)
 

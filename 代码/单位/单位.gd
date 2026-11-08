@@ -194,6 +194,8 @@ var star_level: int = 0
 var kill_count: int = 0
 ## 最后一次打在身上的伤害来源（死亡时用它做击杀归因）
 var _last_attacker: Node3D = null
+## 挨打后"去找人"的剩余时间（秒）；>0 时不再重复触发（防抖）
+var _search_t: float = 0.0
 ## 法力（只有定义里 max_mana > 0 的单位才有；UI 的"蓝条"读它）
 var mana: float = 0.0
 var state: int = RtsConst.State.IDLE
@@ -690,9 +692,52 @@ func take_damage(amount: float, _type: int, from: Node3D) -> void:
 			if _target_gap(from) <= _attack_reach(from):
 				if target == null or not is_instance_valid(target) or not target.is_alive():
 					target = from
+	# ★ 2026-11-08 玩家口径：视野内没有敌人却挨打 → 朝随机方向走一段去找
+	#   （距离不超过原视野）。只在"没目标 + 视野里真没人"时触发，带 2.5s 冷却。
+	if from != null and is_instance_valid(from) and target == null and _search_t <= 0.0:
+		if not _has_visible_foe_in_sight():
+			_search_for_threat()
 	# 农民挨打就往基地跑，别站那儿送死
 	if def != null and RtsWorld.is_worker_def(def):
 		_flee(from)
+
+
+## 视野内有没有**看得见**的敌人（搜索触发判据；和索敌同一个可见性出口）
+func _has_visible_foe_in_sight() -> bool:
+	if def == null or faction == null:
+		return false
+	var r: float = maxf(def.sight_range, def.acquire_range)
+	var cand: Node3D = Game.find_nearest_enemy(global_position, faction, r)
+	if cand == null:
+		return false
+	return Game.is_node_visible_to(faction, cand)
+
+
+## **挨打找敌人**：视野里没人却被打了，就朝一个随机方向走一段（≤ 视野半径）。
+##
+## 三条约束：
+##   ① 玩家亲自下的指令不抢（只在空闲/AI 归属时可触发）；
+##   ② 走的方向随机（按实例 id 散开，同一帧挨打的一队人不会挤成一条线）；
+##   ③ 距离 = 视野 × 0.55，且封顶在视野半径内 —— 不允许"一挨打就跑半张图"。
+func _search_for_threat() -> void:
+	if def == null or not is_mobile():
+		return
+	if _retreat or _flee_t > 0.0 or _inside_site != null:
+		return
+	if order != RtsConst.Order.NONE and order_owner != 0:
+		return
+	var sight: float = maxf(def.sight_range, 4.0)
+	var dist: float = clampf(sight * 0.55, 2.5, sight)
+	var ang: float = fposmod(float(get_instance_id() % 997) * 0.6180339887, 1.0) * TAU
+	var dir := Vector3(cos(ang), 0.0, sin(ang))
+	var goal: Vector3 = RtsWorld.walkable_pos(global_position + dir * dist)
+	_search_t = SEARCH_SEEK_TIME
+	order = RtsConst.Order.MOVE
+	_acquire_grace = 0.0          # 行军照常索敌（不然"找人"路上反而瞎了）
+	_goal = goal
+	move_target = goal
+	_go_to(goal, true)
+	state = RtsConst.State.MOVE
 
 
 ## 减速（火球附带）：移速 ×ratio，持续 time 秒
@@ -724,6 +769,8 @@ func _flee(_from: Node3D) -> void:
 
 ## 到家判定（米）：进这个圈就算收队完成，可被 AI 重新编入进攻队列
 const RETREAT_ARRIVE: float = 6.0
+## 挨打找人走多久算一次（秒）：0 之前不重复触发，避免每一下平A都改道
+const SEARCH_SEEK_TIME: float = 2.5
 ## 回血后重新参战的门槛（最大血比例）。低于它就继续待在家。
 const RETREAT_RECOVER: float = 0.62
 ## 基地圈内的回血速度（每秒最大血比例）。没有这层，"残血→撤退→又残血"会无限循环：
@@ -1468,6 +1515,8 @@ func _is_fully_idle() -> bool:
 ## 各种计时器
 func _tick_timers(dt: float) -> void:
 	_attack_cd = maxf(_attack_cd - dt, 0.0)
+	if _search_t > 0.0:
+		_search_t = maxf(_search_t - dt, 0.0)
 	if _acquire_grace > 0.0:
 		_acquire_grace = maxf(_acquire_grace - dt, 0.0)
 	_ability_cd = maxf(_ability_cd - dt, 0.0)
@@ -2940,7 +2989,11 @@ func _acquire(dt: float, radius_scale: float = 1.0) -> void:
 		return
 	_think_t = THINK_SLICE
 	var pursue: bool = _may_pursue()
-	var scan_r: float = def.acquire_range if pursue else _guard_radius()
+	# ★ 2026-11-08 玩家口径「索敌范围和视野一致」：
+	#   以前追击用 acquire_range、待机用 _guard_radius（近战只有 3.3m），
+	#   于是"视野 11m 却看不见 4m 外的敌人"。现在两种情形都用**视野**，
+	#   行军时的 45% 缩减仍由 radius_scale 控制。
+	var scan_r: float = maxf(def.sight_range, def.acquire_range if pursue else _guard_radius())
 	var radius: float = scan_r * radius_scale
 	if radius <= 0.0:
 		return

@@ -67,6 +67,10 @@ var _title: Label = null
 var _bullet: Control = null
 var _tag: Label = null
 var _rule: Control = null
+## 数值行左侧那条**竖版**经验条（单选一个兵时出现；2026-11-08）
+var _exp: RtsExpBar = null
+## 数值区的横排：左边竖版经验条 + 右边三行数值
+var _body: HBoxContainer = null
 var _page_box: HBoxContainer = null
 var _page_prev: Button = null
 var _page_next: Button = null
@@ -155,12 +159,35 @@ func ensure_built() -> void:
 	_rule.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_rule)
 
+	# --- 数值区：**左竖版经验条 + 右三行数值**（2026-11-08 玩家第三轮口径）---
+	#   玩家原话：「不要放在信息面板外，是内嵌在信息面板、在显示单位近战或远程的
+	#   下方，仍然是竖版经验条」——所以它是数值区里的一个 18px 竖槽，
+	#   从金线下面一直拉到面板底部，和攻击/护甲/移速并排。
+	_body = HBoxContainer.new()
+	_body.name = "数值区"
+	_body.add_theme_constant_override("separation", 10)
+	_body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_body.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(_body)
+
+	_exp = RtsExpBar.new()
+	_exp.visible = false
+	_exp.custom_minimum_size = Vector2(RtsExpBar.W, 0.0)
+	_exp.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_body.add_child(_exp)
+	# 悬停：这一星多少经验 / 还差多少升级 / 下一星叫什么
+	RtsTipLayer.bind(self, _exp, func() -> Dictionary:
+		if _units.size() != 1:
+			return {}
+		return Lex.exp(_units[0] as Node3D))
+
 	# --- 竖排数值（单选时出现）---
 	_stats = RtsStatColumn.new()
 	_stats.name = "数值"
 	_stats.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_stats.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_root.add_child(_stats)
+	_body.add_child(_stats)
 
 	# --- 多选清单 ---
 	_grid_wrap = HBoxContainer.new()
@@ -184,6 +211,24 @@ func ensure_built() -> void:
 	_empty = Spec.label("框选或点选单位后，这里列出队伍", Spec.FS_BODY, Spec.text_dim())
 	_empty.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_root.add_child(_empty)
+
+
+## 经验条：**只对兵**显示（建筑没有星级），内嵌在数值区左侧。
+##
+## 玩家 2026-11-08：「内嵌在信息面板、在显示单位近战或远程的下方」「做宽些」
+## 「仍然是竖版经验条」。所以它和攻击/护甲/移速排在同一行里，自己占一列。
+func _sync_exp(u: Node3D, d: UnitDef) -> void:
+	if _exp == null:
+		return
+	var is_unit: bool = d != null and d.kind == RtsConst.Kind.UNIT
+	_exp.visible = is_unit
+	if not is_unit:
+		return
+	var star: int = int(u.get("star_level")) if u.get("star_level") != null else 0
+	var cur: float = float(u.get("exp_value")) if u.get("exp_value") != null else 0.0
+	var need: float = float(u.call("exp_need")) if u.has_method("exp_need") else 60.0
+	var r: float = 1.0 if star >= 3 else clampf((cur - float(star) * need) / maxf(need, 1.0), 0.0, 1.0)
+	_exp.set_state(r, star, Spec.accent())
 
 
 ## 页码块："‹ 1 / 2 ›"（多于 16 个才出现；点箭头或滚轮翻页）
@@ -275,10 +320,11 @@ func content_height() -> float:
 ## 内容想要多宽（HUD 据此给中段定宽，**不再一路铺到命令卡**）
 func content_width() -> float:
 	if _units.size() == 1:
-		var want: float = 250.0
+		# 250 是"三行数值 + 名字"的旧宽度；经验条内嵌后要给它留一列（18 + 10 间距）
+		var want: float = 278.0
 		if _title != null:
-			want = maxf(want, _title.get_combined_minimum_size().x + 90.0)
-		return clampf(want, 236.0, 340.0)
+			want = maxf(want, _title.get_combined_minimum_size().x + 118.0)
+		return clampf(want, 264.0, 360.0)
 	# 多选时中段是"一路贴到命令卡"的，这里给个下限值就行
 	return 250.0
 
@@ -341,13 +387,22 @@ func _rebuild() -> void:
 		_title.text = "未选中"
 		_tag.text = ""
 		_stats.clear()
+		if _exp != null:
+			_exp.visible = false
 		return
 	if single:
 		var d: UnitDef = (_units[0] as Node3D).def
 		_title.text = d.display_name if d != null else "单位"
-		_tag.text = Lex.kind_name(d)
+		# ★ 2026-11-08 玩家口径：「做完后把近战远程这种字眼删除」。
+		#   兵的定位词（近战/远程/采集/辅助）在这一版信息面板里不再出现；
+		#   建筑仍留一个"建筑"当分类提示（不是被点名的字眼）。
+		_tag.text = "建筑" if (d != null and d.is_building()) else ""
+		_tag.visible = not _tag.text.is_empty()
 		_feed_single(_units[0] as Node3D, d)
+		_sync_exp(_units[0] as Node3D, d)
 		return
+	if _exp != null:
+		_exp.visible = false
 	var same_id: StringName = &""
 	var same: bool = true
 	for u in _units:

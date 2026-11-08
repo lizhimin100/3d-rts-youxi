@@ -33,9 +33,11 @@ func _ready() -> void:
 func _run() -> void:
 	await _wait(0.4)
 
-	# --- 1. 营地表：3 个定义 + 反查命中 ---
+	# --- 1. 营地表：定义 + 反查命中 ---
+	# 数量只做下限：玩家在编辑器里「新建」的营地卡会往里加（`camp_creep_den_1` 就是这么来的），
+	# 写死 3 会让这条检查在"卡变多了"时假红。
 	var defs: Array = CAMP_TABLE.all()
-	_check(defs.size() == 3, "营地表读到 3 个定义（实 %d）" % defs.size())
+	_check(defs.size() >= 3, "营地表读到 ≥3 个定义（实 %d）" % defs.size())
 	var summary: Array = []
 	for d in defs:
 		summary.append({
@@ -81,6 +83,14 @@ func _run() -> void:
 	if _camps == null:
 		_finish()
 		return
+	# ★ 自检要"开局就刷"才有得测：卡上的 `first_spawn_min` 是可以配到 120 分钟的
+	#   （编辑器新建卡的默认值），那种营地**按设计**在开局几秒内就是空的 ——
+	#   不把它拨到 0，下面"刷出 3 只"就会永远假红。改的是内存里的 Resource，
+	#   不写回 .tres，跑完就没了。
+	var test_def: Resource = CAMP_TABLE.for_den(&"creep_den")
+	if test_def != null:
+		test_def.set("first_spawn_min", 0.0)
+		test_def.set("spawn_interval_min", 0.0)
 	_camps.call("setup", neutral)
 	_check(int(_camps.call("camp_count")) == 1, "识别到 1 座营地（实 %d）"
 		% int(_camps.call("camp_count")))
@@ -130,6 +140,19 @@ func _run() -> void:
 	_check(int(row3.get("alive", -1)) == 3 and int(row3.get("total", -1)) == 3,
 		"补满后 camps() alive/total = 3/3（实 %d/%d）"
 		% [int(row3.get("alive", -1)), int(row3.get("total", -1))])
+
+	# --- 6. 锚点被拆 → 小地图图标必须消失（2026-11-08 玩家口径）---
+	#   小地图不读营地存活数，只读 `anchor_alive`（见 代码/界面/小地图.gd `_draw_creep_camps`）。
+	#   这里验的就是那条契约：锚点死了，camps() 那一行必须把 anchor_alive 报成 false；
+	#   否则"失落阵营的窝被拆了，小地图上还挂着一个图标"。
+	var row4: Dictionary = _camp_row(pos)
+	_check(bool(row4.get("anchor_alive", false)), "拆之前 camps().anchor_alive = true")
+	_den.call("take_damage", float(_den.get("hp")) + 1.0, 0, null)
+	await _wait(0.3)
+	var row5: Dictionary = _camp_row(pos)
+	_check(not row5.is_empty(), "锚点被拆后 camps() 仍然列出这座营地（由小地图按 anchor_alive 过滤）")
+	_check(not bool(row5.get("anchor_alive", true)),
+		"锚点被拆后 camps().anchor_alive = false（小地图图标会消失）")
 
 	_report["营地表"] = summary
 	_finish()
