@@ -86,6 +86,8 @@ var fog_node: Node = null
 ##   不要再各自去 `get_parent().get("day_night")` 或者 get_node("../日夜") —— 那是
 ##   "谁挂谁知道"的写法，换层级就静默失效（踩过：营火白天不灭、AI 夜里出门）。
 var day_night: Node = null
+## 地图据点（资源箱）。由主场景挂在关卡里；AI/HUD 只读它的公开方法。
+var strongpoint: Node = null
 
 
 ## 现在是不是夜里（没有日夜系统 = 永远白天）

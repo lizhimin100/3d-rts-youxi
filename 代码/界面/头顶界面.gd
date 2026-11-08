@@ -42,6 +42,8 @@ var _guards: Array = []
 var _sites: Array = []
 ## 有星级的单位（含敌方：野怪/敌兵升星也是情报）
 var _stars: Array = []
+## 地图据点（资源箱）。没有 = 不画
+var _sp: Node = null
 var _site_t: float = 0.0
 
 const COL_HOLD := Color(0.55, 0.76, 1.0)
@@ -206,6 +208,9 @@ func _draw() -> void:
 		icons += 1
 
 	# --- ③ 星级图标（老兵 / 精英 / 王牌）---
+	# --- ③.5 据点资源箱：头顶一块小牌（剩余时间 / 占领进度）---
+	_draw_strongpoint(cam, cam_pos, vp)
+
 	var drawn_star: int = 0
 	for u3 in _stars:
 		if drawn_star >= MAX_STARS:
@@ -275,6 +280,48 @@ func _anchor_of(u: Node3D) -> Vector3:
 		if u.def.is_building():
 			h *= 0.92
 	return u.global_position + Vector3(0.0, h + 0.45, 0.0)
+
+
+## 据点资源箱头顶的小牌（2026-11-08）。
+##
+## 两种文案：
+##   · 没人占 → 「据点 · 资源箱」（提示"这里有钱，去站 15 秒"）
+##   · 有人在占 → 「占领 N/15s」+ 底部进度线，颜色 = 占据方阵营色
+func _draw_strongpoint(cam: Camera3D, cam_pos: Vector3, vp: Vector2) -> void:
+	if _sp == null or not is_instance_valid(_sp):
+		_sp = get_tree().get_first_node_in_group("strongpoint")
+	if _sp == null or not is_instance_valid(_sp):
+		return
+	if not bool(_sp.get("crate_active")):
+		return
+	var top: Vector3 = _sp.call("crate_pos") + Vector3(0.0, 2.9, 0.0)
+	if cam.is_position_behind(top):
+		return
+	if cam_pos.distance_to(top) > 160.0:
+		return
+	var sp: Vector2 = cam.unproject_position(top)
+	if sp.x < -200.0 or sp.y < -200.0 or sp.x > vp.x + 200.0 or sp.y > vp.y + 200.0:
+		return
+	var ratio: float = float(_sp.call("hold_ratio"))
+	var holder: RtsFaction = _sp.get("holder") as RtsFaction
+	var txt: String = "据点 · 资源箱"
+	var col: Color = Color(1.0, 0.88, 0.52)
+	if ratio > 0.001 and holder != null:
+		txt = "占领 %d/%ds" % [int(ceil(ratio * 15.0)), 15]
+		col = holder.color.lerp(Color.WHITE, 0.35)
+	var font: Font = ThemeDB.fallback_font
+	var fs: int = maxi(int(round(15.0 * zoom)), 9)
+	var ts: Vector2 = font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+	var pad := Vector2(7.0, 3.0) * zoom
+	var box := Rect2(sp.x - (ts.x + pad.x * 2.0) * 0.5, sp.y - ts.y - pad.y * 2.0,
+			ts.x + pad.x * 2.0, ts.y + pad.y * 2.0)
+	draw_rect(box, Color(0.05, 0.05, 0.045, 0.86), true)
+	draw_rect(box, Color(col.r, col.g, col.b, 0.72), false, 1.0 * zoom)
+	if ratio > 0.001:
+		draw_rect(Rect2(box.position.x, box.end.y - 2.0 * zoom, box.size.x * ratio, 2.0 * zoom),
+				col, true)
+	draw_string(font, Vector2(box.position.x + pad.x, box.position.y + pad.y + ts.y * 0.82),
+			txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
 
 
 ## **星级图标**（仿红警）：一排 n 颗金星，中心在 center。

@@ -213,6 +213,19 @@ func _ready() -> void:
 		day_night.call("debug_set_hour", _qa_hour)
 		print("[QA] 时钟 → %.1f 时（白昼程度 %.2f）" % [
 			_qa_hour, float(day_night.call("light_level"))])
+	# 4.99 **地图据点**（2026-11-08）：地图中心，开局 3 分钟刷资源箱，占 15 秒归占据方，
+	#      之后每 2 分钟一次。挂在关卡下（跟着地图走），AI/HUD 通过 Game.strongpoint 读。
+	var sp: Node = _mount_script("res://代码/系统/据点.gd", "据点")
+	if sp != null and level != null:
+		var mid: Vector3 = RtsWorld.walkable_pos(Vector3.ZERO)
+		sp.call("setup", mid)
+		Game.strongpoint = sp
+		# QA：--qa-crate 立刻把资源箱刷出来（不用等 3 分钟），镜头对准据点
+		if "--qa-crate" in OS.get_cmdline_user_args():
+			sp.call("_spawn_crate")
+			if camera != null and camera.has_method("focus_on"):
+				camera.call("focus_on", mid)
+			print("[QA] 据点资源箱已刷出 @%.0f,%.0f" % [mid.x, mid.z])
 	# QA：--qa-spawn=<id>[,<id>…] 在玩家基地旁直接生成（验收新单位/建筑能不能跑起来）
 	_qa_spawn_stuff()
 	# QA：--qa-arrow 沿 +X 射一箭，10 帧后把箭身朝向打出来（验收"箭是不是歪的"）

@@ -598,6 +598,8 @@ func _think_once(diff: DifficultyDef) -> void:
 		_t0 = Time.get_ticks_usec()
 		_manage_retreat()
 		_manage_defense(diff)
+		# ★ 2026-11-08 据点：地图中心的资源箱值不值得派人去占（家里挨打时不抢）
+		_manage_strongpoint()
 		if Game.is_night():
 			_manage_night(diff)
 		else:
@@ -2652,6 +2654,78 @@ static func _dhash01(a: int, b: int) -> float:
 	h = (h ^ (h >> 13)) * 1274126177
 	h = h ^ (h >> 16)
 	return float(h & 0x7FFFFFFF) / 2147483648.0
+
+
+# ===========================================================================
+# 据点（2026-11-08 · 地图中心资源箱）
+# ===========================================================================
+
+## 一次最多派几个人去占点（人多没用，圈里 15 秒就够；多了是浪费兵力）
+const STRONGPOINT_SEND_MAX: int = 3
+## 两次派兵之间的最短间隔（秒），避免同一 tick 反复下重叠命令
+const STRONGPOINT_CD: float = 8.0
+var _strongpoint_cd: float = 0.0
+
+
+## **判断据点价值 → 派兵占点**。
+##
+## 玩家口径：「AI 和副官要会判断据点价值、派兵占点、增加资源收入。」
+## 价值判断交给 `据点.value_score()`（一个出口，别在这里重写）：
+##   0    没箱子 / 我们已经稳拿 → 不动
+##   0.25 我们正在圈里计时 → 交给驻防，不动
+##   1.0  空圈 → 值，派 3 个人
+##   1.2  混战 → 值，派 3 个人
+##   1.6  敌人在占 → 最急，派 3 个人
+##
+## 三条硬约束（不做就会变成"AI 一有箱子就全家出门"）：
+##   ① 家里有敌军（**只算玩家对手**，野怪不算）→ 不抢；
+##   ② 现役战斗兵 < 4 → 不抢（连家门都守不住时别谈扩张）；
+##   ③ 圈里已经站满 3 个人 → 不重复派。
+func _manage_strongpoint() -> void:
+	if _faction == null:
+		return
+	var sp: Node = Game.strongpoint
+	if sp == null or not is_instance_valid(sp):
+		return
+	if not bool(sp.get("crate_active")):
+		return
+	if _strongpoint_cd > 0.0:
+		_strongpoint_cd -= maxf(think_scale, 0.1)
+		return
+	if _threat_units(true).size() > 0:
+		return
+	var army: Array = _combat_units(true)
+	if army.size() < 4:
+		return
+	var score: float = float(sp.call("value_score", _faction))
+	if score <= 0.3:
+		return
+	var pos: Vector3 = sp.call("crate_pos")
+	var radius: float = float(sp.get("CAPTURE_RADIUS"))
+	var already: int = 0
+	var pool: Array = []
+	for u in army:
+		if u == null or not is_instance_valid(u):
+			continue
+		if u.global_position.distance_to(pos) <= radius + 2.0:
+			already += 1
+			continue
+		if u.call("is_idle_like"):
+			pool.append(u)
+	var want: int = STRONGPOINT_SEND_MAX - already
+	if want <= 0 or pool.is_empty():
+		return
+	# 近的先派（走到地图中心的时间差一倍以上）
+	pool.sort_custom(func(a, b):
+		return a.global_position.distance_to(pos) < b.global_position.distance_to(pos))
+	var sent: int = 0
+	for u in pool:
+		if sent >= want:
+			break
+		_sched.attack_move([u], pos, "strongpoint")
+		sent += 1
+	if sent > 0:
+		_strongpoint_cd = STRONGPOINT_CD
 
 
 func _manage_patrol(_diff: DifficultyDef) -> void:
