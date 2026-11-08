@@ -3691,7 +3691,12 @@ func _update_wall_pushout(dt: float) -> void:
 		_pushout_has = false
 		return
 	# 砍楼贴墙例外：正在砍的那栋楼，只要没进楼里就不推
-	var hug := _wall_approach as RtsBuilding
+	# ⚠ 不能直接写 `_wall_approach as RtsBuilding`：目标楼可能已经被拆掉（实例已释放），
+	#   对已释放实例做类型转换会每帧报 "Trying to cast a freed object"（实测一局 10 条）。
+	#   先判有效再转，语义完全一样（freed → hug=null → 跳过贴墙例外）。
+	var hug: RtsBuilding = null
+	if _wall_approach != null and is_instance_valid(_wall_approach):
+		hug = _wall_approach as RtsBuilding
 	if hug != null and is_instance_valid(hug) \
 			and hug.distance_to_footprint(global_position) <= 3.0 \
 			and hug.distance_to_footprint(global_position) >= get_radius() + WALL_HUG_EPS:

@@ -204,7 +204,11 @@ func _pump_spawn() -> void:
 ## 唯一判据（`camps()` 和小地图、刷怪循环共用这一个出口）：
 ## 节点被释放 = 没了；有 `is_alive()` 且为 false = 被拆了。
 func _anchor_alive(camp: Dictionary) -> bool:
-	var anchor: Node = camp.get("anchor", null)
+	# ⚠ 这里**不能写成 var anchor: Node = camp.get(...)**：营地锚点被拆掉后是"已释放实例"，
+	#   带类型赋值在赋值那一刻就会报 "Trying to assign invalid previously freed instance"
+	#   （每帧画小地图刷一条，实测一局 143 条），而且赋值完还是 null。
+	#   先收进无类型变量、再 is_instance_valid 判，语义完全一样且不刷错误。
+	var anchor = camp.get("anchor", null)
 	if anchor == null or not is_instance_valid(anchor):
 		return false
 	if anchor.has_method("is_alive"):

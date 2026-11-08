@@ -5521,6 +5521,13 @@ func _goal_switch(from_id: String, to_id: String, reason: String, now: float) ->
 		seq.remove_at(0)
 
 
+## 目标的「动作|对象」键：判断"是不是同一条活"一律用它，**不要用 id**。
+## 为什么：提案 id 是按"本线本周期第几条"重编的，前面那条一消失，后面整体前移；
+## 而落库的目标 id 是**开目标那一刻**的编号 —— 两者会漂。动作|对象 不漂。
+func _goal_key(g: Dictionary) -> String:
+	return "%s|%s" % [String(g.get("动作", "")), String(g.get("对象", ""))]
+
+
 ## 本周期"还没被采纳的最高分建议"——只用来判抢占（不能拿当前主/次自己来抢自己）。
 ##
 ## ★ 2026-11-08 修「自己抢占自己」：次目标是拿 `Sub_` 前缀另起 id 落库的
@@ -5531,12 +5538,25 @@ func _goal_switch(from_id: String, to_id: String, reason: String, now: float) ->
 ##   所以排除条件必须把带 `Sub_` 前缀的那条 id 也算进来。
 func _goal_best_new(props: Array) -> Dictionary:
 	var best: Dictionary = {}
+	# ★ 2026-11-08（第二道闸）：除了按 id 排（含 `Sub_` 前缀），**再按「动作|对象」排一遍**。
+	#   原因：提案 id 是"每周期按本线第几条重编"的（Yy001/Yy002…），前面那条提案一消失
+	#   （农场一开工就不再报建造、兵营一到位就不再报扩建），后面所有人的序号整体前移 ——
+	#   于是"同一个 动作|对象 的原提案"下一周期可能叫成另一个 id，`goals_active.has(pid)`
+	#   就匹配不上它自己，提案被当成全新建议 → 抢占 → 目标结束 → 4 秒冷却空窗。
+	#   按 动作|对象 排与 id 无关，正好补上这个洞：**同一条活干着的时候，它自己的提案
+	#   永远不会把自己抢掉**（不管 id 怎么漂）。
+	var active_keys: Dictionary = {}
+	for k in goals_active.keys():
+		var ag: Dictionary = goals_active[k]
+		active_keys[_goal_key(ag)] = true
 	for p in props:
 		if not (p is Dictionary):
 			continue
 		var g: Dictionary = p
 		var pid: String = String(g.get("id", ""))
 		if goals_active.has(pid) or goals_active.has("Sub_" + pid):
+			continue
+		if active_keys.has(_goal_key(g)):
 			continue
 		if not GL.proposal_valid(g):
 			continue
