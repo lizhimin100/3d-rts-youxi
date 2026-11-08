@@ -310,9 +310,11 @@ func _draw_strongpoint(cam: Camera3D, cam_pos: Vector3, vp: Vector2) -> void:
 		txt = "占领 %d/%ds" % [int(ceil(ratio * 15.0)), 15]
 		col = holder.color.lerp(Color.WHITE, 0.35)
 	var font: Font = ThemeDB.fallback_font
-	var fs: int = maxi(int(round(15.0 * zoom)), 9)
+	# 字号 15 → 18（2026-11-08 玩家「据点刷新的 UI 和字体做大点」）：
+	# 这块牌是玩家"走到据点附近唯一能读的东西"，15px 在 44m 默认视距下只有一个色块。
+	var fs: int = maxi(int(round(18.0 * zoom)), 11)
 	var ts: Vector2 = font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
-	var pad := Vector2(7.0, 3.0) * zoom
+	var pad := Vector2(9.0, 4.0) * zoom
 	var box := Rect2(sp.x - (ts.x + pad.x * 2.0) * 0.5, sp.y - ts.y - pad.y * 2.0,
 			ts.x + pad.x * 2.0, ts.y + pad.y * 2.0)
 	draw_rect(box, Color(0.05, 0.05, 0.045, 0.86), true)
