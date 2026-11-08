@@ -50,10 +50,33 @@ var _place_grid: MeshInstance3D = null
 var _place_mat: StandardMaterial3D = null
 var _place_key: String = ""
 
+## ---- 相机（2026-11-08 玩家口径：对齐实际游玩视角、禁止甩进虚空）----
+## 俯角：与游戏 魔兽镜头 / Cfg.game.camera_pitch_deg 一致（50°）
+const CAM_PITCH_DEG: float = 50.0
+## FOV：与 魔兽镜头.gd 的 cam.fov 一致（52）
+const CAM_FOV: float = 52.0
+## 缩放范围。上限不是「能拉多远」而是「拉远之后还看得见地图」
+const CAM_DIST_MIN: float = 12.0
+const CAM_DIST_MAX: float = 200.0
+## 默认距离：224m 图上大约看半张图，够认路又不至于只剩一个点
+const CAM_DIST_DEFAULT: float = 90.0
+## Ctrl+Shift+C 跳到玩家出生点时的距离（= Cfg.game.camera_distance_default 的手感）
+const CAM_DIST_PLAY: float = 32.0
+## 镜头能到地图边界外多少米（= Cfg.game.camera_bounds_margin）
+const CAM_BOUNDS_MARGIN: float = 4.0
+## 界外底板：尺寸 / 高度 / 颜色（地图外看到的深色，不是天空）
+const VOID_PLANE_SIZE: float = 4000.0
+const VOID_PLANE_Y: float = -14.0
+const VOID_COLOR := Color(0.030, 0.034, 0.042)
+## 距离雾（把远处压黑，进一步藏掉地图边界）
+const CAM_FOG_DENSITY: float = 0.0032
+
 var _yaw: float = deg_to_rad(32.0)
-var _pitch: float = deg_to_rad(-54.0)
-var _dist: float = 130.0
+var _pitch: float = deg_to_rad(-CAM_PITCH_DEG)
+var _dist: float = CAM_DIST_DEFAULT
 var _target: Vector3 = Vector3.ZERO
+## 界外底板（_build_world 里建）
+var _void_plane: MeshInstance3D = null
 
 var _dirty_terrain: bool = true
 var _dirty_objects: bool = true
@@ -126,7 +149,10 @@ func _build_viewport() -> void:
 	add_child(vp)
 	cam = Camera3D.new()
 	cam.name = "编辑相机"
-	cam.fov = 45.0
+	# ★ 透视投影 + 与游玩一致的 FOV/俯角（玩家口径「编辑器相机要和真玩起来一个视角」）
+	cam.projection = Camera3D.PROJECTION_PERSPECTIVE
+	cam.keep_aspect = Camera3D.KEEP_HEIGHT
+	cam.fov = CAM_FOV
 	cam.near = 0.1
 	cam.far = 1200.0
 	vp.add_child(cam)
@@ -157,7 +183,28 @@ func _build_world() -> void:
 		world_env.environment = env_res
 	else:
 		world_env.environment = _fallback_env()
+	# ★ 2026-11-08 玩家口径「地图外区域用黑色/深色雾效遮蔽，不直接暴露虚空」：
+	#   复制一份环境再改（战斗环境.tres 是共享资源，直接改会污染游戏里那一份），
+	#   把背景从天球换成近黑的纯色，再加一层薄的距离雾 —— 地图边界之外就是深色，
+	#   而不是一片天空/虚空。
+	world_env.environment = _mask_environment(world_env.environment)
 	vp.add_child(world_env)
+
+	# 地图外的「黑色底板」：一张极大的深色平面。地形只有地图那么大，
+	# 镜头看向边界外时看到的是这块板，不是天球。
+	_void_plane = MeshInstance3D.new()
+	_void_plane.name = "界外底板"
+	var pm := PlaneMesh.new()
+	pm.size = Vector2(VOID_PLANE_SIZE, VOID_PLANE_SIZE)
+	_void_plane.mesh = pm
+	var vmat := StandardMaterial3D.new()
+	vmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	vmat.albedo_color = VOID_COLOR
+	vmat.disable_receive_shadows = true
+	_void_plane.material_override = vmat
+	_void_plane.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_void_plane.position = Vector3(0.0, VOID_PLANE_Y, 0.0)
+	vp.add_child(_void_plane)
 
 	sun = DirectionalLight3D.new()
 	sun.name = "主光"
@@ -954,7 +1001,11 @@ func _update_camera() -> void:
 		return
 	# _pitch 是"向下看的俯角"（负数），所以相机高度要用 -sin(_pitch)
 	var cp := Vector3(cos(_pitch) * sin(_yaw), -sin(_pitch), cos(_pitch) * cos(_yaw)) * _dist
-	cam.global_position = _target + cp
+	var pos: Vector3 = _target + cp
+	# 地形保护：机位不许插进山体/台地里（只抬 y，不动俯角/距离/注视点）
+	var ground: float = _h(pos.x, pos.z)
+	pos.y = maxf(pos.y, ground + 3.0)
+	cam.global_position = pos
 	cam.look_at(_target, Vector3.UP)
 
 
@@ -1101,11 +1152,11 @@ func _handle_mouse_button(mb: InputEventMouseButton) -> void:
 	match mb.button_index:
 		MOUSE_BUTTON_WHEEL_UP:
 			if mb.pressed:
-				_dist = clampf(_dist * 0.88, 12.0, 520.0)
+				_dist = clampf(_dist * 0.88, CAM_DIST_MIN, CAM_DIST_MAX)
 				accept_event()
 		MOUSE_BUTTON_WHEEL_DOWN:
 			if mb.pressed:
-				_dist = clampf(_dist * 1.14, 12.0, 520.0)
+				_dist = clampf(_dist * 1.14, CAM_DIST_MIN, CAM_DIST_MAX)
 				accept_event()
 		MOUSE_BUTTON_MIDDLE:
 			if mb.pressed:
@@ -1377,6 +1428,12 @@ func _handle_mouse_motion(mm: InputEventMouseMotion) -> void:
 func _handle_key(k: InputEventKey) -> void:
 	if not k.pressed:
 		return
+	# ★ 2026-11-08 玩家口径：Ctrl+Shift+C 一键跳到「当前游戏玩家位置」（试玩机位）。
+	#   必须放在 match 之前：Ctrl+C 是复制，Ctrl+Shift+C 不能被它吃掉。
+	if k.keycode == KEY_C and k.ctrl_pressed and k.shift_pressed:
+		focus_player()
+		accept_event()
+		return
 	match k.keycode:
 		KEY_F:
 			if not session.selection.is_empty():
@@ -1411,9 +1468,9 @@ func _handle_key(k: InputEventKey) -> void:
 				_update_place_preview()
 				accept_event()
 		KEY_1:
-			_dist = clampf(_dist * 0.9, 12.0, 520.0)
+			_dist = clampf(_dist * 0.9, CAM_DIST_MIN, CAM_DIST_MAX)
 		KEY_2:
-			_dist = clampf(_dist * 1.1, 12.0, 520.0)
+			_dist = clampf(_dist * 1.1, CAM_DIST_MIN, CAM_DIST_MAX)
 
 
 func _on_right_click() -> void:
@@ -1486,7 +1543,13 @@ func _finish_box_select(pos: Vector2) -> void:
 # 拾取 / 射线
 # ===========================================================================
 
-## 屏幕点附近的对象（屏幕距离最小者；26px 内才算点到）
+## 屏幕点附近的对象（屏幕距离最小者；PICK_PIXELS 内才算点到）。
+##
+## ★ 2026-11-08 玩家口径「中心不可选中的树」：屏幕距离这一层对**树**太苛刻 ——
+##   树冠宽、树干细，模型中心投影点却只有一个像素位置；再加上密集林子里
+##   相邻树互相抢，就表现成「怎么点都点不中」。现在两层：
+##     ① 屏幕近邻（原有逻辑，树的吸附圈放大到 1.5 倍）；
+##     ② 落空时退到**射线命中**（竖直胶囊近似），点树冠/树干都能选中。
 func _pick(pos: Vector2) -> MapObject:
 	var best: MapObject = null
 	var best_d: float = PICK_PIXELS
@@ -1497,11 +1560,15 @@ func _pick(pos: Vector2) -> MapObject:
 		# 农民 1.6m 和兵营 7m 用同一个 lift 时，点单位头部就会偏出吸附圈，
 		# 表现就是"单位怎么点都选不中"。
 		var lift: float = 1.0
+		var pick_px: float = PICK_PIXELS
 		match int(o.category):
 			MapObject.Category.BUILDING:
 				lift = 3.0
+				pick_px = PICK_PIXELS * 1.6
 			MapObject.Category.RESOURCE:
 				lift = 1.4
+				# 树/金矿的模型比判定点大得多，吸附圈放大（否则林子中心几乎点不中）
+				pick_px = PICK_PIXELS * 1.5
 			MapObject.Category.UNIT:
 				var ud: UnitDef = MapLoader.type_def(o.type_id)
 				lift = maxf(0.9, (ud.height if ud != null else 1.7) * 0.55)
@@ -1510,10 +1577,84 @@ func _pick(pos: Vector2) -> MapObject:
 			continue
 		var sp: Vector2 = cam.unproject_position(wp)
 		var d: float = sp.distance_to(pos)
-		if d < best_d:
+		if d <= pick_px and d < best_d:
 			best_d = d
 			best = o
+	if best != null:
+		return best
+	# 第二层：射线命中（点树冠/树干、点子像很大的建筑都能选中）
+	return _pick_by_ray(pos)
+
+
+## 对象的拾取半径（米，射线命中用）：树 1.8m、单位 1.2m、建筑按占地。
+func _obj_pick_radius(o: MapObject) -> float:
+	match int(o.category):
+		MapObject.Category.BUILDING:
+			var fp: Vector2i = session.building_footprint(o.type_id)
+			return maxf(float(maxi(fp.x, fp.y)) * 0.6, 2.0)
+		MapObject.Category.RESOURCE:
+			return 1.8
+		MapObject.Category.UNIT:
+			return 1.2
+	return 1.2
+
+
+## 对象的近似高度（米，射线命中用）
+func _obj_pick_height(o: MapObject) -> float:
+	match int(o.category):
+		MapObject.Category.BUILDING:
+			var bd: UnitDef = MapLoader.type_def(o.type_id)
+			return maxf(3.0, bd.height if bd != null else 5.0)
+		MapObject.Category.RESOURCE:
+			return 4.0
+		MapObject.Category.UNIT:
+			var ud: UnitDef = MapLoader.type_def(o.type_id)
+			return maxf(1.0, ud.height if ud != null else 1.7)
+	return 1.5
+
+
+## **射线拾取**：射线与对象「竖直胶囊（底→顶，半径 r）」最近的那一个。
+## 编辑器里**不建碰撞体**（对象都是纯数据 + 预览实例），所以这里用解析近似，
+## 对「点树点不中」这类问题就是缺的那一层。
+func _pick_by_ray(screen_pos: Vector2) -> MapObject:
+	if cam == null or session == null or session.def == null:
+		return null
+	var from: Vector3 = cam.project_ray_origin(screen_pos)
+	var dir: Vector3 = cam.project_ray_normal(screen_pos)
+	var best: MapObject = null
+	var best_t: float = INF
+	for o in session.def.objects:
+		if o == null:
+			continue
+		var base := Vector3(o.position.x,
+			session.def.height_at(o.position.x, o.position.z), o.position.z)
+		var top: Vector3 = base + Vector3.UP * _obj_pick_height(o)
+		var r: float = _obj_pick_radius(o)
+		var t: float = _ray_vs_segment(from, dir, base, top, r)
+		if t < 0.0 or t >= best_t:
+			continue
+		best_t = t
+		best = o
 	return best
+
+
+## 射线与线段（竖直胶囊的轴）的最近距离 <= r 时，返回射线参数 t；否则 -1。
+## 采样近似（13 个点）足够点选用，代价只在鼠标左键按下时付一次。
+func _ray_vs_segment(from: Vector3, dir: Vector3, a: Vector3, b: Vector3,
+		r: float) -> float:
+	var best_t: float = -1.0
+	var best_d: float = INF
+	var n: int = 12
+	for i in range(n + 1):
+		var p: Vector3 = a.lerp(b, float(i) / float(n))
+		var t: float = (p - from).dot(dir)
+		if t <= 0.0:
+			continue
+		var d: float = (from + dir * t).distance_to(p)
+		if d <= r and t < best_d:
+			best_d = t
+			best_t = t
+	return best_t
 
 
 ## 屏幕坐标 → 地面点（步进 + 二分细化；不依赖物理引擎，编辑器里也不建碰撞体）
@@ -1556,26 +1697,64 @@ func _ray_ground(screen_pos: Vector2) -> Vector3:
 # 相机
 # ===========================================================================
 
+## 复位：**游玩视角**（俯角 50° / FOV 52 / 距离 CAM_DIST_DEFAULT），看向地图中心。
 func reset_camera() -> void:
 	if session == null or session.def == null:
 		return
 	_target = Vector3.ZERO
 	_target.y = session.def.height_at(0.0, 0.0)
-	_dist = float(session.def.size) * 0.95
+	_dist = CAM_DIST_DEFAULT
 	_yaw = deg_to_rad(32.0)
-	_pitch = deg_to_rad(-54.0)
+	_pitch = deg_to_rad(-CAM_PITCH_DEG)
+	_clamp_target()
 	_update_camera()
 
 
+## **Ctrl+Shift+C：一键跳到「当前游戏玩家位置」**（= 地图里的玩家出生点 / 大本营）。
+## 用途：编辑器改完图，直接跳到玩家开局看到的地方，F5 试玩的机位心里有数。
+## 距离取 CAM_DIST_PLAY（= 游戏默认镜头距离），角度与游玩一致。
+func focus_player() -> void:
+	if session == null or session.def == null:
+		return
+	var p := Vector3.ZERO
+	var found: bool = false
+	# 玩家槽位 = players 里 faction == "player" 的那位；没有就用第 0 位；再没有就用地图中心
+	for slot in session.def.players:
+		if slot == null:
+			continue
+		if String(slot.get("faction")) == "player":
+			var sp: Vector2 = slot.get("start_pos")
+			p = Vector3(sp.x, 0.0, sp.y)
+			found = true
+			break
+	if not found and not session.def.players.is_empty():
+		var s0 = session.def.players[0]
+		if s0 != null:
+			var sp0: Vector2 = s0.get("start_pos")
+			p = Vector3(sp0.x, 0.0, sp0.y)
+	_target = p
+	_target.y = _h(p.x, p.z)
+	_dist = clampf(CAM_DIST_PLAY, CAM_DIST_MIN, CAM_DIST_MAX)
+	_yaw = deg_to_rad(32.0)
+	_pitch = deg_to_rad(-CAM_PITCH_DEG)
+	_clamp_target()
+	_update_camera()
+	if session.has_method("push_status"):
+		session.call("push_status", "镜头 → 玩家出生点 (%.0f, %.0f)" % [p.x, p.z])
+
+
+## 俯瞰全图：俯角顶到 88°（正上方），配合「拉远」就能看完整张图。
 func set_view_top() -> void:
 	_pitch = deg_to_rad(-88.0)
 	_yaw = 0.0
+	_clamp_target()
 	_update_camera()
 
 
 func set_view_iso() -> void:
-	_pitch = deg_to_rad(-50.0)
+	_pitch = deg_to_rad(-CAM_PITCH_DEG)
 	_yaw = deg_to_rad(35.0)
+	_clamp_target()
 	_update_camera()
 
 
@@ -1586,18 +1765,54 @@ func focus_on(world_pos: Vector3) -> void:
 
 
 func zoom_by(factor: float) -> void:
-	_dist = clampf(_dist * factor, 12.0, 520.0)
+	_dist = clampf(_dist * factor, CAM_DIST_MIN, CAM_DIST_MAX)
+	_clamp_target()
 	_update_camera()
 
 
+## **镜头边界**（玩家口径「最多只能看到地图边界外一点点，禁止甩进无尽虚空」）。
+##
+## 与游戏 魔兽镜头._clamp_focus() 同一套算法：
+##   相机会在注视点后面后退 `_dist × cos(俯角)` 米，所以能看的范围要**先扣掉这段后撤**，
+##   否则拉远之后注视点还在图内、画面早已越过边界（= 玩家说的「甩进虚空」）。
+## 另外给一个下限（地图的 12%），保证再远也能在中间一小块活动。
 func _clamp_target() -> void:
 	if session == null or session.def == null:
 		return
 	var b: Rect2 = session.def.camera_bounds
 	if b.size.x > 0.0 and b.size.y > 0.0:
-		_target.x = clampf(_target.x, b.position.x, b.position.x + b.size.x)
-		_target.z = clampf(_target.z, b.position.y, b.position.y + b.size.y)
+		var pitch: float = -_pitch                      # 向下看的俯角（正数）
+		var reach: float = _dist * cos(pitch)           # 相机往后撤的水平距离
+		var cx: float = b.position.x + b.size.x * 0.5
+		var cz: float = b.position.y + b.size.y * 0.5
+		var hx: float = maxf(b.size.x * 0.5 - reach + CAM_BOUNDS_MARGIN,
+				b.size.x * 0.12)
+		var hz: float = maxf(b.size.y * 0.5 - reach + CAM_BOUNDS_MARGIN,
+				b.size.y * 0.12)
+		_target.x = clampf(_target.x, cx - hx, cx + hx)
+		_target.z = clampf(_target.z, cz - hz, cz + hz)
 	_target.y = _h(_target.x, _target.z)
+
+
+## 把共享的环境资源改成「深色背景 + 距离雾」（复制后改，不动原资源）。
+func _mask_environment(src: Environment) -> Environment:
+	if src == null:
+		return null
+	var env := src.duplicate(true) as Environment
+	if env == null:
+		return src
+	# 天空 → 近黑纯色（玩家口径：先不做天空盒，也不要露出虚空）
+	env.background_mode = Environment.BG_COLOR
+	env.background_color = Color(0.028, 0.032, 0.040)
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = Color(0.42, 0.47, 0.56)
+	env.ambient_light_energy = 0.55
+	# 距离雾：远处压暗，地图边界之外自然融进深色
+	# 只用项目里已经验证过的三个 fog 属性（主场景 / 战斗环境 同一套），不引新字段
+	env.fog_enabled = true
+	env.fog_light_color = Color(0.035, 0.040, 0.050)
+	env.fog_density = CAM_FOG_DENSITY
+	return env
 
 
 ## 当前鼠标地面点（dock 的坐标/高度显示用）

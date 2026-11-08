@@ -1177,28 +1177,73 @@ func copy_selection() -> void:
 	_emit_status("已复制 %d 个对象" % clipboard.size())
 
 
+## **粘贴**（2026-11-08 修「重复建筑向外扩散到树内」）。
+##
+## 旧实现的两个坑：
+##   ① 每个副本只挪 (+2, +2) 米 —— 9×5 的兵营叠着往斜下走，连贴几次就**穿进树林**；
+##   ② 挪完**不校验**能不能放（树 / 水 / 别的建筑都照贴）→ 树里长出建筑、占地重叠。
+## 现在：
+##   · 偏移量按**占地**算（建筑 = 宽 + 2m 沿 +X 排队；小物件仍是 2m 斜移），不会自我重叠；
+##   · 每个副本落点先过 can_place_building_editor()（地图边界 / 水面 / 陡坡 / 建筑重叠），
+##     不合法就在 4~24m 的环上找一个合法空位；一个都没有才放回吸附点（并提示）。
+##   · 剪贴板里那份继续按同样步长前移，所以连续粘贴是**排队往外排**，不是叠着走。
 func paste_clipboard() -> void:
 	if def == null or clipboard.is_empty():
 		_emit_status("剪贴板是空的")
 		return
 	var before: Array = _snapshot_objects()
 	var pasted: Array[MapObject] = []
+	var blocked: int = 0
 	for c in clipboard:
 		var o := c.clone_obj()
-		o.position += Vector3(2.0, 0.0, 2.0)
+		o.position += _paste_step_for(o)
 		if int(o.category) == MapObject.Category.BUILDING:
-			o.position = snap_building_pos(o.position, building_footprint(o.type_id))
+			var fp: Vector2i = building_footprint(o.type_id)
+			o.position = _find_paste_spot(o.position, fp)
 			o.rotation = GRID.snap_yaw(o.rotation)
+			if not can_place_building_editor(o.position, fp, null):
+				blocked += 1
 		else:
 			o.position.y = def.height_at(o.position.x, o.position.z)
 		def.objects.append(o)
 		pasted.append(o)
-	# 粘贴后再次粘贴继续偏移，所见即所得
+	# 粘贴后再次粘贴继续偏移（按同样的步长排队），所见即所得
 	for c in clipboard:
-		c.position += Vector3(2.0, 0.0, 2.0)
+		c.position += _paste_step_for(c)
 	selection = pasted
 	_push_objects("粘贴 %d 个对象" % pasted.size(), before, _snapshot_objects())
 	selection_changed.emit()
+	if blocked > 0:
+		_emit_status("粘贴 %d 个：其中 %d 个位置放不下（树/水/重叠），已就近找空位"
+			% [pasted.size(), blocked])
+
+
+## 粘贴步长：建筑按占地宽度排队（不会叠在自己身上），其它物件 2m 斜移。
+func _paste_step_for(o: MapObject) -> Vector3:
+	if o == null:
+		return Vector3(2.0, 0.0, 2.0)
+	if int(o.category) == MapObject.Category.BUILDING:
+		var fp: Vector2i = building_footprint(o.type_id)
+		return Vector3(float(maxi(fp.x, 2)) + 2.0, 0.0, 0.0)
+	return Vector3(2.0, 0.0, 2.0)
+
+
+## 找一个能放下这栋建筑的落点：先试吸附后的原位置，不行再 4~24m 环形找。
+## 找不到就返回吸附位置（调用方会统计 blocked 并提示）。
+func _find_paste_spot(want: Vector3, fp: Vector2i) -> Vector3:
+	var p: Vector3 = snap_building_pos(want, fp)
+	if can_place_building_editor(p, fp, null):
+		return p
+	var r: float = 4.0
+	while r <= 24.0:
+		for i in range(12):
+			var ang: float = TAU * float(i) / 12.0
+			var raw := Vector3(want.x + cos(ang) * r, 0.0, want.z + sin(ang) * r)
+			var q: Vector3 = snap_building_pos(raw, fp)
+			if can_place_building_editor(q, fp, null):
+				return q
+		r += 2.0
+	return p
 
 
 ## 把所有选中对象换成另一个类型（保留位置/朝向/归属）

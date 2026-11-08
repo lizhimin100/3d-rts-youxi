@@ -12,14 +12,21 @@ extends SkillAtom
 @export var shots: int = 3
 ## 两发之间的间隔（秒）
 @export var interval: float = 0.12
-## 一轮打完后装填多久（秒）
+## 一轮打完后装填多久（秒）。
+## ★ 2026-11-08 玩家口径「装填时间绑定单位的攻击速度字段（攻速=装填）」：
+##   这里的值**不再决定装填时长**（保留只为旧 .tres 兼容/编辑器可读），
+##   运行时按单位的 attack_cooldown 算（见 技能运行时.burst_reload_seconds()）。
 @export var reload: float = 2.0
+## **每发伤害修正**（乘在单位攻击力上）。
+## 2026-11-08 玩家拍板：三连发每发 = 攻击力的 **75%**（3 发 × 0.75 = 2.25 倍单发伤害）。
+@export var damage_mult: float = 0.75
 
 
 func to_burst() -> Dictionary:
 	if shots <= 1:
 		return {}
-	return {"shots": shots, "interval": maxf(interval, 0.02), "reload": maxf(reload, 0.0)}
+	return {"shots": shots, "interval": maxf(interval, 0.02),
+		"reload": maxf(reload, 0.0), "damage_mult": maxf(damage_mult, 0.0)}
 
 
 func describe() -> String:

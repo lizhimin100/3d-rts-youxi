@@ -1591,7 +1591,20 @@ func _tick_timers(dt: float) -> void:
 func _tick_skills(dt: float) -> void:
 	skills_rt.tick(dt)
 	if skills_rt.burst_left > 0 and skills_rt.tick_burst():
-		_fire_projectile()
+		# 连发的每一发都吃 75% 伤害修正（三连发口径，见 原子_连发.damage_mult）
+		_fire_projectile(skills_rt.burst_damage_mult())
+
+
+## **连发装填时长 = 本单位的攻击速度字段**（2026-11-08 玩家口径「攻速=装填」）。
+##
+## 口径必须与 _begin_swing() 完全一致：基础 攻击间隔 × 技能修正 ÷ 星级攻速。
+## 这样弩兵举盾（攻速 -50%）时，装填也会跟着变慢一倍，不会出现
+## 「攻击变慢了、但箭还是原来的节奏」这种两套攻速。
+func burst_reload_seconds() -> float:
+	if def == null:
+		return 0.0
+	var skill: float = skills_rt.attack_cooldown_mult() if skills_rt != null else 1.0
+	return maxf(def.attack_cooldown * skill / maxf(star_atkspd_mult(), 0.01), 0.1)
 
 
 ## 切换开关技能（由 RtsSkills.release 调用；也可被 UI/自检直接调）
@@ -3231,7 +3244,9 @@ func _release_attack() -> void:
 
 
 ## 打出一发投射物（连发/单发共用）
-func _fire_projectile() -> void:
+##
+## damage_mult：每发伤害修正。单发 = 1.0；连发（弩兵三连发）= 技能卡上的 0.75。
+func _fire_projectile(damage_mult: float = 1.0) -> void:
 	if def == null or target == null or not is_instance_valid(target):
 		return
 	if not target.is_alive():
@@ -3239,7 +3254,7 @@ func _fire_projectile() -> void:
 	if not Game.is_node_visible_to(faction, target):
 		return
 	dbg_shots += 1
-	var snap: Dictionary = RtsCombat.make_snapshot(self)
+	var snap: Dictionary = RtsCombat.make_snapshot(self, damage_mult)
 	var aim: Vector3 = target.global_position + Vector3.UP * RtsProjectile.AIM_HEIGHT
 	RtsProjectile.fire_from(self, def.projectile, aim, target,
 			def.projectile_speed, snap, faction)
@@ -3360,9 +3375,12 @@ func _finish_harvest() -> void:
 	if _gather_node == null or not is_instance_valid(_gather_node):
 		_gather_phase = GatherPhase.TO_NODE
 		return
+	# ★ 2026-11-08 玩家口径「农民采金 10 → 15」：
+	#   农民走**全局口径**（采金/采木分开配，见 GameConfig.harvest_carry_of），
+	#   其它单位仍看自己的 carry_capacity（<=0 时同样回落全局口径）。
 	var cap: int = def.carry_capacity
-	if cap <= 0:
-		cap = Cfg.game.harvest_carry
+	if RtsWorld.is_worker_def(def) or cap <= 0:
+		cap = Cfg.game.harvest_carry_of(_carry_kind)
 	# ★ 树按「次数」扣（玩家口径 2026-11-07）：这一趟采完 = 扣 1 次，拿满 cap 木头。
 	#   金矿仍然按吨位扣（3200 金一次搬 10）。两种口径分开见 可采集物.consume_charge。
 	var got: int = 0

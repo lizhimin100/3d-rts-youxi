@@ -279,8 +279,28 @@ func tick_burst() -> bool:
 	var b: Dictionary = burst_spec()
 	burst_t = maxf(float(b.get("interval", 0.12)), 0.02)
 	if burst_left <= 0:
-		reload_t = maxf(float(b.get("reload", 0.0)), 0.0)
+		reload_t = burst_reload_seconds()
 	return true
+
+
+## **一轮打完后装填多久**（2026-11-08 玩家口径：装填 = 单位的攻击速度字段）。
+##
+## 为什么不读卡上的 reload：玩家原话「装填时间绑定单位的『攻击速度』字段（攻速=装填）」，
+## 单位 0.9 秒一刀就 0.9 秒装填、2 秒一刀就 2 秒装填 —— 攻速本身就是节奏。
+## 计算口径与单位 _begin_swing() 完全一致（吃技能修正 + 星级攻速），
+## 所以弩兵举盾/升星之后，装填会跟着一起变慢/变快，不会出现「两套攻速」。
+func burst_reload_seconds() -> float:
+	if _unit != null and is_instance_valid(_unit) and _unit.has_method("burst_reload_seconds"):
+		return maxf(float(_unit.call("burst_reload_seconds")), 0.0)
+	return maxf(float(burst_spec().get("reload", 0.0)), 0.0)
+
+
+## **每发伤害修正**（三连发 = 攻击力 × 0.75 / 发）。
+func burst_damage_mult() -> float:
+	var b: Dictionary = burst_spec()
+	if b.is_empty():
+		return 1.0
+	return maxf(float(b.get("damage_mult", 1.0)), 0.0)
 
 
 # ===========================================================================

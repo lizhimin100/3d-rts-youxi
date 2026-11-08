@@ -583,7 +583,12 @@ func _think_once(diff: DifficultyDef) -> void:
 		if not (AIV.goal_on() and goal_noop):
 			_maybe_upgrade_tower()
 			_manage_research(diff)
-			_maybe_expand()            # 扩展线"最小可用"桩，2C-9 未纳入仲裁
+			_maybe_expand()            # 扩张线：野怪清空后去资源点旁建前哨
+			# ★ 2026-11-08 玩家拍板「爆兵营」：**强制扩产能通道**。
+			#   不等仲裁、不等预算：自己判 want/have/买得起/有工位，幂等。
+			#   理由（实测）：扩建兵营的目标层紧迫度只有 0.45 < 空过阈值 0.60，
+			#   只能靠"搭便车"落地；金币一多，第 2 座兵营就该在下一 tick 立起来。
+			_maybe_build_barracks(diff)
 		SimpleAI.dbg_econ += Time.get_ticks_usec() - _t0
 	else:
 		_manage_peasants(diff)
@@ -1272,16 +1277,22 @@ func _nearest_wood(w: RtsUnit, drop: Vector3) -> Node3D:
 	return best
 
 
-## 木材的收货点：最近的、收木材的己方交汇点。
-## 伐木场是"专收木材"的，给 8m 的等效折扣 —— 否则大本营常常更近，
-## 伐木场就白造了（它存在的意义就是把送货路程缩短）。
+## 木材的收货点：**伐木场优先**，没有伐木场才用大本营。
+##
+## ★ 2026-11-08 玩家口径「优先选离伐木场或基地最近的树（优先伐木场）」：
+##   旧实现是把伐木场的距离减 8m 做"等效折扣"再比，于是大本营更近时照样往家送，
+##   伐木场白造。现在改成**硬优先级**：只要有一座已完工的伐木场，就以最近的那座
+##   为收货点；只有一座都没有（或都还没完工）才退回大本营。
+##   这样 `_nearest_wood()` 的评分（到收货点的距离）自然就变成"伐木场最近的树"。
 func _wood_dropoff() -> Vector3:
-	var home: Vector3 = RtsWorld.base_center(_faction)
-	var best: Vector3 = home
-	var best_d: float = INF
 	if _faction == null:
-		return best
+		return Vector3.ZERO
+	var home: Vector3 = RtsWorld.base_center(_faction)
 	var special_id: StringName = _wood_dropoff_building_id()
+	var best_special: Vector3 = Vector3.INF
+	var best_special_d: float = INF
+	var best_any: Vector3 = home
+	var best_any_d: float = INF
 	for b in _faction.buildings:
 		if b == null or not is_instance_valid(b) or not b.is_alive() or b.def == null:
 			continue
@@ -1291,12 +1302,15 @@ func _wood_dropoff() -> Vector3:
 		if not b.def.accepts_harvest(RtsConst.Harvest.WOOD):
 			continue
 		var d: float = b.global_position.distance_to(home)
-		if special_id != &"" and b.def.id == special_id:
-			d -= 8.0
-		if d < best_d:
-			best_d = d
-			best = b.global_position
-	return best
+		if d < best_any_d:
+			best_any_d = d
+			best_any = b.global_position
+		if special_id != &"" and b.def.id == special_id and d < best_special_d:
+			best_special_d = d
+			best_special = b.global_position
+	if best_special != Vector3.INF:
+		return best_special
+	return best_any
 
 ## 金木人力分配比例：**从兵种与建筑成本推导**，再叠加 2C-2 的动态修正。
 ##
@@ -2325,6 +2339,22 @@ func _barracks_want() -> int:
 	var army_n: int = _army_units().size()
 	return int(_model_call("barracks_want_of",
 			[army_n, BARRACKS_MIN, BARRACKS_ARMY_STEP, BARRACKS_AT_STEP, MAX_BARRACKS]))
+
+
+## **「金币充足」——爆兵营的判据**（2026-11-08 玩家拍板）。
+##
+## 口径：够「一座兵营 + 一个最便宜的兵」的钱，且木材也够 → 现在就该把下一座兵营立起来。
+## 为什么还要留一个兵的钱：新兵营一完工就得能立刻排单，否则它是空转的产能
+## （这条是 2C-6 的老规矩，这里只是把它变成"够不够充裕"的判据）。
+func _barracks_expand_urgent(pid: StringName) -> bool:
+	if _faction == null or pid == &"":
+		return false
+	var bd: UnitDef = Cfg.unit(pid)
+	if bd == null:
+		return false
+	var need_gold: int = int(bd.gold_cost) \
+			+ _cheapest_army_gold(Cfg.difficulty(Game.difficulty_index))
+	return _faction.gold >= need_gold and _faction.wood >= int(bd.wood_cost)
 
 
 func _maybe_build_barracks(diff: DifficultyDef) -> void:
@@ -3636,11 +3666,18 @@ func _on_wave_closed(rec: Dictionary) -> void:
 		return
 
 	# ---------------- new 模式 ----------------
-	# B5：连续 3 次"差"→攒大波；中间出现"达成/好"→重置。
+	# B5（2026-11-08 改写）：**连续 WAVE_FAIL_STREAK_TO_BANK(5) 次判定失败** → 进攒兵态。
+	#   「失败」= 差 / 快速被消灭 / 无接敌（WAVE_FAIL_VERDICTS）；
+	#   「达成 / 好」清零；「一般」既不算失败也不清零（没打出结论，继续按节奏压）。
+	if WAVE_FAIL_VERDICTS.has(verdict):
+		_wave_fail_streak += 1
+	elif verdict == VERDICT_ACHIEVED or verdict == VERDICT_BETTER:
+		_wave_fail_streak = 0
 	if verdict == VERDICT_BAD:
 		_bad_streak += 1
 	elif verdict == VERDICT_ACHIEVED or verdict == VERDICT_BETTER:
 		_bad_streak = 0
+	dept_stats["wave_fail_streak"] = _wave_fail_streak
 	match strat_state:
 		ST_PROBE:
 			if verdict == VERDICT_ACHIEVED or verdict == VERDICT_BETTER:
@@ -3648,8 +3685,8 @@ func _on_wave_closed(rec: Dictionary) -> void:
 				_press_goal = _goal_from_rec(rec)
 				_reset_switch()
 				_go(ST_PRESS, "T1")
-			elif verdict == VERDICT_BAD:
-				if _bad_streak >= P3_FAST_STREAK:
+			elif WAVE_FAIL_VERDICTS.has(verdict):
+				if _wave_fail_streak >= WAVE_FAIL_STREAK_TO_BANK:
 					_go(ST_BANK, "T3")
 				else:
 					_request_switch("T2")
@@ -3664,8 +3701,8 @@ func _on_wave_closed(rec: Dictionary) -> void:
 				_go(ST_PRESS, "T6")
 			elif verdict == VERDICT_FAIR:
 				_request_switch("T7")        # 出口 1
-			elif verdict == VERDICT_BAD:
-				if _bad_streak >= P3_FAST_STREAK:
+			elif WAVE_FAIL_VERDICTS.has(verdict):
+				if _wave_fail_streak >= WAVE_FAIL_STREAK_TO_BANK:
 					_go(ST_BANK, "T8")
 				else:
 					_request_switch("T2")    # 出口 2
@@ -3696,11 +3733,15 @@ func _tick_strategy(now: float) -> void:
 				_recall_outside_idle()
 				_go(ST_PROBE, "T10")
 				return
-			# T9（2C-4）：当前可派战斗单位**总成本** ≥ 1.5 × 基准 → 打出去（不封顶）；
-			# 或 90 s 到点**直接出击**（删 T11a/T11b 的"继续攒/转科技"分岔）。
+			# T9（2C-4 起；2026-11-08 按玩家口径改写）：**攒够 WAVE_P3_TOTAL(10) 个**
+			# 　（= 除开防守部队之外的可用兵力）就发起总攻。
+			# 　保留两条兜底：成本达到基准的 1.5 倍、或攒了 150 秒还没攒够 ——
+			# 　否则经济一崩就永远出不了门（防守死锁的老毛病）。
+			var spare_n: int = _army_units().size() - _defense_floor()
 			var avail_cost: float = _units_cost(_available_units())
-			if bool(_model_call("bank_ready", [avail_cost, _bank_baseline_cost, BANK_MULT])) \
-					or now - _state_since >= BANK_MAX_SEC:
+			if spare_n >= WAVE_P3_TOTAL \
+					or bool(_model_call("bank_ready", [avail_cost, _bank_baseline_cost, BANK_MULT])) \
+					or now - _state_since >= BANK_MAX_SEC + 60.0:
 				_go(ST_PRESS, "T9")
 		ST_RETARGET:
 			if now - _state_since >= T12_SEC:
@@ -3929,43 +3970,101 @@ func _manage_waves(diff: DifficultyDef) -> void:
 
 
 # ---------------------------------------------------------------------------
-# 波次编队（2026-11-08 玩家口径：「5 步 3 弩」「攒 10 出 8 留 2」「防守积累」）
+# 波次阶梯进攻编队（2026-11-08 玩家拍板「三阶段阶梯」，严格执行）
 #
-# 规则（只写在代码里，不做成表格配置）：
-#   · 触发：总兵力 ≥ WAVE_MIN_ARMY(10) 且出击基础判定通过；
-#   · 编队：从现有部队里**先点 5 个 footman（步兵）+ 3 个 archer（弩兵）**，
-#           不足 8 个就用其它兵补满 → 一支 8 人突击队；
-#   · 留守：剩下的全部留基地加入防守；
-#   · 密集进攻：下一波重复"攒 10 出 8 留 2"；
-#   · 防守积累：当留守已经够 `_defense_floor()`（防守下限）时，
-#           之后新练的单位**不再留守**，出击人数 = 总兵力 − 防守下限。
+# 三阶段 + 一个交替开关，**全部写在代码里按兵种 id 过滤，不新增任何配表**：
+#
+#   第一阶段（防守下限没满足）：总兵力 ≥ 7 → **强制**出 5 个（3 步 + 2 弩），
+#       留 2 个守家，循环。这一阶段**不看 allow_attack** —— 家里被压也要打出去，
+#       否则就是蹲在基地挨打（实测 allow_attack 只有 0.8%~3.5% 的思考帧为 true，
+#       见 文档/AI经济与等级排查报告.md §3）。
+#   第二阶段（防守下限已满足）：防守部队继续留守；进攻波**交替**：
+#       常规波 4 个（3 步 1 弩）→ 下一波 6 个（4 步 2 弩）→ 再 4 个 …
+#       交替状态住在 `_wave_toggle`（1 = 下一波是大波）。
+#   第三阶段（连续 5 次波次判定失败）：进入攒兵态（战略状态机 ST_BANK 同款），
+#       攒到「除开防守部队还有 10 个」→ 发起总攻（10 个一起上）。
+#
+# 判据全部复用现成的：防守下限 `_defense_floor()`、波次判定词 `VERDICT_*`。
 # ---------------------------------------------------------------------------
 
-## 出兵门槛（总兵力）
-const WAVE_MIN_ARMY: int = 10
-## 常规突击队人数
-const WAVE_STRIKE: int = 8
-## 突击队里的步兵/弩兵定编（按真实兵种 id 点选）
-const WAVE_FOOTMEN: int = 5
-const WAVE_ARCHERS: int = 3
+## 第一阶段：触发兵力 / 出击人数 / 编队 / 留守
+const WAVE_P1_MIN_ARMY: int = 7
+const WAVE_P1_SEND: int = 5
+const WAVE_P1_FOOT: int = 3
+const WAVE_P1_ARCH: int = 2
+const WAVE_P1_KEEP: int = 2
+## 第二阶段：常规波 4（3 步 1 弩）/ 大波 6（4 步 2 弩），交替
+const WAVE_P2_SMALL: int = 4
+const WAVE_P2_SMALL_FOOT: int = 3
+const WAVE_P2_SMALL_ARCH: int = 1
+const WAVE_P2_BIG: int = 6
+const WAVE_P2_BIG_FOOT: int = 4
+const WAVE_P2_BIG_ARCH: int = 2
+## 第三阶段：连续失败多少波进攒兵态；防守之外攒够多少人发起总攻
+const WAVE_FAIL_STREAK_TO_BANK: int = 5
+const WAVE_P3_TOTAL: int = 10
+const WAVE_P3_FOOT: int = 6
+const WAVE_P3_ARCH: int = 4
+## 编队里认识的兵种 id（**按 id 过滤，不新增配表**）
 const WAVE_UNIT_FOOTMAN: StringName = &"footman"
 const WAVE_UNIT_ARCHER: StringName = &"archer"
+## 兼容别名：目标层的出击门槛仍读这个名字（语义 = 第一阶段的 7）
+const WAVE_MIN_ARMY: int = WAVE_P1_MIN_ARMY
+## 「这一波算失败」的判定词：连续 WAVE_FAIL_STREAK_TO_BANK 次 → 进入第三阶段。
+## 达成/好 清零；一般（没打出结论）既不算失败也不清零 —— 按第二阶段节奏继续压。
+const WAVE_FAIL_VERDICTS: Array[String] = [VERDICT_BAD, VERDICT_FAST, VERDICT_NO_CONTACT]
+
+## 连续失败波次数（_on_wave_closed 维护，进入第三阶段的唯一判据）
+var _wave_fail_streak: int = 0
+## 第二阶段交替开关：1 = 下一波是大波（6），0 = 常规（4）；每发一波翻转一次
+var _wave_toggle: int = 1
+## 本轮判定出的阶段（1/2/3；写日志与 bench 用，不参与决策）
+var _wave_phase: int = 1
 
 
-## 出击人数：先出 8 人突击队；留守满编（≥ 防守下限）之后，多出来的全部编入波次。
-func _wave_push_n(army_n: int, defense_floor: int) -> int:
-	if army_n <= 0:
-		return 0
-	var strike: int = mini(WAVE_STRIKE, army_n)
-	var defenders: int = army_n - strike
-	if defenders >= defense_floor:
-		return maxi(army_n - defense_floor, strike)
-	return strike
+## 本 tick 处在哪个阶段（1/2/3）。
+##
+## · 3：连续 WAVE_FAIL_STREAK_TO_BANK 次判定失败 → 攒兵（战略状态机同时进 ST_BANK）；
+## · 2：**防守下限已满足**（留下 `_defense_floor()` 之后还剩 ≥ 4 个）→ 交替 4/6；
+## · 1：剩下的（包括「只有 7 个、防守下限根本满足不了」）→ 强制出 5 留 2。
+func _wave_phase_of(army_n: int) -> int:
+	if _wave_fail_streak >= WAVE_FAIL_STREAK_TO_BANK:
+		return 3
+	if army_n - _defense_floor() >= WAVE_P2_SMALL:
+		return 2
+	return 1
 
 
-## 编队：5 步兵 + 3 弩兵 → 不足就用其它兵补到 `want` 个。
+## 这一波出多少人、几个步兵几个弩兵。返回 {} = 本 tick 不出。
+##
+## 三个阶段的编制**只在代码里**（按 id 过滤 footman / archer），不读任何配表。
+func _wave_formation(army_n: int, phase: int) -> Dictionary:
+	var floor_n: int = _defense_floor()
+	if phase == 3:
+		# 攒大波：除开防守部队，攒够 WAVE_P3_TOTAL 个才发总攻
+		if army_n - floor_n < WAVE_P3_TOTAL:
+			return {}
+		return {"n": WAVE_P3_TOTAL, "foot": WAVE_P3_FOOT, "arch": WAVE_P3_ARCH}
+	if phase == 2:
+		var spare: int = maxi(army_n - floor_n, 0)
+		var want: int = WAVE_P2_BIG if _wave_toggle == 1 else WAVE_P2_SMALL
+		want = mini(want, spare)
+		if want <= 0:
+			return {}
+		if want >= WAVE_P2_BIG:
+			return {"n": WAVE_P2_BIG, "foot": WAVE_P2_BIG_FOOT, "arch": WAVE_P2_BIG_ARCH}
+		return {"n": want, "foot": WAVE_P2_SMALL_FOOT, "arch": WAVE_P2_SMALL_ARCH}
+	# 第一阶段：总兵力到 7 就强制出 5、留 2（保底至少派出 1 个）
+	if army_n < WAVE_P1_MIN_ARMY:
+		return {}
+	var n: int = mini(WAVE_P1_SEND, maxi(army_n - WAVE_P1_KEEP, 1))
+	return {"n": n, "foot": WAVE_P1_FOOT, "arch": WAVE_P1_ARCH}
+
+
+## 编队：先点 `foot_n` 个步兵 + `arch_n` 个弩兵，不足 `want` 就用其它兵补满。
 ## 返回的顺序就是下令顺序（步兵在前，前排先落地）。
-func _wave_squad(army: Array, want: int) -> Array:
+func _wave_squad(army: Array, want: int, foot_n: int = WAVE_P1_FOOT,
+		arch_n: int = WAVE_P1_ARCH) -> Array:
 	var foot: Array = []
 	var arch: Array = []
 	var rest: Array = []
@@ -3973,9 +4072,9 @@ func _wave_squad(army: Array, want: int) -> Array:
 		if u == null or not is_instance_valid(u):
 			continue
 		var uid: StringName = u.def.id if u.def != null else &""
-		if uid == WAVE_UNIT_FOOTMAN and foot.size() < WAVE_FOOTMEN:
+		if uid == WAVE_UNIT_FOOTMAN and foot.size() < foot_n:
 			foot.append(u)
-		elif uid == WAVE_UNIT_ARCHER and arch.size() < WAVE_ARCHERS:
+		elif uid == WAVE_UNIT_ARCHER and arch.size() < arch_n:
 			arch.append(u)
 		else:
 			rest.append(u)
@@ -3991,7 +4090,8 @@ func _wave_squad(army: Array, want: int) -> Array:
 
 ## 把计划里的编制对回**当前**军队：先保留还活着且仍在军队里的，再按 `_wave_squad`
 ## 的口径从剩余部队补到 `want`。返回空 = 一个人都派不出去。
-func _squad_alive(army: Array, planned: Array, want: int) -> Array:
+func _squad_alive(army: Array, planned: Array, want: int,
+		foot_n: int = WAVE_P1_FOOT, arch_n: int = WAVE_P1_ARCH) -> Array:
 	var alive: Array = []
 	var in_army: Dictionary = {}
 	for u in army:
@@ -4003,7 +4103,7 @@ func _squad_alive(army: Array, planned: Array, want: int) -> Array:
 		alive.append(u)
 	if alive.size() >= want:
 		return alive.slice(0, want)
-	for u in _wave_squad(army, want):
+	for u in _wave_squad(army, want, foot_n, arch_n):
 		if alive.size() >= want:
 			break
 		if alive.has(u):
@@ -4034,25 +4134,39 @@ func _wave_plan(diff: DifficultyDef) -> Dictionary:
 			_log("暂不出击：%s" % _block_reason())
 		return {}
 	var army: Array = _army_units()
-	# ★ 2026-11-08：出击门槛 = max(难度档, 10)。难度档只能更严，不能比 10 更松。
-	if army.size() < maxi(diff.min_wave_size, WAVE_MIN_ARMY):
+	# --- 阶梯阶段与编制（2026-11-08 玩家拍板，见文件顶部「波次阶梯」注释）---
+	var phase: int = _wave_phase_of(army.size())
+	_wave_phase = phase
+	var form: Dictionary = _wave_formation(army.size(), phase)
+	if form.is_empty():
+		# 兵还不够本阶段的编制：5 秒后再看（不要每 tick 都算一遍）
+		_next_wave_at = Game.elapsed + 5.0
 		return {}
-	var aggr: float = float(posture.get("aggression", diff.aggression))
-	# 加强不掷骰：上一波已经证明"打得动"，这时候犹豫等于把战果还回去
-	if strat_state == ST_PROBE and randf() > clampf(aggr, 0.0, 1.0):
+	# ★ 第一阶段与第三阶段是**强制**出击：不经过 allow_attack。
+	#   理由（实测）：allow_attack 只有 0.8%~3.5% 的思考帧为 true，「家里被压」几乎
+	#   是常态 —— 再让它当闸门，AI 就整局不出门、蹲在基地被逐个磨死。
+	var forced: bool = phase == 1 or phase == 3
+	if not forced and not bool(posture.get("allow_attack", false)):
+		# 不是"这一波取消"，而是"10 秒后再评估" —— 兵力一到位就会打出去
+		_next_wave_at = Game.elapsed + 10.0
+		if Game.elapsed - _last_block_log >= 25.0:
+			_last_block_log = Game.elapsed
+			_log("暂不出击（阶段 %d）：%s" % [phase, _block_reason()])
 		return {}
-
-	# --- 2C-4 出击比例（任务书 §4.2）---
+	# 只有第二阶段（常规交替波）掷侵略性骰；第一阶段/第三阶段是强制，不掷
+	if phase == 2:
+		var aggr: float = float(posture.get("aggression", diff.aggression))
+		# 加强不掷骰：上一波已经证明"打得动"，这时候犹豫等于把战果还回去
+		if strat_state == ST_PROBE and randf() > clampf(aggr, 0.0, 1.0):
+			_next_wave_at = Game.elapsed + 5.0
+			return {}
+	# --- 出兵人数 / 编制 ---
 	var defense_floor: int = _defense_floor()
-	var push_n: int = 0
 	var breakout: bool = strat_state == ST_PRESS and _bank_breakout
-	if breakout:
-		# 攒大波突围：全部战斗单位出击（含临时防守），保底 ceil(下限×2/3) 不低于
-		push_n = int(_model_call("bank_push_n", [army.size(), defense_floor]))
-	else:
-		# ★ 2026-11-08：常态出击改成「8 人突击队（5 步 + 3 弩）」，
-		#   留守够 `_defense_floor()` 之后，多出来的人全部编入波次（见 `_wave_push_n`）。
-		push_n = _wave_push_n(army.size(), defense_floor)
+	var push_n: int = int(form.get("n", 0))
+	if breakout and phase != 3:
+		# 战略状态机的"攒大波突围"（T9）：整队压上，保底 ceil(下限×2/3)
+		push_n = maxi(push_n, int(_model_call("bank_push_n", [army.size(), defense_floor])))
 	push_n = clampi(push_n, 0, army.size())
 	if push_n < 1:
 		return {}
@@ -4078,8 +4192,12 @@ func _wave_plan(diff: DifficultyDef) -> Dictionary:
 		target += Vector3(cos(ang0), 0.0, sin(ang0)) * 8.0
 	return {
 		"push_n": push_n,
-		# 点好的编制（5 步 + 3 弩 + 补位）。`_issue_wave_plan` 会把它对回当前军队。
-		"squad": _wave_squad(army, push_n),
+		# 点好的编制（按阶段定编：3步2弩 / 3步1弩 / 4步2弩 / 6步4弩 + 补位）。
+		# `_issue_wave_plan` 会把它对回当前军队。
+		"squad": _wave_squad(army, push_n, int(form.get("foot", 0)), int(form.get("arch", 0))),
+		"foot_n": int(form.get("foot", 0)),
+		"arch_n": int(form.get("arch", 0)),
+		"phase": phase,
 		"goal": goal,
 		"foe": foe,
 		"target": target,
@@ -4109,7 +4227,9 @@ func _issue_wave_plan(p: Dictionary) -> bool:
 	var foe = p.get("foe", null)
 	var goal: Dictionary = p.get("goal", {})
 	# 计划里点好的编制（可能已经阵亡/被玩家接管）→ 过滤后按现有军队补齐到 push_n
-	var squad: Array = _squad_alive(army, p.get("squad", []), push_n)
+	var foot_n: int = int(p.get("foot_n", WAVE_P1_FOOT))
+	var arch_n: int = int(p.get("arch_n", WAVE_P1_ARCH))
+	var squad: Array = _squad_alive(army, p.get("squad", []), push_n, foot_n, arch_n)
 	if squad.is_empty():
 		return false
 	var targets: Array = _scatter_targets(squad, target)
@@ -4151,9 +4271,13 @@ func _issue_wave_plan(p: Dictionary) -> bool:
 	if strat_state == ST_PRESS:
 		interval *= 0.75
 	_next_wave_at = Game.elapsed + interval
-	# 编队明细写进日志：5 步 3 弩点到了几个、补了几个，一眼能核。
-	_log("第 %d 波[%s]：%d 出击（步兵 %d / 弩兵 %d / 补位 %d）/ %d 留守 → %s·%s（下一波 +%.0fs）" % [
-		_wave_index, strat_state, sent.size(),
+	# ★ 2026-11-08 阶梯编队：第二阶段的交替开关在这里翻转（发出去一波才翻）。
+	#   第一阶段/第三阶段不参与交替（它们是固定编制）。
+	if int(p.get("phase", 1)) == 2:
+		_wave_toggle = 0 if _wave_toggle == 1 else 1
+	# 编队明细写进日志：本阶段定编点到了几个、补了几个，一眼能核。
+	_log("第 %d 波[%s·阶段%d]：%d 出击（步兵 %d / 弩兵 %d / 补位 %d）/ %d 留守 → %s·%s（下一波 +%.0fs）" % [
+		_wave_index, strat_state, int(p.get("phase", 1)), sent.size(),
 		_count_squad_id(sent, WAVE_UNIT_FOOTMAN), _count_squad_id(sent, WAVE_UNIT_ARCHER),
 		maxi(sent.size() - _count_squad_id(sent, WAVE_UNIT_FOOTMAN)
 			- _count_squad_id(sent, WAVE_UNIT_ARCHER), 0),
@@ -4206,6 +4330,22 @@ const MAX_ARROW_TOWERS := 4
 const WATCHTOWER_GROW_SEC := 95.0
 ## 营火上限定
 const CAMPFIRE_MAX := 2
+
+# ---------------------------------------------------------------------------
+# 造塔半径（2026-11-08 玩家拍板「限制内圈造塔」）
+#
+# 规则：**基地内圈最多 2 座塔**（哨塔 + 箭塔都算，它们长在同一个防御圈上）。
+# 内圈满了之后，新塔一律只能建在外圈（INNER_TOWER_RADIUS ~ OUTER_TOWER_RADIUS），
+# 内圈再也插不进第三座 —— 原因（实测）：3 座哨塔 + 1 座箭塔 = 约 400 金，
+# 在同一条防御圈上叠 3 个视野点没有任何边际收益，而那时候 AI 连第 7 个兵都造不起。
+# ---------------------------------------------------------------------------
+## 内圈半径（米，从基地中心算）
+const INNER_TOWER_RADIUS := 26.0
+## 内圈塔数上限
+const INNER_TOWER_MAX := 2
+## 外圈造塔的搜索半径（内圈满了之后只能在这里找点）
+const OUTER_TOWER_RADIUS_MIN := 30.0
+const OUTER_TOWER_RADIUS_MAX := 58.0
 
 var _night_cd: float = 0.0
 var _creep_cd: float = 0.0
@@ -4319,8 +4459,79 @@ func _manage_upkeep(diff: DifficultyDef) -> void:
 	_maybe_build_campfire()
 
 
+## 内圈已经有多少座塔（哨塔 + 箭塔，只看活着、已完工或在建的，离基地中心 <= 内圈半径）。
+## 这是「内圈最多 2 座塔」的**唯一计数口径**，建造/升级/仲裁三处共用。
+func _inner_tower_count() -> int:
+	if _faction == null:
+		return 0
+	var ids: Array = []
+	var wid: StringName = _watchtower_id()
+	var tid: StringName = _tower_id()
+	if wid != &"":
+		ids.append(wid)
+	if tid != &"":
+		ids.append(tid)
+	if ids.is_empty():
+		return 0
+	var home: Vector3 = RtsWorld.base_center(_faction)
+	var n: int = 0
+	for b in _faction.buildings:
+		if b == null or not is_instance_valid(b) or b.def == null or not b.is_alive():
+			continue
+		if not ids.has(b.def.id):
+			continue
+		if b.global_position.distance_to(home) <= INNER_TOWER_RADIUS:
+			n += 1
+	return n
+
+
+## 内圈还有没有名额（满额 = 2 座）
+func _inner_tower_room() -> bool:
+	return _inner_tower_count() < INNER_TOWER_MAX
+
+
+## **塔的落点**（「基地内圈最多 2 座塔」的唯一出口）。
+##
+## · 内圈 < 2 → 朝敌方向在 16~26m 内圈找；
+## · 内圈已满 → **只能**在外圈 30~58m 找；外圈找不到就返回 INF（这一轮不造，
+##   **绝不回落到 `_find_build_spot()`** —— 它是从 11m 开始环形搜索，等于允许在内圈插塔）。
+func _tower_spot(footprint: Vector2i) -> Vector3:
+	if _inner_tower_room():
+		var p: Vector3 = _frontier_spot(footprint, 18.0, INNER_TOWER_RADIUS)
+		if p != Vector3.INF:
+			return p
+	return _outer_tower_spot(footprint)
+
+
+## 外圈选点：从基地朝敌方方向 30~58m 环采样（内圈满额后唯一合法的地方）。
+func _outer_tower_spot(footprint: Vector2i) -> Vector3:
+	if _faction == null:
+		return Vector3.INF
+	var home: Vector3 = RtsWorld.base_center(_faction)
+	var dir := Vector3.FORWARD
+	var foe: RtsFaction = _foe_faction()
+	if foe != null:
+		var to: Vector3 = RtsWorld.base_center(foe) - home
+		to.y = 0.0
+		if to.length() > 1.0:
+			dir = to.normalized()
+	var base_ang: float = atan2(dir.x, dir.z)
+	var r: float = OUTER_TOWER_RADIUS_MIN
+	while r <= OUTER_TOWER_RADIUS_MAX:
+		for sgn in [0.0, 0.45, -0.45, 0.9, -0.9, 1.6, -1.6]:
+			var ang: float = base_ang + float(sgn)
+			var raw := Vector3(home.x + sin(ang) * r, 0.0, home.z + cos(ang) * r)
+			var p: Vector3 = 建筑网格.snap_point(raw, footprint)
+			if 建筑网格.can_place(p, footprint) and _has_room(p, footprint) \
+					and p.distance_to(home) > INNER_TOWER_RADIUS:
+				return p
+		r += 4.0
+	return Vector3.INF
+
+
 ## 哨塔：**朝敌方方向**推到基地外圈，目的是"提前看见有人来"。
 ## 目标座数随时间长大（1 → 3），这样前期不浪费钱，后期基地有预警圈。
+## ★ 2026-11-08：落点走 _tower_spot()，**内圈 2 座封顶**。
 func _maybe_build_watchtower(diff: DifficultyDef) -> void:
 	if _faction == null:
 		return
@@ -4349,13 +4560,12 @@ func _maybe_build_watchtower(diff: DifficultyDef) -> void:
 	var builder: RtsUnit = _pick_builder()
 	if builder == null:
 		return
-	var spot: Vector3 = _frontier_spot(d.footprint, 24.0, 34.0)
-	if spot == Vector3.INF:
-		spot = _find_build_spot(d.footprint)
+	var spot: Vector3 = _tower_spot(d.footprint)
 	if spot == Vector3.INF:
 		return
 	if _sched.build(builder, d, spot, _build_yaw_at(spot), "defense") != null:
-		_log("造哨塔扩视野（已有 %d / 目标 %d）" % [have, want])
+		_log("造哨塔扩视野（已有 %d / 目标 %d，内圈 %d/%d）" % [have, want,
+			_inner_tower_count(), INNER_TOWER_MAX])
 
 
 ## "朝敌方的外圈"选点：从基地沿"我方→最近敌人"方向走 24~34m，找第一个可建点。
@@ -4453,14 +4663,52 @@ func can_build_townhall() -> bool:
 	return false
 
 
-## **扩张线（2C-4 §4.4，只留接口 + 最小可用）**：
-## 触发 = 农民到总上限（软上限+4）且木材足够 → 派 1 个农民建 1 座哨塔 → **停**
-##（不接入新矿区，完整扩张不在本轮）。农民去向的 "expand" 枚举 = 建造期间的
-## 建造命令（label "expand"），建造农民平常照常采集（_pick_builder 优先闲着的）。
+# ---------------------------------------------------------------------------
+# 扩张线：**外围前哨**（2026-11-08 玩家拍板「野怪被清空后，逼 AI 派农民去资源点旁
+# 建造哨塔或分基地」）
+#
+# 触发（全部满足才动手）：
+#   ① **野怪被清空**：中立敌对阵营没有活着的野怪，或基地 100m 内没有野怪；
+#   ② 钱够（哨塔价 + 木材余量 40）；
+#   ③ 有一个「离家 ≥ 35m、且 22m 内没有自家建筑」的资源点（金矿优先）；
+#   ④ 两次前哨间隔 ≥ 90 秒，最多 EXPAND_OUTPOST_MAX 座。
+# 行为：派 1 个**闲置**农民到那个资源点旁边建哨塔（视野 + 立足点）。
+# 分基地（大本营）仍由 can_build_townhall() 关着 —— 那是老的禁止项，本轮不动。
+# ---------------------------------------------------------------------------
+## 资源点要到多远才算「外围」
+const EXPAND_MIN_DIST := 35.0
+## 资源点附近这么多米内有自家建筑 → 视为已覆盖，不再插前哨
+const EXPAND_COVER_RADIUS := 22.0
+## 最多几座前哨
+const EXPAND_OUTPOST_MAX := 2
+## 两次前哨之间的最小间隔（秒）
+const EXPAND_COOLDOWN := 90.0
+## 开局多久之内不往外扩张（秒）：先把自己的兵营/人口立稳，别一开局就把 70 金扔在外面
+const EXPAND_NOT_BEFORE := 120.0
+var _expand_next_t: float = 0.0
+
+
+## 野怪是不是被清空了（中立阵营没有活着的兵，或基地 100m 内没有野怪）。
+func _creeps_cleared() -> bool:
+	var neutral: RtsFaction = Game.neutral_faction
+	if neutral == null:
+		return true
+	if not neutral.has_forces():
+		return true
+	var home: Vector3 = RtsWorld.base_center(_faction)
+	for u in neutral.units:
+		if u == null or not is_instance_valid(u) or not u.is_alive():
+			continue
+		if u.global_position.distance_to(home) <= 100.0:
+			return false
+	return true
+
+
+## 扩张线：外围前哨（见上面那段注释）。
 func _maybe_expand() -> void:
-	if _expand_state != 0 or _faction == null:
+	if _faction == null or _expand_state >= EXPAND_OUTPOST_MAX:
 		return
-	if _workers().size() < PEASANT_TOTAL_CAP:
+	if Game.elapsed < _expand_next_t:
 		return
 	var wid: StringName = _watchtower_id()
 	if wid == &"":
@@ -4468,9 +4716,18 @@ func _maybe_expand() -> void:
 	var wd: UnitDef = Cfg.unit(wid)
 	if wd == null:
 		return
-	# 木材也够（留 40 木 buffer，别把修理/农场的木头花光）
+	# ⓪ 开局 2 分钟内不扩张：先把兵营/人口立稳（前哨 70 金 = 半个步兵）
+	if Game.elapsed < EXPAND_NOT_BEFORE:
+		return
+	# ① 野怪清空才往外走（不然农民/前哨就是给野怪送菜）
+	if not _creeps_cleared():
+		return
+	# ② 木材余量（别把修理/农场的木头花光）+ 买得起
 	if _faction.wood < wd.wood_cost + 40:
 		return
+	if not _can_spend(wid):
+		return
+	# 已经有前哨在建：等它完工
 	for b in _faction.buildings:
 		if b == null or not is_instance_valid(b) or b.def == null:
 			continue
@@ -4478,72 +4735,73 @@ func _maybe_expand() -> void:
 			var rb: RtsBuilding = b as RtsBuilding
 			if rb != null and not rb.is_constructed:
 				return
-	if not _can_spend(wid):
+	# ③ 挑一个「外围资源点」
+	var target: Vector3 = _expand_resource_target()
+	if target == Vector3.INF:
 		return
 	var builder: RtsUnit = _pick_builder()
 	if builder == null:
 		return
-	var spot: Vector3 = _expand_spot(wd.footprint)
+	var spot: Vector3 = _spot_near(target, wd.footprint)
 	if spot == Vector3.INF:
 		return
 	if _sched.build(builder, wd, spot, _build_yaw_at(spot), "expand") != null:
-		_expand_state = 2
-		_log("扩张线：派农民建哨塔 @ (%.0f, %.0f)（最小可用：建完即停，不接新矿）"
-			% [spot.x, spot.z])
+		_expand_state += 1
+		_expand_next_t = Game.elapsed + EXPAND_COOLDOWN
+		_log("扩张线：资源点旁建前哨 @ (%.0f, %.0f)（第 %d/%d 座，野怪已清空）" % [
+			spot.x, spot.z, _expand_state, EXPAND_OUTPOST_MAX])
 
 
-## 扩张选点 = §3.5 三因子（控制区边缘 + 最近战斗 + 地图中心）。
-## 候选：基地外圈 24~34m 环采样；评分 = 0.4×离最近己方建筑（推视野/控制区边缘）
-## + 0.4×离 60s 威胁账本质心（最近战斗的位置值得插眼）+ 0.2×朝地图中心。
-func _expand_spot(footprint: Vector2i) -> Vector3:
+## 挑「外围资源点」：离家 ≥ EXPAND_MIN_DIST、22m 内没有自家建筑。金矿优先、远的优先。
+func _expand_resource_target() -> Vector3:
 	if _faction == null:
 		return Vector3.INF
 	var home: Vector3 = RtsWorld.base_center(_faction)
-	var map_center := Vector3(Cfg.game.map_size * 0.5, 0.0, Cfg.game.map_size * 0.5)
-	# 最近战斗：60s 威胁账本的位置质心（没有就退化为朝地图中心方向）
-	var battle := Vector3.INF
-	var n: int = 0
-	for e in _threat_ledger:
-		var nd = instance_from_id(int(e["id"]))
-		if nd == null or not is_instance_valid(nd) or not nd.is_alive():
-			continue
-		var pos: Vector3 = nd.global_position
-		battle = pos if n == 0 else battle + pos
-		n += 1
-	if n > 0:
-		battle = battle / float(n)
 	var best: Vector3 = Vector3.INF
 	var best_s: float = -1.0
-	var r: float = 24.0
-	var cands: Array = []
-	while r <= 34.0:
-		for i in range(12):
-			var ang: float = TAU * float(i) / 12.0
-			var raw := Vector3(home.x + cos(ang) * r, 0.0, home.z + sin(ang) * r)
-			var p: Vector3 = 建筑网格.snap_point(raw, footprint)
-			if 建筑网格.can_place(p, footprint) and _has_room(p, footprint):
-				cands.append(p)
-		r += 3.0
-	for p in cands:
-		var edge_nearest: float = INF
+	for h in Game.all_harvestables():
+		if h == null or not is_instance_valid(h) or not h.is_alive():
+			continue
+		var hd: UnitDef = h.def
+		if hd == null:
+			continue
+		var p: Vector3 = h.global_position
+		var d: float = p.distance_to(home)
+		if d < EXPAND_MIN_DIST:
+			continue
+		var covered: bool = false
 		for b in _faction.buildings:
 			if b == null or not is_instance_valid(b) or not b.is_alive():
 				continue
-			edge_nearest = minf(edge_nearest, p.distance_to(b.global_position))
-		var edge_s: float = clampf(edge_nearest / 30.0, 0.0, 1.0)
-		var battle_s: float = 0.5
-		if battle != Vector3.INF:
-			battle_s = 1.0 - clampf(p.distance_to(battle) / 60.0, 0.0, 1.0)
-		var center_s: float = 1.0 - clampf(p.distance_to(map_center) / float(Cfg.game.map_size), 0.0, 1.0)
-		var s: float = 0.4 * edge_s + 0.4 * battle_s + 0.2 * center_s
+			if b.global_position.distance_to(p) <= EXPAND_COVER_RADIUS:
+				covered = true
+				break
+		if covered:
+			continue
+		# 金矿优先（+30 分），其次远的优先（把视野/立足点推出去）
+		var s: float = d + (30.0 if int(hd.harvest_kind) == RtsConst.Harvest.GOLD else 0.0)
 		if s > best_s:
 			best_s = s
 			best = p
 	return best
 
 
-## 营火：**只在夜里考虑**，最多 CAMPFIRE_MAX 座，摆在基地朝敌方的一侧。
-## 玩家口径："并会建造营火，在夜晚能看清（让火在晚上能照明）"。
+## 在某个点周围 6~18m 找一个能放下的建筑格（贴网格 + 避开占格）。
+func _spot_near(center: Vector3, footprint: Vector2i) -> Vector3:
+	var r: float = 6.0
+	while r <= 18.0:
+		for i in range(10):
+			var ang: float = TAU * float(i) / 10.0
+			var raw := Vector3(center.x + cos(ang) * r, 0.0, center.z + sin(ang) * r)
+			var p: Vector3 = 建筑网格.snap_point(raw, footprint)
+			if 建筑网格.can_place(p, footprint) and _has_room(p, footprint):
+				return p
+		r += 3.0
+	return Vector3.INF
+
+
+## （旧的 _expand_spot 三因子选点已删除：2026-11-08 起扩张线走
+##   _expand_resource_target() + _spot_near()，理由见上面「外围前哨」那段注释。）
 func _maybe_build_campfire() -> void:
 	if _faction == null or not Game.is_night():
 		return
@@ -5261,9 +5519,14 @@ func _goal_can_attack(diff: DifficultyDef) -> bool:
 		return false
 	if strat_state == ST_BANK or strat_state == ST_RETARGET:
 		return false
+	var army_n: int = _army_units().size()
+	# ★ 2026-11-08 阶梯：第一阶段（总兵力 ≥ 7、防守下限还没满足）是**强制出击**，
+	#   与 _wave_plan 同口径 —— 否则目标层永远不报"攻击区域"，执行层也发不出去。
+	if army_n >= WAVE_P1_MIN_ARMY and _wave_phase_of(army_n) == 1:
+		return true
 	if not bool(posture.get("allow_attack", false)):
 		return false
-	return _army_units().size() >= maxi(diff.min_wave_size, WAVE_MIN_ARMY)
+	return army_n >= maxi(diff.min_wave_size, WAVE_MIN_ARMY)
 
 
 ## 下一项可研究的科技（与 `_sanity_research` 同一批判据，只读不点）。
@@ -5342,10 +5605,13 @@ func _goal_proposals(diff: DifficultyDef, now: float) -> Array:
 		if have_p < want_p:
 			var bd: UnitDef = Cfg.unit(pid)
 			if bd != null:
+				# ★ 2026-11-08「爆兵营」：金币充足 → 0.82（越过空过阈值，当得上主目标）
+				var b_urgent: bool = _barracks_expand_urgent(pid)
 				var p2: Dictionary = GL.proposal_make(GL.DEPT_OPS, yseq + 1, GL.ACT_BUILD,
-						String(pid), 1, GL.urgency_build_barracks(have_p),
-						"兵营 %d/%d（%s）" % [have_p, want_p,
-							"无产能" if have_p <= 0 else "扩建"],
+						String(pid), 1, GL.urgency_build_barracks(have_p, b_urgent),
+						"兵营 %d/%d（%s%s）" % [have_p, want_p,
+							"无产能" if have_p <= 0 else "扩建",
+							"，金币充足急建" if b_urgent else ""],
 						int(bd.gold_cost), int(bd.wood_cost), GL.DONE_BUILT,
 						now + GOAL_TTL_BUILD)
 				if not p2.is_empty():
@@ -5899,6 +6165,9 @@ func _goal_execute(now: float, reserve: float, urgent: bool) -> void:
 		var src: String = String(dd.get("来源线", ""))
 		var act: String = String(dd.get("动作类型", ""))
 		var key: String = "%s|%s|%s" % [src, act, String(dd.get("目标", ""))]
+		# 诉求自带「去重键」时用它（多兵营并行训练：每个兵营一条独立队列）
+		if dd.has("去重键"):
+			key = "%s|%s" % [act, String(dd["去重键"])]
 		dd["驳回原因"] = BM.RJ_NONE
 		if seen.has(key):
 			dd["驳回原因"] = BM.RJ_DONE
@@ -6017,6 +6286,10 @@ func _dept_tick(diff: DifficultyDef, now: float) -> void:
 		_manage_night(diff)
 	else:
 		_manage_creep_clear(diff)
+	# ★ 2026-11-08 据点：占据 / 抢夺（**不花金币**，只派兵占圈）。
+	#   旧代码只在 dept=off 分支里调它，而默认是 dept=on + goal=on
+	#   → AI 整局不去抢地图中心的资源箱（玩家实测「对据点没有占据和抢夺」）。
+	_manage_strongpoint()
 	# --- 2 s 节拍：L2 重建 → 主部门仲裁 → 按分数顺序执行 ---
 	if _dept_cd > 0.0:
 		return
@@ -6392,11 +6665,17 @@ func _demand_army_train(diff: DifficultyDef, threat_n: int) -> Array:
 		var ud: UnitDef = Cfg.unit(picked)
 		if ud == null:
 			continue
-		out.append(_demand("运营线", "训练", String(ud.display_name),
+		var dm: Dictionary = _demand("运营线", "训练", String(ud.display_name),
 				int(ud.gold_cost), int(ud.wood_cost), 0, false,
 				float(_model_call("demand_score_train", [gap, threat_n])),
 				"军队缺口=%d（目标 %d 实际 %d）" % [gap, target_army, army],
-				true, Callable(self, "_exec_train_army").bind(rb, picked)))
+				true, Callable(self, "_exec_train_army").bind(rb, picked))
+		if not dm.is_empty():
+			# ★ 2026-11-08 多兵营并行：同一种兵在两座兵营里是**两条独立队列**，
+			#   不能因为"来源线|动作|目标显示名"相同就被判成"本周期已执行"
+			#   （旧实现里第二座兵营的提案一律被判 RJ_DONE → 多兵营产能白建）。
+			dm["去重键"] = "%s#%d" % [String(ud.display_name), rb.get_instance_id()]
+			out.append(dm)
 	return out
 
 
@@ -6474,8 +6753,10 @@ func _demand_builds(diff: DifficultyDef, threat_n: int) -> Array:
 		if have < want:
 			var bd: UnitDef = Cfg.unit(pid)
 			if bd != null:
-				var bs: float = float(_model_call("demand_scale",
-						["兵营无产能" if have <= 0 else "兵营扩建"]))
+				# ★ 2026-11-08「爆兵营」：金币充足时把"扩建"当成"无产能"同档的紧迫度
+				var b_key: String = "兵营无产能" \
+						if have <= 0 or _barracks_expand_urgent(pid) else "兵营扩建"
+				var bs: float = float(_model_call("demand_scale", [b_key]))
 				out.append(_demand("运营线", "建造", String(bd.display_name),
 						int(bd.gold_cost), int(bd.wood_cost), 0, false,
 						float(_model_call("demand_score_build",
@@ -6902,15 +7183,14 @@ func _exec_build_watchtower() -> bool:
 	var builder: RtsUnit = _pick_builder()
 	if builder == null:
 		return false
-	var spot: Vector3 = _frontier_spot(d.footprint, 24.0, 34.0)
-	if spot == Vector3.INF:
-		spot = _find_build_spot(d.footprint)
+	# ★ 2026-11-08：内圈 2 座封顶（唯一落点出口，见 _tower_spot）
+	var spot: Vector3 = _tower_spot(d.footprint)
 	if spot == Vector3.INF:
 		return false
 	if _sched.build(builder, d, spot, _build_yaw_at(spot), "defense") == null:
 		return false
 	_note_build(wid)
-	_log("造哨塔扩视野（部门仲裁）")
+	_log("造哨塔扩视野（部门仲裁，内圈 %d/%d）" % [_inner_tower_count(), INNER_TOWER_MAX])
 	return true
 
 
@@ -6926,13 +7206,14 @@ func _exec_build_arrow_tower() -> bool:
 	var builder: RtsUnit = _pick_builder()
 	if builder == null:
 		return false
-	var spot: Vector3 = _find_build_spot(td.footprint)
+	# ★ 2026-11-08：箭塔与哨塔共用同一个「内圈 2 座」出口
+	var spot: Vector3 = _tower_spot(td.footprint)
 	if spot == Vector3.INF:
 		return false
 	if _sched.build(builder, td, spot, _build_yaw_at(spot), "economy") == null:
 		return false
 	_note_build(tid)
-	_log("补箭塔（部门仲裁）")
+	_log("补箭塔（部门仲裁，内圈 %d/%d）" % [_inner_tower_count(), INNER_TOWER_MAX])
 	return true
 
 

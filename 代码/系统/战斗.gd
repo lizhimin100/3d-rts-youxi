@@ -377,7 +377,11 @@ static func damage_taken_mult(target: Node3D, attack_type: int) -> float:
 
 
 ## 攻击快照：投射物飞行途中射手可能已经死了，伤害按**出手瞬间**的数值结算。
-static func make_snapshot(attacker: Node3D) -> Dictionary:
+##
+## damage_mult：每发伤害修正（弩兵三连发 = 0.75；单发 = 1.0）。
+## 它不是「克制/护甲」那一层（那层在 resolve_from_snapshot 里算），
+## 而是「这一发本身就只带 75% 攻击力」的武器属性。
+static func make_snapshot(attacker: Node3D, damage_mult: float = 1.0) -> Dictionary:
 	var snap: Dictionary = {}
 	if attacker == null or not is_instance_valid(attacker):
 		return snap
@@ -385,7 +389,7 @@ static func make_snapshot(attacker: Node3D) -> Dictionary:
 	if ad == null:
 		return snap
 	snap["damage"] = (ad.attack_damage + attack_bonus(attacker.faction, ad)) \
-			* star_attack_mult(attacker)
+			* star_attack_mult(attacker) * maxf(damage_mult, 0.0)
 	snap["spread"] = ad.attack_spread
 	snap["attack_type"] = ad.attack_type
 	snap["attack_mult"] = 1.0

@@ -184,9 +184,15 @@ static func urgency_build_farm(pop_rate: float, urgent: bool) -> float:
 	return 0.25
 
 
-## 建造兵营：没有产能建筑 = 结构性缺口（0.80）；扩建 = 0.45。
-static func urgency_build_barracks(have: int) -> float:
-	return 0.80 if have <= 0 else 0.45
+## 建造兵营：没有产能建筑 = 结构性缺口（0.85）；扩建 = 0.55。
+##
+## ★ 2026-11-08 玩家拍板「爆兵营」：金币充足（`urgent = true`）时扩建抬到 **0.82**，
+##   越过空过阈值 0.60 —— 否则它永远只能"搭便车"落地，还会跟训练抢同一笔钱。
+##   旧值：无产能 0.80 / 扩建 0.45（0.45 < 0.60，永远当不上主目标）。
+static func urgency_build_barracks(have: int, urgent: bool = false) -> float:
+	if have <= 0:
+		return 0.85
+	return 0.82 if urgent else 0.55
 
 
 ## 训练：军队缺口比例。gap=target → 0.90；gap=0.5×target → 0.625；gap=0 → 0.35。

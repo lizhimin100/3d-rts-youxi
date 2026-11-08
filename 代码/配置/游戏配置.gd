@@ -54,8 +54,15 @@ extends Resource
 @export var start_wood: int = 380
 ## 开局人口上限（大本营提供的另算）
 @export var start_food_cap: int = 0
-## 单个农民一次采集携带量（覆盖单位自己的 carry_capacity 为空时用）
+## 兼容字段：非农民单位 / 未知资源种类时的兜底携带量。
+## ★ 2026-11-08 起农民**不再走这个数**，见下面 harvest_carry_gold / harvest_carry_wood。
 @export var harvest_carry: int = 10
+## **农民一次采金携带量**（1 趟 = 搬这么多金）。
+## 2026-11-08 玩家拍板：10 → **15**（金是唯一瓶颈，木长期溢出，见
+## 文档/AI经济与等级排查报告.md §2.4）。
+@export var harvest_carry_gold: int = 15
+## **农民一次采木携带量**（1 趟 = 搬这么多木）。保持 10 不变。
+@export var harvest_carry_wood: int = 10
 ## 采集一次所需时间（秒）
 @export var harvest_time_gold: float = 3.2
 @export var harvest_time_wood: float = 4.0
@@ -347,6 +354,17 @@ func ensure_default_difficulties() -> void:
 	if not difficulties.is_empty():
 		return
 	difficulties = UnitTable.build_difficulties()
+
+
+## **农民一次采集的携带量**（按资源种类）。
+## 2026-11-08 玩家拍板：采金 10 → **15**，采木维持 10。
+## 只给"采集类单位"（农民）用；其它单位仍读自己的 carry_capacity。
+func harvest_carry_of(kind: int) -> int:
+	if kind == RtsConst.Harvest.WOOD:
+		return maxi(harvest_carry_wood, 1)
+	if kind == RtsConst.Harvest.GOLD:
+		return maxi(harvest_carry_gold, 1)
+	return maxi(harvest_carry, 1)
 
 
 ## 伤害克制倍率
