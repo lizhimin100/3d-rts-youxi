@@ -1,5 +1,25 @@
 class_name RtsSkillRt
 extends RefCounted
+## **技能运行时（技能系统入口）** —— 把配方卡拼成成品技能的那台机器
+##
+## ★ 整套技能系统的模型（玩家 2026-11-08 定稿，**改任何技能相关代码前先读**）：
+##
+## ```
+##   第 1 层  技能原子（代码/配置/原子/*.gd）   只描述效果，不绑触发
+##   第 2 层  单位姿势（动画 clip 名）          只描述动作
+##   第 3 层  技能特效（代码/系统/技能特效.gd） 只描述光效
+##   配方卡   SkillCard（代码/配置/技能卡.gd）  用哪几个原子/哪个动作/哪个特效/什么触发
+##            ↓ 技能表（启动时全量扫 .tres → Dictionary）
+##            ↓ 本文件（运行时把卡拼起来：修正倍率 / 连发 / 装填 / 动作 / 特效 / 格挡）
+## ```
+##
+## 三条铁律：
+##   ① **原子不绑触发**：本文件只认 stat 名与 kind，不认识任何具体技能 id；
+##   ② **表现可缺**：clip 名不存在 → 静默跳过；vfx id 未注册 → 占位微光；
+##   ③ 加一个技能 = **加一张 .tres**（编辑器里点"技能卡"），本文件一行不改；
+##      只有"主动伤害类"（火球）需要 技能.gd 里一个 case —— 那落的是真实伤害，
+##      纯数值表达不了。
+##
 ## **技能运行时**：一个单位身上"技能正在发生什么"。
 ##
 ## 2026-11-07 建立，组件化三件套的中间层：
@@ -140,6 +160,24 @@ func burst_spec() -> Dictionary:
 	return _burst
 
 
+## **格挡倍率**：这一击被挡掉多少（1.0 = 没挡）。
+##
+## 只有 kind = 受击 的卡参与（触发方式在卡上，原子只管 chance/mul）。
+## 在 RtsCombat 结算完护甲/克制之后、真正扣血之前判一次；每一下独立掷骰。
+func block_mult() -> float:
+	if _unit == null or not is_instance_valid(_unit):
+		return 1.0
+	for id in _active_ids_all():
+		if not TABLE.is_onhit(StringName(id)):
+			continue
+		var b: Dictionary = TABLE.block_of(StringName(id))
+		if b.is_empty():
+			continue
+		if randf() <= float(b.get("chance", 0.0)):
+			return float(b.get("mul", 1.0))
+	return 1.0
+
+
 ## 这个单位是否有被动连发（不看开关状态：被动类一律生效）
 func has_burst() -> bool:
 	return not burst_spec().is_empty()
@@ -263,10 +301,18 @@ func _active_ids_all() -> Array:
 	return out
 
 
-## 把当前开启的技能修正汇总成一张表（只在开关变化时重建，查询 O(1)）
+## 把当前开启的技能修正汇总成一张表（只在开关变化时重建，查询 O(1)）。
+##
+## ★ 2026-11-08：**被动 / 受击**类卡的 mods 永远生效（不看 _active）——
+##   格挡是"受击时判定"，不是"开着才有效"；被动铁甲光环同理。
 func _rebuild() -> void:
 	_mods.clear()
-	for id in _active.keys():
+	var ids: Array = _active.keys()
+	for id in _active_ids_all():
+		if TABLE.is_passive(StringName(id)) or TABLE.is_onhit(StringName(id)):
+			if not ids.has(id):
+				ids.append(id)
+	for id in ids:
 		var eff: Dictionary = TABLE.effect_of(StringName(id))
 		for md in eff.get("mods", []):
 			if not (md is Dictionary):

@@ -44,6 +44,8 @@ func _运行() -> void:
 		_用例C_不绑单位()
 		_用例D_三连发()
 		_用例E_组件可缺()
+		_用例G_原子层()
+		_用例H_格挡原子()
 		await _用例F_举盾动作()
 	报告["失败项"] = 失败
 	报告["结果"] = "通过" if 失败.is_empty() else "失败"
@@ -280,6 +282,83 @@ func _用例E_组件可缺() -> void:
 	_ok(true, "缺动画/特效时 toggle 不报错")
 	rt.call("toggle", &"shield_up")
 	_ok(true, "再次切换同样安全")
+	if u != null and is_instance_valid(u):
+		u.queue_free()
+
+
+# ===========================================================================
+# G 原子层（三层积木第 1 层）：卡上的 atoms 必须和旧字段拼出同样的 effect
+# ===========================================================================
+
+func _用例G_原子层() -> void:
+	print("[G] 原子层")
+	var T: Script = load("res://代码/配置/技能表.gd")
+	# 举盾：4 条属性原子（全伤害 -15% / 穿刺再 -35% / 移速 -45% / 攻速 -50%）
+	var sh: Dictionary = T.call("get_def", &"shield_up")
+	var mods: Array = (sh.get("effect", {}) as Dictionary).get("mods", [])
+	_ok(mods.size() == 4, "举盾 = 4 条属性原子（实得 %d）" % mods.size())
+	var has_pierce: bool = false
+	var move_mul: float = 1.0
+	var cd_mul: float = 1.0
+	for m in mods:
+		if String(m.get("stat", "")) == "damage_taken" and String(m.get("when", "")) == "穿刺":
+			has_pierce = absf(float(m.get("mul", 1.0)) - 0.65) < 0.001
+		if String(m.get("stat", "")) == "move_speed":
+			move_mul = float(m.get("mul", 1.0))
+		if String(m.get("stat", "")) == "attack_cooldown":
+			cd_mul = float(m.get("mul", 1.0))
+	_ok(has_pierce, "穿刺专用原子（×0.65）还在")
+	_ok(_近(move_mul, 0.55), "移速原子 ×0.55")
+	_ok(_近(cd_mul, 2.0), "攻速原子 ×2.0")
+	# 三连发：1 个连发原子
+	var ts: Dictionary = T.call("get_def", &"triple_shot")
+	var b: Dictionary = (ts.get("effect", {}) as Dictionary).get("burst", {})
+	_ok(int(b.get("shots", 0)) == 3, "三连发 = 连发原子 3 发")
+	_ok(_近(float(b.get("reload", 0.0)), 2.0), "三连发装填 2 秒")
+	# 原子不绑触发：举盾（开关）与格挡（受击）用的是同一套原子基类
+	var bp: Dictionary = T.call("get_def", &"block_parry")
+	_ok(T.call("is_onhit", &"block_parry"), "格挡卡是"
+			+ "受击" + "触发（不是开关）")
+	_ok(not (bp.get("effect", {}) as Dictionary).get("block", {}).is_empty(),
+			"格挡原子产出了 block 组件")
+	_ok(not (bp.get("effect", {}) as Dictionary).get("mods", []).size() > 0,
+			"格挡卡没有属性原子（效果与触发分离）")
+
+
+# ===========================================================================
+# H 格挡原子（受击触发）：概率生效、不需要 toggle、伤害真的被打折
+# ===========================================================================
+
+func _用例H_格挡原子() -> void:
+	print("[H] 格挡原子")
+	var u = _造(&"footman", Vector3(0.0, 0.0, 0.0))
+	if u == null:
+		return
+	# 运行时把格挡卡挂上去（数据驱动：不看单位卡里有没有）
+	var d: UnitDef = u.get("def")
+	d.abilities.append(&"block_parry")
+	var rt_script: Script = load("res://代码/系统/技能运行时.gd")
+	var rt = rt_script.new(u)
+	u.set("skills_rt", rt)
+	# 受击类不需要 toggle，直接就该生效
+	var hit: int = 0
+	var total: int = 400
+	var sum_ref: float = 0.0
+	var sum_block: float = 0.0
+	for i in total:
+		var ref := 100.0
+		var got: float = ref * float(rt.call("block_mult"))
+		sum_ref += ref
+		sum_block += got
+		if got < ref - 0.001:
+			hit += 1
+	var ratio: float = sum_block / maxf(sum_ref, 1.0)
+	# 25% 概率 ×0.5 → 期望 0.875；400 次采样留 ±0.04 余量
+	_ok(hit > 0, "格挡真的触发过（%d/%d 次）" % [hit, total])
+	_ok(absf(ratio - 0.875) < 0.04, "平均伤害 ≈ 0.875（实得 %.3f）" % ratio)
+	# 关掉：移除技能后必须回到 1.0
+	d.abilities.erase(&"block_parry")
+	_ok(_近(float(rt.call("block_mult")), 1.0), "没有格挡卡时 block_mult = 1.0")
 	if u != null and is_instance_valid(u):
 		u.queue_free()
 

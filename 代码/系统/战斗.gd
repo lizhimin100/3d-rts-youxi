@@ -57,6 +57,8 @@ class DamageInfo extends RefCounted:
 	var mitigation: float = 0.0
 	## 克制倍率（调试/测试用）
 	var multiplier: float = 1.0
+	## 是否被格挡（受击触发的原子；调试/自检用）
+	var blocked: bool = false
 
 
 # ===========================================================================
@@ -467,6 +469,14 @@ static func _apply(attacker: Node3D, target: Node3D, info: DamageInfo,
 	if c == Color(0, 0, 0):
 		c = COLOR_CRIT if info.is_crit else COLOR_HIT
 
+	# ★ 2026-11-08 格挡（受击触发的原子）：在真正扣血之前打折。
+	#   触发方式是技能卡的 kind=受击，原子只管概率/倍率 —— 这里不该认识任何技能 id。
+	var rt: Variant = target.get("skills_rt")
+	if rt != null and info.damage > 0.0:
+		var block: float = float(rt.call("block_mult"))
+		if block < 0.999:
+			info.damage *= block
+			info.blocked = true
 	if target.has_method("take_damage"):
 		target.call("take_damage", info.damage, info.attack_type, attacker)
 

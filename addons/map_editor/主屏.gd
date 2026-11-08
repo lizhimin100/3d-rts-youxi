@@ -31,6 +31,7 @@ const 皮肤 := preload("res://addons/map_editor/编辑器皮肤.gd")
 ## 不写 class_name，按本工程惯例用 preload 常量 + .call()。
 const CAMP_DIALOG_SCRIPT := preload("res://addons/map_editor/营地弹窗.gd")
 const CARD_DIALOG_SCRIPT := preload("res://addons/map_editor/卡片弹窗.gd")
+const SKILL_DIALOG_SCRIPT := preload("res://addons/map_editor/技能弹窗.gd")
 ## 功能索引窗（人类/agent 都能一键查「这个按钮在哪、实现写在哪」）
 const HELP_DIALOG_SCRIPT := preload("res://addons/map_editor/帮助窗.gd")
 
@@ -68,6 +69,8 @@ var _save_dialog: EditorFileDialog
 ## 点击弹窗：营地配置（视口点锚点触发）/ 单位卡 / 建筑卡（快捷条按钮触发）
 var _camp_dialog = null
 var _card_dialog_unit = null
+## 技能卡编辑器（三层积木 + 配方卡）—— 2026-11-08
+var _skill_dialog: Window = null
 var _card_dialog_building = null
 ## 功能索引窗
 var _help_dialog = null
@@ -587,9 +590,14 @@ func _build_dialogs() -> void:
 	_card_dialog_building.setup(session, "building")
 	add_child(_card_dialog_building)
 
+	_skill_dialog = SKILL_DIALOG_SCRIPT.new()
+	_skill_dialog.call("setup", session)
+	add_child(_skill_dialog)
+
 	if session != null:
 		session.card_dialog_unit = _card_dialog_unit
 		session.card_dialog_building = _card_dialog_building
+		session.skill_dialog = _skill_dialog
 
 	# 切到别的编辑器主屏时，这两扇窗不该浮在地图编辑器上面
 	visibility_changed.connect(_on_main_visibility_changed)
@@ -600,7 +608,7 @@ func _build_dialogs() -> void:
 func _on_main_visibility_changed() -> void:
 	if visible:
 		return
-	for d in [_camp_dialog, _card_dialog_unit, _card_dialog_building, _help_dialog]:
+	for d in [_camp_dialog, _card_dialog_unit, _card_dialog_building, _skill_dialog, _help_dialog]:
 		if d != null and is_instance_valid(d) and d.visible:
 			d.hide()
 
@@ -725,8 +733,19 @@ func _on_menu(id: int) -> void:
 			_open_card_editor("unit")
 		42:
 			_open_card_editor("building")
+		44:
+			_open_skill_editor()
 		43:
 			_open_help()
+
+
+## 打开技能卡编辑器（配方卡：三层积木 + 触发）
+func _open_skill_editor() -> void:
+	if _skill_dialog == null or not is_instance_valid(_skill_dialog):
+		_on_status("技能卡窗还没建好（编辑器插件加载异常）")
+		return
+	if _skill_dialog.has_method("open"):
+		_skill_dialog.call("open")
 
 
 ## 打开功能索引（帮助窗）

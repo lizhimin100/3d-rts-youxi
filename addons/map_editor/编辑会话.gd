@@ -46,6 +46,8 @@ var camp_dialog = null
 ## 单位卡 / 建筑卡编辑器窗口（主屏建好塞进来，快捷条按钮打开它们）
 var card_dialog_unit = null
 var card_dialog_building = null
+## 技能卡编辑器（三层积木 + 配方卡）。2026-11-08 新增，和两张卡片窗并列。
+var skill_dialog = null
 ## 功能索引窗（主屏建好塞进来）
 var help_dialog = null
 var def: MapDef = null

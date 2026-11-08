@@ -1,6 +1,12 @@
 [gd_resource type="Resource" script_class="SkillCard" format=3]
 
 [ext_resource type="Script" path="res://代码/配置/技能卡.gd" id="1"]
+[ext_resource type="Script" path="res://代码/配置/技能原子.gd" id="1_djahr"]
+[ext_resource type="Script" path="res://代码/配置/原子/原子_连发.gd" id="2_47rm7"]
+
+[sub_resource type="Resource" id="Resource_rg84w"]
+script = ExtResource("2_47rm7")
+atom_id = &"连发"
 
 [resource]
 script = ExtResource("1")
@@ -9,13 +15,6 @@ display_name = "三连发"
 icon = "技能/triple_shot"
 note = "被动：每次攻击快速射出 3 支弩矢（间隔 0.12 秒），打完后装填 2 秒。"
 kind = "被动"
-target = "无"
-cast = 0.0
-cooldown = 0.0
-range = 0.0
-burst_shots = 3
-burst_interval = 0.12
+atoms = Array[ExtResource("1_djahr")]([SubResource("Resource_rg84w")])
 reload = 2.0
 anim_on = &"reload"
-vfx_on = &""
-vfx_off = &""

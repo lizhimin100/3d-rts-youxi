@@ -31,6 +31,9 @@ const K_ACTIVE: StringName = &"主动"
 const K_TOGGLE: StringName = &"开关"
 const K_PASSIVE: StringName = &"被动"
 const K_GATHER: StringName = &"采集"
+## 受击触发（格挡）：每次挨打判定一次。**这是触发方式，不是原子** ——
+## 同一个格挡原子换成"开关"卡就是"开启后 N 秒必挡"。
+const K_ONHIT: StringName = &"受击"
 
 const T_NONE: StringName = &"无"
 const T_POINT: StringName = &"点"
@@ -78,6 +81,15 @@ static func _ensure() -> void:
 		_defs[sid] = d
 
 
+## 让缓存失效（编辑器保存技能卡之后调；运行时不用管）。
+## 没有它，新加的技能要重启 Godot 才认。
+static func reload() -> void:
+	_loaded = false
+	_defs.clear()
+	load_errors.clear()
+	_ensure()
+
+
 static func has(id: StringName) -> bool:
 	_ensure()
 	return _defs.has(id)
@@ -116,6 +128,11 @@ static func is_passive(id: StringName) -> bool:
 	return kind_of(id) == K_PASSIVE
 
 
+## 受击触发（格挡类）
+static func is_onhit(id: StringName) -> bool:
+	return kind_of(id) == K_ONHIT
+
+
 ## 采集技能同时能容纳几个农民（载位）。没有这个字段 = 1。
 static func slots_of(id: StringName) -> int:
 	var d: Dictionary = get_def(id)
@@ -139,6 +156,12 @@ static func effect_of(id: StringName) -> Dictionary:
 static func burst_of(id: StringName) -> Dictionary:
 	var eff: Dictionary = effect_of(id)
 	return eff.get("burst", {})
+
+
+## 技能的格挡组件（没有返回空字典）
+static func block_of(id: StringName) -> Dictionary:
+	var eff: Dictionary = effect_of(id)
+	return eff.get("block", {})
 
 
 ## 技能的表现组件：anim / vfx
@@ -180,6 +203,7 @@ static func schema() -> Dictionary:
 		"anim_off": {"type": "StringName", "hint": "关闭动画（可空）", "default": &""},
 		"vfx_on": {"type": "StringName", "hint": "开启特效（可空）", "default": &""},
 		"vfx_off": {"type": "StringName", "hint": "关闭特效（可空）", "default": &""},
+		"atoms": {"type": "Array[SkillAtom]", "hint": "三层积木第 1 层（编辑器按模板出表单）", "default": []},
 	}
 
 

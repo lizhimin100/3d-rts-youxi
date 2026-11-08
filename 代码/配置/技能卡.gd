@@ -1,7 +1,23 @@
 @tool
 class_name SkillCard
 extends Resource
-## **技能卡（组件化技能的唯一数据形态）**
+## **技能卡（配方卡）—— 三层积木 + 一张配方卡 = 成品技能**
+##
+## ★ 2026-11-08 玩家定稿的模型（整套技能系统的唯一口径，改之前先读完这段）：
+##
+## ```
+##   ┌ 第 1 层：技能原子（Effect）  代码/配置/原子/*.gd
+##   │    只描述"发生什么效果"：属性倍率 / 连发 / 格挡 …
+##   │    **不绑触发方式** —— 同一个减伤原子，换张卡就是举盾/光环/格挡
+##   ├ 第 2 层：单位姿势（Action）   动画 clip 名（shield_hold / cast …）
+##   │    只是 clip 名，模型没有就静默跳过
+##   ├ 第 3 层：技能特效（VFX）      代码/系统/技能特效.gd 的 id
+##   │    只是 id，没注册就退到占位微光
+##   └ 配方卡（本文件 SkillCard）     用哪几个原子 + 播哪个动作 + 挂哪个特效
+##                                    + 什么触发 + 对谁 + 冷却多久
+## ```
+##
+## **卡是说明书，不是成品；成品是运行时按卡把三层积木拼起来**（技能表 → 技能运行时）。
 ##
 ## 2026-11-07 建立。玩家口径：技能不要和单位绑死，编辑器里能单独拎出来挂到任意单位；
 ## 技能的动作、特效、效果三者分开，缺什么就用占位。
@@ -38,7 +54,8 @@ extends Resource
 ##   · 开关 = 点一下开、再点一下关（举盾）
 ##   · 被动 = 无需操作，自动生效（三连发）
 ##   · 采集 = 右键资源触发（伐木 / 采矿）
-@export_enum("主动", "开关", "被动", "采集") var kind: String = "主动"
+##   · 受击 = 每次挨打时判定一次（格挡）—— **触发方式住在卡上，不住在原子类里**
+@export_enum("主动", "开关", "被动", "采集", "受击") var kind: String = "主动"
 ## 目标类型：无 / 点 / 单位 / 资源
 @export_enum("无", "点", "单位", "资源") var target: String = "无"
 ## 前摇秒数（0 = 瞬发）
@@ -52,7 +69,13 @@ extends Resource
 ## 快捷键（空 = 自动分配 Q，第二个技能 X）
 @export var hotkey: String = ""
 
-@export_group("效果（纯数值，不写代码）")
+@export_group("原子（三层积木第 1 层）")
+## 这张卡用哪几个原子。**编辑器不直接暴露原子的原始字段**，
+## 而是按"技能模板"生成表单（见 addons/map_editor/技能弹窗.gd）。
+## 允许多个原子叠在一张卡上（例如：减伤 + 移速惩罚 + 攻速惩罚 = 举盾）。
+@export var atoms: Array[SkillAtom] = []
+
+@export_group("效果（纯数值，不写代码 · 旧字段，保留兼容）")
 ## 开关类技能**开启时**挂在自身上的修正组件。每项一个 Dictionary：
 ##   {"stat": "damage_taken", "mul": 0.85}                 # 受到伤害 ×0.85
 ##   {"stat": "damage_taken", "mul": 0.65, "when": "穿刺"}  # 只在受穿刺时再 ×0.65
@@ -82,6 +105,57 @@ extends Resource
 @export var vfx_off: StringName = &""
 
 
+## 旧字段（mods 数组）与原子里的属性倍率**合并**：老的 .tres 不用改就能继续跑。
+func _all_mods() -> Array:
+	var out: Array = []
+	for m in mods:
+		if m is Dictionary:
+			out.append(m)
+	for a in atoms:
+		if a != null and a.has_method("to_mods"):
+			out.append_array(a.call("to_mods"))
+	return out
+
+
+## 连发：原子优先，没有原子时回落到旧字段
+func _all_burst() -> Dictionary:
+	for a in atoms:
+		if a != null and a.has_method("to_burst"):
+			var b: Dictionary = a.call("to_burst")
+			if not b.is_empty():
+				return b
+	if burst_shots > 0:
+		return {
+			"shots": maxi(burst_shots, 0),
+			"interval": maxf(burst_interval, 0.02),
+			"reload": maxf(reload, 0.0),
+		}
+	return {}
+
+
+## 格挡：所有原子里的格挡取**最高概率**那一份（叠多份没有意义）
+func _all_block() -> Dictionary:
+	var best: Dictionary = {}
+	for a in atoms:
+		if a == null or not a.has_method("to_block"):
+			continue
+		var b: Dictionary = a.call("to_block")
+		if b.is_empty():
+			continue
+		if best.is_empty() or float(b.get("chance", 0.0)) > float(best.get("chance", 0.0)):
+			best = b
+	return best
+
+
+## 这张卡的原子摘要（编辑器/日志）
+func atom_describe() -> Array:
+	var out: Array = []
+	for a in atoms:
+		if a != null and a.has_method("describe"):
+			out.append(String(a.call("describe")))
+	return out
+
+
 ## 转成运行期读的 Dictionary（`技能表.get_def` 的返回格式）。
 ## 为什么要转：全工程的技能读取都是 Dictionary 口径，转一层就不用改几十处调用点。
 func to_def() -> Dictionary:
@@ -98,12 +172,9 @@ func to_def() -> Dictionary:
 		"slots": maxi(slots, 1),
 		"hotkey": hotkey,
 		"effect": {
-			"mods": mods,
-			"burst": {
-				"shots": maxi(burst_shots, 0),
-				"interval": maxf(burst_interval, 0.02),
-				"reload": maxf(reload, 0.0),
-			} if burst_shots > 0 else {},
+			"mods": _all_mods(),
+			"burst": _all_burst(),
+			"block": _all_block(),
 		},
 		"anim": {
 			"on": anim_on,

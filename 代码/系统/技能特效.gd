@@ -17,6 +17,17 @@ const VFX := preload("res://代码/美术/特效生成.gd")
 static var _warned: Dictionary = {}
 
 
+## 已注册的特效 id 列表（编辑器下拉 / 校验用）。
+## ★ 加特效时**这里和 match 一起改**，否则编辑器看不到新 id。
+static func ids() -> Array[StringName]:
+	return [&"weapon_glint", &"none"]
+
+
+## 这个 id 注册过没有（编辑器保存前校验用）
+static func has(id: StringName) -> bool:
+	return ids().has(id)
+
+
 ## 播一次技能特效。`id` 为空直接返回。
 static func play(unit: Node3D, id: StringName) -> void:
 	if unit == null or not is_instance_valid(unit) or id == &"":

@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="SkillCard" format=3]
+
+[ext_resource type="Script" path="res://代码/配置/技能原子.gd" id="1_x3srf"]
+[ext_resource type="Script" path="res://代码/配置/原子/原子_格挡.gd" id="2_jpqo8"]
+[ext_resource type="Script" path="res://代码/配置/技能卡.gd" id="3_ufg8v"]
+
+[sub_resource type="Resource" id="Resource_4jwbk"]
+script = ExtResource("2_jpqo8")
+atom_id = &"格挡"
+
+[resource]
+script = ExtResource("3_ufg8v")
+id = &"block_parry"
+display_name = "格挡"
+icon = "技能/block_parry"
+note = "受击触发：25% 概率挡下一击，该次伤害减半。原子与举盾共用同一套（只是触发方式不同）。"
+kind = "受击"
+atoms = Array[ExtResource("1_x3srf")]([SubResource("Resource_4jwbk")])
+vfx_on = &"weapon_glint"

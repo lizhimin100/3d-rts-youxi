@@ -1,6 +1,31 @@
 [gd_resource type="Resource" script_class="SkillCard" format=3]
 
 [ext_resource type="Script" path="res://代码/配置/技能卡.gd" id="1"]
+[ext_resource type="Script" path="res://代码/配置/技能原子.gd" id="1_2rp3n"]
+[ext_resource type="Script" path="res://代码/配置/原子/原子_属性.gd" id="2_hs0fk"]
+
+[sub_resource type="Resource" id="Resource_6rjxd"]
+script = ExtResource("2_hs0fk")
+mul = 0.85
+atom_id = &"减伤"
+
+[sub_resource type="Resource" id="Resource_dv6m7"]
+script = ExtResource("2_hs0fk")
+mul = 0.65
+when = &"穿刺"
+atom_id = &"减伤"
+
+[sub_resource type="Resource" id="Resource_a4awv"]
+script = ExtResource("2_hs0fk")
+stat = &"move_speed"
+mul = 0.55
+atom_id = &"属性"
+
+[sub_resource type="Resource" id="Resource_n41lh"]
+script = ExtResource("2_hs0fk")
+stat = &"attack_cooldown"
+mul = 2.0
+atom_id = &"属性"
 
 [resource]
 script = ExtResource("1")
@@ -9,25 +34,10 @@ display_name = "举盾"
 icon = "技能/shield_up"
 note = "举盾防御：受到伤害 -15%，受到穿刺伤害再 -35%；移动速度 -45%，攻击速度 -50%。再点一次放下。"
 kind = "开关"
-target = "无"
 cast = 0.2
 cooldown = 0.4
-range = 0.0
 hotkey = "Q"
-mods = [{
-"mul": 0.85,
-"stat": "damage_taken"
-}, {
-"mul": 0.65,
-"stat": "damage_taken",
-"when": "穿刺"
-}, {
-"mul": 0.55,
-"stat": "move_speed"
-}, {
-"mul": 2.0,
-"stat": "attack_cooldown"
-}]
+atoms = Array[ExtResource("1_2rp3n")]([SubResource("Resource_6rjxd"), SubResource("Resource_dv6m7"), SubResource("Resource_a4awv"), SubResource("Resource_n41lh")])
 anim_on = &"shield_up"
 anim_hold = &"shield_hold"
 anim_off = &"shield_down"

@@ -600,7 +600,7 @@ func _run_selftest() -> void:
 	# 但 Window.popup_centered() 在无头编辑器里也是安全的。
 	var popups: int = 0
 	var pop_bad: PackedStringArray = PackedStringArray()
-	for key in ["camp_dialog", "card_dialog_unit", "card_dialog_building", "help_dialog"]:
+	for key in ["camp_dialog", "card_dialog_unit", "card_dialog_building", "skill_dialog", "help_dialog"]:
 		# 主屏建好后会塞进 session（公开名不带下划线），从这里拿最稳
 		var dlg = _session.get(key) if _session != null else null
 		if dlg == null or not is_instance_valid(dlg):
@@ -619,9 +619,9 @@ func _run_selftest() -> void:
 		await get_tree().process_frame
 		dlg.call("hide")
 		popups += 1
-	if pop_bad.is_empty() and popups == 4:
+	if pop_bad.is_empty() and popups == 5:
 		passes += 1
-		print("  · 点击弹窗：营地 / 单位卡 / 建筑卡 / 帮助 四扇窗都能打开")
+		print("  · 点击弹窗：营地 / 单位卡 / 建筑卡 / 技能卡 / 帮助 五扇窗都能打开")
 	else:
 		fails.append("点击弹窗缺项：%s" % ", ".join(pop_bad))
 
