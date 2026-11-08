@@ -852,6 +852,9 @@ func start_upgrade(new_id: StringName) -> bool:
 	_upgrade_t = 0.0
 	_upgrade_total = upgrade_time_for(new_id)
 	_upgrade_done = false
+	# ★ 2026-11-08 玩家口径：升级和建造共用"施工中"状态机 ——
+	#   旧模型**瞬间**切施工中（半成品），进度条走完才换成目标模型。
+	_enter_upgrade_stage()
 	return true
 
 
@@ -862,6 +865,7 @@ func cancel_upgrade() -> bool:
 	_upgrade_id = &""
 	_upgrade_t = 0.0
 	_upgrade_total = 0.0
+	_leave_upgrade_stage()
 	return true
 
 
@@ -878,6 +882,7 @@ func _tick_upgrade(dt: float) -> void:
 	_upgrade_t = 0.0
 	_upgrade_done = true
 	var was_selected: bool = is_selected
+	_leave_upgrade_stage()
 	# replace 内部会 Game.unregister(self) + queue_free(self)。
 	# queue_free 是延迟的，这一帧剩下的逻辑仍然跑在有效节点上，安全。
 	var n: Node3D = REFIT.replace(self, to, true)
@@ -886,6 +891,8 @@ func _tick_upgrade(dt: float) -> void:
 			Game.toast("升级失败：%s" % (def.display_name if def != null else "建筑"),
 					Color(1.0, 0.5, 0.4))
 		return
+	# ★ 换模型那一帧：0.2 秒闪光 + 一圈尘土，遮住"旧塔变新塔"的跳变
+	_swap_flash(n)
 	# 选中跟着搬到新楼：玩家看到的是"这座塔升级完成了"，不是"面板突然空了"
 	if was_selected:
 		var tree := get_tree()
@@ -894,6 +901,123 @@ func _tick_upgrade(dt: float) -> void:
 				if nd.has_method("select_units"):
 					nd.call("select_units", [n])
 					break
+
+# ===========================================================================
+# 升级施工中（2026-11-08 · 甲方案：只做半成品哨塔 / 半成品大本营）
+# ===========================================================================
+## 允许"升级时切施工中"的建筑 → 用哪张建造模型当半成品。
+##
+## 玩家口径：「只做'半成品哨塔'和'半成品大本营'两个，其他建筑不做。」
+## 这两张正好就是建造资产里的 `<id>_build.glb`（自带脚手架 + `build` 动画），
+## 所以不需要美术再出一套"半成品"模型。
+const UPGRADE_STAGE_MODEL: Dictionary = {
+	&"watchtower": "res://美术/模型/建造/watchtower_build.glb",
+	&"townhall": "res://美术/模型/建造/townhall_build.glb",
+}
+## 半成品摆到"建造动画的几成"：0.62 = 脚手架还在、主体已起来大半
+const UPGRADE_STAGE_T: float = 0.62
+## 换模型那一帧的闪光时长（秒）
+const SWAP_FLASH_TIME: float = 0.2
+
+## 施工中模型 holder（null = 没进施工中 / 该建筑不做半成品）
+var _stage: Node3D = null
+
+
+## 进入"施工中"：旧模型瞬间隐藏，摆上半成品（哨塔 / 大本营）。
+## 其他建筑：只走读条 + 进度条（玩家明确说"其他建筑不做"）。
+func _enter_upgrade_stage() -> void:
+	_leave_upgrade_stage()
+	if def == null or faction == null:
+		return
+	var path: String = String(UPGRADE_STAGE_MODEL.get(def.id, ""))
+	if path.is_empty() or not ResourceLoader.exists(path):
+		return
+	var model: Node3D = ArtKit.build_model(path, def.model_scale)
+	if model == null:
+		return
+	ArtKit.apply_team_color(model, faction.color)
+	# 建造动画摆到 62%：不自己播，时轴由这个常量定死（施工中不随进度变，
+	# 玩家要的是"看起来在施工"，不是"看着它再长一遍"）
+	var ap: AnimationPlayer = _find_anim_player(model)
+	if ap != null and ap.has_animation("build"):
+		ap.play("build")
+		ap.speed_scale = 0.0
+		ap.seek(ap.get_animation("build").length * UPGRADE_STAGE_T, true)
+	var holder := Node3D.new()
+	holder.name = "升级工地"
+	# 成品模型的抬升（单位视觉.BUILDING_LIFT = 0.06）照抄，别让半成品陷进地里
+	holder.position = Vector3(0.0, 0.06, 0.0)
+	holder.add_child(model)
+	add_child(holder)
+	_stage = holder
+	if visual != null:
+		visual.visible = false
+	# 起手的尘土：让"切成工地"这一下有个交代
+	BuildFx.dust(global_position + Vector3.UP * 0.3, 8, 0.7, Color(0.68, 0.62, 0.50))
+
+
+## 退出施工中：撤掉半成品，露回成品模型
+func _leave_upgrade_stage() -> void:
+	if _stage != null and is_instance_valid(_stage):
+		_stage.queue_free()
+	_stage = null
+	if visual != null and is_instance_valid(visual):
+		visual.visible = true
+
+
+## 自检读：现在是不是摆着半成品
+func has_upgrade_stage() -> bool:
+	return _stage != null and is_instance_valid(_stage)
+
+
+## 换模型那一帧的 0.2 秒闪光 + 尘土（玩家口径 34：遮住跳变）
+func _swap_flash(n: Node3D) -> void:
+	if n == null or not is_instance_valid(n):
+		return
+	var pos: Vector3 = n.global_position
+	BuildFx.dust(pos + Vector3.UP * 0.5, 22, 1.2, Color(0.74, 0.68, 0.54))
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			BuildFx.dust(pos + Vector3(sx * 1.6, 0.3, sz * 1.6), 8, 0.8,
+					Color(0.66, 0.60, 0.48))
+	Vfx.selection_burst(pos + Vector3.UP * 0.8, 2.4, Color(1.0, 0.88, 0.52))
+	# 一团迅速膨胀并淡出的暖白光球：0.2 秒，正好盖住"旧模型消失 / 新模型出现"
+	var mi := MeshInstance3D.new()
+	var sm := SphereMesh.new()
+	sm.radius = 1.0
+	sm.height = 2.0
+	mi.mesh = sm
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.albedo_color = Color(1.0, 0.92, 0.70, 0.85)
+	mi.material_override = mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	if n.has_method("get_radius"):
+		mi.position.y = float(n.call("get_radius")) * 0.5
+	add_child(mi)
+	var tw := mi.create_tween()
+	tw.set_parallel(true)
+	tw.tween_property(mi, "scale", Vector3(2.6, 1.6, 2.6), SWAP_FLASH_TIME)
+	tw.tween_property(mat, "albedo_color:a", 0.0, SWAP_FLASH_TIME)
+	tw.chain().tween_callback(mi.queue_free)
+	if n.get("visual") != null:
+		var v = n.get("visual")
+		if v != null and v.has_method("flash"):
+			v.call("flash", pos)
+
+
+## 深度优先找第一个 AnimationPlayer（和 工地表现 同一个写法）
+func _find_anim_player(root: Node) -> AnimationPlayer:
+	if root is AnimationPlayer:
+		return root as AnimationPlayer
+	for c in root.get_children():
+		var f := _find_anim_player(c)
+		if f != null:
+			return f
+	return null
+
 
 # ===========================================================================
 # 新建筑的专属逻辑

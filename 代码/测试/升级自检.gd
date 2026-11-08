@@ -155,6 +155,7 @@ func _run() -> void:
 
 	# --- 8. 升级要**读条**（2026-11-06 玩家口径：不能一口气变成箭塔）---
 	_check_timed_upgrade(pf)
+	_check_upgrade_cancel(pf)
 
 	_finish()
 
@@ -186,6 +187,11 @@ func _check_timed_upgrade(pf: RtsFaction) -> void:
 	var g0: int = pf.gold
 	_check(REFIT.start(bt), "[读条] 升级能开始（校验+扣差价）")
 	_check(bt.is_upgrading(), "[读条] 进入升级状态")
+	# ★ 2026-11-08 甲方案：升级和建造共用"施工中"状态机 ——
+	#   点下去那一帧就该看到半成品哨塔，成品模型必须藏起来。
+	_check(bool(bt.call("has_upgrade_stage")), "[施工中] 哨塔升级摆出半成品")
+	if bt.visual != null:
+		_check(not bt.visual.visible, "[施工中] 旧塔的成品模型已隐藏")
 	_check(pf.gold == g0 - cost.x, "[读条] 升级费当场扣掉 %d 金" % cost.x)
 	_check(bt.upgrade_progress() < 0.01, "[读条] 刚点下去进度 0（不是瞬变）")
 	_check(not bt.queue_train(&"footman"), "[读条] 读条期间不能训练")
@@ -205,10 +211,43 @@ func _check_timed_upgrade(pf: RtsFaction) -> void:
 	_check(found != null, "[读条] 读满后原地换成箭塔")
 	if found != null:
 		_check(found.is_constructed, "[读条] 新塔是完工状态")
+		_check(found.def.id == &"tower", "[读条] 施工中只显示半成品，到点才换成箭塔")
 		Game.unregister(found)
 		if Game.level != null and Game.level.has_method("clear_footprint"):
 			Game.level.call("clear_footprint", found)
 		found.queue_free()
+
+
+## 取消升级：半成品必须撤掉、旧模型必须露回来（否则玩家会看到一座"永远在施工"的塔）
+func _check_upgrade_cancel(pf: RtsFaction) -> void:
+	const REFIT := preload("res://代码/系统/建筑改造.gd")
+	var wd: UnitDef = Cfg.unit(&"watchtower")
+	if wd == null:
+		return
+	var parent: Node = get_parent()
+	if parent == null:
+		return
+	pf.gold = 2000
+	pf.wood = 2000
+	var bt: RtsBuilding = RtsBuilding.new()
+	bt.name = "自检取消升级塔"
+	parent.add_child(bt)
+	bt.global_position = RtsWorld.snap_y(RtsWorld.base_center(pf) + Vector3(-22.0, 0.0, -14.0))
+	bt.setup(pf, wd)
+	bt.set_constructed(true)
+	Game.register(bt)
+	if Game.level != null and Game.level.has_method("mark_footprint"):
+		Game.level.call("mark_footprint", bt)
+	REFIT.start(bt)
+	_check(bool(bt.call("has_upgrade_stage")), "[取消] 开始后摆出半成品")
+	bt.cancel_upgrade()
+	_check(not bool(bt.call("has_upgrade_stage")), "[取消] 半成品已撤掉")
+	if bt.visual != null:
+		_check(bt.visual.visible, "[取消] 旧模型露回来")
+	Game.unregister(bt)
+	if Game.level != null and Game.level.has_method("clear_footprint"):
+		Game.level.call("clear_footprint", bt)
+	bt.queue_free()
 
 
 ## 哨塔升级箭塔：这是 2026-11-01 新增的玩家/AI 共用能力，

@@ -75,6 +75,8 @@ var _qa_skill: StringName = &""
 var _qa_stars: bool = false
 ## --qa-stars=N：只选中前 N 个
 var _qa_star_pick: int = 0
+## --qa-upgrade：造一座哨塔并立刻开始升级（看"施工中"半成品）
+var _qa_upgrade: bool = false
 ## 地图编辑器：--map=<路径> 直接加载 MapDef（地图编辑器 Test Map 用）
 var _map_path: String = ""
 ## 开局提前读到的地图（阵营数量要用它，见 _ready 第 1 步）
@@ -427,6 +429,8 @@ func _mount_tests() -> void:
 		_qa_select.call_deferred(_qa_select_id)
 	if _qa_stars:
 		_qa_spawn_stars.call_deferred()
+	if _qa_upgrade:
+		_qa_upgrade_tower.call_deferred()
 	# 压测：--stress-units=8000 在基地附近塞 N 个待命兵（性能排查用，默认不开）
 	for a in args:
 		if a.begins_with("--stress-units="):
@@ -908,6 +912,26 @@ func _qa_spawn_stars() -> void:
 	print("[QA] 星级演示：%d 个（0~3 星）" % made.size())
 
 
+## QA：造一座哨塔 → 立刻开始升级 → 镜头对准（拍"施工中"半成品）
+func _qa_upgrade_tower() -> void:
+	var pl: RtsFaction = Game.player_faction
+	if pl == null:
+		return
+	pl.gold = 2000
+	pl.wood = 2000
+	var pos: Vector3 = RtsWorld.walkable_pos(RtsWorld.base_center(pl) + Vector3(7.0, 0.0, 11.0))
+	var n: Node3D = Game.spawn_unit(pl, &"watchtower", pos, level)
+	if n == null:
+		return
+	if n.has_method("set_constructed"):
+		n.call("set_constructed", true)
+	var REFIT: Script = load("res://代码/系统/建筑改造.gd")
+	REFIT.call("start", n)
+	if camera != null and camera.has_method("focus_on"):
+		camera.call("focus_on", pos)
+	print("[QA] 哨塔升级中（施工中模型已切）")
+
+
 func _parse_cmdline() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--shot="):
@@ -918,6 +942,8 @@ func _parse_cmdline() -> void:
 			_quit_after_shot = true
 		elif arg.begins_with("--select-id="):
 			_qa_select_id = arg.substr(12)
+		elif arg == "--qa-upgrade":
+			_qa_upgrade = true
 		elif arg == "--qa-stars":
 			_qa_stars = true
 		elif arg.begins_with("--qa-stars="):
