@@ -110,6 +110,10 @@ extends Resource
 @export var harvest_kind: int = RtsConst.Harvest.GOLD
 ## 可采集物总量
 @export var resource_amount: int = 0
+## **击杀掉落**（中立敌对用）：死亡时击杀方直接拿到这些资源。
+## 普通单位 / 建筑填 0。读取口径见 `代码/系统/掉落.gd`。
+@export var drop_gold: int = 0
+@export var drop_wood: int = 0
 
 @export_group("技能")
 ## 技能 id 列表（目前支持 "fireball"）

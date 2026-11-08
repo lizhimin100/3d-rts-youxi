@@ -24,3 +24,5 @@ display_name = "豺狼人战士"
 description = "中立野怪：对任何玩家/盟友敌对，没有大本营。"
 race = &"中立"
 volume = 1.1
+drop_gold = 18
+drop_wood = 4

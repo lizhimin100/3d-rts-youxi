@@ -16,6 +16,8 @@ extends Node
 signal unit_spawned(unit: Node3D)
 ## 单位死亡（还没被移除）
 signal unit_died(unit: Node3D)
+## 击杀归因（2026-11-08）：谁打死了谁 —— 经验、掉落、击杀日志都挂这条信号
+signal unit_killed(victim: Node3D, killer: Node3D)
 ## 建筑建造完成
 signal building_completed(building: Node3D)
 ## 阵营资源/人口变化
@@ -498,6 +500,81 @@ func add_resource(faction: RtsFaction, gold: int, wood: int) -> void:
 		return
 	faction.add_res(gold, wood)
 	resources_changed.emit(faction)
+
+
+# ===========================================================================
+# 击杀归因 / 经验 / 掉落（2026-11-08）
+# ===========================================================================
+## 击杀日志上限（环形，只留最近的）
+const KILL_LOG_MAX: int = 400
+## 击杀日志：[{秒, 击杀者, 击杀者阵营, 受害者, 受害者阵营, 经验, 金, 木}]
+var kill_log: Array = []
+## 升星口径（经验/命名/倍率）唯一出口
+const STAR := preload("res://代码/系统/升星.gd")
+
+
+## **谁打死了谁**（RtsUnit._die() 调用一次）。
+##
+## 三条口径（玩家 2026-11-08）：
+##   1. 击杀者**独得**经验（不分享），每次 15 点；
+##   2. 中立敌对（team 0）死亡 → 击杀方直接拿到卡上写的金/木掉落；
+##   3. 记一条击杀日志（谁杀了谁），并广播 unit_killed。
+##
+## 塔/建筑打死人也算"击杀方"（资源归阵营），但**经验只给兵**：
+## 建筑没有星级，给它攒经验没有去处。
+func on_unit_killed(victim: Node3D, killer: Node3D) -> void:
+	if victim == null or not is_instance_valid(victim):
+		return
+	var vd: UnitDef = victim.get("def") as UnitDef
+	var vf: RtsFaction = victim.get("faction") as RtsFaction
+	var ku: Node3D = null
+	if killer != null and is_instance_valid(killer) and killer is RtsUnit:
+		ku = killer as Node3D
+	var kf: RtsFaction = ku.get("faction") as RtsFaction if ku != null else null
+	var kd: UnitDef = ku.get("def") as UnitDef if ku != null else null
+
+	var got_exp: float = 0.0
+	if ku != null and kd != null and kd.kind == RtsConst.Kind.UNIT:
+		if ku.has_method("gain_exp"):
+			ku.call("gain_exp", STAR.KILL_EXP)
+		ku.set("kill_count", int(ku.get("kill_count")) + 1)
+		got_exp = STAR.KILL_EXP
+
+	var dg: int = 0
+	var dw: int = 0
+	# 中立敌对 = team 0（野怪）。掉落写在中立那边的卡上，谁打死归谁。
+	if vf != null and int(vf.team) == 0 and kf != null and vd != null:
+		dg = int(vd.drop_gold)
+		dw = int(vd.drop_wood)
+		if dg > 0 or dw > 0:
+			add_resource(kf, dg, dw)
+			if kf == player_faction:
+				toast("击杀 %s　+%d 金 +%d 木" % [vd.display_name, dg, dw],
+						Color(0.96, 0.82, 0.42))
+
+	var rec: Dictionary = {
+		"秒": snappedf(elapsed, 0.1),
+		"击杀者": kd.display_name if kd != null else "—",
+		"击杀者阵营": kf.display_name if kf != null else "—",
+		"受害者": vd.display_name if vd != null else "—",
+		"受害者阵营": vf.display_name if vf != null else "—",
+		"经验": got_exp, "金": dg, "木": dw,
+	}
+	kill_log.append(rec)
+	if kill_log.size() > KILL_LOG_MAX:
+		kill_log.remove_at(0)
+	if _kill_log_on():
+		print("[击杀] %s（%s）击杀 %s（%s）+%.0f经验 +%d金 +%d木" % [
+			rec["击杀者"], rec["击杀者阵营"], rec["受害者"], rec["受害者阵营"],
+			got_exp, dg, dw])
+	unit_killed.emit(victim, killer)
+
+
+func _kill_log_on() -> bool:
+	for a in OS.get_cmdline_user_args():
+		if a == "--kill-log":
+			return true
+	return false
 
 
 ## 能不能造

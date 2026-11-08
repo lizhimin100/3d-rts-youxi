@@ -183,6 +183,17 @@ enum GatherPhase { SEEK = 0, TO_NODE = 1, ENTER = 4, HARVEST = 2, TO_DROP = 3 }
 var def: UnitDef = null
 var faction: RtsFaction = null
 var hp: float = 1.0
+# ===========================================================================
+# 经验 / 星级（2026-11-08 · 玩家口径见 代码/系统/升星.gd 文件头）
+# ===========================================================================
+## 累计经验（击杀获得，击杀者独得）
+var exp_value: float = 0.0
+## 星级 0~3（0 新兵 / 1 老兵 / 2 精英 / 3 王牌）
+var star_level: int = 0
+## 击杀数（击杀日志/界面用）
+var kill_count: int = 0
+## 最后一次打在身上的伤害来源（死亡时用它做击杀归因）
+var _last_attacker: Node3D = null
 ## 法力（只有定义里 max_mana > 0 的单位才有；UI 的"蓝条"读它）
 var mana: float = 0.0
 var state: int = RtsConst.State.IDLE
@@ -414,7 +425,7 @@ func setup(p_faction: RtsFaction, p_def: UnitDef) -> void:
 	def = p_def
 	if def == null:
 		return
-	hp = def.max_hp
+	hp = max_hp()
 	mana = def.max_mana
 	_ability_cd = 0.0
 	# 技能运行时：只有真的挂了技能才建（不挂的单位保持 null，查询零开销）
@@ -537,7 +548,8 @@ func _max_speed() -> float:
 	if def == null:
 		return 0.0
 	var skill: float = skills_rt.move_speed_mult() if skills_rt != null else 1.0
-	return maxf(def.move_speed * speed_multiplier() * skill, 0.0)
+	# ★ 星级（老兵/精英/王牌）的移速加成走同一处，不另开一条路径
+	return maxf(def.move_speed * speed_multiplier() * skill * star_speed_mult(), 0.0)
 
 
 ## 加速度（让 0→满速刚好用 SPEED_EASE_TIME 秒）
@@ -547,6 +559,92 @@ func _accel() -> float:
 	# 举盾走路：起速也跟着慢下来，否则"移速 -45%"只体现在最高速上，手感很怪
 	var skill: float = skills_rt.move_speed_mult() if skills_rt != null else 1.0
 	return def.move_speed * skill / SPEED_EASE_TIME
+
+
+# ===========================================================================
+# 经验 / 星级
+# ===========================================================================
+
+## 升星口径（经验换算、倍率表、命名）唯一出口
+const STAR := preload("res://代码/系统/升星.gd")
+
+
+## 当前**有效**生命上限（含星级加成）。所有"按比例算血"的地方都读它。
+func max_hp() -> float:
+	if def == null:
+		return 1.0
+	return maxf(def.max_hp * star_tough_mult(), 1.0)
+
+
+## 攻击力 / 移速 / 攻速 的星级倍率
+func star_offense_mult() -> float:
+	return STAR.offense_mult(star_level)
+
+
+## 血量 / 防御 的星级倍率
+func star_tough_mult() -> float:
+	return STAR.tough_mult(star_level)
+
+
+## 给 RtsCombat / AI 读的别名（分开命名，免得以后想单独调某一项时找不到入口）
+func star_attack_mult() -> float:
+	return star_offense_mult()
+
+
+func star_speed_mult() -> float:
+	return star_offense_mult()
+
+
+func star_atkspd_mult() -> float:
+	return star_offense_mult()
+
+
+func star_defense_mult() -> float:
+	return star_tough_mult()
+
+
+## 星级名（新兵 / 老兵 / 精英 / 王牌）
+func star_title() -> String:
+	return STAR.name_of(star_level)
+
+
+## 升一星要多少经验（金×2 + 木×3；二星三星同价）
+func exp_need() -> float:
+	return STAR.exp_per_star(def)
+
+
+## 距下一星还差多少经验（满星返回 0）
+func exp_to_next() -> float:
+	if star_level >= STAR.STAR_CAP:
+		return 0.0
+	var need: float = exp_need()
+	var base: float = float(star_level) * need
+	return maxf(base + need - exp_value, 0.0)
+
+
+## **加经验**（击杀者独得）。跨过门槛就连升，最多三星。
+func gain_exp(amount: float) -> void:
+	if def == null or def.kind != RtsConst.Kind.UNIT:
+		return
+	if amount <= 0.0 or star_level >= STAR.STAR_CAP:
+		return
+	exp_value += amount
+	var need: float = exp_need()
+	var want: int = STAR.stars_of(exp_value, need)
+	if want <= star_level:
+		return
+	var old_max: float = max_hp()
+	star_level = want
+	var new_max: float = max_hp()
+	# 按比例抬血：升星是"变强"，不是"回满"（否则每次升星等于送一次治疗）
+	if old_max > 0.01:
+		hp = clampf(hp * (new_max / old_max), 1.0, new_max)
+	# 反馈：身上冒一圈金星 + 给玩家报一条
+	Vfx.selection_burst(global_position + Vector3.UP * 0.9,
+			maxf(get_radius() * 1.6, 0.6), Color(1.0, 0.84, 0.34))
+	if faction != null and faction == Game.player_faction:
+		Game.toast("%s 升为 %s（%d 星）" % [def.display_name, star_title(), star_level],
+				Color(1.0, 0.86, 0.42))
 
 
 # ===========================================================================
@@ -562,6 +660,12 @@ func take_damage(amount: float, _type: int, from: Node3D) -> void:
 	#   （范围技/脚本直伤/旧存档里的残留目标）。要打他，先把房子拆了。
 	if _inside_site != null:
 		return
+	# 击杀归因（2026-11-08）：记下"最后是谁打的"，死亡时给经验/掉落用。
+	# 只认敌方来源：自己人误伤/环境伤害不写进日志。
+	if from != null and is_instance_valid(from) and from is RtsUnit:
+		var ff: RtsFaction = from.get("faction") as RtsFaction
+		if ff != null and faction != null and faction.is_enemy_of(ff):
+			_last_attacker = from
 	hp -= amount
 	if visual != null:
 		var src: Vector3 = Vector3.ZERO
@@ -651,9 +755,9 @@ func _tick_retreat(dt: float) -> void:
 	var home: Vector3 = RtsWorld.base_center(faction)
 	if _flat_dist(home) <= RETREAT_ARRIVE:
 		# 在自家圈里：回血（只回到门槛，不白送满血）
-		var cap: float = def.max_hp * RETREAT_RECOVER
+		var cap: float = max_hp() * RETREAT_RECOVER
 		if hp < cap:
-			hp = minf(cap, hp + def.max_hp * HOME_REGEN * dt)
+			hp = minf(cap, hp + max_hp() * HOME_REGEN * dt)
 		if hp >= cap * 0.999:
 			_retreat = false
 			_acquire_grace = 0.0
@@ -695,6 +799,11 @@ func _die() -> void:
 	BUILD_FX.death_puff(global_position, col)
 	if RtsCombat.is_near_camera(global_position):
 		Game.shake(Cfg.game.shake_on_death)
+
+	# 击杀归因 / 经验 / 掉落 / 日志（2026-11-08）。放在注销之前：
+	# 归因需要 def/faction 都还在身上。
+	if Game.has_method("on_unit_killed"):
+		Game.call("on_unit_killed", self, _last_attacker)
 
 	# 死亡即注销 + 广播。
 	# 为什么不等尸体沉完：`unit_died` 的语义是"它死了"，胜负判定、HUD 取消选中、
@@ -2983,7 +3092,8 @@ func _begin_swing() -> void:
 	_swinging = true
 	# 攻击间隔吃技能修正：举盾时 attack_cooldown ×2（攻速 -50%）
 	var skill: float = skills_rt.attack_cooldown_mult() if skills_rt != null else 1.0
-	_attack_cd = maxf(def.attack_cooldown * skill, 0.1)
+	# 星级攻速：attack_cooldown 是"间隔"，攻速 +15% = 间隔 ÷1.15
+	_attack_cd = maxf(def.attack_cooldown * skill / maxf(star_atkspd_mult(), 0.01), 0.1)
 	dbg_swings += 1
 	_windup_t = _attack_cd * clampf(Cfg.game.attack_windup, 0.05, 0.95)
 	state = RtsConst.State.ATTACK

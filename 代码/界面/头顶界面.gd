@@ -26,6 +26,13 @@ const MAX_BARS: int = 64
 const MAX_ICONS: int = 96
 ## 最多画多少个"工地倒计时"（玩家 2026-11-07：世界里的工地头顶要有秒数）
 const MAX_SITES: int = 24
+## 最多画多少个"星级"（老兵/精英/王牌）。和血条一样是屏幕像素尺寸，拉远也认得出
+const MAX_STARS: int = 96
+## 星级图标直径（屏幕像素，**所有单位统一**、不随镜头缩放）
+const STAR_PX: float = 13.0
+## 星级图标底色（暖金）+ 描边
+const COL_STAR := Color(1.0, 0.82, 0.28)
+const COL_STAR_EDGE := Color(0.28, 0.19, 0.05, 0.92)
 ## 工地倒计时的刷新间隔（秒）：秒数只到整秒，0.25s 足够，别每帧扫阵营
 const SITE_REFRESH: float = 0.25
 
@@ -33,6 +40,8 @@ var _t: float = 0.0
 var _sel: Array = []
 var _guards: Array = []
 var _sites: Array = []
+## 有星级的单位（含敌方：野怪/敌兵升星也是情报）
+var _stars: Array = []
 var _site_t: float = 0.0
 
 const COL_HOLD := Color(0.55, 0.76, 1.0)
@@ -61,6 +70,7 @@ func _process(delta: float) -> void:
 		return
 	_t = REFRESH
 	_scan_guards()
+	_scan_stars()
 	queue_redraw()
 
 
@@ -105,6 +115,32 @@ func _scan_guards() -> void:
 				continue
 			_guards.append(u)
 			if _guards.size() >= MAX_ICONS:
+				return
+
+
+## 扫一遍"身上有星级的单位"。
+##
+## 口径（玩家 2026-11-08「单位身上显示星级图标，仿红警」）：
+##   · 0 星不显示；1/2/3 星显示对应颗数；
+##   · 图标**屏幕像素固定大小**（镜头拉远也认得出），位置/朝向对所有单位一致；
+##   · 只收集 `visible` 的节点 —— 迷雾里被隐藏的敌人不会白送星级情报。
+func _scan_stars() -> void:
+	_stars.clear()
+	for f in Game.factions:
+		if f == null:
+			continue
+		for u in f.units:
+			if u == null or not is_instance_valid(u):
+				continue
+			if not (u is Node3D) or not (u as Node3D).visible:
+				continue
+			if not u.has_method("is_alive") or not bool(u.call("is_alive")):
+				continue
+			var st: Variant = u.get("star_level")
+			if st == null or int(st) <= 0:
+				continue
+			_stars.append(u)
+			if _stars.size() >= MAX_STARS:
 				return
 
 
@@ -169,6 +205,26 @@ func _draw() -> void:
 		_draw_guard(u2, sp2 + Vector2(0.0, -16.0 * zoom))
 		icons += 1
 
+	# --- ③ 星级图标（老兵 / 精英 / 王牌）---
+	var drawn_star: int = 0
+	for u3 in _stars:
+		if drawn_star >= MAX_STARS:
+			break
+		if u3 == null or not is_instance_valid(u3):
+			continue
+		if not (u3 as Node3D).visible:
+			continue
+		var p3: Vector3 = _anchor_of(u3)
+		if cam_pos.distance_to(p3) > MAX_DIST:
+			continue
+		if cam.is_position_behind(p3):
+			continue
+		var sp3: Vector2 = cam.unproject_position(p3)
+		if sp3.x < -40.0 or sp3.y < -40.0 or sp3.x > vp.x + 40.0 or sp3.y > vp.y + 40.0:
+			continue
+		_draw_stars(int(u3.get("star_level")), sp3 + Vector2(0.0, 9.0 * zoom))
+		drawn_star += 1
+
 
 ## 在建工地头顶的「剩余 N 秒」小牌。
 ##
@@ -221,10 +277,41 @@ func _anchor_of(u: Node3D) -> Vector3:
 	return u.global_position + Vector3(0.0, h + 0.45, 0.0)
 
 
+## **星级图标**（仿红警）：一排 n 颗金星，中心在 center。
+##
+## 三条硬口径（玩家 2026-11-08）：
+##   ① 0 星不画；② 大小/间距/朝向**对所有单位统一**（屏幕像素，不随模型/镜头缩放）；
+##   ③ 不挡单位主体 —— 画在头顶锚点**下方 9px**（血条在上方，两者不打架）。
+func _draw_stars(n: int, center: Vector2) -> void:
+	if n <= 0:
+		return
+	var r: float = STAR_PX * 0.5 * zoom
+	var gap: float = STAR_PX * 1.12 * zoom
+	var total: float = gap * float(maxi(n - 1, 0))
+	var x0: float = center.x - total * 0.5
+	for i in n:
+		var c := Vector2(x0 + gap * float(i), center.y)
+		_star(c, r + 1.1 * zoom, COL_STAR_EDGE)
+		_star(c, r, COL_STAR)
+
+
+## 一颗五角星（三角扇拼；draw_colored_polygon 对凹多边形不稳，别用）
+func _star(c: Vector2, r: float, col: Color) -> void:
+	var pts: Array[Vector2] = []
+	for i in 10:
+		var a: float = -PI * 0.5 + PI * 0.2 * float(i)
+		var rr: float = r if i % 2 == 0 else r * 0.44
+		pts.append(c + Vector2(cos(a), sin(a)) * rr)
+	for i in 10:
+		draw_colored_polygon(PackedVector2Array([
+			pts[i], pts[(i + 1) % 10], c]), col)
+
+
 ## 血条（+ 蓝条）。宽度按单位体量走：兵 44，建筑 108
 func _draw_bars(u: Node3D, sp: Vector2) -> void:
 	var d: UnitDef = u.def
-	var total: float = d.max_hp if d != null else 100.0
+	# 星级会抬高生命上限：血条必须按**有效上限**算，否则升星后条永远不满
+	var total: float = float(u.call("max_hp")) if u.has_method("max_hp") else (d.max_hp if d != null else 100.0)
 	var cur: float = float(u.get("hp"))
 	var r: float = clampf(cur / maxf(total, 1.0), 0.0, 1.0)
 	var big: bool = d != null and d.is_building()

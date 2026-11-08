@@ -483,10 +483,16 @@ func _sync_hp() -> void:
 		if u == null or not is_instance_valid(u) or hp == null:
 			continue
 		var d: UnitDef = u.def
-		var total: float = d.max_hp if d != null and d.max_hp > 0.0 else 1.0
+		# 星级会抬高生命上限（老兵 +20% / 精英 +40% / 王牌 +100%）
+		var total: float = float(u.call("max_hp")) if u.has_method("max_hp") else \
+				(d.max_hp if d != null and d.max_hp > 0.0 else 1.0)
 		var cur: float = float(u.get("hp"))
 		var r: float = clampf(cur / total, 0.0, 1.0)
 		var txt: String = "%d/%d" % [int(round(cur)), int(round(total))]
+		# 有星级的单位在血量前加星号（底栏格子太小，画不下三颗星）
+		var st: Variant = u.get("star_level")
+		if st != null and int(st) > 0:
+			txt = "★%d %s" % [int(st), txt]
 		if hp.text != txt:
 			hp.text = txt
 		var col: Color = Color(0.90, 0.92, 0.86)

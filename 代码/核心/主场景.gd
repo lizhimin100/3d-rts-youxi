@@ -71,6 +71,10 @@ var _qa_select_id: String = ""
 ## QA：选中之后立刻对这个单位放一个技能（截图验收举盾/连发用）。
 ## 用法：`--select-id=footman --qa-skill=shield_up --shot=...`
 var _qa_skill: StringName = &""
+## QA：摆一排 0/1/2/3 星的步兵看星级图标（--qa-stars）
+var _qa_stars: bool = false
+## --qa-stars=N：只选中前 N 个
+var _qa_star_pick: int = 0
 ## 地图编辑器：--map=<路径> 直接加载 MapDef（地图编辑器 Test Map 用）
 var _map_path: String = ""
 ## 开局提前读到的地图（阵营数量要用它，见 _ready 第 1 步）
@@ -408,6 +412,8 @@ func _mount_tests() -> void:
 		_mount_script("res://代码/测试/地图编辑器自检.gd", "地图编辑器自检")
 	if not _qa_select_id.is_empty():
 		_qa_select.call_deferred(_qa_select_id)
+	if _qa_stars:
+		_qa_spawn_stars.call_deferred()
 	# 压测：--stress-units=8000 在基地附近塞 N 个待命兵（性能排查用，默认不开）
 	for a in args:
 		if a.begins_with("--stress-units="):
@@ -855,6 +861,40 @@ func _qa_apply_yaw() -> void:
 	print("[QA] 镜头朝向 %.0f°" % _qa_cam_yaw)
 
 
+## QA：在基地前面摆四个步兵（0/1/2/3 星），并选中，用来拍"星级图标"。
+func _qa_spawn_stars() -> void:
+	var pl: RtsFaction = Game.player_faction
+	if pl == null:
+		return
+	var base: Vector3 = RtsWorld.base_center(pl)
+	var made: Array = []
+	for i in 4:
+		var pos: Vector3 = RtsWorld.walkable_pos(base + Vector3(-6.0 + float(i) * 3.4, 0.0, 9.0))
+		var n: Node3D = Game.spawn_unit(pl, &"footman", pos, level)
+		if n == null:
+			continue
+		n.set("star_level", i)
+		n.set("exp_value", float(i) * 1000.0)
+		made.append(n)
+	if not made.is_empty():
+		var sel: Node = get("selection_system")
+		if sel != null and sel.has_method("select_units"):
+			var pick: Array = made
+			if _qa_star_pick > 0:
+				pick = made.slice(0, mini(_qa_star_pick, made.size()))
+			sel.call("select_units", pick)
+		# 镜头对准这一排（否则基地大本营会挡住它们）
+		var mid: Vector3 = (made[0] as Node3D).global_position
+		if made.size() > 1:
+			mid = ((made[0] as Node3D).global_position + (made[-1] as Node3D).global_position) * 0.5
+		var cam: Node = camera
+		if cam != null and cam.has_method("focus_on"):
+			cam.call("focus_on", mid)
+		if cam != null:
+			cam.set("distance_want", 16.0)
+	print("[QA] 星级演示：%d 个（0~3 星）" % made.size())
+
+
 func _parse_cmdline() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--shot="):
@@ -865,6 +905,12 @@ func _parse_cmdline() -> void:
 			_quit_after_shot = true
 		elif arg.begins_with("--select-id="):
 			_qa_select_id = arg.substr(12)
+		elif arg == "--qa-stars":
+			_qa_stars = true
+		elif arg.begins_with("--qa-stars="):
+			# --qa-stars=N：只选中前 N 个（拍"单选双圈"用，N=1）
+			_qa_stars = true
+			_qa_star_pick = int(arg.get_slice("=", 1))
 		elif arg.begins_with("--qa-skill="):
 			_qa_skill = StringName(arg.substr(11))
 		elif arg.begins_with("--cam="):

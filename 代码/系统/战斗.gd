@@ -201,6 +201,24 @@ static func armor_mult(faction: RtsFaction) -> float:
 
 
 ## 目标的**有效护甲值**（基础护甲 + 阵营升级平铺加成）
+## 星级攻击倍率（不是兵 / 没升星 = 1.0）
+static func star_attack_mult(u: Node3D) -> float:
+	if u == null or not is_instance_valid(u):
+		return 1.0
+	if u.has_method("star_attack_mult"):
+		return float(u.call("star_attack_mult"))
+	return 1.0
+
+
+## 星级防御倍率（不是兵 / 没升星 = 1.0）
+static func star_defense_mult(u: Node3D) -> float:
+	if u == null or not is_instance_valid(u):
+		return 1.0
+	if u.has_method("star_defense_mult"):
+		return float(u.call("star_defense_mult"))
+	return 1.0
+
+
 static func effective_armor(target: Node3D) -> float:
 	if target == null or not is_instance_valid(target):
 		return 0.0
@@ -208,7 +226,8 @@ static func effective_armor(target: Node3D) -> float:
 	if d == null:
 		return 0.0
 	var fac: RtsFaction = target.faction
-	return d.armor + armor_bonus(fac, d)
+	# ★ 星级（老兵/精英/王牌）防御加成：+20% / +40% / +100%（累计）
+	return (d.armor + armor_bonus(fac, d)) * star_defense_mult(target)
 
 
 ## 木材搬运加成（0.0 = 没研究；0.5 = +50%）
@@ -321,7 +340,9 @@ static func resolve_hit(attacker: Node3D, target: Node3D) -> DamageInfo:
 		return null
 	# ★ 2026-10-31：铁匠铺改成**平铺 +1**，加在基础伤害上（不是末端倍率）。
 	#   步兵基础 15 → 满级 20；弩手 19 → 24。其它兵种一点不吃（UPGRADE_TARGETS 白名单）。
-	var base: float = ad.attack_damage + attack_bonus(attacker.faction, ad)
+	# ★ 星级攻击加成（+15% / +30% / +80% 累计）乘在基础伤害上
+	var base: float = (ad.attack_damage + attack_bonus(attacker.faction, ad)) \
+			* star_attack_mult(attacker)
 	var info := compute(
 		base, ad.attack_spread, ad.attack_type,
 		effective_armor(target), td.armor_type
@@ -361,7 +382,8 @@ static func make_snapshot(attacker: Node3D) -> Dictionary:
 	var ad: UnitDef = attacker.def
 	if ad == null:
 		return snap
-	snap["damage"] = ad.attack_damage + attack_bonus(attacker.faction, ad)
+	snap["damage"] = (ad.attack_damage + attack_bonus(attacker.faction, ad)) \
+			* star_attack_mult(attacker)
 	snap["spread"] = ad.attack_spread
 	snap["attack_type"] = ad.attack_type
 	snap["attack_mult"] = 1.0

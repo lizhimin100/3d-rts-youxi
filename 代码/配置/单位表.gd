@@ -197,6 +197,8 @@ static func _def_of_card(card: EntityCard) -> UnitDef:
 		# ★ 体积是主参数（2026-11-08）：模型缩放 / 碰撞半径 / 判定圈全从它派生。
 		#   volume = 0 的老卡（或建筑）走回退：照抄卡上原来那几个数，行为不变。
 		d.volume = c.volume
+		d.drop_gold = c.drop_gold
+		d.drop_wood = c.drop_wood
 		if c.volume > 0.0:
 			d.model_scale = VOL.model_scale(c.volume)
 			d.body_radius = VOL.body_radius(c.volume, c.body_radius)
