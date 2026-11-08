@@ -1946,11 +1946,14 @@ func _sync_crate_banner() -> void:
 			if left > 0.0 and left <= 30.0:
 				show_it = true
 				txt = "据点资源箱 %d 秒后刷新" % int(ceil(left))
+	# ★ 先把文案写进去，再切可见性 + 重排。
+	#   反过来的话，第一次出现那一帧 `_crate_banner_height()` 量到的是**空 Label**
+	#   的最小高度，让位算少了 → 第一条普通提示会压在播报条上。
+	if show_it:
+		_set_label(_crate_label, txt)
 	if _crate_banner.visible != show_it:
 		_crate_banner.visible = show_it
 		_apply_layout()
-	if show_it:
-		_set_label(_crate_label, txt)
 
 
 ## 幂等写 Label：文本没变就一个字节都不写（避免 8Hz 重排）
