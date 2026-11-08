@@ -358,6 +358,18 @@ var _goal_thr: float = 0.6
 ## 只影响**选目标**，不动 0.6 阈值，也不给空过开口子（冷却完还是空过就空过）。
 const GOAL_COOLDOWN_SEC: float = 4.0
 var _goal_cd: Dictionary = {}
+## ★ 2026-11-08 训练超时兜底（玩家口径「造几个就不造了」）：
+##   记录**最后一次真的排上训练队列**的时刻（军队/农民都算）。
+##   距上次训练超过 `TRAIN_STALL_SEC`、且金币 > `TRAIN_STALL_GOLD`、且有闲置兵营时，
+##   把"训练"提案的紧迫度顶到 `TRAIN_BOOST_URGENCY`（越过 0.6 阈值并压过建农场），
+##   保证训练重新成为主目标。**不清空金币**：只是把该花的钱排进队列。
+var _last_train_at: float = -1.0
+## 多久没训练算"卡住了"（秒）
+const TRAIN_STALL_SEC: float = 60.0
+## 兜底触发的最低金币（低于这个数不硬顶，避免为了出兵把农民/农场饿死）
+const TRAIN_STALL_GOLD: int = 100
+## 兜底时的训练紧迫度（0.95 > 农场 0.72，低于人口 90% 时的 1.0 → 卡人口仍然优先建农场）
+const TRAIN_BOOST_URGENCY: float = 0.95
 ## 2C-11 §3：最近 60 s 被拆建筑账本。只存时刻、不存对象引用，避免悬空。
 ## `_known_buildings` = 上一次思考时存活的建筑 instance_id 集合；
 ## 完工不会让 id 消失，所以「上次有、这次没了」只可能是被拆/被移除。
@@ -2102,6 +2114,7 @@ func _queue_one(b: RtsBuilding, diff: DifficultyDef) -> StringName:
 	if picked == &"":
 		return &""
 	if b.queue_train(picked):
+		_last_train_at = Game.elapsed
 		# 2C-7 P2：军队投资记账（只统计**真的排上队**的那笔钱，失败不记）
 		var ud: UnitDef = Cfg.unit(picked)
 		if ud != null:
@@ -2607,10 +2620,37 @@ func _defense_plan(diff: DifficultyDef) -> Dictionary:
 	var army: Array = _army_units()
 	if army.is_empty():
 		return {}
-	var n: int = clampi(int(ceil(float(army.size()) * clampf(diff.defend_ratio, 0.0, 1.0))),
-			1, army.size())
-	return {"n": n, "point": _defend_point(), "army_n": army.size(),
-		"threat_n": threats.size()}
+	# ★ 2026-11-08 玩家口径「已经出门的部队不强制召回」：
+	#   可回防池 = 在家圈里的 + 当前**脱战**的；贴脸交战的一个都不拉。
+	var squad: Array = _recallable_squad(army)
+	if squad.is_empty():
+		return {}
+	var n: int = clampi(int(ceil(float(squad.size()) * clampf(diff.defend_ratio, 0.0, 1.0))),
+			1, squad.size())
+	return {"n": n, "squad": squad.slice(0, n), "point": _defend_point(),
+		"army_n": army.size(), "threat_n": threats.size()}
+
+
+## **能回防的人**：在家圈里的，或者当前"脱战"（没有贴脸交战）的。
+##
+## 为什么要过滤（2026-11-08）：老实现永远取 `army.slice(0, n)` —— 正在前线跟人拼命的
+## 前排也会被拽回家，路上又因为"敌人就在旁边"重新拉回去，来回拉锯；同时家里其实有
+## 留守部队（防守下限）可以先顶上。所以：正在打的人**不召回**，只召回走得动的。
+func _recallable_squad(army: Array) -> Array:
+	var out: Array = []
+	if _faction == null:
+		return out
+	var home: Vector3 = RtsWorld.base_center(_faction)
+	for u in army:
+		if u == null or not is_instance_valid(u):
+			continue
+		if u.global_position.distance_to(home) <= DEFENSE_RADIUS + 6.0:
+			out.append(u)
+			continue
+		if _engaged_in_combat(u):
+			continue
+		out.append(u)
+	return out
 
 
 func _issue_defend(p: Dictionary) -> bool:
@@ -2619,22 +2659,26 @@ func _issue_defend(p: Dictionary) -> bool:
 	_defend_cd = DEFEND_REISSUE
 	var n: int = int(p.get("n", 0))
 	var army: Array = _army_units()
-	if n < 1 or n > army.size():
+	# 优先用计划里点好的"能回防的人"（脱战过滤过）；老调用方不给 squad 就退回原口径。
+	var pool: Array = p.get("squad", [])
+	if pool.is_empty():
+		pool = army
+	if n < 1 or n > pool.size():
 		return false
 	var point: Vector3 = p.get("point", RtsWorld.base_center(_faction))
 	var before: int = int(_sched.stats().get("queued", 0))
 	# ★ 散开回防（2026-11-07 玩家口径「不要挤在一起、更不要挤在基地门口」）：
 	#   老实现把 n 个兵全派到**同一个点**（掉血最多那座建筑的中心），
 	##  一群人挤在门口/墙根互相顶，既打不动也卡路。现在按圆周均分散到建筑周围 7m。
-	var squad: Array = army.slice(0, n)
+	var squad: Array = pool.slice(0, n)
 	var spots: Array = _spread_targets(squad, point, 7.0, 61)
 	for i in range(squad.size()):
 		_sched.attack_move([squad[i]], spots[i], "defend")
 	# 只在"真的登记了命令"时才打日志：否则每 4 秒一行同样的字，
 	# 看起来像在疯狂下令，其实早就在路上了（到达判定已经拦掉了）。
 	if int(_sched.stats().get("queued", 0)) > before:
-		_log("回防：%d/%d 兵（压家敌人 %d 个）" % [
-			n, army.size(), int(p.get("threat_n", 0))])
+		_log("回防：%d/%d 兵（压家敌人 %d 个，脱战可召回 %d）" % [
+			n, army.size(), int(p.get("threat_n", 0)), pool.size()])
 	return true
 
 ## 巡逻：没有战事时让 1~3 个兵绕着基地转，别全挤在基地里发呆。
@@ -3884,8 +3928,92 @@ func _manage_waves(diff: DifficultyDef) -> void:
 	_issue_wave_plan(p)
 
 
+# ---------------------------------------------------------------------------
+# 波次编队（2026-11-08 玩家口径：「5 步 3 弩」「攒 10 出 8 留 2」「防守积累」）
+#
+# 规则（只写在代码里，不做成表格配置）：
+#   · 触发：总兵力 ≥ WAVE_MIN_ARMY(10) 且出击基础判定通过；
+#   · 编队：从现有部队里**先点 5 个 footman（步兵）+ 3 个 archer（弩兵）**，
+#           不足 8 个就用其它兵补满 → 一支 8 人突击队；
+#   · 留守：剩下的全部留基地加入防守；
+#   · 密集进攻：下一波重复"攒 10 出 8 留 2"；
+#   · 防守积累：当留守已经够 `_defense_floor()`（防守下限）时，
+#           之后新练的单位**不再留守**，出击人数 = 总兵力 − 防守下限。
+# ---------------------------------------------------------------------------
+
+## 出兵门槛（总兵力）
+const WAVE_MIN_ARMY: int = 10
+## 常规突击队人数
+const WAVE_STRIKE: int = 8
+## 突击队里的步兵/弩兵定编（按真实兵种 id 点选）
+const WAVE_FOOTMEN: int = 5
+const WAVE_ARCHERS: int = 3
+const WAVE_UNIT_FOOTMAN: StringName = &"footman"
+const WAVE_UNIT_ARCHER: StringName = &"archer"
+
+
+## 出击人数：先出 8 人突击队；留守满编（≥ 防守下限）之后，多出来的全部编入波次。
+func _wave_push_n(army_n: int, defense_floor: int) -> int:
+	if army_n <= 0:
+		return 0
+	var strike: int = mini(WAVE_STRIKE, army_n)
+	var defenders: int = army_n - strike
+	if defenders >= defense_floor:
+		return maxi(army_n - defense_floor, strike)
+	return strike
+
+
+## 编队：5 步兵 + 3 弩兵 → 不足就用其它兵补到 `want` 个。
+## 返回的顺序就是下令顺序（步兵在前，前排先落地）。
+func _wave_squad(army: Array, want: int) -> Array:
+	var foot: Array = []
+	var arch: Array = []
+	var rest: Array = []
+	for u in army:
+		if u == null or not is_instance_valid(u):
+			continue
+		var uid: StringName = u.def.id if u.def != null else &""
+		if uid == WAVE_UNIT_FOOTMAN and foot.size() < WAVE_FOOTMEN:
+			foot.append(u)
+		elif uid == WAVE_UNIT_ARCHER and arch.size() < WAVE_ARCHERS:
+			arch.append(u)
+		else:
+			rest.append(u)
+	var out: Array = []
+	out.append_array(foot)
+	out.append_array(arch)
+	for u in rest:
+		if out.size() >= want:
+			break
+		out.append(u)
+	return out
+
+
+## 把计划里的编制对回**当前**军队：先保留还活着且仍在军队里的，再按 `_wave_squad`
+## 的口径从剩余部队补到 `want`。返回空 = 一个人都派不出去。
+func _squad_alive(army: Array, planned: Array, want: int) -> Array:
+	var alive: Array = []
+	var in_army: Dictionary = {}
+	for u in army:
+		if u != null and is_instance_valid(u):
+			in_army[u] = true
+	for u in planned:
+		if u == null or not is_instance_valid(u) or not in_army.has(u):
+			continue
+		alive.append(u)
+	if alive.size() >= want:
+		return alive.slice(0, want)
+	for u in _wave_squad(army, want):
+		if alive.size() >= want:
+			break
+		if alive.has(u):
+			continue
+		alive.append(u)
+	return alive
+
+
 ## 出击判定（**只读 + 只改时钟**，不下任何战斗命令）。
-## 返回 {} = 本 tick 不出击；否则返回 {push_n, goal, foe, target, army_n, state}。
+## 返回 {} = 本 tick 不出击；否则返回 {push_n, squad, goal, foe, target, army_n, state}。
 func _wave_plan(diff: DifficultyDef) -> Dictionary:
 	if _faction == null:
 		return {}
@@ -3906,7 +4034,8 @@ func _wave_plan(diff: DifficultyDef) -> Dictionary:
 			_log("暂不出击：%s" % _block_reason())
 		return {}
 	var army: Array = _army_units()
-	if army.size() < maxi(diff.min_wave_size, 3):
+	# ★ 2026-11-08：出击门槛 = max(难度档, 10)。难度档只能更严，不能比 10 更松。
+	if army.size() < maxi(diff.min_wave_size, WAVE_MIN_ARMY):
 		return {}
 	var aggr: float = float(posture.get("aggression", diff.aggression))
 	# 加强不掷骰：上一波已经证明"打得动"，这时候犹豫等于把战果还回去
@@ -3921,8 +4050,9 @@ func _wave_plan(diff: DifficultyDef) -> Dictionary:
 		# 攒大波突围：全部战斗单位出击（含临时防守），保底 ceil(下限×2/3) 不低于
 		push_n = int(_model_call("bank_push_n", [army.size(), defense_floor]))
 	else:
-		# 常态（试探/加强）：0.75 floor 且不超过 军队数−防守下限（保底留守不动）
-		push_n = int(_model_call("normal_push_n", [army.size(), defense_floor]))
+		# ★ 2026-11-08：常态出击改成「8 人突击队（5 步 + 3 弩）」，
+		#   留守够 `_defense_floor()` 之后，多出来的人全部编入波次（见 `_wave_push_n`）。
+		push_n = _wave_push_n(army.size(), defense_floor)
 	push_n = clampi(push_n, 0, army.size())
 	if push_n < 1:
 		return {}
@@ -3948,6 +4078,8 @@ func _wave_plan(diff: DifficultyDef) -> Dictionary:
 		target += Vector3(cos(ang0), 0.0, sin(ang0)) * 8.0
 	return {
 		"push_n": push_n,
+		# 点好的编制（5 步 + 3 弩 + 补位）。`_issue_wave_plan` 会把它对回当前军队。
+		"squad": _wave_squad(army, push_n),
 		"goal": goal,
 		"foe": foe,
 		"target": target,
@@ -3959,6 +4091,12 @@ func _wave_plan(diff: DifficultyDef) -> Dictionary:
 
 
 ## 真的把一波发出去（原 `_manage_waves` 的后半段，一行未改）。
+##
+## ★ 2026-11-08 编队重构（玩家口径「5 步 3 弩 + 防守积累」）：
+##   出击名单不再按数组下标切 `army.slice(0, push_n)`，而是走 `_wave_squad()`：
+##   **先点 5 个步兵 + 3 个弩兵**（按真实兵种 id：footman / archer），
+##   不够 8 个就用其它兵补满；多出来的（防守满编后新练的）也一并编入。
+##   剩下的人**全部留守**，散在基地外圈。
 func _issue_wave_plan(p: Dictionary) -> bool:
 	var push_n: int = int(p.get("push_n", 0))
 	var army: Array = _army_units()
@@ -3970,24 +4108,37 @@ func _issue_wave_plan(p: Dictionary) -> bool:
 	var target: Vector3 = p.get("target", Vector3.ZERO)
 	var foe = p.get("foe", null)
 	var goal: Dictionary = p.get("goal", {})
-	var targets: Array = _scatter_targets(army.slice(0, push_n), target)
+	# 计划里点好的编制（可能已经阵亡/被玩家接管）→ 过滤后按现有军队补齐到 push_n
+	var squad: Array = _squad_alive(army, p.get("squad", []), push_n)
+	if squad.is_empty():
+		return false
+	var targets: Array = _scatter_targets(squad, target)
 	var home: Vector3 = RtsWorld.base_center(_faction)
-	# 留守散点：base 外 20m 一圈（比 16 更靠外，避开门口那条路），按人数算弧长
-	var rest_units: Array = army.slice(push_n)
+	# 留守 = 军队里不在出击名单上的人。散点：base 外 20m 一圈，
+	# 按人数算弧长（老实现固定半径 16m，人一多就挤在门口）。
+	var in_squad: Dictionary = {}
+	for u in squad:
+		in_squad[u] = true
+	var rest_units: Array = []
+	for u in army:
+		if not in_squad.has(u):
+			rest_units.append(u)
 	var rest_pts: Array = _spread_targets(rest_units, home, 20.0, _wave_index * 3 + 1)
 	var sent: Array = []
-	for i in range(army.size()):
-		var u: RtsUnit = army[i]
+	for i in range(squad.size()):
+		var u: RtsUnit = squad[i]
 		if u == null or not is_instance_valid(u):
 			continue
-		if i < push_n:
-			_sched.attack_move([u], targets[i], "wave")
-			sent.append(u)
-		else:
-			# 留守的人散在基地外圈，别全站在大本营里堵路。
-			# ★ 2026-11-07：改成真正的圆周均分（老实现是一个半径 16m 的环，
-			#   人一多弧长不够 → 挤在门口/门口那条路上；见 _spread_targets）。
-			_sched.move([u], rest_pts[i - push_n], "wave")
+		_sched.attack_move([u], targets[i], "wave")
+		sent.append(u)
+	for i in range(rest_units.size()):
+		var r: RtsUnit = rest_units[i]
+		if r == null or not is_instance_valid(r):
+			continue
+		# 留守的人散在基地外圈，别全站在大本营里堵路。
+		# ★ 2026-11-07：改成真正的圆周均分（老实现是一个半径 16m 的环，
+		#   人一多弧长不够 → 挤在门口/门口那条路上；见 _spread_targets）。
+		_sched.move([r], rest_pts[i], "wave")
 
 	# ★ 记录表在这里开（`_open_wave` 里自增 `_wave_index`，所以日志与记录同号）
 	_open_wave(sent, target, foe, goal)
@@ -4000,10 +4151,25 @@ func _issue_wave_plan(p: Dictionary) -> bool:
 	if strat_state == ST_PRESS:
 		interval *= 0.75
 	_next_wave_at = Game.elapsed + interval
-	_log("第 %d 波[%s]：%d 出击 / %d 留守 → %s·%s（下一波 +%.0fs）" % [
-		_wave_index, strat_state, push_n, army.size() - push_n,
-		_foe_name(), String(goal.get("name", "?")), interval])
+	# 编队明细写进日志：5 步 3 弩点到了几个、补了几个，一眼能核。
+	_log("第 %d 波[%s]：%d 出击（步兵 %d / 弩兵 %d / 补位 %d）/ %d 留守 → %s·%s（下一波 +%.0fs）" % [
+		_wave_index, strat_state, sent.size(),
+		_count_squad_id(sent, WAVE_UNIT_FOOTMAN), _count_squad_id(sent, WAVE_UNIT_ARCHER),
+		maxi(sent.size() - _count_squad_id(sent, WAVE_UNIT_FOOTMAN)
+			- _count_squad_id(sent, WAVE_UNIT_ARCHER), 0),
+		rest_units.size(), _foe_name(), String(goal.get("name", "?")), interval])
 	return true
+
+
+## 名单里某个兵种 id 有几个
+func _count_squad_id(list: Array, id: StringName) -> int:
+	var n: int = 0
+	for u in list:
+		if u == null or not is_instance_valid(u) or u.def == null:
+			continue
+		if u.def.id == id:
+			n += 1
+	return n
 
 
 ## 按名字找我打的那一家（加强时用；找不到就退回最近的一家）
@@ -5084,6 +5250,10 @@ func _goal_attack_region() -> String:
 
 ## 有没有"可以真的打出去"的条件（**不调用 `_wave_plan`**：它有副作用，
 ## 会把 `_next_wave_at` / `_bank_breakout` 改掉；目标建议必须是无副作用的读数）。
+##
+## ★ 2026-11-08：兵力门槛与 `_wave_plan` 对齐 —— `max(难度档, WAVE_MIN_ARMY=10)`。
+##   否则目标层在 6 个兵时就报"攻击区域"（紧迫度 0.55~0.70），执行层却永远发不出去，
+##   白白占着主目标、把训练/农场挤下去。
 func _goal_can_attack(diff: DifficultyDef) -> bool:
 	if _faction == null:
 		return false
@@ -5093,7 +5263,7 @@ func _goal_can_attack(diff: DifficultyDef) -> bool:
 		return false
 	if not bool(posture.get("allow_attack", false)):
 		return false
-	return _army_units().size() >= maxi(diff.min_wave_size, 3)
+	return _army_units().size() >= maxi(diff.min_wave_size, WAVE_MIN_ARMY)
 
 
 ## 下一项可研究的科技（与 `_sanity_research` 同一批判据，只读不点）。
@@ -5113,6 +5283,28 @@ func _goal_research_candidate() -> StringName:
 				continue
 			return r
 	return &""
+
+
+## **训练是不是卡住了**（2026-11-08 玩家口径「造几个就不造了」的兜底判据）：
+##   ① 距最后一次真的排上队列 > `TRAIN_STALL_SEC`（60 秒；从没排过 = 也算）；
+##   ② 金币 > `TRAIN_STALL_GOLD`（100）；
+##   ③ 至少有一座已完工兵营的队列是空的。
+## 只用来抬"训练"提案的紧迫度，不动金币、不动成本、不动判定表。
+func _train_stall(now: float, diff: DifficultyDef) -> bool:
+	if _faction == null:
+		return false
+	if _faction.gold <= TRAIN_STALL_GOLD:
+		return false
+	var idle_sec: float = now if _last_train_at < 0.0 else now - _last_train_at
+	if idle_sec <= TRAIN_STALL_SEC:
+		return false
+	for b in _army_producers(diff):
+		var rb: RtsBuilding = b as RtsBuilding
+		if rb == null or not is_instance_valid(rb) or not rb.is_constructed:
+			continue
+		if int(rb.train_count()) <= 0:
+			return true
+	return false
 
 
 ## 三部门提目标建议（每 2 s 各 0~N 条，9 字段）。
@@ -5170,9 +5362,19 @@ func _goal_proposals(diff: DifficultyDef, now: float) -> Array:
 				break
 		var ud: UnitDef = Cfg.unit(picked) if picked != &"" else null
 		if ud != null:
+			# ★ 2026-11-08 训练超时兜底：兵营空转 60 秒 + 手里有 100 金以上 → 顶到 0.95。
+			#   只抬**紧迫度**（让它抢到主目标），不改金币、不清空金币；
+			#   卡人口（农场 1.0）仍然排在它前面。
+			var tu: float = GL.urgency_train(gap, at)
+			var stalled: bool = _train_stall(now, diff)
+			if stalled:
+				tu = maxf(tu, TRAIN_BOOST_URGENCY)
+				dept_stats["train_stall_boosts"] = \
+						int(dept_stats.get("train_stall_boosts", 0)) + 1
 			var p3: Dictionary = GL.proposal_make(GL.DEPT_OPS, yseq + 1, GL.ACT_TRAIN,
-					String(picked), gap, GL.urgency_train(gap, at),
-					"军队缺口 %d（目标 %d 实际 %d）" % [gap, at, army_n],
+					String(picked), gap, tu,
+					"军队缺口 %d（目标 %d 实际 %d%s）" % [gap, at, army_n,
+						"，训练停滞兜底" if stalled else ""],
 					int(ud.gold_cost), int(ud.wood_cost), GL.DONE_TRAINED,
 					now + GOAL_TTL_TRAIN)
 			if not p3.is_empty():
@@ -5320,13 +5522,21 @@ func _goal_switch(from_id: String, to_id: String, reason: String, now: float) ->
 
 
 ## 本周期"还没被采纳的最高分建议"——只用来判抢占（不能拿当前主/次自己来抢自己）。
+##
+## ★ 2026-11-08 修「自己抢占自己」：次目标是拿 `Sub_` 前缀另起 id 落库的
+##   （见 `_goal_fill_sub`），而每周期重建的提案还是原 id（`Yy003`）。
+##   只判 `goals_active.has(原id)` 的话，次目标**永远匹配不上自己的提案** →
+##   提案被当成"全新建议"交给 `goal_tick` 判抢占 → 次目标结束 → 同「动作|对象」
+##   进 4 秒冷却 → 这 4 秒里主/次都选不回来（玩家看到的"4 秒空窗"）。
+##   所以排除条件必须把带 `Sub_` 前缀的那条 id 也算进来。
 func _goal_best_new(props: Array) -> Dictionary:
 	var best: Dictionary = {}
 	for p in props:
 		if not (p is Dictionary):
 			continue
 		var g: Dictionary = p
-		if goals_active.has(String(g.get("id", ""))):
+		var pid: String = String(g.get("id", ""))
+		if goals_active.has(pid) or goals_active.has("Sub_" + pid):
 			continue
 		if not GL.proposal_valid(g):
 			continue
@@ -5626,7 +5836,18 @@ func _goal_tick(diff: DifficultyDef, now: float) -> void:
 ## 执行层：按主目标优先级重排既有诉求 → 逐条过预算 → `_dept_execute`。
 ## **不改任何执行细节**（怎么派兵、怎么选工地一律走原 `_exec_*`），
 ## 只决定"谁先谁后、这笔钱该不该花"。
+##
+## ★ 2026-11-08 玩家口径「别攒着不花」：**删掉储备线拒付**（原 `BM.saving_breach`）。
+##   旧逻辑要求公共池在花完这笔之后仍 ≥ G(t)（单件成本中位数 × 系数，实测常被顶到
+##   350 金左右），于是"手里有 300 金、兵营空着"也不出兵 —— 玩家看到的就是
+##   "造几个就不造了"。现在只要买得起就花：目标预留（`goal_reserved`）仍然优先，
+##   公共池不再有隐形存款下限。
+##   `reserve` / `urgent` 仅保留在签名里（`_goal_tick` 已经算好 G(t) 与紧急事由，
+##   供报告与空过储蓄态使用），本函数不再用它们做拒付。
 func _goal_execute(now: float, reserve: float, urgent: bool) -> void:
+	# G(t) 与紧急事由照旧落账（纯观测）：储备线不再拒付，但报告还要看这两个数。
+	dept_stats["goal_reserve_g_last"] = int(round(reserve))
+	dept_stats["goal_urgent_at_exec"] = urgent
 	var pool: Array = []
 	if goal_noop:
 		for d in demands_l2:
@@ -5653,10 +5874,6 @@ func _goal_execute(now: float, reserve: float, urgent: bool) -> void:
 	var per_dept: Dictionary = {}
 	var caps: Dictionary = _model_call("concurrency_caps", [Game.elapsed])
 	var reserved_left: int = int(goal_reserved.get("金币", 0))
-	# 空过 + 已退出积极储蓄 → 不再把 G(t) 当底线（钱可以放着不动，但也不主动攒）
-	var floor_reserve: float = reserve
-	if goal_noop and not _noop_aggressive:
-		floor_reserve = 0.0
 	for d in list:
 		var dd: Dictionary = d
 		var src: String = String(dd.get("来源线", ""))
@@ -5720,13 +5937,7 @@ func _goal_execute(now: float, reserve: float, urgent: bool) -> void:
 					dd["驳回原因"] = BM.RJ_TROOP
 				(plan["驳回"] as Array).append(dd)
 				continue
-			# 储备线：公共池的钱要留够 G(t)；0 成本诉求天然豁免（`saving_breach` 内保证）
-			if BM.saving_breach(g - reserved_left, ng, floor_reserve, urgent):
-				if ng <= 0:
-					plan["零成本储备驳回"] = int(plan["零成本储备驳回"]) + 1
-				dd["驳回原因"] = BM.RJ_SAVING
-				(plan["驳回"] as Array).append(dd)
-				continue
+			# ★ 2026-11-08：储备线（`saving_breach`）已按玩家口径删除 —— 买得起就花。
 		dd["_owner"] = owner
 		g -= ng
 		w -= nw
@@ -6580,6 +6791,7 @@ func _exec_train_peasant() -> bool:
 		return false
 	if not hall.queue_train(wid):
 		return false
+	_last_train_at = Game.elapsed
 	_log("排农民（部门仲裁，现有 %d）" % _faction.count_units(wid))
 	return true
 
@@ -6593,6 +6805,7 @@ func _exec_train_army(b: RtsBuilding, picked: StringName) -> bool:
 		return false
 	if not b.queue_train(picked):
 		return false
+	_last_train_at = Game.elapsed
 	var ud: UnitDef = Cfg.unit(picked)
 	if ud != null:
 		invest_stats["army_gold"] = int(invest_stats["army_gold"]) + int(ud.gold_cost)

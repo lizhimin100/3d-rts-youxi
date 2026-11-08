@@ -30,6 +30,11 @@ const EAGER_STATIC_DEF_WEIGHT: float = 1.2
 const UNKNOWN_RATIO: float = 1.0
 ## 敌方军队被打光时的兵力比（该压上去了）
 const CLEARED_RATIO: float = 4.0
+## ★ 2026-11-08 防守死锁兜底：基地圈内**连续**多久没有敌人，就强制恢复出击许可。
+##   为什么要有它：`allow_attack` 的两条否决里，"家里挨打"读的是**当下**的威胁数，
+##   而威胁可能被野怪/卡住的目标长期占着（或某帧计数异常），一旦触发就没有出口。
+##   现在记录"基地最后一次受威胁的时刻"，平静满 30 秒就强制把许可放开。
+const CALM_RELEASE_SEC: float = 30.0
 
 var _plans: Array = []
 var _plan_id: String = ""
@@ -43,6 +48,10 @@ var metrics: Dictionary = {}
 var _locked_sec: float = 0.0
 ## 本次算出的门槛（报告/日志读它；A/B 下等于 _attack_ratio_needed 的原始值）
 var _ratio_need: float = 0.0
+## 基地**最后一次**有敌人的时刻（含野怪；<0 = 本局还没出现过威胁）
+var _last_threat_at: float = -1.0
+## 距离那次威胁过了多久（无威胁历史时给一个大数，语义 = "一直很安静"）
+var _calm_sec: float = 1e9
 
 
 func setup(plans: Array, difficulty_index: int) -> void:
@@ -61,10 +70,20 @@ func update(ctx: Dictionary) -> Dictionary:
 	_locked_sec = float(ctx.get("attack_locked_sec", 0.0))
 	var m: Dictionary = build_metrics(ctx)
 	metrics = m
-	var chosen: Dictionary = _select(m, float(ctx.get("now", 0.0)))
+	var now: float = float(ctx.get("now", 0.0))
+	var chosen: Dictionary = _select(m, now)
 	var params: Dictionary = chosen.get("params", {})
 
 	var threat: float = float(m["base_threat"])
+	# 基地最后一次受威胁（**含野怪**：平静判据问的是"圈里到底有没有敌人"）
+	if threat > 0.0:
+		_last_threat_at = now
+		_calm_sec = 0.0
+	elif _last_threat_at < 0.0:
+		_calm_sec = now      # 开局的"一直安静"按已过时长算
+	else:
+		_calm_sec = maxf(now - _last_threat_at, 0.0)
+	var calm_release: bool = _calm_sec >= CALM_RELEASE_SEC
 	# ★ 2026-11-07：压制侵略性的判据也必须是**战争对手**（war_threat），不能是野怪。
 	#   老实现用 base_threat，而 base_threat 含中立野怪：一只豺狼人溜达到基地圈 →
 	#   aggr 被压到 0.15 → `_compute_allow_attack` 的「aggression < 0.30」再否决一次
@@ -83,13 +102,15 @@ func update(ctx: Dictionary) -> Dictionary:
 		"worker_bonus": int(params.get("worker_bonus", 0)),
 		"allow_patrol": bool(params.get("allow_patrol", true)),
 		"research": bool(params.get("research", false)),
-		"allow_attack": _compute_allow_attack(m, aggr),
+		"allow_attack": _compute_allow_attack(m, aggr, calm_release),
 		"attack_ratio_needed": _attack_ratio_needed(),
 		# 归因用：这一 tick 用的是哪个分母口径 / 已经多久没打出去
 		"ratio_mode": AIW.mode(),
 		"attack_locked_sec": _locked_sec,
 		"base_threat": threat,
 		"war_threat": float(m.get("war_threat", threat)),
+		"calm_sec": _calm_sec,
+		"calm_release": calm_release,
 		"army_ratio": float(m["army_ratio"]),
 		"metrics": m,
 	}
@@ -292,7 +313,12 @@ func _attack_ratio_needed() -> float:
 ##   · `aggression < 0.30` —— 计划明确说"这一轮不打"。
 ## `attack_ratio` 仍然算、仍然进 metrics/posture，但**只记录、不判断**，
 ## 供报告与反馈线（波次记录表的投入产出比 / 状态机）使用。
-func _compute_allow_attack(m: Dictionary, aggression: float) -> bool:
+##
+## ★ 2026-11-08 加第三条出口 `calm_release`（玩家口径「防守死锁」）：
+##   基地圈内**连续** `CALM_RELEASE_SEC`(30s) 没有任何敌人（无论玩家还是野怪）→
+##   强制恢复出击许可。它只解除"计划说这一轮不打"这条否决，**不解除**"家里正在挨打"：
+##   真有敌人压家时 `calm_release` 必然为 false（威胁会把时钟清零），顺序上也不会被绕过。
+func _compute_allow_attack(m: Dictionary, aggression: float, calm_release: bool = false) -> bool:
 	# ★ 2026-11-07：只看**战争对手**压家（war_threat），不看野怪（base_threat）。
 	#   老实现用 base_threat，而 base_threat 把中立野怪算进来了 ——
 	#   一只豺狼人溜达到基地圈里，这局 AI 就再也不出兵打玩家（玩家实测到的就是这个）。
@@ -300,6 +326,8 @@ func _compute_allow_attack(m: Dictionary, aggression: float) -> bool:
 	var wt: float = float(m.get("war_threat", m.get("base_threat", 0.0)))
 	if wt > 0.0:
 		return false
+	if calm_release:
+		return true
 	if aggression < 0.30:
 		return false
 	return true

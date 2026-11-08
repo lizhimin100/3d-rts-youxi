@@ -2146,15 +2146,18 @@ func _case_2c13() -> void:
 			"0.59 空过=%s 0.60 空过=%s" % [str(gl.empty_pass(low)),
 				str(gl.empty_pass(edge))])
 	# 紧迫度映射的边界（第一版直觉值，报告里列分布）
-	_record("2C13 §7：紧迫度映射（农场急建 0.95 / 70% 占用 0.62 / 50% 占用 0.25；军队缺口满 0.90）",
+	# ★ 2026-11-08 改口径（玩家：防卡人口）：70% 占用 0.62 → 0.72（明确越过 0.6），
+	#   90% 占用拉满 1.0（优先级高于一切）；急建 0.95 不变。
+	_record("2C13 §7：紧迫度映射（农场急建 0.95 / 70% 占用 0.72 / 90% 占用 1.00 / 50% 占用 0.25；军队缺口满 0.90）",
 			is_equal_approx(gl.urgency_build_farm(0.5, true), 0.95)
-			and is_equal_approx(gl.urgency_build_farm(0.70, false), 0.62)
+			and is_equal_approx(gl.urgency_build_farm(0.70, false), 0.72)
+			and is_equal_approx(gl.urgency_build_farm(0.90, false), 1.00)
 			and is_equal_approx(gl.urgency_build_farm(0.50, false), 0.25)
 			and is_equal_approx(gl.urgency_train(10, 10), 0.90)
 			and is_equal_approx(gl.urgency_train(0, 10), 0.35)
 			and is_equal_approx(gl.urgency_defend(3), 0.90)
 			and is_equal_approx(gl.urgency_research(), 0.50),
-			"农场 0.95/0.62/0.25；训练 0.90/0.35；防守 0.90；研发 0.50")
+			"农场 0.95/0.72/1.00/0.25；训练 0.90/0.35；防守 0.90；研发 0.50")
 
 	# ---------------- §4.4 生命周期四条路径 ----------------
 	# 生命周期用一条"过期时间给足"的目标（gg 的过期时间=100 只适合选目标用例，

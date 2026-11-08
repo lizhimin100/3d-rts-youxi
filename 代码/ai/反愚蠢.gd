@@ -143,7 +143,11 @@ func _check_production(ctx: Dictionary) -> void:
 		_episode("production_idle", false, ctx)
 		return
 	var headroom: int = faction.food_cap() - faction.food_used() - faction.food_reserved()
-	var on: bool = idle and faction.gold > 260 and headroom >= 2
+	# ★ 2026-11-08 玩家口径：**删掉「金币 > 260 才补兵」这条囤积线**。
+	#   旧判据要求手上压着 260 金才肯排兵 —— AI 于是先攒钱、攒够又被别的开销花掉，
+	#   10 分钟局只出几个兵（"造几个就不造了"）。现在只要队列是空的、人口够、
+	#   手里有钱（>0，买不买得起由 queue_army 自己判）就补。
+	var on: bool = idle and headroom >= 2 and faction.gold > 0
 	_episode("production_idle", on, ctx)
 	if not on or not _can_fix("production_idle", ctx):
 		return
@@ -196,17 +200,20 @@ func _check_army_response(ctx: Dictionary) -> void:
 		_episode("idle_army_under_attack", false, ctx)
 		_strikes.erase("army_response")
 		return
-	var responding: bool = false
+	# ★ 2026-11-08 玩家口径「已经出门的部队不强制召回」：
+	#   老实现把**整支军队**拉回基地，连正在贴脸交战的前排也拽走 → 撤一半又冲回去，
+	#   在门口来回拉锯。现在只召回"脱战"的人（没有锁定目标 / 目标已死 / 超出 1.6 倍射程），
+	#   正在打的一个都不动；这段审计也只管"家里在挨打时还有人在发呆"。
+	var recall: Array = []
 	for u in army:
 		if u == null or not is_instance_valid(u):
 			continue
-		var o: int = int(u.order)
-		if o == RtsConst.Order.ATTACK or o == RtsConst.Order.ATTACK_MOVE:
-			responding = true
-			break
+		if _is_fighting(u):
+			continue
+		recall.append(u)
 	# 给 1 秒反应时间（思考周期 1~1.4 秒），不把"刚发生"算成发呆
 	var n: int = int(_strikes.get("army_response", 0))
-	if responding:
+	if recall.is_empty():
 		n = 0
 	else:
 		n += 1
@@ -218,7 +225,7 @@ func _check_army_response(ctx: Dictionary) -> void:
 	var sched = ctx.get("sched")
 	var base: Vector3 = RtsWorld.base_center(ctx.get("faction"))
 	if sched != null:
-		sched.attack_move(army, base, "sanity:recall")
+		sched.attack_move(recall, base, "sanity:recall")
 		_fix("army_response", ctx)
 
 

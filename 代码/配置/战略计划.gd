@@ -29,7 +29,16 @@ static func build() -> Array:
 			"priority": 100,
 			"stance": "defend",
 			"desc": "基地在挨打：全军回防，停止巡逻与贪经济",
-			"when": {"all": [{"metric": "base_threat", "op": ">=", "value": 1.0}]},
+			# ★ 2026-11-08 玩家口径「防守死锁」：触发条件从"任何压家敌人（含野怪）≥1"
+			#   收紧为「战争对手 ≥1」或「压家敌人 ≥2」。
+			#   旧条件只要一只豺狼人溜进基地圈，这个 priority=100 的计划就永久占位，
+			#   aggression 被钉在 0.10 → `_compute_allow_attack` 的「侵略性 <0.30」一路否决，
+			#   AI 整局不出门。单只野怪该由防守/清野解决，不该劫持战略层。
+			#   （战略导演另有"30 秒无敌人 → 强制恢复出击许可"的兜底，见 `CALM_RELEASE_SEC`。）
+			"when": {"any": [
+				{"metric": "war_threat", "op": ">=", "value": 1.0},
+				{"metric": "base_threat", "op": ">=", "value": 2.0},
+			]},
 			"params": {"aggression": 0.10, "worker_bonus": -2,
 				"allow_patrol": false, "research": false},
 		},

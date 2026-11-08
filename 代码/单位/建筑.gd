@@ -512,6 +512,18 @@ func spawn_point() -> Vector3:
 	return RtsWorld.walkable_pos(p)
 
 
+## 出兵点的**确定性**版本（不掷随机散布）。给"找集结点时避开出生点"用：
+## 出生点每帧都在抖，拿它当避让目标会得到抖动的判定；这里给一个稳定的锚。
+func spawn_anchor() -> Vector3:
+	var fwd := -global_transform.basis.z
+	fwd.y = 0.0
+	if fwd.length_squared() < 0.0001:
+		fwd = Vector3(0.0, 0.0, 1.0)
+	fwd = fwd.normalized()
+	var front: float = (def.body_radius + 1.2) if def != null else 2.0
+	return global_position + fwd * front
+
+
 ## 设集结点：同时在地面立一面小旗（旗是建筑的孩子，建筑没了旗跟着没）
 func set_rally(pos: Vector3) -> void:
 	rally_point = RtsWorld.walkable_pos(pos)
@@ -532,10 +544,135 @@ func default_rally_point() -> Vector3:
 	return RtsWorld.walkable_pos(global_position + fwd * front)
 
 
-## 当前有效的出兵集结点（有旗用旗，没旗用默认点）。
+## 当前有效的出兵集结点（有旗用旗，没旗用**动态集结点**）。
 ## **唯一出口**：出兵、界面提示、自检都读它，别再各自判断 has_rally。
 func rally_destination() -> Vector3:
-	return rally_point if has_rally else default_rally_point()
+	return rally_point if has_rally else dynamic_rally_point()
+
+
+# ---------------------------------------------------------------------------
+# 动态集结点（2026-11-08 玩家口径：「不要用固定偏移量」）
+#
+# 旧实现是"建筑正前方 body_radius + 2.6m"这个**固定偏移**：基地里建筑一多，
+# 那个点就被别的楼/别的楼门口占了 —— 新兵全挤在墙角（玩家看到的"兵营堵门"）。
+#
+# 现在的规则（不新增寻路算法，复用现成的 `RtsWorld.walkable_pos`）：
+#   · 以**阵营基地中心**为圆心，由近到远试 5 个环 × 16 个方位；
+#   · 候选点必须站得住（`walkable_pos` 没有把它吸走 >1.2m）；
+#   · 必须避开**所有己方建筑的占地**与**所有己方出兵点**（含自己门口）；
+#   · 取"最先找到的那一环里余量最大"的点，缓存起来给后续新兵用；
+#   · 缓存键 = 本阵营建筑 instance_id 集合 → **基地里新增/拆掉建筑会自动重算**。
+# ---------------------------------------------------------------------------
+
+## 搜索环半径（米）：从基地中心往外试
+const RALLY_RINGS: Array[float] = [4.5, 6.5, 9.0, 12.0, 15.0]
+## 每个环试几个方位
+const RALLY_SECTORS: int = 16
+## 离出生点至少留几米（别把集结点摆在出兵点上，新兵会互相顶）
+const RALLY_CLEAR_SPAWN: float = 2.2
+## 离建筑占地边缘至少留几米
+const RALLY_CLEAR_BUILD: float = 1.0
+## 候选点被 walkable_pos 吸附超过这个距离 = 那点本身站不住，直接丢
+const RALLY_SNAP_MAX: float = 1.2
+
+var _rally_dyn: Vector3 = Vector3.ZERO
+var _rally_dyn_key: int = 0
+
+
+## 动态集结点（缓存版）。基地建筑集合没变时零成本。
+func dynamic_rally_point() -> Vector3:
+	if faction == null or def == null:
+		return default_rally_point()
+	var key: int = _rally_field_key()
+	if key == _rally_dyn_key and _rally_dyn != Vector3.ZERO:
+		return _rally_dyn
+	_rally_dyn_key = key
+	_rally_dyn = _search_rally_point()
+	return _rally_dyn
+
+
+## 本阵营建筑集合的指纹（顺序稳定：faction.buildings 是有序数组）。
+func _rally_field_key() -> int:
+	if faction == null:
+		return 0
+	var k: int = 17
+	for b in faction.buildings:
+		if b == null or not is_instance_valid(b) or not b.is_alive():
+			continue
+		k = (k * 1315423911) ^ int(b.get_instance_id())
+	return k
+
+
+## 真正的搜索。返回 Vector3.ZERO = 一个都找不到（调用方退固定点）。
+func _search_rally_point() -> Vector3:
+	var home: Vector3 = RtsWorld.base_center(faction)
+	var spawns: Array = _rally_spawn_anchors()
+	var blocks: Array = _rally_footprints()
+	for ring in RALLY_RINGS:
+		var best := Vector3.ZERO
+		var best_margin: float = -INF
+		for i in RALLY_SECTORS:
+			var a: float = TAU * float(i) / float(RALLY_SECTORS)
+			var cand: Vector3 = home + Vector3(cos(a), 0.0, sin(a)) * ring
+			if not RtsWorld.is_walkable(cand):
+				continue
+			var p: Vector3 = RtsWorld.walkable_pos(cand)
+			if p.distance_to(cand) > RALLY_SNAP_MAX:
+				continue
+			var margin: float = _rally_clearance(p, spawns, blocks)
+			if margin <= 0.0:
+				continue
+			if margin > best_margin:
+				best_margin = margin
+				best = p
+		if best != Vector3.ZERO:
+			return best
+	return Vector3.ZERO
+
+
+## 候选点到"最近的出生点/建筑占地"还剩多少余量（<=0 = 不合格）。
+func _rally_clearance(p: Vector3, spawns: Array, blocks: Array) -> float:
+	var margin: float = 999.0
+	for s in spawns:
+		var sp: Vector3 = s
+		margin = minf(margin, p.distance_to(sp) - RALLY_CLEAR_SPAWN)
+	for rec in blocks:
+		var bd: Dictionary = rec
+		var bp: Vector3 = bd["pos"]
+		margin = minf(margin, p.distance_to(bp) - float(bd["r"]) - RALLY_CLEAR_BUILD)
+	return margin
+
+
+## 己方全部建筑的出兵点锚（含自己）
+func _rally_spawn_anchors() -> Array:
+	var out: Array = []
+	if faction == null:
+		return out
+	for b in faction.buildings:
+		if b == null or not is_instance_valid(b) or not b.is_alive():
+			continue
+		if b.has_method("spawn_anchor"):
+			var a: Vector3 = b.call("spawn_anchor")
+			out.append(a)
+	return out
+
+
+## 己方全部建筑的占地圆（pos + 半径）。建筑不随体积缩放，按 footprint 折半算。
+func _rally_footprints() -> Array:
+	var out: Array = []
+	if faction == null:
+		return out
+	for b in faction.buildings:
+		if b == null or not is_instance_valid(b) or not b.is_alive() or b.def == null:
+			continue
+		var fp: Vector2i = b.def.footprint
+		var r: float = 1.0
+		if fp.x > 0 and fp.y > 0:
+			r = float(maxi(fp.x, fp.y)) * 0.5 + 0.4
+		else:
+			r = maxf(float(b.def.body_radius), 1.0)
+		out.append({"pos": b.global_position, "r": r})
+	return out
 
 
 ## 拔掉集结点（命令卡的"取消集结点"用；旗子跟着消失）
