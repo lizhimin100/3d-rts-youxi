@@ -125,7 +125,8 @@ func _scan_guards() -> void:
 ## 口径（玩家 2026-11-08「单位身上显示星级图标，仿红警」）：
 ##   · 0 星不显示；1/2/3 星显示对应颗数；
 ##   · 图标**屏幕像素固定大小**（镜头拉远也认得出），位置/朝向对所有单位一致；
-##   · 只收集 `visible` 的节点 —— 迷雾里被隐藏的敌人不会白送星级情报。
+##   · 只收集 `visible` 的节点 —— 迷雾里被隐藏的敌人不会白送星级情报；
+##   · 画在**模型脚下**（玩家第四轮口径：从名字/头顶挪到单位下方）。
 func _scan_stars() -> void:
 	_stars.clear()
 	for f in Game.factions:
@@ -219,7 +220,11 @@ func _draw() -> void:
 			continue
 		if not (u3 as Node3D).visible:
 			continue
-		var p3: Vector3 = _anchor_of(u3)
+		# ★ 2026-11-08 玩家口径：星级从"名字/头顶"改到**单位下方**
+		#   （参考红警：把星贴在血条下方或模型脚下）。
+		#   兵 → 模型脚下（地面锚点）；建筑没有"脚下"可言，仍在楼顶上方。
+		var is_bld: bool = u3.def != null and u3.def.is_building()
+		var p3: Vector3 = _anchor_of(u3) if is_bld else _feet_of(u3)
 		if cam_pos.distance_to(p3) > MAX_DIST:
 			continue
 		if cam.is_position_behind(p3):
@@ -227,7 +232,8 @@ func _draw() -> void:
 		var sp3: Vector2 = cam.unproject_position(p3)
 		if sp3.x < -40.0 or sp3.y < -40.0 or sp3.x > vp.x + 40.0 or sp3.y > vp.y + 40.0:
 			continue
-		_draw_stars(int(u3.get("star_level")), sp3 + Vector2(0.0, 9.0 * zoom))
+		var dy: float = 9.0 * zoom if is_bld else 11.0 * zoom
+		_draw_stars(int(u3.get("star_level")), sp3 + Vector2(0.0, dy))
 		drawn_star += 1
 
 
@@ -282,6 +288,12 @@ func _anchor_of(u: Node3D) -> Vector3:
 	return u.global_position + Vector3(0.0, h + 0.45, 0.0)
 
 
+## **脚下锚点**（2026-11-08）：星级要"贴在模型脚下"时用它 —— 就是单位站的那块地。
+## 只抬 5cm，避免和地形/选中圈共面闪烁。
+func _feet_of(u: Node3D) -> Vector3:
+	return u.global_position + Vector3(0.0, 0.05, 0.0)
+
+
 ## 据点资源箱头顶的小牌（2026-11-08）。
 ##
 ## 两种文案：
@@ -330,7 +342,7 @@ func _draw_strongpoint(cam: Camera3D, cam_pos: Vector3, vp: Vector2) -> void:
 ##
 ## 三条硬口径（玩家 2026-11-08）：
 ##   ① 0 星不画；② 大小/间距/朝向**对所有单位统一**（屏幕像素，不随模型/镜头缩放）；
-##   ③ 不挡单位主体 —— 画在头顶锚点**下方 9px**（血条在上方，两者不打架）。
+##   ③ 不挡单位主体 —— 兵的星画在**模型脚下**（`_feet_of`），建筑仍在楼顶上方。
 func _draw_stars(n: int, center: Vector2) -> void:
 	if n <= 0:
 		return

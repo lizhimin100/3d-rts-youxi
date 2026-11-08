@@ -159,10 +159,11 @@ func ensure_built() -> void:
 	_rule.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_rule)
 
-	# --- 数值区：**左竖版经验条 + 右三行数值**（2026-11-08 玩家第三轮口径）---
-	#   玩家原话：「不要放在信息面板外，是内嵌在信息面板、在显示单位近战或远程的
-	#   下方，仍然是竖版经验条」——所以它是数值区里的一个 18px 竖槽，
-	#   从金线下面一直拉到面板底部，和攻击/护甲/移速并排。
+	# --- 数值区：**左三行数值 + 右竖版经验条**（2026-11-08 玩家第四轮口径）---
+	#   玩家原话：「将单位的经验进度条从当前位置移到信息面板的右侧。去除现有进度条上与
+	#   单位名称旁装饰混淆的款式，换成干净清晰的独立进度条。」
+	#   所以顺序反过来：数值在左，经验条贴着面板**右缘**单独占一列；
+	#   条上不再画星级（星级现在画在世界里的单位脚下，见 头顶界面）。
 	_body = HBoxContainer.new()
 	_body.name = "数值区"
 	_body.add_theme_constant_override("separation", 10)
@@ -170,6 +171,13 @@ func ensure_built() -> void:
 	_body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_body.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_body)
+
+	# --- 竖排数值（单选时出现）---
+	_stats = RtsStatColumn.new()
+	_stats.name = "数值"
+	_stats.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_stats.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_body.add_child(_stats)
 
 	_exp = RtsExpBar.new()
 	_exp.visible = false
@@ -181,13 +189,6 @@ func ensure_built() -> void:
 		if _units.size() != 1:
 			return {}
 		return Lex.exp(_units[0] as Node3D))
-
-	# --- 竖排数值（单选时出现）---
-	_stats = RtsStatColumn.new()
-	_stats.name = "数值"
-	_stats.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_stats.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_body.add_child(_stats)
 
 	# --- 多选清单 ---
 	_grid_wrap = HBoxContainer.new()
@@ -213,10 +214,7 @@ func ensure_built() -> void:
 	_root.add_child(_empty)
 
 
-## 经验条：**只对兵**显示（建筑没有星级），内嵌在数值区左侧。
-##
-## 玩家 2026-11-08：「内嵌在信息面板、在显示单位近战或远程的下方」「做宽些」
-## 「仍然是竖版经验条」。所以它和攻击/护甲/移速排在同一行里，自己占一列。
+## 经验条：**只对兵**显示（建筑没有星级），挂在数值区**右侧**（2026-11-08 第四轮口径）。
 func _sync_exp(u: Node3D, d: UnitDef) -> void:
 	if _exp == null:
 		return
@@ -320,7 +318,7 @@ func content_height() -> float:
 ## 内容想要多宽（HUD 据此给中段定宽，**不再一路铺到命令卡**）
 func content_width() -> float:
 	if _units.size() == 1:
-		# 250 是"三行数值 + 名字"的旧宽度；经验条内嵌后要给它留一列（18 + 10 间距）
+		# 250 是"三行数值 + 名字"的旧宽度；经验条在右侧，同样要给它留一列（18 + 10 间距）
 		var want: float = 278.0
 		if _title != null:
 			want = maxf(want, _title.get_combined_minimum_size().x + 118.0)

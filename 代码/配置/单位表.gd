@@ -267,6 +267,11 @@ static func _build_harvestables(out: Dictionary) -> void:
 	goldmine.max_hp = 99999.0
 	goldmine.footprint = Vector2i(4, 4)
 	goldmine.height = 3.2
+	# ★ 2026-11-08 玩家口径「金矿图标放大，一眼看到资源点」：模型整体 ×1.35。
+	#   只放大**外观**：footprint(4×4) / body_radius(2.0) / 采集载位一律不动，
+	#   否则会改到占格与站位（那是玩法）。矿体略微越出占格边缘是有意的 ——
+	#   远看才像个地标，而且树/岩石本来也会越出各自格子。
+	goldmine.model_scale = 1.35
 	goldmine.harvest_kind = RtsConst.Harvest.GOLD
 	goldmine.resource_amount = 3200
 	goldmine.body_radius = 2.0

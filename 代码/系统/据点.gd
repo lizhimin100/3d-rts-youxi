@@ -163,9 +163,11 @@ func _make_crate() -> Node3D:
 			var inst: Node = ps.instantiate()
 			if inst is Node3D:
 				var n := inst as Node3D
-				# 木箱模型按米建；抬一点离开地面，别插进土里
-				n.position.y = 0.45
-				n.scale = Vector3.ONE * 1.6
+				# 木箱模型按米建；抬一点离开地面，别插进土里。
+				# ★ 2026-11-08 玩家口径「中心据点图标放大」：1.6 → **2.4（1.5 倍）**，
+				#   抬高也按比例走（0.45 → 0.68），箱底才不会陷进地里。
+				n.position.y = 0.68
+				n.scale = Vector3.ONE * 2.4
 				root.add_child(n)
 				# ★ 木箱的 albedo 是**纯灰度**（228,230,232）—— 美术资产是给
 				#   "材质族染色"用的（和 自然材质.gd 同一套口径）。直接实例化会是个白箱子，

@@ -334,8 +334,10 @@ func _draw() -> void:
 		var gold := Spec.gold()
 		for m in md.get("mines"):
 			var mp: Vector2 = _world_to_map(Vector3(m.x, 0.0, m.y))
-			draw_rect(Rect2(mp - Vector2(3.4, 3.4), Vector2(6.8, 6.8)), Color(0.0, 0.0, 0.0, 0.66), true)
-			draw_rect(Rect2(mp - Vector2(2.3, 2.3), Vector2(4.6, 4.6)), gold, true)
+			# ★ 2026-11-08 玩家口径「金矿图标放大，一眼看到资源点」：
+			#   金色方块 4.6 → 6.9（1.5 倍），黑底同步 6.8 → 9.6（保持一圈描边）。
+			draw_rect(Rect2(mp - Vector2(4.8, 4.8), Vector2(9.6, 9.6)), Color(0.0, 0.0, 0.0, 0.66), true)
+			draw_rect(Rect2(mp - Vector2(3.45, 3.45), Vector2(6.9, 6.9)), gold, true)
 		for t in md.get("trees"):
 			var tp: Vector2 = _world_to_map(Vector3(t.x, 0.0, t.y))
 			draw_rect(Rect2(tp - Vector2(1.6, 1.6), Vector2(3.2, 3.2)), Color(0.10, 0.24, 0.11, 0.92), true)
@@ -493,12 +495,14 @@ func _draw_creep_camps() -> void:
 ##
 ## 常驻画一个小金菱形（地图信息，和营地图标同级：不按迷雾过滤）；
 ## 资源箱在场时菱形里多一颗亮心 + 一圈脉冲环，一眼看出"现在能去抢"。
+## ★ 2026-11-08 玩家口径「中心据点图标放大」：半径 5.2 → **7.8（1.5 倍）**，
+##   亮心 2.2 → 3.3、脉冲环 +3 → +4.5 同步放大（比例不变，读起来还是同一个图标）。
 func _draw_strongpoint() -> void:
 	var sp: Node = Game.strongpoint
 	if sp == null or not is_instance_valid(sp):
 		return
 	var p: Vector2 = _world_to_map(sp.get("center") as Vector3)
-	var r: float = 5.2
+	var r: float = 7.8
 	var outer := PackedVector2Array([
 		p + Vector2(0.0, -r), p + Vector2(r, 0.0), p + Vector2(0.0, r), p + Vector2(-r, 0.0)])
 	var active: bool = bool(sp.get("crate_active"))
@@ -510,8 +514,8 @@ func _draw_strongpoint() -> void:
 		inner.append(p + (q - p) * 0.72)
 	_fill_poly_uv(inner, col)
 	if active:
-		_dot_uv(p, 2.2, Color(1.0, 0.98, 0.86, 0.95))
-		draw_arc(p, r + 3.0, 0.0, TAU, 24, Color(1.0, 0.86, 0.40, 0.55), 1.2, true)
+		_dot_uv(p, 3.3, Color(1.0, 0.98, 0.86, 0.95))
+		draw_arc(p, r + 4.5, 0.0, TAU, 24, Color(1.0, 0.86, 0.40, 0.55), 1.4, true)
 
 
 ## 营地图标纹理（按 icon key 缓存；缺失返回 null，由调用方降级画圆点）
