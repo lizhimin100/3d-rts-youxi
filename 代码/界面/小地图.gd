@@ -21,6 +21,11 @@ const PAD := 0.0
 const LEGEND_H := 24.0
 ## 圆盘遮罩色（= 面板底色）
 const MASK_COLOR := Color(0.035, 0.041, 0.052, 0.96)
+## 迷雾在小地图上的**最大不透明度**（2026-11-08）。
+## 3D 战场里未探索是纯黑（alpha 1.0），但小地图不行：那会把地形底图整片吃掉，
+## 玩家看到的是"圆盘缺了一块"。压到 0.62 之后：未探索 = 暗但能看出山脉/路口，
+## 已探索 = 轻微压暗，当前视野 = 完全不受影响（那格 alpha 本来就是 0）。
+const FOG_MINIMAP_ALPHA := 0.62
 
 ## 圆形裁剪用的 canvas_item 着色器。
 ## 为什么不用"画四个角盖住"：底盘和遮罩同色，盖了等于没盖，仍旧是一块方板；
@@ -231,7 +236,12 @@ func _sync_world_size() -> void:
 func _map_rect() -> Rect2:
 	# 四周留 7px 给边框：地形不再顶到控件边缘，圆形裁剪也就不会把内容切出"毛边"
 	var side: float = maxf(16.0, minf(size.x, size.y) - 14.0)
-	return Rect2(Vector2(7.0, 7.0), Vector2(side, side))
+	# ★ 2026-11-08 玩家报「小地图圆形右侧区域不显示」：
+	#   旧版固定从 (7,7) 起画，控件一旦不是正方形（布局过渡帧 / 换分辨率），
+	#   圆盘就贴在左边，金环却按控件中心画 —— 右边那半圈看着就是"空的"。
+	#   现在**居中**：不管控件什么比例，地形圆盘和金环同心。
+	return Rect2(Vector2((size.x - side) * 0.5, (size.y - side) * 0.5),
+			Vector2(side, side))
 
 
 func _build_frame() -> void:
@@ -327,10 +337,15 @@ func _draw() -> void:
 		_fog_node = get_tree().get_first_node_in_group("fog_system")
 	# ★ 迷雾**关掉时不能画这层贴图**：贴图里未探索格 alpha=1，照画就是"整张小地图全黑"。
 	#   `--no-fog` / 设置菜单关掉迷雾之后，小地图必须能看全图（这就是"关雾却全黑"的根因）。
+	#
+	# ★ 2026-11-08 玩家报「小地图圆形右侧区域不显示」：真凶是**未探索格 alpha=1（纯黑）**
+	#   把地形底图整片吃掉，圈里只剩自己基地那一小块亮斑 —— 看起来就像圆盘被切掉了半边。
+	#   小地图的正确语义是"战图"：地形永远看得见（山脉/路口/矿区轮廓），
+	#   迷雾只负责**压暗**。所以这里按 FOG_MINIMAP_ALPHA 封顶，不再用 1.0 的黑。
 	if _fog_on():
 		var ft: Variant = _fog_node.get("fog_texture")
 		if ft != null:
-			draw_texture_rect(ft, mr, false)
+			draw_texture_rect(ft, mr, false, Color(1.0, 1.0, 1.0, FOG_MINIMAP_ALPHA))
 
 	# --- 野怪营地（压在迷雾之上、单位点之下：先看"哪有营地"，再看"谁在那"）---
 	_draw_creep_camps()
