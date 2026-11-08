@@ -3455,7 +3455,14 @@ func _update_anim() -> void:
 			else:
 				visual.play("move", ratio)
 		RtsConst.State.ATTACK:
-			visual.play("attack", 1.0)
+			# ★ 2026-11-08 玩家实测「攻击砍两下」：state 会一直停在 ATTACK（冷却 1.75s
+			#   比 clip 0.9s 长），旧代码每帧都请求播 attack —— clip 播完后被重新拉起，
+			#   于是同一个冷却里看到两刀。现在只有"这一刀还在播/还在前摇"才继续推进。
+			var ast: StringName = visual.anim_state() if visual.has_method("anim_state") else &""
+			if _swinging or ast == &"attack" or ast == &"shoot" or ast == &"cast":
+				visual.play("attack", 1.0)
+			else:
+				visual.play("idle", 1.0)
 		RtsConst.State.GATHER:
 			# 速度 = 一趟正好挥 N 下（见 _gather_anim_speed）；不是 1.0 的死板循环
 			visual.play("gather", _gather_anim_speed())

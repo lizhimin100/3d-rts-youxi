@@ -66,11 +66,15 @@ func _process(delta: float) -> void:
 		if _countdown <= 0.0:
 			_spawn_crate()
 		return
+	# ★ 2026-11-08 玩家实测「占了好几秒才过去 2s」：
+	#   旧代码每 0.2s 才判一次，却只把**当帧 delta**（≈0.016s）加进计时器 ——
+	#   15 秒真实时间只累出 1.2 秒。现在把这个周期的真实时长整段喂进去。
 	_tick += delta
 	if _tick < 0.2:
 		return
+	var step: float = _tick
 	_tick = 0.0
-	_tick_capture(delta)
+	_tick_capture(step)
 
 
 # ===========================================================================

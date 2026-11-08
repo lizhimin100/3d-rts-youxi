@@ -26,6 +26,8 @@ extends CanvasLayer
 ##       `--all-hidden` 界面 + 鼠标光标全隐藏（成片/干净截图用）。
 
 const Spec := preload("res://代码/界面/界面规格.gd")
+## 词条（悬停说明）：经验条/资源条的气泡文案都从这里取
+const Lex := preload("res://代码/界面/词条.gd")
 
 ## 界面刷新间隔（秒）：不跟渲染帧空转
 const REFRESH_INTERVAL := 0.12
@@ -49,6 +51,9 @@ var _zoom: float = 1.0
 
 ## 顶部资源
 var _stats_panel: PanelContainer = null
+## 顶部「据点资源箱 N 秒后刷新」提示（2026-11-08 玩家要求：刷新前 30s 要有 UI）
+var _crate_banner: PanelContainer = null
+var _crate_label: Label = null
 var _gold_label: Label = null
 var _wood_label: Label = null
 var _food_label: Label = null
@@ -111,6 +116,8 @@ var _glyph: RtsGlyphCursor = null
 
 ## 底栏底板（一整条奇幻石金板，见 浮雕底板.gd）
 var _band_plate: RtsOrnatePlate = null
+## 底栏左缘的竖版经验条（单选一个兵时出现；2026-11-08）
+var _exp_bar: RtsExpBar = null
 ## 可弹出式说明文本层（见 说明气泡.gd）
 var _tips: RtsTipLayer = null
 ## 上一次用的底栏高度（内容变化时用来发现"该重摆了"）
@@ -213,6 +220,15 @@ func _ready() -> void:
 	_sync_root_size()
 
 	_build_band_plate()
+	# 经验条：贴在底栏最左缘，两种形态（紧凑/展开）都跟着底板走
+	_exp_bar = RtsExpBar.new()
+	_exp_bar.visible = false
+	root.add_child(_exp_bar)
+	RtsTipLayer.bind(self, _exp_bar, func() -> Dictionary:
+		var arr: Array = _valid_selection()
+		if arr.size() != 1:
+			return {}
+		return Lex.exp(arr[0] as Node3D))
 	_build_tip_layer()
 	_build_stats()
 	_build_toasts()
@@ -520,6 +536,10 @@ func _apply_layout() -> void:
 		_place(_stats_panel, 0.5, 0.0, 0.5, 0.0,
 				-_mets.stats_w * 0.5, m, _mets.stats_w * 0.5, m + _mets.stats_h)
 	# 小地图：左上（圆盘 + 下方图例条）
+	# 据点提示：资源条正下方居中（宽度固定 300，和资源条同一条竖轴）
+	if _crate_banner != null and _crate_banner.visible:
+		_place(_crate_banner, 0.5, 0.0, 0.5, 0.0,
+				-150.0, m + _mets.stats_h + 6.0, 150.0, m + _mets.stats_h + 6.0 + 26.0)
 	if _minimap != null:
 		# 正方形：圆盘 = 控件内切圆，图例浮在圆内底部（不再额外占高度）
 		_place(_minimap, 0.0, 0.0, 0.0, 0.0,
@@ -629,16 +649,17 @@ func _apply_layout() -> void:
 	# 底板：2026-11-01 第五版 —— **整条底栏长出一块奇幻石金板**。
 	#   三块内容全部坐在这块板上：左卡 stylebox 仍是空的（大头像浮在石面上），
 	#   信息面板与命令卡只留一圈很淡的凹槽。
+	# ★ 2026-11-01 第七版（玩家口径）：**紧凑形态下底板从信息面板左缘起**。
+	#   以前底板永远铺满整屏宽，紧凑形态时中段被推到右边，于是左边留下
+	#   一大块"什么都没有的石板 + 一枚纹章"——玩家原话："左边就不要再有多余的空白面板"。
+	#   现在底板跟着内容走：紧凑 = 只包住 [信息面板][头像][命令卡]；展开 = 铺满。
+	#   （plate_left 提到 if 外面：底栏左缘的经验条也要按它定位）
+	var plate_left: float = m + BAND_PAD
+	if compact:
+		plate_left = clampf(rect_mid.position.x - BAND_EDGE, m + BAND_PAD,
+				_mets.vw - m - BAND_PAD - 240.0)
 	if _band_plate != null:
 		_band_plate.visible = _band_visible() and root.visible
-		# ★ 2026-11-01 第七版（玩家口径）：**紧凑形态下底板从信息面板左缘起**。
-		#   以前底板永远铺满整屏宽，紧凑形态时中段被推到右边，于是左边留下
-		#   一大块"什么都没有的石板 + 一枚纹章"——玩家原话："左边就不要再有多余的空白面板"。
-		#   现在底板跟着内容走：紧凑 = 只包住 [信息面板][头像][命令卡]；展开 = 铺满。
-		var plate_left: float = m + BAND_PAD
-		if compact:
-			plate_left = clampf(rect_mid.position.x - BAND_EDGE, m + BAND_PAD,
-					_mets.vw - m - BAND_PAD - 240.0)
 		# 走 `_place_smooth`：形态切换时底板要和三块内容一起滑过去，
 		# 直接给矩形会出现"面板在滑、底板已经跳到位"的割裂感。
 		_place_smooth(_band_plate, Rect2(plate_left, top_y,
@@ -650,6 +671,12 @@ func _apply_layout() -> void:
 		_band_plate.show_medallion = (not compact) and gap_w >= 260.0
 		if _band_plate.show_medallion:
 			_band_plate.medallion_x = (gap_x0 + gap_x1) * 0.5 - plate_left
+
+	# 经验条：贴底板左缘外侧（比底板矮 16px，读起来像"挂在板子边上的标尺"）
+	if _exp_bar != null:
+		var eb_left: float = plate_left - 15.0
+		var eb_top: float = top_y + 8.0
+		_place_smooth(_exp_bar, Rect2(eb_left, eb_top, RtsExpBar.W, maxf(inner_h - 16.0, 24.0)), animate)
 
 	_place_toasts()
 	# 气泡层铺满整个 root：**必须显式摆**，光靠 full-rect 锚点在这套
@@ -808,6 +835,20 @@ func _build_stats() -> void:
 	hb.add_theme_constant_override("separation", 12)
 	hb.alignment = BoxContainer.ALIGNMENT_CENTER
 	_stats_panel.add_child(hb)
+
+	# 据点资源箱提示条：贴在资源条正下方（居中），平时隐藏
+	_crate_banner = PanelContainer.new()
+	_crate_banner.name = "据点提示"
+	_crate_banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sb2 := Spec.panel_style(5, 0.92, 0.40, 10.0)
+	sb2.border_width_top = 1
+	sb2.border_color = Color(0.98, 0.78, 0.36, 0.75)
+	_crate_banner.add_theme_stylebox_override("panel", sb2)
+	_crate_banner.visible = false
+	root.add_child(_crate_banner)
+	_crate_label = Spec.label("", Spec.FS_BODY, Color(1.0, 0.88, 0.56))
+	_crate_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_crate_banner.add_child(_crate_label)
 
 	_gold_label = _stat_pill(hb, "金币", Spec.gold(), false, "coin")
 	_wood_label = _stat_pill(hb, "木材", Spec.wood(), false, "wood")
@@ -1871,6 +1912,57 @@ func _refresh_stats() -> void:
 				Color(0.98, 0.52, 0.42) if full else Spec.text_main())
 	if _pop_bar != null:
 		_pop_bar.set_ratio(float(used) / maxf(float(cap), 1.0), full)
+	_sync_crate_banner()
+	_sync_exp_bar()
+
+
+## 据点资源箱的顶部倒计时（刷新前 30 秒出现）。
+##
+## 玩家 2026-11-08：「据点刷新前 30S 要在上面有 UI 提示」。
+## 口径：只在**没箱子且剩余 ≤30 秒**时显示；箱子在场就收起来（那时看头顶那块牌）。
+func _sync_crate_banner() -> void:
+	if _crate_banner == null:
+		return
+	var sp: Node = Game.strongpoint
+	var show_it: bool = false
+	var txt: String = ""
+	if sp != null and is_instance_valid(sp):
+		if not bool(sp.get("crate_active")):
+			var left: float = float(sp.call("countdown"))
+			if left > 0.0 and left <= 30.0:
+				show_it = true
+				txt = "据点资源箱 %d 秒后刷新" % int(ceil(left))
+	if _crate_banner.visible != show_it:
+		_crate_banner.visible = show_it
+		_apply_layout()
+	if show_it:
+		_set_label(_crate_label, txt)
+
+
+## 经验条：**只在单选一个兵**时出现（多选没有"这个单位多少经验"这回事）。
+##
+## 玩家 2026-11-08：「选中单个单位后，在下面左侧的信息面板的左边做竖版的经验条 UI，
+## 鼠标悬停会显示当前单位有多少经验值、还需多少经验值升级。」
+func _sync_exp_bar() -> void:
+	if _exp_bar == null:
+		return
+	var arr: Array = _valid_selection()
+	var show_it: bool = arr.size() == 1
+	var u: Node3D = arr[0] as Node3D if show_it else null
+	if show_it and u != null:
+		var d: UnitDef = u.get("def") as UnitDef
+		if d == null or d.kind != RtsConst.Kind.UNIT:
+			show_it = false
+	if _exp_bar.visible != show_it:
+		_exp_bar.visible = show_it
+		_apply_layout()
+	if not show_it:
+		return
+	var star: int = int(u.get("star_level")) if u.get("star_level") != null else 0
+	var cur: float = float(u.get("exp_value")) if u.get("exp_value") != null else 0.0
+	var need: float = float(u.call("exp_need")) if u.has_method("exp_need") else 60.0
+	var r: float = 1.0 if star >= 3 else clampf((cur - float(star) * need) / maxf(need, 1.0), 0.0, 1.0)
+	_exp_bar.set_state(r, star, Spec.accent())
 
 
 ## 幂等写 Label：文本没变就一个字节都不写（避免 8Hz 重排）

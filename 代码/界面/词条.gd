@@ -210,6 +210,49 @@ static func hp(u: Node3D) -> Dictionary:
 	}
 
 
+## 经验 / 星级（底栏左侧竖条 + 悬停）
+##
+## 口径来自 代码/系统/升星.gd：击杀 +15 经验；升一星 = 金×2 + 木×3，三星同价；
+## 加成累计 +15%/+20% → +30%/+40% → +80%/+100%。这里只做说明，不参与任何计算。
+static func exp(u: Node3D) -> Dictionary:
+	if u == null or not is_instance_valid(u):
+		return {}
+	var d: UnitDef = _def(u)
+	if d == null or d.kind != RtsConst.Kind.UNIT:
+		return {}
+	var star: int = int(u.get("star_level")) if u.get("star_level") != null else 0
+	var cur: float = float(u.get("exp_value")) if u.get("exp_value") != null else 0.0
+	var need: float = float(u.call("exp_need")) if u.has_method("exp_need") else 60.0
+	var next: float = float(u.call("exp_to_next")) if u.has_method("exp_to_next") else 0.0
+	var title: String = "%s · %s" % [String(d.display_name), _star_name(star)]
+	if star < 3:
+		var base: float = float(star) * need
+		var into: float = clampf(cur - base, 0.0, need)
+		return {
+			"icon": "star",
+			"icon_color": Color(1.0, 0.82, 0.32),
+			"title": title,
+			"tag": "%d 星" % star,
+			"body": ("经验 [b]%d[/b] / %d（这一星）\n还差 [b]%d[/b] 点升到「%s」（%d 星）\n"
+					+ "击杀 +15 经验；升一星需要 金×2 + 木×3（三星同价）") % [
+					int(round(into)), int(round(need)), int(ceil(next)),
+					_star_name(star + 1), star + 1],
+			"foot": "累计经验 %d · 击杀 %d" % [int(round(cur)), int(u.get("kill_count")) if u.get("kill_count") != null else 0],
+		}
+	return {
+		"icon": "star",
+		"icon_color": Color(1.0, 0.82, 0.32),
+		"title": title,
+		"tag": "满星",
+		"body": "已经是最高星级（王牌）。\n加成累计：攻击/移速/攻速 +80%，血量/防御 +100%。",
+		"foot": "累计经验 %d · 击杀 %d" % [int(round(cur)), int(u.get("kill_count")) if u.get("kill_count") != null else 0],
+	}
+
+
+static func _star_name(star: int) -> String:
+	return ["新兵", "老兵", "精英", "王牌"][clampi(star, 0, 3)]
+
+
 ## 法力那一行
 static func mana(u: Node3D) -> Dictionary:
 	if u == null or not u.has_method("has_mana") or not bool(u.call("has_mana")):

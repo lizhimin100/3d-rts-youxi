@@ -68,6 +68,11 @@ var _ready_ok: bool = false
 ## 玩家 2026-11-07 口径：**待机可以随机多个不同动画，移动/攻击/举盾只用一个**。
 ## 所以只有 idle 走随机，其他状态一律按名字取那唯一一个。
 var _idle_pool: Array[StringName] = []
+## 待机池覆盖（只有"手持盾牌"这类单位用）：
+## 默认池是 资产里所有 `idle*`（含 idle_scratch / idle_stretch）；
+## 挂着盾的单位随机到"挠头"时，手抬到头顶、盾还挂在手边 —— 玩家实测觉得怪，
+## 所以那类单位把池子收成 ["idle"]（见 单位视觉._make_pose_layer）。
+var _idle_override: Array[StringName] = []
 ## 上一次随机到的待机（避免连着两次同一个）
 var _last_idle: StringName = &""
 ## 表现层随机流（不要用全局 randf —— 会让"重放同一场"的战斗结果跟着变）
@@ -148,6 +153,12 @@ func set_state(state: String, speed_ratio: float = 1.0, force: bool = false) -> 
 			cur_len = cur_anim.length
 		if cur_len <= 0.001 or _ap.current_animation_position < cur_len * 0.55:
 			return
+	# ★ 2026-11-08 玩家实测「步兵攻击砍两下」的根因：
+	#   攻击是单次动作（is_loop=false），旧判据只挡"循环动作"，于是状态机每帧
+	#   重新 play 一次 attack —— 播完一遍后又被从头拉起，看起来就是连砍两刀。
+	#   现在：同一个单次动作还在播就**不许重播**（要重播必须 force）。
+	if want == _current and not is_loop and not force and _ap.is_playing():
+		return
 	if want == _current and is_loop and not force:
 		# 上限 3.0：walk 按真实地速播放（4.6m/s / 2.0m/s 步幅 ≈ 2.3x）
 		_speed = clampf(speed_ratio, 0.2, 3.0)
@@ -185,17 +196,25 @@ func _playable(n: StringName) -> bool:
 ## 待机随机：从 `idle*` 池里挑一个，**不连着重复**。
 ## 只有 1 个待机时根本不会走到这里（见 set_state 的判据）。
 func _pick_idle() -> StringName:
-	if _idle_pool.is_empty():
+	var pool: Array[StringName] = _idle_override if not _idle_override.is_empty() else _idle_pool
+	if pool.is_empty():
 		return &"idle"
-	if _idle_pool.size() == 1:
-		return _idle_pool[0]
+	if pool.size() == 1:
+		return pool[0]
 	for _i in 4:
-		var pick: StringName = _idle_pool[Fx.rand_index(_idle_pool.size())]
+		var pick: StringName = pool[Fx.rand_index(pool.size())]
 		if pick != _last_idle:
 			_last_idle = pick
 			return pick
-	_last_idle = _idle_pool[Fx.rand_index(_idle_pool.size())]
+	_last_idle = pool[Fx.rand_index(pool.size())]
 	return _last_idle
+
+
+## 收窄待机池（手持盾牌的单位用：只要基础 idle，别随机到挠头/伸展）
+func set_idle_pool(names: Array) -> void:
+	_idle_override.clear()
+	for n in names:
+		_idle_override.append(StringName(n))
 
 
 func _on_finished(anim: StringName) -> void:

@@ -890,8 +890,9 @@ func _qa_spawn_stars() -> void:
 		var n: Node3D = Game.spawn_unit(pl, &"footman", pos, level)
 		if n == null:
 			continue
-		n.set("star_level", i)
-		n.set("exp_value", float(i) * 1000.0)
+		# 倒着排：第一个 3 星（经验条拉满），后面 2/1/0 —— 一眼看全四档
+		n.set("star_level", 3 - i)
+		n.set("exp_value", float(3 - i) * 1000.0)
 		made.append(n)
 	if not made.is_empty():
 		var sel: Node = get("selection_system")

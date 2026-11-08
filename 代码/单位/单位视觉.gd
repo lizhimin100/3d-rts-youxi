@@ -210,6 +210,10 @@ func _make_pose_layer(root: Node3D) -> Node:
 		skel.remove_child(layer)
 		layer.queue_free()
 		return null
+	# 有盾的单位只随机到基础 idle：挠头/伸展会把手臂抬到头顶，
+	# 盾虽然跟着手走了（2026-11-08 重绑），但"举着盾挠头"读起来很怪。
+	if _anim != null and is_instance_valid(_anim) and _anim.has_method("set_idle_pool"):
+		_anim.call("set_idle_pool", ["idle"])
 	return layer
 
 
@@ -241,6 +245,16 @@ func set_hold_pose(clip: StringName, on: bool) -> void:
 		return
 	_pose.call("use_clip", clip)
 	_pose.call("set_hold", on)
+
+
+## 当前动画状态（解析后的 clip 名，例如 attack / shoot / idle）。
+## 单位的状态机用它判断"这一刀是不是还在播"（2026-11-08 修"攻击砍两下"）。
+func anim_state() -> StringName:
+	if _anim == null or not is_instance_valid(_anim):
+		return &""
+	if _anim.has_method("current_state"):
+		return StringName(_anim.call("current_state"))
+	return &""
 
 
 ## 姿态层当前状态（自检/截图脚本读）

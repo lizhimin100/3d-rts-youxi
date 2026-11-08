@@ -36,8 +36,9 @@ func _ready() -> void:
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUT_DIR))
 	await _shot("0_待机")
 	await _walk()
-	await _attack()
+	# ★ 先拍举盾再拍攻击：攻击会在身前 2m 摆一个敌人，正前方的机位会被敌人挡住
 	await _shield()
+	await _attack()
 	print("[动作截图] 完成 → %s" % ProjectSettings.globalize_path(OUT_DIR))
 	get_tree().quit(0)
 
@@ -64,8 +65,9 @@ func _setup_camera() -> void:
 	_follow()
 
 
-## 相机站在单位**右前 40 度**：既看得到剑、也看得到腿（正侧面手会挡住身子）
-func _follow() -> void:
+## 相机站在单位**右前 40 度**：既看得到剑、也看得到腿（正侧面手会挡住身子）。
+## `front=true` 时站到**正前方**（验收举盾：盾是不是挡在身前、手有没有穿模）。
+func _follow(front: bool = false) -> void:
 	if _unit == null or not is_instance_valid(_unit) or _cam == null:
 		return
 	var p: Vector3 = _unit.global_position
@@ -74,12 +76,15 @@ func _follow() -> void:
 	fwd.y = 0.0
 	fwd = fwd.normalized()
 	var right: Vector3 = fwd.cross(Vector3.UP).normalized()
-	_cam.global_position = p + fwd * 3.9 + right * 2.9 + Vector3(0.0, 1.55, 0.0)
+	if front:
+		_cam.global_position = p + fwd * 4.2 + Vector3(0.0, 1.35, 0.0)
+	else:
+		_cam.global_position = p + fwd * 3.9 + right * 2.9 + Vector3(0.0, 1.55, 0.0)
 	_cam.look_at(p + Vector3(0.0, 0.92, 0.0), Vector3.UP)
 
 
-func _shot(tag: String) -> void:
-	_follow()
+func _shot(tag: String, front: bool = false) -> void:
+	_follow(front)
 	await get_tree().process_frame
 	await RenderingServer.frame_post_draw
 	var img: Image = get_viewport().get_texture().get_image()
@@ -133,6 +138,7 @@ func _shield() -> void:
 	if v != null and is_instance_valid(v) and v.has_method("hold_pose_debug"):
 		print("[动作截图] 姿态层 ", v.call("hold_pose_debug"))
 	await _shot("3_举盾_待机")
+	await _shot("3_举盾_正面", true)
 	# 举盾走路
 	var goal: Vector3 = _unit.global_position + (-_unit.global_transform.basis.z) * 7.0
 	_unit.order_move(RtsWorld.walkable_pos(goal))
