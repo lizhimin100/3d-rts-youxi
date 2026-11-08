@@ -10,6 +10,12 @@ extends SkeletonModifier3D
 ##
 ## 姿势从哪来：读 `anim_hold` 那个 clip 的**最后一帧**（美术在 Blender 里摆好的举盾姿势），
 ## 所以换美术、改动作都不用动这份代码。
+##
+## ★ 2026-11-08：旋转**和位置**都按。
+##   定位结论（玩家报"手臂跑到天上、盾不在身前"）：`shield` 骨的父节点是 `chest`，
+##   不是 `hand_L` —— 这是绑定层的事实，改绑定会打断蒙皮；而"举盾"这个动作
+##   本质上是"把盾从胸前挪到身前一步"，**是平移**。所以这里必须把 position 轨道也按住，
+##   否则手臂摆到胸前、盾还在原地，两者永远差半个身位（实测 0.43 m）。
 
 ## 允许被姿态层按住、并从中取目标姿势的骨骼白名单。
 ## ★ 只收"上半身左侧 + 盾"：root/hips/腿/脊柱留给基础动作，否则走路会僵住。
@@ -22,7 +28,7 @@ const BLEND_TIME := 0.18
 var _skel: Skeleton3D = null
 var _ap: AnimationPlayer = null
 var _clip: StringName = &""
-## 骨骼名 → { idx, target: Quaternion }
+## 骨骼名 → { idx, target: Quaternion, pos: Vector3 }（pos 只在 clip 真有平移曲线时有效）
 var _targets: Dictionary = {}
 var _want: float = 0.0
 var _weight: float = 0.0
@@ -55,7 +61,8 @@ func use_clip(clip: StringName) -> void:
 	var anim: Animation = _ap.get_animation(String(clip))
 	var t_end: float = maxf(anim.length - 0.001, 0.0)
 	for i in anim.get_track_count():
-		if anim.track_get_type(i) != Animation.TYPE_ROTATION_3D:
+		var tt: int = anim.track_get_type(i)
+		if tt != Animation.TYPE_ROTATION_3D and tt != Animation.TYPE_POSITION_3D:
 			continue
 		var path: NodePath = anim.track_get_path(i)
 		var bone: String = String(path.get_concatenated_subnames())
@@ -64,8 +71,19 @@ func use_clip(clip: StringName) -> void:
 		var idx: int = _skel.find_bone(bone)
 		if idx < 0:
 			continue
-		var q: Quaternion = anim.rotation_track_interpolate(i, t_end)
-		_targets[bone] = {"idx": idx, "target": q}
+		var info: Dictionary = _targets.get(bone, {})
+		info["idx"] = idx
+		if not info.has("target"):
+			info["target"] = _skel.get_bone_pose_rotation(idx)
+		if tt == Animation.TYPE_ROTATION_3D:
+			info["target"] = anim.rotation_track_interpolate(i, t_end)
+		else:
+			# ★ 2026-11-08：盾牌**位置**也要按（`shield` 骨挂在 chest 下，
+			#   举盾是"把盾从胸前挪到身前一步"这个平移动作干的事；
+			#   只按旋转的话盾会留在原位，手伸到前面还是够不着）。
+			info["pos"] = anim.position_track_interpolate(i, t_end)
+			info["has_pos"] = true
+		_targets[bone] = info
 
 
 ## 开/关（带淡入淡出由 _process_modification 做）
@@ -95,6 +113,9 @@ func _process_modification() -> void:
 		var idx: int = int(info["idx"])
 		var cur: Quaternion = _skel.get_bone_pose_rotation(idx)
 		_skel.set_bone_pose_rotation(idx, cur.slerp(info["target"], _weight))
+		if bool(info.get("has_pos", false)):
+			var cur_p: Vector3 = _skel.get_bone_pose_position(idx)
+			_skel.set_bone_pose_position(idx, cur_p.lerp(info["pos"], _weight))
 
 
 ## 调试：当前按住的是哪几根骨（自检/截图脚本读）

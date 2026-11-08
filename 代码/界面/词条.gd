@@ -290,13 +290,14 @@ static func stat(d: UnitDef, key: String, u: Node3D = null) -> Dictionary:
 		"range":
 			# ★ 2026-11-08 口径：界面显示的是**游戏射程数值**（1 / 1.2 / 1.5 / 10 / 13），
 			#   不是米。米只给引擎判定用，换算只有一处：代码/配置/射程基准.gd（定死）。
-			if d.attack_range_value < 1.0:
+			# "贴身"按**米**判（< 1 米才叫贴脸）；卡上的游戏数值是三位数，不能拿它比 1
+			if d.attack_range < 1.0:
 				return {
 					"icon": "sword", "icon_color": Color(0.98, 0.62, 0.42),
 					"title": "近战 · 贴身",
 					"tag": "攻击距离",
-					"body": "只要双方身体贴住就一定能打到（射程数值 [b]%s[/b] 是留的余量，不是武器长度）。\n"
-							% fmt(d.attack_range_value)
+					"body": "只要双方身体贴住就一定能打到（[b]%.2f 米[/b] 是留的余量，不是武器长度）。\n"
+							% d.attack_range
 							+ "身体没贴住就打不到，会自己向前贴近。",
 					"foot": "",
 				}
