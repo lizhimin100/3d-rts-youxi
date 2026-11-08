@@ -186,11 +186,30 @@ func _pump_spawn() -> void:
 		var ci: int = int(item["camp"])
 		if ci >= 0 and ci < _camps.size():
 			var camp: Dictionary = _camps[ci]
+			# ★ 锚点建筑在这几拍之间被拆掉了：这一只直接丢掉（连同 pending 计数）。
+			#   否则"窝都拆了还往外冒怪"，玩家会认为拆营地没意义。
+			if not _anchor_alive(camp):
+				camp["pending"] = maxi(0, int(camp["pending"]) - 1)
+				n += 1
+				continue
 			_spawn_one(camp, StringName(String(item["id"])))
 			camp["pending"] = maxi(0, int(camp["pending"]) - 1)
 		n += 1
 	if _queue.is_empty() and _spawn_timer != null:
 		_spawn_timer.stop()
+
+
+## 这座营地的**锚点建筑**还活着没有。
+##
+## 唯一判据（`camps()` 和小地图、刷怪循环共用这一个出口）：
+## 节点被释放 = 没了；有 `is_alive()` 且为 false = 被拆了。
+func _anchor_alive(camp: Dictionary) -> bool:
+	var anchor: Node = camp.get("anchor", null)
+	if anchor == null or not is_instance_valid(anchor):
+		return false
+	if anchor.has_method("is_alive"):
+		return bool(anchor.call("is_alive"))
+	return true
 
 
 ## 在锚点外圈刷一只
@@ -232,6 +251,13 @@ func _process(delta: float) -> void:
 
 func _tick(dt: float) -> void:
 	for camp in _camps:
+		# ★ 锚点建筑被拆 = 这座营地不存在了：不刷新波、不进补满倒计时。
+		#   已经刷出来的怪仍然留着（它们是"已经站在那儿的"，不会跟着窝一起消失）。
+		if not _anchor_alive(camp):
+			camp["pending"] = 0
+			camp["waiting"] = false
+			camp["respawn_left"] = 0.0
+			continue
 		# --- 时间点刷怪（2026-11-07）---
 		# `spawn_interval_min > 0` = 每 N 分钟刷一整波；= 0 只按 first 刷一次。
 		var d0: Resource = camp["def"]
@@ -314,12 +340,9 @@ func camps() -> Array:
 	for camp in _camps:
 		var d: Resource = camp["def"]
 		var left: float = float(camp["respawn_left"]) if bool(camp["waiting"]) else 0.0
-		var anchor: Node = camp.get("anchor", null)
-		var anchor_alive: bool = anchor != null and is_instance_valid(anchor) \
-				and (not anchor.has_method("is_alive") or bool(anchor.call("is_alive")))
 		out.append({
 			"pos": camp["pos"],
-			"anchor_alive": anchor_alive,
+			"anchor_alive": _anchor_alive(camp),
 			"name": String(d.get("display_name")),
 			"icon": String(d.get("minimap_icon")),
 			"alive": _alive_units(camp).size(),

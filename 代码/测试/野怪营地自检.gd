@@ -153,6 +153,13 @@ func _run() -> void:
 	_check(not row5.is_empty(), "锚点被拆后 camps() 仍然列出这座营地（由小地图按 anchor_alive 过滤）")
 	_check(not bool(row5.get("anchor_alive", true)),
 		"锚点被拆后 camps().anchor_alive = false（小地图图标会消失）")
+	# 窝都拆了就不该再补怪：把剩下的 3 只清掉，推完一个 respawn 周期，仍然必须是 0。
+	for u in _near_creeps(pos, 14.0):
+		u.call("take_damage", float(u.get("hp")) + 1.0, 0, null)
+	await _wait(0.3)
+	_camps.call("debug_tick", 200.0)
+	await _wait(1.0)
+	_check(_near_creeps(pos, 14.0).size() == 0, "锚点被拆后不再补怪（拆窝就该没怪）")
 
 	_report["营地表"] = summary
 	_finish()
