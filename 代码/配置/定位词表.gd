@@ -20,10 +20,13 @@ const KINDS: Array[StringName] = [&"陆军", &"空军", &"海军"]
 
 ## 词表·攻击范围（档位名，由 range + 阈值**派生**，卡上不存）
 const RANGE_TIERS: Array[StringName] = [&"近战", &"中程", &"远程", &"超远程"]
-## 阈值（占位，TODO 实测后调）：range ≤ 上限 → 该档
-const TIER_MELEE_MAX: float = 1.5
-const TIER_MID_MAX: float = 3.0
-const TIER_FAR_MAX: float = 6.0
+## 阈值（米）：range ≤ 上限 → 该档。
+## ★ 2026-11-08：近战上限从 1.5 抬到 **2.5** —— 射程基准改了（R1 = 0.015 米/单位，
+##   步兵卡上 125 = **1.875 米**），旧阈值 1.5 会把步兵判成"中程"，AI 的按档选兵就错位了。
+##   现在：近战 ≤2.5m（农民 0.975 / 战士 1.2 / 重步兵 1.5 / 步兵 1.875），中程 ≤4m，远程 ≤8m，其余超远程。
+const TIER_MELEE_MAX: float = 2.5
+const TIER_MID_MAX: float = 4.0
+const TIER_FAR_MAX: float = 8.0
 
 ## 词表·职能（多选）。**当前选兵只认 承伤/输出**（2C-4 用户口径）。
 const FUNCTION_ROLES: Array[StringName] = [&"承伤", &"输出", &"辅助", &"机动", &"控制"]

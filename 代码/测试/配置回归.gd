@@ -459,6 +459,7 @@ func _case_theory() -> void:
 # ===========================================================================
 func _case_2c4() -> void:
 	var UT = load("res://代码/配置/单位表.gd")
+	var RANGE_BASE = load("res://代码/配置/射程基准.gd")
 	# ★ --script 模式**不能** load 带 class_name 的脚本（Godot 怪癖：
 	#   "Class X hides a global script class"），简单AI.gd 的常量用**文本级断言**；
 	#   它的编译检查由 --ai-bench / --autotest 真跑兜底（那两个模式没有这个限制）。
@@ -551,7 +552,8 @@ func _case_2c4() -> void:
 	_record("2C4卡：build_units = 20 卡 + 6 可采集物 = 26",
 			all_units.size() == 26 and all_units.has(&"footman") and all_units.has(&"goldmine"),
 			"size=%d" % all_units.size())
-	var tiers: Array = [LW.range_tier(1.0), LW.range_tier(2.0), LW.range_tier(5.0), LW.range_tier(9.0)]
+	# 阈值是 2.5 / 4.0 / 8.0 米（见 定位词表 TIER_*），取样点跟着阈值走，别写死旧档位
+	var tiers: Array = [LW.range_tier(1.0), LW.range_tier(3.0), LW.range_tier(6.0), LW.range_tier(9.0)]
 	_record("2C4卡：range_tier 四档单调",
 			String(tiers[0]) == "近战" and String(tiers[1]) == "中程"
 			and String(tiers[2]) == "远程" and String(tiers[3]) == "超远程", str(tiers))
@@ -574,7 +576,8 @@ func _case_2c4() -> void:
 		var atk: int = int(card.get("attack"))
 		if atk <= 0:
 			continue
-		var rng: float = float(card.get("range"))
+		# ★ 2026-11-08：卡的 range 是**游戏数值**，比较前先换成米（R1 = 0.015 米/单位）
+		var rng: float = RANGE_BASE.米(float(card.get("range")))
 		var proj: int = int(card.get("projectile"))
 		if rng <= 0.0:
 			bad_range.append("%s range=%.2f（能攻击却打不到任何东西）" % [cid, rng])
@@ -659,6 +662,7 @@ func _case_2c5() -> void:
 func _case_2c6() -> void:
 	var AIV = load("res://代码/配置/AI判定模式.gd")
 	var UT = load("res://代码/配置/单位表.gd")
+	var RANGE_BASE = load("res://代码/配置/射程基准.gd")
 	var sa_src: String = FileAccess.get_file_as_string("res://代码/ai/简单AI.gd")
 	var cmd_src: String = FileAccess.get_file_as_string("res://代码/界面/命令卡.gd")
 	var foot: UnitDef = _cfg.unit(&"footman")

@@ -613,24 +613,27 @@ func _用例H_最大射程() -> void:
 	var 靶 = _造单位("enemy_faction", &"footman", 位 + Vector3(1.6, 0.0, 0.0), 100000.0)
 	if 兵 == null or 靶 == null:
 		return
-	var 表: Array = []
-	var 最远: float = 0.0
-	for d in [1.6, 1.8, 2.0, 2.05, 2.1, 2.2, 2.4]:
-		(靶 as Node3D).global_position = (兵 as Node3D).global_position + Vector3(float(d), 0.0, 0.0)
-		var gap: float = float(兵.call("_target_gap", 靶))
-		var reach: float = float(兵.call("_attack_reach", 靶))
-		var ok: bool = gap <= reach
-		if ok:
-			最远 = float(d)
-		表.append({"中心距": "%.2f" % float(d), "间隙": "%.2f" % gap, "reach": "%.2f" % reach, "够": ok})
 	var 自身半径: float = float(兵.call("get_radius"))
 	var 靶半径: float = float(靶.call("get_radius"))
-	# ★ 圈半径要和**玩家真的看到的那个圈**同一个公式：读选择系统的常量，
-	#   别在这里另写一套 —— 以前这里漏了 RING_TARGET_RADIUS，于是自检报
-	#   "圈外还能打 0.50m"，其实圈早就画到 2.0m 了，白查半天。
+	var reach: float = float(兵.call("_attack_reach", 靶))
+	# 最大可打中心距 = 射程 + 自身半径 + 目标半径；采样点**跟着它走**，
+	# 不再写死 1.6/2.0/2.2 —— 射程一改，写死的表就没意义了。
+	var 边界: float = reach + 自身半径 + 靶半径
+	var 表: Array = []
+	var 最远: float = 0.0
+	for off in [-0.30, -0.10, 0.0, 0.05, 0.20, 0.40]:
+		var d: float = maxf(边界 + float(off), 0.2)
+		(靶 as Node3D).global_position = (兵 as Node3D).global_position + Vector3(d, 0.0, 0.0)
+		var gap: float = float(兵.call("_target_gap", 靶))
+		var ok: bool = gap <= reach
+		if ok:
+			最远 = maxf(最远, d)
+		表.append({"中心距": "%.2f" % d, "间隙": "%.2f" % gap, "reach": "%.2f" % reach, "够": ok})
+	# ★ 圈半径必须和**玩家真的看到的那个圈**同一个公式（读选择系统算出来的目标半径），
+	#   而且必须 >= 最远可打中心距 —— 玩家 2026-11-08：
+	#   「圈要符合含义，不要在圈外能打到敌人」。
 	var sel_script: Script = load("res://代码/操作/选择系统.gd")
-	var 圈半径: float = float(兵.call("_attack_reach", 靶)) + 自身半径 \
-			+ float(sel_script.get("RING_TARGET_RADIUS"))
+	var 圈半径: float = reach + 自身半径 + float(sel_script.call("ring_target_radius"))
 	_记("H_最大射程", {
 		"表": 表,
 		"自身半径(米)": "%.2f" % 自身半径,
@@ -640,4 +643,7 @@ func _用例H_最大射程() -> void:
 		"圈外还能打的余量(米)": "%.2f" % (最远 - 圈半径),
 	})
 	if 最远 <= 0.0:
-		失败.append("H 最大射程：连 1.6m 都打不到")
+		失败.append("H 最大射程：连 %.2fm 都打不到" % 边界)
+	# 圈外不许能打：圈半径必须覆盖"最远仍可打"的那个中心距
+	if 圈半径 < 最远 - 0.01:
+		失败.append("H 圈太小：圈半径 %.2fm，但 %.2fm 处还能打到（圈外能打 = 圈不算数）" % [圈半径, 最远])

@@ -45,10 +45,10 @@ extends Resource
 @export var attack_spread: float = 0.0
 ## 攻击间隔（秒）
 @export var attack_cooldown: float = 1.5
-## 攻击距离（**米**，运行时用）。= 卡上 range × 射程基准.米每1，见 代码/配置/射程基准.gd
+## 攻击距离（**米**，运行时用）。= 卡上 range × 射程基准.R1（0.015 米/单位）
 @export var attack_range: float = 0.0
 ## 攻击距离的**游戏数值**（卡上那个数：1 / 1.2 / 1.5 / 10 / 13 …）。界面显示用它，
-## 判定用 attack_range（米）。两者只差一个 射程基准.米每1。
+## 判定用 attack_range（米）。两者只差一个 射程基准.R1。
 @export var attack_range_value: float = 0.0
 ## 伤害类型（RtsConst.DamageType）
 @export var attack_type: int = RtsConst.DamageType.NORMAL

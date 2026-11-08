@@ -365,14 +365,34 @@ func _select_box(rect: Rect2, additive: bool) -> void:
 # ===========================================================================
 
 ## 从自己的单位/建筑里点一个（最近命中优先）
+## 屏幕上**至少保留**这么多像素的点击半径。
+## 玩家 2026-11-08：「缩小视角时，单位建筑的选中碰撞不变，影响手感。」
+## 原因：拾取用的是世界空间胶囊半径（def.selection_radius），镜头拉远后它在屏幕上
+## 只有几个像素，鼠标点在兵身上也点不中。这里给一个**屏幕像素下限**，
+## 按当前镜头距离把世界半径补足（封顶 MAX_PICK_SCALE 倍，免得拉极远时满屏都算点中）。
+const MIN_PICK_PX: float = 16.0
+const MAX_PICK_SCALE: float = 3.0
+
+
 func _pick(ray_o: Vector3, ray_d: Vector3) -> Node3D:
 	var best: Node3D = null
 	var best_t: float = INF
+	# 屏幕像素 → 世界米 的换算（每个候选按自己的深度算，越远补得越多）
+	var cam := _camera()
+	var vp_h: float = float(get_viewport().get_visible_rect().size.y) if is_inside_tree() else 900.0
+	var tan_half: float = tan(deg_to_rad(cam.fov) * 0.5) if cam != null else 0.0
 	for n in _selectable_units():
 		# 迷雾里被藏起来的敌人不许点选（否则"看不见也能选中"，等于免费开图）
 		if not n.visible:
 			continue
 		var r: float = _select_radius(n)
+		# ★ 屏幕空间下限：拉远镜头时选中碰撞不要跟着缩成几个像素
+		if cam != null and vp_h > 1.0 and tan_half > 0.0001:
+			var depth: float = maxf((n.global_position - cam.global_position).dot(-cam.global_transform.basis.z), 1.0)
+			var px_per_m: float = vp_h * 0.5 / (depth * tan_half)
+			if px_per_m > 0.0001:
+				var want: float = MIN_PICK_PX / px_per_m
+				r = clampf(maxf(r, want), r, r * MAX_PICK_SCALE)
 		var bottom: float = minf(r, 0.45)
 		var a: Vector3 = n.global_position + Vector3.UP * bottom
 		var b: Vector3 = a + Vector3.UP * maxf(_def_height(n) - bottom, 0.25)
@@ -571,7 +591,29 @@ func _sync_range_rings() -> void:
 ##   于是敌人的**中心**站在圈外 0.5m 时仍然够得着 —— 视觉上就是"人在圈外挨打"。
 ##   现在把"一个标准体型单位（半径 0.5m）"的半径也画进去：
 ##   **圈边 = 标准体型的敌人中心能站到的最远处**，圈外就是真的打不到。
-const RING_TARGET_RADIUS: float = 0.5
+## 圈必须满足"圈外一定打不到"，所以目标半径取**全场最大的单位体型**。
+## 玩家 2026-11-08：「圈要符合含义，不要在圈外能打到敌人。」
+const RING_TARGET_RADIUS_MIN: float = 0.5
+static var _ring_target_radius_cache: float = -1.0
+
+
+## 圈要留的目标半径 = 全场最大**单位**体型（建筑不算：打楼是走到墙边砍，不是隔着距离打）。
+## 结果缓存一次（只影响画圈，不影响判定）。
+static func ring_target_radius() -> float:
+	if _ring_target_radius_cache > 0.0:
+		return _ring_target_radius_cache
+	var out: float = RING_TARGET_RADIUS_MIN
+	var table: Script = load("res://代码/配置/单位表.gd")
+	if table != null:
+		var all: Dictionary = table.call("build_units")
+		for _id in all.keys():
+			var d: UnitDef = all[_id]
+			if d == null or d.is_building() or d.is_harvestable():
+				continue
+			out = maxf(out, d.body_radius)
+	_ring_target_radius_cache = out
+	return out
+
 
 func _range_ring_radius(u: RtsUnit) -> float:
 	var r: float = u.def.attack_range
@@ -583,7 +625,7 @@ func _range_ring_radius(u: RtsUnit) -> float:
 			r += float(u.call("get_radius")) if u.has_method("get_radius") else 0.0
 	elif u.has_method("get_radius"):
 		r += float(u.call("get_radius"))
-	return r + RING_TARGET_RADIUS
+	return r + ring_target_radius()
 
 
 func _make_range_ring(u: RtsUnit) -> Node3D:

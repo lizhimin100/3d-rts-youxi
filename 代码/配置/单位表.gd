@@ -65,7 +65,9 @@ static func ensure_index() -> void:
 	for id: String in _cards.keys():
 		var card: EntityCard = _cards[id]
 		if card is UnitCard:
-			var tier: StringName = LW.range_tier((card as UnitCard).range)
+			# ★ 2026-11-08：卡上的 range 是**游戏数值**（125/650…），
+			#   档位阈值（1.5/3/6 米）是米制 —— 换算完再分档，否则步兵会被判成"超远程"。
+			var tier: StringName = LW.range_tier(RANGE_BASE.米((card as UnitCard).range))
 			if not _tier_index.has(tier):
 				_tier_index[tier] = []
 			_tier_index[tier].append(id)

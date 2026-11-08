@@ -4,7 +4,7 @@
 
 [resource]
 script = ExtResource("1")
-range = 1.0
+range = 65
 attack = 6
 defense_type = &"无"
 max_hp = 190.0

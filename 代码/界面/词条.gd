@@ -306,7 +306,7 @@ static func stat(d: UnitDef, key: String, u: Node3D = null) -> Dictionary:
 				"tag": "攻击距离",
 				"body": "从[b]自己的身体边缘[/b]算起，超出这个射程就打不到目标。\n"
 						+ "选中时地上的圈 = 射程 + 自身半径，圈边就是真正的够得着边界。\n"
-						+ "[color=#a8a49a]（游戏射程 1 = %s 米，全游戏统一）[/color]" % fmt(RANGE_BASE.米每1),
+						+ "[color=#a8a49a]（游戏射程 1 = %s 米，换算系数 R1 全游戏统一）[/color]" % fmt(RANGE_BASE.R1),
 				"foot": "",
 			}
 		"sight":

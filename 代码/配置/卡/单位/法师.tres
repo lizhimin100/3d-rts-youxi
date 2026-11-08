@@ -6,7 +6,7 @@
 script = ExtResource("1")
 roles = Array[StringName]([&"输出"])
 counters = Array[StringName]([&"重甲"])
-range = 11
+range = 730
 attack = 12
 attack_type = &"魔法"
 defense_type = &"无"
