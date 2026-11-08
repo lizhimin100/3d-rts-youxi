@@ -127,6 +127,21 @@ func _shield() -> void:
 		return
 	if _unit.has_method("skill_toggle"):
 		_unit.call("skill_toggle", &"shield_up")
-	await get_tree().create_timer(0.6).timeout
-	await _shot("3_举盾")
-
+	await get_tree().create_timer(0.55).timeout
+	# 姿态层是不是真的挂上了、权重到 1 了
+	var v = _unit.get("visual")
+	if v != null and is_instance_valid(v) and v.has_method("hold_pose_debug"):
+		print("[动作截图] 姿态层 ", v.call("hold_pose_debug"))
+	await _shot("3_举盾_待机")
+	# 举盾走路
+	var goal: Vector3 = _unit.global_position + (-_unit.global_transform.basis.z) * 7.0
+	_unit.order_move(RtsWorld.walkable_pos(goal))
+	await get_tree().create_timer(0.7).timeout
+	await _shot("3_举盾_走")
+	_unit.order_stop()
+	await get_tree().create_timer(0.3).timeout
+	# 举盾攻击
+	if _foe != null and is_instance_valid(_foe) and _foe.call("is_alive"):
+		_unit.order_attack(_foe)
+		await get_tree().create_timer(0.55).timeout
+		await _shot("3_举盾_攻击")

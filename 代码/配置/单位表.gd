@@ -26,6 +26,8 @@ const CARD_VERIFY_DEFAULT: bool = true
 
 ## 词表（词 → 引擎枚举映射 + 校验的唯一来源）
 const LW := preload("res://代码/配置/定位词表.gd")
+## ★ 射程换算：卡上的"游戏数值" → 引擎用的米。全游戏只此一处（见 代码/配置/射程基准.gd）
+const RANGE_BASE := preload("res://代码/配置/射程基准.gd")
 ## 选兵权重公式（find_by_role 排序用；不用 power —— power 全 -1 未测）
 const CBM := preload("res://代码/ai/战斗模型.gd")
 
@@ -178,7 +180,8 @@ static func _def_of_card(card: EntityCard) -> UnitDef:
 		d.attack_damage = float(c.attack)
 		d.attack_spread = c.attack_spread
 		d.attack_cooldown = c.attack_cooldown
-		d.attack_range = c.range
+		d.attack_range_value = c.range
+		d.attack_range = RANGE_BASE.米(c.range)
 		d.attack_type = LW.attack_type_of(c.attack_type)
 		d.projectile = c.projectile
 		d.projectile_speed = c.projectile_speed
@@ -207,7 +210,8 @@ static func _def_of_card(card: EntityCard) -> UnitDef:
 		d.attack_damage = float(b.attack)
 		d.attack_spread = b.attack_spread
 		d.attack_cooldown = b.attack_cooldown
-		d.attack_range = b.range
+		d.attack_range_value = b.range
+		d.attack_range = RANGE_BASE.米(b.range)
 		d.attack_type = LW.attack_type_of(b.attack_type)
 		d.projectile = b.projectile
 		d.projectile_speed = b.projectile_speed

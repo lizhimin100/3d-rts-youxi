@@ -29,3 +29,4 @@ display_name = "箭塔"
 description = "有攻击的防御塔，但视野比哨塔小（它是箭，不是哨）。"
 cost_gold = 100
 cost_wood = 40
+race = &"联盟"

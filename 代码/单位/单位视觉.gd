@@ -41,6 +41,8 @@ var _model: Node3D = null
 const BUILDING_LIFT := 0.06
 ## 程序动画器（可能为 null：美术没到位时）
 var _anim: Node = null
+## 姿态层（SkeletonModifier3D；只有带 `shield` 骨的单位才有）
+var _pose: Node = null
 ## 收集到的所有网格（闪白要挨个套 overlay）
 var _meshes: Array = []
 ## 本次命中的时长 / 峰值（按单位或建筑分档，见 build）
@@ -156,6 +158,7 @@ func build(def: UnitDef, team_color: Color, proc: Dictionary = {}) -> void:
 		if not 程序化树 and not 组合件:
 			ArtKit.apply_team_color(_model, team_color)
 			_anim = ArtKit.attach_anim(_model)
+			_pose = _make_pose_layer(_model)
 		_collect_meshes(_model)
 		_add_ground_shadow(def)
 		_nudge_base = _model.position
@@ -184,6 +187,67 @@ func build(def: UnitDef, team_color: Color, proc: Dictionary = {}) -> void:
 	else:
 		_flash_dur = FLASH_TIME_UNIT
 		_flash_peak = FLASH_PEAK_UNIT
+
+
+## **姿态层**（举盾这类"一直按着一个姿势"的技能）：见 代码/美术/姿态层.gd。
+## 为什么不在 UnitVisual 里直接摆骨骼：动画每帧会把骨骼写回去，
+## 必须挂在 Skeleton3D 的 `SkeletonModifier3D` 通道上（动画之后执行）才压得住。
+const PoseLayer := preload("res://代码/美术/姿态层.gd")
+
+
+func _make_pose_layer(root: Node3D) -> Node:
+	var skel := _find_skeleton(root)
+	var ap := _find_anim_player(root)
+	if skel == null or ap == null:
+		return null
+	# 没有"盾"这根骨的单位（农民/法师/弩兵）不挂 —— 挂了也没东西可按
+	if skel.find_bone("shield") < 0:
+		return null
+	var layer: Node = PoseLayer.new()
+	layer.name = "姿态层"
+	skel.add_child(layer)
+	if not bool(layer.call("setup", skel, ap)):
+		skel.remove_child(layer)
+		layer.queue_free()
+		return null
+	return layer
+
+
+func _find_skeleton(n: Node) -> Skeleton3D:
+	if n is Skeleton3D:
+		return n as Skeleton3D
+	for c in n.get_children():
+		var r := _find_skeleton(c)
+		if r != null:
+			return r
+	return null
+
+
+func _find_anim_player(n: Node) -> AnimationPlayer:
+	if n is AnimationPlayer:
+		return n as AnimationPlayer
+	for c in n.get_children():
+		var r := _find_anim_player(c)
+		if r != null:
+			return r
+	return null
+
+
+## 开/关一个"持续姿势"（举盾）。clip = 技能卡的 anim_hold（那个 clip 的**最后一帧**
+## 就是美术摆好的举盾姿势，姿态层照着它把左臂按住）。
+## 基础动作照常播：走路迈腿、攻击挥剑，只有左臂被按住。
+func set_hold_pose(clip: StringName, on: bool) -> void:
+	if _pose == null or not is_instance_valid(_pose):
+		return
+	_pose.call("use_clip", clip)
+	_pose.call("set_hold", on)
+
+
+## 姿态层当前状态（自检/截图脚本读）
+func hold_pose_debug() -> Dictionary:
+	if _pose == null or not is_instance_valid(_pose):
+		return {}
+	return _pose.call("debug_info") as Dictionary
 
 
 ## 动画器是不是"绑不上"的静态模型（没有骨骼 / 没有 Body/Torso 关节）

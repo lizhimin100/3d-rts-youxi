@@ -34,3 +34,4 @@ display_name = "法师"
 description = "魔法远程 + 火球 AOE 技能，最能出特效的单位。"
 cost_gold = 225
 cost_wood = 45
+race = &"联盟"

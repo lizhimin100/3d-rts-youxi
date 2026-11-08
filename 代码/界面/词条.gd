@@ -15,6 +15,8 @@ extends RefCounted
 ## 减伤一律问 `RtsCombat.armor_mitigation()` —— 数值表改了，说明文本自动跟上。
 
 const Spec := preload("res://代码/界面/界面规格.gd")
+## 射程换算（卡上游戏数值 ↔ 引擎米）。界面只显示游戏数值。
+const RANGE_BASE := preload("res://代码/配置/射程基准.gd")
 
 
 # ===========================================================================
@@ -260,7 +262,7 @@ static func stat(d: UnitDef, key: String, u: Node3D = null) -> Dictionary:
 				"title": "%s攻击 · %s" % [dmg_name(d.attack_type), fmt(d.attack_damage)],
 				"tag": "伤害类型",
 				"body": "%s\n%s" % [dmg_how(d.attack_type), body],
-				"foot": "" if d.attack_range <= 0.0 else "射程 %s 米（超出就打不到）" % fmt(d.attack_range),
+				"foot": "" if d.attack_range <= 0.0 else "射程 %s（超出就打不到）" % fmt(d.attack_range_value),
 			}
 		"armor":
 			var pct: int = mitigation_pct(d.armor)
@@ -286,24 +288,25 @@ static func stat(d: UnitDef, key: String, u: Node3D = null) -> Dictionary:
 				"foot": "",
 			}
 		"range":
-			# ★ 口径（2026-11-07）：attack_range 是**身位边缘→目标边缘**的间隙。
-			#   近战 0.2 直接说"贴身"，别写成"射程 0.2 米"（玩家会以为是 bug）。
-			if d.attack_range < 1.0:
+			# ★ 2026-11-08 口径：界面显示的是**游戏射程数值**（1 / 1.2 / 1.5 / 10 / 13），
+			#   不是米。米只给引擎判定用，换算只有一处：代码/配置/射程基准.gd（定死）。
+			if d.attack_range_value < 1.0:
 				return {
 					"icon": "sword", "icon_color": Color(0.98, 0.62, 0.42),
 					"title": "近战 · 贴身",
 					"tag": "攻击距离",
-					"body": "只要双方身体贴住就一定能打到（[b]%.1f 米[/b] 是留的余量，不是武器长度）。\n"
-							% d.attack_range
+					"body": "只要双方身体贴住就一定能打到（射程数值 [b]%s[/b] 是留的余量，不是武器长度）。\n"
+							% fmt(d.attack_range_value)
 							+ "身体没贴住就打不到，会自己向前贴近。",
 					"foot": "",
 				}
 			return {
 				"icon": "bow", "icon_color": Color(0.86, 0.80, 0.52),
-				"title": "射程 · %s 米" % fmt(d.attack_range),
+				"title": "射程 · %s" % fmt(d.attack_range_value),
 				"tag": "攻击距离",
-				"body": "从[b]自己的身体边缘[/b]算起，超出这个距离就打不到目标。\n"
-						+ "选中时地上的圈 = 这个距离 + 自身半径，圈边就是真正的够得着边界。",
+				"body": "从[b]自己的身体边缘[/b]算起，超出这个射程就打不到目标。\n"
+						+ "选中时地上的圈 = 射程 + 自身半径，圈边就是真正的够得着边界。\n"
+						+ "[color=#a8a49a]（游戏射程 1 = %s 米，全游戏统一）[/color]" % fmt(RANGE_BASE.米每1),
 				"foot": "",
 			}
 		"sight":

@@ -3251,6 +3251,11 @@ func _deposit() -> void:
 func _update_anim() -> void:
 	if visual == null or def == null:
 		return
+	# 持续姿势类技能（举盾）：把"按住左臂"开/关交给外观层。
+	# clip 来自技能卡的 anim_hold（那个 clip 的最后一帧就是美术摆的举盾姿势）。
+	if visual.has_method("set_hold_pose"):
+		var hold_clip: StringName = skills_rt.hold_anim() if skills_rt != null else &""
+		visual.call("set_hold_pose", hold_clip, hold_clip != &"")
 	# ★ 在工地里：**模型不隐藏了**，站在工地正中心一直播建造动作。
 	#   2026-11-07 玩家口径改成「模型要待在建筑工地正中心」——
 	#   旧版是"钻进房子、模型隐藏"（兽族苦工那套），玩家看不到人在干活，
@@ -3325,13 +3330,12 @@ func _update_anim() -> void:
 		RtsConst.State.CAST:
 			visual.play("cast", 1.0)
 		_:
-			# 开关技能开启时用它的"持续动作"覆盖待机（举盾 = shield_hold）。
-			# 没有这个动作的单位照旧播 idle —— 技能卡里 anim_hold 留空即可。
-			var hold: StringName = skills_rt.hold_anim() if skills_rt != null else &""
-			if hold != &"":
-				visual.play(String(hold), 1.0)
-			else:
-				visual.play("idle", 1.0)
+			# ★ 2026-11-08 玩家口径：「举盾技能就该一直举着，不要循环播放举盾动作，
+			#   而且举盾状态下也要有移动/攻击动作。」
+			#   所以这里**不再**用 shield_hold 覆盖待机：基础动作永远是 idle，
+			#   举盾由 UnitVisual 的**姿态层**把左臂按住（见 代码/美术/姿态层.gd），
+			#   走路/挥砍照常播，盾一直举在身前。
+			visual.play("idle", 1.0)
 
 
 ## 共享空间哈希：**直接复用 Game.unit_hash()**（每帧只重建一次，全工程一份）。

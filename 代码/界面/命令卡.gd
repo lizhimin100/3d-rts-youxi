@@ -275,13 +275,13 @@ func _build_entries() -> Array:
 		if b.def.can_attack():
 			out.append({
 				"label": "攻击",
-				"hint": "%s 自动射击：%.0f 伤害 / %.1f 秒 · 射程 %.0fm · 视野 %.0fm" % [
+				"hint": "%s 自动射击：%.0f 伤害 / %.1f 秒 · 射程 %s · 视野 %.0fm" % [
 					b.def.display_name, b.def.attack_damage, b.def.attack_cooldown,
-					b.def.attack_range, b.def.sight_range],
+					_num(b.def.attack_range_value), b.def.sight_range],
 				"color": Color(0.98, 0.62, 0.42),
 				"glyph": "攻",
 				"icon": "sword",
-				"sub": "%.0f伤 · %.0fm" % [b.def.attack_damage, b.def.attack_range],
+				"sub": "%.0f伤 · 射程%s" % [b.def.attack_damage, _num(b.def.attack_range_value)],
 				"disabled": true,
 			})
 		elif b.def.sight_range >= 18.0:
@@ -311,7 +311,7 @@ func _build_entries() -> Array:
 						else ("把这座哨塔改造成箭塔（只补差价 %d 金 / %d 木，工期 %.0f 秒）。\n改造后：%.0f 伤害 · %.0fm 射程；视野从 %.0fm 降到 12m。\n血量按当前比例继承，不能当回血手段。" % [
 							uc.x, uc.y, RtsBuilding.upgrade_time_for(&"tower"),
 							float(Cfg.unit(&"tower").attack_damage if Cfg.unit(&"tower") != null else 0.0),
-							float(Cfg.unit(&"tower").attack_range if Cfg.unit(&"tower") != null else 0.0),
+							float(Cfg.unit(&"tower").attack_range_value if Cfg.unit(&"tower") != null else 0.0),
 							b.def.sight_range]),
 				"color": Color(0.96, 0.72, 0.42),
 				"glyph": "升",
@@ -900,6 +900,14 @@ func _has_worker() -> bool:
 static var _icon_cache: Dictionary = {}
 
 const ICON_DIR := "res://美术/图标/"
+
+## 数值显示：整数不带小数点（13），非整数留一位（1.5）。
+## 射程现在是**游戏数值**（1 / 1.2 / 1.5 / 10 / 13），不能一律 %.0f，否则 1.5 会显示成 2。
+static func _num(v: float) -> String:
+	if absf(v - roundf(v)) < 0.001:
+		return "%d" % int(roundf(v))
+	return "%.1f" % v
+
 
 static func _icon_tex(name: String) -> Texture2D:
 	if name.is_empty():

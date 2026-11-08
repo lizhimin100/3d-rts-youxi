@@ -33,3 +33,4 @@ display_name = "弩兵"
 description = "勇敢的弩兵向联盟献上了自己的忠诚和技能。弩兵们使用可连射的弩箭，是出色的射手，可以射击地面和空中的敌人。"
 cost_gold = 105
 cost_wood = 15
+race = &"联盟"

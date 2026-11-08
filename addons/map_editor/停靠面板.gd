@@ -168,7 +168,10 @@ func _build() -> void:
 
 	_add_tab(_build_terrain_tab(), "地形")
 	_add_tab(_build_object_tab(), "对象")
-	_add_tab(_build_region_tab(), "区域")
+	# ★ 2026-11-08 玩家口径：「把一些多余的删掉，比如区域是什么东西？」
+	#   「区域」页是**给 AI 用的战区划分**（AI 目标层按 Dr/Zy 区域做决策），
+	#   玩家摆图时不需要手填 —— 进图时会按地块自动生成。
+	#   所以这一页从面板上摘掉；_build_region_tab() 保留（数据还在，想加回来一行即可）。
 	_add_tab(_build_player_tab(), "玩家")
 	_add_tab(_build_prop_tab(), "属性")
 	_add_tab(_build_camp_tab(), "营地")
@@ -1464,8 +1467,11 @@ func _wire() -> void:
 	_player_gold.value_changed.connect(func(v: float) -> void: _set_player("gold", int(v)))
 	_player_wood.value_changed.connect(func(v: float) -> void: _set_player("wood", int(v)))
 
-	_region_list.item_selected.connect(_on_region_selected)
-	_wave_list.item_selected.connect(_on_wave_selected)
+	# 「区域」页已摘掉（含里面的波次列表）：控件是 null，信号接线要跳过。
+	if _region_list != null:
+		_region_list.item_selected.connect(_on_region_selected)
+	if _wave_list != null:
+		_wave_list.item_selected.connect(_on_wave_selected)
 
 	session.def_changed.connect(_on_def_changed)
 	session.selection_changed.connect(_on_selection_changed)
@@ -1489,7 +1495,8 @@ func _sync_all() -> void:
 	_strength_label.text = "%.2f" % session.brush_strength
 	_shape_opt.select(1 if session.brush_square else 0)
 	_snap.button_pressed = session.snap_grid
-	_region_purpose.select(clampi(session.region_purpose, 0, 3))
+	if _region_purpose != null:
+		_region_purpose.select(clampi(session.region_purpose, 0, 3))
 	_sync_biome_option()
 	_syncing = false
 	_sync_tool_buttons()
@@ -1554,6 +1561,18 @@ func _sync_object_filters() -> void:
 		if int(session.asset_category) == MapObject.Category.DOODAD else "搜索类型…"
 
 
+## 单位/建筑按阵营分段：返回的列表里混入 `{"__header__": "— 联盟 —"}` 占位项。
+## 装饰/资源不分阵营（它们不是谁的兵），原样返回。
+func _with_race_headers(items: Array, cat: int) -> Array:
+	if cat != MapObject.Category.UNIT and cat != MapObject.Category.BUILDING:
+		return items
+	var out: Array = []
+	for sec in MapAssets.split_by_race(items):
+		out.append({"__header__": "— %s —" % String(sec["race"])})
+		out.append_array(sec["items"])
+	return out
+
+
 func _populate_assets() -> void:
 	if session == null:
 		return
@@ -1567,7 +1586,18 @@ func _populate_assets() -> void:
 		group = _group_opt.get_item_text(_group_opt.selected)
 	var needle: String = _asset_search.text.strip_edges().to_lower() if _asset_search != null else ""
 	var shown: int = 0
+	# ★ 2026-11-08 玩家口径：「单位和建筑怎么没按阵营分类，还是都挤在一起。」
+	#   做法：在过滤完的列表里**按阵营插段落**（联盟 / 失落 / 中立），
+	#   段头是不可选中的占位行，不参与选中/替换（metadata = "__header__"）。
+	items = _with_race_headers(items, cat)
 	for a in items:
+		if a.has("__header__"):
+			_asset_list.add_item(String(a["__header__"]))
+			var hi: int = _asset_list.item_count - 1
+			_asset_list.set_item_selectable(hi, false)
+			_asset_list.set_item_metadata(hi, "__header__")
+			_asset_list.set_item_custom_fg_color(hi, Color(0.86, 0.74, 0.46))
+			continue
 		var id: String = String(a["id"])
 		var nm: String = String(a.get("name", id))
 		if cat == MapObject.Category.DOODAD and not group.is_empty() \
@@ -1923,6 +1953,11 @@ func _begin_region(shape: int) -> void:
 func _refresh_regions() -> void:
 	if session == null or session.def == null:
 		return
+	# 「区域」页已经从面板摘掉（见 _build_dock 顶部说明），控件是 null。
+	# 这里直接返回：数据层（session.def.regions / 选区）照旧由引擎维护，
+	# 只是没有面板去显示它。
+	if _region_list == null or _region_id == null or _region_purpose == null:
+		return
 	_syncing = true
 	_region_list.clear()
 	for r in session.def.regions:
@@ -2075,6 +2110,8 @@ func _focus_player() -> void:
 
 
 func _refresh_waves() -> void:
+	if _wave_list == null:
+		return
 	if session == null or session.def == null:
 		return
 	_syncing = true

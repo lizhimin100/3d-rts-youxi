@@ -17,6 +17,10 @@ extends Resource
 @export var icon: String = ""
 ## 简介
 @export var description: String = ""
+## **阵营（种族）**：联盟 / 失落 / 中立。
+## 只用于**分类展示**（地图编辑器按它分组、卡面板按它排版），
+## **不影响玩法**：一局里谁能造谁，是运行时 RtsFaction 决定的，不是这张卡决定的。
+@export var race: StringName = &"联盟"
 ## 金币成本
 @export var cost_gold: int = 0
 ## 木材成本

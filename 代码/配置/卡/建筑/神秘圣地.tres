@@ -42,3 +42,4 @@ anim_set = 4
 def_role = &""
 def_tags = Array[StringName]([])
 design_power = 0.0
+race = &"联盟"

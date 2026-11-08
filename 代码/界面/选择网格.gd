@@ -523,7 +523,7 @@ func _stats_of(d: UnitDef) -> Array:
 				{"icon": "sword", "name": "攻击", "color": Color(0.98, 0.62, 0.42),
 					"text": _fmt(d.attack_damage), "tip": Lex.stat(d, "attack")},
 				{"icon": "bow", "name": "射程", "color": Color(0.86, 0.80, 0.52),
-					"text": "%dm" % int(round(d.attack_range)), "tip": Lex.stat(d, "range")},
+					"text": _fmt(d.attack_range_value), "tip": Lex.stat(d, "range")},
 				{"icon": "eye", "name": "视野", "color": Color(0.66, 0.86, 0.92),
 					"text": "%dm" % int(round(d.sight_range)), "tip": Lex.stat(d, "sight")},
 			]

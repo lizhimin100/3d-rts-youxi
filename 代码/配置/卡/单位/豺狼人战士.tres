@@ -6,7 +6,7 @@
 script = ExtResource("1")
 roles = Array[StringName]([&"承伤"])
 counters = Array[StringName]([&"轻甲"])
-range = 1.0
+range = 1.2
 attack = 15
 defense = 2
 max_hp = 340.0
@@ -22,3 +22,4 @@ def_tags = Array[StringName]([&"light"])
 card_id = "gnoll_warrior"
 display_name = "豺狼人战士"
 description = "中立野怪：对任何玩家/盟友敌对，没有大本营。"
+race = &"中立"

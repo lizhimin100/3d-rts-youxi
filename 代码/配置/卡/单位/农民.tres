@@ -25,3 +25,4 @@ card_id = "peasant"
 display_name = "联盟农民"
 description = "众多王国中勤劳而勇敢的农民们可开采黄金和砍伐木材，还能建造和修理建筑物，他们是联盟必不可少的一份子。"
 cost_gold = 25
+race = &"联盟"

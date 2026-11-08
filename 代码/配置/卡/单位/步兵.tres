@@ -6,7 +6,7 @@
 script = ExtResource("1")
 roles = Array[StringName]([&"承伤"])
 counters = Array[StringName]([&"轻甲"])
-range = 1.0
+range = 1.5
 attack = 14
 defense = 2
 defense_type = &"重甲"
@@ -29,3 +29,4 @@ card_id = "footman"
 display_name = "联盟步兵"
 description = "多年来，联盟军队的庞大队伍已经缩减，然而，许多勇敢的联盟公民自愿作为步兵来保卫他们的土地。尽管这些战士缺乏前辈那闪亮的板甲和专门训练，但他们仍在战场上带着勇气和荣誉作战。"
 cost_gold = 125
+race = &"联盟"

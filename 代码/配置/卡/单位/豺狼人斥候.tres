@@ -28,3 +28,4 @@ def_tags = Array[StringName]([&"light"])
 card_id = "gnoll_scout"
 display_name = "豺狼人斥候"
 description = "中立野怪：更快、更脆、远程投掷。"
+race = &"中立"

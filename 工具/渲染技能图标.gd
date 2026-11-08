@@ -95,12 +95,13 @@ func _build(id: String) -> void:
 	var prop := Node3D.new()
 	stage.add_child(prop)
 	match id:
-		"shield_up": _prop_shield(prop)
+		"shield_up": _prop_unit_shield(prop)
 		"triple_shot": _prop_bolts(prop)
 		"fireball": _prop_fireball(prop)
 		"chop_wood": _prop_axe(prop)
 		"mine_gold": _prop_pick(prop)
 		_: _prop_shield(prop)
+	var unit_mode: bool = id == "shield_up"
 	var box := _aabb(stage)
 	var h: float = maxf(box.size.y, 0.3)
 	var cam := Camera3D.new()
@@ -110,10 +111,15 @@ func _build(id: String) -> void:
 	#   道具不是都摆在原点的（盾偏左、镐偏右），按原点对焦会半张脸出画。
 	var span: float = maxf(box.size.y, maxf(box.size.x, box.size.z))
 	var dist: float = (span * 0.5 / FILL) / tan(deg_to_rad(cam.fov * 0.5))
+	var focus := box.get_center()
+	if unit_mode:
+		# 举盾图标是"半身特写"：只看胸口以上 + 盾，全身会把盾缩成一片蓝
+		dist = 2.75
+		focus = Vector3(0.05, 1.05, 0.0)
 	var yaw := deg_to_rad(32.0)
 	var pitch := deg_to_rad(14.0)
 	var dir := Vector3(-sin(yaw) * cos(pitch), sin(pitch), -cos(yaw) * cos(pitch))
-	var target := box.get_center()
+	var target := focus
 	cam.position = target + dir * dist
 	cam.look_at(target, Vector3.UP)
 	cam.current = true
@@ -222,6 +228,35 @@ func _prop_pick(p: Node3D) -> void:
 	_box(hd, Vector3(0.26, 0.11, 0.12), Vector3(0.36, -0.10, 0.0), STEEL_DARK)
 	_box(hd, Vector3(0.26, 0.11, 0.12), Vector3(-0.34, 0.10, 0.0), STEEL_DARK)
 	_box(hd, Vector3(0.14, 0.20, 0.14), Vector3(0.0, -0.10, 0.0), STEEL_DARK)
+
+
+## 举盾图标：**兵举着盾的半身特写**（玩家口径：盾要在身前）。
+## 直接把步兵模型放进场景、播到 shield_hold 的最后一帧（美术摆好的举盾姿势），
+## 所以图标和游戏里看到的样子永远一致 —— 不会再出现"图标画的是盾，游戏里盾在侧面"。
+func _prop_unit_shield(p: Node3D) -> void:
+	var ps := load("res://美术/模型/方块人/方块人_联盟步兵.glb") as PackedScene
+	if ps == null:
+		return
+	var inst := ps.instantiate() as Node3D
+	p.add_child(inst)
+	ArtKit.apply_team_color(inst, Color(0.24, 0.56, 1.0))
+	var ap := _find_ap(inst)
+	if ap == null or not ap.has_animation("shield_hold"):
+		return
+	var a: Animation = ap.get_animation("shield_hold")
+	ap.play("shield_hold")
+	ap.seek(maxf(a.length - 0.01, 0.0), true)
+	ap.pause()
+
+
+func _find_ap(n: Node) -> AnimationPlayer:
+	if n is AnimationPlayer:
+		return n as AnimationPlayer
+	for c in n.get_children():
+		var r := _find_ap(c)
+		if r != null:
+			return r
+	return null
 
 
 # ===========================================================================

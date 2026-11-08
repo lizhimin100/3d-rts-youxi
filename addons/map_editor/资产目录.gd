@@ -35,7 +35,41 @@ const DOODAD_GROUPS: Dictionary = {
 static var _cache: Array = []
 
 
-## 全部资产：[{id, name, category, model, scale, def}]
+## 阵营（种族）分组顺序：面板里就按这个顺序分段显示。
+## 玩家 2026-11-08：「单位和建筑怎么没按阵营分类，还是都挤在一起。」
+const RACE_ORDER: Array[String] = ["联盟", "失落", "中立"]
+
+
+## 某个类型属于哪个阵营 —— **只认卡上的 race 字段**（卡是唯一真相源）。
+## 卡上没有（新加还没填）就归「联盟」，不猜模型目录。
+static func race_of(id: StringName) -> String:
+	var card: EntityCard = UnitTable.get_card(id)
+	if card == null:
+		return "联盟"
+	var r: String = String(card.race)
+	return r if not r.is_empty() else "联盟"
+
+
+## 把一组资产按阵营切成 [{race, items}]（只留非空的段，顺序按 RACE_ORDER）。
+static func split_by_race(items: Array) -> Array:
+	var buckets: Dictionary = {}
+	for a in items:
+		var r: String = String(a.get("race", "联盟"))
+		if not buckets.has(r):
+			buckets[r] = []
+		(buckets[r] as Array).append(a)
+	var out: Array = []
+	for r in RACE_ORDER:
+		if buckets.has(r) and not (buckets[r] as Array).is_empty():
+			out.append({"race": r, "items": buckets[r]})
+	# RACE_ORDER 之外的新阵营：排在最后，别丢
+	for r in buckets.keys():
+		if not RACE_ORDER.has(String(r)) and not (buckets[r] as Array).is_empty():
+			out.append({"race": String(r), "items": buckets[r]})
+	return out
+
+
+## 全部资产：[{id, name, category, model, scale, group, race}]
 static func all_assets() -> Array:
 	if not _cache.is_empty():
 		return _cache
@@ -58,6 +92,7 @@ static func all_assets() -> Array:
 			"model": d.model_path,
 			"scale": d.model_scale,
 			"group": "",
+			"race": String(race_of(d.id)),
 		})
 	# 装饰：**只**从 v7_自然 目录来；先白名单排序，再扫目录补齐（跳过资源/LOD）
 	var seen: Dictionary = {}

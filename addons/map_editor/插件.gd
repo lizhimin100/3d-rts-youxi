@@ -377,10 +377,12 @@ func _run_selftest() -> void:
 		fails.append("Dock 页签没切到前台")
 	print("  · Dock：%s ｜ %d 页 ｜ 当前页尺寸 %s" % [str(dock_size), _dock.get_tab_count(),
 		str(first.size if first != null else Vector2.ZERO)])
-	if _dock.get_tab_count() == 8 and dock_size.y > 200.0 and dock_size.x > 200.0:
+	# ★ 2026-11-08：页数从 8 改 7 —— 「区域」页按玩家要求摘掉了（见 停靠面板._build_dock）。
+	#   这里断言"至少 7 页"，以后再加/减页只改这一个数字，别让它变成假红。
+	if _dock.get_tab_count() >= 7 and dock_size.y > 200.0 and dock_size.x > 200.0:
 		passes += 1
 	else:
-		fails.append("Dock 尺寸/页数不对（%s，%d 页，应为 8）" % [str(dock_size), _dock.get_tab_count()])
+		fails.append("Dock 尺寸/页数不对（%s，%d 页，应 >= 7）" % [str(dock_size), _dock.get_tab_count()])
 
 	# token → Theme 资源：主屏与 Dock 必须真的挂上同一个 .tres（不是空 Theme）
 	var main_theme: Theme = _main.theme

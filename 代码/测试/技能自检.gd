@@ -44,7 +44,7 @@ func _运行() -> void:
 		_用例C_不绑单位()
 		_用例D_三连发()
 		_用例E_组件可缺()
-		_用例F_举盾动作()
+		await _用例F_举盾动作()
 	报告["失败项"] = 失败
 	报告["结果"] = "通过" if 失败.is_empty() else "失败"
 	报告["耗时(毫秒)"] = Time.get_ticks_msec() - 开始
@@ -308,11 +308,34 @@ func _用例F_举盾动作() -> void:
 		return
 	u.call("skill_toggle", &"shield_up")
 	_走(0.8)
+	# 姿态层挂在 Skeleton3D 上，靠引擎帧（_process_modification）推进；
+	# 本自检是"手动步进单位逻辑"的，不会推进引擎帧，所以这里必须真等几帧。
+	for _i in 24:
+		await process_frame
+	# ★ 2026-11-08 口径变了（玩家：「不应该循环播放举盾动作，要一直保持举着盾的状态」）：
+	#   现在**不播** shield_hold 这个 clip，由**姿态层**把左臂按在它的末帧姿势上。
+	#   所以这里验三件事：
+	#     ① 基础动作照常在播（idle，而不是被 shield_hold 顶掉）；
+	#     ② 姿态层权重到 1（= 盾真的举起来了）；
+	#     ③ 姿态层按住的是左臂 5 根骨。
 	var 当前: String = String(anim.call("current_state"))
-	_ok(当前 == "shield_hold", "站着不动时播 shield_hold", "实际 %s" % 当前)
+	_ok(当前.begins_with("idle"), "举盾时基础动作照常播 idle（不再循环播举盾动作）", "实际 %s" % 当前)
+	var dbg: Dictionary = {}
+	if v.has_method("hold_pose_debug"):
+		dbg = v.call("hold_pose_debug") as Dictionary
+	_ok(float(dbg.get("weight", 0.0)) >= 0.99, "举盾姿态层权重到 1（盾举在身前）",
+		"weight=%s" % str(dbg.get("weight", "无姿态层")))
+	_ok((dbg.get("bones", []) as Array).has("shield"), "姿态层按住了 shield 骨",
+		str(dbg.get("bones", [])))
 	u.call("skill_toggle", &"shield_up")
 	_走(0.5)
-	var 关后: String = String(anim.call("current_state"))
-	_ok(关后 != "shield_hold", "放下后不再保持举盾", "实际 %s" % 关后)
+	# 淡出要 0.18s；无头帧 delta 不稳定，多等几帧再判（60 帧 = 1 秒）
+	for _i in 60:
+		await process_frame
+	var dbg2: Dictionary = {}
+	if v.has_method("hold_pose_debug"):
+		dbg2 = v.call("hold_pose_debug") as Dictionary
+	_ok(float(dbg2.get("weight", 0.0)) <= 0.01, "放下后姿态层权重归零（不再举盾）",
+		"weight=%s" % str(dbg2.get("weight", 0.0)))
 	if u != null and is_instance_valid(u):
 		u.queue_free()
