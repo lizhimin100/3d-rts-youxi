@@ -213,7 +213,8 @@ func _make_pose_layer(root: Node3D) -> Node:
 	# 有盾的单位只随机到基础 idle：挠头/伸展会把手臂抬到头顶，
 	# 盾虽然跟着手走了（2026-11-08 重绑），但"举着盾挠头"读起来很怪。
 	if _anim != null and is_instance_valid(_anim) and _anim.has_method("set_idle_pool"):
-		_anim.call("set_idle_pool", ["idle"])
+		# 只保留"基础待机 + 左右看"：挠头/伸展会把手臂举到头顶（盾跟着翻），玩家已否掉
+		_anim.call("set_idle_pool", ["idle", "idle_look"])
 	return layer
 
 

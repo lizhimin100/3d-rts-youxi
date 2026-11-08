@@ -104,6 +104,26 @@ func bind(root: Node3D) -> void:
 			_idle_pool.append(StringName(n))
 	if _idle_pool.is_empty():
 		_idle_pool.append(&"idle")
+	# ★ 2026-11-08 玩家口径（第三次）：「步兵的待机悠闲动作不要搞挠头，换成左右看即可，
+	#   不然盾牌跟着手臂一起翻滚很怪异。」
+	#   盾已经挂在 `hand_L` 下（工具/修盾牌.py），所以**任何把手臂举到头顶的动作**
+	#   （idle_scratch 挠头 / idle_stretch 伸展）都会让盾翻到脸上。
+	#   判据放在这里（而不是只写在 单位视觉 里）是因为**每个**拿 AnimationPlayer 的地方
+	#   都要这条规则：3D 战场、底栏头像台、编辑器预览 —— 头像台原来没设池子，
+	#   于是它照样随机到 idle_stretch，玩家看到的就是"头像在挠头"。
+	if _has_bone(root, &"shield"):
+		var keep: Array[StringName] = []
+		for n2 in [&"idle", &"idle_look"]:
+			if _ap.has_animation(String(n2)):
+				keep.append(n2)
+		if not keep.is_empty():
+			_idle_override = keep
+	# 排查用：`ANIM_POOL_DEBUG=1` 会打出每个模型实际用的待机池。
+	# （"头像在挠头""步兵举着盾伸展"这类问题，第一眼看的就是这张表）
+	if OS.has_environment("ANIM_POOL_DEBUG"):
+		print("[骨骼动画] %s idle_pool=%s override=%s shield=%s" % [
+			String(root.name), str(_idle_pool), str(_idle_override),
+			str(_has_bone(root, &"shield"))])
 	set_state("idle")
 
 
@@ -118,6 +138,22 @@ func _find_player(root: Node) -> AnimationPlayer:
 		for c in n.get_children():
 			stack.append(c)
 	return null
+
+
+## 骨架里有没有这根骨（用来判断"这个模型带不带盾"）。
+## 只看 Skeleton3D，不看节点名 —— 盾是骨，不是 MeshInstance。
+func _has_bone(root: Node, bone: StringName) -> bool:
+	if root == null:
+		return false
+	var stack: Array[Node] = [root]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		var sk := n as Skeleton3D
+		if sk != null and sk.find_bone(String(bone)) >= 0:
+			return true
+		for c in n.get_children():
+			stack.append(c)
+	return false
 
 
 ## 有没有这个动作（含降级链）
