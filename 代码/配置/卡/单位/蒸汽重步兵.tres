@@ -32,3 +32,4 @@ description = "蒸汽车坊出的重装单位，攻城伤害。（废弃待重�
 cost_gold = 190
 cost_wood = 45
 race = &"联盟"
+volume = 1.16

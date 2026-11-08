@@ -2633,50 +2633,71 @@ func _snap_ground(dt: float) -> void:
 		_slope_mult = clampf(1.0 - slope * 0.55, 1.0, 1.22)          # 下坡：略快
 
 
-## 攻击能打到的距离。
+## 攻击能打到的距离（= 攻击圈半径 = 卡上 range × 射程基准.R1）。
 ##
-## ★ 2026-11-07 统一口径（玩家反馈"弩兵实际射程比圈大、还能打雾里的敌人"）：
-##   `UnitDef.attack_range` = **本单位碰撞圆边缘 → 目标碰撞体边缘的水平间隙（米）**。
-##   旧实现 `_attack_reach` 又加了一次目标半径、`_target_gap` 又减了一次，
-##   结果真实够得着 = attack_range + 2×目标半径（步兵 1.35 → 实际 2.35），
-##   而范围圈按 attack_range 画 → 圈永远比实际小一大截。
+## ★ **2026-11-08 定稿口径**（玩家，一次说清，别再改）：
+##   · `实际米数 = 卡上数值 × R1`（R1 = 0.015，唯一出口 代码/配置/射程基准.gd）；
+##   · **攻击圈固定 = 射程**，不随场上最大单位体型变，也不加自身/目标半径；
+##   · **命中 = 两圈相交**：攻击者中心到目标中心 ≤ 攻击圈半径 + 目标判定圈半径
+##     → 这里只返回攻击圈半径，另一半（目标判定圈）由 `_target_gap` 扣掉；
+##   · 打建筑**没有第二套口径**：建筑的身体就是 footprint 占地，量到墙面；
+##     卡上 range 填多少就是多少，打人和打楼同一把尺。
 ##
-##   现在：`_attack_reach` 只返回 attack_range，`_target_gap` 把**双方**半径都扣掉。
-##   于是"贴身必中"= attack_range ≥ 0.2 就一定成立（0 = 两具身体正好贴住）。
-##
-##   建筑目标例外：寻路把占地外扩 1 格，**实测**最近的落定位置在墙面外 2.00m
-##   （2026-11-07 用 战斗自检 G 组量出来：兵走到墙外 2.00m 就不再靠近，因为
-##   可走格按"占地 + 1 格 + 单位半径"算）。扣掉自身半径 0.5 后边缘间隙 1.5m，
-##   所以墙面余量必须 ≥ 1.5，否则"贴着楼站着却砍不到"。
-##   ★ 这个值跟"近战 range = 1"是两个口径：range 管打人，START 这里管打楼。
-##   旧值 1.15 是按"墙面 1.50m"估的，实测偏小 0.35，这就是玩家报的"打不到建筑"。
-## ★ 2026-11-07 二次修正：这个"打楼专用余量"**已经删掉**。
-##   它存在的唯一理由是「寻路把建筑占格外扩 1 格，兵只能站在墙面外 2.0~2.5m」，
-##   于是必须给近战塞一个比 range 更大的隐形 reach 才砍得到楼 —— 结果是
-##   玩家在卡上把近战填 1.0，打人贴身、打楼隔空挥，两个口径永远对不上。
-##   现在建筑占格不再外扩（见 关卡.BUILDING_BLOCK_CLEARANCE = 0），
-##   近战可以走到墙面外 0.5~1.0m，**range 填多少就是多少，打人和打楼同一把尺**。
+##   历史（别重犯）：2026-11-07 曾经让 `_target_gap` 把双方半径都扣掉，
+##   等于实际够得着 = range + 自身半径 + 目标半径（步兵 1.35 → 2.35），
+##   圈和判定差半个身位；玩家实测「圈外还能打到」。现在不扣自身半径了。
 func _attack_reach(t: Node3D) -> float:
 	var r: float = def.attack_range if def != null else 0.0
 	return maxf(r, 0.05)
 
 
-## 到目标的**有效间隙**：建筑量到墙面，单位量到身位边缘（双方半径都扣掉）。
+## **攻击圈半径**（画在脚下那个圆 + 命中判定的半径）= 卡上 range × 射程基准.R1。
+## ★ 2026-11-08 最终口径（玩家）：
+##   · 攻击圈固定 = 射程，**不随场上最大单位体型变**；
+##   · 命中 = 两圈相交；圈只跟"我打多远"有关，跟"我多大"无关。
+func attack_circle_radius() -> float:
+	return def.attack_range if def != null else 0.0
+
+
+## **判定圈半径**（"我这一圈身体"）——由卡上的体积派生（`体积派生.judge_radius`）。
+## 命中时它加在攻击者那一侧：中心距 ≤ 攻击圈 + 我的判定圈。
+func judge_radius() -> float:
+	if def == null:
+		return 0.5
+	if def.judge_radius > 0.0:
+		return def.judge_radius
+	return def.body_radius
+
+
+## 目标身上那一圈（没有这个方法的目标按 body_radius、建筑按 0）
+func _judge_radius_of(t: Node3D) -> float:
+	if t == null:
+		return 0.0
+	if t is RtsBuilding:
+		return 0.0
+	if t.has_method("judge_radius"):
+		return float(t.call("judge_radius"))
+	var d: UnitDef = t.get("def") as UnitDef
+	return d.body_radius if d != null else 0.5
+
+
+## 到目标的**命中余量**：中心距 − 目标判定圈半径（建筑量到墙面，判定圈按 0）。
 ##
-## 近战打建筑必须用这个，不能用中心距（见 建筑.distance_to_footprint 的注释）。
+## ★ 2026-11-08 最终口径（玩家）：**两圈相交即可**
+##   `攻击者中心到目标中心 ≤ 攻击圈半径 + 目标判定圈半径`
+##   → 这里返回 `中心距 − 目标判定圈`，调用方只比 `<= _attack_reach()`。
+##
+##   注意**不再扣自身半径**：攻击圈画在自己脚下，自己的体积不参与"够不够得着"。
+##   旧口径扣了双方半径（reach + 自身 + 目标），比现在多算半个身位。
 func _target_gap(t: Node3D) -> float:
 	if t == null:
 		return INF
 	var b := t as RtsBuilding
 	if b != null:
-		var d: float = b.distance_to_footprint(global_position)
-		# 自己也扣掉半径：口径统一成"边缘到墙面"，否则大本营 9m 宽会把近战挡在 4.5m 外
-		d -= get_radius()
-		return maxf(d, 0.0)
+		# 建筑的身体就是占地矩形：墙面即"圈边"，不再加判定圈
+		return maxf(b.distance_to_footprint(global_position), 0.0)
 	var d: float = _flat_dist(t.global_position)
-	if t.has_method("get_radius"):
-		d -= float(t.call("get_radius"))
-	d -= get_radius()
+	d -= _judge_radius_of(t)
 	return maxf(d, 0.0)
 
 
@@ -2729,8 +2750,11 @@ func _surround_spot(t: Node3D) -> Vector3:
 	if t.has_method("get_radius"):
 		tr = float(t.call("get_radius"))
 	var reach: float = _attack_reach(t)
-	# 想要的"边缘间隙"：扣掉到点容差后仍有余量；近战会收到 ≈0.02，靠分离力自然分开
-	var gap_want: float = clampf(reach - ARRIVE_TOLERANCE - 0.08, 0.02, maxf(reach * 0.9, 0.02))
+	# 想要的"边缘间隙"：扣掉到点容差和自身半径后仍有余量 ——
+	# ★ 2026-11-08 起命中不扣自身半径，但**站位**还得留出自己的身位，
+	#   否则落点会压在目标判定圈里（两具身体重叠，分离力把人顶出去）。
+	var gap_want: float = clampf(reach - get_radius() - ARRIVE_TOLERANCE - 0.08,
+			0.02, maxf(reach * 0.9, 0.02))
 	var want: float = tr + get_radius() + gap_want
 	var to_self: Vector3 = global_position - t.global_position
 	to_self.y = 0.0

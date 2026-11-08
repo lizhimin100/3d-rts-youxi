@@ -65,10 +65,17 @@ extends Resource
 @export var move_speed: float = 4.0
 ## 转向速度（弧度/秒）
 @export var turn_speed: float = 8.0
-## 碰撞半径（占位，避免单位重叠）
+## **体积（主参数，卡上填）**。1.0 = 标准体型。
+## 模型缩放 / body_radius / judge_radius 都由它派生（`代码/配置/体积派生.gd`）。
+## 0 = 不走体积（建筑 / 可采集物 / 老数据回退）。
+@export var volume: float = 0.0
+## 碰撞半径（占位，避免单位重叠）。**单位**由体积派生，别在卡上另填。
 @export var body_radius: float = 0.45
 ## 点击拾取半径（比 body 略大，手感更好）
 @export var selection_radius: float = 0.7
+## **判定圈半径**（命中判定 + 选中圈）：`两圈相交` 里的"目标那一圈"。
+## 单位由体积派生；建筑没有判定圈（它的"圈"就是 footprint 占地）。
+@export var judge_radius: float = 0.5
 
 @export_group("建筑")
 ## 占地格数（1 格 = 1 米）

@@ -377,9 +377,12 @@ func _用例D_自动施法不吞指令() -> void:
 # ===========================================================================
 
 ## 纯数值断言，不打架：直接问单位的 `_target_gap` / `_attack_reach`。
-##   · 步兵贴身（中心距 ≈ 两半径之和）必须够得着；
-##   · 步兵隔 2m 必须够不着（旧口径 1.35 + 双方半径 ≈ 2.35，会"隔空砍人"）；
-##   · 弩兵 8m：中心距 8.8（边缘间隙 7.92）够得着，9.2（8.32）够不着。
+## ★ 2026-11-08 定稿：命中 = 两圈相交
+##   `中心距 ≤ 攻击圈(射程×R1) + 目标判定圈`
+##   → `_target_gap` 只扣目标判定圈，**不再扣自身半径**。
+##   · 步兵贴身（中心距 1.2）必须够得着；
+##   · 最大中心距外 0.25m 必须够不着；
+##   · 弩兵：边界内 0.1m 够、外 0.1m 不够。
 func _用例E_射程口径() -> void:
 	var 基: Vector3 = 关卡.call("base_center", 游戏.get("player_faction"))
 	var 位: Vector3 = 关卡.call("walkable_pos", 基 + Vector3(-4.0, 0.0, 16.0))
@@ -389,43 +392,41 @@ func _用例E_射程口径() -> void:
 	var 靶2 = _造单位("enemy_faction", &"archer", 位 + Vector3(2.2, 0.0, 0.0), 5000.0)
 	if 兵 == null or 弓 == null or 靶 == null or 靶2 == null:
 		return
-	# 贴身：中心距 1.2，双方半径 0.5 + 0.44 → 边缘间隙 0.26
+	# 贴身：中心距 1.2，靶判定圈 0.5 → 余量 0.7 ≤ 射程
 	var 贴身间隙: float = float(兵.call("_target_gap", 靶))
 	var 贴身够: bool = 贴身间隙 <= float(兵.call("_attack_reach", 靶))
-	# ★ 远靶**从射程派生**，不写死 2.2m：
-	#   射程是玩家在卡上调的（现在卡上 1.5 × 基准1米 = 1.5m），写死距离会让
-	#   "玩家一调数值自检就红"。这里把它摆在"最大可打中心距 + 0.25m"，必须打不到。
+	# ★ 远靶**从射程派生**，不写死距离：
+	#   最大可打中心距 = 攻击圈 + 目标判定圈；再远 0.25m 必须打不到。
 	var 兵射程: float = float(兵.call("_attack_reach", 靶))
-	var 兵边界: float = 兵射程 + float(兵.call("get_radius")) + float(靶.call("get_radius"))
+	var 兵边界: float = 兵射程 + float(靶.call("judge_radius"))
 	(靶2 as Node3D).global_position = (兵 as Node3D).global_position + Vector3(兵边界 + 0.25, 0.0, 0.0)
 	var 远间隙: float = float(兵.call("_target_gap", 靶2))
 	var 远够: bool = 远间隙 <= float(兵.call("_attack_reach", 靶2))
 	# 弩兵：阈值**从卡的 range 派生**，不写死数字。
-	# 旧版硬编码 8.8 / 9.2（range=8 时代），玩家把 range 改成 10 之后
-	# 这条就一直红 —— 自检测的是"口径"，不是"某一次的数值"。
 	var 弓射程: float = float(弓.call("_attack_reach", 靶))
-	var 弓半径: float = float(弓.call("get_radius"))
-	var 靶半径: float = float(靶.call("get_radius"))
-	var 边界: float = 弓射程 + 弓半径 + 靶半径
-	# 边界内 0.1m 必须够得着；边界外 0.1m 必须够不着
-	var 弓够近: bool = (边界 - 0.1 - 弓半径 - 靶半径) <= 弓射程
-	var 弓够远: bool = (边界 + 0.1 - 弓半径 - 靶半径) <= 弓射程
+	var 靶半径: float = float(靶.call("judge_radius"))
+	var 边界: float = 弓射程 + 靶半径
+	# 边界内 0.1m 必须够得着；边界外 0.1m 必须够不着。
+	# 注意比的是**余量**（中心距 − 目标判定圈），不是中心距本身。
+	var 弓够近: bool = (边界 - 0.1 - 靶半径) <= 弓射程
+	var 弓够远: bool = (边界 + 0.1 - 靶半径) <= 弓射程
 
 	var 明细: Dictionary = {
-		"步兵贴身间隙(米)": "%.2f" % 贴身间隙,
-		"步兵攻击距离(米)": "%.2f" % float(兵.call("_attack_reach", 靶)),
+		"步兵贴身余量(米)": "%.2f" % 贴身间隙,
+		"步兵攻击圈(米)": "%.2f" % float(兵.call("_attack_reach", 靶)),
+		"步兵判定圈(米)": "%.2f" % float(兵.call("judge_radius")),
 		"贴身够得着": 贴身够,
-		"边界外0.25m间隙(米)": "%.2f" % 远间隙,
+		"边界外0.25m余量(米)": "%.2f" % 远间隙,
 		"边界外0.25m够得着": 远够,
-		"弩兵射程(米)": "%.2f" % 弓射程,
+		"弩兵攻击圈(米)": "%.2f" % 弓射程,
 		"弩兵最大中心距(米)": "%.2f" % 边界,
 		"边界内0.1m够": 弓够近,
 		"边界外0.1m不够": not 弓够远,
 	}
 	if not 贴身够:
-		失败.append("E 射程：步兵贴身还打不到（间隙 %.2f > 射程）" % 贴身间隙)
+		失败.append("E 射程：步兵贴身还打不到（余量 %.2f > 攻击圈）" % 贴身间隙)
 	if 远够:
-		失败.append("E 射程：步兵在最大中心距外 0.25m 还能打到（间隙 %.2f ≤ 射程 %.2f，口径破了）" % [远间隙, 兵射程])
+		失败.append("E 射程：步兵在最大中心距外 0.25m 还能打到（余量 %.2f ≤ 攻击圈 %.2f，口径破了）" % [远间隙, 兵射程])
 	if not 弓够近:
 		失败.append("E 射程：弩兵在最大中心距内 0.1m 就打不到，射程被压小了")
 	if 弓够远:
@@ -600,12 +601,14 @@ func _用例G2_多近战围楼() -> void:
 	if 末血 >= 初血:
 		失败.append("G2 多近战围楼：楼没掉血")
 # ===========================================================================
-# H · 最大可打距离（范围圈口径的实测基线）
+# H · 攻击圈口径（2026-11-08 定稿：圈 = 射程，命中 = 两圈相交）
 # ===========================================================================
 
 ## 把靶子摆在若干中心距上，直接问 `_target_gap <= _attack_reach`。
-## 输出「中心距 → 边缘间隙 / 射程 / 够不够」，用来对齐"圈画多大"。
-## 同时算出"圈半径"（选择系统用的值），检查"圈外一点点还能打"到底差多少。
+## 判据三条：
+##   1. 攻击圈半径 == 卡上 range × R1（跑遍 pick 的圈半径函数，和判定同一份）；
+##   2. 最大中心距 = 攻击圈 + 目标判定圈，内 0.1m 够、外 0.1m 不够；
+##   3. 选中圈（判定圈）= 单位的 judge_radius（从体积派生），不是拾取半径。
 func _用例H_最大射程() -> void:
 	var 基: Vector3 = 关卡.call("base_center", 游戏.get("player_faction"))
 	var 位: Vector3 = 关卡.call("walkable_pos", 基 + Vector3(-10.0, 0.0, 10.0))
@@ -613,37 +616,42 @@ func _用例H_最大射程() -> void:
 	var 靶 = _造单位("enemy_faction", &"footman", 位 + Vector3(1.6, 0.0, 0.0), 100000.0)
 	if 兵 == null or 靶 == null:
 		return
-	var 自身半径: float = float(兵.call("get_radius"))
-	var 靶半径: float = float(靶.call("get_radius"))
-	var reach: float = float(兵.call("_attack_reach", 靶))
-	# 最大可打中心距 = 射程 + 自身半径 + 目标半径；采样点**跟着它走**，
-	# 不再写死 1.6/2.0/2.2 —— 射程一改，写死的表就没意义了。
-	var 边界: float = reach + 自身半径 + 靶半径
+	var 攻击圈: float = float(兵.call("attack_circle_radius"))
+	var 判定圈: float = float(兵.call("judge_radius"))
+	var 靶判定: float = float(靶.call("judge_radius"))
+	var 边界: float = 攻击圈 + 靶判定
 	var 表: Array = []
 	var 最远: float = 0.0
 	for off in [-0.30, -0.10, 0.0, 0.05, 0.20, 0.40]:
 		var d: float = maxf(边界 + float(off), 0.2)
 		(靶 as Node3D).global_position = (兵 as Node3D).global_position + Vector3(d, 0.0, 0.0)
 		var gap: float = float(兵.call("_target_gap", 靶))
-		var ok: bool = gap <= reach
+		var ok: bool = gap <= 攻击圈
 		if ok:
 			最远 = maxf(最远, d)
-		表.append({"中心距": "%.2f" % d, "间隙": "%.2f" % gap, "reach": "%.2f" % reach, "够": ok})
-	# ★ 圈半径必须和**玩家真的看到的那个圈**同一个公式（读选择系统算出来的目标半径），
-	#   而且必须 >= 最远可打中心距 —— 玩家 2026-11-08：
-	#   「圈要符合含义，不要在圈外能打到敌人」。
+		表.append({"中心距": "%.2f" % d, "余量": "%.2f" % gap,
+			"攻击圈": "%.2f" % 攻击圈, "够": ok})
+	# 圈半径必须和**玩家真的看到的那个圈**同一个函数（选择系统的静态出口）
 	var sel_script: Script = load("res://代码/操作/选择系统.gd")
-	var 圈半径: float = reach + 自身半径 + float(sel_script.call("ring_target_radius"))
-	_记("H_最大射程", {
+	var 圈半径: float = float(sel_script.call("range_ring_radius_of", 兵))
+	_记("H_攻击圈", {
 		"表": 表,
-		"自身半径(米)": "%.2f" % 自身半径,
-		"目标半径(米)": "%.2f" % 靶半径,
-		"最远可打中心距(米)": "%.2f" % 最远,
-		"当前圈半径(米)": "%.2f" % 圈半径,
-		"圈外还能打的余量(米)": "%.2f" % (最远 - 圈半径),
+		"攻击圈(米)": "%.2f" % 攻击圈,
+		"画出来的圈(米)": "%.2f" % 圈半径,
+		"自身判定圈(米)": "%.2f" % 判定圈,
+		"目标判定圈(米)": "%.2f" % 靶判定,
+		"最大中心距(米)": "%.2f" % 边界,
+		"最远实测可打(米)": "%.2f" % 最远,
 	})
 	if 最远 <= 0.0:
-		失败.append("H 最大射程：连 %.2fm 都打不到" % 边界)
-	# 圈外不许能打：圈半径必须覆盖"最远仍可打"的那个中心距
-	if 圈半径 < 最远 - 0.01:
-		失败.append("H 圈太小：圈半径 %.2fm，但 %.2fm 处还能打到（圈外能打 = 圈不算数）" % [圈半径, 最远])
+		失败.append("H 攻击圈：连 %.2fm 都打不到" % 边界)
+	# 圈 = 射程：多一点都不许有（旧版加了"全场最大体型"，玩家已经否掉）
+	if absf(圈半径 - 攻击圈) > 0.01:
+		失败.append("H 攻击圈：画出来的圈 %.2fm ≠ 射程 %.2fm（不许按体型修正）" % [圈半径, 攻击圈])
+	if 判定圈 <= 0.0:
+		失败.append("H 攻击圈：判定圈半径为 0（体积派生没生效）")
+	# 边界外 0.4m 一定打不到（否则命中口径破了）
+	var 超远: float = 边界 + 0.4
+	(靶 as Node3D).global_position = (兵 as Node3D).global_position + Vector3(超远, 0.0, 0.0)
+	if float(兵.call("_target_gap", 靶)) <= 攻击圈:
+		失败.append("H 攻击圈：中心距 %.2fm（边界外 0.4m）还能打到" % 超远)

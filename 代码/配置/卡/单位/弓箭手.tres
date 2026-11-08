@@ -34,3 +34,4 @@ description = "勇敢的弩兵向联盟献上了自己的忠诚和技能。弩�
 cost_gold = 105
 cost_wood = 15
 race = &"联盟"
+volume = 0.88

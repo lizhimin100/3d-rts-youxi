@@ -519,6 +519,9 @@ var _range_rings: Dictionary = {}
 const RANGE_RING_WIDTH := 0.14
 ## 贴在离地多高（米）：0.12 能压住地形又不和选中圈（0.06）打架
 const RANGE_RING_LIFT := 0.12
+## 攻击圈的固定颜色（暖金）：和"选中圈/判定圈"（阵营色）明确区分。
+## 玩家 2026-11-08：「两个圈不同颜色。」
+const ATTACK_RING_COLOR := Color(0.98, 0.74, 0.32)
 
 
 ## **该给谁画攻击圈**（唯一判据）。
@@ -577,55 +580,21 @@ func _sync_range_rings() -> void:
 ## 造一个贴地的攻击范围圆环。
 ##
 ## 只画"圈"不画"盘"：盘会盖住地表明暗（RTS 里选区高亮是另一种信息，别混）。
-## 材质：unshaded + alpha + 双面，颜色取阵营色提亮一档 ——
-## 和选中圈（实心渐隐环）在观感上要能区分：这个是**细亮线**，不是光圈。
-##
-## ★ 2026-11-07 半径口径 = `attack_range + 自身半径`（建筑换成占地半宽）。
-##   attack_range 本身是"身位边缘→目标边缘"的间隙，圈画在自身中心就得多加自己的半径，
-##   这样圈的边缘 = 真正够得着的边界（玩家反馈"实际射程比圈大"就是这里少了这半步）。
-## 范围圈半径（玩家看到的那个圆）。
-##
-## ★ 2026-11-07 加"标准目标半径"（玩家口径：「敌人整个模型都在圈外一些却仍然能打到」）：
-##   射程是**边缘对边缘**的间隙，所以能打到的最大中心距 =
-##   `attack_range + 自身半径 + 目标半径`。旧圈只画到 `attack_range + 自身半径`，
-##   于是敌人的**中心**站在圈外 0.5m 时仍然够得着 —— 视觉上就是"人在圈外挨打"。
-##   现在把"一个标准体型单位（半径 0.5m）"的半径也画进去：
-##   **圈边 = 标准体型的敌人中心能站到的最远处**，圈外就是真的打不到。
-## 圈必须满足"圈外一定打不到"，所以目标半径取**全场最大的单位体型**。
-## 玩家 2026-11-08：「圈要符合含义，不要在圈外能打到敌人。」
-const RING_TARGET_RADIUS_MIN: float = 0.5
-static var _ring_target_radius_cache: float = -1.0
-
-
-## 圈要留的目标半径 = 全场最大**单位**体型（建筑不算：打楼是走到墙边砍，不是隔着距离打）。
-## 结果缓存一次（只影响画圈，不影响判定）。
-static func ring_target_radius() -> float:
-	if _ring_target_radius_cache > 0.0:
-		return _ring_target_radius_cache
-	var out: float = RING_TARGET_RADIUS_MIN
-	var table: Script = load("res://代码/配置/单位表.gd")
-	if table != null:
-		var all: Dictionary = table.call("build_units")
-		for _id in all.keys():
-			var d: UnitDef = all[_id]
-			if d == null or d.is_building() or d.is_harvestable():
-				continue
-			out = maxf(out, d.body_radius)
-	_ring_target_radius_cache = out
-	return out
-
-
+## ★ 2026-11-08 最终口径（玩家）：
+##   · **攻击圈 = 射程 × R1，固定**；不随场上最大单位体型修正，也不加自身/目标半径；
+##   · 命中是"两圈相交"（攻击圈 + 目标判定圈），所以**圈外还够得着目标的身体**是对的 ——
+##     圈代表"我能打到多远"，不是"敌人中心能站到哪"；
+##   · 单选画攻击圈 + 选中圈（判定圈），两圈**不同颜色**（攻击=暖金，选中=阵营色）。
 func _range_ring_radius(u: RtsUnit) -> float:
-	var r: float = u.def.attack_range
-	if u is RtsBuilding:
-		var fp: Vector2i = u.def.footprint
-		if fp != Vector2i.ZERO:
-			r += float(maxi(fp.x, fp.y)) * 0.5
-		else:
-			r += float(u.call("get_radius")) if u.has_method("get_radius") else 0.0
-	elif u.has_method("get_radius"):
-		r += float(u.call("get_radius"))
-	return r + ring_target_radius()
+	return range_ring_radius_of(u)
+
+
+## 攻击圈画多大（**唯一公式**，自检直接调这个，不用建场景）。
+## = 单位自己的攻击圈半径；建筑塔也一样（圈中心在建筑原点）。
+static func range_ring_radius_of(u: RtsUnit) -> float:
+	if u == null or not is_instance_valid(u):
+		return 0.0
+	return maxf(u.attack_circle_radius(), 0.0)
 
 
 func _make_range_ring(u: RtsUnit) -> Node3D:
@@ -634,10 +603,7 @@ func _make_range_ring(u: RtsUnit) -> Node3D:
 	var r: float = _range_ring_radius(u)
 	if r <= 0.0:
 		return null
-	var color: Color = u.faction.color if u.faction != null else (
-		Cfg.game.player_color if Cfg.game != null else Color(0.3, 0.62, 1.0))
-	# 提亮 + 降饱和：纯阵营色叠在草地上会发闷
-	color = color.lerp(Color(1.0, 0.98, 0.92), 0.35)
+	var color: Color = ATTACK_RING_COLOR
 
 	var im := ImmediateMesh.new()
 	im.surface_begin(Mesh.PRIMITIVE_TRIANGLE_STRIP)
@@ -679,11 +645,13 @@ func _make_range_ring(u: RtsUnit) -> Node3D:
 ##   2. 美术侧给好的 美术/特效/选中圈.tscn（文档 §7 点名的资源）
 ##   3. 自己画一段贴地环形三角带（保证美术没到位也能看出选中了谁）
 func _make_ring(u: Node3D) -> Node3D:
-	# 1.02：贴着脚下轮廓。旧版 1.35/1.22 在 1.7m 高的兵身上像套了个呼啦圈，
-	# 魔兽 3 的圈只比身体宽一点。建筑另算（下面按占地半对角线补）。
-	var radius: float = maxf(_select_radius(u) * 1.02, 0.55)
-	# ★ 建筑要"罩住占地"：兵营 6×7 的半对角线 4.6m，按 _select_radius×1.22 = 4.27
-	#   画出来会切进四个角（玩家看到的是"圈比房子小"）。这里按半对角线补到刚好罩住。
+	# ★ 2026-11-08 玩家口径：选中圈就是**判定圈** —— 半径从体积派生（`judge_radius`）。
+	#   旧版画的是"拾取半径 × 1.02"，比身体大一圈，和命中判定没有关系。
+	#   建筑照旧按占地半对角线罩住（建筑没有判定圈，它的身体是占地矩形）。
+	var radius: float = maxf(_select_radius(u), 0.55)
+	var ru := u as RtsUnit
+	if ru != null:
+		radius = maxf(ru.judge_radius(), 0.35)
 	var b := u as RtsBuilding
 	if b != null and b.def != null and b.def.footprint != Vector2i.ZERO:
 		var hx: float = float(maxi(b.def.footprint.x, 1)) * 0.5

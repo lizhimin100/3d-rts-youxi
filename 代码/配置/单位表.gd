@@ -28,6 +28,9 @@ const CARD_VERIFY_DEFAULT: bool = true
 const LW := preload("res://代码/配置/定位词表.gd")
 ## ★ 射程换算：卡上的"游戏数值" → 引擎用的米。全游戏只此一处（见 代码/配置/射程基准.gd）
 const RANGE_BASE := preload("res://代码/配置/射程基准.gd")
+## ★ 体积派生：体积 → 模型缩放 / 碰撞半径 / 判定圈半径。全游戏只此一处
+##   （见 代码/配置/体积派生.gd；三种候选公式在那里切）
+const VOL := preload("res://代码/配置/体积派生.gd")
 ## 选兵权重公式（find_by_role 排序用；不用 power —— power 全 -1 未测）
 const CBM := preload("res://代码/ai/战斗模型.gd")
 
@@ -191,8 +194,19 @@ static func _def_of_card(card: EntityCard) -> UnitDef:
 		d.sight_range = c.sight_range
 		d.move_speed = c.move_speed
 		d.turn_speed = c.turn_speed
-		d.body_radius = c.body_radius
-		d.selection_radius = c.selection_radius
+		# ★ 体积是主参数（2026-11-08）：模型缩放 / 碰撞半径 / 判定圈全从它派生。
+		#   volume = 0 的老卡（或建筑）走回退：照抄卡上原来那几个数，行为不变。
+		d.volume = c.volume
+		if c.volume > 0.0:
+			d.model_scale = VOL.model_scale(c.volume)
+			d.body_radius = VOL.body_radius(c.volume, c.body_radius)
+			d.judge_radius = VOL.judge_radius(c.volume, c.selection_radius)
+			# 拾取半径跟着体积走（旧数据里 selection ≈ body × 1.65，保持同一手感）
+			d.selection_radius = maxf(d.body_radius * 1.65, 0.45)
+		else:
+			d.body_radius = c.body_radius
+			d.selection_radius = c.selection_radius
+			d.judge_radius = c.body_radius
 		d.food_cost = c.food_cost
 		d.train_time = c.train_time
 		d.height = c.height
@@ -228,6 +242,9 @@ static func _def_of_card(card: EntityCard) -> UnitDef:
 		d.sight_range = b.sight_range
 		d.body_radius = b.body_radius
 		d.selection_radius = b.selection_radius
+		# 建筑没有"判定圈"：它的身体**就是 footprint 占地矩形**，
+		# 打楼一律量到墙面（distance_to_footprint），不要给建筑再加一圈半径。
+		d.judge_radius = 0.0
 		d.detect_radius = b.detect_radius
 		d.aura_radius = b.aura_radius
 		d.aura_mana_regen = b.aura_mana_regen
