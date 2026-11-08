@@ -59,6 +59,7 @@ func _运行() -> void:
 		_用例G2_多近战围楼()
 		_用例H_最大射程()
 		_用例I_挨打找敌人()
+		_用例J_视野内挨打逼上去()
 	报告["失败项"] = 失败
 	报告["结果"] = "通过" if 失败.is_empty() else "失败"
 	报告["耗时(毫秒)"] = Time.get_ticks_msec() - 开始
@@ -694,3 +695,45 @@ func _用例I_挨打找敌人() -> void:
 		失败.append("I 挨打找敌人：视野外挨打后原地不动（位移 %.2f）" % 位移)
 	if 位移 > 视 + 1.5:
 		失败.append("I 挨打找敌人：走的距离 %.1f 超过视野 %.1f" % [位移, 视])
+
+
+# ===========================================================================
+# J · 被**视野内**的攻击者打 → 压上去还手（2026-11-08 玩家口径第 7 条）
+# ===========================================================================
+
+## 场景：一个待机的近战兵，被 8 米外（视野内、但远在 1.35 米近战射程外）的弩兵射了一箭。
+##
+## 旧行为：`take_damage` 只在"够得着"时锁目标，`_update_attack` 对"够不着 + 待机"
+## 直接放掉锁定 —— 于是这个兵**站着被射死**，玩家看到的就是"没有索敌"。
+## 现在：视野内的攻击者 → 把指令改成 ATTACK 压上去（`_engage_attacker`）。
+func _用例J_视野内挨打逼上去() -> void:
+	var 基: Vector3 = 关卡.call("base_center", 游戏.get("player_faction"))
+	var 位: Vector3 = 关卡.call("walkable_pos", 基 + Vector3(-14.0, 0.0, 30.0))
+	var 兵 = _造单位("player_faction", &"footman", 位)
+	if 兵 == null:
+		return
+	# 8 米：步兵视野 11 米（看得见）、近战射程 1.35 米（够不着）—— 正是"站着挨射"的距离
+	var 射 = _造单位("enemy_faction", &"archer", 位 + Vector3(8.0, 0.0, 0.0), 99999.0)
+	if 射 == null:
+		return
+	if 射.has_method("order_hold"):
+		射.call("order_hold")
+	var 起: Vector3 = (兵 as Node3D).global_position
+	var 初距: float = _平面距(起, (射 as Node3D).global_position)
+	兵.set("order", 指令.get("NONE", 0))
+	兵.set("order_owner", 0)
+	兵.call("take_damage", 5.0, 0, 射)
+	_走(2.0)
+	var 末: Vector3 = (兵 as Node3D).global_position
+	var 末距: float = _平面距(末, (射 as Node3D).global_position)
+	var 明细: Dictionary = {
+		"初始距(米)": "%.2f" % 初距,
+		"2s 后距(米)": "%.2f" % 末距,
+		"当前指令": _指令名(int(兵.order)),
+		"当前目标": "有" if 兵.target != null else "无",
+	}
+	_记("J_视野内挨打逼上去", 明细)
+	if int(兵.order) != int(指令.get("ATTACK", 2)):
+		失败.append("J 视野内挨打：指令没变成 ATTACK（实 %s）" % 明细["当前指令"])
+	if 初距 - 末距 < 1.0:
+		失败.append("J 视野内挨打：没有朝攻击者压上去（只近了 %.2f 米）" % (初距 - 末距))

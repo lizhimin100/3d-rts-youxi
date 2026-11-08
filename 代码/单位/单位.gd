@@ -692,10 +692,15 @@ func take_damage(amount: float, _type: int, from: Node3D) -> void:
 			if _target_gap(from) <= _attack_reach(from):
 				if target == null or not is_instance_valid(target) or not target.is_alive():
 					target = from
-	# ★ 2026-11-08 玩家口径：视野内没有敌人却挨打 → 朝随机方向走一段去找
-	#   （距离不超过原视野）。只在"没目标 + 视野里真没人"时触发，带 2.5s 冷却。
-	if from != null and is_instance_valid(from) and target == null and _search_t <= 0.0:
-		if not _has_visible_foe_in_sight():
+	# ★ 2026-11-08 玩家口径「单位要有索敌机制，范围和视野一致」：
+	#   挨打之后分两种情况，**不能再一概站着不动**：
+	#     · 攻击者在视野里（看得见）→ 压上去还手。远程在 8 米外放冷箭，
+	#       近战站在那儿挨射是玩家最不能接受的一种"没索敌"；
+	#     · 视野里根本没有敌人（被雾里的东西打）→ 朝随机方向走一段去找。
+	if from != null and is_instance_valid(from) and target == null and not _retreat:
+		if _visible_within_sight(from):
+			_engage_attacker(from)
+		elif _search_t <= 0.0 and not _has_visible_foe_in_sight():
 			_search_for_threat()
 	# 农民挨打就往基地跑，别站那儿送死
 	if def != null and RtsWorld.is_worker_def(def):
@@ -711,6 +716,43 @@ func _has_visible_foe_in_sight() -> bool:
 	if cand == null:
 		return false
 	return Game.is_node_visible_to(faction, cand)
+
+
+## 这个具体目标是不是"看得见 + 在视野里"（还击判据，和索敌同一个口径）
+func _visible_within_sight(t: Node3D) -> bool:
+	if t == null or not is_instance_valid(t) or def == null or faction == null:
+		return false
+	var r: float = maxf(def.sight_range, def.acquire_range)
+	if r <= 0.0 or _flat_dist(t.global_position) > r:
+		return false
+	return Game.is_node_visible_to(faction, t)
+
+
+## **被视野内的攻击者打了 → 压上去还手**。
+##
+## 为什么不能只把 `target` 设成对方：`_update_attack` 对"够不着 + 不会追"的目标是
+## **直接放掉**的（待机/警戒不许追出警戒圈，见 `_may_pursue`）。
+## 所以这里必须把指令也改成 ATTACK —— 那才是"允许追出去"的那一档。
+##
+## 不抢的四种情形：撤退/逃跑中、正在工地里干活、玩家亲自下的指令、
+## 以及**驻守**（HOLD 的语义就是"站住不动"，被射也不挪窝，这是玩家点出来的）。
+func _engage_attacker(from: Node3D) -> void:
+	if def == null or not is_mobile():
+		return
+	if _retreat or _flee_t > 0.0 or _inside_site != null:
+		return
+	if def != null and RtsWorld.is_worker_def(def):
+		return
+	if order == RtsConst.Order.HOLD or order == RtsConst.Order.GATHER or order == RtsConst.Order.BUILD:
+		return
+	if order != RtsConst.Order.NONE and order_owner != 0:
+		return
+	target = from
+	_acquire_grace = 0.0
+	order = RtsConst.Order.ATTACK
+	_wall_approach = null
+	_go_to(_attack_spot(from), true)
+	state = RtsConst.State.MOVE
 
 
 ## **挨打找敌人**：视野里没人却被打了，就朝一个随机方向走一段（≤ 视野半径）。
