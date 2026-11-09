@@ -1225,15 +1225,15 @@ func _case_2c9() -> void:
 			_near(float(bm.demand_coef("训练_威胁系数")), 0.8, 0.000001)
 			and _near(float(bm.demand_coef("不存在的键", 0.7)), 0.7, 0.000001),
 			"训练_威胁系数=0.8；未知键回落 0.7")
-	# 2C-12 处置：A 组判失败 → 部门制回退 2C-8 为主线，默认改成 off（`--dept=on` 仍可实验）
-	_record("2C9/2C12：dept 开关 on/off（默认 off；非法值回落 off；on 可显式开）",
-			String(AIV.DEFAULT_DEPT_MODE) == "off"
-			and String(AIV.dept_mode()) == "off"
-			and bool(AIV.dept_off())
+	# 2C-15 转正：默认 on；非法参数保守回落 off 旧主线；A 组实验必须显式 --dept=off
+	_record("2C9/2C12/2C15：dept 开关 on/off（默认 on；非法值回落 off；on 可显式开）",
+			String(AIV.DEFAULT_DEPT_MODE) == "on"
+			and String(AIV.dept_mode()) == "on"
+			and bool(AIV.dept_on())
 			and String(AIV.set_dept_mode("乱写")) == "off"
 			and String(AIV.set_dept_mode("on")) == "on"
 			and bool(AIV.dept_on()),
-			"默认 %s（回退 2C-8 为主线）" % String(AIV.DEFAULT_DEPT_MODE))
+			"默认 %s（转正）/ 非法值回落 off（旧主线）" % String(AIV.DEFAULT_DEPT_MODE))
 	AIV.reset_defaults()
 	_record("2C9：不变式守门（判定表窗口/系数/分母/修理线/gap 一个字没动）",
 			_near(float(bm.VD_TIME_GOOD), 0.8, 0.0001)
@@ -2331,10 +2331,10 @@ func _case_2c13() -> void:
 			sa13.contains("func can_build_townhall() -> bool:") and _townhall_blocked(sa13),
 			"can_build_townhall 仍 return false")
 	var aiv13: String = FileAccess.get_file_as_string("res://代码/配置/AI判定模式.gd")
-	_record("2C13 §1：默认 dept=off 主线不变；新架构只在 --dept=on 实验分支",
-			aiv13.contains("const DEFAULT_DEPT_MODE: String = DEPT_OFF")
+	_record("2C13 §1/2C15：默认 dept=on（转正）；A 组实验必须显式 --dept=off",
+			aiv13.contains("const DEFAULT_DEPT_MODE: String = DEPT_ON")
 			and aiv13.contains("const DEFAULT_GOAL_MODE: String = GOAL_ON"),
-			"dept 默认 off / goal 默认 on（只在 dept=on 时生效）")
+			"dept 默认 on / goal 默认 on（A 组实验显式 --dept=off）")
 
 
 ## `can_build_townhall()` 是否仍然固定返回 false（2C-9 起的禁止项）。
