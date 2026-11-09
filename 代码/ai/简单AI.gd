@@ -6040,11 +6040,12 @@ func _goal_tick(diff: DifficultyDef, now: float) -> void:
 	_saving_last_unit_cost = unit_cost
 	var reserve: float = float(_model_call("saving_target", [Game.elapsed, unit_cost]))
 	dept_stats["saving_reserve_last"] = reserve
-	# 2C-14 纯观测修复：goal 路径补上「储备充足率」计数器（2C-13 §10.2 遗留）。
-	# 口径与 2C-12 完全一致：金币 >= 本周期 G(t)；分母 cycles 由共用的 _dept_execute 累加。
-	# 只写计数，不进任何决策（reserve 已在上方算好，未被改动）。
+	# 2C-15 纯观测：goal 路径逐周期记「金币 >= 本周期 G(t)」的周期数。
+	# 口径与 2C-12 一致；分母 cycles 由共用的 _dept_execute 累加。
+	# ★ 储备线拒付已在 2026-11-08 删除，G(t) 只剩观测，因此改名为 `gold_ge_g_cycles`，
+	#   不再叫「储备充足率」—— 别把一条已不生效的阈值当成有效指标。只写计数，不进任何决策。
 	if float(_faction.gold) >= reserve:
-		dept_stats["saving_sufficient_cycles"] = int(dept_stats.get("saving_sufficient_cycles", 0)) + 1
+		dept_stats["gold_ge_g_cycles"] = int(dept_stats.get("gold_ge_g_cycles", 0)) + 1
 	dept_stats["saving_unit_cost_last"] = unit_cost
 	var hits: Array = _saving_urgency()
 	var urgent: bool = not hits.is_empty()
@@ -6334,9 +6335,9 @@ func _dept_tick(diff: DifficultyDef, now: float) -> void:
 	_saving_last_unit_cost = unit_cost
 	var reserve: float = float(_model_call("saving_target", [t_sec, unit_cost]))
 	var caps: Dictionary = _model_call("concurrency_caps", [t_sec])
-	# 2C-11 P2：储备充足率 = 金币 >= G(t) 的周期数 / 总周期数（只记录，不进决策）
+	# 2C-15：逐周期记「金币 >= G(t)」的周期数（纯观测；储备线拒付已删，见 _goal_execute）
 	if float(_faction.gold) >= reserve:
-		dept_stats["saving_sufficient_cycles"] = int(dept_stats.get("saving_sufficient_cycles", 0)) + 1
+		dept_stats["gold_ge_g_cycles"] = int(dept_stats.get("gold_ge_g_cycles", 0)) + 1
 	dept_stats["saving_reserve_last"] = reserve
 	dept_stats["saving_unit_cost_last"] = unit_cost
 	dept_stats["saving_urgent_last"] = urgent

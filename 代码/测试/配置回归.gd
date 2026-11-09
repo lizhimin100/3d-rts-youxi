@@ -1725,13 +1725,13 @@ func _case_2c11() -> void:
 			and bench11.contains("\"并发上限驳回率\"")
 			and bench11.contains("\"建造停滞恢复率\"")
 			and bench11.contains("\"同时做事数实际分布\"")
-			and bench11.contains("\"储备充足率\"")
+			and bench11.contains("\"金币≥G(t)周期占比\"")
 			and bench11.contains("储蓄过度，AI 接近停摆"),
-			"驳回率分母=总诉求数；充足率分母=总周期数")
-	_record("2C11：储备充足率由产品侧逐周期计数（只记录，不进决策）",
-			sa11.contains("\"saving_sufficient_cycles\"")
+			"驳回率分母=总诉求数；金币≥G(t)占比分母=总周期数（AI-only）")
+	_record("2C11/2C15：金币≥G(t)周期占比由产品侧逐周期计数（只记录，不进决策）",
+			sa11.contains("\"gold_ge_g_cycles\"")
 			and sa11.contains("if float(_faction.gold) >= reserve:"),
-			"gold >= G(t) 的周期数 / cycles")
+			"AI-only；gold >= G(t) 的周期数 / cycles；无仲裁周期置 N/A")
 
 
 # ===========================================================================
