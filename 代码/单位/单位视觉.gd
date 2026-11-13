@@ -203,6 +203,13 @@ func _make_pose_layer(root: Node3D) -> Node:
 	# 没有"盾"这根骨的单位（农民/法师/弩兵）不挂 —— 挂了也没东西可按
 	if skel.find_bone("shield") < 0:
 		return null
+	# ★ 2026-11-13：资产自带整套举盾动作（guard_raise/guard_idle/guard_walk/guard_attack…）时
+	#   **不再挂姿态层**。姿态层是"只有一条 shield_hold"时代的补丁：它把左臂按住，
+	#   于是举盾时的攻击也只有半套动作。v4 美术把六条 guard_* 都画出来了，
+	#   直接播美术的动作更好看、也不再需要每帧覆写骨骼。
+	if _anim != null and is_instance_valid(_anim) and _anim.has_method("has_state"):
+		if bool(_anim.call("has_state", "guard_idle")):
+			return null
 	var layer: Node = PoseLayer.new()
 	layer.name = "姿态层"
 	skel.add_child(layer)
@@ -242,6 +249,12 @@ func _find_anim_player(n: Node) -> AnimationPlayer:
 ## 就是美术摆好的举盾姿势，姿态层照着它把左臂按住）。
 ## 基础动作照常播：走路迈腿、攻击挥剑，只有左臂被按住。
 func set_hold_pose(clip: StringName, on: bool) -> void:
+	# ① 首选：模型自带举盾动作组（v4 步兵的 guard_*）→ 切动作变体，整段动作都是美术画的
+	if _anim != null and is_instance_valid(_anim) and _anim.has_method("has_state"):
+		if bool(_anim.call("has_state", "guard_idle")):
+			_anim.call("set_variant", "guard", on)
+			return
+	# ② 老资产：只有一条 shield_hold，用姿态层把左臂按住
 	if _pose == null or not is_instance_valid(_pose):
 		return
 	_pose.call("use_clip", clip)

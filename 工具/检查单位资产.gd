@@ -1,17 +1,31 @@
 extends SceneTree
-## QA：打印新方块人步兵模型的实际尺寸 / 材质名 / 骨骼 / 动画。
-## 用法：godot --headless --path . --script 工具/检查单位资产.gd
+## QA：打印单位模型的实际尺寸 / 材质名 / 骨骼 / 动画。
+## 用法：
+##   godot --headless --path . --script 工具/检查单位资产.gd
+##   godot --headless --path . --script 工具/检查单位资产.gd -- --glb=res://美术/模型/精模/破法者.glb
+##   （`--glb=` 可重复；不给就检查默认的联盟步兵）
 
 const PATH := "res://美术/模型/方块人/方块人_联盟步兵.glb"
 
 
 func _init() -> void:
+	var paths: Array[String] = []
+	for a in OS.get_cmdline_user_args():
+		if String(a).begins_with("--glb="):
+			paths.append(String(a).substr(6))
+	if paths.is_empty():
+		paths.append(PATH)
+	for p in paths:
+		_inspect(p)
+	quit()
+
+
+func _inspect(PATH_: String) -> void:
 	print("——————————————————————————————")
-	print("[单位检查] ", PATH, "  exists=", ResourceLoader.exists(PATH))
-	var ps := load(PATH) as PackedScene
+	print("[单位检查] ", PATH_, "  exists=", ResourceLoader.exists(PATH_))
+	var ps := load(PATH_) as PackedScene
 	if ps == null:
 		print("[单位检查] 载入失败")
-		quit()
 		return
 	var root := ps.instantiate() as Node3D
 	var meshes: Array[MeshInstance3D] = []
@@ -25,7 +39,7 @@ func _init() -> void:
 	for mi in meshes:
 		if mi.mesh == null:
 			continue
-		var b: AABB = mi.global_transform * mi.get_aabb()
+		var b: AABB = (mi.global_transform if mi.is_inside_tree() else mi.transform) * mi.get_aabb()
 		if first:
 			aabb = b
 			first = false
@@ -50,13 +64,17 @@ func _init() -> void:
 	print("    网格数 = ", meshes.size(), "  三角面 = ", tris)
 	print("    材质 = ", names)
 	print("    骨骼 = ", skins.size(), "  动画播放器 = ", aps.size())
+	for sk in skins:
+		var bn: Array[String] = []
+		for i in sk.get_bone_count():
+			bn.append(sk.get_bone_name(i))
+		print("    骨名 = ", bn)
 	for ap in aps:
 		print("    动画 = ", ap.get_animation_list())
 	print("    本地包围盒 = ", aabb, "  size = ", aabb.size)
 	print("    根缩放 = ", root.scale)
 	root.free()
 	print("——————————————————————————————")
-	quit()
 
 
 func _collect(n: Node, meshes: Array[MeshInstance3D], skins: Array[Skeleton3D],

@@ -200,7 +200,12 @@ static func _def_of_card(card: EntityCard) -> UnitDef:
 		d.drop_gold = c.drop_gold
 		d.drop_wood = c.drop_wood
 		if c.volume > 0.0:
-			d.model_scale = VOL.model_scale(c.volume)
+			# ★ 2026-11-13：卡上的 `model_scale` 现在是**乘数**（默认 1.0 = 只吃体积派生）。
+			#   为什么改：体积同时管"碰撞半径"和"模型缩放"，而精模资产是按真实尺寸建模的
+			#   （魔金傀儡 4.30 m 高、2.65 m 宽）。它的碰撞半径要 1.3（体积 2.4），
+			#   但模型再乘 2.4 就变成 10 m。需要"原生尺寸"的单位在卡上填 1/体积。
+			#   现有 7 张卡的 model_scale 全是默认 1.0 → 行为一个字节没变。
+			d.model_scale = c.model_scale * VOL.model_scale(c.volume)
 			d.body_radius = VOL.body_radius(c.volume, c.body_radius)
 			d.judge_radius = VOL.judge_radius(c.volume, c.selection_radius)
 			# 拾取半径跟着体积走（旧数据里 selection ≈ body × 1.65，保持同一手感）

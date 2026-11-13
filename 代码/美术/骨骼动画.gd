@@ -26,7 +26,10 @@ const NAME_MAP := {
 ##   现在反过来：**除了下面这几个一次性动作，其余全部按循环播**。
 ##   于是 `gather` / `build` / `carry_*` / 技能持续动作（`shield_hold`）自动就是循环，
 ##   新动作进资产即生效，代码零改动。
-const ONE_SHOT: Array[StringName] = [&"attack", &"shoot", &"cast", &"hurt", &"death", &"reload"]
+const ONE_SHOT: Array[StringName] = [&"attack", &"shoot", &"cast", &"hurt", &"death", &"reload",
+	# 2026-11-13：举盾动作组的开/收两拍。它们只在开关变体时各播一次，
+	# 之后由 `guard_idle / guard_walk / guard_attack …` 接管，不能循环。
+	&"guard_raise", &"guard_lower"]
 
 ## 缺动作时的降级链（第一个存在的就用）
 const FALLBACK := {
@@ -78,6 +81,30 @@ var _last_idle: StringName = &""
 ## 表现层随机流（不要用全局 randf —— 会让"重放同一场"的战斗结果跟着变）
 const Fx := preload("res://代码/美术/表现随机.gd")
 
+# ---------------------------------------------------------------------------
+# 动作变体（2026-11-13）：`guard_*` = 举盾整套动作
+# ---------------------------------------------------------------------------
+#
+# 背景：v4 美术给联盟步兵重做了 12 条动作，其中 6 条是举盾专用
+# （guard_raise / guard_idle / guard_walk / guard_attack / guard_hurt / guard_death）。
+# 在此之前引擎只能用 `姿态层`（SkeletonModifier3D）把左臂按在"举盾末帧"，
+# 因为资产里只有一条 shield_hold。现在资产自带整套，就该直接播自己的动作 ——
+# 姿态层那套是补丁，会把举盾时的攻击也按住左臂。
+#
+# 机制：`set_variant("guard", true)` 之后，所有状态解析先查 `guard_<状态>`，
+# 有就播它、没有才退回基础动作。于是"举着盾走路/挥砍/挨打/阵亡"全是美术画的。
+var _variant: String = ""
+
+## 节拍错开（2026-11-13）：同一批兵不能像合唱团一样同时呼吸/同时抬腿。
+##
+## 做法：模型绑定时按实例 id 的金比例散列取一个 0~1 的相位，
+## **只在循环动作真正开播的那一次** seek 到该相位；之后由 speed_scale 连续推进。
+##   · 单次动作（攻击/受击/死亡/举放盾）**不吃相位** ——
+##     否则同一次齐射每个人起手帧都不同，"一刀"就读不出来了；
+##   · 相位只在 play 那一刻用一次，不逐帧 seek（逐帧 seek 会打断 speed_scale）。
+## 人群层的 `anim_phase`（人群模拟.gd）用的是同一套黄金比散列，两边观感一致。
+var _phase: float = 0.0
+
 
 ## 绑定到模型根节点（ArtKit.attach_anim 调用）
 func bind(root: Node3D) -> void:
@@ -85,6 +112,9 @@ func bind(root: Node3D) -> void:
 	if _ap == null:
 		return
 	_ready_ok = true
+	# 节拍错开：实例 id 是递增分配的，乘黄金比取小数部分后任意两个单位都不会同相。
+	var iid: int = int(root.get_instance_id())
+	_phase = fmod(float(iid) * 0.61803398875, 1.0)
 	_ap.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_IDLE
 	if not _ap.animation_finished.is_connected(_on_finished):
 		_ap.animation_finished.connect(_on_finished)
@@ -208,12 +238,60 @@ func set_state(state: String, speed_ratio: float = 1.0, force: bool = false) -> 
 	if force:
 		# play() 对"正在播同一个动作"会续播而不是重头播 → 显式回到 0
 		_ap.seek(0.0, true)
+	elif is_loop:
+		# 节拍错开：循环动作才吃相位（见 _phase 的注释）
+		_apply_phase(want)
+
+
+## 把循环动作 seek 到本单位的相位（只在开播那一次调用）
+func _apply_phase(clip: StringName) -> void:
+	if _phase <= 0.0005 or _ap == null:
+		return
+	var a := _ap.get_animation(String(clip))
+	if a == null or a.length <= 0.001:
+		return
+	_ap.seek(_phase * a.length, true)
+
+
+## 切换动作变体（目前只有 "guard" = 举盾整套）。空串 = 回到基础动作。
+## 开关时播一次 `guard_raise` / `guard_lower`（资产里有才播），之后按变体解析状态。
+func set_variant(prefix: String, on: bool = true) -> void:
+	var want: String = prefix if on else ""
+	if want == _variant or _ap == null:
+		return
+	var was: String = _variant
+	_variant = want
+	# 开：raise → guard_idle（由 _on_finished 接回 set_state("idle")）
+	if want != "" and _ap.has_animation(want + "_raise"):
+		_play_transition(StringName(want + "_raise"))
+		return
+	# 关：lower → 基础 idle
+	if want == "" and was != "" and _ap.has_animation(was + "_lower"):
+		_play_transition(StringName(was + "_lower"))
+		return
+	# 没有过渡动作：清掉去重缓存，让下一帧的状态机重新解析一遍
+	_current = &""
+
+
+## 播一条"过场动作"（举盾开/收）。它进 ONE_SHOT，播完自动回 idle。
+func _play_transition(n: StringName) -> void:
+	_current = n
+	_one_shot = n
+	_ap.speed_scale = 1.0
+	_ap.play(String(n), BLEND, 1.0)
+	_ap.seek(0.0, true)
 
 
 func _resolve(state: StringName) -> StringName:
 	if _ap == null:
 		return &""
 	var mapped: StringName = NAME_MAP.get(state, state)
+	# 变体优先：举盾时 "move" → guard_walk、"attack" → guard_attack …
+	# 资产里没有对应变体（例如 guard_shoot）就自动退回基础动作，不需要任何名单。
+	if _variant != "" and not String(mapped).begins_with(_variant + "_"):
+		var v := StringName(_variant + "_" + String(mapped))
+		if _playable(v):
+			return v
 	if _playable(mapped):
 		return mapped
 	for alt in FALLBACK.get(mapped, []):

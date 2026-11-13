@@ -155,13 +155,26 @@ func _用例A_资产等待() -> void:
 		失败.append("步兵模型里没有 AnimationPlayer")
 		return
 	明细.append({"case": "A", "clips": ap.get_animation_list()})
-	for want in ["idle", "walk", "attack", "shield_hold"]:
+	# ★ 2026-11-13 资产契约改成 v4：步兵的举盾不再是单条 `shield_hold`，
+	#   而是整套六条 `guard_*`（raise/idle/walk/attack/hurt/death）。
+	#   两种契约都算通过 —— 引擎侧两条路都支持（见 单位视觉.set_hold_pose）。
+	for want in ["idle", "walk", "attack"]:
 		if not ap.has_animation(want):
 			失败.append("步兵资产缺动作：%s" % want)
+	var 举盾: bool = ap.has_animation("guard_idle") or ap.has_animation("shield_hold")
+	if not 举盾:
+		失败.append("步兵资产没有任何举盾动作（guard_idle / shield_hold）")
+	if ap.has_animation("guard_idle"):
+		# 有整套就必须四件齐：只画一半会让"举盾走路"退回基础 walk（手臂放下、盾跟着落）
+		for g in ["guard_raise", "guard_walk", "guard_attack", "guard_lower"]:
+			if not ap.has_animation(g):
+				失败.append("举盾动作组缺一件：%s" % g)
 
 
 func _用例B_待机随机() -> void:
-	var u = _造(&"footman", Vector3(2.0, 0.0, 0.0))
+	# ★ 2026-11-13：待机随机用农民验（它有 idle / idle_scratch / idle_stretch 三条）。
+	#   步兵 v4 只画了一条 idle，用他验"池子 >= 2"会假红；判据本身没变。
+	var u = _造(&"peasant", Vector3(2.0, 0.0, 0.0))
 	if u == null:
 		return
 	var a := _anim_of(u)
@@ -169,9 +182,9 @@ func _用例B_待机随机() -> void:
 		失败.append("拿不到动画节点")
 		return
 	var pool: Array = a.get("_idle_pool")
-	明细.append({"case": "B", "idle_pool": pool})
+	明细.append({"case": "B", "idle_pool": pool, "unit": "peasant"})
 	if pool.size() < 2:
-		失败.append("待机池只有 %d 个（要求 >= 2）" % pool.size())
+		失败.append("农民待机池只有 %d 个（要求 >= 2）" % pool.size())
 
 
 func _用例C_单一动作() -> void:
@@ -203,11 +216,12 @@ func _用例D_真在动() -> void:
 	_静默(u)
 	var sk := _find_skel(u)
 	var a := _anim_of(u)
+	var ap := _find_ap(u)
 	if sk == null or a == null:
 		失败.append("步兵里没有 Skeleton3D 或动画节点")
 		return
 	await _wait(0.2)
-	for state in ["walk", "attack", "shield_hold"]:
+	for state in ["walk", "attack"]:
 		a.call("set_state", state, 1.0, true)
 		await _wait(0.10)
 		var s1 := _bones(sk)
@@ -217,6 +231,37 @@ func _用例D_真在动() -> void:
 		明细.append({"case": "D", "state": state, "delta": snappedf(d, 0.0001)})
 		if d < 0.008:
 			失败.append("%s 播了但骨骼没动（最大位移 %.4fm）" % [state, d])
+
+	# ★ 2026-11-13：举盾改成验"动作变体"这条路，而不是量 guard_idle 的幅度 ——
+	#   guard_idle 是"举着盾换气"，本来就只有几毫米（实测 4.9mm），拿它当"在动"的判据会假红。
+	#   真正要证的是：开了变体之后 move 解析到 guard_walk、而且真的在迈腿。
+	if ap != null and ap.has_animation("guard_idle"):
+		a.call("set_variant", "guard", true)
+		a.call("set_state", "move", 1.0, true)
+		await _wait(0.10)
+		var g1 := _bones(sk)
+		await _wait(0.18)
+		var g2 := _bones(sk)
+		var gd := _max_delta(g1, g2)
+		var cur := String(a.call("current_state"))
+		明细.append({"case": "D", "state": "guard_walk(变体)", "clip": cur,
+			"delta": snappedf(gd, 0.0001)})
+		if cur != "guard_walk":
+			失败.append("举盾时 move 没解析到 guard_walk（得到 %s）" % cur)
+		if gd < 0.008:
+			失败.append("guard_walk 播了但骨骼没动（最大位移 %.4fm）" % gd)
+		a.call("set_variant", "", true)
+	else:
+		# 老资产（只有单条 shield_hold）：仍然量它有没有动
+		a.call("set_state", "shield_hold", 1.0, true)
+		await _wait(0.10)
+		var h1 := _bones(sk)
+		await _wait(0.18)
+		var h2 := _bones(sk)
+		var hd := _max_delta(h1, h2)
+		明细.append({"case": "D", "state": "shield_hold", "delta": snappedf(hd, 0.0001)})
+		if hd < 0.008:
+			失败.append("shield_hold 播了但骨骼没动（最大位移 %.4fm）" % hd)
 
 
 func _用例E_一刀() -> void:
