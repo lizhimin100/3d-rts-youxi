@@ -95,12 +95,17 @@ extends Resource
 ## 暴击率 / 暴击倍率
 @export var crit_chance: float = 0.12
 @export var crit_multiplier: float = 1.65
-## 伤害克制表：扁平 4x4，行=伤害类型(普通/穿刺/魔法/攻城)，列=护甲类型(轻/重/城/无)
+## 伤害克制表：扁平 4 行 × **5** 列，**列序必须与 `RtsConst.ArmorType` 的枚举值一致**：
+##   行 = 伤害类型（普通 / 穿刺 / 魔法 / 攻城）
+##   列 = 护甲类型（0 轻甲 / 1 重甲 / 2 城甲 / 3 无甲 / 4 中甲）
+## ★ 2026-11-13：加了「中甲」列，**列宽 4 → 5，新列追加在最后**（枚举也是追加在最后，
+##   旧值 0~3 一个没动，旧存档/旧卡的 armor_type 语义不变）。
+##   索引一律走 `damage_multiplier()` / `ARMOR_STRIDE`，谁再手写 `*4` 就会读到隔壁列。
 @export var damage_table: Array[float] = [
-	1.00, 0.85, 0.60, 1.00,   # 普通
-	1.35, 0.85, 0.45, 1.20,   # 穿刺
-	1.10, 1.15, 0.55, 1.00,   # 魔法
-	0.60, 0.85, 1.60, 0.70,   # 攻城
+	1.00, 0.85, 0.60, 1.00, 0.92,   # 普通
+	1.35, 0.85, 0.45, 1.20, 1.05,   # 穿刺
+	1.10, 1.15, 0.55, 1.00, 1.12,   # 魔法
+	0.60, 0.85, 1.60, 0.70, 0.72,   # 攻城
 ]
 ## 死亡后尸体停留时间（秒）
 @export var corpse_linger: float = 2.2
@@ -368,8 +373,11 @@ func harvest_carry_of(kind: int) -> int:
 
 
 ## 伤害克制倍率
+## 列宽（每行的护甲类型数）。加护甲类型只改这里 + 上面的表 + RtsConst.ArmorType。
+const ARMOR_STRIDE: int = 5
+
 func damage_multiplier(attack_type: int, armor_type: int) -> float:
-	var idx: int = clampi(attack_type, 0, 3) * 4 + clampi(armor_type, 0, 3)
+	var idx: int = clampi(attack_type, 0, 3) * ARMOR_STRIDE + clampi(armor_type, 0, ARMOR_STRIDE - 1)
 	if idx < 0 or idx >= damage_table.size():
 		return 1.0
 	return damage_table[idx]

@@ -1,0 +1,35 @@
+[gd_resource type="Resource" script_class="UnitCard" format=3]
+
+[ext_resource type="Script" path="res://代码/配置/单位卡.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+roles = Array[StringName]([&"输出"])
+counters = Array[StringName]([&"重甲"])
+range = 380.0
+attack = 19
+attack_type = &"魔法"
+defense = 2
+defense_type = &"轻甲"
+volume = 1.0
+drop_gold = 20
+drop_wood = 5
+max_hp = 380.0
+attack_spread = 1.0
+attack_cooldown = 1.4
+projectile = 2
+projectile_speed = 16.0
+acquire_range = 9
+sight_range = 11.0
+move_speed = 4.2
+turn_speed = 9.0
+train_time = 12.0
+height = 2.0
+model_path = "res://美术/模型/野怪/豺狼人萨满.glb"
+anim_set = 3
+def_role = &"caster"
+def_tags = Array[StringName]([&"light"])
+card_id = "gnoll_shaman"
+display_name = "豺狼人萨满"
+description = "失落野怪：豺狼人营地里的施法者。杖顶电球在中程连续放电，攻速快、血薄，先切它。"
+race = &"中立"

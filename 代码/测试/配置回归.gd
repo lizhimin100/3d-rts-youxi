@@ -161,7 +161,9 @@ func _case_cost(delta: float, label: String) -> void:
 func _case_counter() -> void:
 	var d0: UnitDef = _cfg.unit(&"footman")
 	var table: Array = _cfg.game.damage_table
-	var idx: int = 0 * 4 + 1          # 普通(0) × 重甲(1)
+	# 列宽走 Cfg.game.ARMOR_STRIDE（2026-11-13 加中甲后从 4 变 5）；
+	# 列序 = ArmorType 枚举：0 轻 / 1 重 / 2 城 / 3 无 / 4 中
+	var idx: int = 0 * Cfg.game.ARMOR_STRIDE + 1
 	if d0 == null or idx >= table.size():
 		_record("克制表改一项", false, "索引越界或找不到 footman")
 		return
@@ -328,7 +330,7 @@ func _case_resilience() -> void:
 
 	# --- 克制表 普通×重甲 0.85 → 1.10 ---
 	var table: Array = _cfg.game.damage_table
-	var idx: int = 0 * 4 + 1
+	var idx: int = 0 * Cfg.game.ARMOR_STRIDE + 1     # 普通 × 重甲（列序 = ArmorType 枚举）
 	var old: float = float(table[idx])
 	var before: float = float(_model.call("counter_multiplier", 0, 1))
 	table[idx] = 1.10
@@ -548,7 +550,7 @@ func _case_2c4() -> void:
 	var bad: PackedStringArray = LW.validate_words(&"魔法兵种", [&"坦克"], [], &"普通", &"轻甲")
 	_record("2C4卡：词表校验拦下非法词", bad.size() >= 2, "%s" % str(bad))
 	var all_units: Dictionary = UT.build_units()
-	_record("2C4卡：build_units = 21 卡 + 6 可采集物 = 27（删蒸汽重步兵、加火枪手/联盟要塞）",
+	_record("2C4卡：build_units ≥ 25（2026-11-13 起 24 卡 + 6 可采集物 = 30）",
 			all_units.size() >= 25 and all_units.has(&"footman") and all_units.has(&"goldmine")
 			and all_units.has(&"dwarf_musketeer") and all_units.has(&"townhall_2"),
 			"size=%d" % all_units.size())

@@ -44,8 +44,7 @@ const ATTACK_TYPES: Array[StringName] = [&"普通", &"穿刺", &"魔法", &"攻�
 
 ## 词表·防御类型（**参与结算**，改词要同步伤害公式）。
 ## 2026-11-03 加词「堡垒」「无」：引擎 ArmorType.FORTIFIED(2)/NONE(3)（全部建筑在用）。
-## 「中甲」按任务书保留在词表里，但**引擎暂无对应 RtsConst.ArmorType**（LIGHT/HEAVY/FORTIFIED/NONE），
-## 映射表里没有它 —— 当前卡不使用；引擎加了 MEDIUM 之后再接映射，不加词前填中甲会在校验报错。
+## 2026-11-13 接上「中甲」：引擎 ArmorType.MEDIUM(4)，克制表列宽 5（破法者）。
 const DEFENSE_TYPES: Array[StringName] = [&"轻甲", &"中甲", &"重甲", &"堡垒", &"无"]
 
 ## 农民特例：worker 不是战斗职能（任务书 §4.5），卡上的 roles 不填它；
@@ -63,12 +62,13 @@ const ATTACK_TYPE_MAP: Dictionary = {
 	&"攻城": 3,    # DamageType.SIEGE
 }
 
-## 防御类型词 → RtsConst.ArmorType（中甲暂无映射，见 DEFENSE_TYPES 注释）
+## 防御类型词 → RtsConst.ArmorType
 const DEFENSE_TYPE_MAP: Dictionary = {
 	&"轻甲": 0,    # ArmorType.LIGHT
 	&"重甲": 1,    # ArmorType.HEAVY
 	&"堡垒": 2,    # ArmorType.FORTIFIED
 	&"无": 3,      # ArmorType.NONE
+	&"中甲": 4,    # ArmorType.MEDIUM（2026-11-13）
 }
 
 

@@ -976,6 +976,13 @@ static func _icon_for_unit(id: StringName) -> String:
 			return "staff"
 		&"steam_guard":
 			return "anvil"
+		# 2026-11-13 新增单位（有 PNG 头像时走 `单位/<id>.png`，这里是线描兜底）
+		&"spell_breaker":
+			return "sword"
+		&"golem":
+			return "anvil"
+		&"gnoll_shaman":
+			return "staff"
 	return ""
 
 

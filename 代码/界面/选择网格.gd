@@ -646,8 +646,12 @@ func _icon_for(d: UnitDef) -> String:
 			return "sword"
 		"archer":
 			return "bow"
-		"mage":
+		"mage", "gnoll_shaman":
 			return "staff"
+		"spell_breaker":
+			return "sword"
+		"golem":
+			return "anvil"
 		"steam_guard":
 			return "anvil"
 		"townhall":

@@ -20,6 +20,14 @@ var color: Color = Color.WHITE
 # ---------------------------------------------------------------------------
 # 队伍（多队图的核心字段）
 # ---------------------------------------------------------------------------
+## 运行时取配置单例（**不要写裸 `Cfg`**，理由见 战斗.gd:cfg_node）
+static func cfg_node() -> Node:
+	var loop: MainLoop = Engine.get_main_loop()
+	if loop is SceneTree:
+		return (loop as SceneTree).root.get_node_or_null("Cfg")
+	return null
+
+
 ## 队伍编号（1 起）。**同号 = 盟友**：不许互相攻击、可以共用一个队色。
 var team: int = 1
 ## 出生点槽位号（和 index 同值，语义上更明确）
@@ -117,8 +125,10 @@ func food_reserved() -> int:
 		var q: Variant = b.get("train_queue")
 		if q == null or not (q is Array):
 			continue
+		# ★ 同 战斗.gd：不写裸 `Cfg`（`--script` 自检模式下会在 autoload 之前编译整个依赖链）
+		var cn: Node = cfg_node()
 		for id in (q as Array):
-			var d: UnitDef = Cfg.unit(id)
+			var d: UnitDef = cn.call("unit", id) if cn != null else null
 			if d != null:
 				total += d.food_cost
 	return total

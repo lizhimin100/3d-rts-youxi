@@ -380,8 +380,14 @@ func _用例F_举盾动作() -> void:
 	if anim == null:
 		_ok(false, "找不到动画器")
 		return
-	var 有动作: bool = bool(anim.call("has_state", "shield_hold"))
-	_ok(有动作, "模型里有 shield_hold 动作（Blender 已加进 glb）")
+	# ★ 2026-11-13：资产契约升级到 v4 —— 步兵的举盾从"单条 shield_hold + 姿态层按住左臂"
+	#   变成"整套 guard_* 动作 + 动作变体"。两条路都算通过，验的东西各自对得上：
+	#     · 老资产：有 shield_hold，姿态层权重到 1；
+	#     · 新资产：有 guard_idle，变体切到 guard、当前 clip 是 guard_*。
+	var 新资产: bool = bool(anim.call("has_state", "guard_idle"))
+	var 有动作: bool = 新资产 or bool(anim.call("has_state", "shield_hold"))
+	_ok(有动作, "模型里有举盾动作（v4: guard_idle / 老: shield_hold）",
+		"guard_idle=%s shield_hold=%s" % [新资产, bool(anim.call("has_state", "shield_hold"))])
 	if not 有动作:
 		u.queue_free()
 		return
@@ -398,23 +404,38 @@ func _用例F_举盾动作() -> void:
 	#     ② 姿态层权重到 1（= 盾真的举起来了）；
 	#     ③ 姿态层按住的是左臂 5 根骨。
 	var 当前: String = String(anim.call("current_state"))
-	_ok(当前.begins_with("idle"), "举盾时基础动作照常播 idle（不再循环播举盾动作）", "实际 %s" % 当前)
-	var dbg: Dictionary = {}
-	if v.has_method("hold_pose_debug"):
-		dbg = v.call("hold_pose_debug") as Dictionary
-	_ok(float(dbg.get("weight", 0.0)) >= 0.99, "举盾姿态层权重到 1（盾举在身前）",
-		"weight=%s" % str(dbg.get("weight", "无姿态层")))
-	_ok((dbg.get("bones", []) as Array).has("shield"), "姿态层按住了 shield 骨",
-		str(dbg.get("bones", [])))
+	if 新资产:
+		# 变体路：开局应该先播 guard_raise（0.47s），随后由状态机接 guard_idle/guard_walk。
+		# 这里只断言"变体开了 + 正在播 guard_*"，具体哪一条由单位状态决定。
+		var 变体: String = String(anim.get("_variant"))
+		_ok(变体 == "guard", "举盾时动作变体切到 guard", "变体=%s" % 变体)
+		_ok(当前.begins_with("guard"), "举盾时播的是美术画的 guard_* 动作", "实际 %s" % 当前)
+	else:
+		_ok(当前.begins_with("idle"), "举盾时基础动作照常播 idle（不再循环播举盾动作）", "实际 %s" % 当前)
+		var dbg: Dictionary = {}
+		if v.has_method("hold_pose_debug"):
+			dbg = v.call("hold_pose_debug") as Dictionary
+		_ok(float(dbg.get("weight", 0.0)) >= 0.99, "举盾姿态层权重到 1（盾举在身前）",
+			"weight=%s" % str(dbg.get("weight", "无姿态层")))
+		_ok((dbg.get("bones", []) as Array).has("shield"), "姿态层按住了 shield 骨",
+			str(dbg.get("bones", [])))
 	u.call("skill_toggle", &"shield_up")
 	_走(0.5)
 	# 淡出要 0.18s；无头帧 delta 不稳定，多等几帧再判（60 帧 = 1 秒）
 	for _i in 60:
 		await process_frame
-	var dbg2: Dictionary = {}
-	if v.has_method("hold_pose_debug"):
-		dbg2 = v.call("hold_pose_debug") as Dictionary
-	_ok(float(dbg2.get("weight", 0.0)) <= 0.01, "放下后姿态层权重归零（不再举盾）",
-		"weight=%s" % str(dbg2.get("weight", 0.0)))
+	if 新资产:
+		var 变体2: String = String(anim.get("_variant"))
+		_ok(变体2 == "", "放下后动作变体清空（回到基础动作）", "变体=%s" % 变体2)
+		# 不判"当前 clip"：放下要播 0.47s 的 guard_lower，而无头下 process_frame 的
+		# 真实 delta 很小，等不到它播完就会假红。判"解析结果"才是机制本身。
+		var 解析 := String(anim.call("_resolve", &"idle"))
+		_ok(not 解析.begins_with("guard"), "放下后 idle 解析回基础动作", "解析=%s" % 解析)
+	else:
+		var dbg2: Dictionary = {}
+		if v.has_method("hold_pose_debug"):
+			dbg2 = v.call("hold_pose_debug") as Dictionary
+		_ok(float(dbg2.get("weight", 0.0)) <= 0.01, "放下后姿态层权重归零（不再举盾）",
+			"weight=%s" % str(dbg2.get("weight", 0.0)))
 	if u != null and is_instance_valid(u):
 		u.queue_free()

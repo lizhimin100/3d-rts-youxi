@@ -49,6 +49,8 @@ static func dmg_how(t: int) -> String:
 
 static func armor_name(t: int) -> String:
 	match t:
+		RtsConst.ArmorType.MEDIUM:
+			return "中甲"
 		RtsConst.ArmorType.HEAVY:
 			return "重甲"
 		RtsConst.ArmorType.FORTIFIED:
@@ -407,6 +409,8 @@ static func stat(d: UnitDef, key: String, u: Node3D = null) -> Dictionary:
 
 static func _armor_counter_hint(armor_type: int) -> String:
 	match armor_type:
+		RtsConst.ArmorType.MEDIUM:
+			return "穿刺略加成、魔法小加成，没有明显短板"
 		RtsConst.ArmorType.HEAVY:
 			return "穿刺打它减伤、魔法打它加成"
 		RtsConst.ArmorType.FORTIFIED:
@@ -532,6 +536,10 @@ static func _icon_hint(d: UnitDef) -> String:
 			return "sword"
 		"archer", "crossbow", "rifleman":
 			return "bow"
-		"mage", "priest":
+		"mage", "priest", "gnoll_shaman":
 			return "staff"
+		"spell_breaker":
+			return "sword"
+		"golem":
+			return "anvil"
 	return "shield"

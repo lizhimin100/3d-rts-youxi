@@ -19,9 +19,26 @@ const BUILD_LIFT: float = 0.03
 # 基础取用
 # ===========================================================================
 
+## 运行时取游戏单例。**不写裸 `Game`**：`--script` 自检模式下脚本在 autoload 之前编译，
+## 裸单例会让整份文件（以及所有 preload 它的模块）编译失败 → 一堆假红。见 战斗.gd:cfg_node。
+static func game_node() -> Node:
+	var loop: MainLoop = Engine.get_main_loop()
+	if loop is SceneTree:
+		return (loop as SceneTree).root.get_node_or_null("Game")
+	return null
+
+
+static func cfg_node() -> Node:
+	var loop: MainLoop = Engine.get_main_loop()
+	if loop is SceneTree:
+		return (loop as SceneTree).root.get_node_or_null("Cfg")
+	return null
+
+
 ## 取关卡节点（不在/无效返回 null）
 static func level() -> Node3D:
-	var n: Node3D = Game.level
+	var gn: Node = game_node()
+	var n: Node3D = gn.get("level") if gn != null else null
 	if n != null and is_instance_valid(n):
 		return n
 	return null
@@ -199,7 +216,8 @@ static func base_center(faction: RtsFaction) -> Vector3:
 			if b != null and is_instance_valid(b):
 				return b.global_position
 	# 多队图没有"玩家/敌人各一个固定坐标"这回事：退回玩家基地坐标即可（只影响首帧）。
-	var p2: Vector2 = Cfg.game.player_base_pos
+	var cn: Node = cfg_node()
+	var p2: Vector2 = cn.get("game").player_base_pos if cn != null else Vector2.ZERO
 	return Vector3(p2.x, height_at(p2.x, p2.y), p2.y)
 
 
@@ -291,7 +309,10 @@ static func release_prop(n: Node) -> void:
 
 ## 最近的可采集物（走 Game 的资源注册表，不遍历场景）
 static func nearest_harvestable(from: Vector3, kind: int, origin: Vector3, max_dist: float) -> Node3D:
-	return Game.find_nearest_harvestable(from, kind, origin, max_dist)
+	var gn: Node = game_node()
+	if gn == null:
+		return null
+	return gn.call("find_nearest_harvestable", from, kind, origin, max_dist)
 
 
 # ===========================================================================

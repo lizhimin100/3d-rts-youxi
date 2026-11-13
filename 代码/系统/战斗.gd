@@ -66,14 +66,47 @@ class DamageInfo extends RefCounted:
 # ===========================================================================
 
 ## 护甲减免比例 = min(armor * 系数, 上限)
+## 运行时取配置单例。
+##
+## ★ 2026-11-13：这里**不许直接写 `Cfg`**。
+##   `--script` 模式（配置回归 / 战斗自检）下，脚本在 autoload 注册**之前**就被编译，
+##   裸 `Cfg` 会让本文件整份编译失败（Identifier not found: Cfg），
+##   而本文件是 `战斗模型 → 单位表 → 配置入口(Cfg)` 这条链的叶子 ——
+##   一挂全挂：dps / 战力 / 护甲减免全变 0，11 条断言假红（踩过一次，别再踩）。
+##   走 SceneTree 根节点按名字取就没有编译期依赖（战斗模型.gd 的 _cfg() 同款做法）。
+static func cfg_node() -> Node:
+	var loop: MainLoop = Engine.get_main_loop()
+	if loop is SceneTree:
+		return (loop as SceneTree).root.get_node_or_null("Cfg")
+	return null
+
+
+## 运行时取游戏状态单例（同样不写裸 `Game`，理由同 cfg_node）
+static func game_node() -> Node:
+	var loop: MainLoop = Engine.get_main_loop()
+	if loop is SceneTree:
+		return (loop as SceneTree).root.get_node_or_null("Game")
+	return null
+
+
+static func cfg_game() -> GameConfig:
+	var n: Node = cfg_node()
+	if n == null:
+		return null
+	return n.get("game") as GameConfig
+
+
 static func armor_mitigation(armor: float) -> float:
-	var cfg: GameConfig = Cfg.game
+	var cfg: GameConfig = cfg_game()
+	if cfg == null:
+		return 0.0
 	return minf(maxf(armor, 0.0) * cfg.armor_reduction, cfg.armor_reduction_cap)
 
 
 ## 克制倍率（直接问 Cfg，保证和数值表同源）
 static func counter_multiplier(attack_type: int, target_armor_type: int) -> float:
-	return Cfg.game.damage_multiplier(attack_type, target_armor_type)
+	var g: GameConfig = cfg_game()
+	return g.damage_multiplier(attack_type, target_armor_type) if g != null else 1.0
 
 
 ## 纯函数算一次伤害。
@@ -85,7 +118,9 @@ static func compute(base: float, spread: float, attack_type: int,
 		roll_spread: float = -1.0, roll_crit: float = -1.0) -> DamageInfo:
 	var info := DamageInfo.new()
 	info.attack_type = attack_type
-	var cfg: GameConfig = Cfg.game
+	var cfg: GameConfig = cfg_game()
+	if cfg == null:
+		return info
 
 	# (基础伤害 ± spread 随机)：spread * [-1, 1]
 	var r_spread: float = roll_spread
@@ -263,7 +298,8 @@ static func research_level(faction: RtsFaction, id: StringName) -> int:
 
 ## 某条研究是否已经满级（上限来自 Cfg 的研究定义）
 static func research_maxed(faction: RtsFaction, id: StringName) -> bool:
-	var rd: ResearchDef = Cfg.research(id)
+	var cn: Node = cfg_node()
+	var rd: ResearchDef = cn.call("research", id) if cn != null else null
 	if rd == null:
 		return true
 	return research_level(faction, id) >= maxi(rd.max_level, 1)
@@ -441,7 +477,10 @@ static func deal_damage(source: Node3D, target: Node3D, base: float, attack_type
 ## 群体伤害（火球 AOE）：对半径内**所有敌方**单位/建筑结算
 static func deal_aoe(source: Node3D, center: Vector3, radius: float, base: float,
 		attack_type: int, faction: RtsFaction) -> int:
-	var foes: Array = Game.enemies_of(faction)
+	var gn: Node = game_node()
+	if gn == null:
+		return 0
+	var foes: Array = gn.call("enemies_of", faction)
 	if foes.is_empty():
 		return 0
 	var hit_count: int = 0
@@ -505,12 +544,15 @@ static func _apply(attacker: Node3D, target: Node3D, info: DamageInfo,
 			amount *= 1.6
 		ArtKit.vfx_blood(hit_pos, dir, amount)
 
-	Game.combat_hit.emit(attacker, target, info.damage, info.is_crit)
+	var gn: Node = game_node()
+	if gn != null:
+		gn.emit_signal("combat_hit", attacker, target, info.damage, info.is_crit)
 
 	# 只有玩家镜头附近的战斗才震屏（远处打架别晃玩家脑袋）
 	if is_near_camera(hit_pos):
-		var strength: float = Cfg.game.shake_on_hit * (1.8 if info.is_crit else 1.0)
-		Game.shake(strength)
+		var g: GameConfig = cfg_game()
+		var strength: float = (g.shake_on_hit if g != null else 0.045) * (1.8 if info.is_crit else 1.0)
+		gn.call("shake", strength)
 
 
 ## 命中点是否在玩家镜头感知范围内（公开：投射物/技能复用同一套判定）

@@ -34,7 +34,7 @@ const NEUTRAL_COLOR := Color(0.64, 0.40, 0.36)
 ## 和敌对中立的区别必须一眼能看出来：一个是「别惹我」，一个是「我要打你」。
 const PASSIVE_COLOR := Color(0.66, 0.67, 0.70)
 ## 哪些 id 属于"野怪"（收编时以此为准；和编辑器的 CREEP_IDS 保持一致）
-const CREEP_IDS: Array[String] = ["gnoll_warrior", "gnoll_scout"]
+const CREEP_IDS: Array[String] = ["gnoll_warrior", "gnoll_scout", "gnoll_shaman"]
 
 ## 可配置营地系统（`代码/系统/野怪营地.gd`）。
 ## 为什么预加载而不是 class_name：同 RtsCreeps 的理由 —— 别碰全局类缓存（AGENTS.md §二）。

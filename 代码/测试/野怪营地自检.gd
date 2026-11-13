@@ -15,7 +15,7 @@ extends Node
 const CAMP_TABLE := preload("res://代码/配置/野怪营地表.gd")
 const CAMP_SCRIPT := preload("res://代码/系统/野怪营地.gd")
 ## 野怪 id（和中立阵营的 CREEP_IDS 同口径；这里再写一份是为了"自检不依赖被测代码的常量"）
-const CREEP_IDS: Array[String] = ["gnoll_warrior", "gnoll_scout"]
+const CREEP_IDS: Array[String] = ["gnoll_warrior", "gnoll_scout", "gnoll_shaman"]
 
 var _report: Dictionary = {}
 var _checks: Array = []

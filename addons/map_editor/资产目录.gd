@@ -124,7 +124,7 @@ static func all_assets() -> Array:
 ## 2026-11-01：野怪置顶是玩家明确要的（"编辑器里能正确看到野怪即可"）。
 ## 地牢（dungeon）已删除，玩家说他以后自己放 —— 见 单位表.gd 里那段说明。
 const PIN_FIRST: Array[String] = [
-	"gnoll_warrior", "gnoll_scout",              # 野怪（最容易"以为列表里没有"的两条）
+	"gnoll_warrior", "gnoll_scout", "gnoll_shaman",   # 野怪（最容易"以为列表里没有"的三条）
 	"campfire",                                  # 夜间照明
 ]
 
@@ -233,7 +233,7 @@ static func doodad_group(id: String) -> String:
 
 
 ## 野怪 id（编辑器列表里要给它们打「野怪」标，否则玩家以为列表里没有野怪）
-const CREEP_IDS: Array[String] = ["gnoll_warrior", "gnoll_scout"]
+const CREEP_IDS: Array[String] = ["gnoll_warrior", "gnoll_scout", "gnoll_shaman"]
 ## 需要在列表里额外解释一句的 id（玩家最容易搞混的那几个）
 const ID_TAGS: Dictionary = {
 	"campfire": "夜间照明",
@@ -296,7 +296,7 @@ static func of_category(cat: int) -> Array:
 ##
 ## ⚠ 地牢（dungeon）已按玩家要求删除；以后自己做的巢穴若也要中立，把 id 加进来。
 const NEUTRAL_OK: Array[String] = [
-	"gnoll_warrior", "gnoll_scout",
+	"gnoll_warrior", "gnoll_scout", "gnoll_shaman",
 	# ★ 营地锚点建筑**必须**是中立：`野怪营地.gd` 只扫中立阵营的 buildings。
 	#   以前不在这份名单里 → 选「摆放归属=中立」摆下去会被回落成玩家 0，
 	#   进图后一只怪都不刷（玩家口径「找不到野怪营地 / 摆了没用」）。

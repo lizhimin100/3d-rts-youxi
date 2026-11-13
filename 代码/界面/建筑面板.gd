@@ -1152,7 +1152,11 @@ func _unit_icon(id: StringName) -> String:
 			return "staff"
 		"peasant", "worker":
 			return "hammer"
-		"steam_guard":
+		"steam_guard", "golem":
 			return "anvil"
+		"spell_breaker":
+			return "sword"
+		"gnoll_shaman":
+			return "staff"
 		_:
 			return "shield"
