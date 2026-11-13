@@ -283,6 +283,41 @@ static func mana(u: Node3D) -> Dictionary:
 # ===========================================================================
 
 ## `key` 见下面各级分支；返回的字典直接喂 RtsTipLayer
+## **战区指令**（进攻/防守/占据/生产）的悬停说明。
+## 和 `stat()` 分开：那个首参是 UnitDef，硬塞 kind 会读岔。
+static func war(kind: int) -> Dictionary:
+	match kind:
+		1:
+			return {
+				"icon": "sword", "icon_color": Color(0.94, 0.56, 0.42),
+				"title": "进攻（F5）", "tag": "战区指令",
+				"body": "点一个**敌人或敌方建筑** → 部队围着它打；\n点**一片空地** → 部队向那片区域推进。\n右键 / ESC 取消。",
+				"foot": "只对与你同队的 AI 生效；指令 90 秒后自动过期",
+			}
+		2:
+			return {
+				"icon": "shield", "icon_color": Color(0.66, 0.80, 0.94),
+				"title": "防守（F6）", "tag": "战区指令",
+				"body": "点**自家建筑或路口** → 部队过去站住、遇敌还手；\n点**一片空地** → 守住那片区域。\n右键 / ESC 取消。",
+				"foot": "防守的兵到点转待命，不会一路追出去",
+			}
+		3:
+			return {
+				"icon": "flag", "icon_color": Color(0.90, 0.80, 0.50),
+				"title": "占据（F7）", "tag": "战区指令",
+				"body": "点**地图中央据点** → 部队去打据点、抢占据；\n点**一片区域** → 推进并占住。\n右键 / ESC 取消。",
+				"foot": "据点圈内单一阵营连续 15 秒才结算",
+			}
+		4:
+			return {
+				"icon": "anvil", "icon_color": Color(0.86, 0.72, 0.46),
+				"title": "生产（F8）", "tag": "战区指令",
+				"body": "点**一片空地** → 之后训练出来的兵直接去那里集合。\n右键 / ESC 取消。",
+				"foot": "覆盖副官自动规划的集结点",
+			}
+	return {}
+
+
 static func stat(d: UnitDef, key: String, u: Node3D = null) -> Dictionary:
 	if d == null:
 		return {}

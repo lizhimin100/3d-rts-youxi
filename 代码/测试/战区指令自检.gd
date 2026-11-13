@@ -47,6 +47,32 @@ func _run() -> void:
 	WAR.clear(WAR.ATTACK)
 	_ok("clear 生效", WAR.get_order(WAR.ATTACK).is_empty())
 
+	# --- A2. UI 按钮条（2026-11-13）：小地图旁四颗按钮，点一下进入模式、再点一下取消 ---
+	var hud: Node = get_parent().get_node_or_null("界面")
+	var wi: Node = get_parent().get_node_or_null("战区指令输入")
+	_ok("HUD 与战区输入就位", hud != null and wi != null)
+	if hud != null and wi != null:
+		var btns: Array = hud.get("_war_btns")
+		_ok("按钮条有 4 颗（进攻/防守/占据/生产）", btns != null and btns.size() == 4,
+			"实 %d" % (btns.size() if btns != null else -1))
+		hud.call("_on_war_btn", WAR.DEFEND)
+		_ok("点按钮 → 进入防守待发", int(wi.call("pending_kind")) == WAR.DEFEND,
+			"pending=%d" % int(wi.call("pending_kind")))
+		# 按钮按下态要跟着模型走（HUD 每 0.12s 同步一次，这里手动催一次）
+		hud.call("_sync_war_bar", true)
+		var pressed: int = 0
+		for e in btns:
+			if (e["btn"] as Button).button_pressed:
+				pressed = int(e["kind"])
+		_ok("按下态 = 防守", pressed == WAR.DEFEND, "按下的是 %d" % pressed)
+		hud.call("_on_war_btn", WAR.DEFEND)
+		_ok("再点同一颗 → 取消", int(wi.call("pending_kind")) == 0,
+			"pending=%d" % int(wi.call("pending_kind")))
+		# 按钮必须吃鼠标（不能是 IGNORE，否则点上去等于点地面）
+		var b0: Button = btns[0]["btn"]
+		_ok("按钮可点（mouse_filter != IGNORE）",
+			b0.mouse_filter != Control.MOUSE_FILTER_IGNORE)
+
 	# --- B. 进攻：目标选在玩家基地朝敌方 35m 处 ---
 	# 开局 1.2s 时玩家通常只有 1 个战斗兵（`_apply_war_orders` 要求 ≥2），
 	# 先等 AI 把兵营的第一批兵造出来，否则测的是"没兵可派"而不是"派得出去"。

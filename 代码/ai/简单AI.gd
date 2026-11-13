@@ -2949,7 +2949,14 @@ func _apply_war_one(kind: int, army: Array) -> void:
 	# 不在这里限流：`CommandScheduler` 自己有两层去重（`_already_doing` 判"已经在做同一件事"、
 	# `_throttled` 按 label 节流）。上面再叠一层 `REISSUE`，一旦第一次派兵失败
 	# （兵刚好都不在范围内），后面 8 秒玩家点什么都没反应——2026-11-13 自检踩过。
-	var center: Vector3 = o["center"]
+	# ★ 2026-11-13：玩家"点目标"下的指令带 `target_uid`，要跟着**目标当前位置**打，
+	#   而不是下单那一刻的落点（目标会走）。目标死了/被拆了 → 指令自动作废。
+	var tgt: Node3D = WAR.target_of(kind)
+	if int(o.get("target_uid", 0)) != 0 and tgt == null:
+		WAR.clear(kind)
+		war_skip = "%s: 目标已消失" % String(WAR.NAMES[kind])
+		return
+	var center: Vector3 = tgt.global_position if tgt != null else Vector3(o["center"])
 	var radius: float = float(o["radius"])
 	var inside: int = 0
 	for u in army:

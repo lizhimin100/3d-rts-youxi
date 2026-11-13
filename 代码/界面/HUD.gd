@@ -340,6 +340,7 @@ func _process_inner(delta: float) -> void:
 		return
 	_clock = 0.0
 	_refresh_stats()
+	_sync_war_bar()
 	_refresh_selection()
 	_refresh_pending()
 	_refresh_card(false)
@@ -541,16 +542,31 @@ func _apply_layout() -> void:
 		# 正方形：圆盘 = 控件内切圆，图例浮在圆内底部（不再额外占高度）
 		_place(_minimap, 0.0, 0.0, 0.0, 0.0,
 				m, m, m + _mets.minimap, m + _mets.minimap)
+	# --- 战区指令条：小地图正下方的 2×2 网格 ---
+	var war_top: float = m + _mets.minimap + 8.0
+	var war_h: float = WAR_BTN_H * 2.0 + WAR_GAP
+	if _war_bar != null:
+		_place(_war_bar, 0.0, 0.0, 0.0, 0.0,
+				m, war_top, m + _mets.minimap, war_top + war_h)
+		var bw: float = (_mets.minimap - WAR_GAP) * 0.5
+		for i in _war_btns.size():
+			var b: Button = _war_btns[i]["btn"]
+			if b == null or not is_instance_valid(b):
+				continue
+			var col: int = i % 2
+			var row: int = i / 2
+			b.position = Vector2(float(col) * (bw + WAR_GAP), float(row) * (WAR_BTN_H + WAR_GAP))
+			b.size = Vector2(bw, WAR_BTN_H)
 	if _adj_btn != null:
 		_sync_adjutant()
 		if _adj_btn.visible:
 			_place(_adj_btn, 0.0, 0.0, 0.0, 0.0,
-					m, m + _mets.minimap + 6.0,
-					m + _mets.minimap, m + _mets.minimap + 40.0)
+					m, war_top + war_h + 8.0,
+					m + _mets.minimap, war_top + war_h + 42.0)
 	if _menu_btn != null:
 		_place(_menu_btn, 0.0, 0.0, 0.0, 0.0,
-				m, m + _mets.minimap + 48.0,
-				m + _mets.minimap, m + _mets.minimap + 82.0)
+				m, war_top + war_h + 50.0,
+				m + _mets.minimap, war_top + war_h + 84.0)
 
 	# --- 底栏：一条带子，三块内容 ---
 	var bh: float = _band_h()
@@ -999,12 +1015,113 @@ func _crate_banner_height() -> float:
 	return maxf(CRATE_BANNER_H, _crate_banner.get_combined_minimum_size().y)
 
 
+## 战区指令条（2026-11-13 玩家口径：按钮放在小地图旁，红警3 那种按下态）
+##
+## 为什么不做进底栏：底栏"没选中任何东西"时整条会收起（`_hide_band_parts`），
+## 而战区指令是**随时可下**的战役级操作，不能跟着选择状态一起消失。
+## 位置：小地图正下方的左列（2×2 网格），副官/菜单顺次下移。
+const WAR := preload("res://代码/ai/战区指令.gd")
+const Lex := preload("res://代码/界面/词条.gd")
+## 按钮高度 / 列间距（像素，设计坐标）
+const WAR_BTN_H := 30.0
+const WAR_GAP := 4.0
+var _war_bar: Control = null
+var _war_btns: Array = []          # [{kind, btn, frame}]
+var _war_sync_t: float = 0.0
+
+
 ## 左下小地图
 func _build_minimap() -> void:
 	_minimap = RtsMinimap.new()
 	_minimap.name = "小地图"
 	root.add_child(_minimap)
+	_build_war_bar()
 	_build_adjutant_toggle()
+
+
+## 战区指令按钮条：进攻 / 防守 / 占据 / 生产
+##
+## 图标走 `美术/图标/*.svg`（线描单色，靠 modulate 上色），和命令卡同一套观感。
+## 按下态 = 该指令正在"等落点"，再点一次或右键/ESC 取消。
+func _build_war_bar() -> void:
+	_war_bar = Control.new()
+	_war_bar.name = "战区指令条"
+	_war_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(_war_bar)
+	var specs: Array = [
+		[WAR.ATTACK, "sword", "进攻", "F5"],
+		[WAR.DEFEND, "shield", "防守", "F6"],
+		[WAR.CAPTURE, "flag", "占据", "F7"],
+		[WAR.PRODUCE, "anvil", "生产", "F8"],
+	]
+	for sp in specs:
+		var kind: int = int(sp[0])
+		var btn := Button.new()
+		btn.name = "战区_" + String(sp[2])
+		btn.focus_mode = Control.FOCUS_NONE
+		btn.toggle_mode = true
+		btn.add_theme_font_size_override("font_size", Spec.FS_CAPTION)
+		btn.add_theme_color_override("font_color", Spec.text_main())
+		btn.add_theme_color_override("font_pressed_color", Color(1.0, 0.93, 0.72))
+		btn.add_theme_color_override("font_hover_color", Color(1.0, 0.97, 0.88))
+		var icon: Texture2D = Spec.icon_tex(String(sp[1]))
+		if icon != null:
+			btn.icon = icon
+			btn.add_theme_constant_override("icon_max_width", 18)
+			btn.add_theme_color_override("icon_normal_color", Spec.text_main())
+			btn.add_theme_color_override("icon_pressed_color", Color(1.0, 0.93, 0.72))
+			btn.add_theme_color_override("icon_hover_color", Color(1.0, 0.97, 0.88))
+		btn.text = String(sp[2])
+		btn.add_theme_stylebox_override("normal",
+			Spec.button_style(Color(0.09, 0.10, 0.12, 0.94), Color(0.86, 0.72, 0.40, 0.50),
+				null, 5, 6.0, 3.0))
+		btn.add_theme_stylebox_override("hover",
+			Spec.button_style(Color(0.16, 0.18, 0.21, 0.96), Color(0.92, 0.78, 0.45, 0.95),
+				null, 5, 6.0, 3.0))
+		# 按下态：暖底 + 亮金边 —— 一眼看出"现在在等落点"
+		btn.add_theme_stylebox_override("pressed",
+			Spec.button_style(Color(0.24, 0.19, 0.09, 0.98), Color(1.0, 0.85, 0.45, 1.0),
+				Color(1.0, 0.85, 0.45, 1.0), 5, 6.0, 3.0))
+		btn.add_theme_stylebox_override("hover_pressed",
+			Spec.button_style(Color(0.28, 0.22, 0.10, 0.98), Color(1.0, 0.88, 0.50, 1.0),
+				Color(1.0, 0.88, 0.50, 1.0), 5, 6.0, 3.0))
+		btn.tooltip_text = ""
+		RtsTipLayer.bind(self, btn, func() -> Dictionary: return Lex.war(kind))
+		btn.pressed.connect(_on_war_btn.bind(kind))
+		_war_bar.add_child(btn)
+		_war_btns.append({"kind": kind, "btn": btn})
+
+
+## 点按钮 = 进入/退出该指令（同一颗再点一次 = 取消）
+func _on_war_btn(kind: int) -> void:
+	var wi := _war_input()
+	if wi != null and wi.has_method("enter_mode"):
+		wi.call("enter_mode", kind)
+	_sync_war_bar(true)
+
+
+## 战区指令输入节点（主场景挂的兄弟节点；可能比 HUD 晚建，所以每次现找）
+func _war_input() -> Node:
+	var p := get_parent()
+	if p == null:
+		return null
+	return p.get_node_or_null("战区指令输入")
+
+
+## 把按钮按下态同步成"模型里的待发指令"
+func _sync_war_bar(force: bool = false) -> void:
+	if _war_btns.is_empty():
+		return
+	var wi := _war_input()
+	var cur: int = 0
+	if wi != null and wi.has_method("pending_kind"):
+		cur = int(wi.call("pending_kind"))
+	for e in _war_btns:
+		var b: Button = e["btn"]
+		if b == null or not is_instance_valid(b):
+			continue
+		if force or b.button_pressed != (int(e["kind"]) == cur):
+			b.set_pressed_no_signal(int(e["kind"]) == cur)
 
 
 ## 副官开关：**用一个小控件说清楚"副官开没开"**，比开局弹一条三秒就消失的
@@ -1466,6 +1583,10 @@ func _poll_hotkeys() -> void:
 		var cmd := _command_system()
 		var pending: bool = cmd != null and cmd.has_method("has_pending") \
 			and bool(cmd.call("has_pending"))
+		# 战区指令也在等落点时，Esc 归它（否则一次 Esc 既取消模式又清空选择，底栏整条消失）
+		var wi := _war_input()
+		if wi != null and wi.has_method("pending_kind") and int(wi.call("pending_kind")) != 0:
+			pending = true
 		if not pending:
 			_on_clear_selection()
 
@@ -2268,6 +2389,8 @@ func covers_point(p: Vector2) -> bool:
 	if _card_panel != null and _card_panel.visible and _card_panel.get_global_rect().has_point(p):
 		return true
 	if _stats_panel != null and _stats_panel.get_global_rect().has_point(p):
+		return true
+	if _war_bar != null and _war_bar.visible and _war_bar.get_global_rect().has_point(p):
 		return true
 	if _adj_btn != null and _adj_btn.visible and _adj_btn.get_global_rect().has_point(p):
 		return true

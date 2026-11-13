@@ -361,6 +361,8 @@ func _draw() -> void:
 	_draw_creep_camps()
 	# --- 据点（地图中心）：常驻一个金色菱形；箱子在场时里面多一颗亮点 ---
 	_draw_strongpoint()
+	# --- 战区指令标记（玩家刚下的进攻/防守/占据/生产）：压在营地图标之上 ---
+	_draw_war_orders()
 
 	# --- 单位/建筑 ---
 	var pl := Game.player_faction
@@ -516,6 +518,50 @@ func _draw_strongpoint() -> void:
 	if active:
 		_dot_uv(p, 3.3, Color(1.0, 0.98, 0.86, 0.95))
 		draw_arc(p, r + 4.5, 0.0, TAU, 24, Color(1.0, 0.86, 0.40, 0.55), 1.4, true)
+
+
+## **战区指令标记**（2026-11-13）：玩家下了进攻/防守/占据/生产之后，
+## 小地图上画一圈对应颜色的虚环 + 一颗小菱形，给"我刚让 AI 去哪"一个持久反馈。
+## 只画玩家本人下的（label == "玩家"），AI 自己的战役意图不往小地图上堆。
+const WAR_SCRIPT := preload("res://代码/ai/战区指令.gd")
+
+func _draw_war_orders() -> void:
+	if Game == null or Game.player_faction == null:
+		return
+	var cols := {
+		1: Color(0.96, 0.52, 0.36),   # 进攻 红
+		2: Color(0.56, 0.78, 0.96),   # 防守 蓝
+		3: Color(0.94, 0.82, 0.42),   # 占据 金
+		4: Color(0.72, 0.86, 0.58),   # 生产 绿
+	}
+	for kind in [1, 2, 3, 4]:
+		var o: Dictionary = WAR_SCRIPT.get_order(kind)
+		if o.is_empty():
+			continue
+		if String(o.get("label", "")) != "玩家":
+			continue
+		var c: Vector3 = o["center"]
+		var p: Vector2 = _world_to_map(c)
+		var col: Color = cols.get(kind, Color.WHITE)
+		# 半径按地图比例换算（1 米 ≈ mr.size.x / 边长）
+		var r: float = clampf(float(o["radius"]) * _map_scale(), 4.0, 42.0)
+		draw_arc(p, r, 0.0, TAU, 28, Color(0.0, 0.0, 0.0, 0.55), 2.0, true)
+		draw_arc(p, r, 0.0, TAU, 28, Color(col.r, col.g, col.b, 0.92), 1.2, true)
+		var d: float = 3.4
+		var dia := PackedVector2Array([p + Vector2(0.0, -d), p + Vector2(d, 0.0),
+				p + Vector2(0.0, d), p + Vector2(-d, 0.0)])
+		_fill_poly_uv(dia, Color(0.0, 0.0, 0.0, 0.55))
+		var d2 := PackedVector2Array()
+		for q in dia:
+			d2.append(p + (q - p) * 0.68)
+		_fill_poly_uv(d2, col)
+
+
+## 1 米对应多少小地图像素（直接量两个世界点，不依赖任何内部常量）
+func _map_scale() -> float:
+	var a: Vector2 = _world_to_map(Vector3.ZERO)
+	var b: Vector2 = _world_to_map(Vector3(10.0, 0.0, 0.0))
+	return a.distance_to(b) / 10.0
 
 
 ## 营地图标纹理（按 icon key 缓存；缺失返回 null，由调用方降级画圆点）

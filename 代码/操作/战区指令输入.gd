@@ -1,15 +1,17 @@
 extends Node
-## **战区指令输入** —— F5/F6/F7/F8 四种战役级指令，左键点地面或拖拽画圈。
+## **战区指令输入** —— 四种战役级指令（进攻 / 防守 / 占据 / 生产）的鼠标入口。
 ##
-## 为什么不做成 HUD 面板：`文档/界面说明.md` 第一条就是「没被点名的界面地方一律不要动」。
-## 底栏/顶栏/选中面板都有既定尺寸，塞四个按钮进去必然要动布局。
-## 用功能键 + 鼠标手势，零布局改动，且**指令语义本身**（区域 vs 目标）用"点击/拖拽"
-## 就表达完了：
-##   · **单击** = 对一个目标下指令（半径 6m，覆盖目标本身）；
-##   · **按住拖拽** = 对一个区域下指令（半径 = 拖拽距离，4–40m）。
+## 交互（2026-11-13 玩家口径，对齐红警3）：
+##   · 点 HUD 上小地图旁的按钮（或 F5–F8）→ 进入该指令的待发状态，按钮常亮；
+##   · 然后在战场上**点一下**：
+##       - 点到单位/建筑 → 对**那个目标**下指令（区域半径 = 目标判定圈 + 2m）；
+##       - 点到空地     → 对这**片区域**下指令（半径 6m）；
+##   · 右键 / ESC / 再点一次同一个按钮 = 取消。
+##   **不再用拖拽画圈** —— 玩家明确要求"和点击目标一样，点了没目标就对该片区域下令"。
 ##
-## 反馈：进入待发模式时鼠标变十字；指令下达后控制台打一行（[战区] ...）。
-## 顶部播报条留给据点倒计时，不去抢它的位置。
+## 为什么还要留 F5–F8：按钮是给鼠标用的，快捷键是给熟手用的，两条路写同一份状态。
+##
+## 反馈：按钮按下态由 HUD 轮询 `pending_kind()`；顶部播报走 `Game.toast`（不抢据点条）。
 
 const WAR := preload("res://代码/ai/战区指令.gd")
 
@@ -20,88 +22,188 @@ const KEYS: Dictionary = {
 	KEY_F7: WAR.CAPTURE,
 	KEY_F8: WAR.PRODUCE,
 }
-## 单击时的默认半径（覆盖一个目标）
+## 点空地时的默认半径（米）
 const TAP_RADIUS: float = 6.0
-## 拖拽的最小像素距离（小于它算单击）
-const DRAG_MIN_PX: float = 8.0
-## 区域半径上下限（米）
-const RADIUS_MIN: float = 4.0
-const RADIUS_MAX: float = 40.0
+## 点到目标时，区域半径 = 目标判定圈 + 这个余量（把目标整个圈住）
+const TARGET_PAD: float = 2.0
+
+## 模式切换信号（HUD 靠它即时刷新按下态；也可以轮询 pending_kind）
+signal mode_changed(kind: int)
 
 var _pending: int = 0
-var _pressing: bool = false
-var _press_pos: Vector2 = Vector2.ZERO
 
 
 func _ready() -> void:
-	print("[战区] 指令输入就绪：F5 进攻 / F6 防守 / F7 占据 / F8 生产；左键点地或拖拽画圈，ESC 取消")
+	print("[战区] 指令输入就绪：按钮 / F5 进攻 · F6 防守 · F7 占据 · F8 生产；点目标或点区域，右键取消")
 
+
+# ---------------------------------------------------------------------------
+# 对外 API（HUD 按钮、自检都走这里，不要直接调 _enter/_cancel）
+# ---------------------------------------------------------------------------
+
+## 当前待发指令（0 = 没有）
+func pending_kind() -> int:
+	return _pending
+
+
+## 进入某条指令的待发状态（重复点同一条 = 取消，红警3 的按钮就是这个手感）
+func enter_mode(kind: int) -> void:
+	if not WAR.NAMES.has(kind):
+		return
+	if _pending == kind:
+		cancel_mode()
+		return
+	# 和"建造/技能落点"互斥：两边都吃左键，同时开着必然打架
+	var cmd := get_parent().get_node_or_null("指令系统") if get_parent() != null else null
+	if cmd != null and cmd.has_method("request_cancel"):
+		cmd.call("request_cancel")
+	_pending = kind
+	Input.set_default_cursor_shape(Input.CURSOR_CROSS)
+	mode_changed.emit(_pending)
+	Game.toast("战区指令：%s —— 点目标或点一片区域（右键取消）" % String(WAR.NAMES[kind]),
+		Color(0.98, 0.84, 0.52))
+
+
+func cancel_mode() -> void:
+	if _pending == 0:
+		return
+	_pending = 0
+	Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+	mode_changed.emit(0)
+
+
+# ---------------------------------------------------------------------------
+# 输入
+# ---------------------------------------------------------------------------
 
 func _input(event: InputEvent) -> void:
 	if Game == null or Game.player_faction == null:
+		return
+	if Game.has_method("is_over") and bool(Game.call("is_over")):
+		cancel_mode()
 		return
 
 	if event is InputEventKey and event.pressed and not event.echo:
 		var k: int = event.keycode
 		if KEYS.has(k):
-			_enter(int(KEYS[k]))
+			enter_mode(int(KEYS[k]))
 			get_viewport().set_input_as_handled()
 			return
 		if k == KEY_ESCAPE and _pending != 0:
-			_cancel()
+			cancel_mode()
 			get_viewport().set_input_as_handled()
 			return
 
 	if _pending == 0:
 		return
 
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-		if event.pressed:
-			_pressing = true
-			_press_pos = event.position
-		elif _pressing:
-			_pressing = false
-			_commit(event.position)
-		get_viewport().set_input_as_handled()
-	elif event is InputEventMouseMotion and _pressing:
-		# 拖拽时保持十字，别让手一抖变回箭头
-		Input.set_default_cursor_shape(Input.CURSOR_CROSS)
+	# 右键 / ESC 之外，再给一个"右键取消"（红警手感）
+	if event is InputEventMouseButton:
+		var mb := event as InputEventMouseButton
+		if mb.button_index == MOUSE_BUTTON_RIGHT and mb.pressed:
+			cancel_mode()
+			get_viewport().set_input_as_handled()
+			return
+		if mb.button_index != MOUSE_BUTTON_LEFT:
+			return
+		# ★ `_input` 早于 GUI：不挡住的话，点小地图/按钮/面板都会被当成"对那片地面下令"
+		if _ui_blocks(mb.position):
+			return
+		if mb.pressed:
+			# 只认"按下"：点一下就下单，没有拖拽阶段
+			_commit(mb.position)
+			get_viewport().set_input_as_handled()
 
 
-func _enter(kind: int) -> void:
-	_pending = kind
-	_pressing = false
-	Input.set_default_cursor_shape(Input.CURSOR_CROSS)
-	print("[战区] 已选「%s」：单击地面 = 对一个目标；按住拖拽 = 对一片区域；ESC 取消"
-		% String(WAR.NAMES[kind]))
-
-
-func _cancel() -> void:
-	_pending = 0
-	_pressing = false
-	Input.set_default_cursor_shape(Input.CURSOR_ARROW)
-	print("[战区] 已取消")
+## HUD 盖住了这个屏幕点吗（HUD 有 covers_point；没有就退回 false）
+func _ui_blocks(pos: Vector2) -> bool:
+	var hud := get_parent().get_node_or_null("界面") if get_parent() != null else null
+	if hud == null:
+		return false
+	if hud.has_method("covers_point"):
+		return bool(hud.call("covers_point", pos))
+	return false
 
 
 func _commit(screen_pos: Vector2) -> void:
-	var center: Vector3 = _ground_point(screen_pos)
-	if center == Vector3.INF:
-		_cancel()
+	var kind: int = _pending
+	var ground: Vector3 = _ground_point(screen_pos)
+	if ground == Vector3.INF:
+		cancel_mode()
 		return
+	# --- 1. 先找目标：点到了单位/建筑就围着它下指令 ---
+	var target: Node3D = _pick_target(screen_pos)
+	if target != null:
+		var d: UnitDef = target.get("def") as UnitDef
+		var r: float = TAP_RADIUS
+		if d != null:
+			r = clampf(maxf(d.judge_radius, d.body_radius) + TARGET_PAD, 4.0, 40.0)
+		WAR.issue(kind, target.global_position, r, target, "玩家")
+		Game.toast("战区指令：%s → %s" % [String(WAR.NAMES[kind]),
+			d.display_name if d != null else String(target.name)], Color(0.98, 0.84, 0.52))
+		cancel_mode()
+		return
+	# --- 2. 空地 = 对这片区域下令（半径固定 6m，不再拖拽） ---
 	var radius: float = TAP_RADIUS
-	if _press_pos.distance_to(screen_pos) > DRAG_MIN_PX:
-		var a: Vector3 = _ground_point(_press_pos)
-		if a != Vector3.INF:
-			radius = clampf(Vector2(a.x - center.x, a.z - center.z).length(), RADIUS_MIN, RADIUS_MAX)
-	# 「生产」的作用域是"新兵往哪集结"，半径没有意义，统一给个小的
-	if _pending == WAR.PRODUCE:
+	# 「生产」是"新兵往哪集结"，区域大小没意义
+	if kind == WAR.PRODUCE:
 		radius = TAP_RADIUS
-	WAR.issue(_pending, center, radius, null, "玩家")
-	_pending = 0
-	Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+	WAR.issue(kind, ground, radius, null, "玩家")
+	Game.toast("战区指令：%s → (%.0f, %.0f) 半径 %.0fm" % [
+		String(WAR.NAMES[kind]), ground.x, ground.z, radius], Color(0.98, 0.84, 0.52))
+	cancel_mode()
 
 
-## 屏幕点 → 地面（y=0 平面）。返回 Vector3.INF 表示射线与地面平行/在身后。
+## 屏幕点 → 目标（单位/建筑/资源）。只认"活着的、可被右键的"对象。
+## 用一次性射线 + 球体近似，和 选择系统/指令系统 同一套判据（那两个是私有函数，这里自带一份）。
+func _pick_target(screen: Vector2) -> Node3D:
+	var cam: Camera3D = get_viewport().get_camera_3d()
+	if cam == null:
+		return null
+	var from: Vector3 = cam.project_ray_origin(screen)
+	var dir: Vector3 = cam.project_ray_normal(screen)
+	var best: Node3D = null
+	var best_t: float = 1e20
+	var world: Node = get_parent().get_node_or_null("关卡")
+	var level: Node = world if world != null else Game.get("level")
+	var list: Array = _all_units(level)
+	for n in list:
+		var u := n as Node3D
+		if u == null or not is_instance_valid(u):
+			continue
+		var d: UnitDef = u.get("def") as UnitDef
+		if d == null:
+			continue
+		if u.has_method("is_alive") and not bool(u.call("is_alive")):
+			continue
+		# 球体近似：中心抬到身高的 45%（脚底原点，抬低了贴地打不中）
+		var c: Vector3 = u.global_position + Vector3(0.0, maxf(d.height, 0.6) * 0.45, 0.0)
+		var radius: float = maxf(d.selection_radius, d.body_radius) * 1.15 + 0.25
+		var oc: Vector3 = c - from
+		var t: float = oc.dot(dir)
+		if t <= 0.0 or t >= best_t:
+			continue
+		var closest: Vector3 = from + dir * t
+		if closest.distance_to(c) <= radius:
+			best = u
+			best_t = t
+	return best
+
+
+## 场景里所有有 def 的单位/建筑（走 Game 的阵营表，不扫节点树）
+func _all_units(level: Node) -> Array:
+	var out: Array = []
+	if Game == null:
+		return out
+	for f in Game.factions:
+		if f == null:
+			continue
+		out.append_array(f.units)
+		out.append_array(f.buildings)
+	return out
+
+
+## 屏幕点 → 地面点（吃地形高度：先与 y=0 求交，再按地形高度迭代两次）。
 func _ground_point(screen: Vector2) -> Vector3:
 	var cam: Camera3D = get_viewport().get_camera_3d()
 	if cam == null:
@@ -113,4 +215,12 @@ func _ground_point(screen: Vector2) -> Vector3:
 	var t: float = -from.y / dir.y
 	if t <= 0.0:
 		return Vector3.INF
-	return from + dir * t
+	var p: Vector3 = from + dir * t
+	for _i in 2:
+		var h: float = RtsWorld.height_at(p.x, p.z)
+		var t2: float = (h - from.y) / dir.y
+		if t2 <= 0.0:
+			break
+		p = from + dir * t2
+	p.y = RtsWorld.height_at(p.x, p.z)
+	return p
