@@ -34,6 +34,7 @@ func _运行() -> void:
 	if 失败.is_empty():
 		_用例A_资产等待()
 		await _用例B_待机随机()
+		_用例F_节拍错开()
 		await _用例C_单一动作()
 		await _用例D_真在动()
 		await _用例E_一刀()
@@ -185,6 +186,29 @@ func _用例B_待机随机() -> void:
 	明细.append({"case": "B", "idle_pool": pool, "unit": "peasant"})
 	if pool.size() < 2:
 		失败.append("农民待机池只有 %d 个（要求 >= 2）" % pool.size())
+
+
+## F 节拍错开（2026-11-13）：同一批兵不能齐步走 —— 每个模型绑定时拿一个黄金比相位，
+## 只在循环动作开播那一次 seek 过去。这里造 4 个兵，比较动画器的 `_phase`。
+func _用例F_节拍错开() -> void:
+	var 相位: Array = []
+	for i in 4:
+		var u = _造(&"footman", Vector3(-4.0 - float(i) * 1.2, 0.0, 0.0))
+		if u == null:
+			continue
+		var a := _anim_of(u)
+		if a != null:
+			相位.append(snappedf(float(a.get("_phase")), 0.0001))
+	明细.append({"case": "F", "phases": 相位})
+	if 相位.size() < 3:
+		失败.append("节拍错开：只拿到 %d 个相位（要求 >= 3）" % 相位.size())
+		return
+	var 最小差 := 1.0
+	for i in 相位.size():
+		for j in range(i + 1, 相位.size()):
+			最小差 = minf(最小差, absf(float(相位[i]) - float(相位[j])))
+	if 最小差 < 0.05:
+		失败.append("节拍错开：最小相位差只有 %.3f（要求 >= 0.05，否则看着还是齐步走）" % 最小差)
 
 
 func _用例C_单一动作() -> void:
