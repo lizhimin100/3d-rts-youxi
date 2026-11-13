@@ -48,6 +48,8 @@ var free_cam: bool = false
 var _thread_override: int = 0
 var close_cam: bool = false
 var shot_path: String = ""
+## `--crowd-vat=<name>`：用 `美术/VAT/` 里烘好的真模型（真骨骼动作）替代胶囊体
+var vat_unit: String = ""
 var _bench_done: bool = false
 
 
@@ -69,6 +71,8 @@ func _ready() -> void:
 			close_cam = true
 		elif a == "--crowd-cam=free":
 			free_cam = true
+		elif a.begins_with("--crowd-vat="):
+			vat_unit = a.get_slice("=", 1)
 
 	sim = Sim.new()
 	sim.configure_threads(_thread_override if _thread_override > 0 else OS.get_processor_count())
@@ -251,23 +255,41 @@ func _build_obstacle_meshes(pillars: Array) -> void:
 func _spawn_units() -> void:
 	var n: int = bench_n if bench_n > 0 else 400
 	var per: int = maxi(1, n / team_n)
-	# 胶囊体比方块像人：方块在近景是"倾斜的板砖"，胶囊至少有肩膀和头。
-	# 模型中心在原点（高 1.7m），渲染时由 y_offset 抬高半身高。
-	var mesh := CapsuleMesh.new()
-	mesh.radius = 0.22
-	mesh.height = 1.7
-	mesh.radial_segments = 6
-	mesh.rings = 2
-
-	var smat := ShaderMaterial.new()
-	smat.shader = load("res://代码/人群/人群单位.gdshader")
+	# 默认：胶囊体（模型中心在原点，渲染时由 y_offset 抬高半身高）。
+	# `--crowd-vat=<name>`：换成 `美术/VAT/` 里烘好的真模型 —— 顶点着色器按
+	# 烘焙纹理取帧，真骨骼动作 + 每实例相位错开，CPU 侧一帧都不多花。
+	var mesh: Mesh = null
+	var mat: Material = null
+	var y_off: float = 0.85
+	if not vat_unit.is_empty():
+		var V := load("res://代码/人群/人群VAT.gd")
+		var kit: Dictionary = V.call("build", vat_unit)
+		if kit.is_empty():
+			print("[CROWD] VAT 套件缺失：%s（先跑 工具/烘焙VAT.gd）→ 回退胶囊体" % vat_unit)
+		else:
+			mesh = kit["mesh"] as Mesh
+			mat = kit["material"] as Material
+			y_off = float(kit["y_offset"])
+			print("[CROWD] VAT 模式：%s（%d 顶点 / %d 三角）" % [
+				vat_unit, int((kit["meta"] as Dictionary).get("verts", 0)),
+				int((kit["meta"] as Dictionary).get("tris", 0))])
+	if mesh == null:
+		var cap := CapsuleMesh.new()
+		cap.radius = 0.22
+		cap.height = 1.7
+		cap.radial_segments = 6
+		cap.rings = 2
+		mesh = cap
+		var smat := ShaderMaterial.new()
+		smat.shader = load("res://代码/人群/人群单位.gdshader")
+		mat = smat
 
 	render = Render.new()
 	render.capacity = C.MAX_UNITS
 	render.model_scale = 1.0
-	render.y_offset = 0.85
+	render.y_offset = y_off
 	add_child(render)
-	render.setup(mesh, smat)
+	render.setup(mesh, mat)
 	render.camera = cam
 
 	arrows = Arrow.new()
@@ -377,10 +399,11 @@ func _process(delta: float) -> void:
 		_draw_sum += render._write_ms * float(d)
 
 	if hud != null:
-		hud.text = "n=%d  fps=%d  tick=%.2fms  steer=%.2f  spatial=%.2f  flow=%.2f  draw=%.2f  draw_calls=%d  线程=%s" % [
+		hud.text = "n=%d  fps=%d  tick=%.2fms  steer=%.2f  spatial=%.2f  flow=%.2f  draw=%.2f  draw_calls=%d  线程=%s  渲染=%s" % [
 			sim.count, int(fps), sim.tick_ms, sim.steer_ms, sim.spatial_ms, sim.flow_ms,
 			render._write_ms, int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)),
-			("on" if sim.thread_used else "off")]
+			("on" if sim.thread_used else "off"),
+			("VAT:" + vat_unit) if not vat_unit.is_empty() else "胶囊"]
 
 	# --- 压测到点 ---
 	if bench_n > 0 and not _bench_done and _elapsed >= bench_secs:

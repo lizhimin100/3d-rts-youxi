@@ -64,6 +64,11 @@ func draw_frame(sim, alpha: float) -> void:
 	if multimesh == null:
 		return
 	var n: int = mini(sim.count, capacity)
+	# ★ 2026-11-13：只画前 n 个。不设的话 MultiMesh 会把 `instance_count`（容量 10000）
+	# 全部走一遍顶点着色器 —— 缩放为 0 的实例照样跑顶点阶段。
+	# 实测：VAT 网格 7336 顶点/实例，100 个兵和 1000 个兵都是 55fps，因为都在算 10000 个。
+	if multimesh.visible_instance_count != n:
+		multimesh.visible_instance_count = n
 	var cam_pos: Vector3 = Vector3.ZERO
 	var has_cam: bool = camera != null
 	if has_cam:
@@ -104,7 +109,12 @@ func draw_frame(sim, alpha: float) -> void:
 				continue
 			vis += 1
 		var y: float = py[i] + 0.02 + y_offset
-		var a: float = yaw[i]
+		# ★ 2026-11-13：**人群的 yaw 是 +Z 约定**（`人群模拟` 写 `atan2(vx, vz)`，
+		#   yaw=0 → 朝 +Z），而所有单位模型的**正面是 -Z**（骨骼静止坐标实测：
+		#   盾/武器骨的 z 全为负；引擎主线也用 `atan2(-dx,-dz)`）。
+		#   两者差 180°：胶囊体看不出来，换成 VAT 真模型就是"整队背朝行进方向"。
+		#   这里补 π，别改模拟层的 yaw —— 流场/转向/箭矢都按 +Z 约定算过。
+		var a: float = yaw[i] + PI
 		var ca: float = cos(a) * sx
 		var sa: float = sin(a) * sx
 		# 行主序 3×4：第 0 行 (cos, 0, sin, x)
