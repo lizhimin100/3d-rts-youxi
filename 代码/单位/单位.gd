@@ -384,6 +384,12 @@ var deposit_gold_total: int = 0
 var deposit_wood_total: int = 0
 ## 采矿"钻进矿洞"的视觉推进量 0~1（1 = 完全在洞里，模型隐藏）
 var _mine_k: float = 0.0
+## **采过东西没有**（2026-11-13 玩家口径）：
+##   · -1 = 还没采过（待机照常播 idle 悠闲动作）；
+##   · RtsConst.Harvest.GOLD / WOOD = 采过这种资源，**停下来也要保持搬运姿势**
+##     （金 → carry_idle_gold，木 → carry_idle_wood 定格）。
+## 只影响表现层，不参与任何玩法判定。
+var _carry_pose_kind: int = -1
 ## 砍树/采矿的碎屑特效节流（秒）
 var _chop_fx_t: float = 0.0
 ## 当前采集技能 id（chop_wood / mine_gold），数值全部读 技能表
@@ -1308,11 +1314,20 @@ func _find_open_site(building_def: UnitDef, pos: Vector3) -> Node3D:
 ## 加入一块**已经在施工**的工地（第 2/3 个农民走这条）：
 ## 不新建、不扣费、也不再查地形 —— 活儿直接接着干，进度按人头叠加。
 ## 返回是否真的接上了（地块已完成 / 已被拆就返回 false）。
-func order_build_site(site: Node3D) -> bool:
-	# 已经在某个工地里 → 不接第二份（想换工地先按 X 取消）
+##
+## `force`：救火专用（反愚蠢审计的 construction_stalled）。
+##   · false（默认 / 玩家右键工地）：在工地里就锁死，不接第二份 —— 见 `is_building_locked`；
+##   · true：允许从**当前**工地转场（先退出旧工地、进度留在原地，别的农民可以接）。
+##   为什么必须有：2C-8 起"同时建造 ≤ 工位数−1"，只有 2 个工位时就只有 1 个人在盖。
+##   而救火恰好只能挑到那个人（其余空闲工位不存在），旧实现被 building_locked 拦下 →
+##   停滞工地永远无人接 → 人口上限永久卡死（副官自检 E 组实测 fixes 0→0）。
+func order_build_site(site: Node3D, force: bool = false) -> bool:
 	if is_building_locked() and _inside_site != site:
-		_reject_while_building()
-		return false
+		if not force:
+			_reject_while_building()
+			return false
+		# 强制转场：退出旧工地（不删工地、不清进度），人落到墙外再去新的
+		_leave_inside_site()
 	if _dying or site == null or not is_instance_valid(site):
 		return false
 	if def == null or not RtsWorld.is_worker_def(def):
@@ -3312,6 +3327,12 @@ func _update_cast(dt: float) -> void:
 
 
 ## 找最近的资源点（走 Game 的资源注册表）
+##
+## ★ 2026-11-13 玩家口径「农民别被拉到地图各处」：打分从
+##   `走去 + 0.35×离基地` 改成 **`走去 + 背回来`**（背回来量到离这个矿最近的
+##   自己人交汇点：主城 / 分基地 / 伐木场）。旧公式只看基地中心，
+##   分基地旁边 3m 的矿永远输给主矿，农民于是横穿地图挖远矿 ——
+##   一趟 20 金要走两分钟，玩家看到的就是"卡金币"。
 func _find_harvestable(kind: int) -> Node3D:
 	if faction == null:
 		return null
@@ -3334,6 +3355,8 @@ func _find_harvestable(kind: int) -> Node3D:
 		if n != null and is_instance_valid(n):
 			claimed[n] = int(claimed.get(n, 0)) + 1
 
+	# 交汇点只取一次：后面的候选逐个比"背回哪个点最近"
+	var drops: Array = RtsWorld.dropoffs(faction)
 	var best: Node3D = null
 	var best_score: float = INF
 	for h in Game.level.resource_nodes():
@@ -3341,20 +3364,32 @@ func _find_harvestable(kind: int) -> Node3D:
 			continue
 		if h.harvest_kind != kind or h.is_depleted():
 			continue
-		var d: float = global_position.distance_to(h.global_position)
+		var hp: Vector3 = h.global_position
+		var d: float = global_position.distance_to(hp)
 		if d > radius:
 			continue
-		var score: float = d + base.distance_to(h.global_position) * 0.35
-		score += float(claimed.get(h, 0)) * CROWD_PENALTY
+		var back: float = d
+		var best_back: float = INF
+		for dp in drops:
+			if dp == null or not is_instance_valid(dp) or not dp.is_alive():
+				continue
+			if dp.has_method("accepts_harvest") and not bool(dp.call("accepts_harvest", kind)):
+				continue
+			var dd: float = hp.distance_to(dp.global_position)
+			if dd < best_back:
+				best_back = dd
+		if best_back < INF:
+			back = best_back
+		var score: float = d + back + float(claimed.get(h, 0)) * CROWD_PENALTY
 		if score < best_score:
 			best_score = score
 			best = h
 	if best == null:
+		best = Game.find_trip_harvestable(faction, global_position, kind, radius, claimed)
+	if best == null:
+		# 最后一道兜底：老口径（离基地近的优先），避免这条路彻底返回 null 让农民罚站
 		best = RtsWorld.nearest_harvestable(global_position, kind, base, radius)
 	return best
-
-
-## 采集一次要多久（金 / 木 不同的 Cfg 值）
 
 
 ## 采集一次要多久（金 / 木 不同的 Cfg 值）
@@ -3365,9 +3400,6 @@ func _harvest_time() -> float:
 			return maxf(cfg.harvest_time_wood, 0.1)
 		_:
 			return maxf(cfg.harvest_time_gold, 0.1)
-
-
-## 采满一次 → 资源进背包，进入返回阶段
 
 
 ## 采满一次 → 资源进背包，进入返回阶段
@@ -3395,6 +3427,10 @@ func _finish_harvest() -> void:
 	# AI 有经济倍率（难度档），玩家恒为 1.0
 	got = int(round(float(got) * _gather_multiplier()))
 	_carry = got
+	# ★ 2026-11-13 玩家口径：采到东西之后就记住"手上拿的是什么"，
+	#   待机时保持搬运姿势（见 _update_anim 的 default 分支）。
+	if got > 0:
+		_carry_pose_kind = _carry_kind
 	_gather_t = 0.0
 	_gather_phase = GatherPhase.TO_DROP
 	# 背着就走：载位立刻让出（去卸货的路上，别人可以占这个位置）
@@ -3589,7 +3625,19 @@ func _update_anim() -> void:
 			#   所以这里**不再**用 shield_hold 覆盖待机：基础动作永远是 idle，
 			#   举盾由 UnitVisual 的**姿态层**把左臂按住（见 代码/美术/姿态层.gd），
 			#   走路/挥砍照常播，盾一直举在身前。
-			visual.play("idle", 1.0)
+			#
+			# ★ 2026-11-13 玩家口径：「只要农民采集了木头或金矿，停下来也要保持
+			#   抗金币袋或木头的动作，不能直接恢复到采集之前的悠闲动作」。
+			#   所以采过东西的农民待机不再播 idle（idle_scratch 挠头 / idle_stretch 伸懒腰
+			#   这些"悠闲动作"就是这么来的），改成搬运动作的**待机段**：
+			#     金 → carry_idle_gold（资产自带 2 秒抱金袋的待机）
+			#     木 → carry_idle_wood（资产只有走路的 carry_wood，代码里定格在 30%）
+			if _carry_pose_kind == RtsConst.Harvest.GOLD:
+				visual.play("carry_idle_gold", 1.0)
+			elif _carry_pose_kind == RtsConst.Harvest.WOOD:
+				visual.play("carry_idle_wood", 1.0)
+			else:
+				visual.play("idle", 1.0)
 
 
 ## 共享空间哈希：**直接复用 Game.unit_hash()**（每帧只重建一次，全工程一份）。

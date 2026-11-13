@@ -34,9 +34,29 @@ func _rebuild() -> void:
 	# 单位表永远以代码为准（避免旧 .tres 里残留的 def 覆盖新数值）
 	cfg.units = UnitTable.build_units()
 	cfg.researches = UnitTable.build_researches()
+	# 地图资源的储量由 GameConfig 说了算（2026-11-13）：
+	#   单位表里的 `goldmine.resource_amount = 3200` 只是兜底常量，
+	#   真正常用的是这里的 `gold_mine_amount / tree_amount`——
+	#   这样调"一座矿能挖多久"只改配置卡，不用动单位表。
+	_apply_resource_amounts(cfg)
 	# 难度：.tres 里配了就用，没配就代码默认
 	cfg.ensure_default_difficulties()
 	game = cfg
+
+
+## 把 GameConfig 里的"地图资源储量"写进可采集物的 def。
+##
+## 为什么要在 _rebuild 末尾补这一刀：`UnitTable.build_units()` 是纯静态函数，
+## 跑的时候 `Cfg.game` 还没赋值，没法自己读配置。而储量是**玩家最常调的数值**
+## （一座矿能挖多久直接决定会不会"5 分钟卡金币"），必须只改一处。
+func _apply_resource_amounts(cfg: GameConfig) -> void:
+	if cfg == null or cfg.units == null:
+		return
+	var mine: UnitDef = cfg.units.get(&"goldmine", null)
+	if mine != null:
+		mine.resource_amount = maxi(cfg.gold_mine_amount, 1)
+	# ★ 树**不能**用 `tree_amount` 覆盖：树的 resource_amount 是"还能采几次"（20），
+	#   而配置里那个 tree_amount=260 是给别的口径留下的死字段。写进去会让一棵树砍 260 趟。
 
 
 ## 取单位定义

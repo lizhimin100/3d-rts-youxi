@@ -1096,13 +1096,13 @@ position = Vector3(74.6, 0.090804555, -5.3)
 script = ExtResource("1_1nx3f")
 type_id = &"tree"
 category = 3
-position = Vector3(-94.6, 0.25370845, -0.6)
+position = Vector3(-86, 0.20107177, 8)
 
 [sub_resource type="Resource" id="Resource_5meet"]
 script = ExtResource("1_1nx3f")
 type_id = &"tree"
 category = 3
-position = Vector3(-89.9, 0.27240628, -0.6)
+position = Vector3(-81, 0.17078201, 8)
 
 [sub_resource type="Resource" id="Resource_nkefj"]
 script = ExtResource("1_1nx3f")
@@ -1216,13 +1216,13 @@ position = Vector3(84, 0.2643627, -0.6)
 script = ExtResource("1_1nx3f")
 type_id = &"tree"
 category = 3
-position = Vector3(-94.6, 0.2583139, 4.1)
+position = Vector3(-86, 0.15662394, 13)
 
 [sub_resource type="Resource" id="Resource_w7k5r"]
 script = ExtResource("1_1nx3f")
 type_id = &"tree"
 category = 3
-position = Vector3(-89.9, 0.2378423, 4.1)
+position = Vector3(-81, 0.08685939, 13)
 
 [sub_resource type="Resource" id="Resource_2fo66"]
 script = ExtResource("1_1nx3f")
@@ -1330,7 +1330,7 @@ position = Vector3(79.3, 0.28470588, 4.1)
 script = ExtResource("1_1nx3f")
 type_id = &"tree"
 category = 3
-position = Vector3(-94.6, 0.27238688, 8.8)
+position = Vector3(-86, 0.08885558, 17)
 
 [sub_resource type="Resource" id="Resource_botm6"]
 script = ExtResource("1_1nx3f")
@@ -2740,7 +2740,7 @@ position = Vector3(85, 0.23367365, 17)
 script = ExtResource("1_1nx3f")
 type_id = &"goldmine"
 category = 3
-position = Vector3(50, 1.4, 59)
+position = Vector3(56, 1.399999, 65)
 
 [sub_resource type="Resource" id="Resource_qjd3q"]
 script = ExtResource("1_1nx3f")
@@ -2752,13 +2752,13 @@ position = Vector3(-59, 1.3865044, 66)
 script = ExtResource("1_1nx3f")
 type_id = &"goldmine"
 category = 3
-position = Vector3(-55, 1.4, -58)
+position = Vector3(-60, 1.3019129, -68)
 
 [sub_resource type="Resource" id="Resource_hxlvb"]
 script = ExtResource("1_1nx3f")
 type_id = &"goldmine"
 category = 3
-position = Vector3(62, 1.4, -49)
+position = Vector3(63, 1.4, -59)
 
 [sub_resource type="Resource" id="Resource_g5tc7"]
 script = ExtResource("1_1nx3f")
@@ -3282,13 +3282,13 @@ position = Vector3(104, 0.32616568, -16)
 script = ExtResource("1_1nx3f")
 type_id = &"goldmine"
 category = 3
-position = Vector3(-87, 0.19490217, 9)
+position = Vector3(-94, 0.2668394, -2)
 
 [sub_resource type="Resource" id="Resource_ojwk2"]
 script = ExtResource("1_1nx3f")
 type_id = &"goldmine"
 category = 3
-position = Vector3(-82, 0.36942774, -31)
+position = Vector3(-96, -0.13337441, -37)
 
 [sub_resource type="Resource" id="Resource_ud0u2"]
 script = ExtResource("2_r02i6")

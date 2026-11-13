@@ -558,25 +558,37 @@ func _research_entry(b: RtsBuilding, rid: StringName) -> Dictionary:
 
 
 ## 建造按钮
+##
+## ★ 2026-11-13 二本门槛：车坊 / 神秘圣地的卡上带 `require_tier = 2`，
+##   主城没升到二本时按钮**灰掉**并说明原因（不要让玩家点了才发现造不了）。
 func _build_entry(bid: StringName) -> Dictionary:
 	var d: UnitDef = Cfg.unit(bid)
 	var ok: bool = d != null and Game.can_afford(Game.player_faction, bid)
+	var tier_ok: bool = d == null or Game.tier_allows(Game.player_faction, bid)
+	var tier_note: String = "" if tier_ok or d == null \
+			else "需要主城升到 %d 本（选中大本营 → 升本）。" % int(d.require_tier)
 	return {
 		"label": d.display_name if d != null else String(bid),
-		"hint": "建造 %s：%d金 %d木，占地 %d×%d（朝向统一，不需要转向）" % [
+		"hint": (tier_note + "\n" if not tier_note.is_empty() else "") \
+				+ "建造 %s：%d金 %d木，占地 %d×%d（朝向统一，不需要转向）" % [
 			d.display_name if d != null else "建筑",
 			d.gold_cost if d != null else 0,
 			d.wood_cost if d != null else 0,
 			d.footprint.x if d != null else 0,
 			d.footprint.y if d != null else 0,
 		],
-		"color": Color(0.78, 0.92, 0.72) if ok else Color(0.55, 0.55, 0.52),
+		"color": Color(0.78, 0.92, 0.72) if (ok and tier_ok) else Color(0.55, 0.55, 0.52),
 		"glyph": (d.display_name if d != null else "建").substr(0, 1),
 		"icon": _icon_for_building(bid),
-		"sub": _cost_text(d),
-		"disabled": cmd_missing() or (not ok),
+		"sub": ("需 %d 本" % int(d.require_tier)) if not tier_ok else _cost_text(d),
+		"disabled": cmd_missing() or (not ok) or (not tier_ok),
 		"state": func() -> Dictionary:
 			var afford: bool = d != null and Game.can_afford(Game.player_faction, bid)
+			var t_ok: bool = d == null or Game.tier_allows(Game.player_faction, bid)
+			if not t_ok:
+				return {"disabled": true,
+						"sub": "需 %d 本" % int(d.require_tier),
+						"sub_color": Color(0.95, 0.52, 0.42)}
 			return {"disabled": cmd_missing() or (not afford),
 					"sub": _cost_text(d) if afford else _shortage(d),
 					"sub_color": Spec.text_dim() if afford else Color(0.95, 0.52, 0.42)},

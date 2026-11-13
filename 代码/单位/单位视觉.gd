@@ -402,8 +402,11 @@ func play(state: String, speed_ratio: float = 1.0, force: bool = false) -> void:
 		_motion_state = state
 	if _anim == null:
 		return
-	# idle 之外的状态切换都直接透传；move 要持续更新步频，不能去重
-	var loco: bool = state == "move" or state == "run" or state.begins_with("carry_")
+	# idle 之外的状态切换都直接透传；move 要持续更新步频，不能去重。
+	# ★ carry_idle_*（背着东西站着）**不算** locomotion：它不吃地速缩放，
+	#   否则农民站着不动时"步频 = 0.15 倍"地慢慢迈腿（2026-11-13）。
+	var loco: bool = state == "move" or state == "run" \
+			or (state.begins_with("carry_") and not state.begins_with("carry_idle"))
 	if state == _anim_state and not loco and not force:
 		return
 	_anim_state = state

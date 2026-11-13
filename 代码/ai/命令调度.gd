@@ -187,6 +187,12 @@ func gather(units: Array, node: Node3D, label: String = "") -> void:
 func build(builder, def: UnitDef, point: Vector3, yaw: float, label: String = "build") -> Node3D:
 	if builder == null or not is_instance_valid(builder) or def == null:
 		return null
+	# ★ 2026-11-13 二本门槛（车坊 / 神秘圣地）：AI 的**所有**建造都过这一个口，
+	#   所以门槛只写在这里就够 —— 上层 `_maybe_build_one` / 目标层 / 仲裁都绕不过去。
+	#   口径唯一出口是 `Game.tier_allows()`（建筑卡上的 require_tier）。
+	var fac: RtsFaction = builder.get("faction") as RtsFaction
+	if fac != null and not Game.tier_allows(fac, def.id):
+		return null
 	var ok: Array = available([builder])
 	if ok.is_empty():
 		return null

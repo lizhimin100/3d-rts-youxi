@@ -35,6 +35,7 @@ func _运行() -> void:
 		_用例A_资产等待()
 		await _用例B_待机随机()
 		_用例F_节拍错开()
+		_用例G_农民搬运待机()
 		await _用例C_单一动作()
 		await _用例D_真在动()
 		await _用例E_一刀()
@@ -209,6 +210,30 @@ func _用例F_节拍错开() -> void:
 			最小差 = minf(最小差, absf(float(相位[i]) - float(相位[j])))
 	if 最小差 < 0.05:
 		失败.append("节拍错开：最小相位差只有 %.3f（要求 >= 0.05，否则看着还是齐步走）" % 最小差)
+
+
+## G 农民搬运待机（2026-11-13 玩家口径「只要采过木头/金矿，停下来也要扛着」）。
+##
+## 这一条只验"能不能解析出动作"：资产里必须有 carry_gold_idle（抱金袋待机），
+## 木头没有专门的待机段，靠 carry_wood **定格在 30%**（HOLD_STATES）。
+## 解析不出来 → `_update_anim` 的 idle 分支会退回 idle* 池（挠头/伸懒腰），
+## 玩家看到的就是"刚挖完矿的农民在空地上伸懒腰"。
+func _用例G_农民搬运待机() -> void:
+	var u = _造(&"peasant", Vector3(6.0, 0.0, 0.0))
+	if u == null:
+		return
+	var a := _anim_of(u)
+	if a == null:
+		失败.append("G：拿不到农民的动画节点")
+		return
+	var 金: bool = bool(a.call("has_state", "carry_idle_gold"))
+	var 木: bool = bool(a.call("has_state", "carry_idle_wood"))
+	明细.append({"case": "G", "carry_idle_gold": 金, "carry_idle_wood": 木,
+		"hold": String(a.call("_resolve", &"carry_idle_wood"))})
+	if not 金:
+		失败.append("G：农民解析不出 carry_idle_gold（资产缺 carry_gold_idle）")
+	if not 木:
+		失败.append("G：农民解析不出 carry_idle_wood（资产缺 carry_wood）")
 
 
 func _用例C_单一动作() -> void:

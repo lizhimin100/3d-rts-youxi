@@ -5,5 +5,5 @@
 [resource]
 script = ExtResource("1")
 id = &"camp_den"
-first_spawn_min = 120.0
-spawn_interval_min = 60.0
+first_spawn_min = 2.0
+spawn_interval_min = 2.0

@@ -60,14 +60,21 @@ extends Resource
 ## **农民一次采金携带量**（1 趟 = 搬这么多金）。
 ## 2026-11-08 玩家拍板：10 → **15**（金是唯一瓶颈，木长期溢出，见
 ## 文档/AI经济与等级排查报告.md §2.4）。
-@export var harvest_carry_gold: int = 15
+## ★ 2026-11-13 玩家口径「一把金币值上调到 20」：15 → **20**。
+@export var harvest_carry_gold: int = 20
 ## **农民一次采木携带量**（1 趟 = 搬这么多木）。保持 10 不变。
 @export var harvest_carry_wood: int = 10
 ## 采集一次所需时间（秒）
 @export var harvest_time_gold: float = 3.2
 @export var harvest_time_wood: float = 4.0
-## 资源产出暴击（不设 0）
-@export var gold_mine_amount: int = 3200
+## **一座金矿的储量**（2026-11-13 玩家口径「5 分钟后卡金币」）：
+##   3200 → **6000**。3200 时 9 个采金农民 3 分钟就把家门口那座矿挖空，
+##   之后全队要走 60m 外的中立矿，收入断崖 → 玩家看到的就是"卡金币"。
+##   6000 让"家门口这座矿"能撑到分基地成型，扩张线才有意义。
+## ★ 唯一生效点：`配置入口._rebuild()` 把它写进 goldmine 的 def（单位表里那个常量只是兜底）。
+@export var gold_mine_amount: int = 6000
+## 一棵树的储量。**当前不生效**：树的 `resource_amount` 语义是"还能采几次"（单位表里写死 20，
+## 见 可采集物.is_charge_based）。这个字段留着给"按吨位采木"的老口径，别拿它覆盖树的次数。
 @export var tree_amount: int = 260
 ## 单位重叠时的分离推力
 @export var separation_strength: float = 1.8
@@ -363,6 +370,9 @@ func ensure_default_difficulties() -> void:
 
 ## **农民一次采集的携带量**（按资源种类）。
 ## 2026-11-08 玩家拍板：采金 10 → **15**，采木维持 10。
+## ★ 2026-11-13 玩家口径「一把金币值上调到 20」：15 → **20**。
+##   原因：金矿 3200 一座，采金 15/趟时 5 分钟就见底、之后全程卡金币；
+##   提到 20 后单位时间采金量 +33%，同样的矿能撑更久，开局手感也不再"抠"。
 ## 只给"采集类单位"（农民）用；其它单位仍读自己的 carry_capacity。
 func harvest_carry_of(kind: int) -> int:
 	if kind == RtsConst.Harvest.WOOD:

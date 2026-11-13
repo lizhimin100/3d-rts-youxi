@@ -248,7 +248,12 @@ func _test_sanity_stalled_site() -> void:
 	Game.player_faction.gold = maxi(Game.player_faction.gold, 400)
 	Game.player_faction.wood = maxi(Game.player_faction.wood, 200)
 	var site: Node3D = builder.order_build(farm, spot, _adj._build_yaw_at(spot))
-	if not _ok("E 组：工地落成", site != null and site is RtsBuilding):
+	if not _ok("E 组：工地落成", site != null and site is RtsBuilding,
+			"builder.order=%d 锁定=%s 可建=%s 可付=%s 金=%d 木=%d" % [
+				int(builder.order), str(builder.is_building_locked()),
+				str(建筑网格.can_place(spot, farm.footprint)),
+				str(Game.can_afford(Game.player_faction, farm.id)),
+				Game.player_faction.gold, Game.player_faction.wood]):
 		return
 	builder.order_stop()
 	await _wait(0.4)
@@ -256,13 +261,20 @@ func _test_sanity_stalled_site() -> void:
 	_adj._sanity._seen_progress[site.get_instance_id()] = [prog0, Game.elapsed - 10.0]
 	var before: int = int(_adj._sanity.fixes.get("construction_stalled", 0))
 	var ctx: Dictionary = _adj._build_ctx(Cfg.difficulty(Game.difficulty_index), Game.elapsed)
+	# 立案靠"8 秒没进展"；但救火本身有 6 秒冷却 —— 副官在前面几十秒里可能已经救过
+	# 一座（自己盖的）工地。这里清掉那条冷却记录，保证测的是"有没有人可派"，
+	# 而不是"冷却还没到"（后者会把环境时序当成功能回归）。
+	_adj._sanity._last_fix.erase("construction_stalled")
 	_adj._sanity.update(ctx)
 	await _wait(0.2)
 	var after: int = int(_adj._sanity.fixes.get("construction_stalled", 0))
 	_ok("E 组：审计立案 construction_stalled",
 		int(_adj._sanity.counts.get("construction_stalled", 0)) > 0,
 		"episodes=%d" % int(_adj._sanity.counts.get("construction_stalled", 0)))
-	_ok("E 组：真的派人回去收尾", after > before, "fixes %d → %d" % [before, after])
+	_ok("E 组：真的派人回去收尾", after > before,
+			"fixes %d → %d，工位=%s，能派的=%s" % [before, after,
+				str(_adj._builder_roles_desc()),
+				str(_adj._pick_sanity_builder() != null)])
 	var joined: bool = false
 	for u in Game.player_faction.units:
 		if u == null or not is_instance_valid(u) or not u.is_alive():
@@ -397,6 +409,11 @@ func _pick_idle_worker() -> RtsUnit:
 		if not RtsWorld.is_worker_def(u.def):
 			continue
 		if Game.control != null and Game.control.is_protected(u):
+			continue
+		# ★ 2026-11-13：副官现在会主动开工地（建造选址放宽后更积极），
+		#   必须跳过"已经在工地里"的农民 —— 否则 order_build 会被
+		#   `is_building_locked()` 拦下，E 组测的就不是"工地能不能落成"而是"副官有没有抢人"。
+		if int(u.order) == RtsConst.Order.BUILD or bool(u.call("is_building_locked")):
 			continue
 		return u
 	return null

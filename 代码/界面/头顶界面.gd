@@ -299,6 +299,8 @@ func _feet_of(u: Node3D) -> Vector3:
 ## 两种文案：
 ##   · 没人占 → 「据点 · 资源箱」（提示"这里有钱，去站 15 秒"）
 ##   · 有人在占 → 「占领 N/15s」+ 底部进度线，颜色 = 占据方阵营色
+##   · **被打断**（2026-11-13 新口径：敌人进场只暂停不清零）→ 后面加「· 暂停」，
+##     进度线保持原本的比例不动 —— 玩家一眼看出"进度还在，只是没在走"。
 func _draw_strongpoint(cam: Camera3D, cam_pos: Vector3, vp: Vector2) -> void:
 	if _sp == null or not is_instance_valid(_sp):
 		_sp = get_tree().get_first_node_in_group("strongpoint")
@@ -316,11 +318,15 @@ func _draw_strongpoint(cam: Camera3D, cam_pos: Vector3, vp: Vector2) -> void:
 		return
 	var ratio: float = float(_sp.call("hold_ratio"))
 	var holder: RtsFaction = _sp.get("holder") as RtsFaction
+	var paused: bool = bool(_sp.get("paused"))
 	var txt: String = "据点 · 资源箱"
 	var col: Color = Color(1.0, 0.88, 0.52)
 	if ratio > 0.001 and holder != null:
 		txt = "占领 %d/%ds" % [int(ceil(ratio * 15.0)), 15]
 		col = holder.color.lerp(Color.WHITE, 0.35)
+		if paused:
+			txt += " · 暂停"
+			col = col.lerp(Color(0.95, 0.62, 0.42), 0.55)
 	var font: Font = ThemeDB.fallback_font
 	# 字号 15 → 18（2026-11-08 玩家「据点刷新的 UI 和字体做大点」）：
 	# 这块牌是玩家"走到据点附近唯一能读的东西"，15px 在 44m 默认视距下只有一个色块。

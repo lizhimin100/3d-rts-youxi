@@ -279,6 +279,11 @@ func request_build(building_id: StringName) -> void:
 	if _selected_workers().is_empty():
 		_toast("需要选中农民才能建造", _warn())
 		return
+	# ★ 2026-11-13 二本门槛（车坊 / 神秘圣地）：先拦一道，别让玩家点进放置模式再失败
+	if not Game.tier_allows(Game.player_faction, building_id):
+		_toast("「%s」要主城升到 %d 本才能造（选中大本营 → 升本）"
+				% [d.display_name, int(d.require_tier)], _warn())
+		return
 	pending = Pending.BUILD
 	pending_build = building_id
 	pending_ability = &""
@@ -748,6 +753,11 @@ func place_building(building_id: StringName, ground: Vector3, workers: Array = [
 		return null
 	if not Game.can_afford(Game.player_faction, building_id):
 		_toast("资源不足：%s" % d.display_name, _warn())
+		return null
+	# ★ 2026-11-13 二本门槛：`request_build` 已经拦过一次，这里再兜一次
+	#   —— 自检 / 脚本 / 快捷键都可能绕过 request_build 直接调 place_building。
+	if not Game.tier_allows(Game.player_faction, building_id):
+		_toast("「%s」要主城升到 %d 本才能造" % [d.display_name, int(d.require_tier)], _warn())
 		return null
 
 	# --- 3. 第一个农民真的立工地（它负责扣那一次钱）---

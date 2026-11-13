@@ -282,8 +282,11 @@ func _check_construction(ctx: Dictionary) -> void:
 		return
 	var site: Node3D = stalled[0]
 	if builder.has_method("order_build_site"):
-		# 只接活、不扣钱、也不新建 —— 这正是"收尾"该做的事
-		if bool(builder.call("order_build_site", site)):
+		# 只接活、不扣钱、也不新建 —— 这正是"收尾"该做的事。
+		# force=true：允许从"正在推进的另一个工地"转场过来。工位只有 2 个时
+		# （同时建造上限 = 工位数−1 = 1），救火唯一能拿到的人就是在建造的那个；
+		# 不 force 会被 building_locked 挡下，停滞工地永远没人接（人口永久卡死）。
+		if bool(builder.call("order_build_site", site, true)):
 			_fix("construction_stalled", ctx)
 			_seen_progress.erase(site.get_instance_id())
 

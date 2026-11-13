@@ -45,7 +45,18 @@ const FALLBACK := {
 	# 搬运动作：方块人_农民独有；别的兵没有就退回走路（背东西的样子不变形）
 	&"carry_gold": [&"carry_gold", &"walk"],
 	&"carry_wood": [&"carry_wood", &"walk"],
+	# **背着东西站着不动**（2026-11-13 玩家口径「农民采完矿停下来也要保持搬运动作」）：
+	#   农民资产里有 `carry_gold_idle`（2.0s 站着抱金袋）—— 金直接用；
+	#   木头只有 `carry_wood`（1.0s 走路扛木头），代码侧把它定格在 30% 那一帧
+	#   （见 HOLD_STATES），所以不会"站着原地踏步"。
+	&"carry_idle_gold": [&"carry_gold_idle", &"carry_gold", &"idle"],
+	&"carry_idle_wood": [&"carry_wood", &"carry_gold_idle", &"idle"],
 }
+
+## 需要"定格"的循环姿势 → 定格在 clip 的哪个比例（0~1）。
+## 只用于"资产里没有专门的待机段、只有走路循环"的姿势：
+## 站着播走路 = 原地踏步，比不播还怪；定在一帧反而读成"扛着东西站着"。
+const HOLD_STATES := {&"carry_idle_wood": 0.30}
 
 ## 单次动作（播完自动回 idle）；death 例外：停在最后一帧
 ## （名单本身见文件顶部的 ONE_SHOT）
@@ -200,7 +211,9 @@ func current_state() -> StringName:
 func set_state(state: String, speed_ratio: float = 1.0, force: bool = false) -> void:
 	if not _ready_ok:
 		return
-	var want := _resolve(StringName(state))
+	# 定格名单按**请求名**判（`carry_idle_wood` 解析后叫 `carry_wood`，用解析名就永远命不中）
+	var req := StringName(state)
+	var want := _resolve(req)
 	if want == &"":
 		return
 	# 待机：从池子里随机挑一个（不连着重复）。别的状态一律用唯一那个动作。
@@ -234,13 +247,31 @@ func set_state(state: String, speed_ratio: float = 1.0, force: bool = false) -> 
 	_speed = clampf(speed_ratio, 0.2, 3.0)
 	_ap.speed_scale = _speed if is_loop else 1.0
 	_one_shot = want if ONE_SHOT.has(want) else &""
-	_ap.play(String(want), BLEND_LOOP if is_loop else BLEND, 1.0)
+	_start(want, BLEND_LOOP if is_loop else BLEND)
 	if force:
 		# play() 对"正在播同一个动作"会续播而不是重头播 → 显式回到 0
 		_ap.seek(0.0, true)
 	elif is_loop:
 		# 节拍错开：循环动作才吃相位（见 _phase 的注释）
 		_apply_phase(want)
+	# 定格姿势（见 HOLD_STATES）：停在某个比例上，不要再往前走
+	if HOLD_STATES.has(req):
+		var ha := _ap.get_animation(String(want))
+		if ha != null and ha.length > 0.001:
+			_ap.seek(ha.length * float(HOLD_STATES[req]), true)
+		_ap.pause()
+
+
+## 开播一条动作。**所有** play 都走这里。
+##
+## ★ 2026-11-13：`HOLD_STATES`（扛木头定格）会 `_ap.pause()`。
+##   Godot 4 的 `AnimationPlayer` **没有 `paused` 属性**（写它 = 每帧一条 SCRIPT ERROR），
+##   但 `play()` 内部会把 playing 重新置真 —— 所以切走时直接 play 就能恢复推进，
+##   唯一要保证的是"别在暂停期间用提前 return 拦住状态切换"（见 set_state 的去重分支）。
+func _start(clip: StringName, blend: float) -> void:
+	if _ap == null:
+		return
+	_ap.play(String(clip), blend, 1.0)
 
 
 ## 把循环动作 seek 到本单位的相位（只在开播那一次调用）
@@ -278,7 +309,7 @@ func _play_transition(n: StringName) -> void:
 	_current = n
 	_one_shot = n
 	_ap.speed_scale = 1.0
-	_ap.play(String(n), BLEND, 1.0)
+	_start(n, BLEND)
 	_ap.seek(0.0, true)
 
 
@@ -350,7 +381,7 @@ func _on_finished(anim: StringName) -> void:
 			_reloading = true
 			_current = nxt
 			_one_shot = nxt
-			_ap.play(String(nxt), BLEND, 1.0)
+			_start(nxt, BLEND)
 			_ap.seek(0.0, true)
 			return
 		_one_shot = &""

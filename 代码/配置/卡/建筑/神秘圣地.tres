@@ -11,6 +11,7 @@ description = "法师产地 + 法力之泉光环。"
 cost_gold = 275
 cost_wood = 85
 functions = Array[StringName]([&"产兵", &"治疗"])
+require_tier = 2
 max_hp = 750.0
 defense = 2
 defense_type = &"堡垒"

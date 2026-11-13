@@ -10,5 +10,5 @@ den_building = &"creep_shell"
 creeps = Array[StringName]([&"gnoll_scout", &"gnoll_warrior", &"gnoll_shaman"])
 counts = Array[int]([2, 2, 1])
 respawn = 75.0
-first_spawn_min = 120.0
-spawn_interval_min = 60.0
+first_spawn_min = 2.0
+spawn_interval_min = 2.0

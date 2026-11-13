@@ -187,9 +187,25 @@ func count_buildings(id: StringName = &"") -> int:
 	return n
 
 
-## 是否还有大本营（胜负判定用）
+## 还有没有主城（胜负判定用）。
+##
+## ★ 2026-11-13 修：旧实现只数 `townhall`，而**升二本**会把主城换成 `townhall_2`
+##   （见 建筑改造.ROUTES）。于是"升级读完的那一瞬间 → has_townhall() = false →
+##   主场景立刻判负"——玩家花钱升级等于自杀。AI 自动升本那天一局 33 秒就结束了。
+## 口径改成**按能力认主城**：是资源交汇点、金木全收、还提供人口。
+## 不写任何 id，所以以后加"三本城堡"也不用回来改这里。
 func has_townhall() -> bool:
-	return count_buildings(&"townhall") > 0
+	for b in buildings:
+		if b == null or not is_instance_valid(b) or not b.is_alive() or b.def == null:
+			continue
+		if not b.def.is_dropoff:
+			continue
+		if not b.def.dropoff_kinds.is_empty():
+			continue    # 伐木场这类"只收一种"的不算主城
+		if b.def.food_provided <= 0:
+			continue
+		return true
+	return false
 
 
 ## 还有没有任何活着的兵力/建筑（野怪阵营用：全清完就不再算"敌人"）

@@ -511,14 +511,14 @@ func _case_2c4() -> void:
 			sa_src.contains("const RESEARCH_NOT_BEFORE_SEC: float = 300.0"), "文本命中")
 	_record("2C4：常态出击比例 0.75",
 			sa_src.contains("const ATTACK_RATIO_NORMAL: float = 0.75"), "文本命中")
-	# ★ 2026-11-07 玩家口径「采矿农民改 5」：5 金 + 5 木 + 2 工位 = 12（总数不变）
-	_record("2C4/2C8：农民工位 采金5 + 采木5 + 工位2 = 12（总数不变，工位动态）",
-			sa_src.contains("PEASANT_GOLD_SOFT_CAP: int = 5")
-			and sa_src.contains("PEASANT_WOOD_TARGET: int = 5")
+	# ★ 2026-11-13 玩家口径「多采矿」：采金 9 + 采木 4 + 工位 2 = 15
+	_record("2C4/2C8：农民工位 采金9 + 采木4 + 工位2 = 15（工位仍动态）",
+			sa_src.contains("PEASANT_GOLD_SOFT_CAP: int = 9")
+			and sa_src.contains("PEASANT_WOOD_TARGET: int = 4")
 			and sa_src.contains("PEASANT_BUILDER_SLOT: int = 2")
 			and sa_src.contains(
 				"PEASANT_TOTAL_CAP: int = PEASANT_GOLD_SOFT_CAP + PEASANT_WOOD_TARGET + PEASANT_BUILDER_SLOT"),
-			"5 + 5 + 2 = 12")
+			"9 + 4 + 2 = 15")
 
 	# --- 卡系统（C1~C5）---
 	var foot_card: EntityCard = UT.get_card(&"footman")
@@ -764,12 +764,12 @@ func _case_2c6() -> void:
 			th_card != null and int(th_card.cost_gold) == 320 and int(th_card.cost_wood) == 125
 			and cmd_src.contains("&\"townhall\"")
 			and sa_src.contains("func can_build_townhall() -> bool:") \
-				and sa_src.contains("func can_build_townhall() -> bool:\n\treturn false"),
+				and sa_src.contains("const EXPAND_BASE_MAX"),
 			"金=%d 木=%d 建造页=%s AI=%s" % [
 				int(th_card.cost_gold) if th_card != null else -1,
 				int(th_card.cost_wood) if th_card != null else -1,
 				str(cmd_src.contains("&\"townhall\"")),
-				str(sa_src.contains("func can_build_townhall() -> bool:\n\treturn false"))])
+				str(sa_src.contains("const EXPAND_BASE_MAX"))])
 
 
 # ===========================================================================
@@ -1250,8 +1250,8 @@ func _case_2c9() -> void:
 			and _near(float(AIV.output_coef()), 0.4, 0.0001)
 			and String(AIV.damage_theory_mode()) == "targeted"
 			and String(AIV.output_theory_mode()) == "recent"
-			and sa_src.contains("func can_build_townhall() -> bool:\n\treturn false"),
-			"窗口 0.8/0.5、0.7~1.3、0.4~0.9；系数 0.4；targeted/recent；修理 200；gap 3.0；大本营仍 false")
+			and sa_src.contains("const EXPAND_BASE_MAX"),
+			"窗口 0.8/0.5、0.7~1.3、0.4~0.9；系数 0.4；targeted/recent；修理 200；gap 3.0；分基地开关在（EXPAND_BASE_MAX）")
 
 
 # ===========================================================================
@@ -1389,8 +1389,8 @@ func _case_2c10() -> void:
 			and _near(float(AIV.output_coef()), 0.4, 0.0001)
 			and String(AIV.damage_theory_mode()) == "targeted"
 			and String(AIV.output_theory_mode()) == "recent"
-			and sa_src.contains("func can_build_townhall() -> bool:\n\treturn false"),
-			"机器断言守门：0.4 / targeted / recent / 200 / 3.0 / townhall=false 全冻结")
+			and sa_src.contains("const EXPAND_BASE_MAX"),
+			"机器断言守门：0.4 / targeted / recent / 200 / 3.0 冻结；分基地改为条件开启")
 
 
 # ===========================================================================
@@ -2329,9 +2329,10 @@ func _case_2c13() -> void:
 			sa13.contains("if not (AIV.goal_on() and goal_noop):")
 			and sa13.contains("_maybe_upgrade_tower()\n\t\t\t_manage_research(diff)"),
 			"升塔/研究/分基地在门控内")
-	_record("2C13 §9：AI 自动建大本营仍被禁止（can_build_townhall 恒 false）",
-			sa13.contains("func can_build_townhall() -> bool:") and _townhall_blocked(sa13),
-			"can_build_townhall 仍 return false")
+	_record("2C13 §9：分基地改为**条件开启**（2026-11-13 玩家口径「扩展线·可以开多个基地」）",
+			sa13.contains("func can_build_townhall() -> bool:") and not _townhall_blocked(sa13)
+			and sa13.contains("const EXPAND_BASE_MAX"),
+			"can_build_townhall 有真判定（不再固定 return false）")
 	var aiv13: String = FileAccess.get_file_as_string("res://代码/配置/AI判定模式.gd")
 	_record("2C13 §1：默认 dept=off 主线不变；新架构只在 --dept=on 实验分支",
 			aiv13.contains("const DEFAULT_DEPT_MODE: String = DEPT_OFF")
@@ -2339,13 +2340,18 @@ func _case_2c13() -> void:
 			"dept 默认 off / goal 默认 on（只在 dept=on 时生效）")
 
 
-## `can_build_townhall()` 是否仍然固定返回 false（2C-9 起的禁止项）。
+## `can_build_townhall()` 是否仍然是"空壳"（函数体第一行就是 return false）。
+## 2026-11-13 放开分基地后，函数体里当然还有 `return false`（各种前置条件），
+## 所以判据必须收窄到"**签名下一行直接 return false**"这一种形态。
 func _townhall_blocked(src: String) -> bool:
 	var i: int = src.find("func can_build_townhall() -> bool:")
 	if i < 0:
 		return false
-	var seg: String = src.substr(i, 160)
-	return seg.contains("return false")
+	var nl: int = src.find("\n", i)
+	if nl < 0:
+		return false
+	var line: String = src.substr(nl + 1, 48).strip_edges()
+	return line == "return false"
 
 
 # ===========================================================================

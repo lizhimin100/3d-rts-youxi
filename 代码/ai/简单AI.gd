@@ -44,12 +44,15 @@ const VILLAGER_ARMY_GAP: int = 2
 ## 补经济时农民目标的临时增量（2C-2）：支出需求 > 收入时 +2，压力消失自动回落。
 const PEASANT_EMERGENCY_BONUS: int = 2
 ## 2C-4 农民软上限（**直接覆盖旧上限 10**，任务书 §4.4）：采金人数到这个数 → 转采木。
-## TODO 初始值待农民测试（§4.4）产出后取下沿标定
-## ★ 2026-11-06 玩家口径「决策系统里采矿的农民数量改为 5 个」：
-##   5 金 + 5 木 + 2 工位 = 12（总数不变，只是把 3 个采金的挪去采木）。
-##   只改这一行会让 PEASANT_TOTAL_CAP 从 12 掉到 9 —— 农民总量跟着缩水，
-##   所以 PEASANT_WOOD_TARGET 一起从 2 提到 5。
-const PEASANT_GOLD_SOFT_CAP: int = 5
+##
+## ★ 2026-11-13 玩家口径「鼓励智能决策系统多采矿」：**采金 5 → 9，采木 5 → 4**
+##   （总数 12 → 15，工位不变 2）。
+##   依据是玩家实测：全程让副官操作也常年卡金币，而木头一直富裕 —
+##   旧配比 5 金 / 5 木 把一半人力压在木头上，木头又没什么地方花。
+##   改完满编 15 → 采金 9 + 采木 4 + 工位 2；副官 18 人上限时 采金 9 + 采木 6 + 工位 3。
+##   ★ 采金不是越多越好：单矿只有 3 个载位，人多只是在矿边排队，
+##     真正的上限是"矿的储量 / 往返时间"，所以给 9 而不是 15。
+const PEASANT_GOLD_SOFT_CAP: int = 9
 ## 2C-7 P0 农民工位（用户拍板）：**采金 8 + 采木 3 + 建造/修理 1 = 12**。
 ## 旧口径是"软上限 8 + 4 个机动农民"—— 那 4 个既伐木又建造，于是每次"该修"时
 ## 都有人在盖房/砍树，repair_stats 里 10 min 局 **76 次 candidates / 0 次 issued**
@@ -63,7 +66,14 @@ const PEASANT_GOLD_SOFT_CAP: int = 5
 ##   同时建造数 = 工位数 − 1（**至少留 1 个工位给修理**）；
 ##   无建造任务时全部工位可修；无修理任务时全部工位采木（不待命）。
 ##   ★ 总数仍是 12（PEASANT_TOTAL_CAP 不变），改的是"工位几个人、怎么分工"。
-const PEASANT_WOOD_TARGET: int = 5
+## ★ 2026-11-13：采木目标 5 → **4**（木头长期溢出，见上面 PEASANT_GOLD_SOFT_CAP 的注释）。
+const PEASANT_WOOD_TARGET: int = 4
+## **木头软盈余线**（2026-11-13 玩家口径「木头不会卡，有很多富裕」）：
+## 库存到这个数就只留 1 个人砍树（维持修理/建造的最低供给），其余全转采金。
+## 实测依据（seed 11 / 10 min）：阵营木头从 435 一路涨到 1798，同期金币余额只有 80~316；
+## 而 15 个农民里有 5~6 个常年挂在树上 —— 那 5 个人换去挖金，余额才有起色。
+## 600 的量级 = 3 座兵营 + 10 座农场 + 一堆修理，短期根本花不掉。
+const PEASANT_WOOD_SURPLUS: int = 600
 const PEASANT_BUILDER_SLOT: int = 2
 ## 总农民上限 = 采金 + 采木 + 工位 = 12（与 2C-6/2C-7 同数值，只是重新切分）
 const PEASANT_TOTAL_CAP: int = PEASANT_GOLD_SOFT_CAP + PEASANT_WOOD_TARGET + PEASANT_BUILDER_SLOT
@@ -93,11 +103,32 @@ const DEFEND_REISSUE: float = 4.0
 const BUILD_SEARCH_MIN: float = 11.0
 ## 新建筑与已有建筑的**最小水平间隙**（米，外接矩形之间）。
 ## 3.5m ≈ 一个身位 + 屋檐挑出，既不会插在一起，也不会把基地摊成一片空地。
-const BUILD_GAP: float = 3.5
+## ★ 2026-11-13 玩家口径「建筑不要黏在一起」：3.5 → **4.5**。
+##   3.5m 在俯视 44m 视距下只有 8 像素，两座 5×5 的房子看起来就是"贴着"；
+##   4.5m 能明确读出一条能走人的缝，也不会把基地摊到搜不到点。
+const BUILD_GAP: float = 4.5
 const BUILD_SEARCH_MAX: float = 34.0
 const BUILD_SEARCH_STEP: float = 3.0
 ## 每个环采样多少个方向
 const BUILD_SEARCH_ANGLES: int = 14
+## **建筑到金矿的最小间隙**（米，外接矩形边到矿心）。
+##
+## 玩家口径 2026-11-13：「建筑的建造要远离金矿」—— 矿不是背景板，是农民的作业面：
+## 矿边 3 个载位 + 一条卸货通道，房子一贴上去，农民就只能站在矿背面挖，
+## 视觉上也是"房子把矿围起来了"。矿心到边 5m 能把载位和站位全让出来。
+const BUILD_MINE_GAP: float = 5.0
+## **农民搬运通道**：交汇点（主城/分基地/伐木场）→ 每座金矿的连线，
+## 两侧各留这么宽（米）不盖房。玩家口径：「不要放在基地和金矿之间，
+## 以免挡住农民搬运的道路」。4m ≈ 一条能并排走两个农民的路。
+const BUILD_HAUL_HALF: float = 4.0
+## 压到搬运通道的**罚分**（不是硬拒绝）。
+##
+## 为什么不硬拒绝：主城常常就在矿边上（开局布阵 8~12m），矿又在两侧时，
+## 硬拒绝会把"整个半圆"变成不可建区，AI 直接找不到农场点 → 卡人口 → 更糟。
+## 罚分只让 AI 优先去背面/侧面，实在没地方时仍能盖（比不盖强）。
+const BUILD_HAUL_PENALTY: float = 600.0
+## 贴着金矿的罚分（同上，软约束；越近分越高）
+const BUILD_MINE_PENALTY: float = 400.0
 ## 防守感知半径（米）：敌方战斗单位进到这个圈里就算"压家"。
 ## 取 18 的依据：大本营视野 15m、箭塔 14m，18 让 AI 比玩家早半步反应。
 const DEFENSE_RADIUS: float = 18.0
@@ -579,7 +610,7 @@ func _think_once(diff: DifficultyDef) -> void:
 		#   · 哨塔升级箭塔 = 改造（花钱但不新建），2C-9 不纳入仲裁；
 		#   · 科技研究 = 阵营级升级，动作类型表里没有"研究"。
 		# 2C-13 §4.3：空过期间"没有目标就不花钱" —— 这两件都是新开销，必须一起停
-		# （`_maybe_expand()` 是 `can_build_townhall()` 恒 false 的桩，一并门控）。
+		# （`_maybe_expand()` 只建前哨塔、`can_build_townhall()` 只建分基地，都在门控内）。
 		if not (AIV.goal_on() and goal_noop):
 			_maybe_upgrade_tower()
 			_manage_research(diff)
@@ -589,6 +620,12 @@ func _think_once(diff: DifficultyDef) -> void:
 			#   理由（实测）：扩建兵营的目标层紧迫度只有 0.45 < 空过阈值 0.60，
 			#   只能靠"搭便车"落地；金币一多，第 2 座兵营就该在下一 tick 立起来。
 			_maybe_build_barracks(diff)
+			# ★ 2026-11-13 玩家口径「扩展线：可以开多个基地，并要将基地升本」：
+			#   这两件都在仲裁之外，理由和爆兵营一样 —— 它们的目标层紧迫度长期低于空过阈值，
+			#   靠"搭便车"落地的话 10 分钟局都看不到一次分基地。判定全在函数内部，
+			#   幂等（已完工/在建/钱不够/没目标点都会直接 return），不会刷屏下单。
+			_maybe_build_townhall()
+			_maybe_upgrade_townhall()
 		SimpleAI.dbg_econ += Time.get_ticks_usec() - _t0
 	else:
 		_manage_peasants(diff)
@@ -628,6 +665,8 @@ func _think_once(diff: DifficultyDef) -> void:
 			_manage_waves(diff)
 		_manage_upkeep(diff)
 		_maybe_expand()
+		_maybe_build_townhall()
+		_maybe_upgrade_townhall()
 		SimpleAI.dbg_mil += Time.get_ticks_usec() - _t0
 
 	# --- ⑦ 反愚蠢审计（最后跑，救火命令优先）---
@@ -911,6 +950,52 @@ func _main_base_id() -> StringName:
 	return StringName(_model_call("main_base_id"))
 
 
+## **主城实体**（一本「大本营」/ 二本「联盟要塞」都算）。
+##
+## 为什么不能写 `_first_building(_main_base_id())`（2026-11-13 升本接线时抓到的坑）：
+## 升二本之后主城的 id 变成 `townhall_2`，而 `_main_base_id()` 只返回其中一个 id
+## （字典顺序，先命中谁看运气）。于是"升了二本 → 找不到主城 → 不再补农民、不修主城、
+## 军队目标按 0 座基地算"——玩家看到的是 AI 自己把自己玩死。
+## 现在按**能力**认主城：是交汇点、且能训练农民。升几本都认得出来。
+func _main_base_building() -> RtsBuilding:
+	if _faction == null:
+		return null
+	var wid: StringName = _worker_id()
+	for b in _faction.buildings:
+		if b == null or not is_instance_valid(b) or not b.is_alive() or b.def == null:
+			continue
+		var rb: RtsBuilding = b as RtsBuilding
+		if rb == null or not rb.is_constructed:
+			continue
+		if not b.def.is_dropoff:
+			continue
+		if wid != &"" and not b.def.trains.has(wid):
+			continue
+		return rb
+	return null
+
+
+## 这个建筑面积定义是不是"主城"（一本/二本都算），按能力判、不写 id。
+func _is_main_base_def(d: UnitDef) -> bool:
+	if d == null or not d.is_dropoff:
+		return false
+	var wid: StringName = _worker_id()
+	return wid != &"" and d.trains.has(wid)
+
+
+## 该阵营现在有几座主城（含分基地、含二本）
+func _main_base_count() -> int:
+	if _faction == null:
+		return 0
+	var n: int = 0
+	for b in _faction.buildings:
+		if b == null or not is_instance_valid(b) or not b.is_alive() or b.def == null:
+			continue
+		if _is_main_base_def(b.def):
+			n += 1
+	return n
+
+
 func _food_building_id() -> StringName:
 	return StringName(_model_call("food_building_id"))
 
@@ -1101,7 +1186,7 @@ func _manage_peasants(diff: DifficultyDef) -> void:
 	var wid: StringName = _worker_id()
 	if wid == &"" or not _can_spend(wid):
 		return
-	var townhall: RtsBuilding = _first_building(_main_base_id())
+	var townhall: RtsBuilding = _main_base_building()
 	if townhall == null:
 		return
 	if townhall.train_count() >= MAX_QUEUE_PEASANT:
@@ -1155,6 +1240,10 @@ func _assign_workers(_diff: DifficultyDef) -> void:
 	else:
 		want_gold = int(_model_call("peasant_gold_want",
 				[total, PEASANT_GOLD_SOFT_CAP, PEASANT_WOOD_TARGET]))
+	# ★ 木头富裕时不再派人砍树（只留 1 个维持供给），其余全转采金 ——
+	#   见 PEASANT_WOOD_SURPLUS 的注释（10 min：木 1798 / 金 300）。
+	if _faction != null and _faction.wood >= PEASANT_WOOD_SURPLUS:
+		want_gold = maxi(want_gold, total - 1)
 	var base: Vector3 = RtsWorld.base_center(_faction)
 	var radius: float = Cfg.game.map_size * 0.75
 	# 木材的"收货点"每 tick 只算一次（伐木场优先，其次大本营）
@@ -1176,10 +1265,12 @@ func _assign_workers(_diff: DifficultyDef) -> void:
 		if kind == RtsConst.Harvest.WOOD:
 			node = _nearest_wood(w, wood_drop)
 		else:
-			node = Game.find_nearest_harvestable(w.global_position, kind, base, radius)
+			# ★ 2026-11-13：按「走去 + 背回来」的往返成本挑矿（分基地旁边那座矿会自然胜出），
+			#   不再只看"离主基地多近"—— 旧口径会让农民横穿地图去挖远矿。
+			node = Game.find_trip_harvestable(_faction, w.global_position, kind, radius)
 		if node == null and kind == RtsConst.Harvest.WOOD:
 			kind = RtsConst.Harvest.GOLD
-			node = Game.find_nearest_harvestable(w.global_position, kind, base, radius)
+			node = Game.find_trip_harvestable(_faction, w.global_position, kind, radius)
 		if node == null:
 			continue
 		_sched.gather([w], node, "economy")
@@ -1236,6 +1327,9 @@ func _rebalance_gatherers(total: int) -> void:
 	else:
 		want_gold = int(_model_call("peasant_gold_want",
 				[total, PEASANT_GOLD_SOFT_CAP, PEASANT_WOOD_TARGET]))
+	# 木头富裕：只剩 1 个人砍树（与 `_assign_workers` 同一口径，否则刚转去采金的人会被挪回来）
+	if _faction != null and _faction.wood >= PEASANT_WOOD_SURPLUS:
+		want_gold = maxi(want_gold, total - 1)
 	var kind: int = -1
 	var pool: Array = []
 	if on_gold < want_gold and not wood_workers.is_empty():
@@ -1253,7 +1347,7 @@ func _rebalance_gatherers(total: int) -> void:
 	if kind == RtsConst.Harvest.WOOD:
 		node = _nearest_wood(w, _wood_dropoff())
 	else:
-		node = Game.find_nearest_harvestable(w.global_position, kind, base, radius)
+		node = Game.find_trip_harvestable(_faction, w.global_position, kind, radius)
 	if node == null:
 		return
 	_sched.gather([w], node, "economy")
@@ -1418,13 +1512,20 @@ func _can_spend(id: StringName) -> bool:
 	return Game.can_afford(_faction, id)
 
 
-## 军队专用花钱闸 —— 与 `_can_spend` **完全同一实现**。
+## 军队专用花钱闸 —— 与 `_can_spend` 是同一套口径，只多一条"为扩张攒钱"。
 ##
-## 保留这个名字只为兼容旧调用点（`_pick_army_unit` / 反愚蠢审计），语义已经合并：
-## "军队 / 建筑 / 农民 / 哨塔统一走'钱够就花'，不再有保留金闸"。
-## 2C-1 曾把军队单独摘出来（不套金币保留额），2C-2 把其余花销也一起摘掉了。
+## ★ 2026-11-13：二本/分基地的差额进入 `SAVE_FOR_EXPAND_GAP` 时，这里返回 false，
+##   让军队训练停一会儿（最多 `SAVE_FOR_EXPAND_MAX` 秒）。没有它，收入会一直被兵吃掉：
+##   实测 AI 的金币余额长期 10~250，而升二要 280 —— 十局里难得升一次。
+##   家里挨打 / 人口顶死时**不拦**（那是"不花就死"的钱）。
 func _can_spend_army(id: StringName) -> bool:
-	return _can_spend(id)
+	if not _can_spend(id):
+		return false
+	if _expand_save_active():
+		if float(metrics.get("base_threat", 0.0)) > 0.0 or _pop_critical():
+			return true
+		return false
+	return true
 
 
 ## 修理建筑（2C-5 P1-4 接命令口；2C-6 P3 改判据；2C-7 P0 改派人；2C-8 P0 改多工位）
@@ -1478,7 +1579,6 @@ func _repair_candidates() -> Dictionary:
 	if _faction == null:
 		return {"cands": cands, "wood_blocked": wood_blocked}
 	var deficit_min: float = AIV.repair_hp_deficit()
-	var base_id: StringName = _main_base_id()
 	for b in _faction.buildings:
 		if b == null or not is_instance_valid(b) or not b.is_alive() or b.def == null:
 			continue
@@ -1504,7 +1604,7 @@ func _repair_candidates() -> Dictionary:
 				[float(rb.hp), float(rb.def.max_hp)]))
 		cands.append({
 			"b": rb, "deficit": deficit,
-			"is_base": base_id != &"" and rb.def.id == base_id,
+			"is_base": _is_main_base_def(rb.def),
 		})
 	# 优先非大本营；同类按掉血绝对值降序（sort_custom 稳定：并列保持遍历顺序）
 	cands.sort_custom(func(a, b):
@@ -1735,18 +1835,98 @@ func _predicted_trainees_60s(diff: DifficultyDef) -> float:
 ## v2 加了一条"社交距离"：旧版只问"这几格能不能走"，不问"离别的房子多远"，
 ## 于是兵营/农场会紧贴着大本营盖，屋檐、台阶、地基板互相穿插，
 ## 远看像一堆盒子挤在一起。现在要求与任何己方建筑的外接矩形至少留 BUILD_GAP 米。
+##
+## ★ v3（2026-11-13 玩家口径「远离金矿 / 不挡搬运路」）：
+##   `_has_room` 只保证"不和别的房子黏在一起"，但 AI 仍然会把农场盖在矿边、
+##   或者正好插在主城和矿之间（农民每趟都要绕房子，走成了 S 形）。
+##   现在每个候选点再算一个 `_site_penalty`：
+##     · 贴着金矿（< BUILD_MINE_GAP）→ 重罚；
+##     · 落在"交汇点 → 金矿"的走廊里 → 重罚；
+##   整个搜索取**罚分最低**的点，而不是"第一个能站人的点"。
+##   罚分是软的（找不到完美点也要能盖房），否则矿多的开局会卡住农场。
 func _find_build_spot(footprint: Vector2i) -> Vector3:
 	var center: Vector3 = RtsWorld.base_center(_faction)
+	var segs: Array = _haul_segments()
+	var best: Vector3 = Vector3.INF
+	var best_pen: float = INF
 	var r: float = BUILD_SEARCH_MIN
 	while r <= BUILD_SEARCH_MAX:
 		for i in range(BUILD_SEARCH_ANGLES):
 			var ang: float = TAU * float(i) / float(BUILD_SEARCH_ANGLES)
 			var raw := Vector3(center.x + cos(ang) * r, 0.0, center.z + sin(ang) * r)
 			var p: Vector3 = 建筑网格.snap_point(raw, footprint)
-			if 建筑网格.can_place(p, footprint) and _has_room(p, footprint):
-				return p
+			if not 建筑网格.can_place(p, footprint) or not _has_room(p, footprint):
+				continue
+			var pen: float = _site_penalty(p, footprint, segs)
+			if pen < best_pen:
+				best_pen = pen
+				best = p
+				if pen <= 0.001:
+					# 完美点：不用再扫外层。同一圈后面即使也有完美点，
+					# 视觉上也只差一个角度，早退省一串 can_place 查询。
+					return best
 		r += BUILD_SEARCH_STEP
-	return Vector3.INF
+	return best
+
+
+## 搬运通道线段表：每个交汇点 → 每座活金矿。一次搜索只建一次（矿/建筑都不变）。
+func _haul_segments() -> Array:
+	var out: Array = []
+	if _faction == null:
+		return out
+	var drops: Array = RtsWorld.dropoffs(_faction)
+	if drops.is_empty():
+		return out
+	for h in Game.all_harvestables():
+		if h == null or not is_instance_valid(h):
+			continue
+		if not h.is_alive() or int(h.harvest_kind) != RtsConst.Harvest.GOLD:
+			continue
+		var hp: Vector3 = h.global_position
+		for dp in drops:
+			if dp == null or not is_instance_valid(dp) or not dp.is_alive():
+				continue
+			out.append([dp.global_position, hp])
+	return out
+
+
+## 点到线段（只看 xz 平面）的距离。走廊判定用。
+func _seg_dist_xz(p: Vector3, a: Vector3, b: Vector3) -> float:
+	var ap := Vector2(p.x - a.x, p.z - a.z)
+	var ab := Vector2(b.x - a.x, b.z - a.z)
+	var l2: float = ab.length_squared()
+	if l2 <= 0.0001:
+		return ap.length()
+	var t: float = clampf(ap.dot(ab) / l2, 0.0, 1.0)
+	return (ap - ab * t).length()
+
+
+## 落点罚分（0 = 完美）。只给 `_find_build_spot` 用，分基地不走这条（见 `_spot_near`）。
+func _site_penalty(spot: Vector3, footprint: Vector2i, segs: Array = []) -> float:
+	var pen: float = 0.0
+	# ① 贴金矿：矿边要给载位和站位留空
+	var hx: float = float(maxi(footprint.x, 1)) * 0.5
+	var hz: float = float(maxi(footprint.y, 1)) * 0.5
+	for h in Game.all_harvestables():
+		if h == null or not is_instance_valid(h):
+			continue
+		if not h.is_alive() or int(h.harvest_kind) != RtsConst.Harvest.GOLD:
+			continue
+		var hp: Vector3 = h.global_position
+		var dx: float = maxf(absf(spot.x - hp.x) - hx, 0.0)
+		var dz: float = maxf(absf(spot.z - hp.z) - hz, 0.0)
+		var d: float = sqrt(dx * dx + dz * dz)
+		if d < BUILD_MINE_GAP:
+			pen += BUILD_MINE_PENALTY + (BUILD_MINE_GAP - d) * 40.0
+	# ② 挡在"交汇点 → 金矿"的搬运路上
+	if segs.is_empty():
+		segs = _haul_segments()
+	var half_wide: float = BUILD_HAUL_HALF + sqrt(hx * hx + hz * hz)
+	for s in segs:
+		if _seg_dist_xz(spot, s[0], s[1]) < half_wide:
+			pen += BUILD_HAUL_PENALTY
+			break
+	return pen
 
 
 ## 这个落点离已有建筑够不够远（外接矩形间隙 >= BUILD_GAP）。
@@ -2262,7 +2442,6 @@ func _base_producer_counts() -> Dictionary:
 	var out := {"bases": 0, "producers": 0}
 	if _faction == null:
 		return out
-	var base_id: StringName = _main_base_id()
 	var prod_ids: Array = _producer_ids()
 	for b in _faction.buildings:
 		if b == null or not is_instance_valid(b) or not b.is_alive() or b.def == null:
@@ -2270,7 +2449,9 @@ func _base_producer_counts() -> Dictionary:
 		var rb: RtsBuilding = b as RtsBuilding
 		if rb != null and not rb.is_constructed:
 			continue
-		if base_id != &"" and b.def.id == base_id:
+		# ★ 2026-11-13：基地数按能力认（一本/二本/分基地都算），不再比单一 id ——
+		#   否则升了二本之后"基地数"掉回 0，防守下限和军队目标一起缩水。
+		if _is_main_base_def(b.def):
 			out["bases"] = int(out["bases"]) + 1
 		if prod_ids.has(b.def.id):
 			out["producers"] = int(out["producers"]) + 1
@@ -2462,6 +2643,10 @@ func _maybe_build_one(id: StringName, want: int, tag: String) -> void:
 			return
 	var d: UnitDef = Cfg.unit(id)
 	if d == null or not _can_spend(id):
+		return
+	# ★ 2026-11-13 二本门槛：车坊 / 神秘圣地要主城升到二本。不满足就**别提案**，
+	#   免得仲裁把预算锁在一件永远落地不了的建造上（调度器也有一道同样的拦截）。
+	if not Game.tier_allows(_faction, id):
 		return
 	var builder: RtsUnit = _pick_builder()
 	if builder == null:
@@ -2779,7 +2964,13 @@ func _manage_strongpoint() -> void:
 		return
 	if _threat_units(true).size() > 0:
 		return
-	var army: Array = _combat_units(true)
+	# ★ 2026-11-13 玩家口径「副官别把采矿农民拉到地图各处」：
+	#   这里原来是 `_combat_units(true)`（**连农民一起算**），于是开局没钱出兵时，
+	#   副官会把"闲着的采金农民"当成 3 个占领者派去地图中心 ——
+	#   他们走过去、站一会儿、再走回来，一趟就是一分半，回来矿已经空了/别人占了。
+	#   据点计时靠的是"圈里只有一个队伍"，一个农民在圈里和三个农民没区别，
+	#   所以人不够时宁可不抢，也不拿经济换一个 200 金的箱子。
+	var army: Array = _combat_units(false)
 	if army.size() < 4:
 		return
 	var score: float = float(sp.call("value_score", _faction))
@@ -4018,7 +4209,7 @@ func _goal_dict(type: String, target_id: int, pos: Vector3, name: String,
 func _classify_building_goal(b: Node3D, d: UnitDef) -> String:
 	if String(_model_call("role_of", [d])) == "defense":
 		return GOAL_ARROW_TOWER if d.attack_damage > 0.0 else GOAL_TOWER
-	if d.id == _main_base_id():
+	if _is_main_base_def(d):
 		return GOAL_BASE
 	# 其余（伐木场/农场/兵营/圣地/车坊…）= 敌方外围/经济建筑。
 	# 本作没有独立的"分基地"建筑，这里按规格的"分基地"语义映射到外围建筑。
@@ -4737,17 +4928,24 @@ func _outer_tower_spot(footprint: Vector2i) -> Vector3:
 		if to.length() > 1.0:
 			dir = to.normalized()
 	var base_ang: float = atan2(dir.x, dir.z)
+	var segs: Array = _haul_segments()
+	var fallback: Vector3 = Vector3.INF
 	var r: float = OUTER_TOWER_RADIUS_MIN
 	while r <= OUTER_TOWER_RADIUS_MAX:
 		for sgn in [0.0, 0.45, -0.45, 0.9, -0.9, 1.6, -1.6]:
 			var ang: float = base_ang + float(sgn)
 			var raw := Vector3(home.x + sin(ang) * r, 0.0, home.z + cos(ang) * r)
 			var p: Vector3 = 建筑网格.snap_point(raw, footprint)
-			if 建筑网格.can_place(p, footprint) and _has_room(p, footprint) \
-					and p.distance_to(home) > INNER_TOWER_RADIUS:
+			if not 建筑网格.can_place(p, footprint) or not _has_room(p, footprint) \
+					or p.distance_to(home) <= INNER_TOWER_RADIUS:
+				continue
+			# 外圈通常已经远离矿，优先不挡路；全都挡时仍取第一个（塔不能空着不造）
+			if _site_penalty(p, footprint, segs) <= 0.001:
 				return p
+			if fallback == Vector3.INF:
+				fallback = p
 		r += 4.0
-	return Vector3.INF
+	return fallback
 
 
 ## 哨塔：**朝敌方方向**推到基地外圈，目的是"提前看见有人来"。
@@ -4791,6 +4989,9 @@ func _maybe_build_watchtower(diff: DifficultyDef) -> void:
 
 ## "朝敌方的外圈"选点：从基地沿"我方→最近敌人"方向走 24~34m，找第一个可建点。
 ## 找不到就退到通用的 `_find_build_spot`（环形搜索）。
+##
+## ★ 2026-11-13：优先选"不贴金矿、不挡搬运路"的点（`_site_penalty` = 0），
+##   全都挡路时仍然返回第一个合法点 —— 塔是防御建筑，宁可挡一点路也不能不造。
 func _frontier_spot(footprint: Vector2i, r_min: float, r_max: float) -> Vector3:
 	if _faction == null:
 		return Vector3.INF
@@ -4802,16 +5003,22 @@ func _frontier_spot(footprint: Vector2i, r_min: float, r_max: float) -> Vector3:
 		to.y = 0.0
 		if to.length() > 1.0:
 			dir = to.normalized()
+	var segs: Array = _haul_segments()
+	var fallback: Vector3 = Vector3.INF
 	var r: float = r_min
 	while r <= r_max:
 		for sgn in [0.0, 0.5, -0.5]:
 			var ang: float = atan2(dir.x, dir.z) + float(sgn)
 			var raw := Vector3(home.x + sin(ang) * r, 0.0, home.z + cos(ang) * r)
 			var p: Vector3 = 建筑网格.snap_point(raw, footprint)
-			if 建筑网格.can_place(p, footprint) and _has_room(p, footprint):
+			if not 建筑网格.can_place(p, footprint) or not _has_room(p, footprint):
+				continue
+			if _site_penalty(p, footprint, segs) <= 0.001:
 				return p
+			if fallback == Vector3.INF:
+				fallback = p
 		r += 3.0
-	return Vector3.INF
+	return fallback
 
 
 ## **多余哨塔 → 箭塔**（玩家口径："多余哨塔升级箭塔加强防御"）。
@@ -4870,18 +5077,221 @@ func _maybe_upgrade_tower() -> void:
 		RtsBuilding.upgrade_time_for(new_id), towers.size(), prefer])
 
 
-## **大本营能不能建（2C-6 P4，扩张线预留接口）**：**固定 false**。
+## **升本**：把主城升成二本（联盟要塞）。
 ##
-## 用户口径：大本营现在**有成本**（320 金 / 125 木）且玩家能建（建造页第 10 个按钮），
-## 但 AI **本轮不自动建** —— 多基地会牵动资源点选择、防守下限（5+2×基地数）、
-## 分矿扩张顺序，那是下一轮"扩张线"的活。先把这个判断收成一个函数，
-## 下一轮接扩张线时只改这里 + 加一个 `_maybe_build_townhall()` 调用点，
-## 不会散落在建造逻辑里各写一份。
+## 玩家口径 2026-11-13：「要将基地升本」——而且**必须有 AI 自动做这件事**，
+## 因为二本是车坊/神秘圣地的建造门槛，不升本这条建筑线整局都开不了。
+## 门槛：
+##   · 还没到二本；主城已完工、没在训练/研究/读条（读条期间不能产兵，别把经济掐断）；
+##   · **开局 UPGRADE_BASE_NOT_BEFORE 秒内不升**：升本会锁住主城 33 秒不能出农民，
+##     期间还要吃掉 160 金 —— 开局就升等于把钱和产能一起埋了（实测 4 个 AI 全在 t≈0 升，
+##     第 3 分钟每家只有 3 个农民）；
+##   · 至少一座兵营已完工（有产能才有资格谈科技等级），农民 ≥ 8（经济先立起来）；
+##   · 差价够（补差价口径走 建筑改造.upgrade_cost，和玩家命令卡同一份）；
+##   · 留够出兵/补人口的钱（`UPGRADE_BASE_GOLD_RESERVE`，**不再用 reserve_gold 480**）。
 ##
-## ★ 不许为了让 AI "看起来会扩张"把它改成 true —— 那会立刻开始拿 320 金砸第二基地，
-##   而这轮的农田/兵营/修理预算都按"单基地"标定过。
-func can_build_townhall() -> bool:
+## ★ 2026-11-13 实测：`c.x + reserve_gold` = 160+480 = 640 金，而副官余额最高 320 ——
+##   这条判定等于"永不升本"，二本线和车坊/神秘圣地整条卡死。现在改成 160+120=280，
+##   并在"只差 150 以内"时让军队训练先停（`_save_for_expand`），钱才攒得出来。
+const UPGRADE_BASE_GOLD_RESERVE: int = 120
+
+## ---- 为扩张攒钱（2026-11-13）----
+## 副官的金币余额被军队吃到 80~320，而二本要 280、分基地要 380 —— 光"判定钱够"
+## 永远等不到。所以：当差额进入这个阈值（金）时，军队训练先停一会儿，让钱攒上去。
+const SAVE_FOR_EXPAND_GAP: int = 150
+## 最多攒多久（秒）：超时立刻放弃（不能让 AI 为了攒钱整局不出兵）。
+const SAVE_FOR_EXPAND_MAX: float = 100.0
+## 开始攒钱的时刻（-1 = 没在攒）
+var _expand_save_since: float = -1.0
+## 攒钱"失败"后的封锁期：超时放弃后这么久内不再攒（否则会 100 秒停兵→立刻重开→无限循环）
+var _expand_save_block_until: float = -1.0
+
+
+## 本 tick 军队训练要不要给"二本 / 分基地"让路
+func _expand_save_active() -> bool:
+	if _expand_save_since < 0.0:
+		return false
+	if Game.elapsed - _expand_save_since > SAVE_FOR_EXPAND_MAX:
+		_expand_save_since = -1.0    # 超时放弃：继续正常出兵，别把命攒没了
+		_expand_save_block_until = Game.elapsed + SAVE_FOR_EXPAND_MAX
+		return false
+	return true
+
+
+func _arm_expand_save() -> void:
+	if Game.elapsed < _expand_save_block_until:
+		return
+	if _expand_save_since < 0.0:
+		_expand_save_since = Game.elapsed
+		_log("为扩张攒钱：军队暂停补兵，最多 %.0f 秒" % SAVE_FOR_EXPAND_MAX)
+
+
+func _expand_save_done() -> void:
+	_expand_save_since = -1.0
+func _maybe_upgrade_townhall() -> void:
+	if _faction == null:
+		return
+	if Game.elapsed < UPGRADE_BASE_NOT_BEFORE:
+		return
+	if int(Game.faction_tier(_faction)) >= 2:
+		return
+	if _workers().size() < UPGRADE_BASE_MIN_WORKERS:
+		return
+	var pid: StringName = _primary_producer_id(Cfg.difficulty(Game.difficulty_index))
+	if pid != &"" and _faction.count_buildings(pid) < 1:
+		return
+	var hall: RtsBuilding = _main_base_building()
+	if hall == null or hall.def == null:
+		return
+	var new_id: StringName = REFIT.upgrade_target_of(hall.def.id)
+	if new_id == &"":
+		return
+	if hall.is_upgrading() or not hall.train_queue.is_empty() or hall.is_researching():
+		return
+	var c: Vector2i = REFIT.upgrade_cost(hall.def.id, new_id)
+	var need: int = c.x + UPGRADE_BASE_GOLD_RESERVE
+	if _faction.gold < need:
+		if need - _faction.gold <= SAVE_FOR_EXPAND_GAP:
+			_arm_expand_save()
+		return
+	if _faction.wood < c.y + 60:
+		return
+	if not REFIT.start(hall, new_id):
+		return
+	_expand_save_done()
+	_log("升本：%s → 二本（补差价 %d 金 / %d 木，%.0f 秒）" % [
+		hall.def.display_name, c.x, c.y, RtsBuilding.upgrade_time_for(new_id)])
+
+
+## 这个点是不是"离敌人比离我们近"（分基地选址要排除别人家门口的矿）
+func _enemy_base_closer(p: Vector3, my_dist: float) -> bool:
+	for f in Game.factions:
+		if f == null or f == _faction or int(f.team) == int(_faction.team):
+			continue
+		if int(f.team) == 0:
+			continue
+		var c: Vector3 = RtsWorld.base_center(f)
+		if c == Vector3.INF:
+			continue
+		if p.distance_to(c) < my_dist:
+			return true
 	return false
+
+
+## **开分基地**（扩展线的"多基地"那一半，2026-11-13 玩家口径）。
+## 判定全在 `can_build_townhall()` 里；这里只负责挑人、挑点、下令。
+func _maybe_build_townhall() -> void:
+	if not _in_expand_window():
+		return
+	if _faction == null or not can_build_townhall():
+		return
+	_exec_build_townhall()
+
+
+## 冷启动窗口：分基地太早建会把开局的钱抽干（兵营/人口全饿死）
+func _in_expand_window() -> bool:
+	return Game.elapsed >= EXPAND_BASE_NOT_BEFORE
+
+
+## 分基地目标点：矿边落脚点（见 `_expansion_base_spot`）
+func _expand_base_target() -> Vector3:
+	return _expansion_base_spot()
+
+## **大本营能不能建（分基地）** —— 2026-11-13 起是**真开关**，不再固定 false。
+##
+## 玩家口径：「鼓励智能决策系统多采矿（扩展线，可以开多个基地，并要将基地升本）」。
+## 为什么要开：家门口那座矿挖空之后，全队要走 60m 去挖中立矿，收入断崖 ——
+## 玩家实测 5 分钟之后全程卡金币。分基地的价值不在"多一座楼"，而是**它是交汇点**：
+## 矿边 3m 卸货，一趟从 120 秒变成 20 秒，同一座矿的产出翻 5 倍。
+##
+## 五条门槛（缺一条都会变成"拿 320 金打水漂"）：
+##   ① 开局 4 分钟内不扩张（先把兵营/人口立稳）；
+##   ② 已经有一座分基地在建 → 等它完工，不叠工地；
+##   ③ 主城数到上限（含主城 3 座）；
+##   ④ 有值得开矿的目标点（离家 ≥ 35m 的金矿，22m 内没有自家建筑）；
+##   ⑤ 钱够（分基地价 + 200 金余量）且农民 ≥ 10（人不够时开分矿等于两头空）。
+func can_build_townhall() -> bool:
+	if _faction == null or _faction.passive:
+		return false
+	if Game.elapsed < EXPAND_BASE_NOT_BEFORE:
+		return false
+	if _main_base_count() >= EXPAND_BASE_MAX:
+		return false
+	for b in _faction.buildings:
+		if b == null or not is_instance_valid(b) or not b.is_alive() or b.def == null:
+			continue
+		if not _is_main_base_def(b.def):
+			continue
+		var rb: RtsBuilding = b as RtsBuilding
+		if rb != null and not rb.is_constructed:
+			return false    # 已经有一座分基地在施工
+	# ① 外面得真的有一座"值得为它开基地"的矿（不是随便什么资源点）
+	if _expansion_base_spot() == Vector3.INF:
+		return false
+	if _workers().size() < EXPAND_BASE_MIN_WORKERS:
+		return false
+	var hid: StringName = _main_base_id()
+	var hd: UnitDef = Cfg.unit(hid) if hid != &"" else null
+	if hd == null:
+		return false
+	if _faction.gold < int(hd.gold_cost) + EXPAND_BASE_GOLD_RESERVE:
+		# 只差一点点：让军队先别把这一笔吃掉（见 SAVE_FOR_EXPAND_GAP）
+		var need: int = int(hd.gold_cost) + EXPAND_BASE_GOLD_RESERVE
+		if need - _faction.gold <= SAVE_FOR_EXPAND_GAP:
+			_arm_expand_save()
+		return false
+	if _faction.wood < int(hd.wood_cost) + 40:
+		return false
+	return true
+
+
+## 分基地目标点：**外围金矿**旁边一格能放下主城的地方（8~20m）。
+##
+## 判据（按优先级）：离家 ≥ EXPAND_MIN_DIST；22m 内没有自家建筑（否则不算"新基地"）；
+## 附近有活着的金矿、且那座矿离这个落点 ≤ 18m（保证走两步就能卸货）。
+func _expansion_base_spot() -> Vector3:
+	if _faction == null:
+		return Vector3.INF
+	var hid: StringName = _main_base_id()
+	var hd: UnitDef = Cfg.unit(hid) if hid != &"" else null
+	if hd == null:
+		return Vector3.INF
+	var home: Vector3 = RtsWorld.base_center(_faction)
+	var best: Vector3 = Vector3.INF
+	var best_score: float = -1.0
+	for h in Game.all_harvestables():
+		if h == null or not is_instance_valid(h) or not h.is_alive():
+			continue
+		if int(h.harvest_kind) != RtsConst.Harvest.GOLD:
+			continue
+		var p: Vector3 = h.global_position
+		var d: float = p.distance_to(home)
+		if d < EXPAND_MIN_DIST:
+			continue
+		# 不许开到别人家门口：这座矿必须"离我们比离任何敌人近"，
+		# 否则 AI 会跑到敌方基地 20m 处盖一座 9×5 的大本营（白送 320 金）。
+		if _enemy_base_closer(p, d):
+			continue
+		var covered: bool = false
+		for b in _faction.buildings:
+			if b == null or not is_instance_valid(b) or not b.is_alive():
+				continue
+			if b.global_position.distance_to(p) <= EXPAND_COVER_RADIUS:
+				covered = true
+				break
+		if covered:
+			continue
+		# 先试"矿边 6~18m"，放不下就跳过这座矿（别硬塞）。分基地不吃"离矿 5m"那条规矩。
+		var spot: Vector3 = _spot_near(p, hd.footprint, true)
+		if spot == Vector3.INF:
+			continue
+		if spot.distance_to(p) > 20.0:
+			continue
+		# 越远越优先：把基地往外推，同时把"家门口那座已挖空的矿"排除在外
+		if d > best_score:
+			best_score = d
+			best = spot
+	return best
 
 
 # ---------------------------------------------------------------------------
@@ -4906,6 +5316,25 @@ const EXPAND_OUTPOST_MAX := 2
 const EXPAND_COOLDOWN := 90.0
 ## 开局多久之内不往外扩张（秒）：先把自己的兵营/人口立稳，别一开局就把 70 金扔在外面
 const EXPAND_NOT_BEFORE := 120.0
+## ---- 分基地（2026-11-13 玩家口径「扩展线：可以开多个基地」）----
+## 主城总数上限（含首都）：2 座对 1v1 已经够（每座都带 24~32 人口与交汇点）
+const EXPAND_BASE_MAX: int = 3
+## 开局多久之内不建分基地（秒）：4 分钟前连兵营都可能没立稳
+const EXPAND_BASE_NOT_BEFORE: float = 240.0
+## 分基地要留的金币余量（金）：造完还得立刻能补农民/补人口。
+##
+## ★ 2026-11-13 实测（seed 11 / 10 min）：副官的金币余额长期在 **80~320** 徘徊
+##   （收入全被军队吃掉），200 的余量 = "永远凑不够 520 金"，分基地一次都建不出来。
+##   降到 **60**（= 一个农民 60），再配合 `_save_for_expand`（差 150 以内时军队让路），
+##   分基地才真的能落地。
+const EXPAND_BASE_GOLD_RESERVE: int = 60
+## 开分基地最少需要几个农民（人不够时开分矿 = 两头都喂不饱）
+const EXPAND_BASE_MIN_WORKERS: int = 10
+## 开局多久之内不升二本（秒）：升本锁主城 33 秒不能出农民 + 吃 160 金，
+## 开局就升会把整个前期经济埋掉（实测每家第 3 分钟只有 3 个农民）。
+const UPGRADE_BASE_NOT_BEFORE: float = 180.0
+## 升二本最少需要几个农民
+const UPGRADE_BASE_MIN_WORKERS: int = 8
 var _expand_next_t: float = 0.0
 
 
@@ -5008,15 +5437,22 @@ func _expand_resource_target() -> Vector3:
 
 
 ## 在某个点周围 6~18m 找一个能放下的建筑格（贴网格 + 避开占格）。
-func _spot_near(center: Vector3, footprint: Vector2i) -> Vector3:
+##
+## `allow_near_mine`：分基地专用 —— 分基地的**全部价值**就是"矿边 3m 卸货"，
+## 给它套"离矿 5m"的规矩会让所有分基地落到 18m 外，等于白造。前哨塔/农场不传。
+func _spot_near(center: Vector3, footprint: Vector2i, allow_near_mine: bool = false) -> Vector3:
 	var r: float = 6.0
 	while r <= 18.0:
 		for i in range(10):
 			var ang: float = TAU * float(i) / 10.0
 			var raw := Vector3(center.x + cos(ang) * r, 0.0, center.z + sin(ang) * r)
 			var p: Vector3 = 建筑网格.snap_point(raw, footprint)
-			if 建筑网格.can_place(p, footprint) and _has_room(p, footprint):
-				return p
+			if not 建筑网格.can_place(p, footprint) or not _has_room(p, footprint):
+				continue
+			# 普通建筑：矿边和搬运通道都躲开；分基地：只要求"别和别的房子黏一起"
+			if not allow_near_mine and _site_penalty(p, footprint) > 0.001:
+				continue
+			return p
 		r += 3.0
 	return Vector3.INF
 
@@ -5471,7 +5907,8 @@ func _promise_target_done(disp: String, diff: DifficultyDef) -> bool:
 	if hid != &"":
 		var hd: UnitDef = Cfg.unit(hid)
 		if hd != null and String(hd.display_name) == disp:
-			return _faction.count_buildings(hid) >= 2
+			# 分基地承诺达成 = 主城数量真的 +1（一本/二本都算，见 _main_base_count）
+			return _main_base_count() >= 2
 	return false
 
 
@@ -5517,11 +5954,26 @@ func _promise_spawn(now: float, diff: DifficultyDef) -> void:
 					int(hd.wood_cost), now, BM.PROMISE_TTL_EXPAND)
 
 
-## 资源点"90 s 内枯竭"判据的**接口桩**。
-## 分基地的生成被 `can_build_townhall()`（恒 false）挡在前面，本函数当前不会被调用；
-## 2C-13 若开分基地，在这里接「剩余矿量 ÷ 最近 60 s 金币速率」即可。
+## 资源点"90 s 内枯竭"判据（2026-11-13 起真的会算，不再恒 false）。
+##
+## 口径：**家门口 45m 内**所有活着的金矿，剩余储量加起来不到 900 → 等于见底。
+## 为什么用"总储量"而不是"速率"：9 个采金农民 + 20 金/趟 ≈ 10 金/秒，
+## 900 / 10 = 90 秒 —— 和"90 s 内枯竭"本来就是同一个数，但不需要采样收入历史，
+## 在任何时刻（包括开局、包括被抄家）都能给出确定答案。
 func _expand_due_soon() -> bool:
-	return false
+	if _faction == null:
+		return false
+	var home: Vector3 = RtsWorld.base_center(_faction)
+	var near_gold: int = 0
+	for h in Game.all_harvestables():
+		if h == null or not is_instance_valid(h) or not h.is_alive():
+			continue
+		if int(h.harvest_kind) != RtsConst.Harvest.GOLD:
+			continue
+		if h.global_position.distance_to(home) > 45.0:
+			continue
+		near_gold += int(h.get("remaining"))
+	return near_gold < 900
 
 
 ## 生成一条承诺（已有同类则跳过）。返回是否真的新增。
@@ -6846,7 +7298,7 @@ func _demand_peasant() -> Dictionary:
 	var wd: UnitDef = Cfg.unit(wid) if wid != &"" else null
 	if wd == null:
 		return {}
-	var hall: RtsBuilding = _first_building(_main_base_id())
+	var hall: RtsBuilding = _main_base_building()
 	var ready: bool = hall != null and hall.train_count() < MAX_QUEUE_PEASANT
 	var gap: int = target - peasants
 	return _demand("运营线", "训练", "农民",
@@ -7093,8 +7545,7 @@ func _expand_demands(diff: DifficultyDef) -> Array:
 					float(_model_call("demand_score_fixed", ["建塔"])) * (1.0 + float(threat_n)),
 					"箭塔 %d/%d 座" % [_faction.count_buildings(tid), twant], true,
 					Callable(self, "_exec_build_arrow_tower")))
-	# ④ 建分基地（`can_build_townhall()` 固定 false → 本轮不会真的报出来；
-	#    代码路径留着，2C-10 把开关打开就能进仲裁）
+	# ④ 建分基地（2026-11-13 起是真诉求：`can_build_townhall()` 按条件返回 true）
 	if can_build_townhall():
 		var hid: StringName = _main_base_id()
 		var hd: UnitDef = Cfg.unit(hid) if hid != &"" else null
@@ -7102,7 +7553,9 @@ func _expand_demands(diff: DifficultyDef) -> Array:
 			out.append(_demand("扩展线", "建分基地", String(hd.display_name),
 					int(hd.gold_cost), int(hd.wood_cost), 0, false,
 					float(_model_call("demand_score_fixed", ["分基地"])),
-					"分基地（接口预留）", false, Callable(self, "_exec_build_townhall")))
+					"分基地 %d/%d 座（矿快挖空/需要远端交汇点）" % [
+						_main_base_count(), EXPAND_BASE_MAX],
+					false, Callable(self, "_exec_build_townhall")))
 	return out
 
 
@@ -7306,7 +7759,7 @@ func _exec_train_peasant() -> bool:
 	if _faction == null:
 		return false
 	var wid: StringName = _worker_id()
-	var hall: RtsBuilding = _first_building(_main_base_id())
+	var hall: RtsBuilding = _main_base_building()
 	if hall == null or wid == &"":
 		return false
 	if hall.train_count() >= MAX_QUEUE_PEASANT:
@@ -7482,8 +7935,26 @@ func _exec_build_extra(id: StringName) -> bool:
 
 
 func _exec_build_townhall() -> bool:
-	# 接口预留：`can_build_townhall()` 固定 false，本函数当前**不可达**（回归断言守住）
-	return false
+	# 2026-11-13：不再是桩。真开工，走调度器（受控制权过滤、受二本门槛约束）。
+	if _faction == null or not can_build_townhall():
+		return false
+	var hid: StringName = _main_base_id()
+	var hd: UnitDef = Cfg.unit(hid) if hid != &"" else null
+	if hd == null:
+		return false
+	var builder: RtsUnit = _pick_builder()
+	if builder == null:
+		return false
+	var spot: Vector3 = _expansion_base_spot()
+	if spot == Vector3.INF:
+		return false
+	if _sched.build(builder, hd, spot, _build_yaw_at(spot), "expand") == null:
+		return false
+	_expand_save_done()
+	_note_build(hid)
+	_log("扩张线：开分基地 @ (%.0f, %.0f)（主城 %d/%d 座，%.0f 金余量）" % [
+		spot.x, spot.z, _main_base_count(), EXPAND_BASE_MAX, float(_faction.gold)])
+	return true
 
 
 func _exec_repair(rb: RtsBuilding, deficit: float) -> bool:

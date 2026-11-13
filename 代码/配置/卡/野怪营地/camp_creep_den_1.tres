@@ -6,5 +6,5 @@
 script = ExtResource("1_4hj8k")
 id = &"camp_creep_den_1"
 display_name = "豺狼人巢穴（自定义）"
-first_spawn_min = 120.0
-spawn_interval_min = 60.0
+first_spawn_min = 2.0
+spawn_interval_min = 2.0

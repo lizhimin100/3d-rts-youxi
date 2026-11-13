@@ -248,6 +248,7 @@ static func _def_of_card(card: EntityCard) -> UnitDef:
 		d.trains = b.trains
 		d.researches = b.researches
 		d.tier = b.tier
+		d.require_tier = b.require_tier
 		d.sight_range = b.sight_range
 		d.body_radius = b.body_radius
 		d.selection_radius = b.selection_radius

@@ -243,7 +243,7 @@ func _maybe_hint_request_control() -> void:
 # 覆盖：经济口径
 # ===========================================================================
 
-## 覆盖：农民上限按副官口径，而且钱少时只保底到 8 个（其余留给军队）
+## 覆盖：农民上限按副官口径；只有**满编**之后才为军队让路（见下方 2026-11-13 注释）。
 func _manage_peasants(diff: DifficultyDef) -> void:
 	if _faction == null:
 		return
@@ -260,8 +260,16 @@ func _manage_peasants(diff: DifficultyDef) -> void:
 		return
 	# 农民不占人口，但**占金币**：军队快凑齐时先别把最后一点钱砸进农民。
 	# 保留额走 reserve_gold（副官口径 480）—— 钱少于它就先保玩家的建造预算。
+	#
+	# ★ 2026-11-13 玩家口径「5 分钟后全程卡金币」：旧条件 `peasants >= 8` 是个**负反馈陷阱** ——
+	#   副官开局造完兵营/农场，金币一跌破 480 就停止补农，停在 8 个农民；
+	#   8 个人里 2~3 个是工位，实际只有 5 个采金 → 收入不够把金币推回 480 →
+	#   于是**永远**停在 5 采金，玩家看到的就是"5 分钟后一直没钱"。
+	#   现在只有"已经满编"（采金+采木的配比人数）时才为军队让路：
+	#   8→13 这段缺口一律优先补满，补满后再守保留额。
+	var full_econ: int = PEASANT_GOLD_SOFT_CAP + PEASANT_WOOD_TARGET
 	var army: int = _army_units().size()
-	if peasants >= 8 and _faction.gold < reserve_gold and army < diff.max_army:
+	if peasants >= full_econ and _faction.gold < reserve_gold and army < diff.max_army:
 		return
 	# 副官自己的补农也要过同一道闸，否则它会把"留给玩家的钱"一点点磨掉
 	if not _can_spend(wid):
@@ -285,6 +293,38 @@ func _pick_builder() -> RtsUnit:
 		if bool(u.call("is_idle_like")):
 			return u
 	return null
+
+
+## **军队训练要留出玩家的预算**（2026-11-13 玩家口径「全程让副官操作也经常卡金币」）。
+##
+## 实测（10 分钟 bench、seed 11）：玩家阵营金收入 6194，但金币余额一直在 **80~316**
+## 徘徊（t=60 → 80，t=300 → 249，t=540 → 316），而木头涨到 1798 —— 因为父类 2C-2
+## 把"保留金闸"整条摘掉了（`_can_spend` 只判买得起），副官有多少花多少，
+## 于是玩家自己想下单时余额永远不够一次兵营(180)/农场(80)。
+##
+## 现在只给**军队训练**加一道软闸：付完还要剩 `reserve_gold × 0.55 ≈ 264`
+## （= 兵营 180 + 农场 80，玩家随时能自己起一套）。
+##   · 农民/农场/兵营/修理/科技**不拦** —— 那些是"不花就发展不动"的钱；
+##   · 家里挨打或人口顶死时**不拦** —— 那是"不花就死"的钱。
+const ADJ_ARMY_RESERVE_RATIO: float = 0.55
+
+
+func _can_spend_army(id: StringName) -> bool:
+	if not _can_spend(id):
+		return false
+	if _faction == null:
+		return false
+	if float(metrics.get("base_threat", 0.0)) > 0.0 or _pop_critical():
+		return true
+	# 正在为二本/分基地攒钱（差额 ≤ 150）：军队先别把这一笔吃掉。
+	# 有超时（SAVE_FOR_EXPAND_MAX），不会为了攒钱整局不出兵。
+	if _expand_save_active():
+		return false
+	var d: UnitDef = Cfg.unit(id)
+	if d == null:
+		return false
+	var keep: int = int(float(reserve_gold) * ADJ_ARMY_RESERVE_RATIO)
+	return _faction.gold - int(d.gold_cost) >= keep
 
 
 # ===========================================================================
@@ -412,10 +452,12 @@ func _manage_idle_dispatch() -> void:
 			if kind == RtsConst.Harvest.WOOD:
 				pool = _nearest_wood(w, drop)
 			if pool == null:
-				pool = Game.find_nearest_harvestable(w.global_position, kind, base, radius)
+				# ★ 2026-11-13：按往返成本挑矿（见 Game.find_trip_harvestable），
+				#   不再"离主基地近优先" —— 玩家实测副官会把采金农民甩到地图各处。
+				pool = Game.find_trip_harvestable(_faction, w.global_position, kind, radius)
 			if pool == null:
-				pool = Game.find_nearest_harvestable(w.global_position,
-						RtsConst.Harvest.GOLD, base, radius)
+				pool = Game.find_trip_harvestable(_faction, w.global_position,
+						RtsConst.Harvest.GOLD, radius)
 			if pool == null:
 				continue
 			_sched.gather([w], pool, "idle")

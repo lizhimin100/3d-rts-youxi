@@ -492,6 +492,69 @@ func find_nearest_harvestable(from: Vector3, kind: int, origin: Vector3, max_dis
 	return best
 
 
+## **按"往返成本"挑资源点**（2026-11-13 玩家口径「农民别被拉到地图各处」）。
+##
+## 与 `find_nearest_harvestable` 的差别：那个的"远近"只看到**基地中心**的直线距离，
+## 于是分基地旁边 3m 的矿永远输给 20m 外的主矿；农民于是横穿地图去挖远矿，
+## 一趟 20 金币要走两分钟 —— 玩家看到的就是"采矿农民满地图乱跑、然后卡金币"。
+##
+## 这里的成本 = 走过去 + 背回来，且"背回来"量到**离这个矿最近的自己人交汇点**
+## （主城 / 分基地 / 伐木场都算）。分基地一造好，它旁边那座矿立刻变成最优解。
+##
+## 顺带把 crowd（同一个点上已经有几个农民）折进去：一口矿 3 个载位，
+## 挤到 8 个人只是在矿边排队，不如分散到第二座矿。
+##
+## `crowd` 传空时**自动统计本阵营当前盯在每个点上的采集者**（读 `_gather_node`）——
+## 这是"9 个采金农民全挤在离家最近那口矿"的补丁：AI 派工时不会自己维护这份表，
+## 不自动统计的话 `_assign_workers` 里每个空闲农民都会算出同一个最优矿。
+func find_trip_harvestable(faction: RtsFaction, from: Vector3, kind: int,
+		max_dist: float, crowd: Dictionary = {}) -> Node3D:
+	if faction == null:
+		return null
+	var used: Dictionary = crowd
+	if used.is_empty():
+		used = {}
+		for u in faction.units:
+			if u == null or not is_instance_valid(u):
+				continue
+			if not u.has_method("is_alive") or not bool(u.call("is_alive")):
+				continue
+			# 不标注 Node3D：资源点采空会 free，带类型的赋值会抛错并中断整个函数
+			var n = u.get("_gather_node")
+			if n != null and is_instance_valid(n):
+				used[n] = int(used.get(n, 0)) + 1
+	# 交汇点先取一次（每次调用最多 3~4 个建筑），别在矿的循环里反复重建列表
+	var drops: Array = RtsWorld.dropoffs(faction)
+	var best: Node3D = null
+	var best_score: float = INF
+	for h in _harvestables:
+		if h == null or not is_instance_valid(h):
+			continue
+		if h.is_depleted() or h.harvest_kind != kind:
+			continue
+		var hp: Vector3 = h.global_position
+		var d: float = from.distance_to(hp)
+		if d > max_dist:
+			continue
+		var back: float = d
+		var best_back: float = INF
+		for dp in drops:
+			if dp == null or not is_instance_valid(dp) or not dp.is_alive():
+				continue
+			if dp.has_method("accepts_harvest") and not bool(dp.call("accepts_harvest", kind)):
+				continue
+			var dd: float = hp.distance_to(dp.global_position)
+			if dd < best_back:
+				best_back = dd
+		if best_back < INF:
+			back = best_back
+		var score: float = d + back + float(used.get(h, 0)) * 14.0
+		if score < best_score:
+			best_score = score
+			best = h
+	return best
+
+
 # ===========================================================================
 # 资源
 # ===========================================================================
@@ -604,6 +667,23 @@ func can_afford(faction: RtsFaction, unit_id: StringName) -> bool:
 	if d == null or faction == null:
 		return false
 	return faction.can_afford(d) and faction.has_food(d.food_cost)
+
+
+## **建造门槛**：这张建筑卡要求的主城等级够不够（2026-11-13）。
+##
+## 玩家口径：「车坊和神秘圣地调整到二本才能建造」。门槛写在建筑卡上
+## （`BuildingCard.require_tier`，0 = 一本就能造），判断只认这一个出口：
+##   · 指令系统：真正落地前拦一道，给中文提示；
+##   · 命令卡：按钮灰掉 + tooltip 说明；
+##   · AI：不把这个建筑报进诉求，免得反复尝试浪费预算。
+## 升二本 = 大本营换成「联盟要塞」（def.tier = 2），见 `faction_tier()`。
+func tier_allows(faction: RtsFaction, id: StringName) -> bool:
+	var d: UnitDef = Cfg.unit(id)
+	if d == null:
+		return false
+	if int(d.require_tier) <= 0:
+		return true
+	return faction_tier(faction) >= int(d.require_tier)
 
 
 ## 扣费（含人口检查）；失败返回 false

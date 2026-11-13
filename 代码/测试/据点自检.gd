@@ -4,10 +4,10 @@ extends SceneTree
 ## 跑法：godot --headless --fixed-fps 60 --path . --script 代码/测试/据点自检.gd
 ## 结尾一行 `SPTEST {json}`，退出码 0 = 全过。
 ##
-## 判据（玩家 2026-11-08 口径）：
+## 判据（玩家 2026-11-08 口径，C 项 2026-11-13 改口径）：
 ##   A 刷新节奏：开局 180s 第一次，结算后 120s 下一次；
 ##   B 占据判定：单一阵营连续待满 15s → 资源入账，箱子消失；
-##   C 争夺清零：两个阵营同时在圈里 → 计时不动（谁也别想白拿）；
+##   C 敌人打断：敌方进场**只暂停不清零**，退场后接着走（份额不减）；盟友进场完全不参与；
 ##   D 价值判断：空圈 1.0 / 敌占 1.6 / 我们占 0.25 / 没箱子 0；
 ##   E 不白送：圈里只有野怪（team 0）不算占点。
 
@@ -45,7 +45,8 @@ func _运行() -> void:
 	_建世界()
 	_用例A_刷新节奏()
 	_用例B_占据结算()
-	_用例C_争夺清零()
+	_用例C_打断只暂停()
+	_用例C2_盟友不影响()
 	_用例D_价值判断()
 	_用例E_野怪不算()
 	报告["失败项"] = 失败
@@ -175,20 +176,79 @@ func _用例B_占据结算() -> void:
 
 
 # ---------------------------------------------------------------------------
-func _用例C_争夺清零() -> void:
+# C 敌人打断：只暂停、不清零（2026-11-13 玩家改口径）
+#   ① 单人站 6s → 进度 ≈0.40；
+#   ② 敌人进场 2s → 进度**不许掉**（旧口径会清零）；
+#   ③ 敌人退场再站 4s → 进度继续往上走，最终能拿箱子。
+func _用例C_打断只暂停() -> void:
 	_新建据点()
 	据点.call("_spawn_crate")
 	_造("player_faction", &"footman", Vector3(1.0, 0.0, 0.0))
 	_走(6.0)
 	var 单人进度: float = float(据点.call("hold_ratio"))
-	_造("enemy_faction", &"footman", Vector3(-1.0, 0.0, 0.0))
+	var 敌 = _造("enemy_faction", &"footman", Vector3(-1.0, 0.0, 0.0))
 	_走(2.0)
-	var 争夺后: float = float(据点.call("hold_ratio"))
-	_记("C_争夺清零", {"单人 6s 进度": "%.2f" % 单人进度, "敌人进场后": "%.2f" % 争夺后})
+	var 敌人进场后: float = float(据点.call("hold_ratio"))
+	var 暂停: bool = bool(据点.get("paused"))
+	# 敌人退场
+	if 敌 != null and is_instance_valid(敌):
+		游戏.call("unregister", 敌)
+		敌.queue_free()
+	_走(1.0)
+	var 敌人退场后: float = float(据点.call("hold_ratio"))
+	_记("C_打断只暂停", {
+		"单人 6s 进度": "%.2f" % 单人进度,
+		"敌人 2s 后": "%.2f" % 敌人进场后,
+		"暂停标记": 暂停,
+		"敌人退场 1s 后": "%.2f" % 敌人退场后,
+	})
 	if 单人进度 < 0.3:
-		失败.append("C 争夺清零：单人 6 秒进度只有 %.2f" % 单人进度)
-	if 争夺后 > 0.001:
-		失败.append("C 争夺清零：两人同时在圈里，计时没清零（%.2f）" % 争夺后)
+		失败.append("C 打断只暂停：单人 6 秒进度只有 %.2f" % 单人进度)
+	if not 暂停:
+		失败.append("C 打断只暂停：敌人在圈里却没进入暂停态")
+	if absf(敌人进场后 - 单人进度) > 0.02:
+		失败.append("C 打断只暂停：敌方进场后进度从 %.2f 变成 %.2f（只该暂停、不该增减）"
+				% [单人进度, 敌人进场后])
+	if 敌人退场后 + 0.01 < 敌人进场后:
+		失败.append("C 打断只暂停：敌人退场后进度掉了（%.2f → %.2f）"
+				% [敌人进场后, 敌人退场后])
+
+
+# ---------------------------------------------------------------------------
+# C2 盟友不影响计时：同队（team 相同）的第二个阵营进场，计时照常推进
+func _用例C2_盟友不影响() -> void:
+	_新建据点()
+	据点.call("_spawn_crate")
+	var p = 游戏.get("player_faction")
+	var fs: Script = load("res://代码/数据/阵营.gd")
+	var ally = fs.new()
+	ally.set("index", 7)
+	ally.set("team", int(p.team))
+	ally.set("is_player", false)
+	ally.set("is_ai", true)
+	ally.set("display_name", "盟友")
+	ally.set("color", Color(0.4, 0.9, 0.9))
+	游戏.get("factions").append(ally)
+	_造("player_faction", &"footman", Vector3(1.0, 0.0, 0.0))
+	_走(4.0)
+	var 单队进度: float = float(据点.call("hold_ratio"))
+	var pos: Vector3 = 关卡.call("walkable_pos",
+			(据点.call("crate_pos") as Vector3) + Vector3(-1.0, 0.0, 0.0))
+	var a = 游戏.call("spawn_unit", ally, &"footman", pos, 关卡)
+	if a != null:
+		a.set_process(false)
+	_走(3.0)
+	var 盟友进场后: float = float(据点.call("hold_ratio"))
+	var 队伍数: int = int(据点.call("teams_in_zone").size())
+	_记("C2_盟友不影响", {"单队 4s 进度": "%.2f" % 单队进度,
+		"盟友 3s 后": "%.2f" % 盟友进场后, "圈内队伍数": 队伍数})
+	if 队伍数 != 1:
+		失败.append("C2 盟友不影响：同队两家被判成 %d 个队伍（应为 1）" % 队伍数)
+	if 盟友进场后 <= 单队进度 + 0.1:
+		失败.append("C2 盟友不影响：盟友进场后计时没继续（%.2f → %.2f）"
+				% [单队进度, 盟友进场后])
+	# 收尾：把这个临时阵营摘掉，别污染后面的用例
+	游戏.get("factions").erase(ally)
 
 
 # ---------------------------------------------------------------------------
