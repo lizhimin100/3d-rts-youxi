@@ -43,8 +43,11 @@ const HINT_COOLDOWN: float = 30.0
 const DIRECTIVE_REISSUE: float = 8.0
 ## 空闲单位派活的间隔（秒）
 const IDLE_DISPATCH_GAP: float = 4.0
-## 部队集合点离基地多少米
+## 部队集合点离基地多少米（旧单点口径，保留给自检对比；新逻辑见 assembly_points）
 const ASSEMBLY_RADIUS: float = 12.0
+## 集结点规划缓存（秒）。一次规划 = 64 候选 × 约 80 次可走查询，别每次思考都算。
+const ASSEMBLY_CACHE: float = 6.0
+const PLANNER := preload("res://代码/ai/集结规划.gd")
 
 ## 是否启用（HUD 小地图下方的「副官 · 开/关」按钮控制；--no-adjutant 启动即关）
 var enabled: bool = true
@@ -59,6 +62,10 @@ var _last_hint: float = -999.0
 var _directive_issued_at: float = -999.0
 ## 指令解析统计（自检断言用）
 var intake_stats: Dictionary = {"attack": 0, "hold": 0, "stop": 0, "ignored": 0}
+## 集结点缓存
+var _assembly_cache: Array = []
+var _assembly_at: float = -999.0
+var _assembly_key: String = ""
 
 
 func _ready() -> void:
@@ -419,29 +426,57 @@ func _manage_idle_dispatch() -> void:
 		return
 	if float(metrics.get("base_threat", 0.0)) > 0.0:
 		return
-	var anchor: Vector3 = hold_point()
-	if anchor == Vector3.INF:
-		anchor = assembly_point()
-	if anchor == Vector3.INF:
+	# 玩家有战区指令在跑（进攻/防守/占据）：部队归战区指令调度，
+	# 这里再往集结点拉就是"刚派出去又被拽回来"，玩家看到的是 AI 不听话。
+	if not WAR.get_order(WAR.ATTACK).is_empty() 			or not WAR.get_order(WAR.DEFEND).is_empty() 			or not WAR.get_order(WAR.CAPTURE).is_empty():
 		return
-	_sched.move(army, anchor, "idle")
-	idle_dispatch_stats["army"] = int(idle_dispatch_stats["army"]) + 1
+	# 玩家指定了驻守点 → 全队去那儿（听玩家的）
+	var anchor: Vector3 = hold_point()
+	if anchor != Vector3.INF:
+		_sched.move(army, anchor, "idle")
+		idle_dispatch_stats["army"] = int(idle_dispatch_stats["army"]) + 1
+		return
+	# 否则按人分到多个集结点：所有人挤一个点会堵住出兵口，也让玩家看不出阵型
+	var pts: Array = assembly_points()
+	if pts.is_empty():
+		return
+	for k in range(army.size()):
+		_sched.move([army[k]], pts[k % pts.size()], "idle")
+	idle_dispatch_stats["army"] = int(idle_dispatch_stats["army"]) + army.size()
+	idle_dispatch_stats["points"] = pts.size()
 
 
-## 部队集合点：基地朝敌方（或玩家指定进攻点）12m 处。
-## 放这么近是有意的 —— 玩家一眼能看到"我的兵在门口集结"，而不是散在地图中间。
-func assembly_point() -> Vector3:
+## **多个集结点**：出兵建筑周围 12–33m、连片空地、互相拉开 ≥11m。
+##
+## 为什么不再是"朝敌方 12m 一个点"：玩家明确提过「不要所有集结点都设置在一起」。
+## 一个点的三个实际后果——① 新兵出门就堵在门口；② 部队挤成一坨看不出阵型；
+## ③ 一炮 AOE 全吃。规划器把"空地连片 / 远离建筑 / 彼此分散"三条硬约束
+## 都做完了，这里只负责缓存（6 秒）和喂给调度器。
+func assembly_points() -> Array:
 	if _faction == null:
-		return Vector3.INF
+		return []
+	# 「生产」战区指令 = 玩家指定了新兵集结点：覆盖自动规划
+	var prod: Dictionary = WAR.get_order(WAR.PRODUCE)
+	if not prod.is_empty():
+		return [prod["center"]]
+	var now: float = Game.elapsed
 	var base: Vector3 = RtsWorld.base_center(_faction)
 	var foe: Vector3 = _push_target()
-	if foe == Vector3.INF or foe == Vector3.ZERO:
-		return base
-	var d: Vector3 = foe - base
-	d.y = 0.0
-	if d.length() < 1.0:
-		return base
-	return RtsWorld.walkable_pos(base + d.normalized() * ASSEMBLY_RADIUS)
+	var key: String = "%.0f,%.0f|%.0f,%.0f" % [base.x, base.z, foe.x, foe.z]
+	if key == _assembly_key and now - _assembly_at < ASSEMBLY_CACHE and not _assembly_cache.is_empty():
+		return _assembly_cache
+	_assembly_key = key
+	_assembly_at = now
+	_assembly_cache = PLANNER.plan(base, foe, 3)
+	return _assembly_cache
+
+
+## 主集结点（第一个）。保留这个入口，给只想要一个点的旧调用方用。
+func assembly_point() -> Vector3:
+	var pts: Array = assembly_points()
+	if pts.is_empty():
+		return Vector3.INF
+	return pts[0]
 
 
 ## 调试/自检：副官现在手里的指令

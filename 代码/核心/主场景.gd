@@ -246,6 +246,10 @@ func _ready() -> void:
 	#       和 选择系统 / 指令系统 挂在同一层；脚本缺失时静默跳过，不影响开局。
 	_mount_script("res://代码/操作/移动指示.gd", "移动指示")
 
+	# 4.94 战区指令输入（2026-11-13）：F5 进攻 / F6 防守 / F7 占据 / F8 生产。
+	#      只发"意图"不碰单位，实际下令走副官的调度器（控制权过滤照旧）。
+	_mount_script("res://代码/操作/战区指令输入.gd", "战区指令输入")
+
 	# 5) 起跑
 	Game.phase = RtsConst.Phase.RUNNING
 	Game.game_over.connect(_on_game_over)
@@ -410,6 +414,8 @@ func _mount_tests() -> void:
 	# 野怪营地自检（营地依赖中立阵营 / 地图对象 / 寻路，必须在主场景里跑）
 	if "--camp-test" in args:
 		_mount_script("res://代码/测试/野怪营地自检.gd", "野怪营地自检")
+	if "--war-test" in args:
+		_mount_script("res://代码/测试/战区指令自检.gd", "战区指令自检")
 	if "--adjutant-test" in args:
 		_mount_script("res://代码/测试/副官自检.gd", "副官自检")
 	# AI 基准（固定条件真实对局 + 情况文本 dump）：只读量测，不改 AI 行为

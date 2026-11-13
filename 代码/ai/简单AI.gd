@@ -617,6 +617,9 @@ func _think_once(diff: DifficultyDef) -> void:
 		_manage_defense(diff)
 		# ★ 2026-11-08 据点：地图中心的资源箱值不值得派人去占（家里挨打时不抢）
 		_manage_strongpoint()
+		# ★ 2026-11-13 驻守：留 ≤40% 的兵钉在据点/外围来路/前线塔，
+		#   让主力敢走远（这是"势力范围"的实体，不是一串坐标）
+		_manage_garrison()
 		if Game.is_night():
 			_manage_night(diff)
 		else:
@@ -635,6 +638,14 @@ func _think_once(diff: DifficultyDef) -> void:
 	_t0 = Time.get_ticks_usec()
 	_sanity.update(ctx)
 	SimpleAI.dbg_san += Time.get_ticks_usec() - _t0
+
+	# --- ⑦.5 战区指令（玩家意图最高优先）---
+	# ★ 必须放在这里而不是 _manage_mil 里：默认 `dept=on` 走 `_dept_tick`，
+	#   整段 `_manage_mil` 是死代码（2C-9 起）。2026-11-13 首次接入时踩过，
+	#   现象是"玩家点进攻，AI 一个兵都不动，但日志里指令确实写进去了"。
+	_t0 = Time.get_ticks_usec()
+	_apply_war_orders()
+	SimpleAI.dbg_mil += Time.get_ticks_usec() - _t0
 
 	# --- ⑧ 真正发出去 ---
 	_t0 = Time.get_ticks_usec()
@@ -2800,6 +2811,209 @@ func _manage_strongpoint() -> void:
 		sent += 1
 	if sent > 0:
 		_strongpoint_cd = STRONGPOINT_CD
+
+
+# ===========================================================================
+# 驻守（2026-11-13 · 玩家口径「AI 要学会运用驻守、扩展势力范围」）
+# ===========================================================================
+#
+# 原来 AI 只有"出击"和"回防"两个状态：兵要么全在基地，要么全在推进路上。
+# 没有驻守点，据点被抢了没人管、前哨被拆了没人报、外围矿点被野怪清了才发现。
+#
+# 这里的定位是**只分一小部分兵力**（≤40%）去钉关键点，主力仍然跟着波次走。
+# 为什么不干脆全守：RTS 里不推进的一方永远输——驻守是为了"让主力敢走远"，
+# 不是为了"把兵藏起来"。上限 40% 就是这条的分界线。
+const GARRISON := preload("res://代码/ai/驻守调度.gd")
+## 两次驻守评估的间隔（秒）
+const GARRISON_CD: float = 9.0
+## 驻守兵力上限（占总战斗兵比例）
+const GARRISON_MAX_RATIO: float = 0.40
+## 兵少于这个数就不分兵（连家门都守不住时别谈驻点）
+const GARRISON_MIN_ARMY: int = 5
+## 判定"这个点已经有人"的半径（米）
+const GARRISON_NEAR: float = 6.0
+var _garrison_cd: float = 0.0
+## 诊断：最近一次驻守派了几个人、去了哪几个点
+var garrison_log: Array = []
+
+
+func _manage_garrison() -> void:
+	if _faction == null:
+		return
+	if _garrison_cd > 0.0:
+		_garrison_cd -= maxf(think_scale, 0.1)
+		return
+	_garrison_cd = GARRISON_CD
+	var army: Array = _combat_units(false)
+	if army.size() < GARRISON_MIN_ARMY:
+		return
+	# 家里正在挨打：全部回防，不派人出去站岗
+	if float(metrics.get("base_threat", 0.0)) > 0.0:
+		return
+	var pts: Array = GARRISON.pick_points(_faction, 2)
+	if pts.is_empty():
+		return
+	var cap: int = maxi(1, int(float(army.size()) * GARRISON_MAX_RATIO))
+	var idle: Array = []
+	for u in army:
+		if u != null and is_instance_valid(u) and u.is_idle_like():
+			idle.append(u)
+	if idle.is_empty():
+		return
+	var used: int = 0
+	garrison_log.clear()
+	for p in pts:
+		if used >= cap:
+			break
+		var pos: Vector3 = p["pos"]
+		var need: int = int(p.get("need", 1))
+		# 已经在附近的人算数（不重复派）
+		var already: int = 0
+		for u in army:
+			if u.global_position.distance_to(pos) <= GARRISON_NEAR:
+				already += 1
+		var want: int = need - already
+		if want <= 0 or idle.is_empty():
+			continue
+		# 派最近的闲兵：走过去的时间最短，且顺路
+		idle.sort_custom(func(a, b):
+			return a.global_position.distance_to(pos) < b.global_position.distance_to(pos))
+		var sent: int = 0
+		while sent < want and not idle.is_empty() and used < cap:
+			var u = idle.pop_front()
+			if u == null or not is_instance_valid(u):
+				continue
+			# move 到点即"驻守"：单位到达后转 IDLE，`_think` 会自己索敌还手
+			_sched.move([u], pos, "garrison")
+			sent += 1
+			used += 1
+		if sent > 0:
+			garrison_log.append("%s×%d" % [String(p["kind"]), sent])
+	if not garrison_log.is_empty():
+		_log("驻守：%s（共 %d 兵 / 上限 %d）" % [", ".join(garrison_log), used, cap])
+
+
+# ===========================================================================
+# 战区指令（玩家 → AI 的战役级意图：进攻/防守/占据/生产）
+# ===========================================================================
+#
+# 与 `Game.order_issued` 的区别：那是**单位级**命令（这一队往哪走），会被
+# 控制权保护 5–120 秒；战区指令是**战役级**意图（"那片区域归我"），
+# 不绑定具体单位，由 AI 自己决定派谁、派几个。
+# 下令仍然统一走 `_sched`，所以永远不会绕过控制权。
+const WAR := preload("res://代码/ai/战区指令.gd")
+## 进攻指令投入的兵力比例
+const WAR_ATTACK_RATIO: float = 0.65
+## 防守指令投入的兵力比例（比进攻高：守家优先）
+const WAR_DEFEND_RATIO: float = 0.55
+## 占据指令最多派几个人（占圈靠时间不靠人多）
+const WAR_CAPTURE_N: int = 4
+## 只派离目标这么近的闲兵（再远就不划算，交给就近的其他部队）
+const WAR_LEASH: float = 30.0
+## 诊断：最近一次战区派兵（"进攻×3" / "防守×2"），自检读它
+var war_last: String = ""
+var war_last_at: float = -999.0
+var war_skip: String = ""
+## 每种指令的短冷却（秒）：派兵成功后才计冷却。
+## 不用 8 秒的长限流——玩家改主意时 8 秒没反应是灾难；3 秒刚好够士兵走出去。
+const WAR_COOLDOWN: float = 3.0
+var _war_cd: Dictionary = {}
+
+
+func _apply_war_orders() -> void:
+	if _faction == null or Game.player_faction == null:
+		return
+	# 只有与玩家同队才听（副官、盟友）。敌方 AI 一条都不许读——
+	# 否则玩家一点"进攻"，等于给对面下了一道集结令。
+	if not _faction.is_ally_of(Game.player_faction):
+		return
+	var army: Array = _army_units()
+	# 门槛是 1 不是 2：玩家明确点了"进攻"，哪怕只剩一个兵也该去。
+	# 门槛 2 会让"家里只有一个兵"的开局阶段玩家怎么点都没反应（自检踩过）。
+	if army.is_empty():
+		return
+	_apply_war_one(WAR.ATTACK, army)
+	_apply_war_one(WAR.DEFEND, army)
+	_apply_war_one(WAR.CAPTURE, army)
+
+
+func _apply_war_one(kind: int, army: Array) -> void:
+	var o: Dictionary = WAR.get_order(kind)
+	if o.is_empty():
+		_war_cd.erase(kind)
+		return
+	# 短冷却：只在"上一轮真的派出去了"之后计时。派不出去（兵不在附近）不冷却，
+	# 否则会出现"兵走回来的这 8 秒里玩家怎么点都没用"。
+	if Game.elapsed - float(_war_cd.get(kind, -999.0)) < WAR_COOLDOWN:
+		return
+	# 不在这里限流：`CommandScheduler` 自己有两层去重（`_already_doing` 判"已经在做同一件事"、
+	# `_throttled` 按 label 节流）。上面再叠一层 `REISSUE`，一旦第一次派兵失败
+	# （兵刚好都不在范围内），后面 8 秒玩家点什么都没反应——2026-11-13 自检踩过。
+	var center: Vector3 = o["center"]
+	var radius: float = float(o["radius"])
+	var inside: int = 0
+	for u in army:
+		if u.global_position.distance_to(center) <= radius:
+			inside += 1
+	var want: int = 0
+	match kind:
+		WAR.ATTACK:
+			want = maxi(2, int(float(army.size()) * WAR_ATTACK_RATIO)) - inside
+		WAR.DEFEND:
+			want = maxi(2, int(float(army.size()) * WAR_DEFEND_RATIO)) - inside
+		WAR.CAPTURE:
+			want = WAR_CAPTURE_N - inside
+	if want <= 0:
+		war_skip = "%s: want=%d army=%d inside=%d" % [String(WAR.NAMES[kind]), want, army.size(), inside]
+		return
+	var pool: Array = []
+	for u in army:
+		if u == null or not is_instance_valid(u):
+			continue
+		# 「闲」的判定不能只看 order==NONE：副官每 4 秒把闲兵往集结点拉一次，
+		# 士兵常年是 MOVE 状态。只认 NONE 的话，玩家点下进攻时一个兵都派不出去
+		# （2026-11-13 自检实测 before=0 after=0 就是这个原因）。
+		# 允许接管 MOVE / STOP：这两类命令没有战斗意图，可以被战役级意图覆盖。
+		# 只排除"有明确生产意图"的命令（建造/采集/回城），其余一律可被战区指令接管：
+		# AI 常态下已经把兵派去清野怪（ATTACK_MOVE）或巡逻（PATROL）了，
+		# 如果只认 NONE，玩家点进攻时永远一个兵都调不动。
+		var ord: int = int(u.order)
+		if ord == RtsConst.Order.BUILD or ord == RtsConst.Order.GATHER \
+				or ord == RtsConst.Order.RETURN_RES or ord == RtsConst.Order.CAST:
+			continue
+		# 玩家正在微操的单位一律不动（控制权登记表是唯一出口）
+		if Game.control != null and Game.control.is_protected(u):
+			continue
+		if u.global_position.distance_to(center) > radius + WAR_LEASH:
+			continue
+		pool.append(u)
+	if pool.is_empty():
+		war_skip = "%s: pool=0 army=%d want=%d" % [String(WAR.NAMES[kind]), army.size(), want]
+		return
+	pool.sort_custom(func(a, b):
+		return a.global_position.distance_to(center) < b.global_position.distance_to(center))
+	var sent: int = 0
+	for u in pool:
+		if sent >= want:
+			break
+		if kind == WAR.DEFEND:
+			# 防守：走过去站住（到点转 IDLE，遇敌自动还手）
+			_sched.move([u], center, "war_defend")
+		else:
+			# 进攻/占据：一路打过去
+			_sched.attack_move([u], center, "war_attack")
+		sent += 1
+	if sent > 0:
+		_garrison_cd = maxf(_garrison_cd, 2.0)   # 刚派过兵，驻守评估让一让
+		_war_cd[kind] = Game.elapsed
+		war_last = "%s×%d" % [String(WAR.NAMES[kind]), sent]
+		war_last_at = Game.elapsed
+		_log("战区%s：%d 兵 → (%.0f, %.0f) r=%.0f" % [
+			String(WAR.NAMES[kind]), sent, center.x, center.z, radius])
+	else:
+		# 没派出去的原因（诊断用）：兵力不够 / 池子空 / 圈里已经够了
+		war_skip = "%s: army=%d want=%d pool=%d inside=%d" % [
+			String(WAR.NAMES[kind]), army.size(), want, pool.size(), inside]
 
 
 func _manage_patrol(_diff: DifficultyDef) -> void:
