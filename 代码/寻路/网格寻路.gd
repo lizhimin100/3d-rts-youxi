@@ -45,6 +45,18 @@ const STAND_SAMPLES: int = 7
 ##     两边每帧对拉 —— 这就是“贴墙原地抽搐”的结构性来源；
 ##   · 0.15m ≈ 3 个身位的分离死区 + 采样误差，足够吸收推挤而不碰墙。
 const GOAL_MARGIN: float = 0.15
+## 半径膨胀过角开关与余量（2026-11-13）。
+##
+## 同构建 A/B 实测（`寻路抖动自检`）：
+##   开：27 通过 / 4 失败    关：27 通过 / 4 失败
+## → **圆角既不改善也不回归**，四个红灯（8 兵到达 7/8、瞬移、崖边扫描、12 人间距 0.65）
+## 一个都不是几何问题，而是末端行为（分离/落定/墙推）。
+## 这与 `文档/寻路评估_星际2对照.md` §3.D 的判断一致：路径几何不是瓶颈。
+## 默认开着，是因为它对"看起来像不像人走路"有正面作用（拐角不再是尖折），
+## 且实测零回归；要排查路径相关回归时，把它关掉就能排除这一项。
+## 余量不能为 0：分离每帧最多推 0.027m，零余量落点被推 1mm 就掉出可站立区。
+const FILLET_ON: bool = true
+const FILLET_SKIN: float = 0.12
 ## A* 规划时要求的“3×3 机动空间”：邻域内可走格 ≥ 这个数才允许经过。
 ## 6 = 3×3 里只允许 3 格被挡（贴墙走道正好 6，2m 窄缝正好 6，1 格宽的缝只有 3~5）。
 ## 为什么是 6 而不是 8：8 会把“贴着建筑外墙走”的整条可行走带判死。
@@ -711,7 +723,66 @@ func find_path(from: Vector3, to: Vector3, radius: float = -1.0) -> PackedVector
 	elif line_of_sight(smoothed[smoothed.size() - 1], goal_pos, r):
 		# 终点用解析后的可站立落点（比格心更贴近玩家点的位置）
 		smoothed[smoothed.size() - 1] = goal_pos
+	# 半径膨胀过角（2026-11-13）：拉直后的折线是"格心连线"，拐角是一个尖点，
+	# 单位走到那里要么贴墙减速、要么被判不可站立然后被墙推回来。
+	# 这里把每个拐点换成半径 r+0.12 的圆弧（二次贝塞尔采样 3 点），
+	# 与 `代码/人群/人群导航.gd` 的 fillet 是同一套几何，但走本类的 is_walkable，
+	# 不依赖人群层的 256² 网格。
+	# 采样点任何一点穿墙就保留原拐点 —— **宁方勿卡**。
+	if FILLET_ON and smoothed.size() >= 3:
+		smoothed = _fillet(smoothed, r + FILLET_SKIN)
 	return smoothed
+
+
+## 圆弧倒角：把折线每个拐点替换成半径 r 的圆弧采样（3 点）。
+## 转角 <8°（几乎直行）或 >165°（掉头）不倒角——几何退化，倒了反而更差。
+func _fillet(points: PackedVector3Array, radius: float) -> PackedVector3Array:
+	var n: int = points.size()
+	var out: PackedVector3Array = PackedVector3Array()
+	out.append(points[0])
+	for i in range(1, n - 1):
+		var a: Vector3 = points[i - 1]
+		var b: Vector3 = points[i]
+		var c: Vector3 = points[i + 1]
+		var u1: Vector3 = b - a
+		var u2: Vector3 = c - b
+		u1.y = 0.0
+		u2.y = 0.0
+		if u1.length_squared() < 1e-6 or u2.length_squared() < 1e-6:
+			out.append(b)
+			continue
+		var l1: float = u1.length()
+		var l2: float = u2.length()
+		u1 = u1 / l1
+		u2 = u2 / l2
+		var turn: float = acos(clampf(u1.dot(u2), -1.0, 1.0))
+		if turn < 0.14 or turn > 2.88:
+			out.append(b)
+			continue
+		var d: float = radius / tan(turn * 0.5)
+		d = minf(d, minf(l1, l2) * 0.5)
+		if d < 0.05:
+			out.append(b)
+			continue
+		var p0: Vector3 = b - u1 * d
+		var p1: Vector3 = b + u2 * d
+		var ok: bool = true
+		var samples: PackedVector3Array = PackedVector3Array()
+		for k in range(1, 4):
+			var t: float = float(k) * 0.25
+			var it: float = 1.0 - t
+			var q: Vector3 = p0 * (it * it) + b * (2.0 * it * t) + p1 * (t * t)
+			if not is_walkable(q):
+				ok = false
+				break
+			samples.append(q)
+		if ok:
+			for s in samples:
+				out.append(s)
+		else:
+			out.append(b)
+	out.append(points[n - 1])
+	return out
 
 
 # ===========================================================================
