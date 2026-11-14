@@ -49,3 +49,7 @@ Content/maps/_编辑器链路自检.tres
 
 # WorkBuddy agent 元文件（.workbuddy/memory 等）：本机工作记录，不属于工程内容
 .workbuddy/
+# 测试模式的隔离存档（run-game --check/--simulate/--shot 写这里）
+.test_profile/
+# 发行/演示副本（脚本生成，不进库）
+dist/

@@ -41,10 +41,10 @@ static func read_dict(path: String, fallback: Dictionary = {}) -> Dictionary:
 static func write_atomic(path: String, data: Variant, pretty: bool = true) -> Error:
 	var text := stringify(data, pretty)
 	var dir := path.get_base_dir()
-	if dir != "" and not DirAccess.dir_exists_absolute(dir):
-		var mk := DirAccess.make_dir_recursive_absolute(dir)
+	if dir != "" and not DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(dir)):
+		var mk := DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(dir))
 		if mk != OK:
-			push_error("[json] 建目录失败 %s" % dir)
+			push_error("[json] 建目录失败 %s（%d）" % [dir, mk])
 			return mk
 	var tmp := path + ".tmp"
 	var f := FileAccess.open(tmp, FileAccess.WRITE)

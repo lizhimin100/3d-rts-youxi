@@ -7,7 +7,7 @@ extends TabContainer
 ##   区域   ：画圆/矩形/多边形 ＋ 用途 ＋ 玩家槽位 ＋ 波次
 ##   玩家   ：玩家槽位（阵营/颜色/队伍/出生点/初始资源）＋ 队伍预设
 ##   属性   ：选中对象的数据
-##   营地   ：野怪营地卡（刷什么怪、几只、半径、补满时间），存回 Game/config/卡/野怪营地/
+##   营地   ：野怪营地卡（刷什么怪、几只、半径、补满时间），存回 Content/data/cards/camps/
 ##   校验   ：五关硬检查结果
 ##   历史   ：Tree 实现的撤销/重做面板（点一条直接跳步）
 ##
@@ -842,7 +842,7 @@ func _spin(min_v: float, max_v: float, step: float) -> SpinBox:
 #
 # 为什么单开一页（玩家原话："地图编辑器里我没有找到野怪营地，同时我要的野怪营地，
 # 里面我自己可自定义配置弄什么野怪"）：
-#   营地是"地图内容"，刷什么怪写在一张 .tres 里，散落在 Game/config/卡/野怪营地/。
+#   营地是"地图内容"，刷什么怪写在一张 .tres 里，散落在 Content/data/cards/camps/。
 #   以前只能手改文本文件 —— 编辑器里没有任何入口，等于"找不到"。
 #   这里把那张表原样搬成界面：左列表选一份，右边勾野怪、填只数、存盘。
 #   保存后必须 CAMP_TABLE.reload()：否则玩家刚写的配置要重启 Godot 才生效。
@@ -883,7 +883,7 @@ func _build_camp_tab() -> Control:
 	g.add_child(_label("营地 id"))
 	_camp_id = LineEdit.new()
 	_camp_id.placeholder_text = "camp_den"
-	_hint(_camp_id, "新建时用它拼文件名（Game/config/卡/野怪营地/<id>.tres）。\n已存在的营地按原本的文件路径写回，id 只作标识。")
+	_hint(_camp_id, "新建时用它拼文件名（Content/data/cards/camps/<id>.tres）。\n已存在的营地按原本的文件路径写回，id 只作标识。")
 	g.add_child(_camp_id)
 
 	g.add_child(_label("锚点建筑"))

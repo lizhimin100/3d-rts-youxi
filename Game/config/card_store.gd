@@ -23,13 +23,13 @@ const SCRIPT_CAMP := "res://Game/config/野怪营地定义.gd"
 
 static func script_for_dir(dir_path: String) -> String:
 	match dir_path.trim_suffix("/"):
-		DIR_UNITS, "res://Game/config/卡/单位":
+		DIR_UNITS:
 			return SCRIPT_UNIT
-		DIR_BUILDINGS, "res://Game/config/卡/建筑":
+		DIR_BUILDINGS:
 			return SCRIPT_BUILDING
-		DIR_SKILLS, "res://Game/config/卡/技能":
+		DIR_SKILLS:
 			return SCRIPT_SKILL
-		DIR_CAMPS, "res://Game/config/卡/野怪营地":
+		DIR_CAMPS:
 			return SCRIPT_CAMP
 	push_error("[CardStore] 不认识的卡目录：" + dir_path)
 	return ""

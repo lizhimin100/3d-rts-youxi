@@ -1,5 +1,8 @@
 class_name RtsCombat
 extends RefCounted
+
+## 伤害公式的唯一实现在 Model 层；本文件只负责把 Cfg 组装成规则、把结果包成 DamageInfo
+const ModelDamage := preload("res://Model/core/damage.gd")
 ## **战斗数值中枢**：伤害公式、护甲减免、克制、暴击、命中反馈、群体伤害。
 ##
 ## 为什么单独一个文件：伤害公式**必须只有一份实现**。玩家步兵、AI 步兵、箭塔、火球
@@ -121,29 +124,32 @@ static func compute(base: float, spread: float, attack_type: int,
 	var cfg: GameConfig = cfg_game()
 	if cfg == null:
 		return info
-
-	# (基础伤害 ± spread 随机)：spread * [-1, 1]
+	# 随机数在这里取（Model 是纯函数，只收 [0,1) 的掷值）
 	var r_spread: float = roll_spread
 	if r_spread < 0.0:
 		r_spread = randf()
-	var base_dmg: float = base + spread * (r_spread * 2.0 - 1.0)
-
-	var mult: float = cfg.damage_multiplier(attack_type, target_armor_type)
-	var mit: float = armor_mitigation(target_armor)
-
-	var crit: float = 1.0
 	var r_crit: float = roll_crit
 	if r_crit < 0.0:
 		r_crit = randf()
-	if r_crit < cfg.crit_chance:
-		crit = cfg.crit_multiplier
-		info.is_crit = true
-
-	var dmg: float = base_dmg * mult * (1.0 - mit) * crit * attack_mult
-	info.damage = maxf(dmg, 0.0)
-	info.mitigation = mit
-	info.multiplier = mult
+	var out := ModelDamage.compute(base, spread, attack_type, target_armor, target_armor_type,
+		damage_rules(cfg), r_spread, r_crit, attack_mult)
+	info.damage = float(out.get("damage", 0.0))
+	info.mitigation = float(out.get("mitigation", 0.0))
+	info.multiplier = float(out.get("multiplier", 1.0))
+	info.is_crit = bool(out.get("is_crit", false))
 	return info
+
+
+## Cfg → Model 需要的规则字典（改字段只改这里）
+static func damage_rules(cfg: GameConfig) -> Dictionary:
+	return {
+		"damage_table": cfg.damage_table,
+		"stride": GameConfig.ARMOR_STRIDE,
+		"armor_reduction": cfg.armor_reduction,
+		"armor_reduction_cap": cfg.armor_reduction_cap,
+		"crit_chance": cfg.crit_chance,
+		"crit_multiplier": cfg.crit_multiplier,
+	}
 
 
 # ===========================================================================

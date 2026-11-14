@@ -1,6 +1,6 @@
 @tool
 extends Window
-## **技能编辑器（配方卡）**：把 `Game/config/卡/技能/*.tres` 做成"按模板出表单"的可视窗。
+## **技能编辑器（配方卡）**：把 `Content/data/cards/skills/*.tres` 做成"按模板出表单"的可视窗。
 ##
 ## ★ 三层积木 + 一张配方卡（玩家 2026-11-08 口径，详见 Game/config/技能卡.gd 文件头）：
 ##   第 1 层 技能原子（Game/config/原子/*.gd）—— 只描述效果

@@ -38,8 +38,8 @@ const GROUPS: Array = [
 		{"id": 5, "text": "试玩", "icon": "play", "tip": "保存临时地图并启动游戏（不阻塞编辑器）"},
 	]},
 	{"name": "数值", "items": [
-		{"id": 41, "text": "单位卡", "icon": "card", "tip": "编辑 Game/config/卡/单位/ 下的数值卡（保存即生效，进图前不用重启）"},
-		{"id": 42, "text": "建筑卡", "icon": "card", "tip": "编辑 Game/config/卡/建筑/ 下的数值卡"},
+		{"id": 41, "text": "单位卡", "icon": "card", "tip": "编辑 Content/data/cards/units/ 下的数值卡（保存即生效，进图前不用重启）"},
+		{"id": 42, "text": "建筑卡", "icon": "card", "tip": "编辑 Content/data/cards/buildings/ 下的数值卡"},
 		{"id": 44, "text": "技能卡", "icon": "card", "tip": "技能配方面板：三层积木（原子/动作/特效）+ 触发，按模板出表单"},
 		{"id": 43, "text": "帮助", "icon": "help", "tip": "功能索引：每个按钮做什么、在哪个文件实现"},
 	]},

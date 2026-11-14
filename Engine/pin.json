@@ -1,0 +1,157 @@
+{
+	"version": "0.1.0",
+	"files": {
+		"audio/audio_service.gd": {
+			"sha256": "240290a8a2bc381d7ffe2c9216b57bae069c8835469bb4bf35dfcbc3cf017e5a",
+			"size": 3681
+		},
+		"audio/audio_service.gd.uid": {
+			"sha256": "48b5f6aab9f6fc6b9e625b82d78091b1feaf832958f8ff8034cab8126ba2c8d4",
+			"size": 20
+		},
+		"boot/app.gd": {
+			"sha256": "d47015f18c24f2f35fe61c9302e876a997f0b128cbb7be56ed75d82e77716e85",
+			"size": 5009
+		},
+		"boot/app.gd.uid": {
+			"sha256": "dca15b27e7ce92b4f4e317b8cd6ef4ae792bf4964ffc1da7c120fc3ca705a5dc",
+			"size": 20
+		},
+		"debug/debug_bridge.gd": {
+			"sha256": "2704af1038803c9f386c248eb686e51ea5c57696ed443cf6317c0c158ef83bd8",
+			"size": 9338
+		},
+		"debug/debug_bridge.gd.uid": {
+			"sha256": "0edabbe5fb08dacaac8500190777c492d68031fe1cf66bba69e2f90dfe363dbc",
+			"size": 20
+		},
+		"debug/debug_panel.gd": {
+			"sha256": "00f52a4f606adb570a3950fb3b13cb6ff5a7d6b47c839b13ea22aff0b8cde377",
+			"size": 2712
+		},
+		"debug/debug_panel.gd.uid": {
+			"sha256": "97e968067c3fb797d27ca2d6139595cf07c0d75f44d2a8ec527bdb9aa05936ee",
+			"size": 19
+		},
+		"debug/debug_tuner.gd": {
+			"sha256": "6814025f6001eb94ee7d5f5078c60d0c7ab3e09dc01e1f38dbab18c06093aac7",
+			"size": 3015
+		},
+		"debug/debug_tuner.gd.uid": {
+			"sha256": "7619be8a0d8cae2b4b4eaa67d2920d129f47f4c3bccf726897727f9f21ac324a",
+			"size": 20
+		},
+		"debug/screenshot.gd": {
+			"sha256": "e700a5a7070b7d10ebd24b2352179977cfb1b538ec72e9c3b76d190079e830b1",
+			"size": 1309
+		},
+		"debug/screenshot.gd.uid": {
+			"sha256": "7f802046b9b4932aaf07755737e52b4fed6505f161f0d867f670222be9930913",
+			"size": 20
+		},
+		"dialogue/dialogue_runner.gd": {
+			"sha256": "4f41fa43c21cdd65218ed38f8d986c4640f66e4a7b3e245429bed7d9917d50e6",
+			"size": 4305
+		},
+		"dialogue/dialogue_runner.gd.uid": {
+			"sha256": "a7bfad28c2427c5877c9ce7318eead6433708729e5715e10e05664b88b385938",
+			"size": 20
+		},
+		"i18n/i18n_service.gd": {
+			"sha256": "e73a801bb1e6cb5c1e51202111a0d2001c3fa5914948451a1c7a5a37e8be2667",
+			"size": 3110
+		},
+		"i18n/i18n_service.gd.uid": {
+			"sha256": "b3e1a49a9d0cc9b0b16a96cde61902dc3f5ace0438db9dbdeb2592566eb55423",
+			"size": 20
+		},
+		"platform/platform_headless.gd": {
+			"sha256": "e297b7c5a2bb01f37aa62d6a6fa01f0a9f99358ab2c89b70564a9f8e21018795",
+			"size": 828
+		},
+		"platform/platform_headless.gd.uid": {
+			"sha256": "e642dce33bf9bc50aace0275a95769b12760c1cf1d86bca088a393a5207f6a95",
+			"size": 19
+		},
+		"platform/platform_interface.gd": {
+			"sha256": "9faaeb80234d115917429e41c435eb9808967774a354263e80dc48931d675607",
+			"size": 1250
+		},
+		"platform/platform_interface.gd.uid": {
+			"sha256": "19965743c7d59fa55544f2cbcaac6f3672a9660aaad93c299aed811725a7564a",
+			"size": 20
+		},
+		"platform/platform_local.gd": {
+			"sha256": "988a9c25e161548f4b2770cd676335e63b7472b4e82cfd6e9c11d32457e3f54a",
+			"size": 1973
+		},
+		"platform/platform_local.gd.uid": {
+			"sha256": "45dd92cd3755d5a8a5c5dc6b4be2f50777ff77a7ff2fe271d136c87302e1766c",
+			"size": 20
+		},
+		"platform/platform_mobile.gd": {
+			"sha256": "3ca3961523e25c0b34a7a4dc3d122492e3f760b9f34442c32b025037831b95db",
+			"size": 426
+		},
+		"platform/platform_mobile.gd.uid": {
+			"sha256": "ebba69bbf3fe3140ecf5fa562a0ca419efbf83d0df6cc787c16b4b6801176f70",
+			"size": 20
+		},
+		"platform/platform_service.gd": {
+			"sha256": "e736bd727307a2c99deb372c57a7d343c4f4fb65de563df376967a2b428d6474",
+			"size": 2385
+		},
+		"platform/platform_service.gd.uid": {
+			"sha256": "9f31e1ac854ff6a8932926ca6ea62f0f2c26b035cb9d94a75d88698dd629b224",
+			"size": 20
+		},
+		"platform/platform_steam.gd": {
+			"sha256": "eb26117cb83c400e882d26372792883b15ee737643a7dffbd5f346e55a473422",
+			"size": 630
+		},
+		"platform/platform_steam.gd.uid": {
+			"sha256": "adba6ef5fda27dcaea94683937f721c5afe63ef7995a01c36d1aa9971a53304c",
+			"size": 20
+		},
+		"README.md": {
+			"sha256": "7b09dd3d80398d6d47b83584f9f6ba9c2588a62a1b626fc075098dcfe47e3ae9",
+			"size": 1968
+		},
+		"save/save_service.gd": {
+			"sha256": "120f182584759b4a402591ced4f646e213807ff11ff7788ebea1d44536869a61",
+			"size": 3933
+		},
+		"save/save_service.gd.uid": {
+			"sha256": "8359e90d4578e598d87957ad09d560c3fedf2ff89dd438ac674d3e0dbbd6610a",
+			"size": 20
+		},
+		"util/asset_keys.gd": {
+			"sha256": "7150e68860ac611fd0ffd8cf67be4b7ed8f8c61bf469560a90c06018f1b5cb00",
+			"size": 1824
+		},
+		"util/asset_keys.gd.uid": {
+			"sha256": "c635d26fcc3dafa2946460f76b600ec50ce76549c0b2605319e6a34cd5cd7dde",
+			"size": 20
+		},
+		"util/json_codec.gd": {
+			"sha256": "2f5814c5ed3204aa6e2604a77288668ad4fcb1240c74aa6ff234f17b4e83c790",
+			"size": 8017
+		},
+		"util/json_codec.gd.uid": {
+			"sha256": "9f64c947c718762a6e03839203db691a4fa812767cae0219c70f73bfcf60587c",
+			"size": 20
+		},
+		"util/json_file.gd": {
+			"sha256": "9dcc27a30069ddb295cb8dbb884e267e1c188595f8748fe0eadd5e9a2359f09e",
+			"size": 2602
+		},
+		"util/json_file.gd.uid": {
+			"sha256": "9f49ea828c14b1e240c33d919d2bd33099ff3564fe7b49666f1d2c4ff383fb6e",
+			"size": 20
+		},
+		"VERSION": {
+			"sha256": "e9dd8507f4bf0c6f42458e41aea833ad0bd3f6127272335eee9bf4d58541ed67",
+			"size": 6
+		}
+	}
+}

@@ -1,0 +1,38 @@
+{
+	"$note": "run-game --simulate 的场景配置；数值来自 units.json / game.json，这里只描述'谁打谁、出什么兵'",
+	"games": 5,
+	"max_seconds": 300,
+	"dt": 0.1,
+	"sample_seconds": 30,
+	"trip_seconds": 14,
+	"sides": [
+		{
+			"name": "玩家",
+			"base_x": -22,
+			"workers": 5,
+			"start_gold": 620,
+			"start_wood": 380,
+			"food_cap": 24,
+			"army_target": 12,
+			"roster": [
+				{ "id": "footman", "weight": 5 },
+				{ "id": "archer", "weight": 4 },
+				{ "id": "mage", "weight": 1 }
+			]
+		},
+		{
+			"name": "AI",
+			"base_x": 22,
+			"workers": 5,
+			"start_gold": 620,
+			"start_wood": 380,
+			"food_cap": 24,
+			"army_target": 12,
+			"roster": [
+				{ "id": "footman", "weight": 5 },
+				{ "id": "archer", "weight": 4 },
+				{ "id": "dwarf_musketeer", "weight": 2 }
+			]
+		}
+	]
+}

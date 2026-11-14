@@ -17,8 +17,8 @@ import re
 import io
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC_DIRS = ["代码", "addons"]
-OUT = os.path.join(ROOT, "文档", "索引", "文件索引.md")
+SRC_DIRS = ["Game", "Views", "Model", "Engine", "Tests", "addons"]
+OUT = os.path.join(ROOT, "Documents", "索引", "文件索引.md")
 
 
 def rel(p):

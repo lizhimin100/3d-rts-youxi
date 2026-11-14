@@ -4,7 +4,7 @@ extends RefCounted
 ## 2026-11-07 组件化重写。数据和执行彻底分开：
 ##
 ## ```
-##   Game/config/卡/技能/<id>.tres   ← SkillCard 资源（编辑器可改、可新增、可挂到任意单位）
+##   Content/data/cards/skills/<id>.tres   ← SkillCard 资源（编辑器可改、可新增、可挂到任意单位）
 ##              ↓ 本文件（启动时全量扫入，转 Dictionary）
 ##   Game/systems/技能.gd             ← 主动技能的施放/结算
 ##   Game/systems/技能运行时.gd       ← 开关/被动：修正倍率、连发、装填、动作与特效

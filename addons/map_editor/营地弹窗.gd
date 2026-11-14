@@ -10,7 +10,7 @@ extends Window
 ## 数据口径（和停靠面板完全一致，两边编辑同一份 .tres）：
 ##   · 锚点有 camp_id      → 用 by_id 那一份（逐实例配置）；
 ##   · 没有 camp_id 但有默认 → 用 for_den(锚点类型) 那一份；
-##   · 两份都没有          → 按模板新建 Game/config/卡/野怪营地/camp_<锚点id>_<n>.tres。
+##   · 两份都没有          → 按模板新建 Content/data/cards/camps/camp_<锚点id>_<n>.tres。
 ##   保存后把 camp_id 写进**这一座**锚点的 properties，并让静态表 reload ——
 ##   同一种锚点摆多座时，各座才可能配各自的怪（运行时 野怪营地.gd 已经读 camp_id）。
 ##
@@ -114,7 +114,7 @@ func _build() -> void:
 	g.add_child(_label("营地 id"))
 	_id = LineEdit.new()
 	_id.placeholder_text = "camp_creep_den_1"
-	_id.tooltip_text = "新营地用它拼文件名（Game/config/卡/野怪营地/<id>.tres）。\n已存在的营地按原本的路径写回，id 只作标识。"
+	_id.tooltip_text = "新营地用它拼文件名（Content/data/cards/camps/<id>.tres）。\n已存在的营地按原本的路径写回，id 只作标识。"
 	g.add_child(_id)
 
 	g.add_child(_label("所属玩家"))

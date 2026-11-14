@@ -1,30 +1,31 @@
 # 铁血战歌 · 简易rts
 
-一个用 **Godot 4.7 + 纯 GDScript** 从零做出来的 **3D 即时战略游戏**，玩法对标《魔兽争霸 3》：
-左键选中 / 拖框群选、右键移动与攻击、屏幕边缘平滑滚屏、采金伐木、造兵升级、摧毁敌人大本营取胜。
+用 **Godot 4.7 + GDScript** 做的 **3D 即时战略**（PvE 为主，肉鸽方向）。
+核心特色是 **副官**：它替你接管建造/训练/采集这些重复操作，你只需要决定"往哪打、先打谁、什么时候撤"。
+目标平台 **Steam + 低中端手机**；规则逐步迁到独立的 C# 内核。
 
-美术由**项目内 Blender 管线 + 铁誓军团资产包**组成：三座建筑用资产包近/中/远 LOD，
-单位/自然物用 v7 程序化模型；环境/UI/特效仍在项目内生成。
+> 工程约定与 AI 协作规则见 **[AGENTS.md](AGENTS.md)**；设计真相见 **[Documents/concept.md](Documents/concept.md)**。
+> 2026-11-14 按「七块砖」完成目录重排与地基搭建，旧路径（`代码/`、`场景/`、`美术/`…）已不存在。
 
 ---
 
 ## 一、怎么跑
 
-1. 用 Godot **4.7**（Steam 版 / 官方版皆可）打开本目录（`project.godot`）。
-2. 直接按 **F5**（或用命令行）：
+先让 Godot 扫一遍资源（新克隆 / 新增模型后）：
 
 ```powershell
-# 编辑器
-& 'godot.exe' --path .
-
-# 什么都不改，直接跑主场景
-& 'godot.exe' --path . --resolution 1600x900
+./Tools/run-game.ps1 --import
 ```
 
-首次打开会自动导入 `Content/art/模型/*.glb`（约 10 秒）。
+正常启动（有窗口，直接玩）：
 
-> 如果刚拉了新代码、或自己加了脚本，先让 Godot 重新扫描一次：
-> `godot --headless --path . --import`
+```powershell
+./Tools/run-game.ps1
+# 或者：godot --path .
+```
+
+脚本找 Godot 的顺序：`$env:GODOT_BIN` → 本机已知安装路径 → PATH 里的 `godot`。
+想固定版本：`$env:GODOT_BIN = 'D:\Godot\godot.exe'`。
 
 ---
 
@@ -39,161 +40,96 @@
 | 移动 / 攻击 / 采集（上下文指令） | **右键** |
 | 攻击移动 | **F** 然后左键点地 |
 | 停止 / 原地警戒 | **X** / **H** |
-| 释放技能（法师火球） | **Q / 1** |
+| 释放技能 | **Q / 1** |
 | 建造菜单 / 建筑转向 | **B** / 放置时 **R**（Shift+R 反向） |
 | 研究升级（铁匠铺） | 选中铁匠铺 → 命令卡「武器锻造 / 护甲锻造」 |
 | 镜头平移 | **方向键 / WASD / 鼠标怼到屏幕边缘** |
-| 镜头旋转 | **Q / E** 或 **按住鼠标中键拖拽** |
+| 镜头旋转 | **Q / E** 或按住鼠标中键拖拽 |
 | 镜头缩放 | **鼠标滚轮** |
 | 镜头回中 | **空格** |
-| 小地图跳转 | 在小地图上左键点击/拖动 |
+| 小地图跳转 | 小地图上左键点击/拖动 |
 
-**胜负**：摧毁敌方「大本营」→ 胜利；自己的大本营被拆 → 失败。结束后会出现遮罩，
-点「重新开始」即可重开一局。
+**胜负**：摧毁敌方「大本营」→ 胜利；自己的大本营被拆 → 失败。结束后点「重新开始」重开一局。
 
 ---
 
-## 三、玩法系统
+## 三、玩法系统（当前实现）
 
-- **资源**：金币（金矿）+ 木材（树木），农民往返采集，资源量会真实消耗与枯竭。
-- **人口**：大本营 +24，农场 +8；人口满了不能造兵（会提示）。
-- **兵种**：
-  | 单位 | 定位 | 特点 |
-  |---|---|---|
-  | 农民 | 经济/建造 | 采金伐木、建造建筑、能修，战斗力弱 |
-  | 步兵 | 前排 | 重甲高血，近战普通伤害 |
-  | 弓箭手 | 远程 | 穿刺伤害、克制轻甲、脆皮 |
-  | 法师 | 法术 | 魔法远程 + **火球术**（范围伤害 + 减速） |
-- **建筑**：大本营（出兵/存资源/人口）、兵营（出步兵/弓手/法师）、
-  铁匠铺（研究「武器锻造 / 护甲锻造」，各 3 级、每级全军 +15%，阵营级、对后续单位同样生效）、
-  农场（人口）、箭塔（自动射击）。
-- **护甲/伤害类型**：普通 / 穿刺 / 魔法 / 攻城 × 轻甲 / 重甲 / 城甲 / 无甲，有克制表。
-- **AI**：会采资源、造农场、按兵种配比出兵、集结成波进攻、基地被袭会回防。
-  三档难度（简单/普通/困难）只影响**节奏与经济**，不偷改单位数值。
+- **资源**：金币（金矿）+ 木材（树木）；农民往返采集，资源会真实消耗与枯竭。
+- **人口**：大本营 +24，农场 +8；人口满不能造兵。
+- **兵种**：农民 / 步兵 / 弓箭手 / 法师 / 矮人火枪手 / 破法者 / 魔金傀儡；野怪有豺狼人三系。
+- **建筑**：大本营、兵营、铁匠铺、农场、箭塔、哨塔、神秘圣地、蒸汽车坊、伐木场、营火、联盟要塞。
+- **护甲/伤害**：普通 / 穿刺 / 魔法 / 攻城 × 轻甲 / 重甲 / 中甲 / 城甲 / 无甲，克制表在 `Content/data/game.json`。
+- **AI 与副官**：AI 会采集、造农场、按兵种配比出兵、集结成波；副官替玩家做同类决策，并在界面给建议。
+- **地图**：4 队竞技场（224m），含野怪营地、日夜、据点；地图编辑器在 `addons/map_editor`。
+
+> 数值与内容全在 **[Content/data](Content/data)**；改数值不用改代码，见 **[Documents/data-pipeline.md](Documents/data-pipeline.md)**。
 
 ---
 
 ## 四、工程结构
 
-> **场景是真节点树**（不是脚本硬糊的黑盒）。打开 `Views/scenes/主场景.tscn` 能一层层扒开：
-> ```
-> 主场景 (Node3D)
-> ├── 环境      WorldEnvironment     ← 战斗环境.tres
-> ├── 主光      DirectionalLight3D   ← 暖色主光（开阴影）
-> ├── 补光      DirectionalLight3D   ← 冷色补光
-> ├── 关卡      RtsLevel             ← 地形网格 / 寻路 / 树·金矿·岩石 / 开局部队
-> ├── 镜头      RtsCamera            ← 魔兽式镜头（子节点 Camera3D 运行时创建）
-> ├── 选择系统  SelectionSystem      ← 点选 / 拖框 / 选中圈
-> ├── 指令系统  CommandSystem        ← 右键上下文指令
-> ├── 界面      RtsHud (CanvasLayer) ← 资源条 / 小地图 / 选中面板 / 命令卡 / 结束遮罩
-> └── AI        SimpleAI
-> ```
-> 运行时节点总数约 **1200**（v2.0 美术重制后：单位/建筑按材质合并网格 + 装饰走 MultiMesh；
-> draw call 从 13078 降到 **388**，地形 6728 面 + 54 棵树 + 3 座金矿 + 26 块岩石 + 双方部队），
-> 全部在 `关卡` 节点下成树，可以直接在远程场景树里选中检视。
+```
+Engine/     我们自己的引擎层：启动/存档/多语言/音频/对话/平台/调试接口（共享库，pin.json 锁定）
+Model/      纯逻辑：伤害、经济、生产、成长、存档 schema、确定性推演（零引擎 API）
+Views/      画面与输入：hud/ input/ camera/ world/ scenes/ screens/
+Game/       引擎耦合的玩法装配（迁移期：units/ai/systems/map/config/core/audio）
+Content/    data/（JSON 唯一数值源）i18n/ keys/ art/ audio/ maps/ legacy/
+Tests/      checks/（--check）sim/（--simulate）model/（纯逻辑用例）suites/（历史自检）
+Tools/      run-game.ps1 / gen/（生成器）/ build/（发行与 Demo）/ qa/ migrate/
+Documents/  concept.md（设计真相）/ architecture.md / data-pipeline.md / debug-bridge.md / 专题与索引
+addons/     地图编辑器（不进发行版）
+```
 
-```
-project.godot              工程配置（自动加载 Cfg / Game）
-Views/scenes/主场景.tscn            唯一场景，其余全部代码构建
-Documents/
-  作战条令.md              ★ 接口契约（坐标/模型层级/API/规范），改接口先改它
-  美术规范.md              ★ Content/art/材质/模型规范
-Game/
-  配置/                    唯一数值来源（Cfg 单例 + GameConfig/UnitDef/DifficultyDef + 单位表）
-  核心/                    常量、全局状态(Game)、主场景编排、关卡、地图生成、地形
-  寻路/                    网格 A*、空间哈希
-  单位/                    单位 / 建筑 / 可采集物（数据驱动 + 状态机）
-  系统/                    战斗、投射物、技能
-  ai/                      简单 AI
-  镜头/                    魔兽式 RTS 镜头
-  操作/                    选择系统、指令系统、指针拾取
-  界面/                    HUD、小地图、命令卡、设计令牌(界面规格.gd)
-  Content/art/                    美术接口门面 + 模型工厂 / 程序动画 / 特效生成
-  数据/                    阵营（经济与军队容器）
-  地图核心/                MapDef / MapLoader / MapStore / 区域 / 波次（编辑器与游戏共用）
-  测试/                    自检脚本与测试运行器
-addons/map_editor/          Godot EditorPlugin 地图编辑器（Theme 资源 / Tree 历史 / 建造网格）
-Content/art/
-  模型/*.glb               建筑资产包近/中/远 + v7 单位/自然物（骨骼动画 + M_<zone> 材质协议）
-  着色器/*.gdshader        三渲二主材质 / 描边 / 地形 / 水 / 特效 / 选中圈
-  材质/*.tres              材质实例
-  环境/战斗环境.tres       光照与后期
-  主题/游戏主题.tres       UI 主题（中文字体）
-  特效/*.tscn              命中/死亡/魔法/尘土/选中圈
-Tools/
-  建模/*.py                Blender 生成脚本（可复现全部模型）
-建模/v3/                 v3 管线：kit3(通用) / units / buildings / props（骨骼+动画+材质协议）
-  验证.ps1                 一键验收（编译 + 跑帧 + 报错扫描 + 截图）
-  导出配置.gd              把默认配置导出成可编辑的 .tres
-```
+依赖方向：`Views → Game → (Model, Engine)`；`Model` 不依赖上层；`Engine` 不依赖玩法。
+详见 **[Documents/architecture.md](Documents/architecture.md)**。
 
 ---
 
-## 五、可配置项（都在 `Game/config/`）
+## 五、验证（全部无窗口，静音）
 
-- **镜头**：俯角、距离范围、边缘滚动速度/加速度/阻尼、旋转步长、边界、抖动衰减
-- **经济**：初始资源、采集速率、携带量、金矿/树木储量
-- **战斗**：护甲减免系数、克制表、暴击率、前摇比例、震屏强度
-- **难度**：三档的思考间隔、首波延迟、波次间隔与衰减、军队上限、农民目标、经济倍率、兵种配比
-- **地图**：尺寸、种子、基地坐标、树林簇数、岩石数、地形起伏
-- **界面**：队伍色、小地图尺寸、HUD 配色
-- **单位数值**：`Game/config/单位表.gd`（血量/攻击/护甲/花费/训练时间/采集速率…）
-
-想用编辑器可视化调参：跑一次
 ```powershell
-& 'godot.exe' --headless --path . --script Tools/导出配置.gd
+./Tools/run-game.ps1 --check                  # 体检：数据/文案/资源/分层/存档隔离/发行门禁/文档
+./Tools/run-game.ps1 --simulate --games=5     # 只用 Model 跑推演，输出数值报告
+./Tools/run-game.ps1 --shot hud _qa/hud.png   # 离屏开画面 + 真点一次「建造」+ 存图
+./Tools/run-game.ps1 --shot main _qa/main.png # 只截图
 ```
-会生成 `配置/游戏配置.tres`，之后在 Godot 里双击它即可改；`Cfg` 会优先读它。
+
+通过判据：`--check` 退出码 0 且 `CHECK 通过 N 项 / 失败 0`；`--shot` 退出码 0 且 `SHOT PASS`；
+`--simulate` 退出码 0 且有 `SIM {json}`。
+
+历史自检（`Tests/suites/`）仍可单独跑，例如：
+
+```powershell
+godot --headless --path . --script Tests/suites/配置回归.gd
+godot --headless --path . --script Tests/suites/战斗自检.gd
+```
+
+入口与常红项见 **[Documents/索引/测试索引.md](Documents/索引/测试索引.md)**。
+**已知常红**：`配置回归` 的 2 条 "dept 默认 off" 断言（DEFAULT_DEPT_MODE 临时为 on，commit 607b798，不是新问题）。
 
 ---
 
-## 六、验证
+## 六、文档
 
-```powershell
-# 一键验收：重新扫描 + 无头跑 300 帧 + 报错扫描
-.\工具\验证.ps1
-
-# 再跑一次实机截图（用来人眼看构图/比例/朝向）
-.\工具\验证.ps1 -Shot -Seconds 5
-
-# 寻路专项自检（15 条用例）
-& 'godot.exe' --headless --path . --script Tests/suites/寻路自检.gd
-
-# 寻路抖动 / 贴墙 / 人群专项（36 项；必须 fixed-fps 60）
-& 'godot.exe' --headless --fixed-fps 60 --path . --script Tests/suites/寻路抖动自检.gd
-
-# 升级 / 人口专项自检（铁匠铺研究闭环 + 训练队列不撑爆人口）
-& 'godot.exe' --headless --fixed-fps 60 --path . -- --research-test
-
-# 走姿 / 死亡骨架回归（脚掌不翻面、死亡头颈不分离）
-& 'godot.exe' --path . --resolution 1280x800 -- --walk-test
-
-# 建造 / 死亡 / 倒塌 / 废墟 / 受击反馈自检（30 项；不生成截图）
-& 'godot.exe' --headless --path . --script Tests/suites/表现自检.gd
-
-# 建造 / 界面自检
-& 'godot.exe' --headless --path . --script Tests/suites/建造自检.gd
-& 'godot.exe' --headless --path . --script Tests/suites/界面自检.gd
-
-# 地图编辑器：链路自检（Theme / Tree 历史 / 建筑网格 / 装饰边界）+ 数据自检
-& 'godot.exe' --headless --editor --path . -- --map-editor-selftest
-& 'godot.exe' --headless --path . -- --map-editor-test
-```
-
-> 材质/UI/验证的长期经验统一写在 `.workbuddy/memory/MEMORY.md`；
-> 分轮截图、QC 图、旧报告已清理，不再保留。
+- **[AGENTS.md](AGENTS.md)** —— 硬约定、验证命令、拍板记录、Git 节奏（**先读这个**）。
+- **[Documents/concept.md](Documents/concept.md)** —— 设计真相（已确认 / 建议 / 待决定）。
+- **[Documents/architecture.md](Documents/architecture.md)** —— 分层、数据流、迁移欠账、检查覆盖。
+- **[Documents/data-pipeline.md](Documents/data-pipeline.md)** —— JSON 数据、文案、资源 key、生成器。
+- **[Documents/debug-bridge.md](Documents/debug-bridge.md)** —— 127.0.0.1 调试接口与"新进程校验"。
+- **[Documents/README.md](Documents/README.md)** —— 文档总入口（按任务路由）。
+- **[Documents/topics/qframework-assessment.md](Documents/topics/qframework-assessment.md)** —— QFramework 评估（结论：部分借鉴，不采用）。
 
 ---
 
 ## 七、美术复现
 
-单位/自然物 v7 由 `Tools/建模/*.py` 在 Blender 里生成；三座建筑来自 `Content/art/铁誓军团_资产包_v1`：
+单位/自然物由 `Tools/建模/*.py` 在 Blender 里程序化生成；建筑来自项目内资产包。
+Blender 5.x 示例：
 
 ```powershell
-# 例：重建农民（Blender 5.x）
-& 'E:\tmp\blender_ok\blender.exe' -b --factory-startup --python 工具\建模\build_农民.py
+& 'E:\tmp\blender_ok\blender.exe' -b --factory-startup --python Tools\建模\build_农民.py
 ```
 
-生成脚本会输出 GLB 到 Blender 侧的可写目录，再拷进 `Content/art/模型/` 即可。
-（注：本机 Blender 必须用 `E:\tmp\blender_ok\blender.exe` 这份全量副本；
-D 盘原目录带低完整性标签，启动即零输出 exit=1。这是环境约束，不是设计选择。）
+生成脚本输出 GLB 到可写目录，再拷进 `Content/art/模型/`，跑 `./Tools/run-game.ps1 --import`。
+（本机 Blender 必须用 `E:\tmp\blender_ok\blender.exe` 这份全量副本；D 盘原目录带低完整性标签，启动即零输出 exit=1。这是环境约束，不是设计选择。）

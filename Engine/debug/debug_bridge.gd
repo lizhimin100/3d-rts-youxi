@@ -127,7 +127,7 @@ func _accept_clients() -> void:
 		var peer := _server.take_connection()
 		if peer == null:
 			continue
-		_clients.append({"peer": peer, "buf": PackedByteArray(), "done": false})
+		_clients.append({"peer": peer, "buf": PackedByteArray(), "done": false, "age": 0.0})
 
 
 func _pump_clients() -> void:
@@ -136,18 +136,28 @@ func _pump_clients() -> void:
 		var peer: StreamPeerTCP = c["peer"]
 		peer.poll()
 		var status := peer.get_status()
+		if status == StreamPeerTCP.STATUS_ERROR or status == StreamPeerTCP.STATUS_NONE:
+			continue
+		# ★ 刚 accept 的连接会有一帧处于 CONNECTING：**不能丢**（丢了客户端就永远等不到响应）
 		if status != StreamPeerTCP.STATUS_CONNECTED:
-			if not bool(c.get("done", false)):
+			c["age"] = float(c.get("age", 0.0)) + get_process_delta_time()
+			if float(c["age"]) < 15.0:
+				keep.append(c)
+			else:
 				peer.disconnect_from_host()
 			continue
 		var avail := peer.get_available_bytes()
 		if avail > 0:
 			var got: Array = peer.get_data(avail)
 			if int(got[0]) == OK:
-				(c["buf"] as PackedByteArray).append_array(got[1])
-		if not bool(c.get("done", false)) and _try_handle(c):
-			pass
-		keep.append(c)
+				# ★ PackedByteArray 是值类型：cast 出来的是副本，必须写回字典
+				var buf: PackedByteArray = c["buf"]
+				buf.append_array(got[1])
+				c["buf"] = buf
+		if not bool(c.get("done", false)):
+			_try_handle(c)
+		if not bool(c.get("done", false)):
+			keep.append(c)
 	_clients = keep
 
 

@@ -1,0 +1,8 @@
+# 发行构建排除清单（Tools/build/export_release.ps1 读取）
+# 一行一个路径（目录或文件），相对仓库根目录。只处理发布副本，不动源码。
+Engine/debug
+Tests
+Tools
+addons
+Content/legacy
+Documents

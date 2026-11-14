@@ -23,7 +23,7 @@ const MODE_REGION: int = 2
 const MODE_SELECT: int = 3
 
 ## 野怪营地锚点建筑的 id（玩家点它们要弹营地配置窗）。
-## 固定这三条是因为营地卡的 den_building 就是它们（见 Game/config/卡/野怪营地/）；
+## 固定这三条是因为营地卡的 den_building 就是它们（见 Content/data/cards/camps/）；
 ## 另外 properties 里带 camp* 键的建筑也认（以后加新锚点不用改这里）。
 const CAMP_ANCHOR_IDS: Array[String] = ["creep_den", "creep_gate", "creep_shell"]
 

@@ -22,6 +22,11 @@ func _ready() -> void:
 
 
 func root() -> String:
+	# ★ 测试模式写**项目内**的隔离目录：不碰 player 真实存档（user://），
+	#   也不依赖运行环境能不能写 AppData（无头 CI / 沙箱里常常不能）。
+	#   这个目录在 .gitignore 里，跑完 --check 也不会进版本库。
+	if App != null and App.test_mode:
+		return "res://.test_profile/"
 	var profile := "default"
 	if App != null:
 		profile = App.profile
@@ -37,7 +42,7 @@ func slot_path(slot: int) -> String:
 
 
 func is_test_profile() -> bool:
-	return root().contains("/test/")
+	return root().contains(".test_profile")
 
 
 func set_validator(cb: Callable) -> void:

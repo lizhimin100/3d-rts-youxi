@@ -3,7 +3,7 @@ extends Resource
 ##
 ## 为什么做成 Resource 而不是常量表：
 ##   营地是"地图内容"，不是平衡数值 —— 同一套刷怪规则，不同地图想摆不同组合。
-##   放进 `Game/config/卡/野怪营地/*.tres` 之后，加一座营地只需要加一个文件，
+##   放进 `Content/data/cards/camps/*.tres` 之后，加一座营地只需要加一个文件，
 ##   不用改任何代码（和建筑卡同一个思路）。
 ##
 ## ⚠ 故意**不写 class_name**：
@@ -12,7 +12,7 @@ extends Resource
 ##   一律 `load()` + 动态取字段就够了，不需要全局类名。
 ##
 ## 与建筑的关系：
-##   `den_building` 是**锚点建筑**的 id（见 Game/config/卡/建筑/creep_den.tres 等）。
+##   `den_building` 是**锚点建筑**的 id（见 Content/data/cards/buildings/creep_den.tres 等）。
 ##   营地不自己长房子：房子由玩家在地图编辑器里摆（owner = -1 → 中立阵营），
 ##   系统扫到"中立阵营里 id 命中的建筑"才把它当成一座营地。
 ##   这样"营地摆在哪"完全由地图作者决定，代码不猜。

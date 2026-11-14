@@ -1,0 +1,18 @@
+{
+	"$note": "run-game --shot 的画面表；新增画面只改这里。click 必须配 expect（点了要验状态，不能只截图）",
+	"screens": {
+		"main": {
+			"description": "主场景全景（非交互）",
+			"scene": "res://Views/scenes/主场景.tscn",
+			"delay": 8.0
+		},
+		"hud": {
+			"description": "选中农民 → 用真实输入点开「建造」→ 验证建造页出现",
+			"scene": "res://Views/scenes/主场景.tscn",
+			"delay": 8.0,
+			"select_unit": "peasant",
+			"click": "指令_建造",
+			"expect": "指令_农场"
+		}
+	}
+}

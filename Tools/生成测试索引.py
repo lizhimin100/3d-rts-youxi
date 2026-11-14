@@ -18,8 +18,8 @@ import os
 import re
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TEST_DIR = os.path.join(ROOT, "代码", "测试")
-OUT = os.path.join(ROOT, "文档", "索引", "测试索引.md")
+TEST_DIR = os.path.join(ROOT, "Tests", "suites")
+OUT = os.path.join(ROOT, "Documents", "索引", "测试索引.md")
 
 # 已知常红（2026-11-13 同步自 Documents/开发交接.md §5）
 KNOWN_RED = {

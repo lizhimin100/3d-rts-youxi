@@ -27,7 +27,7 @@ var boot_id := ""
 
 const TEST_FLAGS := ["--test", "--check", "--simulate", "--shot", "--autotest", "--interact-test",
 	"--research-test", "--walk-test", "--map-editor-test", "--map-editor-selftest"]
-const TEST_PREFIXES := ["--qa", "--shot", "--simulate", "--test"]
+const TEST_PREFIXES := ["--qa", "--shot", "--simulate", "--test", "--screen"]
 
 
 func _init() -> void:
@@ -80,9 +80,20 @@ func _setup_services() -> void:
 			AudioServer.set_bus_mute(idx, true)
 	# 服务都是自动加载节点；这里只做"顺序上的收尾"与平台选择确认
 	print(boot_banner())
+	_install_save_schema()
 	if DbgBridge != null:
 		DbgBridge.maybe_start()
 		_install_debug_hooks()
+
+
+## 存档 schema 由游戏侧提供（Engine/save 只认 {schema_version,payload} 外壳）
+func _install_save_schema() -> void:
+	var script: Script = load("res://Game/core/save_setup.gd")
+	if script == null:
+		return
+	var setup: RefCounted = script.new()
+	if setup != null and setup.has_method("install"):
+		setup.call("install")
 
 
 ## 游戏侧钩子实例（必须持有引用：它注册的 Callable 绑在它身上）

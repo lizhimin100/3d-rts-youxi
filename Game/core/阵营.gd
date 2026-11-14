@@ -1,5 +1,8 @@
 class_name RtsFaction
 extends RefCounted
+
+## 经济规则（能不能付 / 扣多少 / 人口够不够）的唯一实现在 Model 层
+const Economy := preload("res://Model/core/economy.gd")
 ## **阵营**：一个玩家（或 AI）的全部资产与资源。
 ## 玩家与 AI 都只有一个 RtsFaction，经济/军队全挂在这里。
 ## 由 Lead 提供，其他人只读/调用，不要改这个文件。
@@ -136,29 +139,34 @@ func food_reserved() -> int:
 
 ## 人口是否够用（已用 + 队列预定 + 本次申请）
 func has_food(amount: int) -> bool:
-	return food_used() + food_reserved() + amount <= food_cap()
+	return Economy.has_food(food_used(), food_reserved(), amount, food_cap())
 
 
 ## 资源是否够
 func can_afford(def: UnitDef) -> bool:
 	if def == null:
 		return false
-	return gold >= def.gold_cost and wood >= def.wood_cost
+	return Economy.can_afford(gold, wood, def.gold_cost, def.wood_cost)
 
 
 ## 扣除资源（先检查再扣；成功返回 true）
 func pay(def: UnitDef) -> bool:
-	if def == null or not can_afford(def):
+	if def == null:
 		return false
-	gold -= def.gold_cost
-	wood -= def.wood_cost
+	var state := {"gold": gold, "wood": wood}
+	if not Economy.pay(state, def.gold_cost, def.wood_cost):
+		return false
+	gold = int(state["gold"])
+	wood = int(state["wood"])
 	return true
 
 
 ## 增加资源
 func add_res(p_gold: int, p_wood: int) -> void:
-	gold = maxi(0, gold + p_gold)
-	wood = maxi(0, wood + p_wood)
+	var state := {"gold": gold, "wood": wood}
+	Economy.add(state, p_gold, p_wood)
+	gold = int(state["gold"])
+	wood = int(state["wood"])
 
 
 ## 存活单位数量（可选按 id 过滤）

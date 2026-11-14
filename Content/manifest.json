@@ -1,0 +1,2433 @@
+{
+	"version": 1,
+	"files": [
+		{
+			"path": "Game/ai/README.md",
+			"size": 2563
+		},
+		{
+			"path": "Game/ai/世界状态.gd",
+			"size": 8826
+		},
+		{
+			"path": "Game/ai/世界状态.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/ai/副官.gd",
+			"size": 21892
+		},
+		{
+			"path": "Game/ai/副官.gd.uid",
+			"size": 18
+		},
+		{
+			"path": "Game/ai/反愚蠢.gd",
+			"size": 15114
+		},
+		{
+			"path": "Game/ai/反愚蠢.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Game/ai/命令调度.gd",
+			"size": 12331
+		},
+		{
+			"path": "Game/ai/命令调度.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/ai/战区指令.gd",
+			"size": 5065
+		},
+		{
+			"path": "Game/ai/战区指令.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/ai/战斗模型.gd",
+			"size": 78016
+		},
+		{
+			"path": "Game/ai/战斗模型.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Game/ai/战略导演.gd",
+			"size": 14913
+		},
+		{
+			"path": "Game/ai/战略导演.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/ai/控制权.gd",
+			"size": 12280
+		},
+		{
+			"path": "Game/ai/控制权.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Game/ai/目标层.gd",
+			"size": 25616
+		},
+		{
+			"path": "Game/ai/目标层.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/ai/简单AI.gd",
+			"size": 356627
+		},
+		{
+			"path": "Game/ai/简单AI.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/ai/计划层.gd",
+			"size": 2731
+		},
+		{
+			"path": "Game/ai/计划层.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/ai/集结规划.gd",
+			"size": 3974
+		},
+		{
+			"path": "Game/ai/集结规划.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Game/ai/驻守调度.gd",
+			"size": 3636
+		},
+		{
+			"path": "Game/ai/驻守调度.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Game/audio/语音表.gd",
+			"size": 1924
+		},
+		{
+			"path": "Game/audio/语音表.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/audio/音效管理.gd",
+			"size": 40788
+		},
+		{
+			"path": "Game/audio/音效管理.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/config/AI判定模式.gd",
+			"size": 18980
+		},
+		{
+			"path": "Game/config/AI判定模式.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/config/AI战略权重.gd",
+			"size": 3023
+		},
+		{
+			"path": "Game/config/AI战略权重.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/config/AI诉求系数.gd",
+			"size": 6921
+		},
+		{
+			"path": "Game/config/AI诉求系数.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/config/card_store.gd",
+			"size": 3573
+		},
+		{
+			"path": "Game/config/card_store.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/config/README.md",
+			"size": 1385
+		},
+		{
+			"path": "Game/config/体积派生.gd",
+			"size": 4897
+		},
+		{
+			"path": "Game/config/体积派生.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/config/单位卡.gd",
+			"size": 5997
+		},
+		{
+			"path": "Game/config/单位卡.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/config/单位定义.gd",
+			"size": 7338
+		},
+		{
+			"path": "Game/config/单位定义.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Game/config/单位表.gd",
+			"size": 17198
+		},
+		{
+			"path": "Game/config/单位表.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/config/原子/原子_属性.gd",
+			"size": 1396
+		},
+		{
+			"path": "Game/config/原子/原子_属性.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/config/原子/原子_格挡.gd",
+			"size": 864
+		},
+		{
+			"path": "Game/config/原子/原子_格挡.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/config/原子/原子_连发.gd",
+			"size": 1432
+		},
+		{
+			"path": "Game/config/原子/原子_连发.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Game/config/定位词表.gd",
+			"size": 6469
+		},
+		{
+			"path": "Game/config/定位词表.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/config/实体卡.gd",
+			"size": 1256
+		},
+		{
+			"path": "Game/config/实体卡.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/config/射程基准.gd",
+			"size": 1691
+		},
+		{
+			"path": "Game/config/射程基准.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/config/建筑卡.gd",
+			"size": 3984
+		},
+		{
+			"path": "Game/config/建筑卡.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Game/config/战略计划.gd",
+			"size": 4542
+		},
+		{
+			"path": "Game/config/战略计划.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/config/技能卡.gd",
+			"size": 7729
+		},
+		{
+			"path": "Game/config/技能卡.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Game/config/技能原子.gd",
+			"size": 2197
+		},
+		{
+			"path": "Game/config/技能原子.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/config/技能表.gd",
+			"size": 7891
+		},
+		{
+			"path": "Game/config/技能表.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/config/游戏配置.gd",
+			"size": 17988
+		},
+		{
+			"path": "Game/config/游戏配置.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/config/研究定义.gd",
+			"size": 896
+		},
+		{
+			"path": "Game/config/研究定义.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Game/config/输入配置.gd",
+			"size": 3094
+		},
+		{
+			"path": "Game/config/输入配置.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/config/配置入口.gd",
+			"size": 3568
+		},
+		{
+			"path": "Game/config/配置入口.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/config/野怪营地定义.gd",
+			"size": 2937
+		},
+		{
+			"path": "Game/config/野怪营地定义.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/config/野怪营地表.gd",
+			"size": 3108
+		},
+		{
+			"path": "Game/config/野怪营地表.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/config/难度定义.gd",
+			"size": 2693
+		},
+		{
+			"path": "Game/config/难度定义.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/core/debug_hooks.gd",
+			"size": 6546
+		},
+		{
+			"path": "Game/core/debug_hooks.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/core/README.md",
+			"size": 1348
+		},
+		{
+			"path": "Game/core/save_setup.gd",
+			"size": 314
+		},
+		{
+			"path": "Game/core/主场景.gd",
+			"size": 55414
+		},
+		{
+			"path": "Game/core/主场景.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/core/关卡.gd",
+			"size": 64250
+		},
+		{
+			"path": "Game/core/关卡.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/core/常量.gd",
+			"size": 3527
+		},
+		{
+			"path": "Game/core/常量.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/core/游戏状态.gd",
+			"size": 30178
+		},
+		{
+			"path": "Game/core/游戏状态.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/core/阵营.gd",
+			"size": 7712
+		},
+		{
+			"path": "Game/core/阵营.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/map/区域定义.gd",
+			"size": 3628
+		},
+		{
+			"path": "Game/map/区域定义.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/map/地图加载器.gd",
+			"size": 47869
+		},
+		{
+			"path": "Game/map/地图加载器.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/map/地图存储.gd",
+			"size": 7328
+		},
+		{
+			"path": "Game/map/地图存储.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Game/map/地图定义.gd",
+			"size": 27889
+		},
+		{
+			"path": "Game/map/地图定义.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/map/地图对象.gd",
+			"size": 3028
+		},
+		{
+			"path": "Game/map/地图对象.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/map/地图校验.gd",
+			"size": 11818
+		},
+		{
+			"path": "Game/map/地图校验.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/map/地图生成.gd",
+			"size": 80307
+		},
+		{
+			"path": "Game/map/地图生成.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/map/地图缩放.gd",
+			"size": 7395
+		},
+		{
+			"path": "Game/map/地图缩放.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/map/地形.gd",
+			"size": 52071
+		},
+		{
+			"path": "Game/map/地形.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/map/波次定义.gd",
+			"size": 2307
+		},
+		{
+			"path": "Game/map/波次定义.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/map/玩家槽位.gd",
+			"size": 2576
+		},
+		{
+			"path": "Game/map/玩家槽位.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/pathing/README.md",
+			"size": 1180
+		},
+		{
+			"path": "Game/pathing/占格规则.gd",
+			"size": 5354
+		},
+		{
+			"path": "Game/pathing/占格规则.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/pathing/空间哈希.gd",
+			"size": 2878
+		},
+		{
+			"path": "Game/pathing/空间哈希.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/pathing/网格寻路.gd",
+			"size": 34177
+		},
+		{
+			"path": "Game/pathing/网格寻路.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/systems/README.md",
+			"size": 1440
+		},
+		{
+			"path": "Game/systems/升星.gd",
+			"size": 2447
+		},
+		{
+			"path": "Game/systems/升星.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/systems/建筑改造.gd",
+			"size": 5630
+		},
+		{
+			"path": "Game/systems/建筑改造.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/systems/战争迷雾.gd",
+			"size": 12416
+		},
+		{
+			"path": "Game/systems/战争迷雾.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/systems/战斗.gd",
+			"size": 22529
+		},
+		{
+			"path": "Game/systems/战斗.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/systems/技能.gd",
+			"size": 7394
+		},
+		{
+			"path": "Game/systems/技能.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/systems/技能特效.gd",
+			"size": 3342
+		},
+		{
+			"path": "Game/systems/技能特效.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/systems/技能运行时.gd",
+			"size": 13404
+		},
+		{
+			"path": "Game/systems/技能运行时.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/systems/投射物.gd",
+			"size": 10532
+		},
+		{
+			"path": "Game/systems/投射物.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/systems/据点.gd",
+			"size": 12437
+		},
+		{
+			"path": "Game/systems/据点.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/systems/日夜.gd",
+			"size": 8257
+		},
+		{
+			"path": "Game/systems/日夜.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/systems/营火光.gd",
+			"size": 2335
+		},
+		{
+			"path": "Game/systems/营火光.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Game/systems/野怪.gd",
+			"size": 6690
+		},
+		{
+			"path": "Game/systems/野怪.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/systems/野怪营地.gd",
+			"size": 14567
+		},
+		{
+			"path": "Game/systems/野怪营地.gd.uid",
+			"size": 18
+		},
+		{
+			"path": "Game/units/README.md",
+			"size": 1813
+		},
+		{
+			"path": "Game/units/关卡桥.gd",
+			"size": 13566
+		},
+		{
+			"path": "Game/units/关卡桥.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Game/units/单位.gd",
+			"size": 158517
+		},
+		{
+			"path": "Game/units/单位.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/units/单位视觉.gd",
+			"size": 24395
+		},
+		{
+			"path": "Game/units/单位视觉.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Game/units/可采集物.gd",
+			"size": 11058
+		},
+		{
+			"path": "Game/units/可采集物.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/units/工地表现.gd",
+			"size": 32707
+		},
+		{
+			"path": "Game/units/工地表现.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Game/units/建筑.gd",
+			"size": 53602
+		},
+		{
+			"path": "Game/units/建筑.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Game/units/建筑网格.gd",
+			"size": 13023
+		},
+		{
+			"path": "Game/units/建筑网格.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/camera/魔兽镜头.gd",
+			"size": 25152
+		},
+		{
+			"path": "Views/camera/魔兽镜头.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/hud/HUD.gd",
+			"size": 100034
+		},
+		{
+			"path": "Views/hud/HUD.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/hud/README.md",
+			"size": 1540
+		},
+		{
+			"path": "Views/hud/光标术.gd",
+			"size": 22895
+		},
+		{
+			"path": "Views/hud/光标术.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/hud/命令卡.gd",
+			"size": 40525
+		},
+		{
+			"path": "Views/hud/命令卡.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/hud/头像台.gd",
+			"size": 24169
+		},
+		{
+			"path": "Views/hud/头像台.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Views/hud/头顶界面.gd",
+			"size": 18668
+		},
+		{
+			"path": "Views/hud/头顶界面.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/hud/小地图.gd",
+			"size": 39496
+		},
+		{
+			"path": "Views/hud/小地图.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/hud/建筑面板.gd",
+			"size": 46667
+		},
+		{
+			"path": "Views/hud/建筑面板.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/hud/按钮框.gd",
+			"size": 5610
+		},
+		{
+			"path": "Views/hud/按钮框.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/hud/数值列.gd",
+			"size": 7010
+		},
+		{
+			"path": "Views/hud/数值列.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Views/hud/浮雕底板.gd",
+			"size": 12918
+		},
+		{
+			"path": "Views/hud/浮雕底板.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Views/hud/界面规格.gd",
+			"size": 49407
+		},
+		{
+			"path": "Views/hud/界面规格.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Views/hud/经验条.gd",
+			"size": 3753
+		},
+		{
+			"path": "Views/hud/经验条.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/hud/装饰.gd",
+			"size": 6121
+		},
+		{
+			"path": "Views/hud/装饰.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/hud/触感回声.gd",
+			"size": 11466
+		},
+		{
+			"path": "Views/hud/触感回声.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/hud/词条.gd",
+			"size": 21770
+		},
+		{
+			"path": "Views/hud/词条.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/hud/说明气泡.gd",
+			"size": 10897
+		},
+		{
+			"path": "Views/hud/说明气泡.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Views/hud/选中面板.gd",
+			"size": 17368
+		},
+		{
+			"path": "Views/hud/选中面板.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Views/hud/选择网格.gd",
+			"size": 26661
+		},
+		{
+			"path": "Views/hud/选择网格.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/input/README.md",
+			"size": 1073
+		},
+		{
+			"path": "Views/input/战区指令输入.gd",
+			"size": 8042
+		},
+		{
+			"path": "Views/input/战区指令输入.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Views/input/指令系统.gd",
+			"size": 47335
+		},
+		{
+			"path": "Views/input/指令系统.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/input/移动指示.gd",
+			"size": 33972
+		},
+		{
+			"path": "Views/input/移动指示.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/input/选择系统.gd",
+			"size": 32291
+		},
+		{
+			"path": "Views/input/选择系统.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/scenes/主场景.tscn",
+			"size": 2849
+		},
+		{
+			"path": "Views/scenes/人群演示.tscn",
+			"size": 197
+		},
+		{
+			"path": "Views/scenes/四季演示.tscn",
+			"size": 278
+		},
+		{
+			"path": "Views/screens/README.md",
+			"size": 620
+		},
+		{
+			"path": "Views/world/art/地表细节.gd",
+			"size": 31235
+		},
+		{
+			"path": "Views/world/art/地表细节.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/world/art/姿态层.gd",
+			"size": 5182
+		},
+		{
+			"path": "Views/world/art/姿态层.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/world/art/建筑LOD.gd",
+			"size": 1260
+		},
+		{
+			"path": "Views/world/art/建筑LOD.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/world/art/建筑基座.gd",
+			"size": 11446
+		},
+		{
+			"path": "Views/world/art/建筑基座.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/world/art/建造表现.gd",
+			"size": 15516
+		},
+		{
+			"path": "Views/world/art/建造表现.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/world/art/材质库.gd",
+			"size": 11408
+		},
+		{
+			"path": "Views/world/art/材质库.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/world/art/树库.gd",
+			"size": 11188
+		},
+		{
+			"path": "Views/world/art/树库.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Views/world/art/模型工厂.gd",
+			"size": 8979
+		},
+		{
+			"path": "Views/world/art/模型工厂.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/world/art/特效生成.gd",
+			"size": 24971
+		},
+		{
+			"path": "Views/world/art/特效生成.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/world/art/程序动画.gd",
+			"size": 13154
+		},
+		{
+			"path": "Views/world/art/程序动画.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/world/art/程序化树.gd",
+			"size": 26372
+		},
+		{
+			"path": "Views/world/art/程序化树.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Views/world/art/程序化自然物.gd",
+			"size": 14389
+		},
+		{
+			"path": "Views/world/art/程序化自然物.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Views/world/art/组合件.gd",
+			"size": 2279
+		},
+		{
+			"path": "Views/world/art/组合件.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/world/art/美术接口.gd",
+			"size": 15230
+		},
+		{
+			"path": "Views/world/art/美术接口.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Views/world/art/自然材质.gd",
+			"size": 12832
+		},
+		{
+			"path": "Views/world/art/自然材质.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/world/art/营火外观.gd",
+			"size": 1813
+		},
+		{
+			"path": "Views/world/art/营火外观.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/world/art/表现随机.gd",
+			"size": 1573
+		},
+		{
+			"path": "Views/world/art/表现随机.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/world/art/装饰库.gd",
+			"size": 12173
+		},
+		{
+			"path": "Views/world/art/装饰库.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/world/art/调色板.gd",
+			"size": 4616
+		},
+		{
+			"path": "Views/world/art/调色板.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/world/art/选中圈贴地.gd",
+			"size": 6020
+		},
+		{
+			"path": "Views/world/art/选中圈贴地.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Views/world/art/铁誓建筑.gd",
+			"size": 16101
+		},
+		{
+			"path": "Views/world/art/铁誓建筑.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/world/art/骨骼动画.gd",
+			"size": 18131
+		},
+		{
+			"path": "Views/world/art/骨骼动画.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/world/crowd/README.md",
+			"size": 5112
+		},
+		{
+			"path": "Views/world/crowd/人群VAT.gd",
+			"size": 2688
+		},
+		{
+			"path": "Views/world/crowd/人群VAT.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/world/crowd/人群VAT.gdshader",
+			"size": 3837
+		},
+		{
+			"path": "Views/world/crowd/人群VAT.gdshader.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/world/crowd/人群单位.gdshader",
+			"size": 3065
+		},
+		{
+			"path": "Views/world/crowd/人群单位.gdshader.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/world/crowd/人群导航.gd",
+			"size": 8020
+		},
+		{
+			"path": "Views/world/crowd/人群导航.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/world/crowd/人群常量.gd",
+			"size": 5748
+		},
+		{
+			"path": "Views/world/crowd/人群常量.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/world/crowd/人群模拟.gd",
+			"size": 26647
+		},
+		{
+			"path": "Views/world/crowd/人群模拟.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Views/world/crowd/人群流场.gd",
+			"size": 10236
+		},
+		{
+			"path": "Views/world/crowd/人群流场.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/world/crowd/人群渲染.gd",
+			"size": 5903
+		},
+		{
+			"path": "Views/world/crowd/人群渲染.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Views/world/crowd/人群演示.gd",
+			"size": 17140
+		},
+		{
+			"path": "Views/world/crowd/人群演示.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Views/world/crowd/人群空间.gd",
+			"size": 3660
+		},
+		{
+			"path": "Views/world/crowd/人群空间.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/world/crowd/人群箭矢.gd",
+			"size": 5263
+		},
+		{
+			"path": "Views/world/crowd/人群箭矢.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Views/world/crowd/人群箭矢.gdshader",
+			"size": 1556
+		},
+		{
+			"path": "Views/world/crowd/人群箭矢.gdshader.uid",
+			"size": 20
+		},
+		{
+			"path": "Model/battle/skirmish.gd",
+			"size": 10843
+		},
+		{
+			"path": "Model/core/damage.gd",
+			"size": 2601
+		},
+		{
+			"path": "Model/core/economy.gd",
+			"size": 1849
+		},
+		{
+			"path": "Model/core/production.gd",
+			"size": 1402
+		},
+		{
+			"path": "Model/core/progression.gd",
+			"size": 1006
+		},
+		{
+			"path": "Model/core/rng.gd",
+			"size": 1420
+		},
+		{
+			"path": "Model/README.md",
+			"size": 1607
+		},
+		{
+			"path": "Model/save/save_schema.gd",
+			"size": 2707
+		},
+		{
+			"path": "Engine/audio/audio_service.gd",
+			"size": 3681
+		},
+		{
+			"path": "Engine/audio/audio_service.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Engine/boot/app.gd",
+			"size": 5009
+		},
+		{
+			"path": "Engine/boot/app.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Engine/debug/debug_bridge.gd",
+			"size": 9338
+		},
+		{
+			"path": "Engine/debug/debug_bridge.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Engine/debug/debug_panel.gd",
+			"size": 2712
+		},
+		{
+			"path": "Engine/debug/debug_panel.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Engine/debug/debug_tuner.gd",
+			"size": 3015
+		},
+		{
+			"path": "Engine/debug/debug_tuner.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Engine/debug/screenshot.gd",
+			"size": 1309
+		},
+		{
+			"path": "Engine/debug/screenshot.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Engine/dialogue/dialogue_runner.gd",
+			"size": 4305
+		},
+		{
+			"path": "Engine/dialogue/dialogue_runner.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Engine/i18n/i18n_service.gd",
+			"size": 3110
+		},
+		{
+			"path": "Engine/i18n/i18n_service.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Engine/pin.json",
+			"size": 5220
+		},
+		{
+			"path": "Engine/platform/platform_headless.gd",
+			"size": 828
+		},
+		{
+			"path": "Engine/platform/platform_headless.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Engine/platform/platform_interface.gd",
+			"size": 1250
+		},
+		{
+			"path": "Engine/platform/platform_interface.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Engine/platform/platform_local.gd",
+			"size": 1973
+		},
+		{
+			"path": "Engine/platform/platform_local.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Engine/platform/platform_mobile.gd",
+			"size": 426
+		},
+		{
+			"path": "Engine/platform/platform_mobile.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Engine/platform/platform_service.gd",
+			"size": 2385
+		},
+		{
+			"path": "Engine/platform/platform_service.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Engine/platform/platform_steam.gd",
+			"size": 630
+		},
+		{
+			"path": "Engine/platform/platform_steam.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Engine/README.md",
+			"size": 1968
+		},
+		{
+			"path": "Engine/save/save_service.gd",
+			"size": 3933
+		},
+		{
+			"path": "Engine/save/save_service.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Engine/util/asset_keys.gd",
+			"size": 1824
+		},
+		{
+			"path": "Engine/util/asset_keys.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Engine/util/json_codec.gd",
+			"size": 8017
+		},
+		{
+			"path": "Engine/util/json_codec.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Engine/util/json_file.gd",
+			"size": 2602
+		},
+		{
+			"path": "Engine/util/json_file.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Engine/VERSION",
+			"size": 6
+		},
+		{
+			"path": "Tests/_probe.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Tests/_runmodel.gd",
+			"size": 299
+		},
+		{
+			"path": "Tests/checks/check_all.gd",
+			"size": 23805
+		},
+		{
+			"path": "Tests/checks/shot_runner.gd",
+			"size": 4890
+		},
+		{
+			"path": "Tests/checks/shot_runner.tscn",
+			"size": 185
+		},
+		{
+			"path": "Tests/model/model_tests.gd",
+			"size": 7343
+		},
+		{
+			"path": "Tests/sim/run_simulate.gd",
+			"size": 5723
+		},
+		{
+			"path": "Tests/suites/AI基准.gd",
+			"size": 64447
+		},
+		{
+			"path": "Tests/suites/AI基准.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tests/suites/README.md",
+			"size": 1521
+		},
+		{
+			"path": "Tests/suites/交互自检.gd",
+			"size": 7711
+		},
+		{
+			"path": "Tests/suites/交互自检.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Tests/suites/体积标定.gd",
+			"size": 3857
+		},
+		{
+			"path": "Tests/suites/体积标定.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tests/suites/农民测试.gd",
+			"size": 8190
+		},
+		{
+			"path": "Tests/suites/农民测试.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Tests/suites/副官自检.gd",
+			"size": 19034
+		},
+		{
+			"path": "Tests/suites/副官自检.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tests/suites/动作截图.gd",
+			"size": 5159
+		},
+		{
+			"path": "Tests/suites/动作截图.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tests/suites/动画验收.gd",
+			"size": 12162
+		},
+		{
+			"path": "Tests/suites/动画验收.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tests/suites/升星自检.gd",
+			"size": 11381
+		},
+		{
+			"path": "Tests/suites/升星自检.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tests/suites/升级自检.gd",
+			"size": 13548
+		},
+		{
+			"path": "Tests/suites/升级自检.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Tests/suites/地图生成自检.gd",
+			"size": 19663
+		},
+		{
+			"path": "Tests/suites/地图生成自检.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tests/suites/地图编辑器自检.gd",
+			"size": 18868
+		},
+		{
+			"path": "Tests/suites/地图编辑器自检.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tests/suites/地图缩放自检.gd",
+			"size": 5107
+		},
+		{
+			"path": "Tests/suites/地图缩放自检.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tests/suites/地形自检.gd",
+			"size": 32591
+		},
+		{
+			"path": "Tests/suites/地形自检.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tests/suites/寻路抖动自检.gd",
+			"size": 44595
+		},
+		{
+			"path": "Tests/suites/寻路抖动自检.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tests/suites/寻路自检.gd",
+			"size": 6681
+		},
+		{
+			"path": "Tests/suites/寻路自检.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tests/suites/射程标定.gd",
+			"size": 6435
+		},
+		{
+			"path": "Tests/suites/射程标定.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tests/suites/建造动画自检.gd",
+			"size": 11189
+		},
+		{
+			"path": "Tests/suites/建造动画自检.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tests/suites/建造自检.gd",
+			"size": 20047
+		},
+		{
+			"path": "Tests/suites/建造自检.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tests/suites/性能探针.gd",
+			"size": 4668
+		},
+		{
+			"path": "Tests/suites/性能探针.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tests/suites/战区指令自检.gd",
+			"size": 8418
+		},
+		{
+			"path": "Tests/suites/战区指令自检.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Tests/suites/战斗自检.gd",
+			"size": 34500
+		},
+		{
+			"path": "Tests/suites/战斗自检.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Tests/suites/手感自检.gd",
+			"size": 7974
+		},
+		{
+			"path": "Tests/suites/手感自检.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tests/suites/技能自检.gd",
+			"size": 18580
+		},
+		{
+			"path": "Tests/suites/技能自检.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tests/suites/据点自检.gd",
+			"size": 11621
+		},
+		{
+			"path": "Tests/suites/据点自检.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tests/suites/木材自检.gd",
+			"size": 5943
+		},
+		{
+			"path": "Tests/suites/木材自检.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tests/suites/树占格自检.gd",
+			"size": 12849
+		},
+		{
+			"path": "Tests/suites/树占格自检.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tests/suites/树品种演示.gd",
+			"size": 2654
+		},
+		{
+			"path": "Tests/suites/树品种演示.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tests/suites/演示导演.gd",
+			"size": 19760
+		},
+		{
+			"path": "Tests/suites/演示导演.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tests/suites/界面自检.gd",
+			"size": 6677
+		},
+		{
+			"path": "Tests/suites/界面自检.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tests/suites/科技与后勤自检.gd",
+			"size": 15692
+		},
+		{
+			"path": "Tests/suites/科技与后勤自检.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tests/suites/程序化树自检.gd",
+			"size": 12847
+		},
+		{
+			"path": "Tests/suites/程序化树自检.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tests/suites/自动试玩.gd",
+			"size": 12231
+		},
+		{
+			"path": "Tests/suites/自动试玩.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tests/suites/表现自检.gd",
+			"size": 22029
+		},
+		{
+			"path": "Tests/suites/表现自检.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tests/suites/装饰性能自检.gd",
+			"size": 5993
+		},
+		{
+			"path": "Tests/suites/装饰性能自检.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tests/suites/走姿验收.gd",
+			"size": 8113
+		},
+		{
+			"path": "Tests/suites/走姿验收.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tests/suites/边缘滚动自检.gd",
+			"size": 5731
+		},
+		{
+			"path": "Tests/suites/边缘滚动自检.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tests/suites/配置回归.gd",
+			"size": 139237
+		},
+		{
+			"path": "Tests/suites/配置回归.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tests/suites/采集自检.gd",
+			"size": 6201
+		},
+		{
+			"path": "Tests/suites/采集自检.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Tests/suites/野怪营地自检.gd",
+			"size": 9981
+		},
+		{
+			"path": "Tests/suites/野怪营地自检.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tools/build/export_release.ps1",
+			"size": 3840
+		},
+		{
+			"path": "Tools/build/pack_demo.ps1",
+			"size": 2441
+		},
+		{
+			"path": "Tools/build/release_exclude.txt",
+			"size": 235
+		},
+		{
+			"path": "Tools/checks/negative_demo.py",
+			"size": 5331
+		},
+		{
+			"path": "Tools/dsh更新/执行更新.ps1",
+			"size": 4620
+		},
+		{
+			"path": "Tools/gen/export_content.gd",
+			"size": 5820
+		},
+		{
+			"path": "Tools/gen/export_content.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Tools/gen/gen_asset_keys.py",
+			"size": 2535
+		},
+		{
+			"path": "Tools/gen/gen_engine_pin.py",
+			"size": 1382
+		},
+		{
+			"path": "Tools/gen/gen_i18n_budget.py",
+			"size": 1886
+		},
+		{
+			"path": "Tools/gen/gen_manifest.py",
+			"size": 1485
+		},
+		{
+			"path": "Tools/migrate/v1_layout.py",
+			"size": 5722
+		},
+		{
+			"path": "Tools/migrate/v1_report.json",
+			"size": 91699
+		},
+		{
+			"path": "Tools/qa/bridge_probe.ps1",
+			"size": 3632
+		},
+		{
+			"path": "Tools/run-game.ps1",
+			"size": 4868
+		},
+		{
+			"path": "Tools/修举盾姿势.py",
+			"size": 14578
+		},
+		{
+			"path": "Tools/修盾牌.py",
+			"size": 19732
+		},
+		{
+			"path": "Tools/做左右看待机.py",
+			"size": 9597
+		},
+		{
+			"path": "Tools/动画帧图.gd",
+			"size": 4283
+		},
+		{
+			"path": "Tools/动画帧图.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Tools/合并glb动作.py",
+			"size": 11086
+		},
+		{
+			"path": "Tools/合成单位图标.py",
+			"size": 6712
+		},
+		{
+			"path": "Tools/合成建筑图标.py",
+			"size": 7818
+		},
+		{
+			"path": "Tools/合成技能图标.py",
+			"size": 4098
+		},
+		{
+			"path": "Tools/地形生成/terrain_check.py",
+			"size": 41271
+		},
+		{
+			"path": "Tools/地形生成/terrain_gen.py",
+			"size": 38695
+		},
+		{
+			"path": "Tools/地形生成/使用说明书.md",
+			"size": 8676
+		},
+		{
+			"path": "Tools/地形生成/参数配置.json",
+			"size": 4012
+		},
+		{
+			"path": "Tools/地形生成/模板文件/cell_lut_样例.txt",
+			"size": 1381
+		},
+		{
+			"path": "Tools/地形生成/模板文件/terrain_blend.gdshader",
+			"size": 8831
+		},
+		{
+			"path": "Tools/地形生成/模板文件/terrain_blend.gdshader.uid",
+			"size": 20
+		},
+		{
+			"path": "Tools/导出配置.gd",
+			"size": 1864
+		},
+		{
+			"path": "Tools/导出配置.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Tools/建模/build_v2_自然.py",
+			"size": 15083
+		},
+		{
+			"path": "Tools/建模/build_农民.py",
+			"size": 12130
+		},
+		{
+			"path": "Tools/建模/build_建筑.py",
+			"size": 34506
+		},
+		{
+			"path": "Tools/建模/build_自然物.py",
+			"size": 14310
+		},
+		{
+			"path": "Tools/建模/build_角色.py",
+			"size": 28115
+		},
+		{
+			"path": "Tools/建模/debug_bbox.py",
+			"size": 1146
+		},
+		{
+			"path": "Tools/建模/norm_v2.py",
+			"size": 4257
+		},
+		{
+			"path": "Tools/建模/preview.py",
+			"size": 2067
+		},
+		{
+			"path": "Tools/建模/rig_human.py",
+			"size": 21537
+		},
+		{
+			"path": "Tools/建模/rts_kit.py",
+			"size": 43909
+		},
+		{
+			"path": "Tools/建模/run_v2.py",
+			"size": 9070
+		},
+		{
+			"path": "Tools/建模/style_v2.py",
+			"size": 23978
+		},
+		{
+			"path": "Tools/建模/v3/_anim_test.glb",
+			"size": 5172
+		},
+		{
+			"path": "Tools/建模/v3/_anim_test.py",
+			"size": 3251
+		},
+		{
+			"path": "Tools/建模/v3/_death_probe.py",
+			"size": 1288
+		},
+		{
+			"path": "Tools/建模/v3/_death_probe2.py",
+			"size": 1367
+		},
+		{
+			"path": "Tools/建模/v3/_death_qc.py",
+			"size": 668
+		},
+		{
+			"path": "Tools/建模/v3/_head_probe.py",
+			"size": 1078
+		},
+		{
+			"path": "Tools/建模/v3/_probe.py",
+			"size": 459
+		},
+		{
+			"path": "Tools/建模/v3/_walk_qc.py",
+			"size": 642
+		},
+		{
+			"path": "Tools/建模/v3/anim_qc.py",
+			"size": 1728
+		},
+		{
+			"path": "Tools/建模/v3/buildings.py",
+			"size": 71866
+		},
+		{
+			"path": "Tools/建模/v3/kit3.py",
+			"size": 32955
+		},
+		{
+			"path": "Tools/建模/v3/props.py",
+			"size": 9113
+		},
+		{
+			"path": "Tools/建模/v3/units.py",
+			"size": 67658
+		},
+		{
+			"path": "Tools/建模/v5/build_all.py",
+			"size": 6577
+		},
+		{
+			"path": "Tools/建模/v5/texgen.py",
+			"size": 19131
+		},
+		{
+			"path": "Tools/建模/v5/textured.py",
+			"size": 14548
+		},
+		{
+			"path": "Tools/建模/v6/_probe_bbox.py",
+			"size": 542
+		},
+		{
+			"path": "Tools/建模/v6/_v6_common.py",
+			"size": 3330
+		},
+		{
+			"path": "Tools/建模/v6/buildings_v6.py",
+			"size": 58105
+		},
+		{
+			"path": "Tools/建模/v6/decor_v6.py",
+			"size": 5375
+		},
+		{
+			"path": "Tools/建模/v6/props_v6.py",
+			"size": 3422
+		},
+		{
+			"path": "Tools/建模/v6/units_v6.py",
+			"size": 2239
+		},
+		{
+			"path": "Tools/建模/v7_单位/build_v7.py",
+			"size": 8188
+		},
+		{
+			"path": "Tools/建模/v7_单位/report_v7.json",
+			"size": 4252
+		},
+		{
+			"path": "Tools/建模/v7_单位/units_v7.py",
+			"size": 92983
+		},
+		{
+			"path": "Tools/建模/v7_自然/_one.py",
+			"size": 556
+		},
+		{
+			"path": "Tools/建模/v7_自然/_smoke.py",
+			"size": 593
+		},
+		{
+			"path": "Tools/建模/v7_自然/_v7_common.py",
+			"size": 10775
+		},
+		{
+			"path": "Tools/建模/v7_自然/decor_v7.py",
+			"size": 17681
+		},
+		{
+			"path": "Tools/建模/v7_自然/props_v7.py",
+			"size": 11554
+		},
+		{
+			"path": "Tools/建模/白模生成器.py",
+			"size": 3529
+		},
+		{
+			"path": "Tools/探针_mat.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tools/探针_mat2.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tools/探针_unit.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Tools/探针_uv.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tools/检查glb动作.py",
+			"size": 4662
+		},
+		{
+			"path": "Tools/检查单位资产.gd",
+			"size": 3172
+		},
+		{
+			"path": "Tools/检查单位资产.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tools/检查建筑资产.gd",
+			"size": 3026
+		},
+		{
+			"path": "Tools/检查建筑资产.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Tools/检查自然资产.gd",
+			"size": 1309
+		},
+		{
+			"path": "Tools/检查自然资产.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tools/渲染动作帧.py",
+			"size": 3323
+		},
+		{
+			"path": "Tools/渲染单位图标.py",
+			"size": 6562
+		},
+		{
+			"path": "Tools/渲染单位头像.gd",
+			"size": 6490
+		},
+		{
+			"path": "Tools/渲染单位头像.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tools/渲染建筑图标.py",
+			"size": 11924
+		},
+		{
+			"path": "Tools/渲染技能图标.gd",
+			"size": 12891
+		},
+		{
+			"path": "Tools/渲染技能图标.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tools/烘焙VAT.gd",
+			"size": 10908
+		},
+		{
+			"path": "Tools/烘焙VAT.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tools/生成四季演示图.gd",
+			"size": 905
+		},
+		{
+			"path": "Tools/生成四季演示图.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tools/生成文件索引.py",
+			"size": 5640
+		},
+		{
+			"path": "Tools/生成测试索引.py",
+			"size": 5746
+		},
+		{
+			"path": "Tools/生成编辑器主题.gd",
+			"size": 1464
+		},
+		{
+			"path": "Tools/生成编辑器主题.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Tools/诊断/生产队列诊断.py",
+			"size": 7940
+		},
+		{
+			"path": "Tools/音频/压缩BGM到OGG.py",
+			"size": 4200
+		},
+		{
+			"path": "Tools/音频/合成语音.py",
+			"size": 5059
+		},
+		{
+			"path": "Tools/音频/合成语音_v2.py",
+			"size": 10650
+		},
+		{
+			"path": "Tools/音频/合成音效.py",
+			"size": 31294
+		},
+		{
+			"path": "Tools/音频校验.py",
+			"size": 5218
+		},
+		{
+			"path": "Tools/验证.ps1",
+			"size": 11288
+		},
+		{
+			"path": "Content/data/ai_demand.json",
+			"size": 724
+		},
+		{
+			"path": "Content/data/cards/buildings/barracks.json",
+			"size": 1104
+		},
+		{
+			"path": "Content/data/cards/buildings/blacksmith.json",
+			"size": 1091
+		},
+		{
+			"path": "Content/data/cards/buildings/campfire.json",
+			"size": 1069
+		},
+		{
+			"path": "Content/data/cards/buildings/creep_den.json",
+			"size": 1128
+		},
+		{
+			"path": "Content/data/cards/buildings/creep_gate.json",
+			"size": 1123
+		},
+		{
+			"path": "Content/data/cards/buildings/creep_shell.json",
+			"size": 1125
+		},
+		{
+			"path": "Content/data/cards/buildings/farm.json",
+			"size": 1013
+		},
+		{
+			"path": "Content/data/cards/buildings/lumbercamp.json",
+			"size": 1126
+		},
+		{
+			"path": "Content/data/cards/buildings/sanctum.json",
+			"size": 1108
+		},
+		{
+			"path": "Content/data/cards/buildings/tower.json",
+			"size": 1085
+		},
+		{
+			"path": "Content/data/cards/buildings/townhall.json",
+			"size": 1114
+		},
+		{
+			"path": "Content/data/cards/buildings/townhall_2.json",
+			"size": 1179
+		},
+		{
+			"path": "Content/data/cards/buildings/watchtower.json",
+			"size": 1086
+		},
+		{
+			"path": "Content/data/cards/buildings/workshop.json",
+			"size": 1121
+		},
+		{
+			"path": "Content/data/cards/camps/camp_creep_den_1.json",
+			"size": 398
+		},
+		{
+			"path": "Content/data/cards/camps/camp_den.json",
+			"size": 375
+		},
+		{
+			"path": "Content/data/cards/camps/camp_gate.json",
+			"size": 381
+		},
+		{
+			"path": "Content/data/cards/camps/camp_shell.json",
+			"size": 401
+		},
+		{
+			"path": "Content/data/cards/skills/block_parry.json",
+			"size": 760
+		},
+		{
+			"path": "Content/data/cards/skills/chop_wood.json",
+			"size": 530
+		},
+		{
+			"path": "Content/data/cards/skills/fireball.json",
+			"size": 528
+		},
+		{
+			"path": "Content/data/cards/skills/mine_gold.json",
+			"size": 532
+		},
+		{
+			"path": "Content/data/cards/skills/shield_up.json",
+			"size": 1489
+		},
+		{
+			"path": "Content/data/cards/skills/triple_shot.json",
+			"size": 772
+		},
+		{
+			"path": "Content/data/cards/units/archer.json",
+			"size": 1299
+		},
+		{
+			"path": "Content/data/cards/units/dwarf_musketeer.json",
+			"size": 1242
+		},
+		{
+			"path": "Content/data/cards/units/footman.json",
+			"size": 1406
+		},
+		{
+			"path": "Content/data/cards/units/gnoll_scout.json",
+			"size": 1175
+		},
+		{
+			"path": "Content/data/cards/units/gnoll_shaman.json",
+			"size": 1237
+		},
+		{
+			"path": "Content/data/cards/units/gnoll_warrior.json",
+			"size": 1195
+		},
+		{
+			"path": "Content/data/cards/units/golem.json",
+			"size": 1313
+		},
+		{
+			"path": "Content/data/cards/units/mage.json",
+			"size": 1192
+		},
+		{
+			"path": "Content/data/cards/units/peasant.json",
+			"size": 1223
+		},
+		{
+			"path": "Content/data/cards/units/spell_breaker.json",
+			"size": 1290
+		},
+		{
+			"path": "Content/data/game.json",
+			"size": 7115
+		},
+		{
+			"path": "Content/data/harvestables.json",
+			"size": 7667
+		},
+		{
+			"path": "Content/data/researches.json",
+			"size": 1315
+		},
+		{
+			"path": "Content/data/screens.json",
+			"size": 556
+		},
+		{
+			"path": "Content/data/sim.json",
+			"size": 803
+		},
+		{
+			"path": "Content/i18n/legacy_budget.json",
+			"size": 6947
+		},
+		{
+			"path": "Content/i18n/ui.csv",
+			"size": 648
+		},
+		{
+			"path": "Content/i18n/ui.en.translation",
+			"size": 760
+		},
+		{
+			"path": "Content/i18n/ui.note.translation",
+			"size": 797
+		},
+		{
+			"path": "Content/i18n/ui.zh.translation",
+			"size": 799
+		},
+		{
+			"path": "Content/keys/assets.json",
+			"size": 15154
+		},
+		{
+			"path": "addons/map_editor/plugin.cfg",
+			"size": 243
+		},
+		{
+			"path": "addons/map_editor/README.md",
+			"size": 8075
+		},
+		{
+			"path": "addons/map_editor/主屏.gd",
+			"size": 41798
+		},
+		{
+			"path": "addons/map_editor/主屏.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "addons/map_editor/停靠面板.gd",
+			"size": 86947
+		},
+		{
+			"path": "addons/map_editor/停靠面板.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "addons/map_editor/卡片弹窗.gd",
+			"size": 28391
+		},
+		{
+			"path": "addons/map_editor/卡片弹窗.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "addons/map_editor/帮助窗.gd",
+			"size": 8613
+		},
+		{
+			"path": "addons/map_editor/帮助窗.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "addons/map_editor/技能弹窗.gd",
+			"size": 30148
+		},
+		{
+			"path": "addons/map_editor/技能弹窗.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "addons/map_editor/按钮表.gd",
+			"size": 4743
+		},
+		{
+			"path": "addons/map_editor/按钮表.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "addons/map_editor/插件.gd",
+			"size": 31689
+		},
+		{
+			"path": "addons/map_editor/插件.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "addons/map_editor/编辑会话.gd",
+			"size": 64253
+		},
+		{
+			"path": "addons/map_editor/编辑会话.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "addons/map_editor/编辑器主题.tres",
+			"size": 68171
+		},
+		{
+			"path": "addons/map_editor/编辑器皮肤.gd",
+			"size": 32230
+		},
+		{
+			"path": "addons/map_editor/编辑器皮肤.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "addons/map_editor/营地弹窗.gd",
+			"size": 21158
+		},
+		{
+			"path": "addons/map_editor/营地弹窗.gd.uid",
+			"size": 18
+		},
+		{
+			"path": "addons/map_editor/视口.gd",
+			"size": 63212
+		},
+		{
+			"path": "addons/map_editor/视口.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "addons/map_editor/资产目录.gd",
+			"size": 13024
+		},
+		{
+			"path": "addons/map_editor/资产目录.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "addons/map_editor/预览工厂.gd",
+			"size": 8298
+		},
+		{
+			"path": "addons/map_editor/预览工厂.gd.uid",
+			"size": 20
+		}
+	]
+}
