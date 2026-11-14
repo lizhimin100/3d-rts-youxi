@@ -400,6 +400,9 @@ func _mount_tests() -> void:
 		if a == "--perf-long" or a.begins_with("--perf-long="):
 			_mount_script("res://Tests/suites/性能探针.gd", "性能探针")
 			break
+	# 移动卫生 A/B：`--legacy-move` 关掉 20Hz 门（分离/贴墙推出回到每帧），只用于对照测量。
+	if "--legacy-move" in args:
+		RtsUnit.slow_gate = false
 	var want_gather: bool = "--gather-test" in args
 	if not want_gather:
 		for a in args:

@@ -93,6 +93,10 @@ const SLOW_STEP: float = 0.05
 const GROUND_IDLE_STEP: float = 0.5
 ## 分离一个 tick 最多纠正多少米（20Hz 下防止一把推穿墙）
 const SEP_MAX_STEP: float = 0.35
+## 20Hz 低频逻辑的**总开关**（A/B 对照用）。
+## 默认 true = 分离/贴墙推出按 SLOW_STEP 走；`--legacy-move` 置 false = 回到每帧都算（旧口径）。
+## 为什么要这个开关：AGENTS.md 的硬规定「改前/改后对照必须同构建、同 seed，用开关切参数」。
+static var slow_gate: bool = true
 ## 采集/建造时相对目标的额外站位间隙（米）
 const GATHER_GAP: float = 0.2
 ## 到点判定的人工余量（米）。A* 终点会被吸附到最近可走格，可能比站位阈值远 0.3~0.5m，
@@ -1782,8 +1786,9 @@ func _update_order(dt: float) -> void:
 					state = RtsConst.State.ATTACK
 				else:
 					_move_interrupted = false
-					# 续行只认原始命令的目的地（_saved_goal 可能被追击覆盖过）
-					_go_to(_order_goal, true)
+					# 续行只认原始命令的目的地（_saved_goal 可能被追击覆盖过）。
+					# 不 force：这条分支每帧都会走到，force 会把 0.25s 节流清零 → 每帧一次 A*。
+					_go_to(_order_goal)
 			else:
 				order = RtsConst.Order.NONE
 				state = RtsConst.State.IDLE
@@ -1849,9 +1854,11 @@ func _order_attack(_dt: float) -> void:
 	if _target_gap(target) > _attack_reach(target):
 		if is_mobile():
 			# 同 _update_attack：落定在射程外一点点时必须强制重走最后半步
-			var reach: float = _attack_reach(target)
-			var dist: float = _target_gap(target)
-			_go_to(_attack_spot(target), _arrived_goal and dist <= reach + 1.2)
+			# ★ 2026-11-14：**不再 force**。以前"落定在射程外一点点"每帧强制重算路径
+			#   （force 会把 `_repath_cd` 清零），几十个近战围一个目标时就是每秒几千次 A* ——
+			#   实测 82 个单位时 `o.goto` 2316 ms/s、`path_n` 4208 次/秒，帧率从 60 掉到 18。
+			#   现在走 `_request_path` 的 0.25s 节流 + 每帧配额，最多晚 0.25s 顶上去。
+			_go_to(_attack_spot(target))
 			state = RtsConst.State.MOVE
 
 
@@ -1869,7 +1876,8 @@ func _order_attack_move(dt: float) -> void:
 	# 注意用 _order_goal 而不是 _saved_goal：_goal 在追击时已被改成敌人坐标。
 	if _order_goal.length_squared() > 0.0001 and _flat_dist(_order_goal) > 1.2:
 		_move_interrupted = false
-		_go_to(_order_goal, true)
+		# 同上：不 force（每帧都会走到这里，force = 每帧一次 A*）
+		_go_to(_order_goal)
 		state = RtsConst.State.MOVE
 		return
 	order = RtsConst.Order.NONE
@@ -2838,7 +2846,7 @@ func _anchor_weight() -> float:
 ## 3000 兵实测：`u.sep` 1050~1250 ms/s 是单位逻辑里最大单项，降到 20Hz 后约 1/3。
 func _tick_slow(dt: float) -> void:
 	_slow_dt += dt
-	if _slow_dt < SLOW_STEP:
+	if RtsUnit.slow_gate and _slow_dt < SLOW_STEP:
 		return
 	var sdt: float = _slow_dt
 	_slow_dt = 0.0
@@ -3300,8 +3308,9 @@ func _update_attack(dt: float) -> void:
 		#    它永远走不到（到点闩锁 + 格子吸附），而这一小段恰好就是"够不着"的全部差额。
 		#    这一小步仍然走 is_standable 判据，不会顶进阻挡格。
 		if not _step_direct(_attack_spot(target), dt):
-			# ② 顶不动（前面是墙/水）：退回正常寻路（可能绕到另一面）
-			_go_to(_attack_spot(target), true)
+			# ② 顶不动（前面是墙/水）：退回正常寻路（可能绕到另一面）。
+			#    不 force：这一步每帧都会重试，force 等于每帧一次 A*（见 _order_attack 的注释）。
+			_go_to(_attack_spot(target))
 		state = RtsConst.State.MOVE
 		return
 	_close_in_t = 0.0
@@ -3666,8 +3675,28 @@ func _deposit() -> void:
 		_go_to(_gather_node.global_position, true)
 
 
+## 快路径判据：**有骨骼**、而且此刻真的停在 idle。
+##
+## 为什么要求有骨骼：静态模型的"程序动作"（前冲/受击）是由 `_motion_state` 推的，
+## 只有 `play()` 会把它改回去；跳过 `play("idle")` 会让它卡在攻击姿势。
+## 受伤动画同理：`visual.play()` 在 `_hurt_t > 0` 时会优先播受伤，播完要靠下一帧重推。
+func _hurt_anim_idle() -> bool:
+	if visual == null or not visual.has_method("anim_state"):
+		return false
+	var a: StringName = visual.anim_state()
+	return a == &"idle"
+
+
 func _update_anim() -> void:
 	if visual == null or def == null:
+		return
+	# ★ 2026-11-14 空闲快路径：纯站着、手里没货、不在矿里/工地里，而且当前动作已经是 idle
+	#   → 这一帧什么都不会变，直接返回。
+	#   `visual.play()` 自己会去重，但在到达它之前还有一串动态派发
+	#   （has_method/call/set_hold_pose/_max_speed/_gather_anim_speed）；
+	#   3000 待命兵实测 `u.ground` 这一桶（= 贴地 + 动画）有一大半耗在这里。
+	if state == RtsConst.State.IDLE and _carry_pose_kind < 0 and _mine_k <= 0.001 \
+			and _inside_site == null and _hurt_anim_idle():
 		return
 	# 持续姿势类技能（举盾）：把"按住左臂"开/关交给外观层。
 	# clip 来自技能卡的 anim_hold（那个 clip 的最后一帧就是美术摆的举盾姿势）。

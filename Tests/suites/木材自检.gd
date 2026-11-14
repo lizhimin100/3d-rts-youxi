@@ -6,7 +6,8 @@ extends Node
 ##
 ## 覆盖玩家 2026-11-07 的两条口径：
 ##   ① 「部分农民采木后，会停在伐木场或基地附近，甚至直接停在刚刚倒下的树木」；
-##   ② 「给树木增加次数 —— 一共 20 次，由采集技能的单位每次采集扣 1 次」。
+##   ② 「给树木增加次数 —— 由采集技能的单位每次采集扣 1 次」
+##      （2026-11-14 玩家改口径：一棵树 **35 次**、每趟搬 8 木，数值走 `Cfg.game.tree_charges`）。
 ##
 ## 用例：
 ##   A. 6 个农民采同一片树林 150 模拟秒：每人至少卸货 1 次、原地不动不超过 8s；
@@ -129,9 +130,10 @@ func _run() -> void:
 	}
 	var ok: bool = true
 	var why: String = ""
-	if start_uses != 20:
+	# 次数从配置读（`Content/data/game.json` 的 tree_charges），别在测试里写死数字
+	if start_uses != int(Cfg.game.tree_charges):
 		ok = false
-		why = "树的初始次数不是 20（%d）" % start_uses
+		why = "树的初始次数不是 %d（%d）" % [int(Cfg.game.tree_charges), start_uses]
 	elif deposited_total < 8:
 		ok = false
 		why = "累计卸货次数不足（%d < 8）" % deposited_total

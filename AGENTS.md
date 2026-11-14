@@ -45,6 +45,16 @@ addons/     Godot 编辑器插件（地图编辑器）。不进发行版。
 - 读大文件分段读（`read` 有截断风险），小改用 `edit`，不要整文件 `read` 再 `write` 回去。
 - 无头/沙箱环境可能写不了 `user://`（AppData）；测试存档因此放项目内 `.test_profile/`（已 gitignore）。
 - `PackedByteArray` 是值类型：从 Dictionary 取出来 append 后**必须写回**，否则数据悄悄丢（调试接口踩过）。
+- **每帧调 `_go_to(pos, force=true)` 是性能自杀（2026-11-14 踩过）**：`force` 会把 `_repath_cd`
+  清零，等于每帧一次完整 A*（~104µs）。同一目标续行一律走 `_go_to(pos)`，
+  由 `_request_path` 的 0.25s 节流 + 每帧配额兜住；只有"玩家刚下新指令/换工地站位"才允许 force。
+  反查办法：`--perf-long=2` 看 `o.goto` 与 `path_n`，`path_n` 上千 = 出事了。
+- **卡资源的 `resource_path` 不许 `take_over_path` 到 `.json`（2026-11-14 踩过）**：
+  这样会把一个 Resource 登记在 `.json` 路径上，编辑器随后用
+  `get_dependencies(path, "Resource")` 去扫它，报一串
+  `No loader found for resource: …camp_den.json (expected type: Resource)`。
+  卡的真实路径只走 `CardStore.path_of()`（读 meta `source_path`），
+  卡 JSON 里也**不许**出现 `metadata/*` 字段（`JsonCodec` 两头都跳过）。
 - 目录迁移/重导入后，编辑器可能缓存"脚本还没编译好"的资源，表现为"打开原地图提示不是 MapDef"。
   `MapStore.load_tres` 已加 `CACHE_MODE_IGNORE` 重读 + 逐字段兜底；还报就重启编辑器或 `--import`。
 - **搬目录最容易漏的是 `addons/`（2026-11-14 踩过）**：地图编辑器是 EditorPlugin，一条
@@ -93,6 +103,16 @@ addons/     Godot 编辑器插件（地图编辑器）。不进发行版。
 - **2026-11-14 项目定名《战争原岛》**（不再叫"铁血战歌"）；代码/文档/窗口标题统一。
 - **2026-11-14 `--dept=on` 转正**：部门制是默认主线；`--dept=off` 只保留作 2C-8 对照。
 - **2026-11-14 保留 4 队混战为主场景**（默认 `match_slots = 4`）。
+- **2026-11-14 音效只留一声"叮"**：删掉全部合成音效与 51 个 wav（`Content/audio/` 只剩 BGM），
+  全局唯一音效 = `synth_bank.PRESETS["ui_ding"]`（运行时合成，UI 更新时响）；
+  音效生成脚本一并删除，改音色只改那一条预设 + 跑 `Tests/checks/synth_probe.gd`。
+- **2026-11-14 金矿单人制**：载位 1（`可采集物.max_slots`），其余农民在矿外排队等；
+  木携带 **8/趟**、一棵树 **35 次**（`game.json` 的 `harvest_carry_wood` / `tree_charges`）。
+  AI 采金人数按"载位总数"封顶（`简单AI._gold_mine_capacity`）。
+- **2026-11-14 移动 A 段"卫生部分"转正**：分离/贴墙推出 20Hz、贴地目标 20Hz、空闲索敌 1s
+  （`--legacy-move` 关掉做 A/B 对照）。600 兵同构建实测 unit -44%、fps +25~30%。
+- **2026-11-14 攻击/攻击移动"继续走完目标"不再每帧 force 重算路径**：这是"越打越卡"的真凶
+  （82 单位时 4208 次 A*/秒、fps 18 → 修后 119 次、fps 141）。见 `Documents/性能基线.md` §6。
 - **2026-11-14 中文优先**：七块砖的**结构性目录名**（Engine/Model/Views/Game/Content/Tests/Tools/Documents）保持不变（它们是契约）；
   其余新增内容（界面文案、注释、文档、玩法脚本名）优先中文；只有跨语言/引擎 key 用 ASCII。
 - **2026-11-14 平台/存档/对话只保留接口**，暂不接玩法、不接 SDK。
