@@ -362,19 +362,30 @@ func _run_selftest() -> void:
 
 	# Dock 布局断言：页签 8 页（地形/对象/区域/玩家/属性/营地/校验/历史）、真的撑开了
 	# （不是被挤成一条 47px 的缝）
-	_open_dock()
-	for _i in range(4):
-		await get_tree().process_frame
-	var first: Control = _dock.get_current_tab_control()
-	var dock_size: Vector2 = _dock.size
+	#
+	# 2026-11-14 改「重试到稳定」：原来是"调一次 _open_dock() → 等 4 帧 → 判 current_tab"，
+	# 在无头编辑器里会**假红**——那一刻 EditorDock 还没挂进 SideDockTabContainer，
+	# `get_tab_idx_from_control()` 返回 -1，`_open_dock()` 里 `if idx >= 0` 直接跳过，
+	# 等布局铺完页签又落回第 0 页（实测：idx=3 / tabs=4 / current_tab=0）。
+	# 现在边等边设，稳定了再判；真人编辑器里切页签本来也得等布局。
 	var slot: Node = _dock.get_parent().get_parent()
+	var tc: TabContainer = slot as TabContainer
 	var slot_ok: bool = false
-	if slot is TabContainer:
-		var tc := slot as TabContainer
-		slot_ok = tc.current_tab == tc.get_tab_idx_from_control(_dock.get_parent())
-		print("  · Dock 是否在前台：%s（current_tab=%d）" % [str(slot_ok), tc.current_tab])
+	if tc != null:
+		var want: int = tc.get_tab_idx_from_control(_dock.get_parent())
+		for _i in range(60):
+			if want >= 0:
+				tc.current_tab = want
+			await get_tree().process_frame
+			want = tc.get_tab_idx_from_control(_dock.get_parent())
+			if want >= 0 and tc.current_tab == want:
+				slot_ok = true
+				break
+		print("  · Dock 是否在前台：%s（current_tab=%d ／ 目标 %d）" % [str(slot_ok), tc.current_tab, want])
 	if not slot_ok:
 		fails.append("Dock 页签没切到前台")
+	var first: Control = _dock.get_current_tab_control()
+	var dock_size: Vector2 = _dock.size
 	print("  · Dock：%s ｜ %d 页 ｜ 当前页尺寸 %s" % [str(dock_size), _dock.get_tab_count(),
 		str(first.size if first != null else Vector2.ZERO)])
 	# ★ 2026-11-08：页数从 8 改 7 —— 「区域」页按玩家要求摘掉了（见 停靠面板._build_dock）。
