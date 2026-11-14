@@ -66,7 +66,11 @@ extends Resource
 ## ★ 2026-11-14 玩家口径：10 → **8**（树的可采次数同时 20 → 35，见 tree_charges）。
 @export var harvest_carry_wood: int = 8
 ## 采集一次所需时间（秒）
-@export var harvest_time_gold: float = 3.2
+## ★ 2026-11-14 玩家口径：农民采金「进去到出来」整段 = **1.25 秒**。
+##   口径拆解：起手 0.35（技能卡 mine_gold.json 的 cast，钻进矿洞）
+##           + 循环 0.9（这里）= 1.25s。
+##   木头 4.0 不动（玩家只点名了金矿）。
+@export var harvest_time_gold: float = 0.9
 @export var harvest_time_wood: float = 4.0
 ## **一座金矿的储量**（2026-11-13 玩家口径「5 分钟后卡金币」）：
 ##   3200 → **6000**。3200 时 9 个采金农民 3 分钟就把家门口那座矿挖空，

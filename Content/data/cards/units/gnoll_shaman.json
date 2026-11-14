@@ -42,6 +42,7 @@
 		"model_path": "res://Content/art/模型/野怪/豺狼人萨满.glb",
 		"model_scale": 1,
 		"anim_set": 3,
+		"anim_walk_mps": 0.85,
 		"def_role": "caster",
 		"def_tags": [
 			"light"

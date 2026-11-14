@@ -182,6 +182,7 @@ static func _def_of_card(card: EntityCard) -> UnitDef:
 	if card is UnitCard:
 		var c := card as UnitCard
 		d.kind = RtsConst.Kind.UNIT
+		d.anim_walk_mps = c.anim_walk_mps
 		d.max_hp = c.max_hp
 		d.armor = float(c.defense)
 		d.armor_type = LW.defense_type_of(c.defense_type)

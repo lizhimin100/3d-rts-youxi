@@ -239,12 +239,14 @@ func set_state(state: String, speed_ratio: float = 1.0, force: bool = false) -> 
 	if want == _current and not is_loop and not force and _ap.is_playing():
 		return
 	if want == _current and is_loop and not force:
-		# 上限 3.0：walk 按真实地速播放（4.6m/s / 2.0m/s 步幅 ≈ 2.3x）
-		_speed = clampf(speed_ratio, 0.2, 3.0)
+		# 上限 5.2：walk 按真实地速播放。上限定 5.2 是为了让
+		# `UnitDef.anim_walk_mps` 标定过的短步幅资产（豺狼人萨满 4.94x）放得下，
+		# 否则被截断 = 脚还是打滑（2026-11-14）。
+		_speed = clampf(speed_ratio, 0.2, 5.2)
 		_ap.speed_scale = _speed
 		return
 	_current = want
-	_speed = clampf(speed_ratio, 0.2, 3.0)
+	_speed = clampf(speed_ratio, 0.2, 5.2)
 	_ap.speed_scale = _speed if is_loop else 1.0
 	_one_shot = want if ONE_SHOT.has(want) else &""
 	_start(want, BLEND_LOOP if is_loop else BLEND)

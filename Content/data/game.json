@@ -23,7 +23,7 @@
 		"harvest_carry": 10,
 		"harvest_carry_gold": 20,
 		"harvest_carry_wood": 8,
-		"harvest_time_gold": 3.2,
+		"harvest_time_gold": 0.9,
 		"harvest_time_wood": 4,
 		"gold_mine_amount": 6000,
 		"tree_charges": 35,

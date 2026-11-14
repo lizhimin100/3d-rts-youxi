@@ -2045,9 +2045,11 @@ func _enter_phase(ph: int) -> void:
 ## 农民用的是 attack 动作（1.57s），实测斧头在 40% 左右到位。
 const CHOP_IMPACT_PHASE: float = 0.42
 ## 一次采集（一趟）里挥几下 —— 决定动画播放速度：越多越快、越利落。
-## 4 挥 / 4.0s = 1.57x（原来 1.0x 慢悠悠）；3 挖 / 3.2s = 1.47x。
+## 4 挥 / 4.0s = 1.57x（原来 1.0x 慢悠悠）。
+## ★ 2026-11-14 采金循环从 3.2s 压到 0.9s（整段 1.25s）：3 挥在 0.9s 里
+##   需要 5.23x（撞上限只会演一半就出矿），所以采金改成 **2 挥**。
 const CHOPS_WOOD: int = 4
-const CHOPS_GOLD: int = 3
+const CHOPS_GOLD: int = 2
 
 
 ## 采集动画该放多快：一趟正好挥 N 下。
@@ -2060,8 +2062,9 @@ func _gather_anim_speed() -> float:
 	if clip <= 0.01:
 		return 1.0
 	var t: float = maxf(_harvest_time(), 0.1)
-	# 0.55~2.6：再快就看不清是在砍树，再慢就回到"飘着挥"
-	return clampf(clip * float(clips) / t, 0.55, 2.6)
+	# 0.55~3.6：再快就看不清是在砍树，再慢就回到"飘着挥"。
+	# 上限 3.6 是给采金 2 挥 / 0.9s = 3.49x 留的余量（2026-11-14）。
+	return clampf(clip * float(clips) / t, 0.55, 3.6)
 
 
 ## 砍树 / 挖矿的落点反馈。
@@ -3145,26 +3148,53 @@ func _stand_off(t: Node3D) -> float:
 	return maxf(r, 0.6)
 
 
-## 警戒圈半径：待机/警戒时**看得见、愿意走过去打**的距离。
+## 警戒圈半径：待机/警戒时**看得见、愿意走过去打**的距离 = 视野。
 ##
-## 为什么要单独一个半径（2026-11-07）：
-##   以前待机索敌直接用 `attack_range`（近战 1.35m），改成"贴身 0.3m"以后，
-##   一个敌人站在 1.2m 外、步兵却一辈子不理他 —— 玩家看到的是"兵在旁边装死"。
-##   现在近战给 `attack_range + 3`（约 3.3m，一个身位多一点），远程按视野封顶。
-##   走过去的距离仍然受 acquire_range / sight_range 约束，不会隔半张图冲锋。
+## ★ 2026-11-14 玩家口径（改了两次，这次是终稿）：
+##   「单位没有索敌机制，视野范围内出现敌人也不会主动移动去攻击，只有被攻击才会去攻击。」
+##
+##   老口径是 `attack_range + 3`（近战 3.3m）的小警戒圈，再叠上 `_acquire` 里
+##   「待机时锁不到射程内就丢弃候选」那条 —— 结果待机兵的**实际**行为是：
+##   只打 1.35m 贴脸的敌人，视野 11m 里的敌人在旁边走过去都不理。
+##   现在警戒圈 = 视野（`max(sight_range, acquire_range)`），扫到就追出去打。
+##   这也是 `Documents/concept.md` 里"自动索敌"那条玩家承诺。
 func _guard_radius() -> float:
-	var base: float = def.attack_range if def != null else 0.0
-	var want: float = maxf(base + 3.0, 3.5)
-	if def != null and def.acquire_range > 0.0:
-		want = minf(want, def.acquire_range)
-	if def != null and def.sight_range > 0.0:
-		want = minf(want, def.sight_range)
-	return maxf(want, base + 0.1)
+	if def == null:
+		return 3.5
+	var sight: float = maxf(def.sight_range, def.acquire_range)
+	if sight <= 0.0:
+		return maxf(def.attack_range + 0.1, 3.5)
+	return maxf(sight, def.attack_range + 0.1)
 
 
-## 当前指令会不会"追出去"（决定索敌半径，也决定够不着时追不追）
+## 这条**指令立场**本身允许主动出击吗（与"当前有没有目标"无关）。
 ##
-## ★ 待机/警戒也要能"走过去打"：只要当前锁定的目标还在警戒圈里就允许追。
+## 为什么必须和 `_may_pursue` 分开：`_acquire` 第一次扫到候选时 `target` 还是 null，
+## 光看 `_may_pursue()` 永远得到 false（它要读 target），于是老代码把
+## "不在射程内的候选"当垃圾丢掉 —— 这就是"不索敌"的第二根钉子。
+##
+## 不主动出击的四类：
+##   · 建筑（不可移动，只打射程内）；
+##   · **驻守 / 观察**（玩家点出来的语义就是"站住不挪窝"，被射也不追）；
+##   · 正在干活（采集 / 建造 / 修理 / 送资源）；
+##   · **农民**（该跑而不是该冲，挨打由 take_damage → _flee 处理）。
+func _stance_pursues() -> bool:
+	if not is_mobile():
+		return false
+	if def != null and RtsWorld.is_worker_def(def):
+		return false
+	match order:
+		RtsConst.Order.HOLD:
+			return false
+		RtsConst.Order.GATHER, RtsConst.Order.BUILD, \
+		RtsConst.Order.REPAIR, RtsConst.Order.RETURN_RES:
+			return false
+	return true
+
+
+## 当前目标还"归我管"吗（决定够不着时追不追、跑远了放不放手）。
+##
+## ★ 待机/警戒也要能"走过去打"：只要目标还在警戒圈（= 视野）里就允许追。
 ##   不然 `_update_attack` 会因为 `not _may_pursue()` 直接 target=null，
 ##   近战永远够不着 1m 外的敌人。
 func _may_pursue() -> bool:
@@ -3174,6 +3204,8 @@ func _may_pursue() -> bool:
 			or order == RtsConst.Order.ATTACK_MOVE \
 			or order == RtsConst.Order.MOVE:
 		return true
+	if not _stance_pursues():
+		return false
 	if target != null and is_instance_valid(target) and target.is_alive():
 		return _flat_dist(target.global_position) <= _guard_radius()
 	return false
@@ -3199,12 +3231,10 @@ func _acquire(dt: float, radius_scale: float = 1.0) -> void:
 	#   而待命兵的反应速度本来就由 take_damage 兜底（被打立刻还手），1s 完全够。
 	#   有指令/有目标的单位保持 0.3s（追击、绕打都靠它）。
 	_think_t = THINK_SLICE if (order != RtsConst.Order.NONE or target != null) else THINK_SLICE_IDLE
-	var pursue: bool = _may_pursue()
-	# ★ 2026-11-08 玩家口径「索敌范围和视野一致」：
-	#   以前追击用 acquire_range、待机用 _guard_radius（近战只有 3.3m），
-	#   于是"视野 11m 却看不见 4m 外的敌人"。现在两种情形都用**视野**，
+	# ★ 2026-11-08 玩家口径「索敌范围和视野一致」：扫描半径 = 视野。
+	#   ★ 2026-11-14 起待机也走这条（`_guard_radius()` 已经等于视野），
 	#   行军时的 45% 缩减仍由 radius_scale 控制。
-	var scan_r: float = maxf(def.sight_range, def.acquire_range if pursue else _guard_radius())
+	var scan_r: float = maxf(def.sight_range, def.acquire_range)
 	var radius: float = scan_r * radius_scale
 	if radius <= 0.0:
 		return
@@ -3213,7 +3243,12 @@ func _acquire(dt: float, radius_scale: float = 1.0) -> void:
 	#   以前弩兵能隔着黑雾锁定 12m 外的野怪并一路射死，玩家完全看不到目标。
 	if cand != null and not Game.is_node_visible_to(faction, cand):
 		cand = null
-	if cand != null and not pursue and _target_gap(cand) > _attack_reach(cand):
+	# ★ 2026-11-14（玩家口径「视野内出现敌人要主动走过去打」）：
+	#   只有**立场本身不许追**的（驻守/观察/干活/农民/建筑）才要求"候选已经够得着"；
+	#   待机 / 攻击 / 行军一律锁定视野内最近的敌人，走不走过去由 `_update_attack` 判。
+	#   老代码这里是 `not pursue`（读 target，而扫的时候 target 必然是 null）→
+	#   待机兵永远只锁 1.35m 贴脸的敌人，这就是"没有索敌"的最大一根钉子。
+	if cand != null and not _stance_pursues() and _target_gap(cand) > _attack_reach(cand):
 		cand = null
 	target = cand
 

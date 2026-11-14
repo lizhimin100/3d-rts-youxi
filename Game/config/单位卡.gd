@@ -94,6 +94,13 @@ extends EntityCard
 @export var model_path: String = ""
 @export var model_scale: float = 1.0
 @export var anim_set: int = 1              # RtsConst.AnimSet
+## **这套模型的 walk 动画在 1.0 倍速时对应的地面速度**（米/秒）。
+## 0 = 用全局默认 1.9（旧口径，只对老的精模资产准）。
+## 为什么需要逐资产填：walk 的步幅是美术定的，`move_speed/1.9` 这个公式
+## 只对"1.1s 一个双步、步幅 1.05m"的老资产成立。豺狼人萨满的 walk 只有
+## 0.85 m/s 的隐含地速，用 1.9 算出来的步频只有实际需要的一半 → 脚下打滑。
+## 标定方法：`Tools/检查glb动作.py` 输出的"隐含地速"直接填这里。
+@export var anim_walk_mps: float = 0.0
 
 # --- 引擎元数据（2C-3 引入，照抄原表；与上面的"职能 roles"是两套口径） ---
 ## UnitDef.role：frontline / ranged / caster / siege / worker / defense（引擎侧）

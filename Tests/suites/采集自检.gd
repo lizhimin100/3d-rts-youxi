@@ -177,6 +177,19 @@ func _run() -> void:
 	elif far_waiters > 0:
 		ok = false
 		why = "有 %d 个农民在排队时跑到矿 10m 外" % far_waiters
+	# ★ 2026-11-14 玩家口径：农民采金「进去到出来」整段 = **1.25 秒**。
+	#   口径 = 起手 0.35（技能卡 mine_gold.json 的 cast）+ 循环 0.9（game.json harvest_time_gold）。
+	#   这里查**配置口径**而不是掐秒表：主循环 0.5s 采样测不出 1.25s 的精度，
+	#   而只要有人把这两个数改回去，这条断言一定红（修 bug = 修复 + 一条新检查）。
+	var 技能脚本: Script = load("res://Game/systems/技能.gd")
+	var 起手: float = float(技能脚本.call("cast_time", &"mine_gold")) if 技能脚本 != null else 0.0
+	var 循环: float = float(Cfg.game.harvest_time_gold)
+	var 一趟: float = 起手 + 循环
+	_report["采金一趟(秒)"] = "%.2f" % 一趟
+	_report["采金口径"] = "起手 %.2f + 循环 %.2f" % [起手, 循环]
+	if absf(一趟 - 1.25) > 0.02:
+		ok = false
+		why = "采金一趟 %.2f 秒 ≠ 1.25 秒（起手 %.2f + 循环 %.2f）" % [一趟, 起手, 循环]
 	_finish(ok, why)
 
 

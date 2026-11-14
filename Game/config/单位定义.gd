@@ -19,6 +19,10 @@ extends Resource
 @export var model_scale: float = 1.0
 ## 动画套件类型（RtsConst.AnimSet）
 @export var anim_set: int = RtsConst.AnimSet.MELEE
+## 这套模型的 walk 动画在 1.0 倍速时对应的地面速度（米/秒）。
+## 0 = 用 `RtsUnitVisual.ANIM_WALK_MPS`（1.9，旧口径）。
+## 非 0 时按 `move_speed / 本值` 定步频，脚才不会打滑（见 单位卡.gd 同名注释）。
+@export var anim_walk_mps: float = 0.0
 
 @export_group("AI 语义（2C-3）")
 ## 战略角色：frontline / ranged / caster / siege / worker / defense。

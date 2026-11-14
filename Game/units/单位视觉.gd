@@ -105,13 +105,24 @@ var _lunge_t: float = 0.0
 #
 # 正确口径：**按真实位移速度换算步频**。`ANIM_WALK_MPS` 是"这套 walk 动画
 # 1.0 倍速时对应的地面速度"，实测（1.1s 一个双步循环、步幅约 1.05m）取 1.9。
-# 上限 2.6：再快腿会抖成马赛克；4.6m/s 的兵 = 2.42 倍，脚下还剩约 5% 滑步，
-# 观感上已经是"跑"而不是"挪"。
+# ★ 2026-11-14：这个 1.9 只对**老精模**准（步兵/法师 ≈2.85m/s 的步幅）。
+#   新的方块人 / 豺狼人资产步幅小得多，所以加了 `UnitDef.anim_walk_mps`
+#   （卡上逐资产标定，0 = 用这里的 1.9 兜底）。萨满 walk 只有 0.85m/s，
+#   按 1.9 算只会播 2.21x → 脚速 1.89m/s 对地面 4.2m/s，滑步 2.2 倍。
+#   上限 5.2：短腿兽人 4.2m/s ÷ 0.85 = 4.94x 要放得下（否则被截断就还是滑）。
 const ANIM_WALK_MPS := 1.9
-const ANIM_WALK_SCALE_MAX := 2.6
+const ANIM_WALK_SCALE_MAX := 5.2
 const ANIM_WALK_SCALE_MIN := 0.55
 ## 当前单位的定义（算步频要用 move_speed）
 var _def: UnitDef = null
+
+
+## 这套 walk 动画 1.0 倍速对应的地面速度（米/秒）。
+## 卡上 `anim_walk_mps > 0` 就用它（逐资产标定），否则用全局 1.9（旧口径）。
+func _walk_anim_mps() -> float:
+	if _def != null and _def.anim_walk_mps > 0.0:
+		return _def.anim_walk_mps
+	return ANIM_WALK_MPS
 
 
 # ===========================================================================
@@ -415,7 +426,7 @@ func play(state: String, speed_ratio: float = 1.0, force: bool = false) -> void:
 		# 0~1 的比例 × 实际最高移速 = 此刻真实地速（m/s），再除以动画步速
 		var top: float = _def.move_speed if _def != null else ANIM_WALK_MPS
 		var mps: float = maxf(top * clampf(speed_ratio, 0.0, 1.6), 0.15)
-		scale = clampf(mps / ANIM_WALK_MPS, ANIM_WALK_SCALE_MIN, ANIM_WALK_SCALE_MAX)
+		scale = clampf(mps / _walk_anim_mps(), ANIM_WALK_SCALE_MIN, ANIM_WALK_SCALE_MAX)
 	ArtKit.set_anim(_anim, state, scale, force)
 
 
