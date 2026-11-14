@@ -97,7 +97,7 @@ Content/data/cards/units/*.json
 | Model 纯度 | 引擎 API、Model 之外的 res:// 路径 |
 | 引擎 pin | Engine/ 被就地修改、未登记文件 |
 | 源文件清单 | 新增/删除文件未重跑 manifest |
-| Model 自测 | 纯逻辑 51 条断言（含可用性 17 条） |
+| Model 自测 | 纯逻辑 54 条断言（含可用性 20 条） |
 | 游戏侧集成 | 战斗伤害/扣费与 Model 逐值一致 |
 | 可用性 P0 | 一本出二本兵 / 升级中训练 / 队列满 / 没钱训练 / 升级中研究 |
 | 卡读写 | 编辑器保存路径（CardStore → JSON → 读回） |
