@@ -1329,7 +1329,6 @@ func order_build(building_def: UnitDef, pos: Vector3, desired_yaw: float = 0.0) 
 		return null
 	if def == null or not RtsWorld.is_worker_def(def) or faction == null:
 		return null
-	_abandon_gather()
 
 	# ⓪ 先把落点吸到建筑网格（和寻路共用同一套格）：占地、寻路标记、工地坐标
 	#    从此是同一个数，不会"看着在格子里、实际骑了半格"。
@@ -1431,6 +1430,10 @@ func order_build_site(site: Node3D, force: bool = false) -> bool:
 	var b := site as RtsBuilding
 	if b == null or b.is_constructed or not b.is_alive():
 		return false
+	# ★ 真正开工才放弃采集（见 _abandon_gather 的注释）。
+	#   ⚠ 不能放在 order_build 开头：AI 每 tick 都会试着下单（钱不够 / 位置不合法也会调到），
+	#   放开头会让农民被"没成功的一次下单"踢出矿位 → 站着发呆（木材自检实测原地不动 46.5s）。
+	_abandon_gather()
 	_build_site = site
 	order = RtsConst.Order.BUILD
 	_flee_t = 0.0

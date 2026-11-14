@@ -84,6 +84,16 @@ func _run() -> void:
 			var u: Node3D = squad[i]
 			if u == null or not is_instance_valid(u) or not u.is_alive():
 				continue
+			# 只统计"还在采木"的人。2026-11-14 起有两类**正当的站着**：
+			#   ① 被副官拉去盖房（`_inside_site`，人在工地里本来就不动）；
+			#   ② 改派去采金以后在矿外排队（金矿载位 1）。
+			# 这两类算进"原地不动"就是误判 —— 本用例只抓"采完木头停在树边/伐木场不动"。
+			if int(u.order) != RtsConst.Order.GATHER \
+					or int(u.call("gather_kind")) != RtsConst.Harvest.WOOD \
+					or u.get("_inside_site") != null:
+				last_pos[i] = u.global_position
+				still[i] = 0.0
+				continue
 			var moved: float = u.global_position.distance_to(last_pos[i])
 			last_pos[i] = u.global_position
 			if moved < 0.02:
