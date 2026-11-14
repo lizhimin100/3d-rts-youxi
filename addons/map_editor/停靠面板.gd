@@ -1294,6 +1294,11 @@ func _camp_save() -> void:
 	_camp_cur.set("den_building", StringName(den))
 	_camp_cur.set("creeps", creeps)
 	_camp_cur.set("counts", counts)
+	# ★ 半径/重生/首刷/间隔都是 SpinBox：编辑器按钮 FOCUS_NONE，点保存不会让输入框失焦，
+	#   不 apply() 就会读到"改之前的旧值"（单位卡踩过同一个坑，见 卡片弹窗._commit_pending）。
+	for sb in [_camp_radius, _camp_respawn, _camp_first, _camp_interval]:
+		if sb is SpinBox:
+			(sb as SpinBox).apply()
 	_camp_cur.set("radius", _camp_radius.value)
 	_camp_cur.set("respawn", _camp_respawn.value)
 	_camp_cur.set("minimap_icon", _camp_icon.text.strip_edges())

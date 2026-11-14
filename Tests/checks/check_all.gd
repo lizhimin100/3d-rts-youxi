@@ -284,6 +284,23 @@ func _check_card_io() -> void:
 	_ok("卡 JSON 不写 metadata/* 字段", meta_keys.is_empty(), "出现了：" + ", ".join(meta_keys))
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(tmp))
 	DirAccess.remove_absolute(ProjectSettings.globalize_path("res://.test_profile/card_io"))
+	# ★ 2026-11-14 回归（玩家报「改攻击范围 → 保存 → 还是旧值」）：
+	#   编辑器按钮是 FOCUS_NONE，点「保存」**不会**让 SpinBox 的输入框失焦，
+	#   Godot 就不会把打进去的字写回 `value` —— 取值拿到的是改之前那个数。
+	#   卡片弹窗靠 `_commit_pending()` 逐个 apply() 兜住；这里断言这个机制真的成立。
+	var sb := SpinBox.new()
+	sb.min_value = 0.0
+	sb.max_value = 3000.0
+	sb.step = 1.0
+	sb.value = 90.0
+	sb.get_line_edit().text = "135"
+	var stuck: float = sb.value
+	sb.apply()
+	var applied: float = sb.value
+	sb.free()
+	_ok("SpinBox 未回车的文本能靠 apply() 提交（卡片弹窗保存前置）",
+		is_equal_approx(stuck, 90.0) and is_equal_approx(applied, 135.0),
+		"未提交=%.1f apply 后=%.1f（若 apply 失效，改数值会存不进去）" % [stuck, applied])
 
 
 func _check_maps() -> void:

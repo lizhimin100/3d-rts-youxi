@@ -15,8 +15,6 @@ extends RefCounted
 ## 减伤一律问 `RtsCombat.armor_mitigation()` —— 数值表改了，说明文本自动跟上。
 
 const Spec := preload("res://Views/hud/界面规格.gd")
-## 射程换算（卡上游戏数值 ↔ 引擎米）。界面只显示游戏数值。
-const RANGE_BASE := preload("res://Game/config/射程基准.gd")
 
 
 # ===========================================================================
@@ -205,9 +203,7 @@ static func hp(u: Node3D) -> Dictionary:
 		"icon_color": Color(0.52, 0.88, 0.56) if r > 0.6 else (Color(1.0, 0.80, 0.36) if r > 0.3 else Color(1.0, 0.42, 0.34)),
 		"title": "生命 %s / %s" % [fmt(cur), fmt(mx)],
 		"tag": state,
-		"body": "余量 [b]%d%%[/b]。生命归零，单位死亡、建筑被摧毁。\n"
-				% int(round(r * 100.0))
-				+ "战斗时看单位头顶那条血条，这里只报精确数字。",
+		"body": "余量 [b]%d%%[/b]，归零即死亡" % int(round(r * 100.0)),
 		"foot": "",
 	}
 
@@ -235,8 +231,8 @@ static func exp(u: Node3D) -> Dictionary:
 			"icon_color": Color(1.0, 0.82, 0.32),
 			"title": title,
 			"tag": "%d 星" % star,
-			"body": ("经验 [b]%d[/b] / %d（这一星）\n还差 [b]%d[/b] 点升到「%s」（%d 星）\n"
-					+ "击杀 +15 经验；升一星需要 金×2 + 木×3（三星同价）") % [
+			"body": ("经验 [b]%d[/b] / %d · 还差 %d 升「%s」\n"
+					+ "击杀 +15 经验；升星 金×2 + 木×3") % [
 					int(round(into)), int(round(need)), int(ceil(next)),
 					_star_name(star + 1), star + 1],
 			"foot": "累计经验 %d · 击杀 %d" % [int(round(cur)), int(u.get("kill_count")) if u.get("kill_count") != null else 0],
@@ -246,7 +242,7 @@ static func exp(u: Node3D) -> Dictionary:
 		"icon_color": Color(1.0, 0.82, 0.32),
 		"title": title,
 		"tag": "满星",
-		"body": "已经是最高星级（王牌）。\n加成累计：攻击/移速/攻速 +80%，血量/防御 +100%。",
+		"body": "满星 · 攻/速 +80%，血/防 +100%",
 		"foot": "累计经验 %d · 击杀 %d" % [int(round(cur)), int(u.get("kill_count")) if u.get("kill_count") != null else 0],
 	}
 
@@ -291,28 +287,28 @@ static func war(kind: int) -> Dictionary:
 			return {
 				"icon": "sword", "icon_color": Color(0.94, 0.56, 0.42),
 				"title": "进攻（F5）", "tag": "战区指令",
-				"body": "点一个**敌人或敌方建筑** → 部队围着它打；\n点**一片空地** → 部队向那片区域推进。\n右键 / ESC 取消。",
+				"body": "点敌人或空地 → 部队推进过去。右键 / ESC 取消。",
 				"foot": "只对与你同队的 AI 生效；指令 90 秒后自动过期",
 			}
 		2:
 			return {
 				"icon": "shield", "icon_color": Color(0.66, 0.80, 0.94),
 				"title": "防守（F6）", "tag": "战区指令",
-				"body": "点**自家建筑或路口** → 部队过去站住、遇敌还手；\n点**一片空地** → 守住那片区域。\n右键 / ESC 取消。",
+				"body": "点建筑 / 路口 / 空地 → 部队站住还手。右键 / ESC 取消。",
 				"foot": "防守的兵到点转待命，不会一路追出去",
 			}
 		3:
 			return {
 				"icon": "flag", "icon_color": Color(0.90, 0.80, 0.50),
 				"title": "占据（F7）", "tag": "战区指令",
-				"body": "点**地图中央据点** → 部队去打据点、抢占据；\n点**一片区域** → 推进并占住。\n右键 / ESC 取消。",
+				"body": "点据点或区域 → 部队推进并占住。右键 / ESC 取消。",
 				"foot": "据点圈内单一阵营连续 15 秒才结算",
 			}
 		4:
 			return {
 				"icon": "anvil", "icon_color": Color(0.86, 0.72, 0.46),
 				"title": "生产（F8）", "tag": "战区指令",
-				"body": "点**一片空地** → 之后训练出来的兵直接去那里集合。\n右键 / ESC 取消。",
+				"body": "点空地 → 新兵去那里集合。右键 / ESC 取消。",
 				"foot": "覆盖副官自动规划的集结点",
 			}
 	return {}
@@ -327,22 +323,22 @@ static func stat(d: UnitDef, key: String, u: Node3D = null) -> Dictionary:
 				return {"icon": "sword", "icon_color": Color(0.7, 0.7, 0.68),
 						"title": "没有攻击能力",
 						"tag": "攻击",
-						"body": "这个单位不会主动攻击。它能做的只有移动、采集或建造。",
+						"body": "不会主动攻击，只能移动 / 采集 / 建造。",
 						"foot": ""}
 			# 一行一个信息点：中文会在任意两字之间折行，句子写太长就会出现
 			# "单次 19 / 点。"这种只剩两个字的孤行。
-			var body: String = "每 [b]%s 秒[/b] 一发 · 单次 [b]%s[/b] 点" % [
+			var body: String = "每 [b]%s 秒[/b] 一发 · 单次 [b]%s[/b]" % [
 					fmt(d.attack_cooldown), fmt(d.attack_damage)]
 			if d.attack_spread > 0.0:
-				body += "（±%s 浮动）" % fmt(d.attack_spread)
-			body += "\n秒伤约 [b]%s[/b]（未计暴击）" % fmt(dps(d))
+				body += "（±%s）" % fmt(d.attack_spread)
+			body += "\n秒伤 [b]%s[/b]" % fmt(dps(d))
 			body += "\n" + counter_line(d.attack_type)
 			return {
 				"icon": "sword", "icon_color": Color(0.98, 0.62, 0.42),
 				"title": "%s攻击 · %s" % [dmg_name(d.attack_type), fmt(d.attack_damage)],
 				"tag": "伤害类型",
 				"body": "%s\n%s" % [dmg_how(d.attack_type), body],
-				"foot": "" if d.attack_range <= 0.0 else "射程 %s（超出就打不到）" % fmt(d.attack_range_value),
+				"foot": "" if d.attack_range <= 0.0 else "射程 %s" % fmt(d.attack_range_value),
 			}
 		"armor":
 			var pct: int = mitigation_pct(d.armor)
@@ -350,11 +346,8 @@ static func stat(d: UnitDef, key: String, u: Node3D = null) -> Dictionary:
 				"icon": "shield", "icon_color": Color(0.62, 0.78, 0.98),
 				"title": "%s甲 · %s" % [armor_name(d.armor_type), fmt(d.armor)],
 				"tag": "护甲类型",
-				"body": "每 1 点护甲按比例削减受到的伤害，当前减免 [b]%d%%[/b]。\n"
-						% pct
-						+ "护甲类型决定被什么克制：%s。\n" % _armor_counter_hint(d.armor_type)
-						+ "铁匠铺的「护甲锻造」每级 +1 点，最多 5 级。",
-				"foot": "",
+				"body": "减免 [b]%d%%[/b] · %s" % [pct, _armor_counter_hint(d.armor_type)],
+				"foot": "铁匠铺「护甲锻造」每级 +1，最多 5 级",
 			}
 		"speed":
 			var sp: float = d.move_speed
@@ -363,8 +356,7 @@ static func stat(d: UnitDef, key: String, u: Node3D = null) -> Dictionary:
 				"icon": "move", "icon_color": Color(0.72, 0.88, 0.56),
 				"title": "移动 · %s 米/秒" % fmt(sp),
 				"tag": "移速",
-				"body": "从基地走到地图中心（约 46 米）要 [b]%.0f 秒[/b]。\n" % per_screen
-						+ "[color=#a8a49a]（不含地形减速与队列拥堵）[/color]",
+				"body": "到地图中心（约 46 米）约 [b]%.0f 秒[/b]" % per_screen,
 				"foot": "",
 			}
 		"range":
@@ -376,18 +368,15 @@ static func stat(d: UnitDef, key: String, u: Node3D = null) -> Dictionary:
 					"icon": "sword", "icon_color": Color(0.98, 0.62, 0.42),
 					"title": "近战 · 贴身",
 					"tag": "攻击距离",
-					"body": "只要双方身体贴住就一定能打到（[b]%.2f 米[/b] 是留的余量，不是武器长度）。\n"
-							% d.attack_range
-							+ "身体没贴住就打不到，会自己向前贴近。",
+					"body": "贴身即可攻击（余量 [b]%.2f 米[/b]）" % d.attack_range,
 					"foot": "",
 				}
 			return {
 				"icon": "bow", "icon_color": Color(0.86, 0.80, 0.52),
 				"title": "射程 · %s" % fmt(d.attack_range_value),
 				"tag": "攻击距离",
-				"body": "从[b]自己的身体边缘[/b]算起，超出这个射程就打不到目标。\n"
-						+ "选中时地上的圈 = 射程 + 自身半径，圈边就是真正的够得着边界。\n"
-						+ "[color=#a8a49a]（游戏射程 1 = %s 米，换算系数 R1 全游戏统一）[/color]" % fmt(RANGE_BASE.R1),
+				"body": "超出 [b]%s[/b] 打不到 · 选中的圈 = 射程 + 自身半径"
+						% fmt(d.attack_range_value),
 				"foot": "",
 			}
 		"sight":
@@ -395,7 +384,7 @@ static func stat(d: UnitDef, key: String, u: Node3D = null) -> Dictionary:
 				"icon": "eye", "icon_color": Color(0.66, 0.86, 0.92),
 				"title": "视野 · %s 米" % fmt(d.sight_range),
 				"tag": "侦察",
-				"body": "能揭开战争迷雾的半径。视野外的敌人看不见、也点不到。",
+				"body": "迷雾半径。圈外看不见，也点不到。",
 				"foot": "",
 			}
 		"detect":

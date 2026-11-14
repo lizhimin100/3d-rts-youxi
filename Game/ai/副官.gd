@@ -243,39 +243,15 @@ func _maybe_hint_request_control() -> void:
 # 覆盖：经济口径
 # ===========================================================================
 
-## 覆盖：农民上限按副官口径；只有**满编**之后才为军队让路（见下方 2026-11-13 注释）。
-func _manage_peasants(diff: DifficultyDef) -> void:
-	if _faction == null:
-		return
-	var wid: StringName = _worker_id()
-	if wid == &"":
-		return
-	var peasants: int = _faction.count_units(wid)
-	if peasants >= PEASANT_MAX:
-		return
-	var townhall: RtsBuilding = _first_building(_main_base_id())
-	if townhall == null:
-		return
-	if townhall.train_count() >= MAX_QUEUE_PEASANT:
-		return
-	# 农民不占人口，但**占金币**：军队快凑齐时先别把最后一点钱砸进农民。
-	# 保留额走 reserve_gold（副官口径 480）—— 钱少于它就先保玩家的建造预算。
-	#
-	# ★ 2026-11-13 玩家口径「5 分钟后全程卡金币」：旧条件 `peasants >= 8` 是个**负反馈陷阱** ——
-	#   副官开局造完兵营/农场，金币一跌破 480 就停止补农，停在 8 个农民；
-	#   8 个人里 2~3 个是工位，实际只有 5 个采金 → 收入不够把金币推回 480 →
-	#   于是**永远**停在 5 采金，玩家看到的就是"5 分钟后一直没钱"。
-	#   现在只有"已经满编"（采金+采木的配比人数）时才为军队让路：
-	#   8→13 这段缺口一律优先补满，补满后再守保留额。
-	var full_econ: int = PEASANT_GOLD_SOFT_CAP + PEASANT_WOOD_TARGET
-	var army: int = _army_units().size()
-	if peasants >= full_econ and _faction.gold < reserve_gold and army < diff.max_army:
-		return
-	# 副官自己的补农也要过同一道闸，否则它会把"留给玩家的钱"一点点磨掉
-	if not _can_spend(wid):
-		return
-	if townhall.queue_train(wid):
-		_log("补农民（现有 %d / 上限 %d）" % [peasants, PEASANT_MAX])
+## 覆盖：农民上限按副官口径（18，比敌方 AI 的 15 高）。
+##
+## ★ 2026-11-14：这里原来是**整段覆写 `_manage_peasants()`**，而那段在默认
+##   `dept=on` 下永远不会被调用（`_think_once` 只走 `_dept_tick` → `_demand_peasant`）——
+##   等于"副官写了 18 上限，实际跑的是 15"。现在只覆写**一个数**：
+##   dept=on 的诉求生成和 dept=off 的旧顺序都读 `peasant_cap()`，两条路同一个口径。
+##   整段覆写已删除（连同 `_manage_waves` / `_manage_patrol` 两个同样的死覆写）。
+func peasant_cap() -> int:
+	return PEASANT_MAX
 
 
 ## 覆盖：**只挑闲着的农民**盖房。父类会从采集队里抽人，
@@ -328,56 +304,18 @@ func _can_spend_army(id: StringName) -> bool:
 
 
 # ===========================================================================
-# 覆盖：出兵的"意图协同"
+# 覆盖：推进目标
 # ===========================================================================
 
-## 玩家指了进攻点 → 副官把"没被点名的"部队协同调过去。
-## 注意这不是抢控制权：玩家点名的那批在控制权登记表里是受保护的，
-## 调度器会直接剔除；副官只是把**其他人**也叫过来，凑成一次像样的推进。
-func _manage_waves(diff: DifficultyDef) -> void:
-	var point: Vector3 = attack_point()
-	if point != Vector3.INF:
-		# 家里在挨打就先回防 —— 玩家指了目标也不代表可以不管家
-		if float(metrics.get("base_threat", 0.0)) > 0.0:
-			super._manage_waves(diff)
-			return
-		if Game.elapsed - _directive_issued_at >= DIRECTIVE_REISSUE:
-			_directive_issued_at = Game.elapsed
-			var army: Array = _army_units()
-			if army.size() >= 2:
-				var move_n: int = clampi(int(ceil(float(army.size()) * 0.7)), 1, army.size())
-				var targets: Array = _scatter_targets(army.slice(0, move_n), point)
-				for i in range(move_n):
-					_sched.attack_move([army[i]], targets[i], "wave")
-				_log("协同推进：%d 兵 → 玩家指定的 (%.0f, %.0f)"
-					% [move_n, point.x, point.z])
-		return
-	# 玩家在"驻军"：不主动推，把闲兵往那个点收（这是听从，不是抢）
-	var hold: Vector3 = hold_point()
-	if hold != Vector3.INF:
-		var idle: Array = []
-		for u in _army_units():
-			if u != null and is_instance_valid(u) and u.is_idle_like():
-				idle.append(u)
-		if not idle.is_empty():
-			_sched.move(idle, hold, "wave")
-		return
-	super._manage_waves(diff)
-
-
-## 玩家指了进攻点时，推进目标就是那个点（覆盖"最近敌方建筑"的默认选择）
+## 玩家指了进攻点时，推进目标就是那个点（覆盖"最近敌方建筑"的默认选择）。
+## ★ 这一条是**活**的：`assembly_points()` 在 dept=on 下也走 `_push_target()`。
+##   （原来同段的 `_manage_waves` / `_manage_patrol` 两个覆写在 dept=on 下是死代码，
+##    已删除 —— 玩家"进攻/驻守"意图现在统一由 `玩家指令接收.gd` 变成最高权重诉求。）
 func _push_target() -> Vector3:
 	var point: Vector3 = attack_point()
 	if point != Vector3.INF:
 		return point
 	return super._push_target()
-
-
-## 玩家在"驻军"时不要巡逻（巡逻会把部队带走，看起来像不听话）
-func _manage_patrol(diff: DifficultyDef) -> void:
-	if hold_point() != Vector3.INF:
-		return
-	super._manage_patrol(diff)
 
 
 # ===========================================================================

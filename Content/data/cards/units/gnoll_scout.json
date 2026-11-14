@@ -42,6 +42,7 @@
 		"model_path": "res://Content/art/模型/野怪/豺狼人斥候.glb",
 		"model_scale": 1,
 		"anim_set": 1,
+		"anim_walk_mps": 0,
 		"def_role": "frontline",
 		"def_tags": [
 			"light"

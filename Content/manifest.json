@@ -15,7 +15,7 @@
 		},
 		{
 			"path": "Game/ai/副官.gd",
-			"size": 21892
+			"size": 19960
 		},
 		{
 			"path": "Game/ai/副官.gd.uid",
@@ -70,16 +70,12 @@
 			"size": 19
 		},
 		{
-			"path": "Game/ai/目标层.gd",
-			"size": 25616
-		},
-		{
-			"path": "Game/ai/目标层.gd.uid",
-			"size": 20
+			"path": "Game/ai/玩家指令接收.gd",
+			"size": 3899
 		},
 		{
 			"path": "Game/ai/简单AI.gd",
-			"size": 357888
+			"size": 357043
 		},
 		{
 			"path": "Game/ai/简单AI.gd.uid",
@@ -111,7 +107,7 @@
 		},
 		{
 			"path": "Game/audio/音效管理.gd",
-			"size": 29699
+			"size": 29485
 		},
 		{
 			"path": "Game/audio/音效管理.gd.uid",
@@ -163,7 +159,7 @@
 		},
 		{
 			"path": "Game/config/单位卡.gd",
-			"size": 5997
+			"size": 6581
 		},
 		{
 			"path": "Game/config/单位卡.gd.uid",
@@ -171,7 +167,7 @@
 		},
 		{
 			"path": "Game/config/单位定义.gd",
-			"size": 7338
+			"size": 7634
 		},
 		{
 			"path": "Game/config/单位定义.gd.uid",
@@ -179,7 +175,7 @@
 		},
 		{
 			"path": "Game/config/单位表.gd",
-			"size": 17198
+			"size": 17234
 		},
 		{
 			"path": "Game/config/单位表.gd.uid",
@@ -291,7 +287,7 @@
 		},
 		{
 			"path": "Game/config/游戏配置.gd",
-			"size": 18493
+			"size": 18774
 		},
 		{
 			"path": "Game/config/游戏配置.gd.uid",
@@ -367,7 +363,7 @@
 		},
 		{
 			"path": "Game/core/主场景.gd",
-			"size": 55414
+			"size": 55753
 		},
 		{
 			"path": "Game/core/主场景.gd.uid",
@@ -391,7 +387,7 @@
 		},
 		{
 			"path": "Game/core/游戏状态.gd",
-			"size": 30476
+			"size": 31269
 		},
 		{
 			"path": "Game/core/游戏状态.gd.uid",
@@ -643,7 +639,7 @@
 		},
 		{
 			"path": "Game/units/单位.gd",
-			"size": 164492
+			"size": 173540
 		},
 		{
 			"path": "Game/units/单位.gd.uid",
@@ -651,7 +647,7 @@
 		},
 		{
 			"path": "Game/units/单位视觉.gd",
-			"size": 24395
+			"size": 25027
 		},
 		{
 			"path": "Game/units/单位视觉.gd.uid",
@@ -667,7 +663,7 @@
 		},
 		{
 			"path": "Game/units/工地表现.gd",
-			"size": 32707
+			"size": 33523
 		},
 		{
 			"path": "Game/units/工地表现.gd.uid",
@@ -815,7 +811,7 @@
 		},
 		{
 			"path": "Views/hud/词条.gd",
-			"size": 21770
+			"size": 20625
 		},
 		{
 			"path": "Views/hud/词条.gd.uid",
@@ -1067,7 +1063,7 @@
 		},
 		{
 			"path": "Views/world/art/骨骼动画.gd",
-			"size": 18131
+			"size": 18275
 		},
 		{
 			"path": "Views/world/art/骨骼动画.gd.uid",
@@ -1171,6 +1167,14 @@
 		},
 		{
 			"path": "Views/world/crowd/人群箭矢.gdshader.uid",
+			"size": 20
+		},
+		{
+			"path": "Model/ai/目标层.gd",
+			"size": 29024
+		},
+		{
+			"path": "Model/ai/目标层.gd.uid",
 			"size": 20
 		},
 		{
@@ -1323,7 +1327,7 @@
 		},
 		{
 			"path": "Engine/pin.json",
-			"size": 5760
+			"size": 5587
 		},
 		{
 			"path": "Engine/platform/platform_headless.gd",
@@ -1419,7 +1423,7 @@
 		},
 		{
 			"path": "Tests/checks/check_all.gd",
-			"size": 33576
+			"size": 34459
 		},
 		{
 			"path": "Tests/checks/check_all.gd.uid",
@@ -1627,7 +1631,7 @@
 		},
 		{
 			"path": "Tests/suites/战斗自检.gd",
-			"size": 34500
+			"size": 35482
 		},
 		{
 			"path": "Tests/suites/战斗自检.gd.uid",
@@ -1659,7 +1663,7 @@
 		},
 		{
 			"path": "Tests/suites/木材自检.gd",
-			"size": 5943
+			"size": 6965
 		},
 		{
 			"path": "Tests/suites/木材自检.gd.uid",
@@ -1755,7 +1759,7 @@
 		},
 		{
 			"path": "Tests/suites/配置回归.gd",
-			"size": 139174
+			"size": 139175
 		},
 		{
 			"path": "Tests/suites/配置回归.gd.uid",
@@ -1763,7 +1767,7 @@
 		},
 		{
 			"path": "Tests/suites/采集自检.gd",
-			"size": 6201
+			"size": 10042
 		},
 		{
 			"path": "Tests/suites/采集自检.gd.uid",
@@ -2259,19 +2263,19 @@
 		},
 		{
 			"path": "Content/data/cards/camps/camp_creep_den_1.json",
-			"size": 453
+			"size": 430
 		},
 		{
 			"path": "Content/data/cards/camps/camp_den.json",
-			"size": 429
+			"size": 406
 		},
 		{
 			"path": "Content/data/cards/camps/camp_gate.json",
-			"size": 435
+			"size": 412
 		},
 		{
 			"path": "Content/data/cards/camps/camp_shell.json",
-			"size": 457
+			"size": 432
 		},
 		{
 			"path": "Content/data/cards/skills/block_parry.json",
@@ -2307,19 +2311,19 @@
 		},
 		{
 			"path": "Content/data/cards/units/footman.json",
-			"size": 1406
+			"size": 1428
 		},
 		{
 			"path": "Content/data/cards/units/gnoll_scout.json",
-			"size": 1175
+			"size": 1252
 		},
 		{
 			"path": "Content/data/cards/units/gnoll_shaman.json",
-			"size": 1237
+			"size": 1262
 		},
 		{
 			"path": "Content/data/cards/units/gnoll_warrior.json",
-			"size": 1195
+			"size": 1217
 		},
 		{
 			"path": "Content/data/cards/units/golem.json",
@@ -2331,7 +2335,7 @@
 		},
 		{
 			"path": "Content/data/cards/units/peasant.json",
-			"size": 1223
+			"size": 1245
 		},
 		{
 			"path": "Content/data/cards/units/spell_breaker.json",
@@ -2339,7 +2343,7 @@
 		},
 		{
 			"path": "Content/data/game.json",
-			"size": 7483
+			"size": 7115
 		},
 		{
 			"path": "Content/data/harvestables.json",
@@ -2359,7 +2363,7 @@
 		},
 		{
 			"path": "Content/i18n/legacy_budget.json",
-			"size": 6997
+			"size": 6775
 		},
 		{
 			"path": "Content/i18n/ui.csv",
@@ -2379,7 +2383,7 @@
 		},
 		{
 			"path": "Content/keys/assets.json",
-			"size": 11893
+			"size": 11680
 		},
 		{
 			"path": "addons/map_editor/plugin.cfg",
@@ -2399,7 +2403,7 @@
 		},
 		{
 			"path": "addons/map_editor/停靠面板.gd",
-			"size": 89219
+			"size": 89580
 		},
 		{
 			"path": "addons/map_editor/停靠面板.gd.uid",
@@ -2407,7 +2411,7 @@
 		},
 		{
 			"path": "addons/map_editor/卡片弹窗.gd",
-			"size": 28387
+			"size": 34111
 		},
 		{
 			"path": "addons/map_editor/卡片弹窗.gd.uid",
@@ -2423,7 +2427,7 @@
 		},
 		{
 			"path": "addons/map_editor/技能弹窗.gd",
-			"size": 31015
+			"size": 31336
 		},
 		{
 			"path": "addons/map_editor/技能弹窗.gd.uid",

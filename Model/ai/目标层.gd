@@ -266,7 +266,10 @@ static func ranked(proposals: Array, weights: Dictionary = {},
 		var w: float = float(weights.get(dept, 1.0))
 		var s: float = float(situation.get(String(g["动作"]), 1.0))
 		var row: Dictionary = g.duplicate(true)
-		row["_分"] = float(g["紧迫度"]) * w * s
+		# `权重`：外部注入的诉求（玩家指令）用它压过三条线的 1.0。
+		# **只影响排序，不影响预算** —— 钱不够/兵不够照样被 `_goal_execute` 驳回。
+		var swing: float = maxf(float(g.get("权重", 1.0)), 0.0)
+		row["_分"] = float(g["紧迫度"]) * w * s * swing
 		row["_线"] = dept
 		out.append(row)
 	out.sort_custom(func(a, b):
@@ -578,6 +581,80 @@ const EXEC_ACTION: Dictionary = {
 
 static func exec_action_of(goal_act: String) -> String:
 	return String(EXEC_ACTION.get(goal_act, goal_act))
+
+
+# ---------------------------------------------------------------------------
+# 执行诉求 → 目标建议（**唯一投影**）
+#
+# 为什么要有这一层：目标层原先在 `简单AI._goal_proposals` 里把"农场缺不缺 /
+# 兵营够不够 / 军队缺口多大"**又判断了一遍**，与 `_ops_demands` 形成两份判据。
+# 两份一旦漂开就出真 bug：目标层选出"研发"，执行层却没有这条诉求 → 目标白占预留、
+# 到点过期，玩家看到的是"AI 发愣"。
+# 现在判据只有一处（诉求生成），这里只做**名字翻译**，不判断要不要做。
+# ---------------------------------------------------------------------------
+
+## 执行层动作类型 → 目标动作。表里没有的动作（修理 / 建塔 / 建分基地）
+## **不产生目标建议** —— 目标层只选"真的有人能执行"的事。
+const EXEC_TO_GOAL: Dictionary = {
+	"训练": ACT_TRAIN,
+	"建造": ACT_BUILD,
+	"出击": ACT_ATTACK_REGION,
+	"防守": ACT_DEFEND,
+	"侦查": ACT_SCOUT,
+	"巡逻": ACT_PATROL,
+}
+
+## 目标动作 → 达成条件
+const DONE_OF: Dictionary = {
+	ACT_BUILD: DONE_BUILT,
+	ACT_TRAIN: DONE_TRAINED,
+	ACT_RESEARCH: DONE_RESEARCHED,
+	ACT_ATTACK_REGION: DONE_REGION_CLEAR,
+	ACT_DESTROY: DONE_TARGET_DEAD,
+	ACT_DEFEND: DONE_THREAT_CLEAR,
+	ACT_SCOUT: DONE_ARRIVED,
+	ACT_PATROL: DONE_PATROLLED,
+	ACT_EXPAND_BASE: DONE_BUILT,
+}
+
+## 目标动作 → 有效期（秒）
+const TTL_OF: Dictionary = {
+	ACT_BUILD: 30.0, ACT_TRAIN: 20.0, ACT_RESEARCH: 45.0,
+	ACT_ATTACK_REGION: 20.0, ACT_DESTROY: 20.0, ACT_DEFEND: 10.0,
+	ACT_SCOUT: 20.0, ACT_PATROL: 20.0, ACT_EXPAND_BASE: 30.0,
+}
+
+## 诉求的"来源线"→ 目标层的部门名。
+## **两套名字必须显式映射**：执行层叫"扩展线"，目标层叫"扩张线"，
+## 直接把来源线塞给 `proposal_make` 会被 `DEPT_ACTIONS` 判成越界、返回空建议。
+const LINE_TO_DEPT: Dictionary = {
+	"运营线": DEPT_OPS, "战斗线": DEPT_COMBAT, "扩展线": DEPT_EXPAND,
+	"扩张线": DEPT_EXPAND,
+}
+
+
+## 一条执行诉求 → 一条 9 字段目标建议（纯函数）。
+##
+## `urgency` 由调用方传：**紧迫度仍然出自目标层这批 `urgency_*` 纯函数**，
+## 只是入口从"自己判断条件"变成了"把诉求里已经算好的缺口/威胁喂进来"。
+## `d["对象id"]` 是达成判定要的 id（建造/训练用）；缺省回落到显示名。
+static func demand_to_proposal(d: Dictionary, seq: int, urgency: float, now: float) -> Dictionary:
+	if d.is_empty():
+		return {}
+	var act0: String = String(d.get("动作类型", ""))
+	var act: String = String(EXEC_TO_GOAL.get(act0, ""))
+	if act.is_empty():
+		return {}
+	var dept: String = String(LINE_TO_DEPT.get(String(d.get("来源线", "")), ""))
+	if dept.is_empty():
+		return {}
+	var obj: String = String(d.get("对象id", ""))
+	if obj.is_empty():
+		obj = String(d.get("目标", ""))
+	var ttl: float = float(TTL_OF.get(act, 20.0))
+	return proposal_make(dept, seq, act, obj, int(d.get("期望值", 1)), urgency,
+		String(d.get("依据", "")), int(d.get("金币成本", 0)), int(d.get("木材成本", 0)),
+		String(DONE_OF.get(act, "")), now + ttl)
 
 
 ## 诉求在优先级表里的位次（越小越先）。未命中 → 表长（垫底）。

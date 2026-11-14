@@ -545,6 +545,12 @@ func _field_value(key: String, fallback: Variant) -> Variant:
 func _save() -> void:
 	if _card == null:
 		return
+	# ★ 先把输入框里的字变成值：编辑器按钮是 FOCUS_NONE，点保存不会让 SpinBox 失焦，
+	#   不 apply() 就会把"改之前的旧值"又写回一遍（单位卡踩过同一个坑）。
+	for key in _fields.keys():
+		var c: Variant = _fields[key]
+		if c is SpinBox:
+			(c as SpinBox).apply()
 	var errs: Array = []
 	var warns: Array = []
 	_collect_into_card()

@@ -1919,7 +1919,7 @@ func _demand_gold(base: Dictionary, gold: int) -> Dictionary:
 # ===========================================================================
 func _case_2c13() -> void:
 	var ws = load("res://Game/ai/世界状态.gd")
-	var gl = load("res://Game/ai/目标层.gd")
+	var gl = load("res://Model/ai/目标层.gd")
 	var pl = load("res://Game/ai/计划层.gd")
 
 	# ---------------- §2 世界状态：字段完整性 / 区域 id / 覆盖写 ----------------

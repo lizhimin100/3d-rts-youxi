@@ -57,6 +57,15 @@ addons/     Godot 编辑器插件（地图编辑器）。不进发行版。
   卡 JSON 里也**不许**出现 `metadata/*` 字段（`JsonCodec` 两头都跳过）。
 - 目录迁移/重导入后，编辑器可能缓存"脚本还没编译好"的资源，表现为"打开原地图提示不是 MapDef"。
   `MapStore.load_tres` 已加 `CACHE_MODE_IGNORE` 重读 + 逐字段兜底；还报就重启编辑器或 `--import`。
+- **别对已释放的实例 id 直接 `instance_from_id(id) as X`（2026-11-14 踩过）**：
+  `instance_from_id` 拿到的可能是 freed object，`as` 会刷
+  `Trying to cast a freed object` —— 这是**引擎级错误输出**，不进脚本逻辑、
+  也不影响正确性，但每帧几十条足以把帧率吃掉。正确顺序：先
+  `var raw = instance_from_id(id)`，判 `is_instance_valid(raw)`，再 cast。
+- **长局"七八分钟后卡"不是 AI 判定**（2026-11-14 实测，10 分钟 headless 采样）：
+  `ai` 各分段合计只有 40~180 ms/s，而 `unit` 从 150 涨到 1000 ms/s、A* 单次
+  从 0.7 涨到 6.5 ms。**先看 `--perf-long` 的 `sys` 再动手**，别去猜某个函数
+  在做树搜索。判定层已经下沉到 `Model/ai/目标层.gd` 且全是 O(候选数) 的纯函数。
 - **搬目录最容易漏的是 `addons/`（2026-11-14 踩过）**：地图编辑器是 EditorPlugin，一条
   `preload("res://旧路径/…")` 会让**整个插件** Parse Error —— 先报"文件不存在"，再连带十几行
   "Cannot infer the type of …"（`const Spec` 一变 Any，用它的变量全推断不出来），最后只给你一句

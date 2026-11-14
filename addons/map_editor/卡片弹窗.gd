@@ -23,8 +23,14 @@ const EDITOR_THEME := preload("res://addons/map_editor/编辑器主题.tres")
 const 皮肤 := preload("res://addons/map_editor/编辑器皮肤.gd")
 const UNIT_TABLE := preload("res://Game/config/单位表.gd")
 const LW := preload("res://Game/config/定位词表.gd")
+## 射程换算的唯一来源（卡上"游戏数值" ↔ 引擎米）：界面里的米数也从这里算，不写死示例
+const RANGE_BASE := preload("res://Game/config/射程基准.gd")
 
 const CARD_STORE := preload("res://Game/config/card_store.gd")
+## 勾选式多选的同一句话（两处表单共用一条字面量，预算冻结只许降不许升）
+const HINT_CHECK := "勾选 = 能训练该单位"
+## 写盘失败的唯一文案（保存 / 新建共用一条，改文案只改这里）
+const MSG_FAIL := "保存失败（错误码 %d）：%s"
 const CARD_DIR_UNIT := CARD_STORE.DIR_UNITS + "/"
 const CARD_DIR_BUILDING := CARD_STORE.DIR_BUILDINGS + "/"
 
@@ -35,6 +41,8 @@ var _built: bool = false
 ## 回填表单时挡住"改动"信号，避免一开窗就被标成脏
 var _syncing: bool = false
 var _dirty: bool = false
+## 保存前那一刻的字段值（存盘后拿它算"改了什么"，见 _verify_written）
+var _before: Dictionary = {}
 ## 当前正在编辑的卡（Resource；null = 没选中）
 var _card: Resource = null
 ## 左侧列表数据：[{path, card, name, id}]
@@ -91,8 +99,6 @@ func _build() -> void:
 	var sp := Control.new()
 	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head_row.add_child(sp)
-	var hint := Spec.editor_label("左选一张卡 → 右边改 → 保存写回 .tres", &"EditorHint")
-	head_row.add_child(hint)
 
 	v.add_child(HSeparator.new())
 
@@ -116,7 +122,7 @@ func _build() -> void:
 	brow.add_theme_constant_override("separation", 6)
 	left.add_child(brow)
 	var save := Spec.editor_button("保存")
-	save.tooltip_text = "写回这张 .tres，并刷新卡缓存"
+	save.tooltip_text = "写回 JSON，并刷新卡缓存"
 	save.pressed.connect(_save)
 	brow.add_child(save)
 	# ★ 2026-11-08 玩家口径：「编辑器内可新建单位/建筑配置卡，名字、各字段我自己填；
@@ -164,8 +170,9 @@ func open() -> void:
 func _popup_fit() -> void:
 	var need: Vector2i = Vector2i(get_contents_minimum_size())
 	var avail := Vector2(1600.0, 900.0)
-	if get_parent() != null:
-		avail = get_parent().get_viewport_rect().size
+	# `get_viewport_rect()` 只有 CanvasItem 有；父节点是裸 Node 时不能硬调（会报 Invalid call）
+	if get_parent() is CanvasItem:
+		avail = (get_parent() as CanvasItem).get_viewport_rect().size
 	var w: int = maxi(need.x + 24, 900)
 	var h: int = maxi(need.y + 24, 700)
 	if avail.y > 300.0:
@@ -173,8 +180,8 @@ func _popup_fit() -> void:
 	# ⚠ 顺序：popup_centered() 会把 size 压回 min_size（实测），必须先弹再改大小再居中
 	popup_centered()
 	size = Vector2i(w, h)
-	if get_parent() != null:
-		var pr: Rect2 = get_parent().get_viewport_rect()
+	if get_parent() is CanvasItem:
+		var pr: Rect2 = (get_parent() as CanvasItem).get_viewport_rect()
 		position = Vector2i(pr.position + (pr.size - Vector2(size)) * 0.5)
 
 
@@ -283,7 +290,7 @@ func _rebuild_form() -> void:
 		_build_building_form()
 	_syncing = false
 	_update_head()
-	_status.text = "编辑中：%s（保存后重开测试地图生效）" % CARD_STORE.path_of(_card).get_file()
+	_status.text = "编辑：%s · 保存后重开生效" % CARD_STORE.path_of(_card).get_file()
 
 
 func _build_unit_form() -> void:
@@ -303,13 +310,13 @@ func _build_unit_form() -> void:
 	g = _grid()
 	_fields["attack_type"] = _opt(g, "攻击类型", LW.ATTACK_TYPES, _s("attack_type"), "参与伤害结算，只能从词表取词")
 	_fields["attack"] = _num(g, "攻击力 attack", _f("attack"), 0.0, 9999.0, 1.0)
-	_fields["attack_cooldown"] = _num(g, "攻击间隔（秒）", _f("attack_cooldown", 1.5), 0.05, 60.0, 0.05,
-		"每次攻击之间的冷却（秒 / 次）")
-	# ★ 2026-11-08 玩家实测「弩兵/步兵的攻击范围显示 80」：上限原来写死 80，
-	#   650 / 90 一进表单就被夹成 80 —— 而且**保存时会把这个 80 写回卡里**。
-	#   现在上限 3000（箭塔 870 的 3 倍），步进 5，提示直接算成米。
-	_fields["range"] = _num(g, "攻击范围 range（游戏数值）", _f("range"), 0.0, 3000.0, 5.0,
-		"游戏射程数值：米数 = 这个值 × 0.015。步兵 90 = 1.35m、火枪手 550 = 8.25m、弩兵 650 = 9.75m、箭塔 870 = 13.05m。")
+	_fields["attack_cooldown"] = _num(g, "攻击间隔（秒）", _f("attack_cooldown", 1.5), 0.05, 60.0, 0.05)
+	# ★ 2026-11-14：范围值旁边**实时**显示米数（值 × 0.015）。
+	#   以前这里是一长串写死的例子（步兵 90 / 火枪手 550 / 弩兵 650 …），
+	#   既啰嗦又会和卡里的真实数值脱节；现在只留一句换算口径 + 当场算出来的数。
+	_fields["range"] = _num_live(g, "攻击范围 range", _f("range"), 0.0, 3000.0, 1.0,
+		"游戏射程数值，米数 = 值 × 0.015",
+		func(v: float) -> String: return "= %.2f 米" % RANGE_BASE.米(v))
 
 	_section("防御 / 移动")
 	g = _grid()
@@ -324,7 +331,7 @@ func _build_unit_form() -> void:
 	_fields["train_time"] = _num(g, "训练时间（秒）", _f("train_time", 10.0), 0.1, 600.0, 0.5)
 
 	_section("由哪些建筑训练")
-	hint_label("这张表是建筑卡 trains 的反向关系：勾上保存 = 把那座建筑的可训练列表加上这个单位；取消 = 从列表里移除。")
+	hint_label(HINT_CHECK)
 	var flow := HFlowContainer.new()
 	flow.add_theme_constant_override("h_separation", 10)
 	flow.add_theme_constant_override("v_separation", 4)
@@ -383,7 +390,7 @@ func _build_building_form() -> void:
 	_fields["sight_range"] = _num(g, "视野 sight_range", _f("sight_range", 10.0), 0.0, 120.0, 0.5)
 
 	_section("可训练单位（trains）")
-	hint_label("勾上 = 这座建筑能训练该单位。改单位卡里的「由哪些建筑训练」也会同步到这里。")
+	hint_label(HINT_CHECK)
 	var flow := HFlowContainer.new()
 	flow.add_theme_constant_override("h_separation", 10)
 	flow.add_theme_constant_override("v_separation", 4)
@@ -483,6 +490,36 @@ func _num(parent: GridContainer, label: String, value: float, min_v: float, max_
 	return sb
 
 
+## 带**实时换算**的数值行：右边跟一行小字，用当前值当场算出来（不写死示例数字）。
+## 例：攻击范围填 90 → 右边立刻显示「= 1.35 米」。
+func _num_live(parent: GridContainer, label: String, value: float, min_v: float, max_v: float,
+		step: float, tip: String, fmt: Callable) -> SpinBox:
+	parent.add_child(Spec.editor_label(label))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	parent.add_child(row)
+	var sb := SpinBox.new()
+	sb.min_value = min_v
+	sb.max_value = max_v
+	sb.step = step
+	sb.value = clampf(value, min_v, max_v)
+	sb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	if not tip.is_empty():
+		sb.tooltip_text = tip
+	var read := Spec.editor_label("", &"EditorHint")
+	read.custom_minimum_size = Vector2(96, 0)
+	row.add_child(sb)
+	row.add_child(read)
+	var sync := func(v: float) -> void:
+		read.text = String(fmt.call(v))
+	sb.value_changed.connect(func(v: float) -> void:
+		_mark_dirty()
+		sync.call(v))
+	sync.call(sb.value)
+	return sb
+
+
 func _opt(parent: GridContainer, label: String, words: Array, current: String,
 		tip: String = "") -> OptionButton:
 	parent.add_child(Spec.editor_label(label))
@@ -536,14 +573,120 @@ func _val_s(key: String, def: String) -> String:
 	return s if not s.is_empty() else def
 
 
+## **把所有 SpinBox 里"打了字但没回车"的输入提交掉。**
+##
+## ★ 这是"改了攻击范围→点保存→进游戏没变→重开卡还是旧值"的真正原因：
+##   编辑器按钮是 `FOCUS_NONE`（`Spec.editor_button`），点「保存」**不会**让
+##   SpinBox 里的 LineEdit 失焦，于是 Godot 从不把文本写回 `SpinBox.value` ——
+##   `_val()` 读到的还是编辑前的旧值，保存等于"把旧值又写了一遍"。
+## 所以保存的第一步必须是 apply()，而不是直接取值。
+func _commit_pending() -> void:
+	for key in _fields.keys():
+		var c: Variant = _fields[key]
+		if c is SpinBox:
+			(c as SpinBox).apply()
+
+
+## 记下"这次要写的字段"当前卡上的值（存盘后拿磁盘内容跟它比，得到一行差异）
+func _snapshot(keys: Array) -> Dictionary:
+	var out: Dictionary = {}
+	for k in keys:
+		out[k] = _card.get(k)
+	return out
+
+
+## 存盘后回读磁盘：把"想写的值"和"文件里真实的值"逐项比。
+## 返回 {diff: "range 90→135", bad: ["range"]}。
+## ★ 2026-11-14：`diff` 必须以**保存前的旧值**（`_before`）为基准，
+##   以前拿 `want` 跟磁盘比 —— 两者都等于新值，等于永远算不出"改了什么"，
+##   界面只会显示一句没有信息量的"已保存"。
+func _verify_written(path: String, want: Dictionary) -> Dictionary:
+	var diff: Array = []
+	var bad: Array = []
+	var disk: Resource = CARD_STORE.load_card(path)
+	if disk == null:
+		return {"diff": "", "bad": ["<整张卡读不回来>"]}
+	for k in want.keys():
+		var a: Variant = want[k]
+		var b: Variant = disk.get(k)
+		var old: Variant = _before.get(k, a)
+		if not _same_num(a, b):
+			# 文件里不是新值：旧值也没变 → 根本没写进去；否则记差异（别人改过）
+			if _same_num(old, a):
+				bad.append("%s（写完还是 %s）" % [k, _fmt_num(b)])
+			else:
+				diff.append("%s %s→%s" % [k, _fmt_num(old), _fmt_num(b)])
+			continue
+		if not _same_num(old, a):
+			diff.append("%s %s→%s" % [k, _fmt_num(old), _fmt_num(a)])
+	return {"diff": "、".join(diff), "bad": bad}
+
+
+## 提示里的数字：整数值不带 ".0"（"range 90→135" 比 "90.0→135.0" 好读）
+func _fmt_num(v: Variant) -> String:
+	if v is float or v is int:
+		var f: float = float(v)
+		if is_finite(f) and f == roundf(f):
+			return str(int(round(f)))
+	return str(v)
+
+
+func _same_num(a: Variant, b: Variant) -> bool:
+	if a == null or b == null:
+		return a == b
+	if (a is float or a is int) and (b is float or b is int):
+		return is_equal_approx(float(a), float(b))
+	if a is Vector2i and b is Vector2i:
+		return (a as Vector2i) == (b as Vector2i)
+	if a is Array and b is Array:
+		if (a as Array).size() != (b as Array).size():
+			return false
+		for i in range((a as Array).size()):
+			if String(a[i]) != String(b[i]):
+				return false
+		return true
+	return String(a) == String(b)
+
+
+## 这次保存写了哪些字段（按卡类型）——只用于"回读校验 + 差异提示"
+func _written_keys() -> Array:
+	if _kind == "unit":
+		return ["range", "attack", "attack_cooldown", "max_hp", "max_mana", "defense",
+			"defense_type", "attack_type", "move_speed", "cost_gold", "cost_wood", "train_time"]
+	return ["range", "attack", "attack_cooldown", "max_hp", "defense", "defense_type",
+		"footprint", "food_provided", "cost_gold", "cost_wood", "train_time", "sight_range",
+		"trains", "researches"]
+
+
+## 保存会写的**全部**字段（含两张卡共有的名字/介绍）：回读校验与差异提示都用这一份。
+func _diff_keys() -> Array:
+	var out: Array = _written_keys()
+	out.append("display_name")
+	out.append("description")
+	return out
+
+
 func _save() -> void:
 	if _card == null:
 		_status.text = "先在左边选一张卡"
 		return
 	var path: String = CARD_STORE.path_of(_card)
 	if path.is_empty():
-		_status.text = "这张卡没有文件路径（不是从目录里读出来的），无法写回"
+		_status.text = "这张卡没有文件路径，无法写回"
 		return
+	# ★ 第一步：把输入框里的字变成值（见 _commit_pending 的注释）
+	_commit_pending()
+	_before = _snapshot(_diff_keys())
+	# ★ 2026-11-14：**先重读一张干净的卡再写**，不信任内存里那张。
+	#   表单只覆盖一部分字段（range/attack/…），其余字段（volume / model_path /
+	#   anim_walk_mps）必须原样保留；而内存卡可能是上一次保存前的快照，
+	#   拿它 set 再写会把别处（手改 JSON / 另一扇窗）的改动悄悄覆盖回去。
+	var fresh: Resource = CARD_STORE.load_card(path)
+	if fresh == null:
+		_status.text = MSG_FAIL % [ERR_FILE_CANT_READ, path]
+		_alert_popup("Save failed", _status.text)
+		return
+	_card = fresh
 
 	# --- 公共字段 ---
 	_card.set("display_name", _val_s("display_name", String(_card.get("card_id"))))
@@ -586,7 +729,16 @@ func _save() -> void:
 
 	var err: int = CARD_STORE.save_card(_card, path)
 	if err != OK:
-		_status.text = "保存失败（错误码 %d）：%s" % [err, path]
+		_status.text = MSG_FAIL % [err, path]
+		return
+
+	# ★ 回读磁盘校验：告诉人"到底写进去了什么"，而不是只说一句"已保存"。
+	var check: Dictionary = _verify_written(path, _snapshot(_diff_keys()))
+	var bad_written: Array = check.get("bad", [])
+	if not bad_written.is_empty():
+		_status.text = "⚠ 没写进去：%s（文件 %s）" % ["、".join(bad_written), path.get_file()]
+		push_error("[CardDialog] verify mismatch: %s" % str(bad_written))
+		_alert_popup("Save failed", _status.text)
 		return
 
 	# 单位卡：勾选"由哪些建筑训练" → 反向同步所有建筑卡的 trains
@@ -601,12 +753,25 @@ func _save() -> void:
 		session.dock.call("refresh_after_card_edit")
 
 	_dirty = false
-	var tail: String = "" if bad == 0 else "（有 %d 张建筑卡写回失败）" % bad
-	_status.text = "已保存 %s%s" % [path.get_file(), tail]
+	# 一行讲完：文件名 + 改了什么（没改动就直说"数值没变"，别让人以为存上了）
+	var diff: String = String(check.get("diff", ""))
+	var tail: String = ""
+	if not diff.is_empty():
+		tail = " · " + diff
+	elif bad > 0:
+		tail = "（%d 张建筑卡写回失败）" % bad
+	else:
+		tail = "（与保存前相同）"
+	# ★ 保存后**重扫磁盘 + 重建表单**：界面上显示的一律是文件里的真值。
+	#   这样"点了保存却没写进去"会当场露馅（数值弹回旧值），而不是等进游戏才发现。
+	_scan()
+	_sync_list()
+	var msg: String = "已保存 %s%s" % [path.get_file(), tail]
+	_status.text = msg
+	print("[CardDialog] " + msg)
 	_update_head()
 	if session != null and session.has_method("push_status"):
-		session.call("push_status", "卡「%s」已保存，重开测试地图生效%s" % [
-			String(_card.get("display_name")), tail])
+		session.call("push_status", msg)
 
 
 ## **新建一张卡**（玩家 2026-11-08 第 13 条）。
@@ -651,7 +816,7 @@ func _create_card() -> void:
 	var path: String = dir_path + id + ".json"
 	var err: int = CARD_STORE.save_card(res, path)
 	if err != OK:
-		_status.text = "新建失败（错误码 %d）：%s" % [err, path]
+		_status.text = MSG_FAIL % [err, path]
 		return
 	# 重扫 + 让新卡成为当前选中的那张
 	_cards = []
@@ -711,7 +876,7 @@ func _sync_unit_trains() -> int:
 func _test() -> void:
 	if _dirty:
 		# 明确要求：有未保存改动先提醒，**不自动保存**
-		_alert_popup("请先保存", "表单里有未保存的改动。\n\n先点「保存」，再点「测试地图」。")
+		_alert_popup("!", "先「保存」再「测试地图」")
 		return
 	if session != null and session.has_method("test_map"):
 		session.call("test_map")

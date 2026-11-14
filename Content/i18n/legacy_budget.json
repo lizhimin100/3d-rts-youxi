@@ -10,7 +10,7 @@
 			"Game/ai/战斗模型.gd": 192,
 			"Game/ai/战略导演.gd": 4,
 			"Game/ai/控制权.gd": 1,
-			"Game/ai/目标层.gd": 318,
+			"Game/ai/玩家指令接收.gd": 5,
 			"Game/ai/简单AI.gd": 453,
 			"Game/ai/计划层.gd": 43,
 			"Game/audio/语音表.gd": 7,

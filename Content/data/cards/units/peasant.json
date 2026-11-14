@@ -38,6 +38,7 @@
 		"model_path": "res://Content/art/模型/方块人/方块人_农民.glb",
 		"model_scale": 1,
 		"anim_set": 0,
+		"anim_walk_mps": 0,
 		"def_role": "worker",
 		"def_tags": [],
 		"design_power": 0,
