@@ -1227,15 +1227,15 @@ func _case_2c9() -> void:
 			_near(float(bm.demand_coef("训练_威胁系数")), 0.8, 0.000001)
 			and _near(float(bm.demand_coef("不存在的键", 0.7)), 0.7, 0.000001),
 			"训练_威胁系数=0.8；未知键回落 0.7")
-	# 2C-12 处置：A 组判失败 → 部门制回退 2C-8 为主线，默认改成 off（`--dept=on` 仍可实验）
-	_record("2C9/2C12：dept 开关 on/off（默认 off；非法值回落 off；on 可显式开）",
-			String(AIV.DEFAULT_DEPT_MODE) == "off"
-			and String(AIV.dept_mode()) == "off"
-			and bool(AIV.dept_off())
-			and String(AIV.set_dept_mode("乱写")) == "off"
-			and String(AIV.set_dept_mode("on")) == "on"
-			and bool(AIV.dept_on()),
-			"默认 %s（回退 2C-8 为主线）" % String(AIV.DEFAULT_DEPT_MODE))
+	# 2026-11-14：部门制（dept=on）转正；off 只保留作 2C-8 旧路径对照
+	_record("2C9/2C12：dept 开关（默认 on，已转正；非法值回落 on；off 可显式开作对照）",
+			String(AIV.DEFAULT_DEPT_MODE) == "on"
+			and String(AIV.dept_mode()) == "on"
+			and bool(AIV.dept_on())
+			and String(AIV.set_dept_mode("乱写")) == "on"
+			and String(AIV.set_dept_mode("off")) == "off"
+			and bool(AIV.dept_off()),
+			"默认 %s（2C-13 起转正）" % String(AIV.DEFAULT_DEPT_MODE))
 	AIV.reset_defaults()
 	_record("2C9：不变式守门（判定表窗口/系数/分母/修理线/gap 一个字没动）",
 			_near(float(bm.VD_TIME_GOOD), 0.8, 0.0001)
@@ -2334,10 +2334,10 @@ func _case_2c13() -> void:
 			and sa13.contains("const EXPAND_BASE_MAX"),
 			"can_build_townhall 有真判定（不再固定 return false）")
 	var aiv13: String = FileAccess.get_file_as_string("res://Game/config/AI判定模式.gd")
-	_record("2C13 §1：默认 dept=off 主线不变；新架构只在 --dept=on 实验分支",
-			aiv13.contains("const DEFAULT_DEPT_MODE: String = DEPT_OFF")
+	_record("2C13 §1：dept=on 已转正（默认 on；--dept=off 仅作 2C-8 对照）",
+			aiv13.contains("const DEFAULT_DEPT_MODE: String = DEPT_ON")
 			and aiv13.contains("const DEFAULT_GOAL_MODE: String = GOAL_ON"),
-			"dept 默认 off / goal 默认 on（只在 dept=on 时生效）")
+			"dept 默认 on / goal 默认 on")
 
 
 ## `can_build_townhall()` 是否仍然是"空壳"（函数体第一行就是 return false）。

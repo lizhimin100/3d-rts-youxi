@@ -10,7 +10,7 @@ config_version=5
 
 [application]
 
-config/name="铁血战歌·简易rts"
+config/name="战争原岛"
 config/description="类魔兽争霸3 的 3D 即时战略（GDScript 全手写，美术由 Blender 程序化生成）"
 config/version="2.0.0"
 run/main_scene="res://Views/scenes/主场景.tscn"
@@ -40,7 +40,7 @@ window/stretch/aspect="expand"
 
 [dotnet]
 
-project/assembly_name="铁血战歌·简易rts"
+project/assembly_name="战争原岛"
 
 [editor_plugins]
 

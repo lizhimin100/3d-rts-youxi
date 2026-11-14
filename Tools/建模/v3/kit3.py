@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-kit3.py —— 铁血战歌 美术 v3 建模工具（Blender 5.1 / 全 headless 可跑）
+kit3.py —— 战争原岛 美术 v3 建模工具（Blender 5.1 / 全 headless 可跑）
 
 为什么重写一套：v2 是「一堆独立物体 + Empty 假骨骼 + 程序动画」，导出后节点多、
 动画靠引擎侧摆姿态、材质靠逐 surface 复制。v3 要的是**真骨骼 + 烘焙动画 + 参数化染色**：

@@ -115,7 +115,7 @@ func _install_debug_hooks() -> void:
 
 
 func boot_banner() -> String:
-	return "[Boot] 铁血战歌 v%s | 模式=%s | 存档=%s | 音频=%s | Godot=%s | pid=%d | boot=%s" % [
+	return "[Boot] 战争原岛 v%s | 模式=%s | 存档=%s | 音频=%s | Godot=%s | pid=%d | boot=%s" % [
 		VERSION,
 		"test" if test_mode else ("release" if release else "dev"),
 		profile,

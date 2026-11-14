@@ -151,7 +151,7 @@
 		},
 		{
 			"path": "Game/config/card_store.gd",
-			"size": 3573
+			"size": 3538
 		},
 		{
 			"path": "Game/config/card_store.gd.uid",
@@ -275,7 +275,7 @@
 		},
 		{
 			"path": "Game/config/技能表.gd",
-			"size": 7891
+			"size": 8108
 		},
 		{
 			"path": "Game/config/技能表.gd.uid",
@@ -315,7 +315,7 @@
 		},
 		{
 			"path": "Game/config/野怪营地定义.gd",
-			"size": 2937
+			"size": 2987
 		},
 		{
 			"path": "Game/config/野怪营地定义.gd.uid",
@@ -352,6 +352,10 @@
 		{
 			"path": "Game/core/save_setup.gd",
 			"size": 314
+		},
+		{
+			"path": "Game/core/save_setup.gd.uid",
+			"size": 20
 		},
 		{
 			"path": "Game/core/主场景.gd",
@@ -411,7 +415,7 @@
 		},
 		{
 			"path": "Game/map/地图存储.gd",
-			"size": 7328
+			"size": 8441
 		},
 		{
 			"path": "Game/map/地图存储.gd.uid",
@@ -1163,27 +1167,51 @@
 		},
 		{
 			"path": "Model/battle/skirmish.gd",
-			"size": 10843
+			"size": 11537
+		},
+		{
+			"path": "Model/battle/skirmish.gd.uid",
+			"size": 20
 		},
 		{
 			"path": "Model/core/damage.gd",
 			"size": 2601
 		},
 		{
+			"path": "Model/core/damage.gd.uid",
+			"size": 19
+		},
+		{
 			"path": "Model/core/economy.gd",
 			"size": 1849
+		},
+		{
+			"path": "Model/core/economy.gd.uid",
+			"size": 20
 		},
 		{
 			"path": "Model/core/production.gd",
 			"size": 1402
 		},
 		{
+			"path": "Model/core/production.gd.uid",
+			"size": 20
+		},
+		{
 			"path": "Model/core/progression.gd",
 			"size": 1006
 		},
 		{
+			"path": "Model/core/progression.gd.uid",
+			"size": 20
+		},
+		{
 			"path": "Model/core/rng.gd",
 			"size": 1420
+		},
+		{
+			"path": "Model/core/rng.gd.uid",
+			"size": 20
 		},
 		{
 			"path": "Model/README.md",
@@ -1192,6 +1220,10 @@
 		{
 			"path": "Model/save/save_schema.gd",
 			"size": 2707
+		},
+		{
+			"path": "Model/save/save_schema.gd.uid",
+			"size": 19
 		},
 		{
 			"path": "Engine/audio/audio_service.gd",
@@ -1203,7 +1235,7 @@
 		},
 		{
 			"path": "Engine/boot/app.gd",
-			"size": 5009
+			"size": 5171
 		},
 		{
 			"path": "Engine/boot/app.gd.uid",
@@ -1350,20 +1382,32 @@
 			"size": 6
 		},
 		{
-			"path": "Tests/_probe.gd.uid",
-			"size": 19
+			"path": "Tests/_mapprobe.gd.uid",
+			"size": 20
 		},
 		{
 			"path": "Tests/_runmodel.gd",
 			"size": 299
 		},
 		{
+			"path": "Tests/_runmodel.gd.uid",
+			"size": 20
+		},
+		{
 			"path": "Tests/checks/check_all.gd",
-			"size": 23805
+			"size": 25327
+		},
+		{
+			"path": "Tests/checks/check_all.gd.uid",
+			"size": 20
 		},
 		{
 			"path": "Tests/checks/shot_runner.gd",
 			"size": 4890
+		},
+		{
+			"path": "Tests/checks/shot_runner.gd.uid",
+			"size": 20
 		},
 		{
 			"path": "Tests/checks/shot_runner.tscn",
@@ -1374,8 +1418,16 @@
 			"size": 7343
 		},
 		{
+			"path": "Tests/model/model_tests.gd.uid",
+			"size": 20
+		},
+		{
 			"path": "Tests/sim/run_simulate.gd",
-			"size": 5723
+			"size": 5834
+		},
+		{
+			"path": "Tests/sim/run_simulate.gd.uid",
+			"size": 20
 		},
 		{
 			"path": "Tests/suites/AI基准.gd",
@@ -1671,7 +1723,7 @@
 		},
 		{
 			"path": "Tests/suites/配置回归.gd",
-			"size": 139237
+			"size": 139174
 		},
 		{
 			"path": "Tests/suites/配置回归.gd.uid",
@@ -1859,19 +1911,19 @@
 		},
 		{
 			"path": "Tools/建模/rig_human.py",
-			"size": 21537
+			"size": 21965
 		},
 		{
 			"path": "Tools/建模/rts_kit.py",
-			"size": 43909
+			"size": 45031
 		},
 		{
 			"path": "Tools/建模/run_v2.py",
-			"size": 9070
+			"size": 9310
 		},
 		{
 			"path": "Tools/建模/style_v2.py",
-			"size": 23978
+			"size": 24563
 		},
 		{
 			"path": "Tools/建模/v3/_anim_test.glb",
@@ -1915,7 +1967,7 @@
 		},
 		{
 			"path": "Tools/建模/v3/kit3.py",
-			"size": 32955
+			"size": 33765
 		},
 		{
 			"path": "Tools/建模/v3/props.py",
@@ -1931,7 +1983,7 @@
 		},
 		{
 			"path": "Tools/建模/v5/texgen.py",
-			"size": 19131
+			"size": 19642
 		},
 		{
 			"path": "Tools/建模/v5/textured.py",
@@ -2119,7 +2171,7 @@
 		},
 		{
 			"path": "Tools/音频/合成音效.py",
-			"size": 31294
+			"size": 32116
 		},
 		{
 			"path": "Tools/音频校验.py",
@@ -2287,11 +2339,11 @@
 		},
 		{
 			"path": "Content/data/sim.json",
-			"size": 803
+			"size": 802
 		},
 		{
 			"path": "Content/i18n/legacy_budget.json",
-			"size": 6947
+			"size": 6975
 		},
 		{
 			"path": "Content/i18n/ui.csv",
@@ -2331,7 +2383,7 @@
 		},
 		{
 			"path": "addons/map_editor/停靠面板.gd",
-			"size": 86947
+			"size": 89211
 		},
 		{
 			"path": "addons/map_editor/停靠面板.gd.uid",
@@ -2339,7 +2391,7 @@
 		},
 		{
 			"path": "addons/map_editor/卡片弹窗.gd",
-			"size": 28391
+			"size": 28393
 		},
 		{
 			"path": "addons/map_editor/卡片弹窗.gd.uid",
@@ -2347,7 +2399,7 @@
 		},
 		{
 			"path": "addons/map_editor/帮助窗.gd",
-			"size": 8613
+			"size": 8757
 		},
 		{
 			"path": "addons/map_editor/帮助窗.gd.uid",
@@ -2355,7 +2407,7 @@
 		},
 		{
 			"path": "addons/map_editor/技能弹窗.gd",
-			"size": 30148
+			"size": 31019
 		},
 		{
 			"path": "addons/map_editor/技能弹窗.gd.uid",
@@ -2363,7 +2415,7 @@
 		},
 		{
 			"path": "addons/map_editor/按钮表.gd",
-			"size": 4743
+			"size": 4834
 		},
 		{
 			"path": "addons/map_editor/按钮表.gd.uid",
@@ -2399,7 +2451,7 @@
 		},
 		{
 			"path": "addons/map_editor/营地弹窗.gd",
-			"size": 21158
+			"size": 21707
 		},
 		{
 			"path": "addons/map_editor/营地弹窗.gd.uid",
@@ -2407,7 +2459,7 @@
 		},
 		{
 			"path": "addons/map_editor/视口.gd",
-			"size": 63212
+			"size": 65027
 		},
 		{
 			"path": "addons/map_editor/视口.gd.uid",

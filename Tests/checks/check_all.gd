@@ -35,6 +35,8 @@ func _run() -> void:
 	_check_layout()
 	_check_data_json()
 	_check_cards()
+	_check_card_io()
+	_check_maps()
 	_check_refs()
 	_check_i18n()
 	_check_assets()
@@ -189,6 +191,38 @@ func _check_refs() -> void:
 			if not units.has(StringName(uid)):
 				problems.append("sim.json sides[%d] → 未定义单位：%s" % [si, uid])
 	_ok("数据引用闭环（训练/研究/技能/模型/营地/开局/推演）", problems.is_empty(), "; ".join(problems.slice(0, 6)))
+
+func _check_card_io() -> void:
+	## 真人用编辑器改卡 = CardStore.save_card 写回 JSON。这里做一次真实往返。
+	var entries = CardStore.list(CardStore.DIR_UNITS)
+	if entries.is_empty():
+		_ok("卡读写往返（编辑器保存路径）", false, "没有单位卡")
+		return
+	var card: Resource = entries[0]["card"]
+	var tmp := "res://.test_profile/card_io/footman.json"
+	var err := CardStore.save_card(card, tmp)
+	var back := CardStore.load_card(tmp)
+	var same := (back != null
+		and String(back.get("card_id")) == String(card.get("card_id"))
+		and is_equal_approx(float(back.get("max_hp")), float(card.get("max_hp")))
+		and String(back.resource_path) == tmp)
+	_ok("卡读写往返（编辑器保存路径 → JSON → 读回）", err == OK and same, "err=%d" % err)
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(tmp))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path("res://.test_profile/card_io"))
+
+
+func _check_maps() -> void:
+	var store: Script = load("res://Game/map/地图存储.gd")
+	if store == null:
+		_ok("地图存储可加载", false)
+		return
+	var def: Resource = store.call("load_tres", "res://Content/maps/主场景地图.tres")
+	_ok("主场景地图能被 MapStore 读回（编辑器同一入口）", def != null)
+	if def != null:
+		var size := float(def.get("size"))
+		var objs: Array = def.get("objects")
+		_ok("地图数据有效（尺寸/对象数）", size > 0.0 and objs.size() > 0, "size=%.0f objects=%d" % [size, objs.size()])
+
 
 # ===========================================================================
 # 3. 多语言

@@ -48,7 +48,7 @@ WARNING: [野怪营地表] 锚点「creep_den」重复默认配置（camp_den.js
   ✓ Documents/concept.md 三栏
 ---------------------------------------------------------------
 CHECK 通过 62 项 / 失败 0  —— 地基体检全部通过 ✓
-[Boot] 铁血战歌 v0.1.0 | 模式=test | 存档=test | 音频=静音 | Godot=4.7.2-stable (official) | pid=16048 | boot=16048-332
+[Boot] 战争原岛 v0.1.0 | 模式=test | 存档=test | 音频=静音 | Godot=4.7.2-stable (official) | pid=16048 | boot=16048-332
 ```
 
 ## 2. `./Tools/run-game.ps1 --simulate --games=5`
@@ -68,7 +68,7 @@ CHECK 通过 62 项 / 失败 0  —— 地基体检全部通过 ✓
 5    5      300.0    玩家       16/4/15/2142               4/16/16/2142              
 ---------------------------------------------------------------
 汇总：玩家 胜 3 ｜ AI 胜 2 ｜ 平局 0 ｜ 平均时长 300.0s
-[Boot] 铁血战歌 v0.1.0 | 模式=test | 存档=test | 音频=静音 | Godot=4.7.2-stable (official) | pid=21224 | boot=21224-291
+[Boot] 战争原岛 v0.1.0 | 模式=test | 存档=test | 音频=静音 | Godot=4.7.2-stable (official) | pid=21224 | boot=21224-291
 ```
 
 （完整 `SIM {json}` 行含逐局 300 秒时间线，运行输出里可见；这里不贴，避免文档膨胀。）
@@ -82,7 +82,7 @@ Vulkan 1.4.303 - Forward+ - Using Device #0: NVIDIA - NVIDIA GeForce RTX 5060
 
 [卡校验] 通过（卡 24 张，问题 0，词表错误 0）；系数卡 通过（1 张，问题 0）
 [Platform] 平台 = headless（可用=true）
-[Boot] 铁血战歌 v0.1.0 | 模式=test | 存档=test | 音频=静音 | Godot=4.7.2-stable (official) | pid=21460 | boot=21460-947
+[Boot] 战争原岛 v0.1.0 | 模式=test | 存档=test | 音频=静音 | Godot=4.7.2-stable (official) | pid=21460 | boot=21460-947
 [Dbg] 调试接口：http://127.0.0.1:18777/ （pid=21460 boot=21460-947）
 [关卡] 树：455 棵（程序化生成，网格池 10 份，关（单档，175m 外剔除））
 [地图加载] 地表层：无（splatmap 全空或未铺）
@@ -144,7 +144,7 @@ Vulkan 1.4.303 - Forward+ - Using Device #0: NVIDIA - NVIDIA GeForce RTX 5060
 
 [卡校验] 通过（卡 24 张，问题 0，词表错误 0）；系数卡 通过（1 张，问题 0）
 [Platform] 平台 = headless（可用=true）
-[Boot] 铁血战歌 v0.1.0 | 模式=test | 存档=test | 音频=静音 | Godot=4.7.2-stable (official) | pid=15292 | boot=15292-957
+[Boot] 战争原岛 v0.1.0 | 模式=test | 存档=test | 音频=静音 | Godot=4.7.2-stable (official) | pid=15292 | boot=15292-957
 [Dbg] 调试接口：http://127.0.0.1:18777/ （pid=15292 boot=15292-957）
 [关卡] 树：455 棵（程序化生成，网格池 10 份，关（单档，175m 外剔除））
 [地图加载] 地表层：无（splatmap 全空或未铺）

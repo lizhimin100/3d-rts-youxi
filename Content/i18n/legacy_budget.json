@@ -1,6 +1,6 @@
 {
 	"version": 1,
-	"total": 7464,
+	"total": 7473,
 	"by_dir": {
 		"Game": {
 			"Game/ai/世界状态.gd": 39,
@@ -18,7 +18,7 @@
 			"Game/config/AI判定模式.gd": 2,
 			"Game/config/AI战略权重.gd": 3,
 			"Game/config/AI诉求系数.gd": 2,
-			"Game/config/card_store.gd": 12,
+			"Game/config/card_store.gd": 8,
 			"Game/config/体积派生.gd": 8,
 			"Game/config/单位卡.gd": 3,
 			"Game/config/单位定义.gd": 10,
@@ -46,7 +46,7 @@
 			"Game/core/阵营.gd": 3,
 			"Game/map/区域定义.gd": 12,
 			"Game/map/地图加载器.gd": 21,
-			"Game/map/地图存储.gd": 7,
+			"Game/map/地图存储.gd": 8,
 			"Game/map/地图定义.gd": 6,
 			"Game/map/地图对象.gd": 5,
 			"Game/map/地图校验.gd": 31,
@@ -128,7 +128,7 @@
 			"addons/map_editor/主屏.gd": 135,
 			"addons/map_editor/停靠面板.gd": 283,
 			"addons/map_editor/卡片弹窗.gd": 94,
-			"addons/map_editor/帮助窗.gd": 130,
+			"addons/map_editor/帮助窗.gd": 129,
 			"addons/map_editor/技能弹窗.gd": 126,
 			"addons/map_editor/按钮表.gd": 51,
 			"addons/map_editor/插件.gd": 92,
@@ -140,11 +140,12 @@
 			"addons/map_editor/预览工厂.gd": 10
 		},
 		"Tests": {
+			"Tests/_mapprobe.gd": 4,
 			"Tests/_runmodel.gd": 1,
-			"Tests/checks/check_all.gd": 104,
+			"Tests/checks/check_all.gd": 112,
 			"Tests/checks/shot_runner.gd": 14,
 			"Tests/model/model_tests.gd": 34,
-			"Tests/sim/run_simulate.gd": 16,
+			"Tests/sim/run_simulate.gd": 17,
 			"Tests/suites/AI基准.gd": 237,
 			"Tests/suites/交互自检.gd": 36,
 			"Tests/suites/体积标定.gd": 31,

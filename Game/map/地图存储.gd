@@ -77,9 +77,35 @@ static func load_tres(path: String) -> MapDef:
 	var res: Resource = load(path)
 	var def := res as MapDef
 	if def == null:
-		push_warning("[地图存储] %s 不是 MapDef" % path)
+		# 2026-11-14：目录迁移/重导入后，编辑器可能缓存了"脚本还没编译好"的坏实例，
+		# 表现为"打开原地图提示不是 MapDef"。先强制绕过缓存重读一次。
+		res = ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_IGNORE)
+		def = res as MapDef
+	if def == null:
+		# 再兜底：脚本路径正确但类身份错位（两套 class 缓存）时，逐字段复制到新 MapDef
+		def = _rebuild_from(res)
+	if def == null:
+		push_warning("[地图存储] %s 不是 MapDef（脚本未加载或类缓存过期；重启编辑器或跑 --import）" % path)
 		return null
 	return migrate(def)
+
+
+## 把一个"脚本正确但类型身份对不上"的资源逐字段复制成新的 MapDef
+static func _rebuild_from(res: Resource) -> MapDef:
+	if res == null:
+		return null
+	var scr: Script = res.get_script()
+	if scr == null or String(scr.resource_path) != "res://Game/map/地图定义.gd":
+		return null
+	var def: MapDef = MapDef.new()
+	for p in res.get_property_list():
+		if not (int(p.get("usage", 0)) & PROPERTY_USAGE_STORAGE):
+			continue
+		var nm := String(p.name)
+		if nm.begins_with("resource_") or nm == "script":
+			continue
+		def.set(nm, res.get(nm))
+	return def
 
 
 ## 读 JSON 并迁移
