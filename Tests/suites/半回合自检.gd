@@ -119,6 +119,9 @@ func _run() -> void:
 	_ok(Game.phase == RtsConst.Phase.RUNNING, "阶段切到 RUNNING")
 	_ok(not get_tree().paused, "执行阶段世界已解冻")
 	_ok(int(cmd.call("planned_count")) == 0, "计划已清空")
+	_ok(int(rc.get("round_index")) == 1, "回合计数为 1")
+	var wave_arr: Variant = rc.get("_wave_units")
+	_ok(wave_arr is Array and (wave_arr as Array).size() > 0, "执行阶段生成了脚本波次")
 
 	await get_tree().create_timer(1.2).timeout
 	var moved: float = foots[0].global_position.distance_to(before)
@@ -127,6 +130,12 @@ func _run() -> void:
 	rc.call("end_execution", "test")
 	_ok(Game.phase == RtsConst.Phase.PREPARE, "结束执行回到 PREPARE")
 	_ok(get_tree().paused, "结束执行后世界重新暂停")
+
+	# 第二次执行：回合计数递增（波次没清完时只加回合，不叠兵）
+	var began2: bool = bool(rc.call("begin_execution"))
+	_ok(began2 and int(rc.get("round_index")) == 2, "第二次执行回合计数为 2")
+	rc.call("end_execution", "test2")
+	_ok(Game.is_prepare(), "第二次结束回准备")
 
 	# 成员死亡，小队继续存在（不做士气）
 	foots[1].take_damage(99999.0, 0, null)
