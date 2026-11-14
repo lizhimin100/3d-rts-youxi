@@ -104,6 +104,8 @@ func _run() -> void:
 	_case_2c12()
 	# 2C-13：世界状态适配器 / 区域 id / 目标层（建议·选目标·空过·生命周期）/ 计划层 / 优先级
 	_case_2c13()
+	# 2026-11-14：诉求 → 目标建议的唯一投影（合并双份判据）+ 玩家指令权重
+	_case_demand_projection()
 	_finish(t0)
 
 
@@ -1912,6 +1914,84 @@ func _demand_gold(base: Dictionary, gold: int) -> Dictionary:
 	var d: Dictionary = base.duplicate(true)
 	d["金币成本"] = gold
 	return d
+
+
+# ===========================================================================
+# 2026-11-14 · 诉求 → 目标建议（合并"双份判据"后的唯一投影）
+#
+# 背景：目标层原先在 简单AI._goal_proposals 里把"农场缺不缺 / 兵营够不够 /
+# 军队缺口多大"又判断了一遍，与 _ops_demands 形成两份判据。两份漂开就出真 bug：
+# 目标层选出"研发"，执行层根本没有这条诉求 → 白占预留、到点过期。
+# 现在判据只有一处（诉求生成），目标层只做名字翻译 —— 下面断言这个投影是"照抄"。
+# ===========================================================================
+func _case_demand_projection() -> void:
+	var gl = load("res://Model/ai/目标层.gd")
+	var base: Dictionary = {
+		"来源线": "运营线", "动作类型": "训练", "目标": "步兵",
+		"金币成本": 125, "木材成本": 0, "兵力占用": 0, "可被征用": false,
+		"诉求分": 4.0, "依据": "军队缺口=4", "可执行": true,
+		"对象id": "footman", "紧迫度": 0.72, "期望值": 4,
+	}
+	var p: Dictionary = gl.demand_to_proposal(base, 2, 0.72, 100.0)
+	_record("2026-11-14：诉求→建议 动作/前缀/对象 id/紧迫度/预留 照抄",
+			String(p.get("动作", "")) == gl.ACT_TRAIN
+			and String(p.get("id", "")) == "Yy002"
+			and String(p.get("对象", "")) == "footman"
+			and is_equal_approx(float(p.get("紧迫度", -1.0)), 0.72)
+			and int((p.get("建议预留", {}) as Dictionary).get("金币", 0)) == 125
+			and String(p.get("达成条件", "")) == gl.DONE_TRAINED,
+			"id=%s 动作=%s 对象=%s 金=%d" % [String(p.get("id", "")),
+				String(p.get("动作", "")), String(p.get("对象", "")),
+				int((p.get("建议预留", {}) as Dictionary).get("金币", 0))])
+	# 没有目标动作的诉求（修理 / 建塔 / 建分基地）不产生建议
+	var d2: Dictionary = base.duplicate(true)
+	d2["动作类型"] = "修理"
+	var d3: Dictionary = {"来源线": "扩展线", "动作类型": "建塔", "目标": "箭塔",
+		"金币成本": 200, "木材成本": 60, "对象id": "tower", "紧迫度": 0.5}
+	_record("2026-11-14：修理/建塔这类没有目标动作的诉求不产生建议（不空占预留）",
+			(gl.demand_to_proposal(d2, 1, 0.5, 100.0) as Dictionary).is_empty()
+			and (gl.demand_to_proposal(d3, 1, 0.5, 100.0) as Dictionary).is_empty(),
+			"修理=%s 建塔=%s" % [
+				str(gl.demand_to_proposal(d2, 1, 0.5, 100.0)),
+				str(gl.demand_to_proposal(d3, 1, 0.5, 100.0))])
+	# "扩展线" → 目标层叫"扩张线"；不映射就会被 DEPT_ACTIONS 判越界
+	var d4: Dictionary = base.duplicate(true)
+	d4["来源线"] = "扩展线"
+	d4["动作类型"] = "侦查"
+	d4["对象id"] = "敌方方向"
+	var p4: Dictionary = gl.demand_to_proposal(d4, 1, 0.65, 100.0)
+	_record("2026-11-14：来源线「扩展线」映射到部门「扩张线」",
+			String(p4.get("id", "")) == "Kz001"
+			and String(p4.get("动作", "")) == gl.ACT_SCOUT,
+			"id=%s 动作=%s" % [String(p4.get("id", "")), String(p4.get("动作", ""))])
+	# 玩家指令：权重只影响排序，不改紧迫度
+	var props: Array = [
+		gl.proposal_make(gl.DEPT_OPS, 1, gl.ACT_TRAIN, "footman", 1, 0.90, "",
+			0, 0, gl.DONE_TRAINED, 1000.0),
+		gl.proposal_make(gl.DEPT_COMBAT, 900, gl.ACT_ATTACK_REGION, "@10,10", 1,
+			1.0, "", 0, 0, gl.DONE_ARRIVED, 1000.0),
+	]
+	(props[1] as Dictionary)["权重"] = 3.0
+	var sel: Dictionary = gl.select(props, 1000, 0.6)
+	var main: Dictionary = sel.get("主目标", {})
+	_record("2026-11-14：玩家指令（权重 3.0）当上主目标，紧迫度仍是原值",
+			String(main.get("对象", "")) == "@10,10"
+			and is_equal_approx(float(main.get("紧迫度", -1.0)), 1.0)
+			and float(main.get("_分", 0.0)) > 0.90,
+			"主目标=%s 分数=%.2f" % [String(main.get("对象", "")),
+				float(main.get("_分", 0.0))])
+	# 权重再高也过不了预算：同一条建议，金币只有 100 时 200 金的建造照样被截断
+	var props2: Array = [
+		gl.proposal_make(gl.DEPT_OPS, 1, gl.ACT_BUILD, "farm", 1, 0.70, "", 200, 0,
+			gl.DONE_BUILT, 1000.0),
+	]
+	var sel2: Dictionary = gl.select(props2, 100, 0.6)
+	var m2: Dictionary = sel2.get("主目标", {})
+	_record("2026-11-14：权重/紧迫度都不能越过金币预算（200 金诉求 + 100 金 → 截断）",
+			int((m2.get("预留", {}) as Dictionary).get("金币", -1)) == 100
+			and int(sel2.get("截断", 0)) == 1,
+			"预留=%d 截断=%d" % [int((m2.get("预留", {}) as Dictionary).get("金币", -1)),
+				int(sel2.get("截断", 0))])
 
 
 # ===========================================================================
