@@ -549,7 +549,9 @@ func _allow(id: String, spec: Dictionary, now: float, dur: float) -> bool:
 
 
 func _play2d(id: String, volume_db: float, jitter: float, bus: String = "") -> void:
-	var s := _stream(id)
+	# 合成音效不需要文件：命中映射就不去 _stream（实现"音效不依赖 wav/ogg"）
+	var synth_key := String(SYNTH_KEYS.get(id, ""))
+	var s: AudioStream = _stream(id) if synth_key.is_empty() else null
 	if _pool2d.is_empty():
 		return
 	var spec := _spec_of(id)
@@ -575,7 +577,8 @@ func _play2d(id: String, volume_db: float, jitter: float, bus: String = "") -> v
 
 
 func _play3d(id: String, pos: Vector3, volume_db: float) -> void:
-	var s := _stream(id)
+	var synth_key := String(SYNTH_KEYS.get(id, ""))
+	var s: AudioStream = _stream(id) if synth_key.is_empty() else null
 	if _pool3d.is_empty():
 		return
 	var spec := _spec_of(id)
