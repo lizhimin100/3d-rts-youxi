@@ -47,6 +47,12 @@ addons/     Godot 编辑器插件（地图编辑器）。不进发行版。
 - `PackedByteArray` 是值类型：从 Dictionary 取出来 append 后**必须写回**，否则数据悄悄丢（调试接口踩过）。
 - 目录迁移/重导入后，编辑器可能缓存"脚本还没编译好"的资源，表现为"打开原地图提示不是 MapDef"。
   `MapStore.load_tres` 已加 `CACHE_MODE_IGNORE` 重读 + 逐字段兜底；还报就重启编辑器或 `--import`。
+- **搬目录最容易漏的是 `addons/`（2026-11-14 踩过）**：地图编辑器是 EditorPlugin，一条
+  `preload("res://旧路径/…")` 会让**整个插件** Parse Error —— 先报"文件不存在"，再连带十几行
+  "Cannot infer the type of …"（`const Spec` 一变 Any，用它的变量全推断不出来），最后只给你一句
+  `Invalid call. Nonexistent function 'new' in base 'GDScript'`，看报错根本看不出是路径问题。
+  搬完先跑 `--check`：`硬路径都指向真实文件` 那条会把**全部** preload / `.tres`+`.tscn` 的
+  ext_resource / `project.godot` 的自动加载与插件清单逐条对一遍（当前 334 条）。
 
 ## 验证命令
 

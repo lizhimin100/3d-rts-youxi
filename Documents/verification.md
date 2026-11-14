@@ -257,3 +257,36 @@ NEGATIVE 全部通过（6 个改坏场景都被抓到）✓
 - 没有证明所有旧 UI 都迁到 i18n；存量仍按预算冻结。
 - 没有完成 `Game/` 全量迁移：本轮只下沉了“可用性”这一刀；单位状态机/技能结算/AI 仍在 `Game/`。
 - 地图编辑器截图在无头模式下拿不到视口图像；但“打开地图”本身已验证成功。
+
+## 9. 补丁（2026-11-14 · 地图编辑器插件打不开）
+
+**症状**（用户贴的编辑器启动日志）：
+
+```text
+ERROR: res://addons/map_editor/主屏.gd:22 - Parse Error: Preload file "res://代码/界面/界面规格.gd" does not exist.
+ERROR: res://addons/map_editor/主屏.gd:22 - Parse Error: Cannot infer the type of "Spec" constant …
+ERROR: res://addons/map_editor/主屏.gd:391 - Parse Error: Cannot infer the type of "title" variable …
+…（共 13 行"类型推断失败"，全是 Spec / MAP_SCALE 的下游）
+ERROR: res://addons/map_editor/插件.gd:26 - Invalid call. Nonexistent function 'new' in base 'GDScript'.
+```
+
+**根因**：七块砖重排把 `代码/界面/界面规格.gd` → `Views/hud/界面规格.gd`、
+`代码/地图核心/地图缩放.gd` → `Game/map/地图缩放.gd`，但 `addons/` 里这两条 `preload` 没跟着改。
+插件是 EditorPlugin，一条 preload 挂掉 → 整个脚本 `valid=false` → `load(...).new()` 才报那句
+看不出因果的 `Nonexistent function 'new'`。
+
+**修复**：两条 preload 指到新位置（`const Spec` / `const MAP_SCALE` 的名字一个没动，下游 1100 行不用改）。
+
+**新增检查**（`Tests/checks/check_all.gd` → `_check_hard_paths`）：把所有 preload、
+`.tres/.tscn` 的 ext_resource、`project.godot` 的自动加载/插件清单逐条对磁盘（本轮 334 条），
+全绿才算过。**反向验证**：临时放一个 `preload("res://Views/hud/这个文件故意不存在.gd")`，
+检查立刻报红并指出 `文件:行 → 路径`，删掉后恢复 95/0。
+
+**顺手**：`dist/.gdignore`（`export_release.ps1` 里补写），消掉每次启动的
+`Detected another project.godot at res://dist/demo`——发布副本是两份完整源码，不该被 res:// 扫。
+
+**仍然有的 WARNING**（与本次无关，已记录在案）：
+`[野怪营地表] 锚点「creep_den」重复默认配置（camp_den.json 只作为 camp_id 可选）` ——
+玩家在地图编辑器里自建的 `camp_creep_den_1` 和 `camp_den` 抢同一个锚点建筑，先到先得，
+按 `Documents/野怪营地.md` 的设计是允许的，只在启动时提示一次。
+

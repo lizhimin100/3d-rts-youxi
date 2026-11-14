@@ -33,6 +33,7 @@ func _run() -> void:
 	print("========== 地基体检（run-game --check） ==========")
 	_cfg = root.get_node_or_null("Cfg")
 	_check_layout()
+	_check_hard_paths()
 	_check_data_json()
 	_check_cards()
 	_check_card_io()
@@ -74,6 +75,65 @@ func _check_layout() -> void:
 		if not text.contains(a):
 			lack.append(a.trim_suffix("="))
 	_ok("引擎层自动加载已注册（9 个）", lack.is_empty(), "缺：" + ", ".join(lack))
+
+
+# ===========================================================================
+# 1b. 硬路径完整性（preload / ext_resource / project.godot）
+#
+# 为什么单开一条：2026-11-14 按七块砖重排目录后，`addons/map_editor/主屏.gd` 里还留着两条
+# `preload("res://代码/…")`，结果**整个编辑器插件 Parse Error**：先报两条"文件不存在"，
+# 再连带 13 行"类型推断失败"（const Spec / MAP_SCALE 无类型 → 所有用它们的变量都推断不出来），
+# 最后由 插件.gd 报一句极具误导性的 `Nonexistent function 'new' in base 'GDScript'`。
+# 搬文件的真正代价就是这种硬路径漏网：preload 指向不存在的文件**永远是 bug**，不是可选依赖。
+# 所以这里把三类硬路径一次性钉死：脚本 preload、.tres/.tscn 的 ext_resource、project.godot。
+# ===========================================================================
+const REF_SCAN_DIRS := ["Engine", "Model", "Views", "Game", "Content", "Tests", "Tools", "addons"]
+## preload("res://…") / preload('res://…')
+const RE_PRELOAD := "preload\\(\\s*[\"'](res://[^\"']+)[\"']"
+## .tres / .tscn 里的 ext_resource 行；写属性用的是 `key = "…"`（有空格），不会误伤
+const RE_RES_PATH := "path=\"(res://[^\"]+)\""
+## project.godot 里所有 res:// 字面量（主场景 / 图标 / 自动加载 / 插件清单）
+const RE_ANY_RES := "(res://[^\"',)\\s]+)"
+
+
+func _check_hard_paths() -> void:
+	var re_preload := RegEx.new()
+	re_preload.compile(RE_PRELOAD)
+	var re_res := RegEx.new()
+	re_res.compile(RE_RES_PATH)
+	var re_any := RegEx.new()
+	re_any.compile(RE_ANY_RES)
+	var problems: Array[String] = []
+	var count := 0
+	for d in REF_SCAN_DIRS:
+		for f in _walk("res://" + d):
+			var short: String = f.replace("res://", "")
+			var ext: String = f.get_extension()
+			if ext == "gd":
+				var line_no := 0
+				for line in _read(f).split("\n"):
+					line_no += 1
+					# 注释里的路径示例（写法教学）不算引用
+					if line.strip_edges().begins_with("#"):
+						continue
+					for m in re_preload.search_all(line):
+						count += 1
+						var p := m.get_string(1)
+						if not FileAccess.file_exists(p):
+							problems.append("%s:%d preload → %s" % [short, line_no, p])
+			elif ext == "tres" or ext == "tscn":
+				for m in re_res.search_all(_read(f)):
+					count += 1
+					var p := m.get_string(1)
+					if not FileAccess.file_exists(p):
+						problems.append("%s ext_resource → %s" % [short, p])
+	for m in re_any.search_all(_read("res://project.godot")):
+		count += 1
+		var auto_path := m.get_string(1)
+		if not FileAccess.file_exists(auto_path):
+			problems.append("project.godot → %s" % auto_path)
+	_ok("硬路径都指向真实文件（preload / ext_resource / 自动加载 %d 条）" % count,
+		problems.is_empty(), "; ".join(problems.slice(0, 6)))
 
 
 # ===========================================================================

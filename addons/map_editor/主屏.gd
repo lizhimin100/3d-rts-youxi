@@ -19,6 +19,8 @@ extends VBoxContainer
 
 const VIEWPORT_SCRIPT := "res://addons/map_editor/视口.gd"
 ## 全套设计令牌（配色/字号/样式工厂）——编辑器只用 editor_ 那一档冷色
+## 2026-11-14 七块砖重排后路径变了（旧 `res://代码/界面/界面规格.gd` 已不存在）。
+## 这类"preload 指向已搬走的文件"会让整个插件 Parse Error 全屏红，别再写旧路径。
 const Spec := preload("res://Views/hud/界面规格.gd")
 ## 工具栏/层栏的按钮定义（表驱动，加按钮只改这张表）
 const 按钮表 := preload("res://addons/map_editor/按钮表.gd")
@@ -33,6 +35,7 @@ const CAMP_DIALOG_SCRIPT := preload("res://addons/map_editor/营地弹窗.gd")
 const CARD_DIALOG_SCRIPT := preload("res://addons/map_editor/卡片弹窗.gd")
 const SKILL_DIALOG_SCRIPT := preload("res://addons/map_editor/技能弹窗.gd")
 ## 地图尺寸缩放（每边加 N 米）。2026-11-08 玩家要求
+## 2026-11-14 随七块砖重排迁到 Game/map/（旧 `res://代码/地图核心/地图缩放.gd` 作废）
 const MAP_SCALE := preload("res://Game/map/地图缩放.gd")
 ## 功能索引窗（人类/agent 都能一键查「这个按钮在哪、实现写在哪」）
 const HELP_DIALOG_SCRIPT := preload("res://addons/map_editor/帮助窗.gd")
