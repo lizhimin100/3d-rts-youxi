@@ -99,6 +99,10 @@ extends Resource
 @export var gold_cost: int = 0
 @export var wood_cost: int = 0
 @export var food_cost: int = 0
+## **短局 CP 成本**。由 `Content/data/game.json` 的 `short_cp_costs` 字典在
+## `配置入口._apply_short_costs()` 里写进来；长局完全忽略。
+## 不放进单位卡：短局和长局是两套资源，混在一张卡上会被误改。
+@export var cp_cost: int = 0
 ## 训练 / 建造耗时（秒）
 @export var train_time: float = 10.0
 ## **主城等级**（建筑用）：1 = 一本 / 2 = 二本。只有大本营有意义。

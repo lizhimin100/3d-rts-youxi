@@ -134,6 +134,8 @@ var _master_target: float = 1.0
 # ===========================================================================
 
 func _ready() -> void:
+	# 准备阶段世界暂停，指令虚线仍要在执行时正常画；节点本身必须常驻。
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	name = "移动指示"
 	_build_visual()
 	# 只订阅全局信号：指令系统 / 单位脚本一行都不用改

@@ -34,6 +34,8 @@ var _pending: int = 0
 
 
 func _ready() -> void:
+	# 准备阶段世界暂停，战区指令仍然是要能下的"意图"。
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	print("[战区] 指令输入就绪：按钮 / F5 进攻 · F6 防守 · F7 占据 · F8 生产；点目标或点区域，右键取消")
 
 

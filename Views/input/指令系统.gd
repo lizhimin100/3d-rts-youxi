@@ -38,6 +38,10 @@ const FORMATION_SPACING := 1.9
 const REFIT := preload("res://Game/systems/建筑改造.gd")
 const 可用性查询 := preload("res://Game/config/可用性查询.gd")
 const 可用性文案 := preload("res://Game/config/可用性文案.gd")
+## 命令记录（名词化后的命令；准备阶段入队，执行阶段统一发出）
+const CmdRecord := preload("res://Game/commands/命令记录.gd")
+## 计划命令上限：面板只显示 6 条，留 2 条余量
+const PLAN_MAX := 8
 ## 训练队列上限
 ## 2026-11-01：5 → 10。玩家要求底栏队列"最多显示 7 个，再多翻页"，
 ## 上限还是 5 的话那段分页逻辑永远走不到（7 格永远排不满）。
@@ -56,6 +60,10 @@ var pending_ability: StringName = &""
 ## 等待设置集结点的建筑（null = 用当前选中的建筑）
 var _rally_building: Node = null
 
+## **计划命令**（准备阶段入队；执行阶段由 execute_planned 统一发出）
+## 元素 = 命令记录（Game/commands/命令记录.gd）
+var planned: Array = []
+
 ## 建造预览（半透明盒子）
 var _ghost: MeshInstance3D = null
 var _ghost_mat: StandardMaterial3D = null
@@ -73,6 +81,8 @@ var _hud: Node = null
 # ===========================================================================
 
 func _ready() -> void:
+	# 准备阶段要能排队命令/放建筑/点训练，必须无视 paused。
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	Game.game_over.connect(_on_game_over)
 
 
@@ -89,6 +99,242 @@ func _process(_delta: float) -> void:
 ## 是否在等落点（选择系统据此让出左键）
 func has_pending() -> bool:
 	return pending != Pending.NONE
+
+
+# ===========================================================================
+# 计划命令（短局：准备阶段排队，执行阶段统一发出）
+# ===========================================================================
+
+func planned_count() -> int:
+	return planned.size()
+
+
+## 给面板/自检用的只读快照（不含 Node 引用，只有文本与坐标）
+func planned_records() -> Array:
+	var out: Array = []
+	for r in planned:
+		out.append({
+			"kind": int(r.kind),
+			"squad_id": int(r.squad_id),
+			"point": r.point,
+			"text": String(r.call("text")),
+			"units": int(r.unit_ids.size()),
+		})
+	return out
+
+
+func clear_planned() -> void:
+	planned.clear()
+
+
+func remove_planned(i: int) -> void:
+	if i >= 0 and i < planned.size():
+		planned.remove_at(i)
+
+
+## 当前选中单位所属/新建的小队。**命令记录的第一等公民**：
+## 选中 2 人以上时，优先复用"包含这批人全部成员"的现有小队；
+## 否则新建一支（不会把单兵硬塞进别人的队）。
+func _squad_for(units: Array):
+	if Game.squads == null or Game.player_faction == null:
+		return null
+	if units.size() >= 2:
+		var found = Game.squads.call("find_containing", units)
+		if found != null:
+			return found
+	# 新建前先从旧队摘掉：一个单位只属于一支队（避免"同一人出现在两队"）。
+	Game.squads.call("detach_units", units)
+	return Game.squads.call("create", Game.player_faction, units)
+
+
+## 可编入小队的单位：只收"会动的"，建筑不进小队（塔的 orders 另走单点）。
+## **Squad 一等公民**：选中一个成员 → 自动扩展到整队（命令是下给队的，不是下给个人的）。
+## 想只动一个人，先把他从队里拆出去（当前版本不做"单体微操"）。
+func _plan_units() -> Array:
+	var out: Array = []
+	for u in _selected_units():
+		if u == null or not is_instance_valid(u):
+			continue
+		if not (u is RtsUnit) or not (u as RtsUnit).is_mobile():
+			continue
+		var sq = null
+		if Game.squads != null:
+			sq = Game.squads.call("find_by_member", u)
+		if sq != null:
+			for m in (sq.get("members") as Array):
+				if m != null and is_instance_valid(m) and not out.has(m):
+					out.append(m)
+		elif not out.has(u):
+			out.append(u)
+	return out
+
+
+func _ids_of(units: Array) -> Array[int]:
+	var out: Array[int] = []
+	for u in units:
+		if u != null and is_instance_valid(u):
+			out.append(int((u as Node).get_instance_id()))
+	return out
+
+
+## 入队一条命令。返回是否成功（空选中/满员失败）。
+func _add_plan(kind: int, units: Array, point: Vector3, target: Node3D = null,
+		ability: StringName = &"", label: String = "", slots: Array = []) -> bool:
+	if units.is_empty():
+		return false
+	if planned.size() >= PLAN_MAX:
+		_toast("计划最多 %d 条，先执行或清空" % PLAN_MAX, _warn())
+		return false
+	var sq = _squad_for(units)
+	if sq != null:
+		sq.set("anchor", point)
+		sq.set("stance", kind)
+		# 攻击记录共享目标；移动/停止/驻守必须清掉旧目标，否则小队面板还挂着上一场的敌人。
+		sq.set("shared_target", target if target != null and is_instance_valid(target) else null)
+	var rec = CmdRecord.make(kind, int(sq.id) if sq != null else 0,
+			_ids_of(units), point,
+			int(target.get_instance_id()) if target != null and is_instance_valid(target) else 0,
+			ability, label, slots)
+	planned.append(rec)
+	_toast("已加入计划：%s" % String(rec.call("text")), _accent())
+	return true
+
+
+## 计划：移动（带编队槽位）
+func queue_move(center: Vector3) -> void:
+	var units := _plan_units()
+	if units.is_empty():
+		return
+	var slots := _formation_points(center, units.size(), FORMATION_SPACING)
+	_add_plan(RtsConst.Order.MOVE, units, center, null, &"", "移动", slots)
+
+
+## 计划：攻击指定目标
+func queue_attack(target: Node3D) -> void:
+	var units := _plan_units()
+	if units.is_empty() or target == null:
+		return
+	var d := _def_of(target)
+	_add_plan(RtsConst.Order.ATTACK, units, target.global_position, target, &"",
+			"攻击 %s" % (d.display_name if d != null else "目标"))
+
+
+## 计划：攻击移动（带编队槽位）
+func queue_attack_move(center: Vector3, near_foe: Node3D = null) -> void:
+	var units := _plan_units()
+	if units.is_empty():
+		return
+	var slots := _formation_points(center, units.size(), FORMATION_SPACING)
+	_add_plan(RtsConst.Order.ATTACK_MOVE, units, center, near_foe, &"", "攻击移动", slots)
+
+
+## 计划：停止 / 驻守
+func queue_stop() -> void:
+	var units := _plan_units()
+	if not units.is_empty():
+		_add_plan(RtsConst.Order.STOP, units, Vector3.ZERO, null, &"", "停止")
+
+
+func queue_hold() -> void:
+	var units := _plan_units()
+	if not units.is_empty():
+		_add_plan(RtsConst.Order.HOLD, units, Vector3.ZERO, null, &"", "驻守")
+
+
+## 计划：采集
+func queue_gather(node: Node3D) -> void:
+	var workers := _selected_workers()
+	if workers.is_empty() or node == null:
+		return
+	var d := _def_of(node)
+	_add_plan(RtsConst.Order.GATHER, workers, node.global_position, node, &"",
+			"采集 %s" % (d.display_name if d != null else "资源"))
+
+
+## 计划：修理
+func queue_repair(b: Node3D) -> void:
+	var workers := _selected_workers()
+	if workers.is_empty() or b == null:
+		return
+	var d := _def_of(b)
+	_add_plan(RtsConst.Order.REPAIR, workers, b.global_position, b, &"",
+			"修理 %s" % (d.display_name if d != null else "建筑"))
+
+
+## 计划：施法
+func queue_cast(ability: StringName, ground: Vector3, target: Node3D = null) -> void:
+	var units := _plan_units()
+	if units.is_empty():
+		return
+	_add_plan(RtsConst.Order.CAST, units, ground, target, ability, "技能")
+
+
+## **执行全部计划**（回合控制器调用）。世界此时仍然冻结；
+## 命令只写进单位的 order_* 字段，解冻后才真正跑。
+## 每条记录只发一次 order_issued —— 控制权/移动指示/副官都按"一条命令"处理。
+func execute_planned() -> void:
+	var batch: Array = planned.duplicate()
+	planned.clear()
+	if batch.is_empty():
+		return
+	for rec in batch:
+		_execute_record(rec)
+	if Game.squads != null:
+		Game.squads.call("prune_all")
+	_toast("执行计划：%d 条" % batch.size(), _accent())
+
+
+func _execute_record(rec) -> void:
+	var units: Array = rec.call("resolve_units", Game.player_faction)
+	if units.is_empty():
+		return
+	var target: Node3D = rec.call("resolve_target")
+	var kind: int = int(rec.kind)
+	var point: Vector3 = rec.point
+	match kind:
+		RtsConst.Order.MOVE:
+			for i in units.size():
+				var u = units[i]
+				if u.has_method("order_move"):
+					u.order_move(rec.call("slot_at", i, point))
+		RtsConst.Order.ATTACK_MOVE:
+			for i in units.size():
+				var u2 = units[i]
+				if u2.has_method("order_attack_move"):
+					u2.call("order_attack_move", rec.call("slot_at", i, point))
+				elif u2.has_method("order_move"):
+					u2.order_move(rec.call("slot_at", i, point))
+		RtsConst.Order.ATTACK:
+			for u3 in units:
+				if target != null and is_instance_valid(target) and u3.has_method("order_attack"):
+					u3.order_attack(target)
+				elif u3.has_method("order_attack_move"):
+					u3.call("order_attack_move", point)
+		RtsConst.Order.STOP:
+			for u4 in units:
+				if u4.has_method("order_stop"):
+					u4.order_stop()
+		RtsConst.Order.HOLD:
+			for u5 in units:
+				if u5.has_method("order_hold"):
+					u5.order_hold()
+		RtsConst.Order.GATHER:
+			if target != null and is_instance_valid(target):
+				for u6 in units:
+					if u6.has_method("order_gather"):
+						u6.order_gather(target)
+		RtsConst.Order.REPAIR:
+			if target != null and is_instance_valid(target):
+				for u7 in units:
+					if u7.has_method("order_repair"):
+						u7.call("order_repair", target)
+		RtsConst.Order.CAST:
+			for u8 in units:
+				if u8.has_method("order_cast"):
+					u8.order_cast(rec.ability, point, target)
+		_:
+			pass
+	Game.order_issued.emit(units, kind, point, target)
 
 
 ## 当前等待状态的提示文案（界面显示在鼠标旁）
@@ -197,6 +443,9 @@ func request_cancel_train_at(idx: int) -> void:
 ##   读满由建筑自己调 建筑改造.replace 换型号。
 ## 数值口径唯一出口：`Game/systems/建筑改造.gd`（AI 走的是同一个入口）。
 func request_upgrade_tower() -> void:
+	if Game.short_match:
+		_toast("短局暂不支持建筑升级", _warn())
+		return
 	var b := _primary_building()
 	if b == null or b.def == null:
 		return
@@ -223,6 +472,9 @@ func request_upgrade_tower() -> void:
 
 ## **升二本**（大本营 → 联盟要塞）。和哨塔升级同一套：补差价 + 读条 + 施工中模型。
 func request_upgrade_townhall() -> void:
+	if Game.short_match:
+		_toast("短局暂不支持升二本", _warn())
+		return
 	var b := _primary_building()
 	if b == null or b.def == null:
 		return
@@ -249,6 +501,9 @@ func request_upgrade_townhall() -> void:
 
 ## 研究一项铁匠铺升级（命令卡调用）：花费/上限全部读 Cfg 的研究定义。
 func request_research(research_id: StringName) -> void:
+	if Game.short_match:
+		_toast("短局暂不支持科技研究", _warn())
+		return
 	var b := _primary_building()
 	if b == null:
 		return
@@ -303,6 +558,11 @@ func request_ability(ability_id: StringName) -> void:
 
 ## 对自己/对全队施放一个无目标技能（开关类）
 func _cast_self(ability_id: StringName) -> void:
+	if Game.is_prepare():
+		var us := _selected_units()
+		if not us.is_empty():
+			queue_cast(ability_id, (us[0] as Node3D).global_position, null)
+		return
 	var n: int = 0
 	for u in _selected_units():
 		if u == null or not is_instance_valid(u) or not u.has_method("order_cast"):
@@ -363,6 +623,10 @@ func _patrol(ground: Vector3) -> void:
 	var units := _selected_units()
 	if units.is_empty():
 		return
+	# 准备阶段没有"往返巡逻"的计划语义：先按攻击移动记一条（执行阶段照样会打）。
+	if Game.is_prepare():
+		queue_attack_move(ground, null)
+		return
 	var did: int = 0
 	for u in units:
 		if u.has_method("order_patrol"):
@@ -385,6 +649,9 @@ func request_attack_move() -> void:
 
 ## 进入修理模式（命令卡「修理」调用）：下一次左键点自家受损建筑
 func request_repair() -> void:
+	if Game.short_match:
+		_toast(I18n.t("short.no_repair"), _warn())
+		return
 	if _selected_workers().is_empty():
 		_toast("需要选中农民才能修理", _warn())
 		return
@@ -396,9 +663,15 @@ func request_repair() -> void:
 
 ## 真的下达修理（左键点了建筑 / 右键点了自家受损建筑都走这里）
 func repair_building(b: Node3D) -> int:
+	if Game.short_match:
+		_toast(I18n.t("short.no_repair"), _warn())
+		return 0
 	var workers := _selected_workers()
 	if workers.is_empty() or b == null:
 		return 0
+	if Game.is_prepare():
+		queue_repair(b)
+		return workers.size()
 	var did: int = 0
 	for w in workers:
 		if w.has_method("order_repair") and bool(w.call("order_repair", b)):
@@ -491,7 +764,9 @@ func _on_pending_left_click(screen_pos: Vector2) -> void:
 
 ## 快捷键（每帧轮询 action；注意输入配置里 攻击移动 是 F，不是 A）
 func _handle_hotkeys() -> void:
-	if Game.phase != RtsConst.Phase.RUNNING:
+	# 准备阶段允许 B（建造）/F（攻击移动）/X/H（停止/驻守）——
+	# 它们会被下面的 _issue_* 走"计划"分支；对局结束才整体禁用。
+	if Game.is_over():
 		return
 	if Input.is_action_just_pressed(InputSetup.CMD_ATTACK_MOVE):
 		request_attack_move()
@@ -559,6 +834,9 @@ func _context_order(screen_pos: Vector2) -> void:
 		var node := target as RtsHarvestable
 		var workers := _selected_workers()
 		if not workers.is_empty():
+			if Game.is_prepare():
+				queue_gather(node)
+				return
 			for w in workers:
 				_order_gather(w, node)
 			Game.order_issued.emit(workers, RtsConst.Order.GATHER, node.global_position, node)
@@ -572,6 +850,9 @@ func _context_order(screen_pos: Vector2) -> void:
 	if target is RtsUnit and pl != null and target.get("faction") != pl:
 		var foe := target as RtsUnit
 		if foe.is_alive():
+			if Game.is_prepare():
+				queue_attack(foe)
+				return
 			for u in units:
 				if u.has_method("order_attack"):
 					u.order_attack(foe)
@@ -601,6 +882,9 @@ func _context_order(screen_pos: Vector2) -> void:
 			if b.can_repair():
 				repair_building(b)
 				return
+			if Game.is_prepare():
+				queue_move(_walkable(b.global_position))
+				return
 			for w in workers:
 				if w.has_method("order_return_res"):
 					w.call("order_return_res")
@@ -616,6 +900,9 @@ func _context_order(screen_pos: Vector2) -> void:
 ## 带编队偏移的移动
 func _issue_move(units: Array, center: Vector3) -> void:
 	if units.is_empty():
+		return
+	if Game.is_prepare():
+		queue_move(center)
 		return
 	var pts := _formation_points(center, units.size(), FORMATION_SPACING)
 	for i in range(units.size()):
@@ -641,6 +928,9 @@ func _attack_move(center: Vector3, screen_pos: Vector2) -> void:
 		var t := _pick_any(ro, rd)
 		if t is RtsUnit and t.get("faction") != Game.player_faction and (t as RtsUnit).is_alive():
 			near_foe = t as Node3D
+	if Game.is_prepare():
+		queue_attack_move(center, near_foe)
+		return
 	var pts := _formation_points(center, units.size(), FORMATION_SPACING)
 	for i in range(units.size()):
 		var u = units[i]
@@ -666,6 +956,9 @@ func _cast_at(ability: StringName, ground: Vector3, screen_pos: Vector2) -> void
 		var ro: Vector3 = cam.project_ray_origin(screen_pos)
 		var rd: Vector3 = cam.project_ray_normal(screen_pos)
 		target = _pick_any(ro, rd)
+	if Game.is_prepare():
+		queue_cast(ability, ground, target)
+		return
 	var any: bool = false
 	for u in units:
 		if u == null or not is_instance_valid(u):
@@ -681,6 +974,12 @@ func _cast_at(ability: StringName, ground: Vector3, screen_pos: Vector2) -> void
 func _issue_simple(order: int, label: String) -> void:
 	var units := _selected_units()
 	if units.is_empty():
+		return
+	if Game.is_prepare():
+		if order == RtsConst.Order.STOP:
+			queue_stop()
+		elif order == RtsConst.Order.HOLD:
+			queue_hold()
 		return
 	for u in units:
 		if order == RtsConst.Order.STOP and u.has_method("order_stop"):

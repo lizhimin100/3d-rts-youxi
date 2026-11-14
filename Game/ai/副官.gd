@@ -200,6 +200,9 @@ func _clear_directives() -> void:
 # ===========================================================================
 
 func _maybe_hint_low_odds(now: float) -> void:
+	# P3：副官静默执行，不主动弹窗/不建议。短局完全关闭建议通道。
+	if Game.short_match:
+		return
 	if now - _last_hint < HINT_COOLDOWN:
 		return
 	var ratio: float = float(metrics.get("army_ratio", 1.0))
@@ -217,6 +220,8 @@ func _maybe_hint_low_odds(now: float) -> void:
 
 ## 基地遇袭但玩家把兵锁在旁边不动 → 只建议，不抢
 func _maybe_hint_request_control() -> void:
+	if Game.short_match:
+		return
 	var now: float = Game.elapsed
 	if now - _last_hint < HINT_COOLDOWN:
 		return
@@ -252,6 +257,33 @@ func _maybe_hint_request_control() -> void:
 ##   整段覆写已删除（连同 `_manage_waves` / `_manage_patrol` 两个同样的死覆写）。
 func peasant_cap() -> int:
 	return PEASANT_MAX
+
+
+# --- 短局：农民只当工程兵，不采矿/砍树/自动补农 ---
+# 这些覆写拦住父类 dept=on / dept=off 两条路径里的派工入口；
+# 不拦的话，副官会把玩家仅有的 5 个农民派去矿边排队，短局 CP 经济直接空转。
+func _assign_workers(_diff: DifficultyDef) -> void:
+	if Game.short_match:
+		return
+	super._assign_workers(_diff)
+
+
+func _rebalance_gatherers(total: int) -> void:
+	if Game.short_match:
+		return
+	super._rebalance_gatherers(total)
+
+
+func _manage_peasants(diff: DifficultyDef) -> void:
+	if Game.short_match:
+		return
+	super._manage_peasants(diff)
+
+
+func _manage_repair() -> void:
+	if Game.short_match:
+		return
+	super._manage_repair()
 
 
 ## 覆盖：**只挑闲着的农民**盖房。父类会从采集队里抽人，
@@ -290,6 +322,9 @@ func _can_spend_army(id: StringName) -> bool:
 		return false
 	if _faction == null:
 		return false
+	# 短局：`_can_spend` 已经按 CP 判过；这里不再用金币保留额（金币恒 0）。
+	if Game.short_match:
+		return true
 	if float(metrics.get("base_threat", 0.0)) > 0.0 or _pop_critical():
 		return true
 	# 正在为二本/分基地攒钱（差额 ≤ 150）：军队先别把这一笔吃掉。
@@ -381,7 +416,8 @@ func _manage_idle_dispatch() -> void:
 			army.append(u)
 
 	# --- 农民：闲着就去采 ---
-	if not workers.is_empty():
+	# 短局没有采集经济：农民只当工程兵（建造/修理），不派去矿/树。
+	if not Game.short_match and not workers.is_empty():
 		var drop: Vector3 = _wood_dropoff()
 		# ★ 2026-11-14：金矿每座只进 1 个农民（可采集物.max_slots），
 		#   采金的人已经占满所有载位时，再派人过去只能在矿外排队 —— 改去砍树。

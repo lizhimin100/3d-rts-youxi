@@ -24,6 +24,9 @@ signal building_completed(building: Node3D)
 signal resources_changed(faction: RtsFaction)
 ## 选择集合变化
 signal selection_changed(units: Array)
+## 对局阶段变化（准备 → 执行 → 胜利/失败）
+## ★ 唯一入口是 set_phase()；不要再直接写 phase = ...
+signal phase_changed(old_phase: int, new_phase: int)
 ## 战斗命中（伤害数字、火花、震屏都靠它）
 signal combat_hit(attacker: Node3D, target: Node3D, damage: float, is_crit: bool)
 ## 投射物命中
@@ -49,6 +52,15 @@ signal adjutant_hint(payload: Dictionary)
 var phase: int = RtsConst.Phase.PREPARE
 ## 已经进行的秒数（只在 RUNNING 阶段累加）
 var elapsed: float = 0.0
+## **短局模式**：准备阶段（世界暂停）+ 执行阶段（实时）+ CP 运营。
+## 长局（默认）仍是原来的即时战略；短局由 `--short` 或 `--round-test` 开启。
+## ★ 必须在 HUD/主场景 _ready 之前定下来（Game 是自动加载，先于主场景）。
+var short_match: bool = false
+## 回合控制器（短局由主场景挂载；长局为 null）
+var round_control: Node = null
+## **小队注册表**（全局唯一，RefCounted；见 Game/systems/小队注册表.gd）
+## 小队是命令的一等公民：命令记录只存 squad_id + unit_ids，执行时按小队成员解析。
+var squads = null
 ## 生成序号（节点名用）。必须是确定性的：同 seed 复跑要得到同一串名字。
 var _spawn_seq: int = 0
 ## 难度下标
@@ -151,6 +163,14 @@ var _harvestables: Array = []
 ## 控制权登记表必须在**任何 AI 之前**建好：副官的 _ready 可能比本单例晚，
 ## 但 _process 里的 tick 一定早于 AI 的思考（同一帧里自动加载先跑）。
 func _ready() -> void:
+	# 短局开关必须在主场景/HUD 之前定下来（Game 是自动加载，先于主场景树）。
+	var args := OS.get_cmdline_user_args()
+	short_match = ("--short" in args) or ("--round-test" in args)
+	# 小队注册表：命令记录引用它，单位死亡时自动剔除成员。
+	var sq_script := load("res://Game/systems/小队注册表.gd")
+	if sq_script != null:
+		squads = sq_script.new()
+		squads.call("attach")
 	var s := load("res://Game/ai/控制权.gd")
 	if s != null:
 		control = s.new()
@@ -160,9 +180,53 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if phase == RtsConst.Phase.RUNNING:
 		elapsed += delta
+		# 短局：CP 是唯一运营资源，按秒回复（封顶）。
+		if short_match:
+			for f in factions:
+				if f != null and is_instance_valid(f):
+					f.tick_cp(delta)
 	# 命令组状态机：组内全部 idle 才算"命令结束"，然后进宽限期。
 	if control != null:
 		control.tick(elapsed)
+
+
+# ===========================================================================
+# 阶段（唯一入口）
+# ===========================================================================
+
+## 切阶段。**不要直接写 phase**——准备/结束阶段必须同时冻结世界。
+##
+## 冻结口径：`SceneTree.paused = true`。这样单位/建筑/AI/据点/日夜/投射物/
+## Timer/AnimationPlayer 默认全停；HUD/镜头/选择/指令等 UI 节点在各自 _ready
+## 里设了 `PROCESS_MODE_ALWAYS`，所以准备阶段仍然可以看、可以点、可以排命令。
+func set_phase(p: int) -> void:
+	var old: int = phase
+	phase = p
+	# 即使 old == p 也要重设 paused：建局时 phase 初始就是 PREPARE，
+	# 这里必须把树冻上，不能因为"值没变"就跳过。
+	if is_inside_tree():
+		var tree := get_tree()
+		if tree != null:
+			tree.paused = (p == RtsConst.Phase.PREPARE
+					or p == RtsConst.Phase.VICTORY
+					or p == RtsConst.Phase.DEFEAT)
+	if old != p:
+		phase_changed.emit(old, p)
+
+
+## 准备阶段（短局：世界暂停，可排命令/建造/训练）
+func is_prepare() -> bool:
+	return phase == RtsConst.Phase.PREPARE
+
+
+## 执行阶段（短局：实时推进）
+func is_executing() -> bool:
+	return phase == RtsConst.Phase.RUNNING
+
+
+## 对局已结束（胜利/失败）
+func is_over() -> bool:
+	return phase == RtsConst.Phase.VICTORY or phase == RtsConst.Phase.DEFEAT
 
 
 # ===========================================================================
@@ -207,6 +271,7 @@ func setup_factions(slots_override: int = 0, teams: Array = [], colors: Array = 
 		if i >= 4 and i < colors.size() and colors[i] is Color:
 			col = colors[i]
 		f.setup(i, human, cfg.slot_name(i, team), col, wealth, cfg.start_wood)
+		f.setup_cp(cfg.short_cp_start, cfg.short_cp_cap, cfg.short_cp_regen)
 		f.team = team
 		f.slot = i
 		f.is_ai = not human
@@ -220,6 +285,8 @@ func setup_factions(slots_override: int = 0, teams: Array = [], colors: Array = 
 	_units.clear()
 	_buildings.clear()
 	_harvestables.clear()
+	if squads != null:
+		squads.call("reset")
 	phase = RtsConst.Phase.PREPARE
 	elapsed = 0.0
 
@@ -299,8 +366,11 @@ func reset() -> void:
 	neutral_faction = null
 	level = null
 	day_night = null
+	round_control = null
 	phase = RtsConst.Phase.PREPARE
 	elapsed = 0.0
+	if squads != null:
+		squads.call("reset")
 	if control != null:
 		control.reset()
 
@@ -666,11 +736,16 @@ func faction_tier(f: RtsFaction) -> int:
 	return best
 
 
-## 能不能造
+## 能不能造。
+## **短局只认 CP + 人口**；长局仍是金 + 木 + 人口。两套资源不混。
 func can_afford(faction: RtsFaction, unit_id: StringName) -> bool:
 	var d: UnitDef = Cfg.unit(unit_id)
 	if d == null or faction == null:
 		return false
+	if short_match:
+		if d.cp_cost > 0 and faction.cp + 0.0001 < float(d.cp_cost):
+			return false
+		return faction.has_food(d.food_cost)
 	return faction.can_afford(d) and faction.has_food(d.food_cost)
 
 
@@ -691,17 +766,35 @@ func tier_allows(faction: RtsFaction, id: StringName) -> bool:
 	return faction_tier(faction) >= int(d.require_tier)
 
 
-## 扣费（含人口检查）；失败返回 false
+## 扣费（含人口检查）；失败返回 false。
+## 短局走 CP，长局走金木——调用方（训练/建造）不需要知道当前是哪套。
 func pay(faction: RtsFaction, unit_id: StringName) -> bool:
 	var d: UnitDef = Cfg.unit(unit_id)
 	if d == null or faction == null:
 		return false
 	if not faction.has_food(d.food_cost):
 		return false
-	if not faction.pay(d):
-		return false
+	if short_match:
+		if not faction.pay_cp(d.cp_cost):
+			return false
+	else:
+		if not faction.pay(d):
+			return false
 	resources_changed.emit(faction)
 	return true
+
+
+## 退款。**必须和 pay 对称**：短局退 CP，长局退金木。
+## 取消训练/取消工地都走这里，不要在业务里直接 add_resource。
+func refund(faction: RtsFaction, unit_id: StringName) -> void:
+	var d: UnitDef = Cfg.unit(unit_id)
+	if d == null or faction == null:
+		return
+	if short_match:
+		faction.add_cp(d.cp_cost)
+	else:
+		faction.add_res(d.gold_cost, d.wood_cost)
+	resources_changed.emit(faction)
 
 
 # ===========================================================================
@@ -750,17 +843,17 @@ func spawn_unit(faction: RtsFaction, unit_id: StringName, pos: Vector3,
 # 结束 / 提示
 # ===========================================================================
 
-## 玩家胜利
+## 玩家胜利。set_phase 会暂停世界（HUD 是 ALWAYS，遮罩照样能显示）。
 func trigger_victory() -> void:
 	if phase == RtsConst.Phase.RUNNING or phase == RtsConst.Phase.PREPARE:
-		phase = RtsConst.Phase.VICTORY
+		set_phase(RtsConst.Phase.VICTORY)
 		game_over.emit(true)
 
 
 ## 玩家失败
 func trigger_defeat() -> void:
 	if phase == RtsConst.Phase.RUNNING or phase == RtsConst.Phase.PREPARE:
-		phase = RtsConst.Phase.DEFEAT
+		set_phase(RtsConst.Phase.DEFEAT)
 		game_over.emit(false)
 
 

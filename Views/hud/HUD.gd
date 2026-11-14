@@ -43,6 +43,8 @@ const CRATE_BANNER_H := 46.0
 
 ## 建筑面板脚本（用 preload 而不是直接写 class_name：新类还没进全局 class 缓存时也能跑）
 const BUILDING_PANEL_SCRIPT := preload("res://Views/hud/建筑面板.gd")
+## 短局准备/执行面板（阶段标题 + 计划列表 + 开始/结束执行）
+const PREPARE_PANEL_SCRIPT := preload("res://Views/hud/准备面板.gd")
 
 ## 界面根节点（承载 theme，铺满视口）
 var root: Control = null
@@ -62,6 +64,8 @@ var _crate_label: Label = null
 var _gold_label: Label = null
 var _wood_label: Label = null
 var _food_label: Label = null
+## 短局指挥点（CP）；长局隐藏
+var _cp_label: Label = null
 var _pop_bar: MiniBar = null
 ## 人口条是否已满（只在翻转时改颜色，见 _refresh_stats）
 var _food_full: bool = false
@@ -160,6 +164,11 @@ var _card: RtsCommandCard = null
 var _card_panel: PanelContainer = null
 var _card_sig: String = ""
 
+## 短局：准备/执行面板（长局隐藏）
+var _prepare_panel: PanelContainer = null
+## 准备面板上一次的屏幕矩形（covers_point 用）
+var _prepare_rect: Rect2 = Rect2()
+
 ## 等待落点提示
 var _pending_box: PanelContainer = null
 var _pending_label: Label = null
@@ -216,6 +225,8 @@ class MiniBar extends Control:
 # ===========================================================================
 
 func _ready() -> void:
+	# 准备阶段整棵树是 paused 的；HUD 必须继续跑，否则看不到面板也点不了按钮。
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	layer = 1
 	root = Control.new()
 	root.name = "界面根"
@@ -240,6 +251,7 @@ func _ready() -> void:
 	_build_card()
 	_build_overhead()
 	_build_pending_label()
+	_build_prepare_panel()
 	_build_overlay()
 	_build_hide_hint()
 	_install_fx()
@@ -250,6 +262,7 @@ func _ready() -> void:
 	Game.selection_changed.connect(_on_selection_changed)
 	Game.notify.connect(_on_notify)
 	Game.game_over.connect(_on_game_over)
+	Game.phase_changed.connect(func(_o: int, _n: int) -> void: _apply_layout())
 
 	_refresh_stats()
 	_refresh_selection()
@@ -352,6 +365,7 @@ func _process_inner(delta: float) -> void:
 	_refresh_selection()
 	_refresh_pending()
 	_refresh_card(false)
+	_refresh_prepare_panel()
 	# 底栏高度要等控件重排后才算准（命令卡行数变了尤其明显）。
 	# 每 0.12s 比对一次"该多高 vs 现在多高"，差 1px 就重摆 ——
 	# 否则右下角会裁掉半行字，或者选中卡比命令卡矮一截（就是"一边低一边高"）。
@@ -696,6 +710,7 @@ func _apply_layout() -> void:
 		if _band_plate.show_medallion:
 			_band_plate.medallion_x = (gap_x0 + gap_x1) * 0.5 - plate_left
 
+	_place_prepare_panel()
 	_place_toasts()
 	# 气泡层铺满整个 root：**必须显式摆**，光靠 full-rect 锚点在这套
 	# "root 尺寸由 offset 反算"的结构里量到的是 (0,0)，气泡会挤在左上角。
@@ -878,6 +893,8 @@ func _build_stats() -> void:
 	_crate_label.add_theme_constant_override("outline_size", 4)
 	_crate_banner.add_child(_crate_label)
 
+	# 短局指挥点（长局由 _refresh_stats 隐藏）
+	_cp_label = _stat_pill(hb, "指挥点", Color(0.72, 0.86, 1.0), false, "flag")
 	_gold_label = _stat_pill(hb, "金币", Spec.gold(), false, "coin")
 	_wood_label = _stat_pill(hb, "木材", Spec.wood(), false, "wood")
 	_food_label = _stat_pill(hb, "人口", Spec.food(), true, "pop")
@@ -915,6 +932,14 @@ func _build_fps() -> void:
 func _resource_tip(title: String) -> Dictionary:
 	var pl := Game.player_faction
 	match title:
+		"指挥点":
+			var cp_v: int = int(pl.cp) if pl != null else 0
+			var cp_cap: int = int(pl.cp_cap) if pl != null else 0
+			return {"icon": "flag", "icon_color": Color(0.72, 0.86, 1.0),
+				"title": "指挥点 %d / %d" % [cp_v, cp_cap],
+				"tag": "短局资源",
+				"body": "短局唯一的运营资源。准备阶段支付，执行阶段按秒回复。\n训练、建造都花 CP；人口仍由建筑提供。",
+				"foot": "回复 %.1f / 秒" % (pl.cp_regen if pl != null else 0.0)}
 		"金币":
 			var g: int = pl.gold if pl != null else 0
 			return {"icon": "coin", "icon_color": Spec.gold(), "title": "金币 %d" % g,
@@ -1040,6 +1065,9 @@ func _place_toasts() -> void:
 	if _crate_banner != null and _crate_banner.visible:
 		# 播报条：top = 资源条下沿 + 6，高 H → 普通提示从它下面 12px 开始
 		top = _mets.margin + _mets.stats_h + 6.0 + _crate_banner_height() + 12.0
+	# 短局准备面板占着资源条下方：普通提示继续往下让位，别压面板。
+	if _prepare_panel != null and _prepare_panel.visible:
+		top = _prepare_panel.position.y + _prepare_panel.size.y + 8.0
 	_place(_toast_box, 0.5, 0.0, 0.5, 0.0, -w * 0.5, top, w * 0.5, top + 260.0)
 
 
@@ -1394,7 +1422,9 @@ func _open_surrender() -> void:
 		_dlg_surrender.ok_button_text = "投降"
 		_dlg_surrender.cancel_button_text = "继续战斗"
 		_dlg_surrender.confirmed.connect(func() -> void:
-			Game.game_over.emit(false))
+			# 必须走 trigger_defeat：它会 set_phase(DEFEAT) 并冻结世界。
+			# 只发 game_over 信号会让 phase 停在 RUNNING，副官/单位继续跑。
+			Game.trigger_defeat())
 		root.add_child(_dlg_surrender)
 	_dlg_surrender.popup_centered(Vector2i(360, 0))
 
@@ -1549,6 +1579,46 @@ func _place_pending_label() -> void:
 	var y: float = _mets.margin + _band_applied + 10.0
 	_place(_pending_box, 0.5, 1.0, 0.5, 1.0,
 			-pw * 0.5, -y - 26.0, pw * 0.5, -y)
+
+
+## 短局准备/执行面板：顶部居中、资源条下方。
+func _build_prepare_panel() -> void:
+	_prepare_panel = PREPARE_PANEL_SCRIPT.new()
+	_prepare_panel.name = "准备面板"
+	root.add_child(_prepare_panel)
+	_prepare_panel.visible = false
+
+
+func _place_prepare_panel() -> void:
+	if _prepare_panel == null or _mets == null:
+		return
+	var on: bool = Game.short_match and not Game.is_over()
+	_prepare_panel.visible = on
+	if not on:
+		_prepare_rect = Rect2()
+		return
+	var w: float = minf(420.0, _mets.vw * 0.34)
+	var y: float = _mets.margin + _mets.stats_h + 8.0
+	# 高度跟内容走（计划 0 条时不留一大块空面板）；上下限防止挤压战场。
+	var need: float = _prepare_panel.get_combined_minimum_size().y
+	var h: float = clampf(need, 148.0, minf(236.0, _mets.vh * 0.34))
+	_place(_prepare_panel, 0.5, 0.0, 0.5, 0.0,
+			-w * 0.5, y, w * 0.5, y + h)
+	_prepare_rect = _prepare_panel.get_global_rect()
+
+
+## 短局面板每 0.12s 刷新一次（内部按签名重建列表，不会每帧 new 控件）。
+func _refresh_prepare_panel() -> void:
+	if _prepare_panel == null or not is_instance_valid(_prepare_panel):
+		return
+	if _prepare_panel.has_method("refresh"):
+		_prepare_panel.call("refresh")
+	# 计划列表增减会改变面板最小高度：差 2px 以上就重摆（不会每帧抖）。
+	if _prepare_panel.visible:
+		var want: float = clampf(_prepare_panel.get_combined_minimum_size().y, 148.0,
+				minf(236.0, _mets.vh * 0.34))
+		if absf(_prepare_panel.size.y - want) > 2.0:
+			_place_prepare_panel()
 
 
 # ===========================================================================
@@ -2059,8 +2129,16 @@ func _refresh_stats() -> void:
 		_sync_adjutant()
 		if _adj_btn.visible != was_vis:
 			_apply_layout()
-	_set_label(_gold_label, "%d" % pl.gold)
-	_set_label(_wood_label, "%d" % pl.wood)
+	# 短局：只显示 CP + 人口；长局：金币/木材/人口（CP 隐藏）。
+	var short: bool = Game.short_match
+	_set_pill_visible(_cp_label, short)
+	_set_pill_visible(_gold_label, not short)
+	_set_pill_visible(_wood_label, not short)
+	if short:
+		_set_label(_cp_label, "%d/%d" % [int(pl.cp), int(pl.cp_cap)])
+	else:
+		_set_label(_gold_label, "%d" % pl.gold)
+		_set_label(_wood_label, "%d" % pl.wood)
 	if _time_label != null:
 		# 有时日系统就显示"游戏内时刻 + ☀/☾"（玩家要知道还有多久天黑），
 		# 没有就退回原来的"本局计时"。
@@ -2144,6 +2222,18 @@ func _sync_crate_banner() -> void:
 func _set_label(lb: Label, txt: String) -> void:
 	if lb != null and lb.text != txt:
 		lb.text = txt
+
+
+## 资源胶囊显隐：Label → HBox(行) → PanelContainer(胶囊)
+func _set_pill_visible(lb: Label, on: bool) -> void:
+	if lb == null:
+		return
+	var row := lb.get_parent()
+	if row == null:
+		return
+	var pill := row.get_parent() as Control
+	if pill != null and pill.visible != on:
+		pill.visible = on
 
 
 ## 选中信息：**左段永远是选中卡**（单位 / 建筑同一张：头像 + 血条 + 法力条），
@@ -2458,5 +2548,7 @@ func covers_point(p: Vector2) -> bool:
 	if _adj_btn != null and _adj_btn.visible and _adj_btn.get_global_rect().has_point(p):
 		return true
 	if _menu_btn != null and _menu_btn.get_global_rect().has_point(p):
+		return true
+	if _prepare_panel != null and _prepare_panel.visible and _prepare_panel.get_global_rect().has_point(p):
 		return true
 	return false

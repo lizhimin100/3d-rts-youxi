@@ -316,7 +316,8 @@ func cancel_construction() -> bool:
 	if not is_under_construction():
 		return false
 	if faction != null and def != null:
-		Game.add_resource(faction, def.gold_cost, def.wood_cost)
+		# 短局退 CP、长局退金木；不要在业务层直接改资源字段。
+		Game.refund(faction, def.id)
 	# 先把人放出来（release_builders 会给每人算一个占格外圈的落点）
 	release_builders()
 	_abort_work()
@@ -410,7 +411,7 @@ func cancel_train() -> void:
 	train_progress = 0.0
 	var d: UnitDef = Cfg.unit(id)
 	if d != null and faction != null:
-		Game.add_resource(faction, d.gold_cost, d.wood_cost)
+		Game.refund(faction, id)
 
 
 ## 取消队列里**指定的一项**（2026-11-01：玩家点队列格直接退这一条）。
@@ -424,7 +425,7 @@ func cancel_train_at(i: int) -> bool:
 		train_progress = 0.0
 	var d: UnitDef = Cfg.unit(id)
 	if d != null and faction != null:
-		Game.add_resource(faction, d.gold_cost, d.wood_cost)
+		Game.refund(faction, id)
 	return true
 
 

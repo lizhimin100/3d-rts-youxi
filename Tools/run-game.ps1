@@ -29,6 +29,7 @@ function Show-Usage {
   Tools/run-game.ps1 --simulate [--games=N]  只用 Model 跑推演并输出数值报告
   Tools/run-game.ps1 --shot <画面> <输出.png> 离屏截图（hud 画面会真点一次「建造」）
   Tools/run-game.ps1 --import                重新扫描资源（加了新类名/新场景后跑一次）
+  Tools/run-game.ps1 --round-test            半回合制自检（准备/执行/CP/小队，无窗口）
   Tools/run-game.ps1 --help                  这张表
 
 画面列表：Content/data/screens.json
@@ -66,6 +67,7 @@ for ($i = 0; $i -lt $Rest.Count; $i++) {
         "--check"    { $mode = "check"; continue }
         "--simulate" { $mode = "simulate"; continue }
         "--import"   { $mode = "import"; continue }
+        "--round-test" { $mode = "round"; continue }
         "--shot" {
             if ($i + 2 -ge $Rest.Count) { throw "--shot 需要两个参数：<画面> <输出.png>" }
             $mode = "shot"
@@ -97,6 +99,10 @@ switch ($mode) {
         $code = $LASTEXITCODE
         if ($code -ne 0) { Write-Host "[run-game] 体检失败（退出码 $code）" -ForegroundColor Red }
         exit $code
+    }
+    "round" {
+        & $Godot --headless --path $Root -- --round-test
+        exit $LASTEXITCODE
     }
     "simulate" {
         & $Godot --headless --path $Root --script "Tests/sim/run_simulate.gd" -- @pass

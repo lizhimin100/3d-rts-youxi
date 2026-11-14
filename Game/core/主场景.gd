@@ -250,10 +250,22 @@ func _ready() -> void:
 	#      只发"意图"不碰单位，实际下令走副官的调度器（控制权过滤照旧）。
 	_mount_script("res://Views/input/战区指令输入.gd", "战区指令输入")
 
+	# 4.93 **短局回合控制器**：准备阶段暂停 / 执行阶段实时 / 脚本波次。
+	#      长局不挂，原即时战略流程一行不改。
+	if Game.short_match:
+		var rc: Node = _mount_script("res://Game/core/回合控制.gd", "回合控制")
+		if rc != null:
+			rc.call("setup", level)
+
 	# 5) 起跑
-	Game.phase = RtsConst.Phase.RUNNING
 	Game.game_over.connect(_on_game_over)
-	Game.notify.emit(_opening_message(), Cfg.game.hud_accent)
+	# 长局先起跑；短局先停在 PREPARE（测试钩子也在暂停前挂好）。
+	if not Game.short_match:
+		Game.set_phase(RtsConst.Phase.RUNNING)
+		Game.notify.emit(_opening_message(), Cfg.game.hud_accent)
+	else:
+		Game.set_phase(RtsConst.Phase.PREPARE)
+		Game.notify.emit("准备阶段：世界已暂停。排好命令后点「开始执行」。", Cfg.game.hud_accent)
 	# 副官不再弹提示：状态改由小地图下方的「副官 · 开/关」按钮表达（常驻、可点）。
 
 	# 6) 测试挂载（只有命令行显式要求时才挂）
@@ -352,6 +364,9 @@ func _make_fallback_env() -> Environment:
 func _process(delta: float) -> void:
 	_tick_map_watch(delta)
 	_update_shot(delta)
+	# 短局的胜负由回合控制器判（脚本波次没有"敌方大本营"这个条件）。
+	if Game.short_match:
+		return
 	if Game.phase != RtsConst.Phase.RUNNING:
 		return
 	_check_timer += delta
@@ -389,6 +404,9 @@ func _on_game_over(victory: bool) -> void:
 
 func _mount_tests() -> void:
 	var args := OS.get_cmdline_user_args()
+	# 半回合制自检：阶段/暂停/命令缓冲/小队/CP（短局专用）
+	if "--round-test" in args:
+		_mount_script("res://Tests/suites/半回合自检.gd", "半回合自检")
 	if "--interact-test" in args:
 		_mount_script("res://Tests/suites/交互自检.gd", "交互自检")
 	if "--edge-test" in args:
@@ -478,6 +496,12 @@ func _mount_tests() -> void:
 ## 这样 `主场景.tscn` 的节点树不用改，`命令`/`副官` 那条老链路也不受影响。
 func _mount_ai_brains() -> void:
 	if Game.player_faction == null:
+		return
+	# 短局：敌人由回合控制器按波次生成并下达攻击移动，不跑经济 AI。
+	# 这样 AI 不会因为"没有金币/没有农民"空转，也不会和 CP 预算打架。
+	if Game.short_match:
+		if ai != null and is_instance_valid(ai):
+			ai.set_process(false)
 		return
 	var script: Script = load("res://Game/ai/简单AI.gd") as Script
 	if script == null:

@@ -23,6 +23,9 @@ const PRUNE_INTERVAL := 0.25
 
 ## 当前选中（Array[Node3D]，玩家自己的单位/建筑）
 var selected: Array = []
+## 控制组：Ctrl+1..9 编组，Alt+1..9 召回。
+## 存 instance_id（不持有节点引用；召回时逐个 is_instance_valid）。
+var _control_groups: Dictionary = {}
 
 ## 鼠标按下中 / 正在拖框
 var _pressing: bool = false
@@ -79,6 +82,8 @@ class BoxOverlay extends Control:
 # ===========================================================================
 
 func _ready() -> void:
+	# 准备阶段世界暂停，但选择/框选/编组必须还能用。
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	# 建筑升级（哨塔→箭塔）会把旧节点换掉：建筑侧靠这个组找到选择系统，
 	# 把选中跟着搬到新节点上（否则玩家面板会突然变空）。
 	add_to_group("selection_system")
@@ -158,6 +163,55 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventMouseMotion and _pressing:
 		var mm := event as InputEventMouseMotion
 		_update_box(mm.position)
+	elif event is InputEventKey:
+		var k := event as InputEventKey
+		if k.pressed and not k.echo:
+			# Ctrl+1..9 编组 / Alt+1..9 召回。数字键单独按是技能，所以必须带修饰键。
+			if k.ctrl_pressed and k.keycode >= KEY_1 and k.keycode <= KEY_9:
+				_assign_group(k.keycode - KEY_0)
+				get_viewport().set_input_as_handled()
+			elif k.alt_pressed and k.keycode >= KEY_1 and k.keycode <= KEY_9:
+				_recall_group(k.keycode - KEY_0)
+				get_viewport().set_input_as_handled()
+
+
+func _assign_group(slot: int) -> void:
+	var out: Array = []
+	for u in selected_units():
+		if u == null or not is_instance_valid(u):
+			continue
+		if u is RtsBuilding:
+			continue
+		if u.get("faction") != Game.player_faction:
+			continue
+		out.append(int((u as Node).get_instance_id()))
+	if out.is_empty():
+		Game.toast("控制组只能编自己的移动单位", _accent_color())
+		return
+	_control_groups[slot] = out
+	Game.toast("已编入控制组 %d（%d 个单位）" % [slot, out.size()], _accent_color())
+
+
+func _recall_group(slot: int) -> void:
+	if not _control_groups.has(slot):
+		return
+	var out: Array = []
+	for uid in (_control_groups[slot] as Array):
+		var raw = instance_from_id(int(uid))
+		if raw == null or not is_instance_valid(raw):
+			continue
+		if not (raw is RtsUnit):
+			continue
+		var u := raw as RtsUnit
+		if not u.is_alive():
+			continue
+		if u.faction != Game.player_faction:
+			continue
+		out.append(u)
+	_set_selection(out)
+	if out.is_empty():
+		_control_groups.erase(slot)
+		Game.toast("控制组 %d 已无存活单位" % slot, _accent_color())
 
 
 ## 左键按下/抬起
@@ -283,6 +337,18 @@ func _click_select(screen_pos: Vector2, additive: bool) -> void:
 	if is_double and not (hit is RtsBuilding) and hit_faction == Game.player_faction:
 		_select_all_of_type(id)
 		return
+
+	# 短局：Squad 是核心战斗实体 —— 点一个成员 = 选中整队。
+	# 长局保持原来的"点谁选谁"，不影响既有手感/自检。
+	if not additive and Game.short_match and Game.squads != null \
+			and hit is RtsUnit and not (hit is RtsBuilding) \
+			and hit_faction == Game.player_faction:
+		var sq = Game.squads.call("find_by_member", hit)
+		if sq != null:
+			var mates: Array = sq.get("members") as Array
+			if mates != null and mates.size() > 1:
+				_set_selection(mates.duplicate())
+				return
 
 	if additive:
 		if selected.has(hit):

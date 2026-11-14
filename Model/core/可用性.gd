@@ -41,6 +41,13 @@ static func check_train(ctx: Dictionary) -> Dictionary:
 	var free_food := int(ctx.get("food_free", 0))
 	if need_food > free_food:
 		return fail(&"no_food", {"need": need_food, "free": free_food})
+	# 短局：金木不参与支付，只看 CP。`short` 由适配层传，Model 不读 Game。
+	if bool(ctx.get("short", false)):
+		var cp := int(ctx.get("cp", 0))
+		var cost_cp := int(ctx.get("cp_cost", 0))
+		if cp < cost_cp:
+			return fail(&"no_cp", {"need": cost_cp, "have": cp, "short": cost_cp - cp})
+		return _ok()
 	var gold := int(ctx.get("gold", 0))
 	var cost_gold := int(ctx.get("gold_cost", 0))
 	if gold < cost_gold:
@@ -116,6 +123,13 @@ static func check_build(ctx: Dictionary) -> Dictionary:
 	var current := int(ctx.get("current_tier", 1))
 	if required > current:
 		return fail(&"tier_locked", {"required": required, "current": current})
+	# 短局：只看 CP（金木不参与支付）
+	if bool(ctx.get("short", false)):
+		var cp := int(ctx.get("cp", 0))
+		var cost_cp := int(ctx.get("cp_cost", 0))
+		if cp < cost_cp:
+			return fail(&"no_cp", {"need": cost_cp, "have": cp, "short": cost_cp - cp})
+		return _ok()
 	var gold := int(ctx.get("gold", 0))
 	var cost_gold := int(ctx.get("gold_cost", 0))
 	if gold < cost_gold:

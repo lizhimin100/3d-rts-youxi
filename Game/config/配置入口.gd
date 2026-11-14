@@ -36,6 +36,7 @@ func _rebuild() -> void:
 	cfg.units = UnitTable.build_units()
 	cfg.researches = UnitTable.build_researches()
 	_apply_resource_amounts(cfg)
+	_apply_short_costs(cfg)
 	cfg.ensure_default_difficulties()
 	game = cfg
 
@@ -60,6 +61,19 @@ func _apply_resource_amounts(cfg: GameConfig) -> void:
 			continue
 		if d.kind == RtsConst.Kind.HARVESTABLE and d.harvest_kind == RtsConst.Harvest.WOOD:
 			d.resource_amount = maxi(cfg.tree_charges, 1)
+
+
+## 把 game.json 的 `short_cp_costs` 写进 UnitDef.cp_cost。
+## **短局 CP 成本的唯一来源**：不写进单位卡，避免"同一张卡两套资源"互相污染。
+func _apply_short_costs(cfg: GameConfig) -> void:
+	if cfg == null or cfg.units == null:
+		return
+	for id in cfg.units.keys():
+		var d := cfg.units[id] as UnitDef
+		if d == null:
+			continue
+		var v: Variant = cfg.short_cp_costs.get(String(id), 0)
+		d.cp_cost = maxi(int(v), 0)
 
 
 ## 取单位定义

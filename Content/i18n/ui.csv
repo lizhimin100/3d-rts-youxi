@@ -17,6 +17,8 @@ avail.queue_full,队列已满,Queue full,可用性
 avail.no_food,人口不足（缺 {free} 个位）,Not enough food,可用性
 avail.no_gold,金币不足（差 {short}）,Not enough gold,可用性
 avail.no_wood,木材不足（差 {short}）,Not enough wood,可用性
+avail.no_cp,指挥点不足（差 {short}）,Not enough CP,可用性
+short.no_repair,短局暂不支持修理（没有木材）,Repair is unavailable in short matches,短局
 avail.max_level,已满级,Max level,可用性
 avail.research_busy,研究中,Research in progress,可用性
 avail.no_worker,需要选中农民,Select a worker first,可用性

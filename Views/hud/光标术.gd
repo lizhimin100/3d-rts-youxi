@@ -59,6 +59,8 @@ var _dormant: bool = false
 # ===========================================================================
 
 func _ready() -> void:
+	# 准备阶段世界暂停，光标仍要随悬停对象变化。
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	name = "光标符文"
 	_dormant = DisplayServer.get_name() == "headless"
 	var dump: bool = "--dump-cursors" in OS.get_cmdline_user_args()

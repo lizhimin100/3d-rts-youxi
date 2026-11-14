@@ -363,6 +363,37 @@
 			"b": 0.0900000035762787,
 			"a": 0.860000014305115
 		},
-		"toast_duration": 3
+		"toast_duration": 3,
+		"short_cp_start": 12,
+		"short_cp_cap": 24,
+		"short_cp_regen": 0.8,
+		"short_execution_seconds": 60.0,
+		"short_rounds": 3,
+		"short_cp_costs": {
+			"peasant": 1,
+			"footman": 2,
+			"archer": 3,
+			"mage": 5,
+			"dwarf_musketeer": 5,
+			"golem": 8,
+			"spell_breaker": 5,
+			"gnoll_scout": 0,
+			"gnoll_warrior": 0,
+			"gnoll_shaman": 0,
+			"townhall": 0,
+			"townhall_2": 10,
+			"barracks": 6,
+			"farm": 4,
+			"blacksmith": 5,
+			"sanctum": 8,
+			"workshop": 7,
+			"lumbercamp": 3,
+			"watchtower": 4,
+			"tower": 5,
+			"campfire": 1,
+			"creep_den": 0,
+			"creep_gate": 0,
+			"creep_shell": 0
+		}
 	}
 }

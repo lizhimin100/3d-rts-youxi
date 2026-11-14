@@ -69,6 +69,12 @@ func is_enemy_of(other: RtsFaction) -> bool:
 var gold: int = 0
 var wood: int = 0
 
+# --- 短局指挥点（CP）---
+## 浮点存储，避免 0.8/秒 的回复被整数截断；显示时取整。
+var cp: float = 0.0
+var cp_cap: float = 24.0
+var cp_regen: float = 0.8
+
 # --- 单位集合（由 游戏 维护）---
 ## Array[RtsUnit]
 var units: Array = []
@@ -84,6 +90,34 @@ func setup(p_index: int, p_is_player: bool, p_name: String, p_color: Color, p_go
 	color = p_color
 	gold = p_gold
 	wood = p_wood
+
+
+## 装配短局 CP（开局/上限/每秒回复）
+func setup_cp(p_start: int, p_cap: int, p_regen: float) -> void:
+	cp_cap = maxf(float(p_cap), 1.0)
+	cp = clampf(float(p_start), 0.0, cp_cap)
+	cp_regen = maxf(p_regen, 0.0)
+
+
+## 每帧回复（只在执行阶段由 Game 调用；准备阶段冻结）
+func tick_cp(dt: float) -> void:
+	if cp_regen <= 0.0 or cp >= cp_cap:
+		return
+	cp = minf(cp + cp_regen * maxf(dt, 0.0), cp_cap)
+
+
+## 付 CP（不够一分不扣）
+func pay_cp(amount: int) -> bool:
+	var need: float = maxf(float(amount), 0.0)
+	if cp + 0.0001 < need:
+		return false
+	cp = maxf(cp - need, 0.0)
+	return true
+
+
+## 退 CP
+func add_cp(amount: int) -> void:
+	cp = clampf(cp + float(amount), 0.0, cp_cap)
 
 
 ## 当前人口占用（所有存活单位的 food_cost 之和）

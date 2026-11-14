@@ -291,6 +291,25 @@ extends Resource
 @export var ally_color: Color = Color(0.18, 0.90, 0.90)
 
 
+# ---------------------------------------------------------------------------
+# 短局（半回合制：准备阶段暂停 / 执行阶段实时 / CP 运营）
+# 归在「对局」组里，不新增 @export_group —— 旧界面文案预算冻结，新增分组名也算一条。
+# ---------------------------------------------------------------------------
+## 开局 CP
+@export var short_cp_start: int = 12
+## CP 上限
+@export var short_cp_cap: int = 24
+## 每秒回复的 CP
+@export var short_cp_regen: float = 0.8
+## 每次执行阶段的时长（秒）；到点自动回到准备阶段
+@export var short_execution_seconds: float = 60.0
+## 一局共几个执行回合
+@export var short_rounds: int = 3
+## id → CP 成本。**唯一数值来源**（不写进单位卡，避免和长局金木混在一起）。
+## 未登记的 id 按 0 CP 处理（只用于短局；长局完全忽略这个字典）。
+@export var short_cp_costs: Dictionary = {}
+
+
 ## 某槽位属于哪个队（越界按 1 队算）
 func team_of_slot(slot: int) -> int:
 	if match_team_of_slot.is_empty():

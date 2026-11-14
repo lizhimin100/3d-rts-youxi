@@ -542,10 +542,9 @@ func _build_entry(bid: StringName) -> Dictionary:
 	return {
 		"label": d.display_name if d != null else String(bid),
 		"hint": (("" if note.is_empty() else note + "\n")
-				+ "建造 %s：%d金 %d木，占地 %d×%d（朝向统一，不需要转向）") % [
+				+ "建造 %s：%s，占地 %d×%d（朝向统一，不需要转向）") % [
 			d.display_name if d != null else "建筑",
-			d.gold_cost if d != null else 0,
-			d.wood_cost if d != null else 0,
+			_cost_text(d),
 			d.footprint.x if d != null else 0,
 			d.footprint.y if d != null else 0,
 		],
@@ -837,6 +836,9 @@ func _style_button(btn: Button, e: Dictionary, disabled: bool) -> void:
 func _cost_text(d: UnitDef) -> String:
 	if d == null:
 		return ""
+	# 短局：只显示 CP。金木在短局不参与支付，显示了只会误导。
+	if Game != null and Game.short_match:
+		return "%d CP" % maxi(d.cp_cost, 0)
 	var cost: String = ""
 	if d.gold_cost > 0:
 		cost = "%d金" % d.gold_cost
@@ -851,6 +853,8 @@ func _shortage(d: UnitDef) -> String:
 	var fac := Game.player_faction
 	if d == null or fac == null:
 		return "资源不足"
+	if Game.short_match:
+		return "缺 %d CP" % maxi(d.cp_cost - int(fac.cp), 0)
 	var miss_g: int = maxi(d.gold_cost - fac.gold, 0)
 	var miss_w: int = maxi(d.wood_cost - fac.wood, 0)
 	return "缺 %d金 %d木" % [miss_g, miss_w]

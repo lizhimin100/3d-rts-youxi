@@ -116,6 +116,8 @@ var _selection_system: Node = null
 # ===========================================================================
 
 func _ready() -> void:
+	# 准备阶段世界暂停，镜头仍要能平移/旋转/缩放。
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	cam = Camera3D.new()
 	cam.name = "相机"
 	cam.fov = 52.0

@@ -38,6 +38,8 @@ static func text(result: Dictionary) -> String:
 			return _t("avail.queue_full")
 		"no_food":
 			return _t("avail.no_food", {"free": int(p.get("free", 0))})
+		"no_cp":
+			return _t("avail.no_cp", {"short": int(p.get("short", 0))})
 		"no_gold":
 			return _t("avail.no_gold", {"short": int(p.get("short", 0))})
 		"no_wood":
