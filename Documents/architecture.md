@@ -66,7 +66,7 @@ Content/data/cards/units/*.json
   命令记录以 `squad_id` 为一等公民，成员死亡由注册表自动剪枝。
 - **短局资源**：`RtsFaction.cp/cp_cap/cp_regen`；成本唯一来源 `Content/data/game.json` 的 `short_cp_costs`；
   `Game.can_afford/pay/refund` 按 `short_match` 切换 CP / 金木。短局禁采集，农民保留为工程兵。
-- **验证**：`./Tools/run-game.ps1 --round-test`（准备/执行/CP/小队/控制组，37 项断言）。
+- **验证**：`./Tools/run-game.ps1 --round-test`（准备/执行/CP/小队/控制组/多回合，41 项断言）。
 
 ## 目录对照（旧 → 新）
 

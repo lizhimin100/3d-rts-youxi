@@ -1599,6 +1599,9 @@ func _place_prepare_panel() -> void:
 		return
 	var w: float = minf(420.0, _mets.vw * 0.34)
 	var y: float = _mets.margin + _mets.stats_h + 8.0
+	# 据点播报条在同一个位置：有它就往下让，别两条叠在一起。
+	if _crate_banner != null and _crate_banner.visible:
+		y = _mets.margin + _mets.stats_h + 6.0 + _crate_banner_height() + 10.0
 	# 高度跟内容走（计划 0 条时不留一大块空面板）；上下限防止挤压战场。
 	var need: float = _prepare_panel.get_combined_minimum_size().y
 	var h: float = clampf(need, 148.0, minf(236.0, _mets.vh * 0.34))
