@@ -1,0 +1,56 @@
+{
+	"$script": "res://Game/config/建筑卡.gd",
+	"props": {
+		"functions": [
+			"产兵"
+		],
+		"tier": 1,
+		"require_tier": 0,
+		"max_hp": 950,
+		"defense": 3,
+		"defense_type": "堡垒",
+		"footprint": {
+			"$t": "Vector2i",
+			"x": 6,
+			"y": 7
+		},
+		"height": 5.8,
+		"train_time": 30,
+		"is_dropoff": false,
+		"dropoff_kinds": [],
+		"food_provided": 0,
+		"trains": [
+			"footman",
+			"archer",
+			"dwarf_musketeer"
+		],
+		"researches": [],
+		"sight_range": 12,
+		"body_radius": 2.8,
+		"selection_radius": 4.4,
+		"detect_radius": 0,
+		"aura_radius": 0,
+		"aura_mana_regen": 0,
+		"attack": 0,
+		"range": 0,
+		"attack_type": "普通",
+		"attack_spread": 0,
+		"attack_cooldown": 1.5,
+		"projectile": 0,
+		"projectile_speed": 20,
+		"acquire_range": 0,
+		"model_path": "res://Content/art/模型/兵营.glb",
+		"model_scale": 0.5,
+		"anim_set": 5,
+		"def_role": "",
+		"def_tags": [],
+		"design_power": 0,
+		"card_id": "barracks",
+		"display_name": "兵营",
+		"icon": "",
+		"description": "出步兵 / 弩手。一座建筑只管一件事。",
+		"race": "联盟",
+		"cost_gold": 160,
+		"cost_wood": 45
+	}
+}

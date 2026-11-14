@@ -18,6 +18,7 @@ var _syncing: bool = false
 ## 全套设计令牌（配色/字号/样式工厂）——这里只用 editor_ 那一档冷色
 const Spec := preload("res://Views/hud/界面规格.gd")
 ## token 编译出来的正经 Theme 资源（主屏同源）
+const CARD_STORE := preload("res://Game/config/card_store.gd")
 const EDITOR_THEME := preload("res://addons/map_editor/编辑器主题.tres")
 ## 皮肤（深铁石底 + 金线）：在 .tres 实例上就地改写，资源路径不变
 const 皮肤 := preload("res://addons/map_editor/编辑器皮肤.gd")
@@ -1171,7 +1172,7 @@ func _camp_new() -> void:
 	var base: String = "camp_new"
 	var nid: String = base
 	var n: int = 0
-	while FileAccess.file_exists(CAMP_TABLE.CARD_DIR + nid + ".tres"):
+	while FileAccess.file_exists(CAMP_TABLE.CARD_DIR + nid + ".json"):
 		n += 1
 		nid = "%s%d" % [base, n]
 	var res: Resource = CAMP_DEF.new()
@@ -1197,7 +1198,7 @@ func _camp_copy() -> void:
 		base = "camp_copy"
 	var nid: String = base
 	var n: int = 0
-	while FileAccess.file_exists(CAMP_TABLE.CARD_DIR + nid + ".tres"):
+	while FileAccess.file_exists(CAMP_TABLE.CARD_DIR + nid + ".json"):
 		n += 1
 		nid = "%s%d" % [base, n]
 	var res: Resource = CAMP_DEF.new()
@@ -1267,7 +1268,7 @@ func _camp_save() -> void:
 	# 因为 id 和文件名允许不一致，按 id 重拼会把老文件复制成第二份、锚点重复。
 	var path: String = String(_camp_cur.resource_path)
 	if path.is_empty():
-		path = CAMP_TABLE.CARD_DIR + nid + ".tres"
+		path = CAMP_TABLE.CARD_DIR + nid + ".json"
 		if FileAccess.file_exists(path):
 			_camp_status.text = "已有 id 为「%s」的营地，换个 id 再存" % nid
 			return
@@ -1299,7 +1300,7 @@ func _camp_save() -> void:
 	_camp_cur.set("owner_slot", _camp_owner_id())
 	_camp_cur.set("first_spawn_min", _camp_first.value)
 	_camp_cur.set("spawn_interval_min", _camp_interval.value)
-	var err: int = ResourceSaver.save(_camp_cur, path)
+	var err: int = CARD_STORE.save_card(_camp_cur, path)
 	if err != OK:
 		_camp_status.text = "保存失败（错误码 %d）：%s" % [err, path]
 		return

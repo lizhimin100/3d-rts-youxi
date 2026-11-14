@@ -1,0 +1,58 @@
+{
+	"$script": "res://Game/config/单位卡.gd",
+	"props": {
+		"unit_class": "陆军",
+		"roles": [
+			"输出"
+		],
+		"counters": [
+			"重甲"
+		],
+		"range": 380,
+		"attack": 19,
+		"attack_type": "魔法",
+		"defense": 2,
+		"defense_type": "轻甲",
+		"power": -1,
+		"skills": [],
+		"volume": 1,
+		"drop_gold": 20,
+		"drop_wood": 5,
+		"require_tier": 0,
+		"max_hp": 380,
+		"attack_spread": 1,
+		"attack_cooldown": 1.4,
+		"projectile": 2,
+		"projectile_speed": 16,
+		"acquire_range": 9,
+		"sight_range": 11,
+		"move_speed": 4.2,
+		"turn_speed": 9,
+		"body_radius": 0.45,
+		"selection_radius": 0.7,
+		"food_cost": 0,
+		"train_time": 12,
+		"height": 2,
+		"gather_rate": 0,
+		"carry_capacity": 10,
+		"max_mana": 0,
+		"mana_regen": 0,
+		"mana_cost": 0,
+		"ability_cooldown": 8,
+		"model_path": "res://Content/art/模型/野怪/豺狼人萨满.glb",
+		"model_scale": 1,
+		"anim_set": 3,
+		"def_role": "caster",
+		"def_tags": [
+			"light"
+		],
+		"design_power": 0,
+		"card_id": "gnoll_shaman",
+		"display_name": "豺狼人萨满",
+		"icon": "",
+		"description": "失落野怪：豺狼人营地里的施法者。杖顶电球在中程连续放电，攻速快、血薄，先切它。",
+		"race": "中立",
+		"cost_gold": 0,
+		"cost_wood": 0
+	}
+}

@@ -1006,7 +1006,9 @@ static var _demand_card_tried: bool = false
 static func demand_card() -> Resource:
 	if not _demand_card_tried:
 		_demand_card_tried = true
-		_demand_card = load("res://Game/config/卡/AI诉求系数.tres")
+		var script: Script = load("res://Game/config/AI诉求系数.gd")
+		if script != null:
+			_demand_card = script.call("load_from_json")
 	return _demand_card
 
 

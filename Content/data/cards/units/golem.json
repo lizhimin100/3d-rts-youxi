@@ -1,0 +1,59 @@
+{
+	"$script": "res://Game/config/单位卡.gd",
+	"props": {
+		"unit_class": "陆军",
+		"roles": [
+			"承伤"
+		],
+		"counters": [
+			"建筑",
+			"轻甲"
+		],
+		"range": 130,
+		"attack": 34,
+		"attack_type": "普通",
+		"defense": 5,
+		"defense_type": "重甲",
+		"power": -1,
+		"skills": [],
+		"volume": 2.4,
+		"drop_gold": 0,
+		"drop_wood": 0,
+		"require_tier": 2,
+		"max_hp": 1090,
+		"attack_spread": 2,
+		"attack_cooldown": 2.6,
+		"projectile": 0,
+		"projectile_speed": 20,
+		"acquire_range": 11,
+		"sight_range": 12,
+		"move_speed": 3.2,
+		"turn_speed": 5,
+		"body_radius": 0.45,
+		"selection_radius": 0.7,
+		"food_cost": 4,
+		"train_time": 34,
+		"height": 4.3,
+		"gather_rate": 0,
+		"carry_capacity": 10,
+		"max_mana": 0,
+		"mana_regen": 0,
+		"mana_cost": 0,
+		"ability_cooldown": 8,
+		"model_path": "res://Content/art/模型/精模/魔金傀儡.glb",
+		"model_scale": 0.416667,
+		"anim_set": 1,
+		"def_role": "frontline",
+		"def_tags": [
+			"heavy"
+		],
+		"design_power": 0,
+		"card_id": "golem",
+		"display_name": "魔金傀儡",
+		"icon": "",
+		"description": "圣地的秘金拼板傀儡：1090 血、5 点重甲、34 点普通攻击，攻速慢但一拳一截。体积是标准兵的 2.4 倍，挡在阵前就是墙。需要二本。",
+		"race": "联盟",
+		"cost_gold": 420,
+		"cost_wood": 110
+	}
+}

@@ -1,4 +1,8 @@
 extends Resource
+
+const JsonFile := preload("res://Engine/util/json_file.gd")
+const JsonCodec := preload("res://Engine/util/json_codec.gd")
+const DATA_PATH := "res://Content/data/ai_demand.json"
 ## **AI 诉求分系数卡（2C-9）** —— 三条线部门化之后，主部门仲裁用的**全部系数**。
 ##
 ## 为什么单独一张卡：2C-5/2C-6 定下的规矩是"数值只住在卡里，代码里只有结构"。
@@ -92,31 +96,21 @@ extends Resource
 #     配置回归逐项断言它与 defaults() 一致，防止两处漂移。
 # ★ 这是「绕过」而不是「修好了 .tres」——工具本身的问题仍在，报告 §5.2 照实写。
 # ---------------------------------------------------------------------------
+## 唯一数值来源：Content/data/ai_demand.json（改系数只改 JSON）。
+## 缺文件时返回空字典（demand_coef 会按 fallback 回落，绝不静默变 0）。
 static func defaults() -> Dictionary:
-	return {
-		"训练_威胁系数": 0.8,
-		"训练_缺口系数": 0.9,
-		"建造_农场缺口系数": 1.2,
-		"建造_农场紧迫系数": 1.2,
-		"建造_兵营缺口系数": 1.0,
-		"建造_兵营紧迫系数": 1.0,
-		"修理_掉血系数": 1.0,
-		"出击_兵力比系数": 1.3,
-		"防守_威胁系数": 1.0,
-		"侦查_固定分": 0.6,
-		"巡逻_固定分": 0.6,
-		"建塔_固定分": 1.2,
-		"分基地_固定分": 1.0,
-		"人口压力_阈值": 0.70,
-		"人口压力_k": 2.0,
-		"储蓄_安全系数": 0.15,
-		"储蓄_假待办周期": 30.0,
-		"刻度_修理": 200.0,
-		"刻度_出击": 5.0,
-		"刻度_防守": 20.0,
-		"刻度_农场急建": 10.0,
-		"刻度_农场不急": 1.0,
-		"刻度_兵营无产能": 3.0,
-		"刻度_兵营扩建": 1.0,
-		"周期秒": 2.0,
-	}
+	return JsonFile.read_dict(DATA_PATH, {})
+
+
+## 把 JSON 系数读成一个 Resource（只给编辑器/校验/展示用；运行时用 defaults()）。
+## 这样旧代码里 card.get(...) 的读法还能用，但数据只有 JSON 一份。
+static func load_from_json() -> Resource:
+	var data := JsonFile.read_dict(DATA_PATH, {})
+	var self_script: Script = load("res://Game/config/AI诉求系数.gd")
+	if self_script == null:
+		return null
+	var res: Resource = self_script.new()
+	var errs := JsonCodec.apply(res, data)
+	for e in errs:
+		push_error("[AI诉求系数] %s" % e)
+	return res

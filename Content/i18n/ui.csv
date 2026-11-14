@@ -1,0 +1,9 @@
+key,zh,en,note
+debug.panel.fps,FPS {fps},FPS {fps},调试面板帧率
+debug.panel.shot,截图,Screenshot,调试面板按钮
+debug.panel.quit,退出,Quit,调试面板按钮
+debug.panel.mode,模式：{mode}  档案：{profile},Mode: {mode}  profile: {profile},调试面板状态行
+debug.panel.bridge,接口：{url},API: {url},调试面板状态行
+debug.panel.bridge_off,接口：未启动,API: not running,调试面板状态行
+debug.panel.phase,阶段：{phase}  时间：{t}s,Phase: {phase}  time: {t}s,调试面板状态行
+debug.panel.economy,金币 {gold}  木材 {wood}  人口 {pop},Gold {gold}  Wood {wood}  Pop {pop},调试面板状态行

@@ -1,0 +1,368 @@
+{
+	"$script": "res://Game/config/游戏配置.gd",
+	"props": {
+		"camera_pitch_deg": 50,
+		"camera_distance_default": 30,
+		"camera_distance_min": 13,
+		"camera_distance_max": 44,
+		"camera_zoom_step": 2.2,
+		"camera_zoom_damping": 17,
+		"camera_edge_margin": 22,
+		"camera_pan_speed": 24,
+		"camera_pan_accel": 165,
+		"camera_pan_damping": 20,
+		"camera_key_pan_scale": 1,
+		"camera_rotate_step": 45,
+		"camera_rotate_speed": 13,
+		"camera_focus_damping": 15,
+		"camera_bounds_margin": 4,
+		"camera_shake_decay": 7,
+		"start_gold": 620,
+		"start_wood": 380,
+		"start_food_cap": 0,
+		"harvest_carry": 10,
+		"harvest_carry_gold": 20,
+		"harvest_carry_wood": 10,
+		"harvest_time_gold": 3.2,
+		"harvest_time_wood": 4,
+		"gold_mine_amount": 6000,
+		"tree_amount": 260,
+		"separation_strength": 1.8,
+		"ai_reserve_gold": 150,
+		"ai_reserve_wood": 40,
+		"adjutant_reserve_gold": 480,
+		"adjutant_reserve_wood": 140,
+		"armor_reduction": 0.06,
+		"armor_reduction_cap": 0.72,
+		"crit_chance": 0.12,
+		"crit_multiplier": 1.65,
+		"damage_table": [
+			1,
+			0.85,
+			0.6,
+			1,
+			0.92,
+			1.35,
+			0.85,
+			0.45,
+			1.2,
+			1.05,
+			1.1,
+			1.15,
+			0.55,
+			1,
+			1.12,
+			0.6,
+			0.85,
+			1.6,
+			0.7,
+			0.72
+		],
+		"corpse_linger": 2.2,
+		"shake_on_hit": 0.045,
+		"shake_on_death": 0.09,
+		"shake_on_building_destroyed": 0.55,
+		"attack_windup": 0.2,
+		"difficulties": [
+			{
+				"$script": "res://Game/config/难度定义.gd",
+				"props": {
+					"id": "easy",
+					"display_name": "简单",
+					"think_interval": 1.4,
+					"first_wave_delay": 100,
+					"wave_interval": 52,
+					"wave_interval_decay": 2,
+					"wave_interval_min": 28,
+					"max_army": 10,
+					"target_peasants": 6,
+					"min_wave_size": 4,
+					"gather_multiplier": 0.85,
+					"train_time_multiplier": 1.15,
+					"bonus_gold": 0,
+					"aggression": 0.55,
+					"defend_ratio": 0.5,
+					"role_weights": {
+						"frontline": 5,
+						"ranged": 3,
+						"caster": 1,
+						"siege": 1
+					},
+					"function_weights": {
+						"承伤": 5,
+						"输出": 5
+					},
+					"composition": {}
+				}
+			},
+			{
+				"$script": "res://Game/config/难度定义.gd",
+				"props": {
+					"id": "normal",
+					"display_name": "普通",
+					"think_interval": 1,
+					"first_wave_delay": 75,
+					"wave_interval": 40,
+					"wave_interval_decay": 2.5,
+					"wave_interval_min": 22,
+					"max_army": 16,
+					"target_peasants": 8,
+					"min_wave_size": 6,
+					"gather_multiplier": 1,
+					"train_time_multiplier": 1,
+					"bonus_gold": 100,
+					"aggression": 0.75,
+					"defend_ratio": 0.6,
+					"role_weights": {
+						"frontline": 6,
+						"ranged": 4,
+						"caster": 2,
+						"siege": 1
+					},
+					"function_weights": {
+						"承伤": 6,
+						"输出": 4
+					},
+					"composition": {}
+				}
+			},
+			{
+				"$script": "res://Game/config/难度定义.gd",
+				"props": {
+					"id": "hard",
+					"display_name": "困难",
+					"think_interval": 0.7,
+					"first_wave_delay": 55,
+					"wave_interval": 30,
+					"wave_interval_decay": 3,
+					"wave_interval_min": 16,
+					"max_army": 24,
+					"target_peasants": 10,
+					"min_wave_size": 8,
+					"gather_multiplier": 1.25,
+					"train_time_multiplier": 0.85,
+					"bonus_gold": 250,
+					"aggression": 0.9,
+					"defend_ratio": 0.75,
+					"role_weights": {
+						"frontline": 8,
+						"ranged": 5,
+						"caster": 3,
+						"siege": 1
+					},
+					"function_weights": {
+						"承伤": 7,
+						"输出": 5
+					},
+					"composition": {}
+				}
+			}
+		],
+		"default_difficulty": 0,
+		"map_size": 224,
+		"map_seed": 20261017,
+		"terrain_amplitude": 2.8,
+		"terrain_resolution": 128,
+		"player_base_pos": {
+			"$t": "Vector2",
+			"x": -62.0,
+			"y": 58.0
+		},
+		"enemy_base_pos": {
+			"$t": "Vector2",
+			"x": 62.0,
+			"y": -58.0
+		},
+		"gold_mine_offset": {
+			"$t": "Vector2",
+			"x": -13.0,
+			"y": -17.0
+		},
+		"tree_clusters": 7,
+		"tree_cluster_radius_min": 5,
+		"tree_cluster_radius_max": 10,
+		"tree_cluster_count_min": 8,
+		"tree_cluster_count_max": 14,
+		"rock_count": 40,
+		"has_pond": true,
+		"map_mesa_height": 7.4,
+		"map_mesa_radius": 24,
+		"map_gorge_depth": 6.5,
+		"map_gorge_width": 12,
+		"map_edge_height": 16,
+		"map_base_flat": 18,
+		"map_decor_grass": 0,
+		"map_decor_rubble": 0,
+		"map_road_width": 4.6,
+		"map_road_branch_width": 2.9,
+		"map_road_trail_width": 2.2,
+		"map_roadside_step": 3.2,
+		"map_decor_mushroom": 0,
+		"map_decor_deadtree": 0,
+		"map_decor_camp": 14,
+		"map_decor_ruin_groups": 1,
+		"map_decor_gate_rocks": 22,
+		"player_buildings": {
+			"townhall": {
+				"$t": "Vector2",
+				"x": 0.0,
+				"y": 0.0
+			},
+			"barracks": {
+				"$t": "Vector2",
+				"x": 13.0,
+				"y": 3.0
+			},
+			"blacksmith": {
+				"$t": "Vector2",
+				"x": -13.0,
+				"y": 3.0
+			},
+			"farm": {
+				"$t": "Vector2",
+				"x": -1.0,
+				"y": 13.5
+			},
+			"watchtower": {
+				"$t": "Vector2",
+				"x": 15.5,
+				"y": 14.5
+			}
+		},
+		"player_units": {
+			"peasant": 5,
+			"footman": 4,
+			"archer": 2,
+			"mage": 1
+		},
+		"enemy_buildings": {
+			"townhall": {
+				"$t": "Vector2",
+				"x": 0.0,
+				"y": 0.0
+			},
+			"barracks": {
+				"$t": "Vector2",
+				"x": -13.0,
+				"y": 3.0
+			},
+			"blacksmith": {
+				"$t": "Vector2",
+				"x": 13.0,
+				"y": 3.0
+			},
+			"farm": {
+				"$t": "Vector2",
+				"x": 1.0,
+				"y": 13.5
+			},
+			"watchtower": {
+				"$t": "Vector2",
+				"x": -15.5,
+				"y": 14.5
+			}
+		},
+		"enemy_units": {
+			"peasant": 5,
+			"footman": 2
+		},
+		"rally_spread": 4.2,
+		"match_slots": 4,
+		"match_human_slot": 0,
+		"match_team_of_slot": [
+			1,
+			1,
+			2,
+			3
+		],
+		"match_team_colors": [
+			{
+				"$t": "Color",
+				"r": 0.300000011920929,
+				"g": 0.620000004768372,
+				"b": 1.0,
+				"a": 1.0
+			},
+			{
+				"$t": "Color",
+				"r": 1.0,
+				"g": 0.319999992847443,
+				"b": 0.259999990463257,
+				"a": 1.0
+			},
+			{
+				"$t": "Color",
+				"r": 0.379999995231628,
+				"g": 0.839999973773956,
+				"b": 0.360000014305115,
+				"a": 1.0
+			},
+			{
+				"$t": "Color",
+				"r": 0.740000009536743,
+				"g": 0.449999988079071,
+				"b": 0.959999978542328,
+				"a": 1.0
+			},
+			{
+				"$t": "Color",
+				"r": 0.980000019073486,
+				"g": 0.779999971389771,
+				"b": 0.239999994635582,
+				"a": 1.0
+			},
+			{
+				"$t": "Color",
+				"r": 0.239999994635582,
+				"g": 0.819999992847443,
+				"b": 0.800000011920929,
+				"a": 1.0
+			}
+		],
+		"ally_color": {
+			"$t": "Color",
+			"r": 0.180000007152557,
+			"g": 0.899999976158142,
+			"b": 0.899999976158142,
+			"a": 1.0
+		},
+		"player_color": {
+			"$t": "Color",
+			"r": 0.300000011920929,
+			"g": 0.620000004768372,
+			"b": 1.0,
+			"a": 1.0
+		},
+		"enemy_color": {
+			"$t": "Color",
+			"r": 1.0,
+			"g": 0.319999992847443,
+			"b": 0.259999990463257,
+			"a": 1.0
+		},
+		"gold_color": {
+			"$t": "Color",
+			"r": 1.0,
+			"g": 0.819999992847443,
+			"b": 0.239999994635582,
+			"a": 1.0
+		},
+		"minimap_size": 236,
+		"minimap_margin": 14,
+		"hud_accent": {
+			"$t": "Color",
+			"r": 0.850000023841858,
+			"g": 0.709999978542328,
+			"b": 0.360000014305115,
+			"a": 1.0
+		},
+		"hud_bg": {
+			"$t": "Color",
+			"r": 0.0599999986588955,
+			"g": 0.0700000002980232,
+			"b": 0.0900000035762787,
+			"a": 0.860000014305115
+		},
+		"toast_duration": 3
+	}
+}

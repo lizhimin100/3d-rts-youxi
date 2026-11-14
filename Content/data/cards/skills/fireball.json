@@ -1,0 +1,26 @@
+{
+	"$script": "res://Game/config/技能卡.gd",
+	"props": {
+		"id": "fireball",
+		"display_name": "火球术",
+		"icon": "技能/fireball",
+		"note": "丢出一颗火球，落点 3.5m 内 55 伤害并减速 40%（2.5 秒）。",
+		"kind": "主动",
+		"target": "单位",
+		"cast": 0.5,
+		"cooldown": 8,
+		"range": 9,
+		"slots": 1,
+		"hotkey": "Q",
+		"atoms": [],
+		"mods": [],
+		"burst_shots": 0,
+		"burst_interval": 0.12,
+		"reload": 0,
+		"anim_on": "",
+		"anim_hold": "",
+		"anim_off": "",
+		"vfx_on": "",
+		"vfx_off": ""
+	}
+}

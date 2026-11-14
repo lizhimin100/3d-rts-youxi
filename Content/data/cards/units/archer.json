@@ -1,0 +1,60 @@
+{
+	"$script": "res://Game/config/单位卡.gd",
+	"props": {
+		"unit_class": "陆军",
+		"roles": [
+			"输出"
+		],
+		"counters": [
+			"轻甲"
+		],
+		"range": 650,
+		"attack": 18,
+		"attack_type": "穿刺",
+		"defense": 1,
+		"defense_type": "轻甲",
+		"power": -1,
+		"skills": [
+			"triple_shot"
+		],
+		"volume": 0.88,
+		"drop_gold": 0,
+		"drop_wood": 0,
+		"require_tier": 0,
+		"max_hp": 280,
+		"attack_spread": 0,
+		"attack_cooldown": 1.95,
+		"projectile": 1,
+		"projectile_speed": 26,
+		"acquire_range": 11,
+		"sight_range": 11,
+		"move_speed": 4.4,
+		"turn_speed": 10,
+		"body_radius": 0.44,
+		"selection_radius": 0.75,
+		"food_cost": 2,
+		"train_time": 18.1,
+		"height": 1.72,
+		"gather_rate": 0,
+		"carry_capacity": 10,
+		"max_mana": 0,
+		"mana_regen": 0,
+		"mana_cost": 0,
+		"ability_cooldown": 8,
+		"model_path": "res://Content/art/模型/方块人/方块人_弩兵.glb",
+		"model_scale": 1,
+		"anim_set": 2,
+		"def_role": "ranged",
+		"def_tags": [
+			"light"
+		],
+		"design_power": 0,
+		"card_id": "archer",
+		"display_name": "弩兵",
+		"icon": "",
+		"description": "勇敢的弩兵向联盟献上了自己的忠诚和技能。弩兵们使用可连射的弩箭，是出色的射手，可以射击地面和空中的敌人。",
+		"race": "联盟",
+		"cost_gold": 105,
+		"cost_wood": 15
+	}
+}

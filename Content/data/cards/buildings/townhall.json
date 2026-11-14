@@ -1,0 +1,56 @@
+{
+	"$script": "res://Game/config/建筑卡.gd",
+	"props": {
+		"functions": [
+			"产兵",
+			"资源",
+			"人口"
+		],
+		"tier": 1,
+		"require_tier": 0,
+		"max_hp": 1600,
+		"defense": 3,
+		"defense_type": "堡垒",
+		"footprint": {
+			"$t": "Vector2i",
+			"x": 9,
+			"y": 5
+		},
+		"height": 12.6,
+		"train_time": 42,
+		"is_dropoff": true,
+		"dropoff_kinds": [],
+		"food_provided": 24,
+		"trains": [
+			"peasant"
+		],
+		"researches": [],
+		"sight_range": 15,
+		"body_radius": 3,
+		"selection_radius": 5.6,
+		"detect_radius": 0,
+		"aura_radius": 0,
+		"aura_mana_regen": 0,
+		"attack": 0,
+		"range": 0,
+		"attack_type": "普通",
+		"attack_spread": 0,
+		"attack_cooldown": 1.5,
+		"projectile": 0,
+		"projectile_speed": 20,
+		"acquire_range": 0,
+		"model_path": "res://Content/art/模型/大本营.glb",
+		"model_scale": 0.5,
+		"anim_set": 4,
+		"def_role": "",
+		"def_tags": [],
+		"design_power": 0,
+		"card_id": "townhall",
+		"display_name": "大本营",
+		"icon": "",
+		"description": "资源交汇点 + 农民产地 + 人口来源；被拆即败。",
+		"race": "联盟",
+		"cost_gold": 320,
+		"cost_wood": 125
+	}
+}

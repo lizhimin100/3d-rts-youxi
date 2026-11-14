@@ -1,0 +1,57 @@
+{
+	"$script": "res://Game/config/建筑卡.gd",
+	"props": {
+		"functions": [
+			"产兵",
+			"治疗"
+		],
+		"tier": 1,
+		"require_tier": 2,
+		"max_hp": 750,
+		"defense": 2,
+		"defense_type": "堡垒",
+		"footprint": {
+			"$t": "Vector2i",
+			"x": 7,
+			"y": 8
+		},
+		"height": 8.1,
+		"train_time": 36,
+		"is_dropoff": false,
+		"dropoff_kinds": [],
+		"food_provided": 0,
+		"trains": [
+			"mage",
+			"spell_breaker",
+			"golem"
+		],
+		"researches": [],
+		"sight_range": 15,
+		"body_radius": 3.4,
+		"selection_radius": 5,
+		"detect_radius": 0,
+		"aura_radius": 14,
+		"aura_mana_regen": 2.2,
+		"attack": 0,
+		"range": 0,
+		"attack_type": "普通",
+		"attack_spread": 0,
+		"attack_cooldown": 1.5,
+		"projectile": 0,
+		"projectile_speed": 20,
+		"acquire_range": 0,
+		"model_path": "res://Content/art/模型/神秘圣地.glb",
+		"model_scale": 0.5,
+		"anim_set": 4,
+		"def_role": "",
+		"def_tags": [],
+		"design_power": 0,
+		"card_id": "sanctum",
+		"display_name": "神秘圣地",
+		"icon": "",
+		"description": "法师产地 + 法力之泉光环。",
+		"race": "联盟",
+		"cost_gold": 275,
+		"cost_wood": 85
+	}
+}

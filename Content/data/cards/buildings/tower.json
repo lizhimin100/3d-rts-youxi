@@ -1,0 +1,52 @@
+{
+	"$script": "res://Game/config/建筑卡.gd",
+	"props": {
+		"functions": [
+			"防御"
+		],
+		"tier": 1,
+		"require_tier": 0,
+		"max_hp": 620,
+		"defense": 3,
+		"defense_type": "堡垒",
+		"footprint": {
+			"$t": "Vector2i",
+			"x": 4,
+			"y": 4
+		},
+		"height": 8.7,
+		"train_time": 25,
+		"is_dropoff": false,
+		"dropoff_kinds": [],
+		"food_provided": 0,
+		"trains": [],
+		"researches": [],
+		"sight_range": 15,
+		"body_radius": 1.6,
+		"selection_radius": 2.4,
+		"detect_radius": 0,
+		"aura_radius": 0,
+		"aura_mana_regen": 0,
+		"attack": 22,
+		"range": 870,
+		"attack_type": "穿刺",
+		"attack_spread": 4,
+		"attack_cooldown": 1.5,
+		"projectile": 1,
+		"projectile_speed": 28,
+		"acquire_range": 13,
+		"model_path": "res://Content/art/模型/箭塔.glb",
+		"model_scale": 0.5,
+		"anim_set": 6,
+		"def_role": "defense",
+		"def_tags": [],
+		"design_power": 0,
+		"card_id": "tower",
+		"display_name": "箭塔",
+		"icon": "",
+		"description": "有攻击的防御塔，但视野比哨塔小（它是箭，不是哨）。",
+		"race": "联盟",
+		"cost_gold": 100,
+		"cost_wood": 40
+	}
+}

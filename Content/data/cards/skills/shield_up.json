@@ -1,0 +1,71 @@
+{
+	"$script": "res://Game/config/技能卡.gd",
+	"props": {
+		"id": "shield_up",
+		"display_name": "举盾",
+		"icon": "技能/shield_up",
+		"note": "举盾防御：受到伤害 -15%，受到穿刺伤害再 -35%；移动速度 -45%，攻击速度 -50%。再点一次放下。",
+		"kind": "开关",
+		"target": "无",
+		"cast": 0.2,
+		"cooldown": 0.4,
+		"range": 0,
+		"slots": 1,
+		"hotkey": "Q",
+		"atoms": [
+			{
+				"$script": "res://Game/config/原子/原子_属性.gd",
+				"props": {
+					"stat": "damage_taken",
+					"mul": 0.85,
+					"add": 0,
+					"when": "",
+					"atom_id": "减伤",
+					"note": ""
+				}
+			},
+			{
+				"$script": "res://Game/config/原子/原子_属性.gd",
+				"props": {
+					"stat": "damage_taken",
+					"mul": 0.65,
+					"add": 0,
+					"when": "穿刺",
+					"atom_id": "减伤",
+					"note": ""
+				}
+			},
+			{
+				"$script": "res://Game/config/原子/原子_属性.gd",
+				"props": {
+					"stat": "move_speed",
+					"mul": 0.55,
+					"add": 0,
+					"when": "",
+					"atom_id": "属性",
+					"note": ""
+				}
+			},
+			{
+				"$script": "res://Game/config/原子/原子_属性.gd",
+				"props": {
+					"stat": "attack_cooldown",
+					"mul": 2,
+					"add": 0,
+					"when": "",
+					"atom_id": "属性",
+					"note": ""
+				}
+			}
+		],
+		"mods": [],
+		"burst_shots": 0,
+		"burst_interval": 0.12,
+		"reload": 0,
+		"anim_on": "shield_up",
+		"anim_hold": "shield_hold",
+		"anim_off": "shield_down",
+		"vfx_on": "weapon_glint",
+		"vfx_off": "weapon_glint"
+	}
+}

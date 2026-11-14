@@ -1,0 +1,54 @@
+{
+	"$script": "res://Game/config/建筑卡.gd",
+	"props": {
+		"functions": [
+			"侦察"
+		],
+		"tier": 1,
+		"require_tier": 0,
+		"max_hp": 240,
+		"defense": 0,
+		"defense_type": "轻甲",
+		"footprint": {
+			"$t": "Vector2i",
+			"x": 1,
+			"y": 1
+		},
+		"height": 1.4,
+		"train_time": 12,
+		"is_dropoff": false,
+		"dropoff_kinds": [],
+		"food_provided": 0,
+		"trains": [],
+		"researches": [],
+		"sight_range": 8,
+		"body_radius": 0.45,
+		"selection_radius": 1.1,
+		"detect_radius": 0,
+		"aura_radius": 0,
+		"aura_mana_regen": 0,
+		"attack": 0,
+		"range": 0,
+		"attack_type": "普通",
+		"attack_spread": 0,
+		"attack_cooldown": 1.5,
+		"projectile": 0,
+		"projectile_speed": 20,
+		"acquire_range": 0,
+		"model_path": "combo:campfire",
+		"model_scale": 1,
+		"anim_set": 4,
+		"def_role": "",
+		"def_tags": [
+			"light"
+		],
+		"design_power": 0,
+		"card_id": "campfire",
+		"display_name": "营火",
+		"icon": "",
+		"description": "夜间照明点：有血量、能被拆、能上小地图的纯功能建筑。",
+		"race": "联盟",
+		"cost_gold": 0,
+		"cost_wood": 20
+	}
+}

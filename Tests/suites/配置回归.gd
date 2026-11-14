@@ -1207,7 +1207,7 @@ func _case_2c9() -> void:
 			"定点 + 一行 JSON")
 
 	# ---------- 系数卡 + 开关 + 守门（4 条）----------
-	var coef_card: Resource = load("res://Game/config/卡/AI诉求系数.tres")
+	var coef_card: Resource = load("res://Game/config/AI诉求系数.gd").call("load_from_json")
 	var coef_ok: bool = coef_card != null
 	var coef_names: Array = ["训练_威胁系数", "训练_缺口系数", "建造_农场缺口系数",
 		"建造_农场紧迫系数", "建造_兵营缺口系数", "建造_兵营紧迫系数", "修理_掉血系数",
@@ -1262,7 +1262,7 @@ func _case_2c10() -> void:
 	var bm = load("res://Game/ai/战斗模型.gd")
 	var sa_src: String = FileAccess.get_file_as_string("res://Game/ai/简单AI.gd")
 	var bench_src: String = FileAccess.get_file_as_string("res://Tests/suites/AI基准.gd")
-	var card: Resource = load("res://Game/config/卡/AI诉求系数.tres")
+	var card: Resource = load("res://Game/config/AI诉求系数.gd").call("load_from_json")
 
 	# ---------- P0-A：防守下限只扣一次（3 条）----------
 	var pa0: int = int(bm.troop_available(8, 8, 0))
@@ -1695,13 +1695,13 @@ func _case_2c11() -> void:
 	_record("2C11/2C12：加载后读到的 25 个值与 AI诉求系数.gd defaults() 逐项一致",
 			same and int(defs.size()) == 25,
 			"逐项 %d 键，一致=%s" % [int(defs.size()), str(same)])
-	var card_obj: Resource = load("res://Game/config/卡/AI诉求系数.tres")
+	var card_obj: Resource = load("res://Game/config/AI诉求系数.gd").call("load_from_json")
 	var export_same: bool = true
 	for k in keys24:
 		var v = card_obj.get(String(k))
 		if v == null or not _near(float(v), float(defs[k]), 0.000001):
 			export_same = false
-	_record("2C11/2C12：.gd 的 @export 默认值与 defaults() 逐项一致（两处同步守门）",
+	_record("2C11/2C12：JSON 25 项与 defaults() 逐项一致（唯一真源 = Content/data/ai_demand.json）",
 			export_same, "25 项一致=%s" % str(export_same))
 	var bm_src: String = ""
 	var fbm := FileAccess.open("res://Game/ai/战斗模型.gd", FileAccess.READ)

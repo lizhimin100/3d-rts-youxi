@@ -18,6 +18,7 @@ extends Window
 ##   调用方用 preload 常量 + .call() 拿它。
 
 const Spec := preload("res://Views/hud/界面规格.gd")
+const CARD_STORE := preload("res://Game/config/card_store.gd")
 const EDITOR_THEME := preload("res://addons/map_editor/编辑器主题.tres")
 ## 皮肤（深铁石底 + 金线）：在 .tres 实例上就地改写，资源路径不变
 const 皮肤 := preload("res://addons/map_editor/编辑器皮肤.gd")
@@ -302,7 +303,7 @@ func _claimed_by_other(o: MapObject, camp_id: String) -> bool:
 func _unique_id(den: String) -> String:
 	var base: String = "camp_%s_" % den.validate_filename()
 	var n: int = 1
-	while FileAccess.file_exists(CAMP_TABLE.CARD_DIR + base + str(n) + ".tres"):
+	while FileAccess.file_exists(CAMP_TABLE.CARD_DIR + base + str(n) + ".json"):
 		n += 1
 	return base + str(n)
 
@@ -485,7 +486,7 @@ func _save() -> void:
 	# 草稿才按 id 拼路径；已有卡一律写回它原本的文件（id 和文件名允许不一致）
 	var path: String = String(_camp.resource_path)
 	if path.is_empty():
-		path = CAMP_TABLE.CARD_DIR + cid + ".tres"
+		path = CAMP_TABLE.CARD_DIR + cid + ".json"
 		if FileAccess.file_exists(path):
 			_status.text = "已有 id 为「%s」的营地卡，换一个营地 id 再存" % cid
 			return
@@ -507,7 +508,7 @@ func _save() -> void:
 	_camp.set("first_spawn_min", _first.value)
 	_camp.set("spawn_interval_min", _interval.value)
 
-	var err: int = ResourceSaver.save(_camp, path)
+	var err: int = CARD_STORE.save_card(_camp, path)
 	if err != OK:
 		_status.text = "保存失败（错误码 %d）：%s" % [err, path]
 		return

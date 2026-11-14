@@ -1,0 +1,58 @@
+{
+	"$script": "res://Game/config/单位卡.gd",
+	"props": {
+		"unit_class": "陆军",
+		"roles": [
+			"输出"
+		],
+		"counters": [
+			"重甲"
+		],
+		"range": 550,
+		"attack": 26,
+		"attack_type": "穿刺",
+		"defense": 3,
+		"defense_type": "轻甲",
+		"power": -1,
+		"skills": [],
+		"volume": 1,
+		"drop_gold": 0,
+		"drop_wood": 0,
+		"require_tier": 2,
+		"max_hp": 320,
+		"attack_spread": 0,
+		"attack_cooldown": 2.2,
+		"projectile": 1,
+		"projectile_speed": 40,
+		"acquire_range": 12,
+		"sight_range": 12,
+		"move_speed": 4,
+		"turn_speed": 9,
+		"body_radius": 0.45,
+		"selection_radius": 0.7,
+		"food_cost": 3,
+		"train_time": 22,
+		"height": 1.8,
+		"gather_rate": 0,
+		"carry_capacity": 10,
+		"max_mana": 0,
+		"mana_regen": 0,
+		"mana_cost": 0,
+		"ability_cooldown": 8,
+		"model_path": "res://Content/art/模型/步兵.glb",
+		"model_scale": 1,
+		"anim_set": 1,
+		"def_role": "ranged",
+		"def_tags": [
+			"light"
+		],
+		"design_power": 0,
+		"card_id": "dwarf_musketeer",
+		"display_name": "矮人火枪手",
+		"icon": "",
+		"description": "二本兵营出的远程火枪手：射程 8.25 米、单发伤害高、射速慢。需要大本营升到二本（联盟要塞）。",
+		"race": "联盟",
+		"cost_gold": 140,
+		"cost_wood": 40
+	}
+}

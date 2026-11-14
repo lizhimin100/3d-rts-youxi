@@ -1,17 +1,20 @@
 extends Node
 ## **配置总线（自动加载单例 `Cfg`）**
 ## 职责：
-##   1. 组装唯一一份 GameConfig（
-##        - 若存在 res://配置/游戏配置.tres 就用它（编辑器里可以直接改数值）
-##        - 否则用代码默认值（单位表.gd）
-##      ）
+##   1. 组装唯一一份 GameConfig：
+##        - 全局数值来自 `Content/data/game.json`（JSON 是唯一真源）；
+##        - 单位/建筑/技能卡来自 `Content/data/cards/*.json`（由 UnitTable 装载）；
+##        - 代码里**没有可调数值默认值**（game.json 缺失只作为最后兜底并报错）。
 ##   2. 提供只读访问：Cfg.game / Cfg.unit(id) / Cfg.difficulty(idx)
 ##   3. 注册输入映射（不让 project.godot 里塞一堆序列化事件，改起来更直观）
 ##
-## 注意：这里**不写任何数值**，数值一律来自 GameConfig / UnitTable。
+## ★ 2026-11-14：旧的 `res://配置/游戏配置.tres` 覆盖机制已退役。
+##   改数值 → 改 Content/data/game.json → 重跑游戏（--check 会校验字段）。
+##   调试面板改数值也必须写回这个 JSON（Engine/debug/debug_tuner.gd 只允许写 Content/data/）。
 
-## 可选的配置覆盖文件（存在即优先）
-const OVERRIDE_PATH := "res://配置/游戏配置.tres"
+const GAME_JSON := "res://Content/data/game.json"
+const JsonFile := preload("res://Engine/util/json_file.gd")
+const JsonCodec := preload("res://Engine/util/json_codec.gd")
 
 ## 全局配置（所有人只读）
 var game: GameConfig = null
@@ -25,21 +28,14 @@ func _init() -> void:
 ## 组装配置
 func _rebuild() -> void:
 	var cfg: GameConfig = null
-	if ResourceLoader.exists(OVERRIDE_PATH):
-		cfg = load(OVERRIDE_PATH) as GameConfig
-		if cfg == null:
-			push_warning("[Cfg] %s 不是合法的 GameConfig，回退到代码默认值" % OVERRIDE_PATH)
+	if FileAccess.file_exists(GAME_JSON):
+		cfg = JsonCodec.restore("res://Game/config/游戏配置.gd", JsonFile.read_dict(GAME_JSON, {})) as GameConfig
 	if cfg == null:
+		push_error("[Cfg] 读不出 %s，退回 schema 默认值（正常构建不该发生）" % GAME_JSON)
 		cfg = GameConfig.new()
-	# 单位表永远以代码为准（避免旧 .tres 里残留的 def 覆盖新数值）
 	cfg.units = UnitTable.build_units()
 	cfg.researches = UnitTable.build_researches()
-	# 地图资源的储量由 GameConfig 说了算（2026-11-13）：
-	#   单位表里的 `goldmine.resource_amount = 3200` 只是兜底常量，
-	#   真正常用的是这里的 `gold_mine_amount / tree_amount`——
-	#   这样调"一座矿能挖多久"只改配置卡，不用动单位表。
 	_apply_resource_amounts(cfg)
-	# 难度：.tres 里配了就用，没配就代码默认
 	cfg.ensure_default_difficulties()
 	game = cfg
 
@@ -52,7 +48,7 @@ func _rebuild() -> void:
 func _apply_resource_amounts(cfg: GameConfig) -> void:
 	if cfg == null or cfg.units == null:
 		return
-	var mine: UnitDef = cfg.units.get(&"goldmine", null)
+	var mine := cfg.units.get(&"goldmine", null) as UnitDef
 	if mine != null:
 		mine.resource_amount = maxi(cfg.gold_mine_amount, 1)
 	# ★ 树**不能**用 `tree_amount` 覆盖：树的 resource_amount 是"还能采几次"（20），
@@ -84,8 +80,14 @@ func difficulty(idx: int = -1) -> DifficultyDef:
 	return game.difficulties[idx]
 
 
-## 把当前配置保存成 .tres（编辑器里想手改数值时用；只在工具脚本里调用）
-func save_override(path: String = OVERRIDE_PATH) -> Error:
+## 把当前配置保存回 JSON（工具/调试用；正常改数值直接改 JSON，不必经过这里）
+func save_game_json(path: String = GAME_JSON) -> Error:
 	if game == null:
 		return ERR_UNCONFIGURED
-	return ResourceSaver.save(game, path)
+	var data := JsonCodec.encode_resource(game)
+	return JsonFile.write_atomic(path, data)
+
+
+## 兼容旧调用名（Tools/导出配置.gd）
+func save_override(path: String = GAME_JSON) -> Error:
+	return save_game_json(path)

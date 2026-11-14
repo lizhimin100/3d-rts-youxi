@@ -1,0 +1,36 @@
+{
+	"$script": "res://Game/config/技能卡.gd",
+	"props": {
+		"id": "block_parry",
+		"display_name": "格挡",
+		"icon": "技能/block_parry",
+		"note": "受击触发：25% 概率挡下一击，该次伤害减半。原子与举盾共用同一套（只是触发方式不同）。",
+		"kind": "受击",
+		"target": "无",
+		"cast": 0,
+		"cooldown": 0,
+		"range": 0,
+		"slots": 1,
+		"hotkey": "",
+		"atoms": [
+			{
+				"$script": "res://Game/config/原子/原子_格挡.gd",
+				"props": {
+					"chance": 0.25,
+					"mul": 0.5,
+					"atom_id": "格挡",
+					"note": ""
+				}
+			}
+		],
+		"mods": [],
+		"burst_shots": 0,
+		"burst_interval": 0.12,
+		"reload": 0,
+		"anim_on": "",
+		"anim_hold": "",
+		"anim_off": "",
+		"vfx_on": "weapon_glint",
+		"vfx_off": ""
+	}
+}

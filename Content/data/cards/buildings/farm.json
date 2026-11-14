@@ -1,0 +1,52 @@
+{
+	"$script": "res://Game/config/建筑卡.gd",
+	"props": {
+		"functions": [
+			"人口"
+		],
+		"tier": 1,
+		"require_tier": 0,
+		"max_hp": 450,
+		"defense": 2,
+		"defense_type": "堡垒",
+		"footprint": {
+			"$t": "Vector2i",
+			"x": 8,
+			"y": 7
+		},
+		"height": 5.1,
+		"train_time": 28,
+		"is_dropoff": false,
+		"dropoff_kinds": [],
+		"food_provided": 8,
+		"trains": [],
+		"researches": [],
+		"sight_range": 12,
+		"body_radius": 3.2,
+		"selection_radius": 4.6,
+		"detect_radius": 0,
+		"aura_radius": 0,
+		"aura_mana_regen": 0,
+		"attack": 0,
+		"range": 0,
+		"attack_type": "普通",
+		"attack_spread": 0,
+		"attack_cooldown": 1.5,
+		"projectile": 0,
+		"projectile_speed": 20,
+		"acquire_range": 0,
+		"model_path": "res://Content/art/模型/农场.glb",
+		"model_scale": 0.5,
+		"anim_set": 4,
+		"def_role": "",
+		"def_tags": [],
+		"design_power": 0,
+		"card_id": "farm",
+		"display_name": "农场",
+		"icon": "",
+		"description": "提供人口。",
+		"race": "联盟",
+		"cost_gold": 120,
+		"cost_wood": 25
+	}
+}

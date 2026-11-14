@@ -1,0 +1,53 @@
+{
+	"$script": "res://Game/config/建筑卡.gd",
+	"props": {
+		"functions": [
+			"防御",
+			"侦察"
+		],
+		"tier": 1,
+		"require_tier": 0,
+		"max_hp": 520,
+		"defense": 2,
+		"defense_type": "堡垒",
+		"footprint": {
+			"$t": "Vector2i",
+			"x": 4,
+			"y": 4
+		},
+		"height": 8.7,
+		"train_time": 22,
+		"is_dropoff": false,
+		"dropoff_kinds": [],
+		"food_provided": 0,
+		"trains": [],
+		"researches": [],
+		"sight_range": 20,
+		"body_radius": 2,
+		"selection_radius": 3,
+		"detect_radius": 22,
+		"aura_radius": 0,
+		"aura_mana_regen": 0,
+		"attack": 0,
+		"range": 0,
+		"attack_type": "普通",
+		"attack_spread": 0,
+		"attack_cooldown": 1.5,
+		"projectile": 0,
+		"projectile_speed": 20,
+		"acquire_range": 0,
+		"model_path": "res://Content/art/模型/哨塔.glb",
+		"model_scale": 0.5,
+		"anim_set": 6,
+		"def_role": "defense",
+		"def_tags": [],
+		"design_power": 0,
+		"card_id": "watchtower",
+		"display_name": "哨塔",
+		"icon": "",
+		"description": "只负责看的自卫建筑：大视野 + 预警，一箭不放。",
+		"race": "联盟",
+		"cost_gold": 70,
+		"cost_wood": 15
+	}
+}

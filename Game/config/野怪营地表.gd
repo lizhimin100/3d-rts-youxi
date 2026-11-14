@@ -10,8 +10,9 @@ extends RefCounted
 ##
 ## ⚠ 本文件**不写 class_name**（同上：别碰全局类缓存），调用方用 preload 常量 + `.call()`。
 
-## 营地卡目录
-const CARD_DIR := "res://Game/config/卡/野怪营地/"
+const CardStore := preload("res://Game/config/card_store.gd")
+## 营地卡目录（JSON）
+const CARD_DIR := CardStore.DIR_CAMPS + "/"
 
 ## 全部营地定义（按文件名排序，保证同图每次刷新顺序一致）
 static var _all: Array = []
@@ -58,16 +59,9 @@ static func _reload() -> void:
 	_all.clear()
 	_by_den.clear()
 	_by_id.clear()
-	var dir := DirAccess.open(CARD_DIR)
-	if dir == null:
-		push_warning("[野怪营地表] 目录打不开：%s（营地系统将不会刷任何怪）" % CARD_DIR)
-		return
-	var names: PackedStringArray = dir.get_files()
-	names.sort()
-	for f in names:
-		if not f.ends_with(".tres"):
-			continue
-		var res: Resource = load(CARD_DIR + f) as Resource
+	for entry in CardStore.list(CardStore.DIR_CAMPS):
+		var f: String = entry["file"]
+		var res: Resource = entry["card"]
 		if res == null:
 			push_warning("[野怪营地表] 加载失败：%s" % f)
 			continue

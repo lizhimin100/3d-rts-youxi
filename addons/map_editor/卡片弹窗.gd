@@ -24,8 +24,9 @@ const 皮肤 := preload("res://addons/map_editor/编辑器皮肤.gd")
 const UNIT_TABLE := preload("res://Game/config/单位表.gd")
 const LW := preload("res://Game/config/定位词表.gd")
 
-const CARD_DIR_UNIT := "res://Game/config/卡/单位/"
-const CARD_DIR_BUILDING := "res://Game/config/卡/建筑/"
+const CARD_STORE := preload("res://Game/config/card_store.gd")
+const CARD_DIR_UNIT := CARD_STORE.DIR_UNITS + "/"
+const CARD_DIR_BUILDING := CARD_STORE.DIR_BUILDINGS + "/"
 
 var session = null
 ## "unit" / "building"
@@ -183,20 +184,8 @@ func _dir() -> String:
 
 ## 读一个卡目录（按文件名排序，保证每次顺序一致）
 func _load_dir(dir_path: String) -> Array:
-	var out: Array = []
-	var dir := DirAccess.open(dir_path)
-	if dir == null:
-		return out
-	var names: PackedStringArray = dir.get_files()
-	names.sort()
-	for f in names:
-		if not f.ends_with(".tres"):
-			continue
-		var res: Resource = load(dir_path + f) as Resource
-		if res == null:
-			continue
-		out.append({"path": dir_path + f, "card": res})
-	return out
+	# 2026-11-14：卡是 JSON（Content/data/cards/…），统一走 CardStore
+	return CARD_STORE.list(dir_path)
 
 
 func _scan() -> void:
@@ -595,7 +584,7 @@ func _save() -> void:
 		_card.set("trains", _checked_ids(_checks_train))
 		_card.set("researches", _checked_ids(_checks_research))
 
-	var err: int = ResourceSaver.save(_card, path)
+	var err: int = CARD_STORE.save_card(_card, path)
 	if err != OK:
 		_status.text = "保存失败（错误码 %d）：%s" % [err, path]
 		return
@@ -631,7 +620,7 @@ func _create_card() -> void:
 	var dir_path: String = _dir()
 	var prefix: String = "new_unit_" if _kind == "unit" else "new_building_"
 	var n: int = 1
-	while FileAccess.file_exists(dir_path + prefix + str(n) + ".tres"):
+	while FileAccess.file_exists(dir_path + prefix + str(n) + ".json"):
 		n += 1
 	var id: String = prefix + str(n)
 	var res: Resource = null
@@ -659,8 +648,8 @@ func _create_card() -> void:
 		res.set("footprint", Vector2i(3, 3))
 		res.set("height", 4.0)
 		res.set("race", &"联盟")
-	var path: String = dir_path + id + ".tres"
-	var err: int = ResourceSaver.save(res, path)
+	var path: String = dir_path + id + ".json"
+	var err: int = CARD_STORE.save_card(res, path)
 	if err != OK:
 		_status.text = "新建失败（错误码 %d）：%s" % [err, path]
 		return
@@ -714,7 +703,7 @@ func _sync_unit_trains() -> int:
 		for s in next:
 			typed.append(StringName(s))
 		b.set("trains", typed)
-		if ResourceSaver.save(b, String(e["path"])) != OK:
+		if CARD_STORE.save_card(b, String(e["path"])) != OK:
 			bad += 1
 	return bad
 

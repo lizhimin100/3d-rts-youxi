@@ -1,0 +1,38 @@
+{
+	"$script": "res://Game/config/技能卡.gd",
+	"props": {
+		"id": "triple_shot",
+		"display_name": "三连发",
+		"icon": "技能/triple_shot",
+		"note": "被动：每次攻击快速射出 3 支弩矢（间隔 0.12 秒），打完后装填 2 秒。",
+		"kind": "被动",
+		"target": "无",
+		"cast": 0,
+		"cooldown": 0,
+		"range": 0,
+		"slots": 1,
+		"hotkey": "",
+		"atoms": [
+			{
+				"$script": "res://Game/config/原子/原子_连发.gd",
+				"props": {
+					"shots": 3,
+					"interval": 0.12,
+					"reload": 2,
+					"damage_mult": 0.75,
+					"atom_id": "连发",
+					"note": ""
+				}
+			}
+		],
+		"mods": [],
+		"burst_shots": 0,
+		"burst_interval": 0.12,
+		"reload": 2,
+		"anim_on": "reload",
+		"anim_hold": "",
+		"anim_off": "",
+		"vfx_on": "",
+		"vfx_off": ""
+	}
+}

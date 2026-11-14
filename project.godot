@@ -19,8 +19,15 @@ config/icon="res://icon.svg"
 
 [autoload]
 
+App="*res://Engine/boot/app.gd"
+Keys="*res://Engine/util/asset_keys.gd"
+I18n="*res://Engine/i18n/i18n_service.gd"
+SaveSvc="*res://Engine/save/save_service.gd"
+AudioSvc="*res://Engine/audio/audio_service.gd"
+Platform="*res://Engine/platform/platform_service.gd"
 Cfg="*res://Game/config/配置入口.gd"
 Game="*res://Game/core/游戏状态.gd"
+DbgBridge="*res://Engine/debug/debug_bridge.gd"
 
 [display]
 

@@ -26,7 +26,8 @@ const SKILL_TABLE := preload("res://Game/config/技能表.gd")
 const SKILL_FX := preload("res://Game/systems/技能特效.gd")
 const UNIT_TABLE := preload("res://Game/config/单位表.gd")
 
-const DIR := "res://Game/config/卡/技能/"
+const CARD_STORE := preload("res://Game/config/card_store.gd")
+const DIR := CARD_STORE.DIR_SKILLS + "/"
 ## 模板 id → 显示名
 const TEMPLATES: Array = [
 	["defense", "防御姿态（减伤 / 移速 / 攻速）"],
@@ -170,18 +171,7 @@ func _popup_fit() -> void:
 
 func _scan() -> void:
 	_cards.clear()
-	var dir := DirAccess.open(DIR)
-	if dir == null:
-		return
-	var names: PackedStringArray = dir.get_files()
-	names.sort()
-	for f in names:
-		if not f.ends_with(".tres"):
-			continue
-		var res: Resource = load(DIR + f) as Resource
-		if res == null:
-			continue
-		_cards.append({"path": DIR + f, "card": res})
+	_cards = CARD_STORE.list(CARD_STORE.DIR_SKILLS)
 	# 技能表也要看到新文件（它自己缓存了 defs）
 	SKILL_TABLE.reload()
 
@@ -567,8 +557,8 @@ func _save() -> void:
 
 	var path: String = String(_card.resource_path)
 	if path == "":
-		path = DIR + String(_card.get("id")) + ".tres"
-	var e: int = ResourceSaver.save(_card, path)
+		path = DIR + String(_card.get("id")) + ".json"
+	var e: int = CARD_STORE.save_card(_card, path)
 	if e != 0:
 		_status.text = "写盘失败（err=%d）：%s" % [e, path]
 		_status.add_theme_color_override("font_color", Color(1.0, 0.42, 0.36))

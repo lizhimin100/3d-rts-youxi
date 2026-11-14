@@ -1,0 +1,55 @@
+{
+	"$script": "res://Game/config/建筑卡.gd",
+	"props": {
+		"functions": [
+			"科技"
+		],
+		"tier": 1,
+		"require_tier": 0,
+		"max_hp": 760,
+		"defense": 2,
+		"defense_type": "堡垒",
+		"footprint": {
+			"$t": "Vector2i",
+			"x": 5,
+			"y": 6
+		},
+		"height": 5.9,
+		"train_time": 28,
+		"is_dropoff": false,
+		"dropoff_kinds": [],
+		"food_provided": 0,
+		"trains": [],
+		"researches": [
+			"attack_up",
+			"armor_up"
+		],
+		"sight_range": 13,
+		"body_radius": 2.6,
+		"selection_radius": 4.2,
+		"detect_radius": 0,
+		"aura_radius": 0,
+		"aura_mana_regen": 0,
+		"attack": 0,
+		"range": 0,
+		"attack_type": "普通",
+		"attack_spread": 0,
+		"attack_cooldown": 1.5,
+		"projectile": 0,
+		"projectile_speed": 20,
+		"acquire_range": 0,
+		"model_path": "res://Content/art/模型/铁匠铺.glb",
+		"model_scale": 0.5,
+		"anim_set": 5,
+		"def_role": "",
+		"def_tags": [],
+		"design_power": 0,
+		"card_id": "blacksmith",
+		"display_name": "铁匠铺",
+		"icon": "",
+		"description": "攻防升级（武器锻造 / 护甲锻造）。",
+		"race": "联盟",
+		"cost_gold": 155,
+		"cost_wood": 45
+	}
+}

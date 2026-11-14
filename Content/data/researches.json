@@ -1,0 +1,50 @@
+{
+	"attack_up": {
+		"$script": "res://Game/config/研究定义.gd",
+		"props": {
+			"id": "attack_up",
+			"display_name": "武器锻造",
+			"description": "步兵 / 弩手 攻击 +1 / 级（最高 5 级，对已存在与后续单位同时生效）",
+			"gold_cost": 100,
+			"wood_cost": 40,
+			"research_time": 22,
+			"max_level": 5
+		}
+	},
+	"armor_up": {
+		"$script": "res://Game/config/研究定义.gd",
+		"props": {
+			"id": "armor_up",
+			"display_name": "护甲锻造",
+			"description": "步兵 / 弩手 防御 +1 / 级（最高 5 级，对已存在与后续单位同时生效）",
+			"gold_cost": 90,
+			"wood_cost": 50,
+			"research_time": 22,
+			"max_level": 5
+		}
+	},
+	"wood_haul": {
+		"$script": "res://Game/config/研究定义.gd",
+		"props": {
+			"id": "wood_haul",
+			"display_name": "高效搬运",
+			"description": "农民每趟运回的木材 +50%（一次研究，永久生效）",
+			"gold_cost": 120,
+			"wood_cost": 0,
+			"research_time": 28,
+			"max_level": 1
+		}
+	},
+	"repair_tech": {
+		"$script": "res://Game/config/研究定义.gd",
+		"props": {
+			"id": "repair_tech",
+			"display_name": "修缮工艺",
+			"description": "建筑修理消耗的木材 -50%（农民可右键修理己方建筑）",
+			"gold_cost": 100,
+			"wood_cost": 0,
+			"research_time": 24,
+			"max_level": 1
+		}
+	}
+}

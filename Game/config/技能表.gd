@@ -25,7 +25,9 @@ extends RefCounted
 ##   anim    = { on, hold, off }
 ##   vfx     = { on, off }
 
-const DIR := "res://Game/config/卡/技能/"
+const CardStore := preload("res://Game/config/card_store.gd")
+## 技能卡目录（JSON）
+const DIR := CardStore.DIR_SKILLS + "/"
 
 const K_ACTIVE: StringName = &"主动"
 const K_TOGGLE: StringName = &"开关"
@@ -53,16 +55,9 @@ static func _ensure() -> void:
 	_loaded = true
 	_defs.clear()
 	load_errors.clear()
-	var da := DirAccess.open(DIR)
-	if da == null:
-		push_warning("[技能表] 打不开目录：" + DIR)
-		return
-	var files: PackedStringArray = da.get_files()
-	files.sort()
-	for f in files:
-		if not f.ends_with(".tres"):
-			continue
-		var res: Resource = ResourceLoader.load(DIR + f)
+	for entry in CardStore.list(CardStore.DIR_SKILLS):
+		var f: String = entry["file"]
+		var res: Resource = entry["card"]
 		if res == null:
 			load_errors.append("%s：加载失败" % f)
 			continue

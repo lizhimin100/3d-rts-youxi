@@ -1,0 +1,58 @@
+{
+	"$script": "res://Game/config/单位卡.gd",
+	"props": {
+		"unit_class": "陆军",
+		"roles": [
+			"输出"
+		],
+		"counters": [
+			"重甲"
+		],
+		"range": 110,
+		"attack": 16,
+		"attack_type": "魔法",
+		"defense": 2,
+		"defense_type": "中甲",
+		"power": -1,
+		"skills": [],
+		"volume": 1,
+		"drop_gold": 0,
+		"drop_wood": 0,
+		"require_tier": 0,
+		"max_hp": 460,
+		"attack_spread": 1,
+		"attack_cooldown": 1.25,
+		"projectile": 0,
+		"projectile_speed": 20,
+		"acquire_range": 11,
+		"sight_range": 11,
+		"move_speed": 4.5,
+		"turn_speed": 10,
+		"body_radius": 0.45,
+		"selection_radius": 0.7,
+		"food_cost": 3,
+		"train_time": 20,
+		"height": 1.8,
+		"gather_rate": 0,
+		"carry_capacity": 10,
+		"max_mana": 0,
+		"mana_regen": 0,
+		"mana_cost": 0,
+		"ability_cooldown": 8,
+		"model_path": "res://Content/art/模型/精模/破法者.glb",
+		"model_scale": 1,
+		"anim_set": 3,
+		"def_role": "frontline",
+		"def_tags": [
+			"medium"
+		],
+		"design_power": 0,
+		"card_id": "spell_breaker",
+		"display_name": "破法者",
+		"icon": "",
+		"description": "神秘圣地的近战法刃。四刃投掷刃出手快、伤害是魔法类型，2 点中甲让他比法师更能站住前排；代价是血量和造价都比步兵高。",
+		"race": "联盟",
+		"cost_gold": 215,
+		"cost_wood": 35
+	}
+}

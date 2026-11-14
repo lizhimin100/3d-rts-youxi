@@ -1,0 +1,22 @@
+{
+	"$script": "res://Game/config/野怪营地定义.gd",
+	"props": {
+		"id": "camp_den",
+		"display_name": "豺狼人营地",
+		"den_building": "creep_den",
+		"creeps": [
+			"gnoll_warrior",
+			"gnoll_scout"
+		],
+		"counts": [
+			2,
+			1
+		],
+		"radius": 6,
+		"respawn": 90,
+		"minimap_icon": "camp",
+		"owner_slot": -2,
+		"first_spawn_min": 2,
+		"spawn_interval_min": 2
+	}
+}

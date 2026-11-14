@@ -1,0 +1,60 @@
+{
+	"$script": "res://Game/config/单位卡.gd",
+	"props": {
+		"unit_class": "陆军",
+		"roles": [
+			"承伤"
+		],
+		"counters": [
+			"轻甲"
+		],
+		"range": 90,
+		"attack": 14,
+		"attack_type": "普通",
+		"defense": 2,
+		"defense_type": "重甲",
+		"power": -1,
+		"skills": [
+			"shield_up"
+		],
+		"volume": 1,
+		"drop_gold": 0,
+		"drop_wood": 0,
+		"require_tier": 0,
+		"max_hp": 400,
+		"attack_spread": 0,
+		"attack_cooldown": 1.75,
+		"projectile": 0,
+		"projectile_speed": 20,
+		"acquire_range": 11,
+		"sight_range": 11,
+		"move_speed": 4.6,
+		"turn_speed": 10,
+		"body_radius": 0.5,
+		"selection_radius": 0.82,
+		"food_cost": 2,
+		"train_time": 15.1,
+		"height": 1.78,
+		"gather_rate": 0,
+		"carry_capacity": 10,
+		"max_mana": 0,
+		"mana_regen": 0,
+		"mana_cost": 0,
+		"ability_cooldown": 8,
+		"model_path": "res://Content/art/模型/方块人/方块人_联盟步兵.glb",
+		"model_scale": 1,
+		"anim_set": 1,
+		"def_role": "frontline",
+		"def_tags": [
+			"heavy"
+		],
+		"design_power": 0,
+		"card_id": "footman",
+		"display_name": "联盟步兵",
+		"icon": "",
+		"description": "多年来，联盟军队的庞大队伍已经缩减，然而，许多勇敢的联盟公民自愿作为步兵来保卫他们的土地。尽管这些战士缺乏前辈那闪亮的板甲和专门训练，但他们仍在战场上带着勇气和荣誉作战。",
+		"race": "联盟",
+		"cost_gold": 125,
+		"cost_wood": 0
+	}
+}

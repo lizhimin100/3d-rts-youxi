@@ -3,11 +3,11 @@ class_name UnitTable
 extends RefCounted
 ## **配置装载 + 卡索引层**（2C-4 改造）。
 ##
-## 2C-4 起**卡（.tres）是数值唯一真相源**（任务书 §2.1：卡不存任何实例状态）：
-##   · `build_units()` = 读 Game/config/卡/ 下的 17 张卡 → 逐字段重建 UnitDef
-##     + 可采集物（金矿/树，非单位/建筑，不走卡，见 `_build_harvestables`）；
-##   · 2C-3 之前的硬编码数值已按 C5 删除（删除前字段级零差异 17卡/0差异/0词表错误，
-##     报告摘要见 `_qa/card_verify.json` 与 2C-4 报告正文）；
+## ★ 2026-11-14 起**卡是 JSON 数据**（Content/data/cards/*.json），JSON 是数值唯一真相源：
+##   · `build_units()` = 读 units/buildings 两张目录的 JSON → 逐字段重建 UnitDef
+##     + 可采集物（Content/data/harvestables.json，非单位/建筑，见 `_build_harvestables`）；
+##   · .tres 卡已退役到 Content/legacy/cards/（只作迁移留档，运行时不读）；
+##   · 2C-3 之前的硬编码数值已按 C5 删除（删除前字段级零差异 17卡/0差异/0词表错误）；
 ##   · 索引/搜索接口：`get_card / find_by_class / find_by_role / find_by_counter /
 ##     find_by_range_tier`；`attack_range_tier` 由 range+阈值派生，**卡上不存**，
 ##     索引层预计算一份。其他系统一律引用卡或走索引，不得持有数值副本。
@@ -18,9 +18,14 @@ extends RefCounted
 ##     cfg.difficulties = UnitTable.build_difficulties()
 
 const MODEL_DIR := "res://Content/art/模型/"
-## 卡目录（2C-4）
-const CARD_DIR_UNIT := "res://Game/config/卡/单位/"
-const CARD_DIR_BUILDING := "res://Game/config/卡/建筑/"
+const CardStore := preload("res://Game/config/card_store.gd")
+const JsonFile := preload("res://Engine/util/json_file.gd")
+const JsonCodec := preload("res://Engine/util/json_codec.gd")
+## 卡目录（JSON；内容数据唯一来源）
+const CARD_DIR_UNIT := CardStore.DIR_UNITS + "/"
+const CARD_DIR_BUILDING := CardStore.DIR_BUILDINGS + "/"
+const HARVEST_JSON := "res://Content/data/harvestables.json"
+const RESEARCH_JSON := "res://Content/data/researches.json"
 ## 比对开关：默认开；`--card-verify=false` 关（任务书 §2.5 C4）
 const CARD_VERIFY_DEFAULT: bool = true
 
@@ -44,19 +49,17 @@ static var _verify_ran: bool = false
 # 卡装载与索引层（2C-4 · C4）
 # ===========================================================================
 
-## 读两张卡目录里的全部 .tres，按 card_id 建索引
+## 读两张卡目录里的全部 JSON 卡，按 card_id 建索引
 static func load_cards() -> Dictionary:
 	var out: Dictionary = {}
-	for dir_path: String in [CARD_DIR_UNIT, CARD_DIR_BUILDING]:
-		var dir := DirAccess.open(dir_path)
-		if dir == null:
-			continue
-		for f in dir.get_files():
-			if not f.ends_with(".tres"):
-				continue
-			var res: Resource = load(dir_path + f)
+	for dir_path: String in [CardStore.DIR_UNITS, CardStore.DIR_BUILDINGS]:
+		for entry in CardStore.list(dir_path):
+			var res: Resource = entry["card"]
 			if res is EntityCard:
 				var card := res as EntityCard
+				if out.has(card.card_id):
+					push_error("[单位表] card_id 重复：%s（%s）" % [card.card_id, entry["file"]])
+					continue
 				out[card.card_id] = card
 	return out
 
@@ -264,52 +267,20 @@ static func _def_of_card(card: EntityCard) -> UnitDef:
 
 ## 可采集物（金矿 / 树 / 四季树）：地图资源，不是"单位/建筑"，不走卡。
 static func _build_harvestables(out: Dictionary) -> void:
-	var goldmine := UnitDef.new()
-	goldmine.id = &"goldmine"
-	goldmine.display_name = "金矿"
-	goldmine.kind = RtsConst.Kind.HARVESTABLE
-	goldmine.model_path = MODEL_DIR + "金矿.glb"
-	goldmine.anim_set = RtsConst.AnimSet.GOLD_MINE
-	goldmine.max_hp = 99999.0
-	goldmine.footprint = Vector2i(4, 4)
-	goldmine.height = 3.2
-	# ★ 2026-11-08 玩家口径「金矿图标放大，一眼看到资源点」：模型整体 ×1.35。
-	#   只放大**外观**：footprint(4×4) / body_radius(2.0) / 采集载位一律不动，
-	#   否则会改到占格与站位（那是玩法）。矿体略微越出占格边缘是有意的 ——
-	#   远看才像个地标，而且树/岩石本来也会越出各自格子。
-	goldmine.model_scale = 1.35
-	goldmine.harvest_kind = RtsConst.Harvest.GOLD
-	goldmine.resource_amount = 3200
-	goldmine.body_radius = 2.0
-	goldmine.selection_radius = 2.8
-	goldmine.sight_range = 6.0
-	out[&"goldmine"] = goldmine
-
-	var tree := UnitDef.new()
-	tree.id = &"tree"
-	tree.display_name = "树（混生）"
-	tree.kind = RtsConst.Kind.HARVESTABLE
-	tree.model_path = ""
-	tree.anim_set = RtsConst.AnimSet.TREE
-	tree.max_hp = 99999.0
-	tree.footprint = Vector2i(2, 2)
-	tree.height = 5.5
-	tree.harvest_kind = RtsConst.Harvest.WOOD
-	# ★ 玩家口径（2026-11-07）：一棵树 = **20 次采集**（采一次扣一次，不是按木料吨位）。
-	#   一次采集 = 农民走到树边做完动作、拿到 carry_capacity 木头的那个循环；
-	#   扣次数发生在「动作完成」那一拍（可采集物.consume_charge），不是卸货那一拍。
-	tree.resource_amount = 20
-	tree.body_radius = 0.9
-	tree.selection_radius = 1.4
-	tree.sight_range = 4.0
-	out[&"tree"] = tree
-
-	var 四季 := [["春", "春·树"], ["夏", "夏·树"], ["秋", "秋·树"], ["冬", "冬·树"]]
-	for pair in 四季:
-		var t: UnitDef = tree.duplicate(true) as UnitDef
-		t.id = StringName("tree_" + String(pair[0]))
-		t.display_name = String(pair[1])
-		out[t.id] = t
+	var data := JsonFile.read_dict(HARVEST_JSON, {})
+	if data.is_empty():
+		push_error("[单位表] 可采集物数据打不开：" + HARVEST_JSON)
+		return
+	for id in data.keys():
+		var value: Variant = data[id]
+		if not (value is Dictionary):
+			push_error("[单位表] 可采集物条目不是对象：" + String(id))
+			continue
+		var d := JsonCodec.restore("res://Game/config/单位定义.gd", value) as UnitDef
+		if d == null:
+			push_error("[单位表] 可采集物重建失败：" + String(id))
+			continue
+		out[d.id] = d
 
 
 # ===========================================================================
@@ -357,7 +328,8 @@ static func _card_verify(built: Dictionary) -> void:
 	}
 	# 2C-9：第 18 张卡 = 诉求分系数卡（不是 UnitDef 卡的子类，单独校验）
 	var coef_problems: Array = []
-	var coef_card: Resource = load("res://Game/config/卡/AI诉求系数.tres")
+	var coef_script: Script = load("res://Game/config/AI诉求系数.gd")
+	var coef_card: Resource = coef_script.call("load_from_json") if coef_script != null else null
 	if coef_card == null:
 		coef_problems.append("加载失败")
 	else:
@@ -398,113 +370,42 @@ static func _card_verify(built: Dictionary) -> void:
 
 static func build_researches() -> Dictionary:
 	var out: Dictionary = {}
-
-	var atk := ResearchDef.new()
-	atk.id = &"attack_up"
-	atk.display_name = "武器锻造"
-	atk.description = "步兵 / 弩手 攻击 +1 / 级（最高 5 级，对已存在与后续单位同时生效）"
-	atk.gold_cost = 100
-	atk.wood_cost = 40
-	atk.research_time = 22.0
-	atk.max_level = 5
-	out[&"attack_up"] = atk
-
-	var arm := ResearchDef.new()
-	arm.id = &"armor_up"
-	arm.display_name = "护甲锻造"
-	arm.description = "步兵 / 弩手 防御 +1 / 级（最高 5 级，对已存在与后续单位同时生效）"
-	arm.gold_cost = 90
-	arm.wood_cost = 50
-	arm.research_time = 22.0
-	arm.max_level = 5
-	out[&"armor_up"] = arm
-
-	var haul := ResearchDef.new()
-	haul.id = &"wood_haul"
-	haul.display_name = "高效搬运"
-	haul.description = "农民每趟运回的木材 +50%（一次研究，永久生效）"
-	haul.gold_cost = 120
-	haul.wood_cost = 0
-	haul.research_time = 28.0
-	haul.max_level = 1
-	out[&"wood_haul"] = haul
-
-	var rep := ResearchDef.new()
-	rep.id = &"repair_tech"
-	rep.display_name = "修缮工艺"
-	rep.description = "建筑修理消耗的木材 -50%（农民可右键修理己方建筑）"
-	rep.gold_cost = 100
-	rep.wood_cost = 0
-	rep.research_time = 24.0
-	rep.max_level = 1
-	out[&"repair_tech"] = rep
-
+	var data := JsonFile.read_dict(RESEARCH_JSON, {})
+	if data.is_empty():
+		push_error("[单位表] 研究数据打不开：" + RESEARCH_JSON)
+		return out
+	for id in data.keys():
+		var value: Variant = data[id]
+		if not (value is Dictionary):
+			push_error("[单位表] 研究条目不是对象：" + String(id))
+			continue
+		var r := JsonCodec.restore("res://Game/config/研究定义.gd", value) as ResearchDef
+		if r == null:
+			push_error("[单位表] 研究重建失败：" + String(id))
+			continue
+		out[r.id] = r
 	return out
+
 
 
 ## 三档难度。2C-4 追加 `function_weights`（承伤:输出 配比，TODO 待实测细调）。
 static func build_difficulties() -> Array[DifficultyDef]:
-	var arr: Array[DifficultyDef] = []
+	## 难度三档住在 Content/data/game.json（game.json 的 difficulties 字段）。
+	## 不走代码默认值：改难度只改 JSON。
+	var out: Array[DifficultyDef] = []
+	var game_data := JsonFile.read_dict("res://Content/data/game.json", {})
+	var props: Dictionary = game_data.get("props", {})
+	var list: Variant = props.get("difficulties", [])
+	if not (list is Array):
+		push_error("[单位表] game.json 里没有 difficulties 数组")
+		return out
+	for item in list:
+		if not (item is Dictionary):
+			continue
+		var d := JsonCodec.restore("res://Game/config/难度定义.gd", item) as DifficultyDef
+		if d != null:
+			out.append(d)
+	if out.is_empty():
+		push_error("[单位表] 一档难度都没读出来")
+	return out
 
-	var easy := DifficultyDef.new()
-	easy.id = &"easy"
-	easy.display_name = "简单"
-	easy.think_interval = 1.4
-	easy.first_wave_delay = 100.0
-	easy.wave_interval = 52.0
-	easy.wave_interval_decay = 2.0
-	easy.wave_interval_min = 28.0
-	easy.max_army = 10
-	easy.target_peasants = 6
-	easy.min_wave_size = 4
-	easy.gather_multiplier = 0.85
-	easy.train_time_multiplier = 1.15
-	easy.bonus_gold = 0
-	easy.aggression = 0.55
-	easy.defend_ratio = 0.5
-	easy.role_weights = {&"frontline": 5.0, &"ranged": 3.0, &"caster": 1.0, &"siege": 1.0}
-	# 2C-4 选兵配比（承伤:输出）。TODO 难度档给简单权重，用户口径"当前兵种少，不需要复杂加权"
-	easy.function_weights = {&"承伤": 5.0, &"输出": 5.0}
-	arr.append(easy)
-
-	var normal := DifficultyDef.new()
-	normal.id = &"normal"
-	normal.display_name = "普通"
-	normal.think_interval = 1.0
-	normal.first_wave_delay = 75.0
-	normal.wave_interval = 40.0
-	normal.wave_interval_decay = 2.5
-	normal.wave_interval_min = 22.0
-	normal.max_army = 16
-	normal.target_peasants = 8
-	normal.min_wave_size = 6
-	normal.gather_multiplier = 1.0
-	normal.train_time_multiplier = 1.0
-	normal.bonus_gold = 100
-	normal.aggression = 0.75
-	normal.defend_ratio = 0.6
-	normal.role_weights = {&"frontline": 6.0, &"ranged": 4.0, &"caster": 2.0, &"siege": 1.0}
-	normal.function_weights = {&"承伤": 6.0, &"输出": 4.0}
-	arr.append(normal)
-
-	var hard := DifficultyDef.new()
-	hard.id = &"hard"
-	hard.display_name = "困难"
-	hard.think_interval = 0.7
-	hard.first_wave_delay = 55.0
-	hard.wave_interval = 30.0
-	hard.wave_interval_decay = 3.0
-	hard.wave_interval_min = 16.0
-	hard.max_army = 24
-	hard.target_peasants = 10
-	hard.min_wave_size = 8
-	hard.gather_multiplier = 1.25
-	hard.train_time_multiplier = 0.85
-	hard.bonus_gold = 250
-	hard.aggression = 0.9
-	hard.defend_ratio = 0.75
-	hard.role_weights = {&"frontline": 8.0, &"ranged": 5.0, &"caster": 3.0, &"siege": 1.0}
-	hard.function_weights = {&"承伤": 7.0, &"输出": 5.0}
-	arr.append(hard)
-
-	return arr
