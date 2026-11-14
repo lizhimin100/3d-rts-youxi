@@ -2,6 +2,47 @@
 
 > 状态：现行（2026-11-14）。改数值/加内容之前先读这一页。
 > 规则：**改数值只改 `Content/data/*.json`**；代码里不再有可调默认值。
+## 0. Content 是唯一真源，不是中转站
+
+`Content/` **不是**“先放这里、之后再导出/再读别的文件”的暂存区。运行时直接读它，编辑器直接写它。
+
+- `Cfg` 读 `Content/data/game.json`；`UnitTable` / `技能表` / `野怪营地表` 经 `CardStore` 读 `Content/data/cards/*.json`；
+- 地图经 `MapStore` 读 `Content/maps/*.tres`；
+- 编辑器弹窗也是 `CardStore` 读写同一批 JSON；
+- **没有“导出/同步”步骤**，也没有构建输出目录里的副本；`DebugTuner` 写回源 JSON；
+- 内存里的 `UnitCard` / `UnitDef` 只是**类型化视图**（方便 GDScript 用），不是第二份数值；保存时仍回写 JSON。
+
+唯一“迁走”的是旧 `.tres` 卡：`Content/legacy/cards/` 只留档，运行时和编辑器都不读，发行构建排除
+（`Tools/build/release_exclude.txt`）。**改那里不会影响游戏。**
+
+### 各类数据在哪、谁在写
+
+| 数据 | 位置 | 真人怎么改 | 运行时谁读 |
+|---|---|---|---|
+| 单位 / 建筑 / 技能 / 营地卡 | `Content/data/cards/{units,buildings,skills,camps}/*.json` | 编辑器弹窗（推荐）或文本编辑 | `CardStore` → `UnitTable` / `技能表` / `野怪营地表` |
+| 全局数值（经济/战斗/镜头/难度/开局/界面） | `Content/data/game.json` | 文本编辑 | `Cfg`（`配置入口.gd`） |
+| 可采集物 / 研究 | `Content/data/{harvestables,researches}.json` | 文本编辑 | `UnitTable` |
+| AI 诉求系数 | `Content/data/ai_demand.json` | 文本编辑 | `AI诉求系数` / `战斗模型` |
+| 界面文案 | `Content/i18n/ui.csv` | 文本编辑 | `I18n` |
+| 资源 key | `Content/keys/assets.json` | **跑 `python Tools/gen/gen_asset_keys.py`**，不要手改 | `Keys` / `AudioSvc` |
+| 地图布局 | `Content/maps/*.tres` | 地图编辑器（.tres 是编辑器资源） | `MapStore` / `MapLoader` |
+| 截图画面 / 推演场景 | `Content/data/{screens,sim}.json` | 文本编辑 | `shot_runner` / `run_simulate` |
+| 美术 / 音频 | `Content/art` / `Content/audio` | Blender 脚本 / 生成器 / 直接换文件 | 模型工厂 / `音效管理` / `AudioSvc` |
+| 旧卡（只留档） | `Content/legacy/cards/*.tres` | **不要改** | 无人读，发行排除 |
+
+### 为什么地图还是 `.tres`
+
+`MapDef` 是地图编辑器的核心 Resource（高度场/地块/对象/区域/波次一大堆嵌套子资源）。
+它不是“平衡数值”，而是编辑器布局数据；转 JSON 只会让地图编辑器失去 Inspector 与类型校验，收益为负。
+所以：**平衡/文案/卡 → JSON；地图布局 → `.tres`**，两者都是“当前生效的真源”，不是新旧两套。
+
+### 改完什么时候生效
+
+- 游戏内卡片/数值：**重启游戏**（没有运行时热重载）；编辑器弹窗保存后刷新列表即可看到。
+- 地图编辑器保存 `.tres`：保存即生效（编辑器自己 reload）。
+- 新增 `.glb` / 场景 / `class_name`：跑 `./Tools/run-game.ps1 --import`。
+- 手改任何 `Content/data` 后：跑 `./Tools/run-game.ps1 --check`，再开游戏。
+
 
 ## 1. 目录
 

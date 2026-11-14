@@ -19,6 +19,7 @@
 		"minimap_icon": "camp",
 		"owner_slot": -2,
 		"first_spawn_min": 2,
-		"spawn_interval_min": 2
+		"spawn_interval_min": 2,
+		"metadata/source_path": "res://Content/data/cards/camps/camp_shell.json"
 	}
 }
