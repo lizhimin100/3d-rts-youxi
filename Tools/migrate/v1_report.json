@@ -1,0 +1,6159 @@
+{
+ "dry_run": false,
+ "moves": [
+  [
+   "代码/核心",
+   "Game/core"
+  ],
+  [
+   "代码/系统",
+   "Game/systems"
+  ],
+  [
+   "代码/单位",
+   "Game/units"
+  ],
+  [
+   "代码/ai",
+   "Game/ai"
+  ],
+  [
+   "代码/寻路",
+   "Game/pathing"
+  ],
+  [
+   "代码/地图核心",
+   "Game/map"
+  ],
+  [
+   "代码/配置",
+   "Game/config"
+  ],
+  [
+   "代码/操作",
+   "Views/input"
+  ],
+  [
+   "代码/镜头",
+   "Views/camera"
+  ],
+  [
+   "代码/界面",
+   "Views/hud"
+  ],
+  [
+   "代码/美术",
+   "Views/world/art"
+  ],
+  [
+   "代码/人群",
+   "Views/world/crowd"
+  ],
+  [
+   "代码/音频",
+   "Game/audio"
+  ],
+  [
+   "代码/测试",
+   "Tests/suites"
+  ],
+  [
+   "代码/数据",
+   "Game/core"
+  ],
+  [
+   "场景",
+   "Views/scenes"
+  ],
+  [
+   "美术",
+   "Content/art"
+  ],
+  [
+   "音频",
+   "Content/audio"
+  ],
+  [
+   "地图",
+   "Content/maps"
+  ],
+  [
+   "文档",
+   "Documents"
+  ],
+  [
+   "工具",
+   "Tools"
+  ],
+  [
+   "代码/战争迷雾.gd",
+   "Game/systems/战争迷雾.gd"
+  ],
+  [
+   "Game/core/地图生成.gd",
+   "Game/map/地图生成.gd"
+  ],
+  [
+   "Game/core/地图生成.gd.uid",
+   "Game/map/地图生成.gd.uid"
+  ],
+  [
+   "Game/core/地形.gd",
+   "Game/map/地形.gd"
+  ],
+  [
+   "Game/core/地形.gd.uid",
+   "Game/map/地形.gd.uid"
+  ]
+ ],
+ "rewrites": [
+  [
+   ".gitignore",
+   13,
+   {
+    "美术/": 1,
+    "地图/": 5,
+    "文档/": 1,
+    "工具/": 6
+   }
+  ],
+  [
+   "AGENTS.md",
+   16,
+   {
+    "代码/测试/": 2,
+    "代码/配置/": 2,
+    "代码/核心/": 1,
+    "地图/": 1,
+    "文档/": 9,
+    "工具/": 1
+   }
+  ],
+  [
+   "project.godot",
+   3,
+   {
+    "代码/配置/": 1,
+    "代码/核心/": 1,
+    "场景/": 1
+   }
+  ],
+  [
+   "README.md",
+   20,
+   {
+    "代码/测试/": 5,
+    "代码/配置/": 2,
+    "代码/": 1,
+    "场景/": 2,
+    "美术/": 6,
+    "文档/": 1,
+    "工具/": 3
+   }
+  ],
+  [
+   "addons\\map_editor\\README.md",
+   13,
+   {
+    "代码/单位/": 1,
+    "代码/地图核心/": 1,
+    "代码/界面/": 1,
+    "美术/": 1,
+    "地图/": 6,
+    "工具/": 3
+   }
+  ],
+  [
+   "addons\\map_editor\\主屏.gd",
+   3,
+   {
+    "代码/地图核心/": 1,
+    "代码/界面/": 1,
+    "工具/": 1
+   }
+  ],
+  [
+   "addons\\map_editor\\停靠面板.gd",
+   6,
+   {
+    "代码/配置/": 5,
+    "代码/界面/": 1
+   }
+  ],
+  [
+   "addons\\map_editor\\卡片弹窗.gd",
+   9,
+   {
+    "代码/配置/": 7,
+    "代码/界面/": 1,
+    "美术/": 1
+   }
+  ],
+  [
+   "addons\\map_editor\\帮助窗.gd",
+   10,
+   {
+    "代码/测试/": 1,
+    "代码/配置/": 1,
+    "代码/地图核心/": 2,
+    "代码/界面/": 2,
+    "美术/": 2,
+    "工具/": 2
+   }
+  ],
+  [
+   "addons\\map_editor\\技能弹窗.gd",
+   19,
+   {
+    "代码/配置/": 9,
+    "代码/系统/": 3,
+    "代码/界面/": 1,
+    "代码/美术/": 2,
+    "美术/": 4
+   }
+  ],
+  [
+   "addons\\map_editor\\按钮表.gd",
+   3,
+   {
+    "代码/配置/": 2,
+    "美术/": 1
+   }
+  ],
+  [
+   "addons\\map_editor\\插件.gd",
+   1,
+   {
+    "地图/": 1
+   }
+  ],
+  [
+   "addons\\map_editor\\编辑会话.gd",
+   3,
+   {
+    "代码/单位/": 1,
+    "地图/": 1,
+    "工具/": 1
+   }
+  ],
+  [
+   "addons\\map_editor\\编辑器皮肤.gd",
+   3,
+   {
+    "代码/界面/": 2,
+    "工具/": 1
+   }
+  ],
+  [
+   "addons\\map_editor\\营地弹窗.gd",
+   5,
+   {
+    "代码/配置/": 4,
+    "代码/界面/": 1
+   }
+  ],
+  [
+   "addons\\map_editor\\视口.gd",
+   4,
+   {
+    "代码/配置/": 1,
+    "代码/单位/": 1,
+    "美术/": 2
+   }
+  ],
+  [
+   "addons\\map_editor\\资产目录.gd",
+   4,
+   {
+    "美术/": 4
+   }
+  ],
+  [
+   "addons\\map_editor\\预览工厂.gd",
+   7,
+   {
+    "代码/配置/": 2,
+    "代码/美术/": 5
+   }
+  ],
+  [
+   "Content\\art\\VAT\\footman.json",
+   4,
+   {
+    "美术/": 4
+   }
+  ],
+  [
+   "Content\\art\\图标\\anvil.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\attack_move.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\axe.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\bones.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\bow.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\brush.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\cancel.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\card.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\check.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\circle.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\clock.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\coin.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\copy.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\crate.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\delete.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\doodad.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\eye.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\fence.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\file_new.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\file_open.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\file_save.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\file_save_as.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\filter.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\fire.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\flag.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\gear.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\grass.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\grid.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\hammer.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\hand.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\heart.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\help.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\history.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\house.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\layers.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\mana.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\mine.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\minus.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\mountain.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\move.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\paint.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\paste.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\pick.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\play.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\plus.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\polygon.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\pop.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\redo.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\region.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\replace.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\return.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\rock.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\rotate_l.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\rotate_r.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\rotate_rand.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\scale_down.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\scale_reset.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\scale_up.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\shield.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\square.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\staff.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\stop.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\surrender.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\sword.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\team.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\tent.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\terrain.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\tower.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\tree.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\undo.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\upgrade.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\view_iso.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\view_reset.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\view_top.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\water.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\wave.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\wood.svg.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\单位\\archer.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\单位\\footman.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\单位\\gnoll_shaman.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\单位\\golem.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\单位\\knight.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\单位\\mage.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\单位\\peasant.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\单位\\spell_breaker.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\单位\\steam_guard.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\小地图\\camp.png.import",
+   2,
+   {
+    "美术/": 1,
+    "地图/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\建筑\\barracks.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\建筑\\blacksmith.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\建筑\\campfire.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\建筑\\creep_den.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\建筑\\creep_gate.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\建筑\\creep_shell.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\建筑\\farm.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\建筑\\lumbercamp.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\建筑\\sanctum.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\建筑\\tower.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\建筑\\townhall.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\建筑\\watchtower.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\建筑\\workshop.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\技能\\chop_wood.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\技能\\fireball.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\技能\\mine_gold.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\技能\\shield_up.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\图标\\技能\\triple_shot.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\场景\\岩石_场景.tscn",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\场景\\树_场景.tscn",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\场景\\水面_场景.tscn",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\场景\\碎石_场景.tscn",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\场景\\草丛_场景.tscn",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\场景\\金矿_场景.tscn",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\材质\\地形材质.tres",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\材质\\建筑主材质.tres",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\材质\\树材质.tres",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\材质\\水材质.tres",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\材质\\角色主材质.tres",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\材质\\金矿材质.tres",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\伐木场.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\伐木场_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\伐木场_中.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\伐木场_中_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\伐木场_中_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\伐木场_中_自发光.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\伐木场_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\伐木场_自发光.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\伐木场_远.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\伐木场_远_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\伐木场_远_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\伐木场_远_自发光.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\兵营.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\兵营_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\兵营_中.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\兵营_中_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\兵营_中_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\兵营_中_自发光.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\兵营_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\兵营_自发光.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\兵营_远.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\兵营_远_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\兵营_远_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\农场.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\农场_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\农场_中.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\农场_中_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\农场_中_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\农场_中_自发光.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\农场_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\农场_自发光.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\农场_远.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\农场_远_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\农场_远_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\农民.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\农民_bark_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\农民_bark_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\农民_cloth_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\农民_cloth_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\农民_hay_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\农民_hay_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\农民_leather_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\农民_leather_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\农民_metal_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\农民_metal_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\农民_plank_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\农民_plank_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\农民_plaster_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\农民_plaster_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\哨塔.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\哨塔_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\哨塔_中.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\哨塔_中_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\哨塔_中_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\哨塔_中_自发光.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\哨塔_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\哨塔_自发光.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\哨塔_远.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\哨塔_远_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\哨塔_远_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\大本营.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\大本营_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\大本营_中.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\大本营_中_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\大本营_中_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\大本营_中_自发光.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\大本营_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\大本营_自发光.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\大本营_远.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\大本营_远_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\大本营_远_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\大本营_远_自发光.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\尸骨.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\尸骨_plaster_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\尸骨_plaster_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\岩石.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\岩石_leaf_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\岩石_leaf_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\岩石_rock_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\岩石_rock_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\帐篷.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\帐篷_cloth_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\帐篷_cloth_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\帐篷_plank_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\帐篷_plank_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\弓箭手.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\弓箭手_bark_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\弓箭手_bark_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\弓箭手_cloth_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\弓箭手_cloth_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\弓箭手_leather_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\弓箭手_leather_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\弓箭手_metal_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\弓箭手_metal_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\弓箭手_plank_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\弓箭手_plank_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\弓箭手_plaster_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\弓箭手_plaster_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\断墙.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\断墙_ashlar_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\断墙_ashlar_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\方块人_联盟步兵_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\旗帜.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\旗帜_cloth_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\旗帜_cloth_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\旗帜_metal_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\旗帜_metal_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\旗帜_plank_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\旗帜_plank_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\旗帜_rock_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\旗帜_rock_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\木桩.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\木桩_bark_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\木桩_bark_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\木桩_metal_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\木桩_metal_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\木桩_plank_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\木桩_plank_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\木桶.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\木桶_metal_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\木桶_metal_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\木桶_plank_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\木桶_plank_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\木箱.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\木箱_metal_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\木箱_metal_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\木箱_plank_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\木箱_plank_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\栅栏.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\栅栏_plank_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\栅栏_plank_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\树.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\树_bark_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\树_bark_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\树_leaf_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\树_leaf_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\步兵.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\步兵_cloth_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\步兵_cloth_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\步兵_leather_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\步兵_leather_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\步兵_metal_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\步兵_metal_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\法师.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\法师_bark_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\法师_bark_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\法师_cloth_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\法师_cloth_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\法师_leather_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\法师_leather_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\法师_metal_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\法师_metal_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\法师_plank_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\法师_plank_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\法师_plaster_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\法师_plaster_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\神秘圣地.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\神秘圣地_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\神秘圣地_中.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\神秘圣地_中_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\神秘圣地_中_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\神秘圣地_中_自发光.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\神秘圣地_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\神秘圣地_自发光.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\神秘圣地_远.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\神秘圣地_远_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\神秘圣地_远_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\神秘圣地_远_自发光.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\箭塔.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\箭塔_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\箭塔_中.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\箭塔_中_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\箭塔_中_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\箭塔_中_自发光.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\箭塔_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\箭塔_自发光.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\箭塔_远.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\箭塔_远_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\箭塔_远_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\草丛.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\草丛_ground_grass_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\草丛_ground_grass_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\草丛_leaf_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\草丛_leaf_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\营火.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\营火_bark_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\营火_bark_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\营火_ground_dirt_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\营火_ground_dirt_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\营火_metal_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\营火_metal_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\营火_plank_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\营火_plank_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\营火_rock_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\营火_rock_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\蒸汽车坊.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\蒸汽车坊_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\蒸汽车坊_中.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\蒸汽车坊_中_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\蒸汽车坊_中_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\蒸汽车坊_中_自发光.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\蒸汽车坊_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\蒸汽车坊_自发光.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\蒸汽车坊_远.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\蒸汽车坊_远_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\蒸汽车坊_远_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\蒸汽车坊_远_自发光.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\路标.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\路标_metal_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\路标_metal_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\路标_plank_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\路标_plank_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\金矿.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\金矿_cloth_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\金矿_cloth_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\金矿_metal_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\金矿_metal_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\金矿_ore_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\金矿_ore_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\金矿_plank_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\金矿_plank_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\金矿_plaster_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\金矿_plaster_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\金矿_rock_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\金矿_rock_normal.png.import",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Content\\art\\模型\\铁匠铺.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\铁匠铺_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\铁匠铺_中.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\铁匠铺_中_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\铁匠铺_中_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\铁匠铺_中_自发光.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\铁匠铺_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\铁匠铺_自发光.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\铁匠铺_远.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\铁匠铺_远_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\铁匠铺_远_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\铁匠铺_远_自发光.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\v7_单位\\说明.md",
+   7,
+   {
+    "美术/": 3,
+    "工具/": 4
+   }
+  ],
+  [
+   "Content\\art\\模型\\v7_自然\\说明.md",
+   1,
+   {
+    "工具/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\失落帝国\\creep_den.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\失落帝国\\creep_den_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\失落帝国\\creep_den_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\失落帝国\\creep_den_自发光.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\失落帝国\\creep_gate.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\失落帝国\\creep_gate_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\失落帝国\\creep_gate_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\失落帝国\\creep_gate_自发光.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\失落帝国\\creep_shell.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\失落帝国\\creep_shell_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\失落帝国\\creep_shell_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\失落帝国\\creep_shell_自发光.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\建造\\barracks_build.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\建造\\barracks_build_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\建造\\barracks_build_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\建造\\barracks_build_自发光.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\建造\\blacksmith_build.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\建造\\blacksmith_build_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\建造\\blacksmith_build_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\建造\\blacksmith_build_自发光.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\建造\\farm_build.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\建造\\farm_build_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\建造\\farm_build_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\建造\\farm_build_自发光.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\建造\\lumbercamp_build.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\建造\\lumbercamp_build_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\建造\\lumbercamp_build_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\建造\\lumbercamp_build_自发光.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\建造\\sanctum_build.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\建造\\sanctum_build_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\建造\\sanctum_build_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\建造\\sanctum_build_自发光.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\建造\\tower_build.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\建造\\tower_build_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\建造\\tower_build_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\建造\\tower_build_自发光.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\建造\\townhall_build.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\建造\\townhall_build_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\建造\\townhall_build_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\建造\\townhall_build_自发光.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\建造\\watchtower_build.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\建造\\watchtower_build_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\建造\\watchtower_build_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\建造\\watchtower_build_自发光.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\建造\\workshop_build.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\建造\\workshop_build_ORM.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\建造\\workshop_build_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\建造\\workshop_build_自发光.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\方块人\\方块人_农民.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\方块人\\方块人_农民_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\方块人\\方块人_农民_方块人_农民_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\方块人\\方块人_弩兵.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\方块人\\方块人_弩兵_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\方块人\\方块人_弩兵_单位色板.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\方块人\\方块人_弩兵_方块人_弩兵_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\方块人\\方块人_步兵.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\方块人\\方块人_联盟步兵.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\方块人\\方块人_联盟步兵_方块人_联盟步兵_主体.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\精模\\破法者.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\精模\\骑士.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\精模\\魔金傀儡.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\野怪\\匕首.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\野怪\\匕首_野怪_色板.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\野怪\\流星锤.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\野怪\\流星锤_野怪_色板.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\野怪\\豺狼人战士.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\野怪\\豺狼人战士_野怪_色板.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\野怪\\豺狼人斥候.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\野怪\\豺狼人斥候_野怪_色板.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\模型\\野怪\\豺狼人萨满.glb.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\特效\\命中火花.tscn",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\特效\\建造尘土.tscn",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\特效\\暗角.tscn",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\特效\\死亡碎裂.tscn",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\特效\\选中圈.tscn",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\特效\\魔法爆裂.tscn",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\着色器\\暗角.gdshader",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\着色器\\选中圈.gdshader",
+   1,
+   {
+    "代码/美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\调色板\\联盟调色板.tres",
+   1,
+   {
+    "代码/美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\ashlar_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\ashlar_normal.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\bark_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\bark_normal.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\cloth_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\cloth_normal.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\cobble_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\cobble_normal.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\ground_dirt_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\ground_dirt_normal.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\ground_grass_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\ground_grass_normal.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\hay_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\hay_normal.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\leaf_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\leaf_normal.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\leather_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\leather_normal.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\metal_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\metal_normal.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\ore_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\ore_normal.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\plank_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\plank_normal.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\plaster_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\plaster_normal.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\rock_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\rock_normal.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\shingle_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\shingle_normal.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\water_albedo.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\water_normal.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\接触阴影.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\石面细节_normal.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\地形\\泥土.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\地形\\草地.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\地形\\裂纹泥地.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\地形\\材质\\草泥\\atlas_草泥_h16.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\地形\\材质\\草泥\\atlas_草泥_n.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\地形\\材质\\草泥\\atlas_草泥_rgb.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\地形\\材质\\草泥\\atlas_草泥_rgba.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\地形\\材质\\草泥\\cell_00.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\地形\\材质\\草泥\\cell_01.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\地形\\材质\\草泥\\cell_02.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\地形\\材质\\草泥\\cell_03.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\地形\\材质\\草泥\\cell_04.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\地形\\材质\\草泥\\cell_05.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\地形\\材质\\草泥\\cell_06.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\地形\\材质\\草泥\\cell_07.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\地形\\材质\\草泥\\cell_08.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\地形\\材质\\草泥\\cell_09.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\地形\\材质\\草泥\\cell_10.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\地形\\材质\\草泥\\cell_11.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\地形\\材质\\草泥\\cell_12.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\地形\\材质\\草泥\\cell_13.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\地形\\材质\\草泥\\cell_14.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\地形\\材质\\草泥\\cell_15.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\地形\\材质\\草泥\\noise_256.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\art\\贴图\\地形\\材质\\草泥\\preview_3x3.png.import",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\audio\\bgm_会战.ogg.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\bgm_和平_和.ogg.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\bgm_和平_森.ogg.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\bgm_战.ogg.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\bgm_经营.ogg.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\bgm_舒缓.ogg.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\升级_完成.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\单位_应答.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\单位_应答2.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\命中_弓.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\命中_金属.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\失败.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\建造_完成.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\建造_放置.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\建造_锤击.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\战斗_命中.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\战斗_塔射.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\战斗_攻击.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\战斗_死亡.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\战斗_箭矢.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\指令_前进.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\指令_撤退.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\指令_移动.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\指令_进攻.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\提示_人口已满.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\提示_低血.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\提示_建造完成.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\提示_金币不足.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\攻击_挥砍.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\来源.md",
+   26,
+   {
+    "代码/音频/": 1,
+    "音频/": 15,
+    "工具/": 10
+   }
+  ],
+  [
+   "Content\\audio\\死亡.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\法术_施放.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\法术_火球.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\界面_框选.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\界面_点击.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\界面_点选.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\结算_失败.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\结算_胜利.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\胜利.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\采集_木材.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\采集_资源.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\采集_金币.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\语音\\农民_应答1.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\语音\\农民_应答2.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\语音\\农民_应答3.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\语音\\农民_死亡.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\语音\\弓箭手_应答1.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\语音\\弓箭手_应答2.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\语音\\弓箭手_应答3.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\语音\\弓箭手_死亡.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\语音\\步兵_应答1.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\语音\\步兵_应答2.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\语音\\步兵_应答3.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\语音\\步兵_死亡.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\语音\\法师_应答1.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\语音\\法师_应答2.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\语音\\法师_应答3.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\audio\\语音\\法师_死亡.wav.import",
+   1,
+   {
+    "音频/": 1
+   }
+  ],
+  [
+   "Content\\maps\\4v4（1）.tres",
+   6,
+   {
+    "代码/地图核心/": 5,
+    "美术/": 1
+   }
+  ],
+  [
+   "Content\\maps\\_QA新图.tres",
+   5,
+   {
+    "代码/地图核心/": 5
+   }
+  ],
+  [
+   "Content\\maps\\_四季演示.tres",
+   5,
+   {
+    "代码/地图核心/": 5
+   }
+  ],
+  [
+   "Content\\maps\\_最近地图.cfg",
+   4,
+   {
+    "地图/": 4
+   }
+  ],
+  [
+   "Content\\maps\\_测试地图.tres",
+   5,
+   {
+    "代码/地图核心/": 5
+   }
+  ],
+  [
+   "Content\\maps\\_自动保存.tres",
+   5,
+   {
+    "代码/地图核心/": 5
+   }
+  ],
+  [
+   "Content\\maps\\主场景地图.tres",
+   5,
+   {
+    "代码/地图核心/": 5
+   }
+  ],
+  [
+   "Documents\\AI目标层观测.md",
+   2,
+   {
+    "代码/ai/": 2
+   }
+  ],
+  [
+   "Documents\\AI经济与等级排查报告.md",
+   6,
+   {
+    "代码/配置/": 3,
+    "代码/ai/": 1,
+    "场景/": 1,
+    "地图/": 1
+   }
+  ],
+  [
+   "Documents\\README.md",
+   9,
+   {
+    "代码/ai/": 1,
+    "代码/人群/": 1,
+    "代码/": 2,
+    "地图/": 1,
+    "工具/": 4
+   }
+  ],
+  [
+   "Documents\\UI风格.md",
+   12,
+   {
+    "代码/测试/": 1,
+    "代码/界面/": 1,
+    "美术/": 7,
+    "文档/": 1,
+    "工具/": 2
+   }
+  ],
+  [
+   "Documents\\万单位与SC2管线_可行性评估.md",
+   7,
+   {
+    "代码/配置/": 1,
+    "代码/人群/": 2,
+    "场景/": 1,
+    "地图/": 1,
+    "文档/": 1,
+    "工具/": 1
+   }
+  ],
+  [
+   "Documents\\人群层.md",
+   7,
+   {
+    "代码/人群/": 2,
+    "场景/": 3,
+    "文档/": 2
+   }
+  ],
+  [
+   "Documents\\作战条令.md",
+   53,
+   {
+    "代码/测试/": 3,
+    "代码/配置/": 7,
+    "代码/核心/": 7,
+    "代码/系统/": 4,
+    "代码/单位/": 3,
+    "代码/ai/": 1,
+    "代码/寻路/": 3,
+    "代码/操作/": 3,
+    "代码/镜头/": 1,
+    "代码/界面/": 3,
+    "代码/美术/": 2,
+    "场景/": 1,
+    "美术/": 12,
+    "地图/": 1,
+    "文档/": 1,
+    "工具/": 1
+   }
+  ],
+  [
+   "Documents\\动画规范.md",
+   14,
+   {
+    "代码/测试/": 2,
+    "代码/美术/": 2,
+    "美术/": 3,
+    "工具/": 7
+   }
+  ],
+  [
+   "Documents\\单位数据Schema.md",
+   7,
+   {
+    "代码/配置/": 2,
+    "代码/ai/": 3,
+    "地图/": 1,
+    "文档/": 1
+   }
+  ],
+  [
+   "Documents\\反馈驱动战略_设计.md",
+   18,
+   {
+    "代码/配置/": 12,
+    "代码/ai/": 5,
+    "文档/": 1
+   }
+  ],
+  [
+   "Documents\\地图编辑器UI.md",
+   7,
+   {
+    "代码/配置/": 1,
+    "代码/界面/": 1,
+    "美术/": 4,
+    "文档/": 1
+   }
+  ],
+  [
+   "Documents\\寻路评估_星际2对照.md",
+   2,
+   {
+    "美术/": 1,
+    "文档/": 1
+   }
+  ],
+  [
+   "Documents\\开发交接.md",
+   23,
+   {
+    "代码/测试/": 4,
+    "代码/配置/": 1,
+    "代码/核心/": 3,
+    "代码/系统/": 5,
+    "代码/单位/": 1,
+    "代码/寻路/": 1,
+    "代码/操作/": 1,
+    "代码/美术/": 3,
+    "文档/": 3,
+    "工具/": 1
+   }
+  ],
+  [
+   "Documents\\战斗射程口径.md",
+   9,
+   {
+    "代码/测试/": 5,
+    "代码/配置/": 4
+   }
+  ],
+  [
+   "Documents\\技能系统.md",
+   21,
+   {
+    "代码/测试/": 1,
+    "代码/配置/": 8,
+    "代码/系统/": 4,
+    "美术/": 2,
+    "文档/": 3,
+    "工具/": 3
+   }
+  ],
+  [
+   "Documents\\文件梳理与Agent协作方案.md",
+   14,
+   {
+    "代码/测试/": 5,
+    "代码/": 3,
+    "文档/": 4,
+    "工具/": 2
+   }
+  ],
+  [
+   "Documents\\架构地图.md",
+   9,
+   {
+    "代码/": 2,
+    "场景/": 2,
+    "美术/": 2,
+    "音频/": 1,
+    "地图/": 1,
+    "工具/": 1
+   }
+  ],
+  [
+   "Documents\\界面说明.md",
+   15,
+   {
+    "代码/测试/": 1,
+    "代码/系统/": 1,
+    "代码/ai/": 1,
+    "代码/操作/": 1,
+    "代码/界面/": 3,
+    "代码/美术/": 1,
+    "场景/": 1,
+    "美术/": 3,
+    "地图/": 1,
+    "文档/": 2
+   }
+  ],
+  [
+   "Documents\\程序化树木评估.md",
+   9,
+   {
+    "代码/测试/": 1,
+    "代码/配置/": 1,
+    "代码/地图核心/": 1,
+    "代码/美术/": 2,
+    "美术/": 2,
+    "工具/": 2
+   }
+  ],
+  [
+   "Documents\\编辑器资产同步.md",
+   13,
+   {
+    "代码/测试/": 1,
+    "代码/配置/": 2,
+    "代码/地图核心/": 1,
+    "代码/界面/": 1,
+    "代码/美术/": 2,
+    "美术/": 3,
+    "地图/": 1,
+    "文档/": 1,
+    "工具/": 1
+   }
+  ],
+  [
+   "Documents\\美术规范.md",
+   6,
+   {
+    "代码/美术/": 1,
+    "美术/": 1,
+    "文档/": 1,
+    "工具/": 3
+   }
+  ],
+  [
+   "Documents\\野怪营地.md",
+   8,
+   {
+    "代码/配置/": 3,
+    "代码/系统/": 2,
+    "代码/美术/": 1,
+    "美术/": 1,
+    "地图/": 1
+   }
+  ],
+  [
+   "Documents\\索引\\文件索引.md",
+   197,
+   {
+    "代码/测试/": 39,
+    "代码/配置/": 29,
+    "代码/核心/": 6,
+    "代码/系统/": 12,
+    "代码/单位/": 7,
+    "代码/ai/": 13,
+    "代码/寻路/": 3,
+    "代码/地图核心/": 9,
+    "代码/操作/": 4,
+    "代码/镜头/": 1,
+    "代码/界面/": 18,
+    "代码/美术/": 22,
+    "代码/人群/": 9,
+    "代码/音频/": 2,
+    "代码/数据/": 1,
+    "代码/战争迷雾.gd": 1,
+    "代码/": 16,
+    "美术/": 1,
+    "音频/": 1,
+    "工具/": 3
+   }
+  ],
+  [
+   "Documents\\索引\\测试索引.md",
+   24,
+   {
+    "代码/测试/": 23,
+    "工具/": 1
+   }
+  ],
+  [
+   "Game\\ai\\README.md",
+   1,
+   {
+    "代码/": 1
+   }
+  ],
+  [
+   "Game\\ai\\世界状态.gd",
+   1,
+   {
+    "代码/核心/": 1
+   }
+  ],
+  [
+   "Game\\ai\\副官.gd",
+   3,
+   {
+    "代码/ai/": 3
+   }
+  ],
+  [
+   "Game\\ai\\反愚蠢.gd",
+   1,
+   {
+    "代码/ai/": 1
+   }
+  ],
+  [
+   "Game\\ai\\命令调度.gd",
+   1,
+   {
+    "代码/ai/": 1
+   }
+  ],
+  [
+   "Game\\ai\\战斗模型.gd",
+   4,
+   {
+    "代码/配置/": 4
+   }
+  ],
+  [
+   "Game\\ai\\战略导演.gd",
+   3,
+   {
+    "代码/配置/": 3
+   }
+  ],
+  [
+   "Game\\ai\\控制权.gd",
+   2,
+   {
+    "代码/ai/": 2
+   }
+  ],
+  [
+   "Game\\ai\\简单AI.gd",
+   15,
+   {
+    "代码/配置/": 3,
+    "代码/系统/": 1,
+    "代码/ai/": 10,
+    "文档/": 1
+   }
+  ],
+  [
+   "Game\\audio\\语音表.gd",
+   4,
+   {
+    "音频/": 3,
+    "工具/": 1
+   }
+  ],
+  [
+   "Game\\audio\\音效管理.gd",
+   16,
+   {
+    "代码/美术/": 2,
+    "代码/音频/": 1,
+    "音频/": 10,
+    "工具/": 3
+   }
+  ],
+  [
+   "Game\\config\\AI诉求系数.gd",
+   1,
+   {
+    "代码/配置/": 1
+   }
+  ],
+  [
+   "Game\\config\\README.md",
+   2,
+   {
+    "代码/测试/": 1,
+    "代码/": 1
+   }
+  ],
+  [
+   "Game\\config\\单位卡.gd",
+   5,
+   {
+    "代码/配置/": 2,
+    "文档/": 3
+   }
+  ],
+  [
+   "Game\\config\\单位定义.gd",
+   4,
+   {
+    "代码/配置/": 2,
+    "代码/系统/": 1,
+    "美术/": 1
+   }
+  ],
+  [
+   "Game\\config\\单位表.gd",
+   12,
+   {
+    "代码/配置/": 9,
+    "代码/ai/": 1,
+    "场景/": 1,
+    "美术/": 1
+   }
+  ],
+  [
+   "Game\\config\\射程基准.gd",
+   1,
+   {
+    "代码/测试/": 1
+   }
+  ],
+  [
+   "Game\\config\\战略计划.gd",
+   1,
+   {
+    "代码/ai/": 1
+   }
+  ],
+  [
+   "Game\\config\\技能卡.gd",
+   5,
+   {
+    "代码/配置/": 2,
+    "代码/系统/": 3
+   }
+  ],
+  [
+   "Game\\config\\技能原子.gd",
+   3,
+   {
+    "代码/配置/": 2,
+    "代码/系统/": 1
+   }
+  ],
+  [
+   "Game\\config\\技能表.gd",
+   4,
+   {
+    "代码/配置/": 2,
+    "代码/系统/": 2
+   }
+  ],
+  [
+   "Game\\config\\游戏配置.gd",
+   2,
+   {
+    "代码/配置/": 1,
+    "文档/": 1
+   }
+  ],
+  [
+   "Game\\config\\野怪营地定义.gd",
+   4,
+   {
+    "代码/配置/": 2,
+    "美术/": 1,
+    "地图/": 1
+   }
+  ],
+  [
+   "Game\\config\\野怪营地表.gd",
+   2,
+   {
+    "代码/配置/": 2
+   }
+  ],
+  [
+   "Game\\config\\卡\\AI诉求系数.tres",
+   1,
+   {
+    "代码/配置/": 1
+   }
+  ],
+  [
+   "Game\\config\\卡\\单位\\农民.tres",
+   2,
+   {
+    "代码/配置/": 1,
+    "美术/": 1
+   }
+  ],
+  [
+   "Game\\config\\卡\\单位\\弓箭手.tres",
+   2,
+   {
+    "代码/配置/": 1,
+    "美术/": 1
+   }
+  ],
+  [
+   "Game\\config\\卡\\单位\\步兵.tres",
+   2,
+   {
+    "代码/配置/": 1,
+    "美术/": 1
+   }
+  ],
+  [
+   "Game\\config\\卡\\单位\\法师.tres",
+   2,
+   {
+    "代码/配置/": 1,
+    "美术/": 1
+   }
+  ],
+  [
+   "Game\\config\\卡\\单位\\矮人火枪手.tres",
+   2,
+   {
+    "代码/配置/": 1,
+    "美术/": 1
+   }
+  ],
+  [
+   "Game\\config\\卡\\单位\\破法者.tres",
+   2,
+   {
+    "代码/配置/": 1,
+    "美术/": 1
+   }
+  ],
+  [
+   "Game\\config\\卡\\单位\\豺狼人战士.tres",
+   2,
+   {
+    "代码/配置/": 1,
+    "美术/": 1
+   }
+  ],
+  [
+   "Game\\config\\卡\\单位\\豺狼人斥候.tres",
+   2,
+   {
+    "代码/配置/": 1,
+    "美术/": 1
+   }
+  ],
+  [
+   "Game\\config\\卡\\单位\\豺狼人萨满.tres",
+   2,
+   {
+    "代码/配置/": 1,
+    "美术/": 1
+   }
+  ],
+  [
+   "Game\\config\\卡\\单位\\魔金傀儡.tres",
+   2,
+   {
+    "代码/配置/": 1,
+    "美术/": 1
+   }
+  ],
+  [
+   "Game\\config\\卡\\建筑\\creep_den.tres",
+   2,
+   {
+    "代码/配置/": 1,
+    "美术/": 1
+   }
+  ],
+  [
+   "Game\\config\\卡\\建筑\\creep_gate.tres",
+   2,
+   {
+    "代码/配置/": 1,
+    "美术/": 1
+   }
+  ],
+  [
+   "Game\\config\\卡\\建筑\\creep_shell.tres",
+   2,
+   {
+    "代码/配置/": 1,
+    "美术/": 1
+   }
+  ],
+  [
+   "Game\\config\\卡\\建筑\\伐木场.tres",
+   2,
+   {
+    "代码/配置/": 1,
+    "美术/": 1
+   }
+  ],
+  [
+   "Game\\config\\卡\\建筑\\兵营.tres",
+   2,
+   {
+    "代码/配置/": 1,
+    "美术/": 1
+   }
+  ],
+  [
+   "Game\\config\\卡\\建筑\\农场.tres",
+   2,
+   {
+    "代码/配置/": 1,
+    "美术/": 1
+   }
+  ],
+  [
+   "Game\\config\\卡\\建筑\\哨塔.tres",
+   2,
+   {
+    "代码/配置/": 1,
+    "美术/": 1
+   }
+  ],
+  [
+   "Game\\config\\卡\\建筑\\大本营.tres",
+   2,
+   {
+    "代码/配置/": 1,
+    "美术/": 1
+   }
+  ],
+  [
+   "Game\\config\\卡\\建筑\\神秘圣地.tres",
+   2,
+   {
+    "代码/配置/": 1,
+    "美术/": 1
+   }
+  ],
+  [
+   "Game\\config\\卡\\建筑\\箭塔.tres",
+   2,
+   {
+    "代码/配置/": 1,
+    "美术/": 1
+   }
+  ],
+  [
+   "Game\\config\\卡\\建筑\\联盟要塞.tres",
+   2,
+   {
+    "代码/配置/": 1,
+    "美术/": 1
+   }
+  ],
+  [
+   "Game\\config\\卡\\建筑\\营火.tres",
+   1,
+   {
+    "代码/配置/": 1
+   }
+  ],
+  [
+   "Game\\config\\卡\\建筑\\蒸汽车坊.tres",
+   2,
+   {
+    "代码/配置/": 1,
+    "美术/": 1
+   }
+  ],
+  [
+   "Game\\config\\卡\\建筑\\铁匠铺.tres",
+   2,
+   {
+    "代码/配置/": 1,
+    "美术/": 1
+   }
+  ],
+  [
+   "Game\\config\\卡\\技能\\block_parry.tres",
+   3,
+   {
+    "代码/配置/": 3
+   }
+  ],
+  [
+   "Game\\config\\卡\\技能\\chop_wood.tres",
+   1,
+   {
+    "代码/配置/": 1
+   }
+  ],
+  [
+   "Game\\config\\卡\\技能\\fireball.tres",
+   1,
+   {
+    "代码/配置/": 1
+   }
+  ],
+  [
+   "Game\\config\\卡\\技能\\mine_gold.tres",
+   1,
+   {
+    "代码/配置/": 1
+   }
+  ],
+  [
+   "Game\\config\\卡\\技能\\shield_up.tres",
+   3,
+   {
+    "代码/配置/": 3
+   }
+  ],
+  [
+   "Game\\config\\卡\\技能\\triple_shot.tres",
+   3,
+   {
+    "代码/配置/": 3
+   }
+  ],
+  [
+   "Game\\config\\卡\\野怪营地\\camp_creep_den_1.tres",
+   1,
+   {
+    "代码/配置/": 1
+   }
+  ],
+  [
+   "Game\\config\\卡\\野怪营地\\camp_den.tres",
+   1,
+   {
+    "代码/配置/": 1
+   }
+  ],
+  [
+   "Game\\config\\卡\\野怪营地\\camp_gate.tres",
+   1,
+   {
+    "代码/配置/": 1
+   }
+  ],
+  [
+   "Game\\config\\卡\\野怪营地\\camp_shell.tres",
+   1,
+   {
+    "代码/配置/": 1
+   }
+  ],
+  [
+   "Game\\config\\原子\\原子_属性.gd",
+   1,
+   {
+    "代码/系统/": 1
+   }
+  ],
+  [
+   "Game\\core\\README.md",
+   2,
+   {
+    "代码/": 1,
+    "场景/": 1
+   }
+  ],
+  [
+   "Game\\core\\主场景.gd",
+   42,
+   {
+    "代码/测试/": 19,
+    "代码/系统/": 6,
+    "代码/ai/": 2,
+    "代码/操作/": 2,
+    "代码/音频/": 2,
+    "代码/战争迷雾.gd": 2,
+    "场景/": 2,
+    "地图/": 4,
+    "文档/": 1,
+    "工具/": 2
+   }
+  ],
+  [
+   "Game\\core\\关卡.gd",
+   12,
+   {
+    "代码/单位/": 1,
+    "代码/寻路/": 1,
+    "美术/": 9,
+    "地图/": 1
+   }
+  ],
+  [
+   "Game\\core\\游戏状态.gd",
+   6,
+   {
+    "代码/系统/": 1,
+    "代码/ai/": 3,
+    "代码/": 1,
+    "文档/": 1
+   }
+  ],
+  [
+   "Game\\map\\地图加载器.gd",
+   6,
+   {
+    "代码/核心/": 1,
+    "代码/寻路/": 3,
+    "美术/": 2
+   }
+  ],
+  [
+   "Game\\map\\地图存储.gd",
+   3,
+   {
+    "地图/": 2,
+    "工具/": 1
+   }
+  ],
+  [
+   "Game\\map\\地图定义.gd",
+   1,
+   {
+    "地图/": 1
+   }
+  ],
+  [
+   "Game\\map\\地图校验.gd",
+   1,
+   {
+    "代码/配置/": 1
+   }
+  ],
+  [
+   "Game\\map\\地图生成.gd",
+   2,
+   {
+    "代码/寻路/": 2
+   }
+  ],
+  [
+   "Game\\map\\地形.gd",
+   9,
+   {
+    "美术/": 9
+   }
+  ],
+  [
+   "Game\\pathing\\README.md",
+   1,
+   {
+    "代码/": 1
+   }
+  ],
+  [
+   "Game\\pathing\\网格寻路.gd",
+   2,
+   {
+    "代码/人群/": 1,
+    "文档/": 1
+   }
+  ],
+  [
+   "Game\\systems\\README.md",
+   2,
+   {
+    "代码/测试/": 1,
+    "代码/": 1
+   }
+  ],
+  [
+   "Game\\systems\\战争迷雾.gd",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Game\\systems\\技能.gd",
+   3,
+   {
+    "代码/配置/": 3
+   }
+  ],
+  [
+   "Game\\systems\\技能特效.gd",
+   3,
+   {
+    "代码/系统/": 1,
+    "代码/美术/": 2
+   }
+  ],
+  [
+   "Game\\systems\\技能运行时.gd",
+   6,
+   {
+    "代码/配置/": 4,
+    "代码/系统/": 2
+   }
+  ],
+  [
+   "Game\\systems\\据点.gd",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Game\\systems\\营火光.gd",
+   2,
+   {
+    "代码/美术/": 2
+   }
+  ],
+  [
+   "Game\\systems\\野怪.gd",
+   3,
+   {
+    "代码/系统/": 3
+   }
+  ],
+  [
+   "Game\\systems\\野怪营地.gd",
+   2,
+   {
+    "代码/配置/": 2
+   }
+  ],
+  [
+   "Game\\units\\README.md",
+   2,
+   {
+    "代码/测试/": 1,
+    "代码/": 1
+   }
+  ],
+  [
+   "Game\\units\\单位.gd",
+   9,
+   {
+    "代码/配置/": 3,
+    "代码/系统/": 2,
+    "代码/ai/": 1,
+    "代码/美术/": 2,
+    "文档/": 1
+   }
+  ],
+  [
+   "Game\\units\\单位视觉.gd",
+   8,
+   {
+    "代码/美术/": 7,
+    "美术/": 1
+   }
+  ],
+  [
+   "Game\\units\\可采集物.gd",
+   1,
+   {
+    "代码/美术/": 1
+   }
+  ],
+  [
+   "Game\\units\\工地表现.gd",
+   5,
+   {
+    "代码/美术/": 1,
+    "美术/": 4
+   }
+  ],
+  [
+   "Game\\units\\建筑.gd",
+   7,
+   {
+    "代码/系统/": 1,
+    "代码/单位/": 1,
+    "代码/美术/": 3,
+    "美术/": 2
+   }
+  ],
+  [
+   "Tests\\suites\\AI基准.gd",
+   4,
+   {
+    "代码/配置/": 2,
+    "代码/ai/": 1,
+    "地图/": 1
+   }
+  ],
+  [
+   "Tests\\suites\\README.md",
+   8,
+   {
+    "代码/测试/": 4,
+    "代码/": 1,
+    "文档/": 2,
+    "工具/": 1
+   }
+  ],
+  [
+   "Tests\\suites\\体积标定.gd",
+   4,
+   {
+    "代码/测试/": 1,
+    "代码/配置/": 3
+   }
+  ],
+  [
+   "Tests\\suites\\副官自检.gd",
+   2,
+   {
+    "代码/配置/": 1,
+    "代码/ai/": 1
+   }
+  ],
+  [
+   "Tests\\suites\\动作截图.gd",
+   1,
+   {
+    "代码/测试/": 1
+   }
+  ],
+  [
+   "Tests\\suites\\动画验收.gd",
+   4,
+   {
+    "代码/测试/": 1,
+    "代码/配置/": 1,
+    "代码/核心/": 2
+   }
+  ],
+  [
+   "Tests\\suites\\升星自检.gd",
+   8,
+   {
+    "代码/测试/": 1,
+    "代码/配置/": 1,
+    "代码/核心/": 2,
+    "代码/系统/": 3,
+    "代码/数据/": 1
+   }
+  ],
+  [
+   "Tests\\suites\\升级自检.gd",
+   3,
+   {
+    "代码/系统/": 3
+   }
+  ],
+  [
+   "Tests\\suites\\地图生成自检.gd",
+   1,
+   {
+    "代码/测试/": 1
+   }
+  ],
+  [
+   "Tests\\suites\\地图编辑器自检.gd",
+   2,
+   {
+    "美术/": 1,
+    "地图/": 1
+   }
+  ],
+  [
+   "Tests\\suites\\地图缩放自检.gd",
+   3,
+   {
+    "代码/测试/": 1,
+    "代码/地图核心/": 1,
+    "地图/": 1
+   }
+  ],
+  [
+   "Tests\\suites\\地形自检.gd",
+   8,
+   {
+    "代码/测试/": 1,
+    "代码/配置/": 1,
+    "代码/核心/": 4,
+    "代码/镜头/": 1,
+    "地图/": 1
+   }
+  ],
+  [
+   "Tests\\suites\\寻路抖动自检.gd",
+   4,
+   {
+    "代码/测试/": 1,
+    "代码/核心/": 1,
+    "代码/操作/": 1,
+    "文档/": 1
+   }
+  ],
+  [
+   "Tests\\suites\\寻路自检.gd",
+   1,
+   {
+    "代码/测试/": 1
+   }
+  ],
+  [
+   "Tests\\suites\\射程标定.gd",
+   5,
+   {
+    "代码/测试/": 1,
+    "代码/配置/": 1,
+    "代码/核心/": 2,
+    "代码/单位/": 1
+   }
+  ],
+  [
+   "Tests\\suites\\建造动画自检.gd",
+   4,
+   {
+    "代码/测试/": 1,
+    "代码/单位/": 2,
+    "美术/": 1
+   }
+  ],
+  [
+   "Tests\\suites\\建造自检.gd",
+   3,
+   {
+    "代码/测试/": 1,
+    "代码/核心/": 1,
+    "代码/操作/": 1
+   }
+  ],
+  [
+   "Tests\\suites\\战区指令自检.gd",
+   1,
+   {
+    "代码/ai/": 1
+   }
+  ],
+  [
+   "Tests\\suites\\战斗自检.gd",
+   8,
+   {
+    "代码/测试/": 1,
+    "代码/核心/": 5,
+    "代码/单位/": 1,
+    "代码/操作/": 1
+   }
+  ],
+  [
+   "Tests\\suites\\技能自检.gd",
+   9,
+   {
+    "代码/测试/": 1,
+    "代码/配置/": 2,
+    "代码/核心/": 2,
+    "代码/系统/": 3,
+    "代码/单位/": 1
+   }
+  ],
+  [
+   "Tests\\suites\\据点自检.gd",
+   7,
+   {
+    "代码/测试/": 1,
+    "代码/核心/": 2,
+    "代码/系统/": 2,
+    "代码/数据/": 2
+   }
+  ],
+  [
+   "Tests\\suites\\树占格自检.gd",
+   5,
+   {
+    "代码/测试/": 1,
+    "代码/核心/": 1,
+    "代码/寻路/": 1,
+    "代码/地图核心/": 1,
+    "地图/": 1
+   }
+  ],
+  [
+   "Tests\\suites\\树品种演示.gd",
+   2,
+   {
+    "地图/": 1,
+    "工具/": 1
+   }
+  ],
+  [
+   "Tests\\suites\\界面自检.gd",
+   8,
+   {
+    "代码/测试/": 1,
+    "代码/配置/": 1,
+    "代码/单位/": 2,
+    "代码/操作/": 1,
+    "代码/界面/": 2,
+    "代码/数据/": 1
+   }
+  ],
+  [
+   "Tests\\suites\\科技与后勤自检.gd",
+   4,
+   {
+    "代码/测试/": 1,
+    "代码/核心/": 1,
+    "代码/系统/": 1,
+    "代码/单位/": 1
+   }
+  ],
+  [
+   "Tests\\suites\\程序化树自检.gd",
+   1,
+   {
+    "代码/测试/": 1
+   }
+  ],
+  [
+   "Tests\\suites\\表现自检.gd",
+   6,
+   {
+    "代码/测试/": 2,
+    "代码/核心/": 1,
+    "代码/操作/": 1,
+    "代码/美术/": 2
+   }
+  ],
+  [
+   "Tests\\suites\\装饰性能自检.gd",
+   4,
+   {
+    "代码/测试/": 1,
+    "场景/": 1,
+    "美术/": 2
+   }
+  ],
+  [
+   "Tests\\suites\\配置回归.gd",
+   51,
+   {
+    "代码/测试/": 7,
+    "代码/配置/": 18,
+    "代码/ai/": 25,
+    "代码/界面/": 1
+   }
+  ],
+  [
+   "Tests\\suites\\野怪营地自检.gd",
+   3,
+   {
+    "代码/配置/": 1,
+    "代码/系统/": 1,
+    "代码/界面/": 1
+   }
+  ],
+  [
+   "Tools\\修举盾姿势.py",
+   4,
+   {
+    "代码/美术/": 1,
+    "美术/": 1,
+    "工具/": 2
+   }
+  ],
+  [
+   "Tools\\修盾牌.py",
+   3,
+   {
+    "美术/": 1,
+    "工具/": 2
+   }
+  ],
+  [
+   "Tools\\做左右看待机.py",
+   3,
+   {
+    "美术/": 1,
+    "工具/": 2
+   }
+  ],
+  [
+   "Tools\\动画帧图.gd",
+   3,
+   {
+    "美术/": 1,
+    "工具/": 2
+   }
+  ],
+  [
+   "Tools\\合并glb动作.py",
+   3,
+   {
+    "工具/": 3
+   }
+  ],
+  [
+   "Tools\\合成单位图标.py",
+   2,
+   {
+    "工具/": 2
+   }
+  ],
+  [
+   "Tools\\合成建筑图标.py",
+   2,
+   {
+    "美术/": 1,
+    "工具/": 1
+   }
+  ],
+  [
+   "Tools\\合成技能图标.py",
+   3,
+   {
+    "美术/": 1,
+    "工具/": 2
+   }
+  ],
+  [
+   "Tools\\导出配置.gd",
+   2,
+   {
+    "代码/配置/": 1,
+    "工具/": 1
+   }
+  ],
+  [
+   "Tools\\检查glb动作.py",
+   5,
+   {
+    "美术/": 2,
+    "工具/": 3
+   }
+  ],
+  [
+   "Tools\\检查单位资产.gd",
+   4,
+   {
+    "美术/": 2,
+    "工具/": 2
+   }
+  ],
+  [
+   "Tools\\检查建筑资产.gd",
+   1,
+   {
+    "工具/": 1
+   }
+  ],
+  [
+   "Tools\\检查自然资产.gd",
+   3,
+   {
+    "美术/": 2,
+    "工具/": 1
+   }
+  ],
+  [
+   "Tools\\渲染动作帧.py",
+   1,
+   {
+    "工具/": 1
+   }
+  ],
+  [
+   "Tools\\渲染单位图标.py",
+   6,
+   {
+    "美术/": 1,
+    "工具/": 5
+   }
+  ],
+  [
+   "Tools\\渲染单位头像.gd",
+   4,
+   {
+    "美术/": 3,
+    "工具/": 1
+   }
+  ],
+  [
+   "Tools\\渲染建筑图标.py",
+   4,
+   {
+    "工具/": 4
+   }
+  ],
+  [
+   "Tools\\渲染技能图标.gd",
+   3,
+   {
+    "美术/": 1,
+    "工具/": 2
+   }
+  ],
+  [
+   "Tools\\烘焙VAT.gd",
+   4,
+   {
+    "美术/": 3,
+    "工具/": 1
+   }
+  ],
+  [
+   "Tools\\生成四季演示图.gd",
+   6,
+   {
+    "代码/测试/": 3,
+    "地图/": 2,
+    "工具/": 1
+   }
+  ],
+  [
+   "Tools\\生成文件索引.py",
+   10,
+   {
+    "代码/测试/": 1,
+    "代码/": 6,
+    "文档/": 1,
+    "工具/": 2
+   }
+  ],
+  [
+   "Tools\\生成测试索引.py",
+   7,
+   {
+    "代码/测试/": 2,
+    "文档/": 3,
+    "工具/": 2
+   }
+  ],
+  [
+   "Tools\\生成编辑器主题.gd",
+   2,
+   {
+    "代码/界面/": 1,
+    "工具/": 1
+   }
+  ],
+  [
+   "Tools\\音频校验.py",
+   4,
+   {
+    "代码/音频/": 2,
+    "工具/": 2
+   }
+  ],
+  [
+   "Tools\\验证.ps1",
+   7,
+   {
+    "代码/测试/": 5,
+    "场景/": 1,
+    "美术/": 1
+   }
+  ],
+  [
+   "Tools\\建模\\build_自然物.py",
+   1,
+   {
+    "工具/": 1
+   }
+  ],
+  [
+   "Tools\\建模\\style_v2.py",
+   1,
+   {
+    "文档/": 1
+   }
+  ],
+  [
+   "Tools\\建模\\v3\\kit3.py",
+   1,
+   {
+    "代码/美术/": 1
+   }
+  ],
+  [
+   "Tools\\建模\\v3\\_anim_test.glb.import",
+   1,
+   {
+    "工具/": 1
+   }
+  ],
+  [
+   "Tools\\建模\\v5\\texgen.py",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Tools\\建模\\v5\\textured.py",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Tools\\建模\\v6\\props_v6.py",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Tools\\建模\\v7_单位\\build_v7.py",
+   3,
+   {
+    "美术/": 2,
+    "工具/": 1
+   }
+  ],
+  [
+   "Tools\\建模\\v7_单位\\units_v7.py",
+   1,
+   {
+    "文档/": 1
+   }
+  ],
+  [
+   "Tools\\建模\\v7_自然\\_v7_common.py",
+   1,
+   {
+    "美术/": 1
+   }
+  ],
+  [
+   "Tools\\诊断\\生产队列诊断.py",
+   2,
+   {
+    "代码/配置/": 2
+   }
+  ],
+  [
+   "Tools\\音频\\压缩BGM到OGG.py",
+   7,
+   {
+    "代码/音频/": 1,
+    "音频/": 4,
+    "工具/": 2
+   }
+  ],
+  [
+   "Tools\\音频\\合成语音.py",
+   4,
+   {
+    "代码/音频/": 1,
+    "音频/": 2,
+    "工具/": 1
+   }
+  ],
+  [
+   "Tools\\音频\\合成语音_v2.py",
+   6,
+   {
+    "音频/": 4,
+    "工具/": 2
+   }
+  ],
+  [
+   "Tools\\音频\\合成音效.py",
+   7,
+   {
+    "音频/": 4,
+    "工具/": 3
+   }
+  ],
+  [
+   "Views\\camera\\魔兽镜头.gd",
+   4,
+   {
+    "代码/配置/": 1,
+    "代码/美术/": 1,
+    "地图/": 1,
+    "文档/": 1
+   }
+  ],
+  [
+   "Views\\hud\\HUD.gd",
+   11,
+   {
+    "代码/ai/": 1,
+    "代码/界面/": 5,
+    "代码/音频/": 1,
+    "美术/": 1,
+    "地图/": 3
+   }
+  ],
+  [
+   "Views\\hud\\README.md",
+   4,
+   {
+    "代码/测试/": 1,
+    "代码/": 1,
+    "文档/": 1,
+    "工具/": 1
+   }
+  ],
+  [
+   "Views\\hud\\命令卡.gd",
+   12,
+   {
+    "代码/系统/": 2,
+    "代码/界面/": 3,
+    "美术/": 7
+   }
+  ],
+  [
+   "Views\\hud\\小地图.gd",
+   4,
+   {
+    "代码/ai/": 1,
+    "代码/界面/": 1,
+    "美术/": 1,
+    "地图/": 1
+   }
+  ],
+  [
+   "Views\\hud\\建筑面板.gd",
+   4,
+   {
+    "代码/界面/": 4
+   }
+  ],
+  [
+   "Views\\hud\\按钮框.gd",
+   1,
+   {
+    "代码/界面/": 1
+   }
+  ],
+  [
+   "Views\\hud\\数值列.gd",
+   2,
+   {
+    "代码/界面/": 2
+   }
+  ],
+  [
+   "Views\\hud\\浮雕底板.gd",
+   1,
+   {
+    "代码/界面/": 1
+   }
+  ],
+  [
+   "Views\\hud\\界面规格.gd",
+   16,
+   {
+    "代码/界面/": 1,
+    "美术/": 10,
+    "地图/": 1,
+    "文档/": 1,
+    "工具/": 3
+   }
+  ],
+  [
+   "Views\\hud\\装饰.gd",
+   2,
+   {
+    "代码/界面/": 2
+   }
+  ],
+  [
+   "Views\\hud\\词条.gd",
+   4,
+   {
+    "代码/配置/": 2,
+    "代码/系统/": 1,
+    "代码/界面/": 1
+   }
+  ],
+  [
+   "Views\\hud\\说明气泡.gd",
+   1,
+   {
+    "代码/界面/": 1
+   }
+  ],
+  [
+   "Views\\hud\\选中面板.gd",
+   3,
+   {
+    "代码/界面/": 3
+   }
+  ],
+  [
+   "Views\\hud\\选择网格.gd",
+   3,
+   {
+    "代码/界面/": 3
+   }
+  ],
+  [
+   "Views\\input\\README.md",
+   1,
+   {
+    "代码/": 1
+   }
+  ],
+  [
+   "Views\\input\\战区指令输入.gd",
+   2,
+   {
+    "代码/ai/": 1,
+    "地图/": 1
+   }
+  ],
+  [
+   "Views\\input\\指令系统.gd",
+   3,
+   {
+    "代码/系统/": 2,
+    "文档/": 1
+   }
+  ],
+  [
+   "Views\\input\\移动指示.gd",
+   2,
+   {
+    "场景/": 1,
+    "美术/": 1
+   }
+  ],
+  [
+   "Views\\input\\选择系统.gd",
+   4,
+   {
+    "代码/美术/": 1,
+    "美术/": 2,
+    "文档/": 1
+   }
+  ],
+  [
+   "Views\\scenes\\主场景.tscn",
+   10,
+   {
+    "代码/核心/": 2,
+    "代码/ai/": 1,
+    "代码/操作/": 2,
+    "代码/镜头/": 1,
+    "代码/界面/": 1,
+    "美术/": 2,
+    "地图/": 1
+   }
+  ],
+  [
+   "Views\\scenes\\人群演示.tscn",
+   1,
+   {
+    "代码/人群/": 1
+   }
+  ],
+  [
+   "Views\\scenes\\四季演示.tscn",
+   1,
+   {
+    "场景/": 1
+   }
+  ],
+  [
+   "Views\\world\\art\\地表细节.gd",
+   2,
+   {
+    "美术/": 2
+   }
+  ],
+  [
+   "Views\\world\\art\\建筑基座.gd",
+   1,
+   {
+    "代码/美术/": 1
+   }
+  ],
+  [
+   "Views\\world\\art\\建造表现.gd",
+   1,
+   {
+    "代码/美术/": 1
+   }
+  ],
+  [
+   "Views\\world\\art\\材质库.gd",
+   4,
+   {
+    "美术/": 3,
+    "工具/": 1
+   }
+  ],
+  [
+   "Views\\world\\art\\模型工厂.gd",
+   3,
+   {
+    "代码/美术/": 3
+   }
+  ],
+  [
+   "Views\\world\\art\\特效生成.gd",
+   7,
+   {
+    "代码/美术/": 1,
+    "美术/": 6
+   }
+  ],
+  [
+   "Views\\world\\art\\组合件.gd",
+   4,
+   {
+    "代码/美术/": 3,
+    "美术/": 1
+   }
+  ],
+  [
+   "Views\\world\\art\\美术接口.gd",
+   15,
+   {
+    "代码/美术/": 10,
+    "美术/": 5
+   }
+  ],
+  [
+   "Views\\world\\art\\自然材质.gd",
+   2,
+   {
+    "代码/美术/": 1,
+    "美术/": 1
+   }
+  ],
+  [
+   "Views\\world\\art\\营火外观.gd",
+   3,
+   {
+    "代码/系统/": 1,
+    "美术/": 2
+   }
+  ],
+  [
+   "Views\\world\\art\\装饰库.gd",
+   6,
+   {
+    "场景/": 2,
+    "美术/": 4
+   }
+  ],
+  [
+   "Views\\world\\art\\调色板.gd",
+   2,
+   {
+    "代码/美术/": 1,
+    "文档/": 1
+   }
+  ],
+  [
+   "Views\\world\\art\\选中圈贴地.gd",
+   2,
+   {
+    "代码/美术/": 1,
+    "美术/": 1
+   }
+  ],
+  [
+   "Views\\world\\art\\铁誓建筑.gd",
+   4,
+   {
+    "美术/": 4
+   }
+  ],
+  [
+   "Views\\world\\art\\骨骼动画.gd",
+   3,
+   {
+    "代码/美术/": 1,
+    "工具/": 2
+   }
+  ],
+  [
+   "Views\\world\\crowd\\README.md",
+   9,
+   {
+    "代码/": 1,
+    "场景/": 4,
+    "美术/": 3,
+    "工具/": 1
+   }
+  ],
+  [
+   "Views\\world\\crowd\\人群VAT.gd",
+   4,
+   {
+    "代码/人群/": 1,
+    "美术/": 2,
+    "工具/": 1
+   }
+  ],
+  [
+   "Views\\world\\crowd\\人群VAT.gdshader",
+   1,
+   {
+    "工具/": 1
+   }
+  ],
+  [
+   "Views\\world\\crowd\\人群导航.gd",
+   2,
+   {
+    "代码/人群/": 1,
+    "文档/": 1
+   }
+  ],
+  [
+   "Views\\world\\crowd\\人群常量.gd",
+   1,
+   {
+    "文档/": 1
+   }
+  ],
+  [
+   "Views\\world\\crowd\\人群模拟.gd",
+   5,
+   {
+    "代码/人群/": 4,
+    "文档/": 1
+   }
+  ],
+  [
+   "Views\\world\\crowd\\人群流场.gd",
+   1,
+   {
+    "代码/人群/": 1
+   }
+  ],
+  [
+   "Views\\world\\crowd\\人群渲染.gd",
+   2,
+   {
+    "代码/人群/": 2
+   }
+  ],
+  [
+   "Views\\world\\crowd\\人群演示.gd",
+   11,
+   {
+    "代码/人群/": 6,
+    "场景/": 2,
+    "美术/": 2,
+    "工具/": 1
+   }
+  ],
+  [
+   "Views\\world\\crowd\\人群空间.gd",
+   2,
+   {
+    "代码/寻路/": 1,
+    "代码/人群/": 1
+   }
+  ],
+  [
+   "Views\\world\\crowd\\人群箭矢.gd",
+   2,
+   {
+    "代码/人群/": 2
+   }
+  ]
+ ],
+ "missing": [],
+ "total_hits": 2127
+}

@@ -21,7 +21,7 @@
 & 'godot.exe' --path . --resolution 1600x900
 ```
 
-首次打开会自动导入 `美术/模型/*.glb`（约 10 秒）。
+首次打开会自动导入 `Content/art/模型/*.glb`（约 10 秒）。
 
 > 如果刚拉了新代码、或自己加了脚本，先让 Godot 重新扫描一次：
 > `godot --headless --path . --import`
@@ -75,7 +75,7 @@
 
 ## 四、工程结构
 
-> **场景是真节点树**（不是脚本硬糊的黑盒）。打开 `场景/主场景.tscn` 能一层层扒开：
+> **场景是真节点树**（不是脚本硬糊的黑盒）。打开 `Views/scenes/主场景.tscn` 能一层层扒开：
 > ```
 > 主场景 (Node3D)
 > ├── 环境      WorldEnvironment     ← 战斗环境.tres
@@ -94,11 +94,11 @@
 
 ```
 project.godot              工程配置（自动加载 Cfg / Game）
-场景/主场景.tscn            唯一场景，其余全部代码构建
-文档/
+Views/scenes/主场景.tscn            唯一场景，其余全部代码构建
+Documents/
   作战条令.md              ★ 接口契约（坐标/模型层级/API/规范），改接口先改它
-  美术规范.md              ★ 美术/材质/模型规范
-代码/
+  美术规范.md              ★ Content/art/材质/模型规范
+Game/
   配置/                    唯一数值来源（Cfg 单例 + GameConfig/UnitDef/DifficultyDef + 单位表）
   核心/                    常量、全局状态(Game)、主场景编排、关卡、地图生成、地形
   寻路/                    网格 A*、空间哈希
@@ -108,19 +108,19 @@ project.godot              工程配置（自动加载 Cfg / Game）
   镜头/                    魔兽式 RTS 镜头
   操作/                    选择系统、指令系统、指针拾取
   界面/                    HUD、小地图、命令卡、设计令牌(界面规格.gd)
-  美术/                    美术接口门面 + 模型工厂 / 程序动画 / 特效生成
+  Content/art/                    美术接口门面 + 模型工厂 / 程序动画 / 特效生成
   数据/                    阵营（经济与军队容器）
   地图核心/                MapDef / MapLoader / MapStore / 区域 / 波次（编辑器与游戏共用）
   测试/                    自检脚本与测试运行器
 addons/map_editor/          Godot EditorPlugin 地图编辑器（Theme 资源 / Tree 历史 / 建造网格）
-美术/
+Content/art/
   模型/*.glb               建筑资产包近/中/远 + v7 单位/自然物（骨骼动画 + M_<zone> 材质协议）
   着色器/*.gdshader        三渲二主材质 / 描边 / 地形 / 水 / 特效 / 选中圈
   材质/*.tres              材质实例
   环境/战斗环境.tres       光照与后期
   主题/游戏主题.tres       UI 主题（中文字体）
   特效/*.tscn              命中/死亡/魔法/尘土/选中圈
-工具/
+Tools/
   建模/*.py                Blender 生成脚本（可复现全部模型）
 建模/v3/                 v3 管线：kit3(通用) / units / buildings / props（骨骼+动画+材质协议）
   验证.ps1                 一键验收（编译 + 跑帧 + 报错扫描 + 截图）
@@ -129,7 +129,7 @@ addons/map_editor/          Godot EditorPlugin 地图编辑器（Theme 资源 / 
 
 ---
 
-## 五、可配置项（都在 `代码/配置/`）
+## 五、可配置项（都在 `Game/config/`）
 
 - **镜头**：俯角、距离范围、边缘滚动速度/加速度/阻尼、旋转步长、边界、抖动衰减
 - **经济**：初始资源、采集速率、携带量、金矿/树木储量
@@ -137,11 +137,11 @@ addons/map_editor/          Godot EditorPlugin 地图编辑器（Theme 资源 / 
 - **难度**：三档的思考间隔、首波延迟、波次间隔与衰减、军队上限、农民目标、经济倍率、兵种配比
 - **地图**：尺寸、种子、基地坐标、树林簇数、岩石数、地形起伏
 - **界面**：队伍色、小地图尺寸、HUD 配色
-- **单位数值**：`代码/配置/单位表.gd`（血量/攻击/护甲/花费/训练时间/采集速率…）
+- **单位数值**：`Game/config/单位表.gd`（血量/攻击/护甲/花费/训练时间/采集速率…）
 
 想用编辑器可视化调参：跑一次
 ```powershell
-& 'godot.exe' --headless --path . --script 工具/导出配置.gd
+& 'godot.exe' --headless --path . --script Tools/导出配置.gd
 ```
 会生成 `配置/游戏配置.tres`，之后在 Godot 里双击它即可改；`Cfg` 会优先读它。
 
@@ -157,10 +157,10 @@ addons/map_editor/          Godot EditorPlugin 地图编辑器（Theme 资源 / 
 .\工具\验证.ps1 -Shot -Seconds 5
 
 # 寻路专项自检（15 条用例）
-& 'godot.exe' --headless --path . --script 代码/测试/寻路自检.gd
+& 'godot.exe' --headless --path . --script Tests/suites/寻路自检.gd
 
 # 寻路抖动 / 贴墙 / 人群专项（36 项；必须 fixed-fps 60）
-& 'godot.exe' --headless --fixed-fps 60 --path . --script 代码/测试/寻路抖动自检.gd
+& 'godot.exe' --headless --fixed-fps 60 --path . --script Tests/suites/寻路抖动自检.gd
 
 # 升级 / 人口专项自检（铁匠铺研究闭环 + 训练队列不撑爆人口）
 & 'godot.exe' --headless --fixed-fps 60 --path . -- --research-test
@@ -169,11 +169,11 @@ addons/map_editor/          Godot EditorPlugin 地图编辑器（Theme 资源 / 
 & 'godot.exe' --path . --resolution 1280x800 -- --walk-test
 
 # 建造 / 死亡 / 倒塌 / 废墟 / 受击反馈自检（30 项；不生成截图）
-& 'godot.exe' --headless --path . --script 代码/测试/表现自检.gd
+& 'godot.exe' --headless --path . --script Tests/suites/表现自检.gd
 
 # 建造 / 界面自检
-& 'godot.exe' --headless --path . --script 代码/测试/建造自检.gd
-& 'godot.exe' --headless --path . --script 代码/测试/界面自检.gd
+& 'godot.exe' --headless --path . --script Tests/suites/建造自检.gd
+& 'godot.exe' --headless --path . --script Tests/suites/界面自检.gd
 
 # 地图编辑器：链路自检（Theme / Tree 历史 / 建筑网格 / 装饰边界）+ 数据自检
 & 'godot.exe' --headless --editor --path . -- --map-editor-selftest
@@ -187,13 +187,13 @@ addons/map_editor/          Godot EditorPlugin 地图编辑器（Theme 资源 / 
 
 ## 七、美术复现
 
-单位/自然物 v7 由 `工具/建模/*.py` 在 Blender 里生成；三座建筑来自 `美术/铁誓军团_资产包_v1`：
+单位/自然物 v7 由 `Tools/建模/*.py` 在 Blender 里生成；三座建筑来自 `Content/art/铁誓军团_资产包_v1`：
 
 ```powershell
 # 例：重建农民（Blender 5.x）
 & 'E:\tmp\blender_ok\blender.exe' -b --factory-startup --python 工具\建模\build_农民.py
 ```
 
-生成脚本会输出 GLB 到 Blender 侧的可写目录，再拷进 `美术/模型/` 即可。
+生成脚本会输出 GLB 到 Blender 侧的可写目录，再拷进 `Content/art/模型/` 即可。
 （注：本机 Blender 必须用 `E:\tmp\blender_ok\blender.exe` 这份全量副本；
 D 盘原目录带低完整性标签，启动即零输出 exit=1。这是环境约束，不是设计选择。）

@@ -1,11 +1,11 @@
 @tool
 extends Window
-## **技能编辑器（配方卡）**：把 `代码/配置/卡/技能/*.tres` 做成"按模板出表单"的可视窗。
+## **技能编辑器（配方卡）**：把 `Game/config/卡/技能/*.tres` 做成"按模板出表单"的可视窗。
 ##
-## ★ 三层积木 + 一张配方卡（玩家 2026-11-08 口径，详见 代码/配置/技能卡.gd 文件头）：
-##   第 1 层 技能原子（代码/配置/原子/*.gd）—— 只描述效果
+## ★ 三层积木 + 一张配方卡（玩家 2026-11-08 口径，详见 Game/config/技能卡.gd 文件头）：
+##   第 1 层 技能原子（Game/config/原子/*.gd）—— 只描述效果
 ##   第 2 层 单位姿势（clip 名）—— 只描述动作
-##   第 3 层 技能特效（代码/系统/技能特效.gd）—— 只描述光效
+##   第 3 层 技能特效（Game/systems/技能特效.gd）—— 只描述光效
 ##   本窗口 = 编辑那张"配方卡"。
 ##
 ## 四条硬规矩（对应玩家第 26~29 条）：
@@ -18,15 +18,15 @@ extends Window
 ##
 ## ⚠ 本文件不写 class_name（AGENTS.md §二），调用方用 preload 常量 + .call()。
 
-const Spec := preload("res://代码/界面/界面规格.gd")
+const Spec := preload("res://Views/hud/界面规格.gd")
 const EDITOR_THEME := preload("res://addons/map_editor/编辑器主题.tres")
 const 皮肤 := preload("res://addons/map_editor/编辑器皮肤.gd")
-const CARD_SCRIPT := preload("res://代码/配置/技能卡.gd")
-const SKILL_TABLE := preload("res://代码/配置/技能表.gd")
-const SKILL_FX := preload("res://代码/系统/技能特效.gd")
-const UNIT_TABLE := preload("res://代码/配置/单位表.gd")
+const CARD_SCRIPT := preload("res://Game/config/技能卡.gd")
+const SKILL_TABLE := preload("res://Game/config/技能表.gd")
+const SKILL_FX := preload("res://Game/systems/技能特效.gd")
+const UNIT_TABLE := preload("res://Game/config/单位表.gd")
 
-const DIR := "res://代码/配置/卡/技能/"
+const DIR := "res://Game/config/卡/技能/"
 ## 模板 id → 显示名
 const TEMPLATES: Array = [
 	["defense", "防御姿态（减伤 / 移速 / 攻速）"],
@@ -506,7 +506,7 @@ func _collect_atoms() -> Array:
 			if absf(sp) > 0.001:
 				out.append(_stat_atom("attack_cooldown", 1.0 / maxf(1.0 + sp, 0.05), ""))
 		"burst":
-			var a: SkillAtom = _new_atom("res://代码/配置/原子/原子_连发.gd")
+			var a: SkillAtom = _new_atom("res://Game/config/原子/原子_连发.gd")
 			a.set("atom_id", &"连发")
 			a.set("shots", int(_field_value("burst_shots", 3)))
 			a.set("interval", float(_field_value("burst_interval", 0.12)))
@@ -518,7 +518,7 @@ func _collect_atoms() -> Array:
 
 
 func _stat_atom(stat: String, mul: float, when: String) -> SkillAtom:
-	var a: SkillAtom = _new_atom("res://代码/配置/原子/原子_属性.gd")
+	var a: SkillAtom = _new_atom("res://Game/config/原子/原子_属性.gd")
 	a.set("atom_id", StringName("减伤") if stat == "damage_taken" else StringName("属性"))
 	a.set("stat", StringName(stat))
 	a.set("mul", mul)
@@ -684,7 +684,7 @@ func _validate(warns: Array) -> Array:
 		if clip == &"":
 			continue
 		if not _clip_exists_anywhere(String(clip)):
-			errs.append("动作「%s」在美术/模型 的所有单位 glb 里都找不到（%s）" % [String(clip), key])
+			errs.append("动作「%s」在Content/art/模型 的所有单位 glb 里都找不到（%s）" % [String(clip), key])
 
 	# 特效必须注册过
 	for key in ["vfx_on", "vfx_off"]:
@@ -692,7 +692,7 @@ func _validate(warns: Array) -> Array:
 		if fx == &"":
 			continue
 		if not bool(SKILL_FX.has(fx)):
-			errs.append("特效「%s」没在 代码/系统/技能特效.gd 注册" % String(fx))
+			errs.append("特效「%s」没在 Game/systems/技能特效.gd 注册" % String(fx))
 
 	# 单位归属：谁挂了这个技能（提示，不拦）
 	var owners: Array = _owners_of(id)
@@ -750,7 +750,7 @@ func _clip_exists_anywhere(clip: String) -> bool:
 
 
 func _scan_all_anims() -> void:
-	var roots: Array = ["res://美术/模型/", "res://美术/模型/方块人/", "res://美术/模型/野怪/"]
+	var roots: Array = ["res://Content/art/模型/", "res://Content/art/模型/方块人/", "res://Content/art/模型/野怪/"]
 	for r in roots:
 		var d := DirAccess.open(String(r))
 		if d == null:
@@ -800,7 +800,7 @@ func _preview() -> void:
 	if model_path == "":
 		_status.text = "预览失败：找不到可用模型"
 		return
-	var art: Script = load("res://代码/美术/美术接口.gd")
+	var art: Script = load("res://Views/world/art/美术接口.gd")
 	var model: Node3D = art.call("build_model", model_path, 1.0)
 	if model == null:
 		_status.text = "预览失败：%s 实例化不出来" % model_path
@@ -825,7 +825,7 @@ func _preview() -> void:
 	# 特效：vfx 层只认位置，这里用模型胸口高度
 	var fx: StringName = _card.get("vfx_on")
 	if fx != &"":
-		var vfx: Script = load("res://代码/美术/特效生成.gd")
+		var vfx: Script = load("res://Views/world/art/特效生成.gd")
 		vfx.call("weapon_glint", _preview_root.global_position + Vector3.UP * 1.1)
 	# 2.5 秒后清掉（预览不该留在地图上）
 	var tm := Timer.new()

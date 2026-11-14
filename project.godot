@@ -13,14 +13,14 @@ config_version=5
 config/name="铁血战歌·简易rts"
 config/description="类魔兽争霸3 的 3D 即时战略（GDScript 全手写，美术由 Blender 程序化生成）"
 config/version="2.0.0"
-run/main_scene="res://场景/主场景.tscn"
+run/main_scene="res://Views/scenes/主场景.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
 config/icon="res://icon.svg"
 
 [autoload]
 
-Cfg="*res://代码/配置/配置入口.gd"
-Game="*res://代码/核心/游戏状态.gd"
+Cfg="*res://Game/config/配置入口.gd"
+Game="*res://Game/core/游戏状态.gd"
 
 [display]
 

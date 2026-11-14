@@ -59,18 +59,18 @@ static func build(o: MapObject) -> Node3D:
 ## 为什么必须单独处理：这类"模型"根本不是一条 glb 路径，`ResourceLoader.exists("combo:campfire")`
 ## 永远为 false → 预览工厂退回棕色占位方块。玩家在编辑器里摆营火时看到的是一块木箱，
 ## 于是"编辑器能不能正常摆放它"这件事看起来就是坏的（其实数据是对的）。
-## 这里直接调游戏里那套拼装函数（代码/美术/组合件.gd），**编辑器所见 = 进图所见**。
+## 这里直接调游戏里那套拼装函数（Views/world/art/组合件.gd），**编辑器所见 = 进图所见**。
 ##
 ## ⚠ 只用 load() 取脚本再 call 静态方法：@tool 首次加载时 class_name 可能还没注册。
 static var _组合件脚本: Script = null
 
 static func _组合预览(path: String, o: MapObject) -> Node3D:
 	if _组合件脚本 == null:
-		_组合件脚本 = load("res://代码/美术/组合件.gd") as Script
+		_组合件脚本 = load("res://Views/world/art/组合件.gd") as Script
 	if _组合件脚本 == null:
 		return null
 	if _单位表脚本 == null:
-		_单位表脚本 = load("res://代码/配置/单位表.gd") as Script
+		_单位表脚本 = load("res://Game/config/单位表.gd") as Script
 	var d: UnitDef = null
 	if _单位表脚本 != null:
 		var table: Dictionary = _单位表脚本.call("build_units")
@@ -91,14 +91,14 @@ static var _单位表脚本: Script = null
 ## 可能还没注册，会静默变成 null。统一 load() 脚本再 call 静态方法。
 static func _proc_tree_preview(o: MapObject) -> MeshInstance3D:
 	if _树库脚本 == null:
-		_树库脚本 = load("res://代码/美术/树库.gd") as Script
+		_树库脚本 = load("res://Views/world/art/树库.gd") as Script
 	if _树库脚本 == null:
 		return null
 	var d: UnitDef = null
 	# 高度只跟 UnitDef 有关，别为了一个 height 去拉整个 MapLoader
 	# （MapLoader 依赖 Game 自动加载单例，在编辑器/无头脚本里可能是不可用的上下文）
 	if _单位表脚本 == null:
-		_单位表脚本 = load("res://代码/配置/单位表.gd") as Script
+		_单位表脚本 = load("res://Game/config/单位表.gd") as Script
 	if _单位表脚本 != null:
 		var table: Dictionary = _单位表脚本.call("build_units")
 		d = table.get(o.type_id, null) as UnitDef
@@ -122,7 +122,7 @@ static func _proc_tree_preview(o: MapObject) -> MeshInstance3D:
 ## 全失败也不抛：编辑器预览不能因为材质层挂掉而整个不显示。
 static func _套自然材质(inst: Node3D) -> void:
 	if _自然脚本 == null:
-		_自然脚本 = load("res://代码/美术/自然材质.gd") as Script
+		_自然脚本 = load("res://Views/world/art/自然材质.gd") as Script
 	if _自然脚本 != null and bool(_自然脚本.call("_是角色", inst)):
 		_套角色材质(inst)
 		return
@@ -137,7 +137,7 @@ const PREVIEW_TEAM := Color(0.19, 0.40, 0.74)
 
 static func _套角色材质(inst: Node3D) -> void:
 	if _材质库脚本 == null:
-		_材质库脚本 = load("res://代码/美术/材质库.gd") as Script
+		_材质库脚本 = load("res://Views/world/art/材质库.gd") as Script
 	if _材质库脚本 == null:
 		return
 	# is_char = true：走角色那一档曝光（提亮 + 减 AO + 暗部补光）

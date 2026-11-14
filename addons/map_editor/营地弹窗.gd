@@ -10,19 +10,19 @@ extends Window
 ## 数据口径（和停靠面板完全一致，两边编辑同一份 .tres）：
 ##   · 锚点有 camp_id      → 用 by_id 那一份（逐实例配置）；
 ##   · 没有 camp_id 但有默认 → 用 for_den(锚点类型) 那一份；
-##   · 两份都没有          → 按模板新建 代码/配置/卡/野怪营地/camp_<锚点id>_<n>.tres。
+##   · 两份都没有          → 按模板新建 Game/config/卡/野怪营地/camp_<锚点id>_<n>.tres。
 ##   保存后把 camp_id 写进**这一座**锚点的 properties，并让静态表 reload ——
 ##   同一种锚点摆多座时，各座才可能配各自的怪（运行时 野怪营地.gd 已经读 camp_id）。
 ##
 ## ⚠ 本文件不写 class_name（AGENTS.md §二：别碰全局类缓存），
 ##   调用方用 preload 常量 + .call() 拿它。
 
-const Spec := preload("res://代码/界面/界面规格.gd")
+const Spec := preload("res://Views/hud/界面规格.gd")
 const EDITOR_THEME := preload("res://addons/map_editor/编辑器主题.tres")
 ## 皮肤（深铁石底 + 金线）：在 .tres 实例上就地改写，资源路径不变
 const 皮肤 := preload("res://addons/map_editor/编辑器皮肤.gd")
-const CAMP_TABLE := preload("res://代码/配置/野怪营地表.gd")
-const CAMP_DEF := preload("res://代码/配置/野怪营地定义.gd")
+const CAMP_TABLE := preload("res://Game/config/野怪营地表.gd")
+const CAMP_DEF := preload("res://Game/config/野怪营地定义.gd")
 
 var session = null
 ## 正在配置的那一座锚点（MapObject）
@@ -113,7 +113,7 @@ func _build() -> void:
 	g.add_child(_label("营地 id"))
 	_id = LineEdit.new()
 	_id.placeholder_text = "camp_creep_den_1"
-	_id.tooltip_text = "新营地用它拼文件名（代码/配置/卡/野怪营地/<id>.tres）。\n已存在的营地按原本的路径写回，id 只作标识。"
+	_id.tooltip_text = "新营地用它拼文件名（Game/config/卡/野怪营地/<id>.tres）。\n已存在的营地按原本的路径写回，id 只作标识。"
 	g.add_child(_id)
 
 	g.add_child(_label("所属玩家"))

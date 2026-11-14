@@ -7,7 +7,7 @@ extends TabContainer
 ##   区域   ：画圆/矩形/多边形 ＋ 用途 ＋ 玩家槽位 ＋ 波次
 ##   玩家   ：玩家槽位（阵营/颜色/队伍/出生点/初始资源）＋ 队伍预设
 ##   属性   ：选中对象的数据
-##   营地   ：野怪营地卡（刷什么怪、几只、半径、补满时间），存回 代码/配置/卡/野怪营地/
+##   营地   ：野怪营地卡（刷什么怪、几只、半径、补满时间），存回 Game/config/卡/野怪营地/
 ##   校验   ：五关硬检查结果
 ##   历史   ：Tree 实现的撤销/重做面板（点一条直接跳步）
 ##
@@ -16,7 +16,7 @@ extends TabContainer
 var session = null
 var _syncing: bool = false
 ## 全套设计令牌（配色/字号/样式工厂）——这里只用 editor_ 那一档冷色
-const Spec := preload("res://代码/界面/界面规格.gd")
+const Spec := preload("res://Views/hud/界面规格.gd")
 ## token 编译出来的正经 Theme 资源（主屏同源）
 const EDITOR_THEME := preload("res://addons/map_editor/编辑器主题.tres")
 ## 皮肤（深铁石底 + 金线）：在 .tres 实例上就地改写，资源路径不变
@@ -95,9 +95,9 @@ var _val_summary: Label
 
 # --- 营地页 ---
 ## 营地卡目录 + 静态表（本工程惯例：不写 class_name，用 preload 常量调静态方法）
-const CAMP_TABLE := preload("res://代码/配置/野怪营地表.gd")
+const CAMP_TABLE := preload("res://Game/config/野怪营地表.gd")
 ## 营地定义脚本（新建时 .new() 一份空的 Resource）
-const CAMP_DEF := preload("res://代码/配置/野怪营地定义.gd")
+const CAMP_DEF := preload("res://Game/config/野怪营地定义.gd")
 var _camp_list: ItemList
 var _camp_name: LineEdit
 var _camp_id: LineEdit
@@ -841,7 +841,7 @@ func _spin(min_v: float, max_v: float, step: float) -> SpinBox:
 #
 # 为什么单开一页（玩家原话："地图编辑器里我没有找到野怪营地，同时我要的野怪营地，
 # 里面我自己可自定义配置弄什么野怪"）：
-#   营地是"地图内容"，刷什么怪写在一张 .tres 里，散落在 代码/配置/卡/野怪营地/。
+#   营地是"地图内容"，刷什么怪写在一张 .tres 里，散落在 Game/config/卡/野怪营地/。
 #   以前只能手改文本文件 —— 编辑器里没有任何入口，等于"找不到"。
 #   这里把那张表原样搬成界面：左列表选一份，右边勾野怪、填只数、存盘。
 #   保存后必须 CAMP_TABLE.reload()：否则玩家刚写的配置要重启 Godot 才生效。
@@ -882,7 +882,7 @@ func _build_camp_tab() -> Control:
 	g.add_child(_label("营地 id"))
 	_camp_id = LineEdit.new()
 	_camp_id.placeholder_text = "camp_den"
-	_hint(_camp_id, "新建时用它拼文件名（代码/配置/卡/野怪营地/<id>.tres）。\n已存在的营地按原本的文件路径写回，id 只作标识。")
+	_hint(_camp_id, "新建时用它拼文件名（Game/config/卡/野怪营地/<id>.tres）。\n已存在的营地按原本的文件路径写回，id 只作标识。")
 	g.add_child(_camp_id)
 
 	g.add_child(_label("锚点建筑"))

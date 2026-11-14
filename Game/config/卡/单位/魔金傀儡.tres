@@ -1,0 +1,36 @@
+[gd_resource type="Resource" script_class="UnitCard" format=3]
+
+[ext_resource type="Script" path="res://Game/config/单位卡.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+roles = Array[StringName]([&"承伤"])
+counters = Array[StringName]([&"建筑", &"轻甲"])
+range = 130.0
+attack = 34
+attack_type = &"普通"
+defense = 5
+defense_type = &"重甲"
+volume = 2.4
+model_scale = 0.416667
+max_hp = 1090.0
+attack_spread = 2.0
+attack_cooldown = 2.6
+acquire_range = 11
+sight_range = 12.0
+move_speed = 3.2
+turn_speed = 5.0
+food_cost = 4
+train_time = 34.0
+height = 4.3
+require_tier = 2
+model_path = "res://Content/art/模型/精模/魔金傀儡.glb"
+anim_set = 1
+def_role = &"frontline"
+def_tags = Array[StringName]([&"heavy"])
+card_id = "golem"
+display_name = "魔金傀儡"
+description = "圣地的秘金拼板傀儡：1090 血、5 点重甲、34 点普通攻击，攻速慢但一拳一截。体积是标准兵的 2.4 倍，挡在阵前就是墙。需要二本。"
+cost_gold = 420
+cost_wood = 110
+race = &"联盟"

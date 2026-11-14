@@ -15,7 +15,7 @@ const GRID_STEP: float = 4.0
 ## 屏幕点选半径（像素）：越大越"吸"。30px 在 1080p 上够点小单位，又不会误吸邻居
 const PICK_PIXELS: float = 30.0
 ## 建筑网格唯一实现（@tool 纯函数）
-const GRID := preload("res://代码/单位/建筑网格.gd")
+const GRID := preload("res://Game/units/建筑网格.gd")
 ## 编辑模式（与 编辑会话.Mode 对应；写成本地常量，避免跨脚本取枚举）
 const MODE_TERRAIN: int = 0
 const MODE_OBJECT: int = 1
@@ -23,7 +23,7 @@ const MODE_REGION: int = 2
 const MODE_SELECT: int = 3
 
 ## 野怪营地锚点建筑的 id（玩家点它们要弹营地配置窗）。
-## 固定这三条是因为营地卡的 den_building 就是它们（见 代码/配置/卡/野怪营地/）；
+## 固定这三条是因为营地卡的 den_building 就是它们（见 Game/config/卡/野怪营地/）；
 ## 另外 properties 里带 camp* 键的建筑也认（以后加新锚点不用改这里）。
 const CAMP_ANCHOR_IDS: Array[String] = ["creep_den", "creep_gate", "creep_shell"]
 
@@ -177,8 +177,8 @@ func _build_world() -> void:
 	world_env = WorldEnvironment.new()
 	world_env.name = "环境"
 	var env_res: Resource = null
-	if ResourceLoader.exists("res://美术/环境/战斗环境.tres"):
-		env_res = load("res://美术/环境/战斗环境.tres")
+	if ResourceLoader.exists("res://Content/art/环境/战斗环境.tres"):
+		env_res = load("res://Content/art/环境/战斗环境.tres")
 	if env_res is Environment:
 		world_env.environment = env_res
 	else:

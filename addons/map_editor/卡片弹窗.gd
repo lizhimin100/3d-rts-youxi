@@ -1,6 +1,6 @@
 @tool
 extends Window
-## **卡片编辑器**：把 `代码/配置/卡/单位/` 与 `.../建筑/` 下的 .tres 做成可视表单。
+## **卡片编辑器**：把 `Game/config/卡/单位/` 与 `.../建筑/` 下的 .tres 做成可视表单。
 ##
 ## 为什么要它（玩家口径「我要自己配单位/建筑，不想手改文本」）：
 ##   卡是数值唯一真相源（见 单位卡.gd / 建筑卡.gd），但一直是"只有写代码的人会改"的
@@ -17,15 +17,15 @@ extends Window
 ##
 ## ⚠ 本文件不写 class_name（AGENTS.md §二），调用方用 preload 常量 + .call()。
 
-const Spec := preload("res://代码/界面/界面规格.gd")
+const Spec := preload("res://Views/hud/界面规格.gd")
 const EDITOR_THEME := preload("res://addons/map_editor/编辑器主题.tres")
 ## 皮肤（深铁石底 + 金线）：在 .tres 实例上就地改写，资源路径不变
 const 皮肤 := preload("res://addons/map_editor/编辑器皮肤.gd")
-const UNIT_TABLE := preload("res://代码/配置/单位表.gd")
-const LW := preload("res://代码/配置/定位词表.gd")
+const UNIT_TABLE := preload("res://Game/config/单位表.gd")
+const LW := preload("res://Game/config/定位词表.gd")
 
-const CARD_DIR_UNIT := "res://代码/配置/卡/单位/"
-const CARD_DIR_BUILDING := "res://代码/配置/卡/建筑/"
+const CARD_DIR_UNIT := "res://Game/config/卡/单位/"
+const CARD_DIR_BUILDING := "res://Game/config/卡/建筑/"
 
 var session = null
 ## "unit" / "building"
@@ -119,7 +119,7 @@ func _build() -> void:
 	save.pressed.connect(_save)
 	brow.add_child(save)
 	# ★ 2026-11-08 玩家口径：「编辑器内可新建单位/建筑配置卡，名字、各字段我自己填；
-	#   卡本身就是单位数据介绍，模型/美术/音频到位直接填，新单位就出现。不用改代码。」
+	#   卡本身就是单位数据介绍，模型/Content/art/音频到位直接填，新单位就出现。不用改代码。」
 	var newb := Spec.editor_button("新建")
 	newb.tooltip_text = "新建一张空卡（自动起 id），填完模型路径保存就进对象页"
 	newb.pressed.connect(_create_card)
@@ -636,7 +636,7 @@ func _create_card() -> void:
 	var id: String = prefix + str(n)
 	var res: Resource = null
 	if _kind == "unit":
-		res = preload("res://代码/配置/单位卡.gd").new()
+		res = preload("res://Game/config/单位卡.gd").new()
 		res.set("card_id", id)
 		res.set("display_name", "新单位 " + str(n))
 		res.set("description", "（自己写：这个兵是谁、干什么用的）")
@@ -649,7 +649,7 @@ func _create_card() -> void:
 		res.set("volume", 1.0)
 		res.set("race", &"联盟")
 	else:
-		res = preload("res://代码/配置/建筑卡.gd").new()
+		res = preload("res://Game/config/建筑卡.gd").new()
 		res.set("card_id", id)
 		res.set("display_name", "新建筑 " + str(n))
 		res.set("description", "（自己写：这座楼干什么用的）")

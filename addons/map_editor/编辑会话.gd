@@ -2,7 +2,7 @@
 extends RefCounted
 ## **编辑会话**：编辑器的唯一状态中心。
 ##
-## 主屏（3D 视口）、停靠面板（工具/对象/属性/校验）都只跟这个对象说话：
+## 主屏（3D 视口）、停靠面板（Tools/对象/属性/校验）都只跟这个对象说话：
 ##   · 所有编辑都改 `def`（MapDef），改完发 `def_changed(reason)` 让视口重建对应那一层；
 ##   · 所有可撤销操作都走 EditorUndoRedoManager（编辑器自带的那套，不自己造轮子）；
 ##   · 地形笔刷按"一笔一条"合并：按下时快照，松开时提交一条 action。
@@ -32,9 +32,9 @@ enum Tool {
 ## 自动保存间隔（秒）
 const AUTOSAVE_INTERVAL: float = 120.0
 ## 没存过盘时的自动保存路径（项目内「地图」文件夹）
-const AUTOSAVE_PATH := "res://地图/_自动保存.tres"
+const AUTOSAVE_PATH := "res://Content/maps/_自动保存.tres"
 ## 建筑网格唯一实现（@tool 纯函数；编辑器不碰 Game/RtsWorld）
-const GRID := preload("res://代码/单位/建筑网格.gd")
+const GRID := preload("res://Game/units/建筑网格.gd")
 ## 建筑落点用寻路格宽（唯一真相在 建筑网格.CELL）。
 
 var plugin: EditorPlugin = null

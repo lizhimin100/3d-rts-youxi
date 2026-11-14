@@ -11,10 +11,10 @@ _test_*.txt
 *.stderr.log
 *.log
 
-# 验收截图 / 临时 QA 产物（每次跑都会重出一批，需要留档的放 文档/图/）
+# 验收截图 / 临时 QA 产物（每次跑都会重出一批，需要留档的放 Documents/图/）
 _qa/
-# VAT 烘焙产物：由 工具/烘焙VAT.gd 从 GLB 生成，单件 3~15MB，不进库（一条命令可重建）
-美术/VAT/
+# VAT 烘焙产物：由 Tools/烘焙VAT.gd 从 GLB 生成，单件 3~15MB，不进库（一条命令可重建）
+Content/art/VAT/
 
 # 引擎缓存目录（Godot 自己写的 app_userdata 链接，不是工程内容）
 Godot/
@@ -27,10 +27,10 @@ NVIDIA Corporation/
 /_检查_*.png.import
 
 # Blender QC 对照图（每跑一次 --qc 都会重出一批）
-工具/建模/v3/qc/
-工具/建模/v3/*.glb
-工具/建模/v6/qc/
-工具/建模/v6/*.log
+Tools/建模/v3/qc/
+Tools/建模/v3/*.glb
+Tools/建模/v6/qc/
+Tools/建模/v6/*.log
 
 # Python 缓存（各版本目录都会生成）
 __pycache__/
@@ -38,14 +38,14 @@ __pycache__/
 # 本地回滚备份（不含交付物，仅本次会话临时备份旧语音）
 _backup/
 
-# 四季演示图（工具/生成四季演示图.gd 现场生成，只用来截屏验收）
-地图/_四季演示.tres
+# 四季演示图（Tools/生成四季演示图.gd 现场生成，只用来截屏验收）
+Content/maps/_四季演示.tres
 
 # 地图编辑器的运行时产物（自动保存 / 测试临时图 / 最近列表）：本机用，不进库
-地图/_自动保存.tres
-地图/_测试地图.tres
-地图/_最近地图.cfg
-地图/_编辑器链路自检.tres
+Content/maps/_自动保存.tres
+Content/maps/_测试地图.tres
+Content/maps/_最近地图.cfg
+Content/maps/_编辑器链路自检.tres
 
 # WorkBuddy agent 元文件（.workbuddy/memory 等）：本机工作记录，不属于工程内容
 .workbuddy/

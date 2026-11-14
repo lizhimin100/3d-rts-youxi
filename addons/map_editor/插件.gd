@@ -582,7 +582,7 @@ func _run_selftest() -> void:
 
 	# --- 存盘 → 读回 ---
 	# 存到项目内的「地图」文件夹（不再写 C 盘 user://），顺便验证 res:// 可写可读
-	var tmp := "res://地图/_编辑器链路自检.tres"
+	var tmp := "res://Content/maps/_编辑器链路自检.tres"
 	if _session.save_as(tmp):
 		var back: MapDef = MapStore.load_tres(tmp)
 		if back != null and back.objects.size() == d.objects.size() \

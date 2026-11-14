@@ -2,19 +2,19 @@
 extends RefCounted
 ## **编辑器皮肤（二次重做，2026-11-07）** —— 把「冷灰蓝 Godot 默认」整屏换成「深铁石底 + 金线」。
 ##
-## 为什么单开这一层，而不是去改 代码/界面/界面规格.gd：
+## 为什么单开这一层，而不是去改 Views/hud/界面规格.gd：
 ##   · build_editor_theme() 是**游戏与编辑器共用**的 token 编译入口，动它会波及 HUD；
 ##   · 本工程规矩：插件只准改 addons/map_editor/**。
 ## 所以皮肤在这里**就地改写** 编辑器主题.tres 那个 Theme 实例（加类型/换皮肤），
 ## .tres 的 resource_path 不变 —— 自检里「主屏与 Dock 挂的是同一个主题资源」照旧成立，
-## 而且就算有人重跑 工具/生成编辑器主题.gd 把 .tres 刷回冷色，运行时也会再被这里盖回来。
+## 而且就算有人重跑 Tools/生成编辑器主题.gd 把 .tres 刷回冷色，运行时也会再被这里盖回来。
 ##
 ## 三件事只在这里做，别处不许再写 StyleBox：
 ##   1. 调色板（IRON / STONE / GOLD / RED 四组 token）；
 ##   2. 控件皮肤（按钮四态 + 标签页 + 列表 + 输入框 + 滑条 + 菜单 + 滚动条）；
 ##   3. 控件工厂（tool_button / layer_button / section / dot）。
 
-const Spec := preload("res://代码/界面/界面规格.gd")
+const Spec := preload("res://Views/hud/界面规格.gd")
 
 # ===========================================================================
 # 调色板（8px 栅格之外，唯一的"设计 token"）

@@ -10,7 +10,7 @@ extends Window
 ##
 ## ⚠ 本文件不写 class_name（AGENTS.md §二）；主屏用 preload 常量 + .call() 打开。
 
-const Spec := preload("res://代码/界面/界面规格.gd")
+const Spec := preload("res://Views/hud/界面规格.gd")
 const EDITOR_THEME := preload("res://addons/map_editor/编辑器主题.tres")
 ## 皮肤（深铁石底 + 金线）：在 .tres 实例上就地改写，资源路径不变
 const 皮肤 := preload("res://addons/map_editor/编辑器皮肤.gd")
@@ -20,7 +20,7 @@ const 皮肤 := preload("res://addons/map_editor/编辑器皮肤.gd")
 const ROWS: Array = [
 	["地图", "新建 / 打开 / 保存", "菜单栏 文件；Ctrl+S 保存", "主屏.gd -> _on_menu / 编辑会话.gd"],
 	["地图", "试玩（测试地图）", "快捷条「试玩」：先存临时图再启动游戏", "编辑会话.gd -> test_map"],
-	["地图", "校验", "快捷条「校验」：出生点 / 可达性 / 占位体检", "代码/地图核心/地图校验.gd"],
+	["地图", "校验", "快捷条「校验」：出生点 / 可达性 / 占位体检", "Game/map/地图校验.gd"],
 	["对象", "摆放归属（先选玩家）", "对象页顶部药丸：先点玩家，再摆单位 / 建筑", "停靠面板.gd -> _build_object_tab"],
 	["对象", "放置分类 / 搜索", "对象页：单位 / 建筑 / 装饰 / 资源 + 搜索框", "停靠面板.gd -> _populate_assets"],
 	["对象", "拖动 / 框选 / 复制粘贴", "手型（H / Esc 收工具）：左键框选、拖已选、Ctrl+C/V", "视口.gd + 编辑会话.gd"],
@@ -38,16 +38,16 @@ const ROWS: Array = [
 	["建筑卡", "可训练 / 可研究清单", "建筑卡窗底部两排勾选框", "卡片弹窗.gd -> _save / _sync_unit_trains"],
 	["野怪营地", "点锚点直接配置", "手型状态下**单击**已放置的巢穴 / 入口 / 折壳营地", "视口.gd -> _open_camp_dialog；营地弹窗.gd"],
 	["野怪营地", "营地页批量配置", "右侧「营地」页：左选配置 -> 右改 -> 保存 -> 应用到选中锚点", "停靠面板.gd -> _build_camp_tab"],
-	["野怪营地", "归属 / 时间点 / 补满", "营地页：所属玩家、首次刷新分钟、间隔分钟、补满秒", "代码/配置/卡/野怪营地/*.tres"],
+	["野怪营地", "归属 / 时间点 / 补满", "营地页：所属玩家、首次刷新分钟、间隔分钟、补满秒", "Game/config/卡/野怪营地/*.tres"],
 	["地形", "抬高 / 压低 / 平滑 / 抹平", "右侧「地形」页的工具按钮", "停靠面板.gd -> _build_terrain_tab"],
-	["地形", "地块涂刷（草 / 泥）", "地形页「地块」：笔刷半径 + 左键涂", "代码/地图核心/地图定义.gd -> mat_cells"],
+	["地形", "地块涂刷（草 / 泥）", "地形页「地块」：笔刷半径 + 左键涂", "Game/map/地图定义.gd -> mat_cells"],
 	["区域", "画圆 / 矩形 / 多边形", "区域页工具 + 左键绘制", "停靠面板.gd -> _build_region_tab"],
 	["属性", "改选中对象的归属 / 坐标 / 缩放", "「属性」页（选中对象后）", "停靠面板.gd -> _refresh_props"],
-	["主题", "改编辑器配色 / 字号", "改 界面规格.gd 后跑 工具/生成编辑器主题.gd", "工具/生成编辑器主题.gd"],
-	["工具栏", "加 / 改 / 重排顶部按钮或左侧层栏", "只改 按钮表.gd 的 GROUPS / LAYERS（图标走 美术/图标/）", "addons/map_editor/按钮表.gd"],
-	["工具栏", "按钮图标缺失 / 想换图标", "在 美术/图标/ 放同名 SVG（64×64，白色路径），跑 --import", "代码/界面/界面规格.gd -> icon_button"],
+	["主题", "改编辑器配色 / 字号", "改 界面规格.gd 后跑 Tools/生成编辑器主题.gd", "Tools/生成编辑器主题.gd"],
+	["工具栏", "加 / 改 / 重排顶部按钮或左侧层栏", "只改 按钮表.gd 的 GROUPS / LAYERS（图标走 Content/art/图标/）", "addons/map_editor/按钮表.gd"],
+	["工具栏", "按钮图标缺失 / 想换图标", "在 Content/art/图标/ 放同名 SVG（64×64，白色路径），跑 --import", "Views/hud/界面规格.gd -> icon_button"],
 	["自检", "编辑器链路自检（24 项）", "godot --headless --editor --path . -- --map-editor-selftest", "主屏.gd -> _selftest"],
-	["自检", "地图数据自检（167 项）", "godot --headless --path . --quit-after 200 -- --map-editor-test", "代码/测试/地图编辑器自检.gd"],
+	["自检", "地图数据自检（167 项）", "godot --headless --path . --quit-after 200 -- --map-editor-test", "Tests/suites/地图编辑器自检.gd"],
 ]
 
 var session = null

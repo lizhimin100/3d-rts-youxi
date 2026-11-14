@@ -25,7 +25,7 @@
 ## 二、几个会直接毁掉文件的坑
 
 - **不要 read 整个大文件再 write 回去**：read 工具对 ~50KB 以上会**静默截断**，
-  写回去就是砍掉半个文件（`代码/核心/地图生成.gd` 踩过）。分段读，每次 ≤400 行；
+  写回去就是砍掉半个文件（`Game/core/地图生成.gd` 踩过）。分段读，每次 ≤400 行；
   小改用 `edit`，别用 `write` 覆盖。
 - 真要整文件重写，先 `Get-Content | Measure-Object -Line` 核对行数，写完再核对一次。
 - `--quit-after` / `--resolution` 是**引擎参数**，必须放在 `--` **之前**，否则游戏一直跑不退出。
@@ -36,11 +36,11 @@
   * 只通过 `.call("…")` 调用的对象 → 类型写 `Node`，脚本用 `const XXX := preload(...)` 拿着；
   * 要调静态方法（`RtsDungeonVisual.build()`）→ 也改成 `preload` 常量再 `.call()`；
   * 真的必须写类名（`extends SimpleAI`、`as RtsBuilding`）→ 加完**立刻** `--import`。
-  * 详见 `文档/开发交接.md` §1。
+  * 详见 `Documents/开发交接.md` §1。
 - **编辑器插件脚本（`addons/map_editor/*.gd`）里新增成员必须先写 `var`**。
   漏一个未声明变量 → 整个 `编辑会话.gd` 编译失败 → `主屏._process` 每帧刷
   `Nonexistent function 'autosave_tick'`，拖动/笔刷全废。**排查时往上找第一条 Parse Error，
-  别从报错行开始读**（报错行只是受害者）。详见 `文档/开发交接.md` §2。
+  别从报错行开始读**（报错行只是受害者）。详见 `Documents/开发交接.md` §2。
 
 ## 三、改完怎么验（都在工程根目录跑）
 
@@ -49,8 +49,8 @@ $g = 'E:/Program Files (x86)/Steam/steamapps/common/Godot Engine/godot.windows.o
 # ↑ 2026-11-07 更正：D 盘那套 Steam 已经不在本机了。备份路径（本机另装的 4.7.2）：
 #   E:/编辑器/tools/godot/Godot_v4.7.2-stable_mono_win64/Godot_v4.7.2-stable_mono_win64_console.exe
 & $g --headless --path . --quit-after 200 -- --qa-terrain          # 地形/出生点体检
-& $g --headless --path . --script 代码/测试/界面自检.gd             # UI 8 项
-& $g --headless --path . --script 代码/测试/建造自检.gd             # 建造 23 项
+& $g --headless --path . --script Tests/suites/界面自检.gd             # UI 8 项
+& $g --headless --path . --script Tests/suites/建造自检.gd             # 建造 23 项
 & $g --headless --path . --quit-after 1200 -- --autotest           # 全流程自动试玩
 & $g --path . --resolution 1600x900 -- --shot=<绝对路径.png> --shot-delay=5 --quit-after-shot
 ```
@@ -67,7 +67,7 @@ $g = 'E:/Program Files (x86)/Steam/steamapps/common/Godot Engine/godot.windows.o
 - 本机 `--speed=8` 不会更快：CPU bound，10 min 局墙钟 ≈ 600~625 s（≈1× 实时）。
   排期按"游戏时长 ≈ 墙钟"算，多局并行才省时间。
 - 对照局必须**同构建、同 seed、同难度**，只切参数开关（`--builder-slot` / `--army-target-formula`
-  / `--dept` 这类，见 `代码/配置/AI判定模式.gd`），不要改代码再编译两次 —— 否则证据链断在版本上。
+  / `--dept` 这类，见 `Game/config/AI判定模式.gd`），不要改代码再编译两次 —— 否则证据链断在版本上。
 
 ### 决策层结构开关（2C-9 起）
 
@@ -76,7 +76,7 @@ $g = 'E:/Program Files (x86)/Steam/steamapps/common/Godot Engine/godot.windows.o
 - `--dept=off` = 2C-8 的固定调用顺序（农场急建 → 农场 → 军队 → 科技 → 军事 → upkeep）。
   **做"改前/改后"对照必须用这个开关，不要回滚代码。**
 - `--dept-log=<路径>`：L3 决策日志（每 2 s 一行 jsonl，**只落盘不进决策**）。
-- 诉求分系数全部住在 `代码/配置/卡/AI诉求系数.tres`（第 18 张卡），2C-9 全部 = 1.0；
+- 诉求分系数全部住在 `Game/config/卡/AI诉求系数.tres`（第 18 张卡），2C-9 全部 = 1.0；
   **改系数不改代码**。改完跑 `配置回归`，`[卡校验]` 会验"13 个系数必须 1.0"。
 - 判定表分布：bench 结尾打印 `JUDGE-DIST {json}`（每阵营一行 + 合计一行），
   bench json 里 `judge_dist` / 每波 `判据` 是同一批数。
@@ -85,22 +85,22 @@ $g = 'E:/Program Files (x86)/Steam/steamapps/common/Godot Engine/godot.windows.o
 ## 四、提交时不该进库的东西
 
 `_qa/`（验收截图）、`.godot/`（引擎缓存）、`.workbuddy/`（会话记忆）、
-`Godot/`、`NVIDIA Corporation/`（驱动日志）、`地图/_自动保存.tres` 等运行时地图产物 ——
+`Godot/`、`NVIDIA Corporation/`（驱动日志）、`Content/maps/_自动保存.tres` 等运行时地图产物 ——
 这些都在 `.gitignore` 里，别手贱 `git add -f`。
 
 ## 五、项目知识去哪看
 
-- **`文档/README.md` —— 文档总入口（先看这一页）**：30 秒路由 + 文档状态
+- **`Documents/README.md` —— 文档总入口（先看这一页）**：30 秒路由 + 文档状态
   （铁律 / 现行 / 设计 / 历史快照）。**历史快照不要当现行口径用。**
-- **`文档/索引/文件索引.md` —— 文件索引（自动生成）**：171 个脚本的行数/职责/
+- **`Documents/索引/文件索引.md` —— 文件索引（自动生成）**：171 个脚本的行数/职责/
   preload 出入/自检入口 + 健康指标。改东西先 grep 索引，别一头扎进 7531 行的 `简单AI.gd`。
-  改完代码重跑 `python 工具/生成文件索引.py`。
-- `文档/架构地图.md` —— 模块树 / 跨模块耦合（带文件:行号）/ **"改 XX 去哪"总表**。
-- `文档/界面说明.md` —— **界面唯一说明书**：怎么做、怎么操作、样式规范、
+  改完代码重跑 `python Tools/生成文件索引.py`。
+- `Documents/架构地图.md` —— 模块树 / 跨模块耦合（带文件:行号）/ **"改 XX 去哪"总表**。
+- `Documents/界面说明.md` —— **界面唯一说明书**：怎么做、怎么操作、样式规范、
   以及"当前生效的全部 UI 要求"清单。
   ⚠️ 里面第一条就是玩家的硬要求：**没被点名的界面地方一律不要动**。
-- `文档/编辑器资产同步.md` —— 新增单位/建筑怎么同步进地图编辑器（能摆、能设、长得对）。
-- `文档/开发交接.md` —— 会让人白干一天的坑（类缓存 / 编辑器脚本编译失败 / 已知常红自检项）。
-- `文档/作战条令.md` —— 早期接口契约；**§6 单位 API 仍有效，数值/AI 章节已过期，以代码为准**。
+- `Documents/编辑器资产同步.md` —— 新增单位/建筑怎么同步进地图编辑器（能摆、能设、长得对）。
+- `Documents/开发交接.md` —— 会让人白干一天的坑（类缓存 / 编辑器脚本编译失败 / 已知常红自检项）。
+- `Documents/作战条令.md` —— 早期接口契约；**§6 单位 API 仍有效，数值/AI 章节已过期，以代码为准**。
 - `.workbuddy/memory/MEMORY.md` —— 长期总结（材质口径 / 地形 / UI / 地图编辑器 / 踩过的坑）。
   改完东西有新结论，**直接改那一个文件**，不要新建分轮总结。

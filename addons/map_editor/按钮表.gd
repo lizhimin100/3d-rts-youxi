@@ -12,7 +12,7 @@ extends RefCounted
 ##
 ## 加/改一个工具栏按钮 = **只改这张表**：
 ##   · `id`   —— 必须和 `主屏.gd::_on_menu(id)` 的 case 对上；
-##   · `icon` —— `美术/图标/<icon>.svg`（找不到会静默退回纯文字）；
+##   · `icon` —— `Content/art/图标/<icon>.svg`（找不到会静默退回纯文字）；
 ##   · `kind` —— `normal` / `primary` / `danger`（删除这类不可逆操作）；
 ##   · `text` —— **两个字**。长了就把说明挪进 `tip`。
 ##
@@ -38,8 +38,8 @@ const GROUPS: Array = [
 		{"id": 5, "text": "试玩", "icon": "play", "tip": "保存临时地图并启动游戏（不阻塞编辑器）"},
 	]},
 	{"name": "数值", "items": [
-		{"id": 41, "text": "单位卡", "icon": "card", "tip": "编辑 代码/配置/卡/单位/ 下的数值卡（保存即生效，进图前不用重启）"},
-		{"id": 42, "text": "建筑卡", "icon": "card", "tip": "编辑 代码/配置/卡/建筑/ 下的数值卡"},
+		{"id": 41, "text": "单位卡", "icon": "card", "tip": "编辑 Game/config/卡/单位/ 下的数值卡（保存即生效，进图前不用重启）"},
+		{"id": 42, "text": "建筑卡", "icon": "card", "tip": "编辑 Game/config/卡/建筑/ 下的数值卡"},
 		{"id": 44, "text": "技能卡", "icon": "card", "tip": "技能配方面板：三层积木（原子/动作/特效）+ 触发，按模板出表单"},
 		{"id": 43, "text": "帮助", "icon": "help", "tip": "功能索引：每个按钮做什么、在哪个文件实现"},
 	]},

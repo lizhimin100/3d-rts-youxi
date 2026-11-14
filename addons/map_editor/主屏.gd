@@ -19,10 +19,10 @@ extends VBoxContainer
 
 const VIEWPORT_SCRIPT := "res://addons/map_editor/视口.gd"
 ## 全套设计令牌（配色/字号/样式工厂）——编辑器只用 editor_ 那一档冷色
-const Spec := preload("res://代码/界面/界面规格.gd")
+const Spec := preload("res://Views/hud/界面规格.gd")
 ## 工具栏/层栏的按钮定义（表驱动，加按钮只改这张表）
 const 按钮表 := preload("res://addons/map_editor/按钮表.gd")
-## token 编译出来的正经 Theme 资源（生成命令见 工具/生成编辑器主题.gd）
+## token 编译出来的正经 Theme 资源（生成命令见 Tools/生成编辑器主题.gd）
 const EDITOR_THEME := preload("res://addons/map_editor/编辑器主题.tres")
 ## 皮肤：把上面那个 Theme **就地**换成「深铁石底 + 金线」（二次重做，见 编辑器皮肤.gd）。
 ## 不断链：resource_path 仍是 编辑器主题.tres，自检里"主屏与 Dock 同资源"照旧。
@@ -33,7 +33,7 @@ const CAMP_DIALOG_SCRIPT := preload("res://addons/map_editor/营地弹窗.gd")
 const CARD_DIALOG_SCRIPT := preload("res://addons/map_editor/卡片弹窗.gd")
 const SKILL_DIALOG_SCRIPT := preload("res://addons/map_editor/技能弹窗.gd")
 ## 地图尺寸缩放（每边加 N 米）。2026-11-08 玩家要求
-const MAP_SCALE := preload("res://代码/地图核心/地图缩放.gd")
+const MAP_SCALE := preload("res://Game/map/地图缩放.gd")
 ## 功能索引窗（人类/agent 都能一键查「这个按钮在哪、实现写在哪」）
 const HELP_DIALOG_SCRIPT := preload("res://addons/map_editor/帮助窗.gd")
 

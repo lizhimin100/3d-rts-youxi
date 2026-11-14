@@ -1,0 +1,23 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="PackedScene" path="res://Content/art/模型/树.glb" id="1_glb"]
+
+[node name="树_场景" type="Node3D"]
+metadata/decor_kind = "tree"
+
+[node name="树" parent="." instance=ExtResource("1_glb")]
+
+[node name="tree_M_bark" parent="树"]
+cast_shadow = 0
+visibility_range_end = 160.0
+visibility_range_fade_mode = 1
+
+[node name="tree_M_leaf" parent="树"]
+cast_shadow = 0
+visibility_range_end = 160.0
+visibility_range_fade_mode = 1
+
+[node name="tree_M_leaf_dark" parent="树"]
+cast_shadow = 0
+visibility_range_end = 160.0
+visibility_range_fade_mode = 1

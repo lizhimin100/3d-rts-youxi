@@ -20,7 +20,7 @@
 | 左侧地形/单位/装饰分层 | 同 | 六层；点层 = 拿工具，Dock 跟着切页 |
 | 工具面板（Terrain / Doodad / Unit / Region） | 同 | Dock 六页；地形分成「应用纹理 / 应用高度」 |
 | Doodad 按类别筛选 | 同 | 装饰子类：植被 / 岩石 / 营地 / 残迹 / 杂物 + 搜索 |
-| 3D 视口 + 状态栏 | 同 | 独立 SubViewport，坐标/工具/校验常驻 |
+| 3D 视口 + 状态栏 | 同 | 独立 SubViewport，坐标/Tools/校验常驻 |
 | 触发器 / 副官 / UI 编辑器 | **不做** | 明确非目标，不把地图编辑器做成万能 IDE |
 | 自定义主题 | **Godot Theme 资源** | 设计 token 编译成 `编辑器主题.tres`，不是自制 cfg |
 
@@ -40,7 +40,7 @@
 
 ## 装饰：只收自然物
 
-「**装饰**」层的数据源**只有** `美术/模型/v7_自然/` 的白名单，**绝不再扫根模型目录**：
+「**装饰**」层的数据源**只有** `Content/art/模型/v7_自然/` 的白名单，**绝不再扫根模型目录**：
 
 - 装饰（12 项，按子类筛选）：草丛 / 岩石 / 木桶 / 木箱 / 栅栏 / 旗帜 / 帐篷 / 断墙 /
   路标 / 木桩 / 营火 / 尸骨
@@ -52,7 +52,7 @@
 
 ## 建筑建造网格（与寻路共用一套）
 
-所有建筑落点 / 朝向都只走 `代码/单位/建筑网格.gd`，**和寻路共用 1m 格**：
+所有建筑落点 / 朝向都只走 `Game/units/建筑网格.gd`，**和寻路共用 1m 格**：
 
 - 偶数占地吸**格线**（6×6 正好压 6×6 格），奇数占地吸**格心**；幂等。
 - 朝向只允许 **90° 档**（资产是正交墙线；斜放会露底/破面）。
@@ -74,7 +74,7 @@ Dock 第六页「历史」用编辑器自带的 **Tree** 实现，数据直接�
 
 ## 主题（token → Godot Theme 资源）
 
-编辑器皮肤来自 `代码/界面/界面规格.gd` 的设计令牌，一次性编译成：
+编辑器皮肤来自 `Views/hud/界面规格.gd` 的设计令牌，一次性编译成：
 
 ```
 res://addons/map_editor/编辑器主题.tres
@@ -85,7 +85,7 @@ LineEdit / PopupMenu / Label 语义变体全部由主题提供；控件上不再
 改 token 后重跑：
 
 ```bash
-godot --headless --path . --script 工具/生成编辑器主题.gd
+godot --headless --path . --script Tools/生成编辑器主题.gd
 ```
 
 ## 动效
@@ -108,18 +108,18 @@ godot --headless --path . --script 工具/生成编辑器主题.gd
 
 ## 保存位置
 
-所有地图与运行时产物都在**项目内的 `地图/` 文件夹**，不写 C 盘：
+所有地图与运行时产物都在**项目内的 `Content/maps/` 文件夹**，不写 C 盘：
 
-- 手存：`res://地图/<名字>.tres`（或 .json，另存为时选格式）
-- 自动保存：`res://地图/_自动保存.tres`（每 120 秒，改动过才写）
-- Test Map 临时图：`res://地图/_测试地图.tres`
-- 最近地图列表：`res://地图/_最近地图.cfg`
+- 手存：`res://Content/maps/<名字>.tres`（或 .json，另存为时选格式）
+- 自动保存：`res://Content/maps/_自动保存.tres`（每 120 秒，改动过才写）
+- Test Map 临时图：`res://Content/maps/_测试地图.tres`
+- 最近地图列表：`res://Content/maps/_最近地图.cfg`
 
 （这三个下划线文件已进 .gitignore。）
 
 ## Test Map
 
-保存临时图 → `OS.create_process()` 起独立游戏进程并传 `--map=res://地图/_测试地图.tres`，
+保存临时图 → `OS.create_process()` 起独立游戏进程并传 `--map=res://Content/maps/_测试地图.tres`，
 **不阻塞编辑器**，你可以继续改。
 
 ## 命令
@@ -132,14 +132,14 @@ godot --headless --editor -- --map-editor-selftest
 # 数据层自检（新建 + 建筑网格 + 存读/JSON/五关校验/三种毛病）
 godot --headless --path . -- --map-editor-test
 # 设计 token → Theme 资源
-godot --headless --path . --script 工具/生成编辑器主题.gd
+godot --headless --path . --script Tools/生成编辑器主题.gd
 # 开发用：开一张示例图 + 截编辑器窗口
 godot --path . --editor -- --map-editor-shot=E:/tmp/ui.png --map-editor-shot-demo
 ```
 
 ## 数据
 
-`代码/地图核心/地图定义.gd` → `MapDef`：version / size / seed / biome / heightmap / splatmap /
+`Game/map/地图定义.gd` → `MapDef`：version / size / seed / biome / heightmap / splatmap /
 water / objects / regions / players / waves / camera_bounds / victory。
 对象只存数据不存节点，加载时由 `MapLoader` 重建；老版本由 `MapStore.migrate()` 补字段。
 游戏侧 `--map=<路径>` 走 `MapLoader.apply_to_level()`，地形/寻路/道具/材质全部复用现成实现。
