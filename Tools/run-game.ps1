@@ -24,7 +24,9 @@ $Root = Split-Path -Parent $PSScriptRoot
 function Show-Usage {
     @"
 用法：
-  Tools/run-game.ps1                         正常启动游戏
+  Tools/run-game.ps1                         正常启动（短局：准备/执行 + CP）
+  Tools/run-game.ps1 --long                  旧即时战略（长局金币/木材）
+  Tools/run-game.ps1 --short                 显式短局（可叠加 --map=...）
   Tools/run-game.ps1 --check                 无窗口体检（数据/文案/资源/分层/存档隔离/文档）
   Tools/run-game.ps1 --simulate [--games=N]  只用 Model 跑推演并输出数值报告
   Tools/run-game.ps1 --shot <画面> <输出.png> 离屏截图（hud 画面会真点一次「建造」）
@@ -59,6 +61,10 @@ $mode = "run"
 $pass = @()
 $shotName = $null
 $shotOut = $null
+## 短局/长局开关：必须放在 `--` 之后，OS.get_cmdline_user_args() 才收得到。
+$userMode = ""
+## 其它游戏参数（--map= / --speed= / --no-adjutant …）：同样必须放在 `--` 之后。
+$gameArgs = @()
 
 for ($i = 0; $i -lt $Rest.Count; $i++) {
     $a = $Rest[$i]
@@ -68,6 +74,16 @@ for ($i = 0; $i -lt $Rest.Count; $i++) {
         "--simulate" { $mode = "simulate"; continue }
         "--import"   { $mode = "import"; continue }
         "--round-test" { $mode = "round"; continue }
+        "--short"    { $userMode = "--short"; continue }
+        "--long"     { $userMode = "--long"; continue }
+        # 常见游戏参数：不能当引擎参数传，否则 Game 侧的 OS.get_cmdline_user_args() 收不到。
+        "--map=*"     { $gameArgs += $a; continue }
+        "--no-map"    { $gameArgs += $a; continue }
+        "--no-adjutant" { $gameArgs += $a; continue }
+        "--speed=*"   { $gameArgs += $a; continue }
+        "--select-id=*" { $gameArgs += $a; continue }
+        "--kill-log"  { $gameArgs += $a; continue }
+        "--legacy-move" { $gameArgs += $a; continue }
         "--shot" {
             if ($i + 2 -ge $Rest.Count) { throw "--shot 需要两个参数：<画面> <输出.png>" }
             $mode = "shot"
@@ -124,7 +140,13 @@ switch ($mode) {
         exit $code
     }
     default {
-        & $Godot --path $Root @pass
+        # 有 --short/--long 时，把开关和剩余参数都放到 `--` 之后；
+        # 没有开关时保持原样（正常启动由 Game 默认走短局）。
+        if ($userMode -ne "" -or $gameArgs.Count -gt 0) {
+            & $Godot --path $Root @pass -- $userMode @gameArgs
+        } else {
+            & $Godot --path $Root @pass
+        }
         exit $LASTEXITCODE
     }
 }

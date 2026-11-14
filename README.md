@@ -17,11 +17,18 @@
 ./Tools/run-game.ps1 --import
 ```
 
-正常启动（有窗口，直接玩）：
+正常启动（有窗口，直接玩）—— **默认是半回合制短局**：准备阶段世界暂停、排命令，执行阶段实时：
 
 ```powershell
 ./Tools/run-game.ps1
 # 或者：godot --path .
+```
+
+想玩旧的即时战略（金币/木材/长局）：
+
+```powershell
+./Tools/run-game.ps1 --long
+# 或者：godot --path . -- --long
 ```
 
 脚本找 Godot 的顺序：`$env:GODOT_BIN` → 本机已知安装路径 → PATH 里的 `godot`。

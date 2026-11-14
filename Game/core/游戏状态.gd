@@ -164,8 +164,17 @@ var _harvestables: Array = []
 ## 但 _process 里的 tick 一定早于 AI 的思考（同一帧里自动加载先跑）。
 func _ready() -> void:
 	# 短局开关必须在主场景/HUD 之前定下来（Game 是自动加载，先于主场景树）。
+	#
+	# 默认口径（2026-11-14 二次拍板）：
+	#   · **正常启动 = 短局**（半回合制是主线，不再藏在 --short 后面）；
+	#   · `--long` 回旧即时战略（测试/QA 也走这条，避免旧自检被短局暂停影响）；
+	#   · `--short` / `--round-test` 显式短局（`--short` 可覆盖测试模式的默认长局）。
 	var args := OS.get_cmdline_user_args()
-	short_match = ("--short" in args) or ("--round-test" in args)
+	var explicit_short: bool = ("--short" in args) or ("--round-test" in args)
+	var explicit_long: bool = "--long" in args
+	var test_like: bool = App != null and bool(App.get("test_mode"))
+	short_match = explicit_short or (not test_like and not explicit_long)
+	print("[Game] mode=", "short" if short_match else "long")
 	# 小队注册表：命令记录引用它，单位死亡时自动剔除成员。
 	var sq_script := load("res://Game/systems/小队注册表.gd")
 	if sq_script != null:

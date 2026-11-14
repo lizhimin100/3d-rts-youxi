@@ -79,6 +79,7 @@ addons/     Godot 编辑器插件（地图编辑器）。不进发行版。
 
 ```powershell
 ./Tools/run-game.ps1 --check                  # 无窗口体检：数据/文案/资源/分层/存档隔离/发行门禁/文档
+./Tools/run-game.ps1 --long                   # 旧即时战略（默认启动是短局：准备/执行 + CP）
 ./Tools/run-game.ps1 --round-test             # 半回合制自检：准备/执行/CP/小队（短局，无窗口）
 ./Tools/run-game.ps1 --simulate --games=5     # 只用 Model 跑推演，输出数值报告（末行 SIM {json}）
 ./Tools/run-game.ps1 --shot hud _qa/hud.png   # 离屏开画面 + 真点一次「建造」+ 存图

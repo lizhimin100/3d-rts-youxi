@@ -57,7 +57,8 @@ Content/data/cards/units/*.json
 
 ## 短局（半回合制，2026-11-14）
 
-- **开关**：`--short` / `--round-test` → `Game.short_match = true`；长局完全不挂回合控制器。
+- **开关**：**正常启动默认短局**（`Game.short_match = true`）；`--long` 回旧长局；`--short` 显式短局；
+  `--round-test` 短局自检。测试/QA（`App.test_mode`）默认长局，除非显式 `--short`。长局完全不挂回合控制器。
 - **阶段**：`Game.set_phase(PREPARE/RUNNING/VICTORY/DEFEAT)` 是唯一入口；准备/结束阶段 `SceneTree.paused = true`。
   HUD/镜头/选择/指令/移动指示/战区输入/光标/准备面板设 `PROCESS_MODE_ALWAYS`；`Game`/单位/AI/据点/日夜保持默认（被冻结）。
 - **命令**：`Views/input/指令系统.gd` 的 `planned` 存 `Game/commands/命令记录.gd`（kind / squad_id / unit_ids / slots / target_id）；
