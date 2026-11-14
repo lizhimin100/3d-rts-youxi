@@ -44,6 +44,8 @@ func _run() -> void:
 	_check_engine_pin()
 	_check_manifest()
 	_check_model_tests()
+	_check_availability()
+	_check_audio()
 	_check_integration()
 	_check_save()
 	_check_release_gate()
@@ -426,6 +428,79 @@ func _check_model_tests() -> void:
 			if String(line).contains("✗"):
 				print(line)
 	print("  · Model 自测：通过 %d / 失败 %d" % [int(r["pass"]), int(r["fail"])])
+
+
+## 可用性：P0 回归（一本出二本兵 / 升级中训练 / 队列满 / 没钱）+ 三个调用点同源
+func _check_availability() -> void:
+	var A: Script = load("res://Game/config/可用性查询.gd")
+	var b_script: Script = load("res://Game/units/建筑.gd")
+	var f_script: Script = load("res://Game/core/阵营.gd")
+	if A == null or b_script == null or f_script == null or _cfg == null:
+		_ok("可用性适配器可加载", false)
+		return
+	var b: Node3D = b_script.new()
+	var f: RefCounted = f_script.new()
+	f.call("setup", 0, true, "测试阵营", Color.WHITE, 500, 500)
+	var defs: Dictionary = (_cfg.get("game")).units
+	b.set("def", defs.get(&"barracks", null))
+	b.set("faction", f)
+	b.set("is_constructed", true)
+
+	var t1: Dictionary = A.call("train", b, &"dwarf_musketeer", f)
+	_ok("P0：一本不能出二本兵（tier_locked）", String(t1.get("reason", "")) == "tier_locked", String(t1.get("reason", "")))
+
+	b.set("_upgrade_id", &"tower")
+	var t2: Dictionary = A.call("train", b, &"footman", f)
+	_ok("P0：升级中不能训练（upgrading）", String(t2.get("reason", "")) == "upgrading", String(t2.get("reason", "")))
+	b.set("_upgrade_id", &"")
+
+	var q: Array = b.get("train_queue")
+	for i in 10:
+		q.append(&"footman")
+	var t3: Dictionary = A.call("train", b, &"footman", f)
+	_ok("P0：队列满不能训练（queue_full）", String(t3.get("reason", "")) == "queue_full", String(t3.get("reason", "")))
+	q.clear()
+
+	# 给假阵营一座已完工大本营，否则 food_cap=0 会先报 no_food（测不到金币分支）
+	var th: Node3D = b_script.new()
+	th.set("def", defs.get(&"townhall", null))
+	th.set("faction", f)
+	th.set("is_constructed", true)
+	var buildings: Array = f.get("buildings")
+	buildings.append(th)
+	f.set("gold", 0)
+	f.set("wood", 0)
+	var t4: Dictionary = A.call("train", b, &"footman", f)
+	buildings.erase(th)
+	th.free()
+	_ok("P0：没钱不能训练（no_gold/no_wood）", String(t4.get("reason", "")) in ["no_gold", "no_wood"], String(t4.get("reason", "")))
+	f.set("gold", 500)
+	f.set("wood", 500)
+
+	b.set("def", defs.get(&"blacksmith", null))
+	b.set("_upgrade_id", &"tower")
+	var r1: Dictionary = A.call("research", b, &"attack_up", f)
+	_ok("P0：升级中不能研究（upgrading）", String(r1.get("reason", "")) == "upgrading", String(r1.get("reason", "")))
+	b.free()
+
+	var src_ok := (_read("res://Game/units/建筑.gd").contains("可用性查询")
+		and _read("res://Views/hud/命令卡.gd").contains("可用性查询")
+		and _read("res://Views/input/指令系统.gd").contains("可用性查询"))
+	_ok("建筑/命令卡/指令系统走同一套可用性判断", src_ok)
+
+
+## 音效：合成器就绪 + 游戏侧真的走合成映射（不是只放了个模块没人用）
+func _check_audio() -> void:
+	var svc := root.get_node_or_null("AudioSvc")
+	if svc == null:
+		_ok("AudioSvc 自动加载就绪", false)
+		return
+	var st: Dictionary = svc.call("synth_stats")
+	_ok("合成音效器有 12 个预设", int(st.get("presets", 0)) == 12, "presets=%d" % int(st.get("presets", 0)))
+	_ok("合成音效可被 AudioSvc 接受（未知 key 拒绝）",
+		bool(svc.call("play_synth", "ui_click")) and not bool(svc.call("play_synth", "no_such_key")))
+	var src := _read("res://Game/audio/音效管理.gd")
+	_ok("游戏音效走 AudioStreamGenerator 映射", src.contains("SYNTH_KEYS") and src.contains("_play_synth"))
 
 
 func _check_integration() -> void:

@@ -7,3 +7,18 @@ debug.panel.bridge,接口：{url},API: {url},调试面板状态行
 debug.panel.bridge_off,接口：未启动,API: not running,调试面板状态行
 debug.panel.phase,阶段：{phase}  时间：{t}s,Phase: {phase}  time: {t}s,调试面板状态行
 debug.panel.economy,金币 {gold}  木材 {wood}  人口 {pop},Gold {gold}  Wood {wood}  Pop {pop},调试面板状态行
+avail.ok,可用,Available,可用性
+avail.not_constructed,未完工,Not constructed,可用性
+avail.not_in_trains,这里造不了,Not trainable here,可用性
+avail.not_researchable,这里不能研究,Not researchable here,可用性
+avail.upgrading,升级中,Upgrading,可用性
+avail.tier_locked,需 {required} 本主城,Requires town hall tier {required},可用性
+avail.queue_full,队列已满,Queue full,可用性
+avail.no_food,人口不足（缺 {free} 个位）,Not enough food,可用性
+avail.no_gold,金币不足（差 {short}）,Not enough gold,可用性
+avail.no_wood,木材不足（差 {short}）,Not enough wood,可用性
+avail.max_level,已满级,Max level,可用性
+avail.research_busy,研究中,Research in progress,可用性
+avail.no_worker,需要选中农民,Select a worker first,可用性
+avail.not_defined,未定义,Undefined,可用性
+avail.unknown,条件不满足,Not available,可用性

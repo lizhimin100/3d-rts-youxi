@@ -1,5 +1,8 @@
 class_name RtsBuilding
 extends RtsUnit
+
+const 可用性查询 := preload("res://Game/config/可用性查询.gd")
+const 可用性文案 := preload("res://Game/config/可用性文案.gd")
 ## **建筑**：大本营 / 兵营 / 铁匠铺 / 农场 / 箭塔。
 ## 继承 RtsUnit（同一套 API、同一套战斗逻辑），额外负责：
 ##   · 建造进度（血量 10% → 100%，半成品就能被人拆 —— 这才是攻防博弈）
@@ -161,13 +164,16 @@ func is_training() -> bool:
 ##   兵种卡上的 `require_tier`（0 = 一本就能出）必须 ≤ 阵营当前 tier。
 ##   例：矮人火枪手 require_tier = 2，大本营升到二本（联盟要塞）之后兵营才出得来。
 func can_train(id: StringName) -> bool:
-	if def == null or not def.trains.has(id):
+	if def == null:
 		return false
 	var ud: UnitDef = Cfg.unit(id)
-	if ud != null and ud.require_tier > 0:
-		if Game.has_method("faction_tier") and int(Game.call("faction_tier", faction)) < ud.require_tier:
-			return false
-	return true
+	if ud == null:
+		return false
+	var tier := 1
+	if faction != null and Game.has_method("faction_tier"):
+		tier = int(Game.call("faction_tier", faction))
+	var res := 可用性查询.train_permission(def.trains, id, int(ud.require_tier), tier)
+	return bool(res.get("ok", false))
 
 
 ## 这个交汇点收不收某种资源（RtsConst.Harvest）：大本营金木全收，伐木场只收木材
@@ -382,30 +388,16 @@ func _complete_construction() -> void:
 
 ## 排一个单位进队列（**当场真扣钱**，扣不起返回 false）
 func queue_train(id: StringName) -> bool:
-	if def == null or not is_constructed:
+	if def == null:
 		return false
-	if is_upgrading():
+	# 判据全部走 Model（完工/升级中/trains/tier/队列/人口/金币/木材）
+	var res := 可用性查询.train(self, id, faction)
+	if not bool(res.get("ok", false)):
 		if faction != null and faction.is_player:
-			Game.toast("正在升级，训练要等升级完成", Color(1, 0.6, 0.35))
-		return false
-	if not can_train(id):
-		return false
-	var d: UnitDef = Cfg.unit(id)
-	if d == null:
-		return false
-
-	# 人口 / 资源检查，不合格给提示，别默默失败
-	if faction != null and not faction.has_food(d.food_cost):
-		if faction.is_player:
-			Game.toast("人口不足（需要 %d）" % d.food_cost, Color(1, 0.55, 0.4))
-		return false
-	if not Game.can_afford(faction, id):
-		if faction != null and faction.is_player:
-			Game.toast("资源不足：%s" % d.display_name, Color(1, 0.5, 0.4))
+			Game.toast(可用性文案.text(res), Color(1, 0.55, 0.4))
 		return false
 	if not Game.pay(faction, id):
 		return false
-
 	train_queue.append(id)
 	return true
 
@@ -760,24 +752,14 @@ func _build_rally_flag() -> Node3D:
 ## 开始一项研究（attack_up / armor_up）：**当场扣费**，可以逐级升，但不能并行。
 ## 返回 false 的原因由调用方用 research_block_reason() 解释（界面提示用）。
 func research(id: StringName) -> bool:
-	if def == null or not is_constructed:
-		return false
-	if is_upgrading():
-		return false
-	if not def.researches.has(id):
-		return false
-	if _research_id != &"":
-		return false
-	if not RtsCombat.has_research(id):
+	# 判据全部走 Model（完工/可研究/升级中/研究中/满级/金币/木材）
+	var res := 可用性查询.research(self, id, faction)
+	if not bool(res.get("ok", false)):
 		return false
 	var rd: ResearchDef = Cfg.research(id)
 	if rd == null:
 		return false
-	if faction != null and RtsCombat.research_level(faction, id) >= maxi(rd.max_level, 1):
-		return false
 	if faction != null:
-		if faction.gold < rd.gold_cost or faction.wood < rd.wood_cost:
-			return false
 		faction.gold -= rd.gold_cost
 		faction.wood -= rd.wood_cost
 		Game.resources_changed.emit(faction)
@@ -788,20 +770,10 @@ func research(id: StringName) -> bool:
 
 ## 研究为什么点不了的中文原因（空串 = 可以研究）。界面/提示共用这一处判定。
 func research_block_reason(id: StringName) -> String:
-	if def == null or not is_constructed:
-		return "建筑还没完工"
-	if not def.researches.has(id):
-		return "这里不能研究这项"
-	var rd: ResearchDef = Cfg.research(id)
-	if rd == null:
-		return "未定义的研究"
-	if _research_id != &"":
-		return "已有研究在进行中"
-	if faction != null and RtsCombat.research_level(faction, id) >= maxi(rd.max_level, 1):
-		return "%s 已满级" % rd.display_name
-	if faction != null and (faction.gold < rd.gold_cost or faction.wood < rd.wood_cost):
-		return "资源不足：%s" % rd.display_name
-	return ""
+	var res := 可用性查询.research(self, id, faction)
+	if bool(res.get("ok", false)):
+		return ""
+	return 可用性文案.text(res)
 
 
 ## 当前正在研究的研究 id（空闲返回空串）

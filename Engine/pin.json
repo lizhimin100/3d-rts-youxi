@@ -2,11 +2,27 @@
 	"version": "0.1.0",
 	"files": {
 		"audio/audio_service.gd": {
-			"sha256": "240290a8a2bc381d7ffe2c9216b57bae069c8835469bb4bf35dfcbc3cf017e5a",
-			"size": 3681
+			"sha256": "ff60101c0b65e397110c3e7297dc5581a171c55060610a474ab9ca88446c5a93",
+			"size": 4799
 		},
 		"audio/audio_service.gd.uid": {
 			"sha256": "48b5f6aab9f6fc6b9e625b82d78091b1feaf832958f8ff8034cab8126ba2c8d4",
+			"size": 20
+		},
+		"audio/synth_bank.gd": {
+			"sha256": "25ea11956b307efe89ffc64a63d35a8236095560cdf44fc68061cdd33350b702",
+			"size": 11388
+		},
+		"audio/synth_bank.gd.uid": {
+			"sha256": "94eae879136d8942d47e3828872eb37b4b5fa41f38ade830586320d4d7f9ebcc",
+			"size": 20
+		},
+		"audio/synth_player.gd": {
+			"sha256": "34134038245c441351b8ef119d18d67256b579eee3f6ddd7e303f4bea5c5c401",
+			"size": 6335
+		},
+		"audio/synth_player.gd.uid": {
+			"sha256": "a7005d36d14f0ec8f06534e0f17851d43e5e423ac247a5ca8721b2619015b5d2",
 			"size": 20
 		},
 		"boot/app.gd": {

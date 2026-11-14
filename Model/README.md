@@ -19,6 +19,7 @@
 | `core/production.gd` | 生产队列（按 tick 推进） |
 | `core/progression.gd` | 升级 / 主城等级门槛 |
 | `core/rng.gd` | 确定性随机数 |
+| `core/可用性.gd` | 训练/研究/建造的可用性判断（reason code + params），全游戏唯一实现 |
 | `battle/skirmish.gd` | 确定性小规模推演（`--simulate` 的引擎） |
 | `save/save_schema.gd` | 存档数据结构、校验、版本迁移 |
 

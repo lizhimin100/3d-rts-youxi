@@ -53,3 +53,6 @@ Content/maps/_编辑器链路自检.tres
 .test_profile/
 # 发行/演示副本（脚本生成，不进库）
 dist/
+
+# 合成音效临时探针（子代理/调试用）
+.synth_tmp/

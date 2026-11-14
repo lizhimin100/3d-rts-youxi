@@ -104,6 +104,27 @@ const VOICE_BUILT := "提示_建造完成"
 ## 低血警报阈值（己方最惨单位低于这个血量比就响；5s 节流在 SPEC 里）
 const LOW_HP_RATIO := 0.30
 
+## 音效 id → AudioStreamGenerator 合成 key（2026-11-14 起音效默认合成）。
+## 没列出的 id 仍回落文件；音乐/语音不走这里。
+const SYNTH_KEYS := {
+	"界面_点选": "ui_click",
+	"界面_框选": "ui_click",
+	"指令_移动": "ui_click",
+	"战斗_攻击": "hit_metal",
+	"战斗_命中": "hit_flesh",
+	"战斗_死亡": "death",
+	"建造_完成": "build_done",
+	"采集_资源": "coin",
+	"法术_施放": "ui_open",
+	"结算_胜利": "level_up",
+	"结算_失败": "ui_error",
+	"战斗_箭矢": "arrow_shot",
+	"战斗_塔射": "arrow_shot",
+	"建造_放置": "build_start",
+	"建造_锤击": "hit_metal",
+	"提示_低血": "notify",
+}
+
 ## 每个音效的播放规格：
 ##   bus        走哪条总线
 ##   throttle   最小播放间隔（秒）——"60~90ms"这一类
@@ -529,14 +550,20 @@ func _allow(id: String, spec: Dictionary, now: float, dur: float) -> bool:
 
 func _play2d(id: String, volume_db: float, jitter: float, bus: String = "") -> void:
 	var s := _stream(id)
-	if s == null or _pool2d.is_empty():
+	if _pool2d.is_empty():
 		return
 	var spec := _spec_of(id)
 	var out_bus := bus
 	if out_bus.is_empty():
 		out_bus = String(spec.get("bus", BUS_SFX))
 	var now := _now()
-	if not _allow(id, spec, now, float(s.get_length())):
+	var dur := float(s.get_length()) if s != null else 0.2
+	if not _allow(id, spec, now, dur):
+		return
+	# 音效优先合成（合成成功就不再碰文件播放器）
+	if _play_synth(id, volume_db, jitter):
+		return
+	if s == null:
 		return
 	var p: AudioStreamPlayer = _pool2d[_next2d]
 	_next2d = (_next2d + 1) % _pool2d.size()
@@ -549,11 +576,17 @@ func _play2d(id: String, volume_db: float, jitter: float, bus: String = "") -> v
 
 func _play3d(id: String, pos: Vector3, volume_db: float) -> void:
 	var s := _stream(id)
-	if s == null or _pool3d.is_empty():
+	if _pool3d.is_empty():
 		return
 	var spec := _spec_of(id)
 	var now := _now()
-	if not _allow(id, spec, now, float(s.get_length())):
+	var dur := float(s.get_length()) if s != null else 0.2
+	if not _allow(id, spec, now, dur):
+		return
+	# 合成音效是 2D 的（无 3D 衰减/声像）；先保证"有声音"，空间感后续再做
+	if _play_synth(id, volume_db, 0.05):
+		return
+	if s == null:
 		return
 	var p: AudioStreamPlayer3D = _pool3d[_next3d]
 	_next3d = (_next3d + 1) % _pool3d.size()
@@ -563,6 +596,18 @@ func _play3d(id: String, pos: Vector3, volume_db: float) -> void:
 	p.volume_db = volume_db
 	p.pitch_scale = 1.0 + Fx.rand_range(-0.05, 0.05)
 	p.play()
+
+
+## 试合成音频：成功返回 true（静音模式下 AudioSvc 也会返回 true，避免回落去读文件）
+func _play_synth(id: String, volume_db: float, jitter: float) -> bool:
+	var key := String(SYNTH_KEYS.get(id, ""))
+	if key.is_empty():
+		return false
+	var svc := get_node_or_null("/root/AudioSvc")
+	if svc == null:
+		return false
+	var pitch := 1.0 + Fx.rand_range(-jitter, jitter)
+	return bool(svc.call("play_synth", key, volume_db, pitch))
 
 
 ## UI 总线的可听度补偿（其余总线不补）

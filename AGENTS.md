@@ -34,7 +34,8 @@ addons/     Godot 编辑器插件（地图编辑器）。不进发行版。
 9. **约定不能只写在注释里**：一条前提被破坏会静默出错时，就要有一条无窗口检查能抓到它。**修一个 bug = 修复 + 一条新检查**；新踩的坑先写进本文件规则，再补检查。
 10. **登记自动化**：新增/删除资产跑 `python Tools/gen/gen_asset_keys.py`；新增/删除源文件跑 `python Tools/gen/gen_manifest.py`；不许手改清单。调试面板改数值必须写回 `Content/data/*.json`（`DebugTuner` 只允许写这个目录）。
 11. **编辑器和调试工具不进发行版**：`Tools/build/release_exclude.txt` + `App.release`/`OS.is_debug_build()` 双门禁；Demo 裁剪只处理发布副本，不动源码。
-12. **本文件 ≤ 20KB**；新增玩法/系统说明写 `Documents/<专题>.md` 并在这里只放链接。新增脚本文件名用 ASCII；已有的中文文件名保留。
+12. **本文件 ≤ 20KB**；新增玩法/系统说明写 `Documents/<专题>.md` 并在这里只放链接。**中文优先**：新增文件/注释/UI 文案优先中文；
+    只有跨语言或引擎 key 用 ASCII；七块砖的结构性目录名保持不变。
 
 ### 会直接毁文件的坑（历史教训，别重犯）
 
@@ -44,6 +45,8 @@ addons/     Godot 编辑器插件（地图编辑器）。不进发行版。
 - 读大文件分段读（`read` 有截断风险），小改用 `edit`，不要整文件 `read` 再 `write` 回去。
 - 无头/沙箱环境可能写不了 `user://`（AppData）；测试存档因此放项目内 `.test_profile/`（已 gitignore）。
 - `PackedByteArray` 是值类型：从 Dictionary 取出来 append 后**必须写回**，否则数据悄悄丢（调试接口踩过）。
+- 目录迁移/重导入后，编辑器可能缓存"脚本还没编译好"的资源，表现为"打开原地图提示不是 MapDef"。
+  `MapStore.load_tres` 已加 `CACHE_MODE_IGNORE` 重读 + 逐字段兜底；还报就重启编辑器或 `--import`。
 
 ## 验证命令
 

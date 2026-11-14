@@ -36,10 +36,12 @@ const FORMATION_SPACING := 1.9
 ## 建筑改造（哨塔→箭塔）：和 AI 共用同一份实现与价格口径。
 ## 用 preload 常量，不写 class_name（避免 .godot 全局类缓存失效时编译失败）。
 const REFIT := preload("res://Game/systems/建筑改造.gd")
+const 可用性查询 := preload("res://Game/config/可用性查询.gd")
+const 可用性文案 := preload("res://Game/config/可用性文案.gd")
 ## 训练队列上限
 ## 2026-11-01：5 → 10。玩家要求底栏队列"最多显示 7 个，再多翻页"，
 ## 上限还是 5 的话那段分页逻辑永远走不到（7 格永远排不满）。
-const TRAIN_QUEUE_MAX := 10
+const TRAIN_QUEUE_MAX := 可用性查询.QUEUE_MAX
 
 ## 当前等待状态
 var pending: int = Pending.NONE
@@ -131,19 +133,14 @@ func request_train(unit_id: StringName) -> void:
 	var d: UnitDef = Cfg.unit(unit_id)
 	if d == null:
 		return
-	if not b.def.trains.has(unit_id):
-		_toast("这里造不了 %s" % d.display_name, _warn())
+	# 判据全部走 Model（完工/升级中/trains/tier/队列/人口/金币/木材）；
+	# 训练走建筑自己的 queue_train（它内部还会再校验一次并扣费）。
+	var res := 可用性查询.train(b, unit_id, Game.player_faction)
+	if not bool(res.get("ok", false)):
+		_toast(可用性文案.text(res), _warn())
 		return
-	if b.train_queue.size() >= TRAIN_QUEUE_MAX:
-		_toast("训练队列已满", _warn())
+	if not b.queue_train(unit_id):
 		return
-	if not Game.can_afford(Game.player_faction, unit_id):
-		_toast("资源不足：%s" % d.display_name, _warn())
-		return
-	if not Game.pay(Game.player_faction, unit_id):
-		_toast("资源不足：%s" % d.display_name, _warn())
-		return
-	b.train_queue.append(unit_id)
 	_toast("开始训练 %s" % d.display_name, _accent())
 
 
@@ -276,13 +273,10 @@ func request_build(building_id: StringName) -> void:
 	var d: UnitDef = Cfg.unit(building_id)
 	if d == null:
 		return
-	if _selected_workers().is_empty():
-		_toast("需要选中农民才能建造", _warn())
-		return
-	# ★ 2026-11-13 二本门槛（车坊 / 神秘圣地）：先拦一道，别让玩家点进放置模式再失败
-	if not Game.tier_allows(Game.player_faction, building_id):
-		_toast("「%s」要主城升到 %d 本才能造（选中大本营 → 升本）"
-				% [d.display_name, int(d.require_tier)], _warn())
+	# 判据全部走 Model（选中农民 / 主城等级 / 金币 / 木材）
+	var res := 可用性查询.build(building_id, Game.player_faction, not _selected_workers().is_empty())
+	if not bool(res.get("ok", false)):
+		_toast(可用性文案.text(res), _warn())
 		return
 	pending = Pending.BUILD
 	pending_build = building_id

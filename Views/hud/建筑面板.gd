@@ -35,11 +35,12 @@ const Spec := preload("res://Views/hud/界面规格.gd")
 const Deco := preload("res://Views/hud/装饰.gd")
 const Lex := preload("res://Views/hud/词条.gd")
 const Frame := preload("res://Views/hud/按钮框.gd")
+const 可用性查询 := preload("res://Game/config/可用性查询.gd")
 
 ## 最小高度
 const H_MIN := 130.0
-## 队列上限（与 指令系统.TRAIN_QUEUE_MAX 同口径：10）
-const QUEUE_MAX := 10
+## 队列上限（唯一来源 = Model/core/可用性.gd）
+const QUEUE_MAX := 可用性查询.QUEUE_MAX
 ## L 型队列：**上排 4 格、下排 3 格**（右下角故意空一格才是 L），一页 7 个
 const L_COLS := 4
 const L_SLOTS := 7

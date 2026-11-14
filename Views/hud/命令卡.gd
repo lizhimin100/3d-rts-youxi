@@ -20,6 +20,8 @@ const Lex := preload("res://Views/hud/词条.gd")
 const Frame := preload("res://Views/hud/按钮框.gd")
 ## 建筑改造（哨塔→箭塔）：和 指令系统 / AI 共用同一份价格与实现
 const UPGRADE := preload("res://Game/systems/建筑改造.gd")
+const 可用性查询 := preload("res://Game/config/可用性查询.gd")
+const 可用性文案 := preload("res://Game/config/可用性文案.gd")
 
 ## 网格列数。2026-11-01 第七版：**5 列 → 4 列**。
 ## 5 列时单格只有 112px，图标 + 中文名 + 副行挤成一坨（玩家："还很挤的感觉"）；
@@ -30,8 +32,8 @@ const COLS := 4
 const MAX_ROWS := 4
 ## 训练队列最多画几格
 const QUEUE_PIPS := 5
-## 训练队列上限（与 指令系统.TRAIN_QUEUE_MAX / 建筑面板.QUEUE_MAX 同口径）
-const QUEUE_MAX := 10
+## 训练队列上限（唯一来源 = Model/core/可用性.gd）
+const QUEUE_MAX := 可用性查询.QUEUE_MAX
 ## 命令条按钮高度（HUD 会按分辨率覆盖）
 const BTN_H := 56.0
 
@@ -305,6 +307,8 @@ func _build_entries() -> Array:
 		if b.def.id == &"townhall":
 			var uc2: Vector2i = UPGRADE.upgrade_cost(&"townhall", &"townhall_2")
 			var busy2: bool = b.is_upgrading()
+			var rc2 := 可用性查询.refit(uc2, Game.player_faction, busy2, b.is_constructed)
+			var ok2: bool = bool(rc2.get("ok", false))
 			var tgt: UnitDef = Cfg.unit(&"townhall_2")
 			out.append({
 				"label": "升本",
@@ -318,14 +322,16 @@ func _build_entries() -> Array:
 				"color": Color(1.0, 0.86, 0.42),
 				"glyph": "二",
 				"icon": "upgrade",
-				"sub": ("%d%%" % int(round(b.upgrade_progress() * 100.0))) if busy2 else ("%d金 %d木" % [uc2.x, uc2.y]),
+				"sub": ("%d%%" % int(round(b.upgrade_progress() * 100.0))) if busy2 else (("%d金 %d木" % [uc2.x, uc2.y]) if ok2 else 可用性文案.text(rc2)),
 				"hotkey": "",
-				"disabled": busy2,
+				"disabled": busy2 or (not ok2),
 				"action": func(): _call("request_upgrade_townhall"),
 			})
 		if b.def.id == &"watchtower":
 			var uc: Vector2i = UPGRADE.upgrade_cost(&"watchtower", &"tower")
 			var busy: bool = b.is_upgrading()
+			var rc := 可用性查询.refit(uc, Game.player_faction, busy, b.is_constructed)
+			var okr: bool = bool(rc.get("ok", false))
 			out.append({
 				"label": "升级",
 				"hint": ("正在改造成箭塔：%d%%，还要 %.0f 秒。\n（读条期间不能训练/研究，被打断不退款）"
@@ -338,9 +344,9 @@ func _build_entries() -> Array:
 				"color": Color(0.96, 0.72, 0.42),
 				"glyph": "升",
 				"icon": "upgrade",
-				"sub": ("%d%%" % int(round(b.upgrade_progress() * 100.0))) if busy else ("%d金 %d木" % [uc.x, uc.y]),
+				"sub": ("%d%%" % int(round(b.upgrade_progress() * 100.0))) if busy else (("%d金 %d木" % [uc.x, uc.y]) if okr else 可用性文案.text(rc)),
 				"hotkey": "",
-				"disabled": busy,
+				"disabled": busy or (not okr),
 				"action": func(): _call("request_upgrade_tower"),
 			})
 		out.append(_stop_entry())
@@ -452,17 +458,12 @@ func _train_entry(b: RtsBuilding, id: StringName) -> Dictionary:
 	var d: UnitDef = Cfg.unit(id)
 	var label: String = d.display_name if d != null else String(id)
 	var cost: String = _cost_text(d)
-	# ★ 2026-11-08 升本门槛：兵种卡 require_tier 比主城等级大 → 灰掉并说明原因
-	var tier_ok: bool = true
-	if d != null and d.require_tier > 0:
-		tier_ok = int(Game.call("faction_tier", Game.player_faction)) >= d.require_tier
-	var ok: bool = d != null and tier_ok and Game.can_afford(Game.player_faction, id)
-	# ★ 队列上限只有一处口径（指令系统.TRAIN_QUEUE_MAX = 10）。
-	#   这里以前写死 5，于是"面板说队列 6/10，命令卡却已经禁用了"——玩家只会觉得是 bug。
-	var full: bool = b.train_queue.size() >= QUEUE_MAX
+	# 判据全部走 Model（完工/升级中/trains/tier/队列/人口/金币/木材）；UI 只负责翻译
+	var base := 可用性查询.train(b, id, Game.player_faction)
+	var ok: bool = bool(base.get("ok", false))
 	var tier_hint: String = ""
-	if not tier_ok:
-		tier_hint = "\n需要主城升到 %d 本（大本营 → 联盟要塞）才能训练。" % (d.require_tier if d != null else 0)
+	if not ok and String(base.get("reason", "")) == "tier_locked":
+		tier_hint = "\n" + 可用性文案.text(base)
 	return {
 		"label": label,
 		"hint": "%s  花费 %s  人口 %d  训练 %.0fs%s" % [
@@ -471,29 +472,18 @@ func _train_entry(b: RtsBuilding, id: StringName) -> Dictionary:
 		],
 		"color": Color(0.90, 0.90, 0.86) if ok else Color(0.55, 0.55, 0.52),
 		"glyph": label.substr(0, 1),
-		# ★ 2026-11-06 玩家口径「兵营等出兵建筑的训练单位图标换成正确的单位图标」：
-		#   以前这里一律给线描 SVG（hammer/sword/bow/staff），弩兵在训练格子里
-		#   只是一个"弓"的符号，跟底部选择栏的渲图头像是两套东西。
-		#   现在优先用 Content/art/图标/单位/<id>.png（和选择栏/队列同一张图），没有才退线描。
 		"icon": _train_icon(id),
 		"sub": cost,
-		"disabled": (not ok) or full or (not b.is_constructed),
+		"disabled": cmd_missing() or (not ok),
 		"state": func() -> Dictionary:
-			var afford: bool = d != null and Game.can_afford(Game.player_faction, id)
-			var q_full: bool = b.train_queue.size() >= QUEUE_MAX
-			var built: bool = b.is_constructed
-			var sub: String = cost
-			var col: Color = Spec.text_dim()
-			if not built:
-				sub = "未完工"
+			var r := 可用性查询.train(b, id, Game.player_faction)
+			if bool(r.get("ok", false)):
+				return {"disabled": cmd_missing(), "sub": cost, "sub_color": Spec.text_dim()}
+			var col := Color(0.95, 0.52, 0.42)
+			var code := String(r.get("reason", ""))
+			if code == "upgrading" or code == "queue_full" or code == "not_constructed":
 				col = Color(0.95, 0.70, 0.45)
-			elif q_full:
-				sub = "队列已满"
-				col = Color(0.95, 0.70, 0.45)
-			elif not afford:
-				sub = _shortage(d)
-				col = Color(0.95, 0.52, 0.42)
-			return {"disabled": (not afford) or q_full or (not built), "sub": sub, "sub_color": col},
+			return {"disabled": true, "sub": 可用性文案.text(r), "sub_color": col},
 		"action": func(): _call("request_train", id),
 	}
 
@@ -502,57 +492,39 @@ func _train_entry(b: RtsBuilding, id: StringName) -> Dictionary:
 func _research_entry(b: RtsBuilding, rid: StringName) -> Dictionary:
 	var rd: ResearchDef = Cfg.research(rid)
 	var lv: int = RtsCombat.research_level(Game.player_faction, rid)
-	var max_lv: int = maxi(rd.max_level, 1) if rd != null else 0
-	var name: String = rd.display_name if rd != null else String(rid)
-	var label: String = name
-	var busy: bool = b.is_researching()
-	var maxed: bool = lv >= max_lv
-	var built: bool = b.is_constructed
-	var afford: bool = rd != null and Game.player_faction != null \
-			and Game.player_faction.gold >= rd.gold_cost \
-			and Game.player_faction.wood >= rd.wood_cost
+	var max_lv: int = maxi(rd.max_level, 1) if rd != null else 1
+	var label: String = rd.display_name if rd != null else String(rid)
+	var base := 可用性查询.research(b, rid, Game.player_faction)
+	var can: bool = bool(base.get("ok", false))
 	var hint: String = ""
 	if rd != null:
 		hint = "%s  升级 %d→%d  花费 %d金 %d木  研究 %.0fs" % [
 			rd.description, lv, mini(lv + 1, max_lv), rd.gold_cost, rd.wood_cost, rd.research_time
 		]
-	if not built:
-		hint += "（建筑还没完工）"
-	elif busy:
-		hint += "（研究进行中）"
-	elif maxed:
-		hint += "（已满级）"
+	if not can:
+		hint += "（%s）" % 可用性文案.text(base)
 	return {
 		"label": label,
 		"hint": hint,
-		"color": Color(0.72, 0.86, 1.0) if afford and not maxed and built else Color(0.55, 0.55, 0.52),
+		"color": Color(0.72, 0.86, 1.0) if can else Color(0.55, 0.55, 0.52),
 		"glyph": "研",
 		"icon": "upgrade",
 		"sub": "lv %d/%d" % [lv, max_lv],
-		"disabled": not built or busy or maxed or not afford,
+		"disabled": cmd_missing() or (not can),
 		"state": func() -> Dictionary:
-			var busy2: bool = b.is_researching()
-			var maxed2: bool = RtsCombat.research_level(Game.player_faction, rid) >= max_lv
-			var afford2: bool = rd != null and Game.player_faction != null \
-					and Game.player_faction.gold >= rd.gold_cost \
-					and Game.player_faction.wood >= rd.wood_cost
+			var r := 可用性查询.research(b, rid, Game.player_faction)
 			var lv2: int = RtsCombat.research_level(Game.player_faction, rid)
-			var sub: String = "lv %d/%d" % [lv2, max_lv]
-			var col: Color = Spec.text_dim()
-			if not b.is_constructed:
-				sub = "未完工"
-				col = Color(0.95, 0.70, 0.45)
-			elif maxed2:
-				sub = "已满级"
+			if bool(r.get("ok", false)):
+				return {"disabled": cmd_missing(), "sub": "lv %d/%d" % [lv2, max_lv], "sub_color": Spec.text_dim()}
+			var code := String(r.get("reason", ""))
+			var col := Color(0.95, 0.52, 0.42)
+			if code == "max_level":
 				col = Color(0.62, 0.86, 0.62)
-			elif busy2:
-				sub = "研究中"
+			elif code == "research_busy":
 				col = Color(0.72, 0.86, 1.0)
-			elif not afford2:
-				sub = "资源不足"
-				col = Color(0.95, 0.52, 0.42)
-			return {"disabled": (not b.is_constructed) or busy2 or maxed2 or (not afford2),
-					"sub": sub, "sub_color": col},
+			elif code == "upgrading" or code == "not_constructed":
+				col = Color(0.95, 0.70, 0.45)
+			return {"disabled": true, "sub": 可用性文案.text(r), "sub_color": col},
 		"action": func(): _call("request_research", rid),
 	}
 
@@ -563,35 +535,30 @@ func _research_entry(b: RtsBuilding, rid: StringName) -> Dictionary:
 ##   主城没升到二本时按钮**灰掉**并说明原因（不要让玩家点了才发现造不了）。
 func _build_entry(bid: StringName) -> Dictionary:
 	var d: UnitDef = Cfg.unit(bid)
-	var ok: bool = d != null and Game.can_afford(Game.player_faction, bid)
-	var tier_ok: bool = d == null or Game.tier_allows(Game.player_faction, bid)
-	var tier_note: String = "" if tier_ok or d == null \
-			else "需要主城升到 %d 本（选中大本营 → 升本）。" % int(d.require_tier)
+	# 判据全部走 Model（选中农民 / 主城等级 / 金币 / 木材）；放置合法性另外由网格判
+	var base := 可用性查询.build(bid, Game.player_faction, true)
+	var ok: bool = bool(base.get("ok", false))
+	var note: String = "" if ok or d == null else 可用性文案.text(base)
 	return {
 		"label": d.display_name if d != null else String(bid),
-		"hint": (tier_note + "\n" if not tier_note.is_empty() else "") \
-				+ "建造 %s：%d金 %d木，占地 %d×%d（朝向统一，不需要转向）" % [
+		"hint": (("" if note.is_empty() else note + "\n")
+				+ "建造 %s：%d金 %d木，占地 %d×%d（朝向统一，不需要转向）") % [
 			d.display_name if d != null else "建筑",
 			d.gold_cost if d != null else 0,
 			d.wood_cost if d != null else 0,
 			d.footprint.x if d != null else 0,
 			d.footprint.y if d != null else 0,
 		],
-		"color": Color(0.78, 0.92, 0.72) if (ok and tier_ok) else Color(0.55, 0.55, 0.52),
+		"color": Color(0.78, 0.92, 0.72) if ok else Color(0.55, 0.55, 0.52),
 		"glyph": (d.display_name if d != null else "建").substr(0, 1),
 		"icon": _icon_for_building(bid),
-		"sub": ("需 %d 本" % int(d.require_tier)) if not tier_ok else _cost_text(d),
-		"disabled": cmd_missing() or (not ok) or (not tier_ok),
+		"sub": _cost_text(d) if ok else 可用性文案.text(base),
+		"disabled": cmd_missing() or (not ok),
 		"state": func() -> Dictionary:
-			var afford: bool = d != null and Game.can_afford(Game.player_faction, bid)
-			var t_ok: bool = d == null or Game.tier_allows(Game.player_faction, bid)
-			if not t_ok:
-				return {"disabled": true,
-						"sub": "需 %d 本" % int(d.require_tier),
-						"sub_color": Color(0.95, 0.52, 0.42)}
-			return {"disabled": cmd_missing() or (not afford),
-					"sub": _cost_text(d) if afford else _shortage(d),
-					"sub_color": Spec.text_dim() if afford else Color(0.95, 0.52, 0.42)},
+			var r := 可用性查询.build(bid, Game.player_faction, true)
+			if bool(r.get("ok", false)):
+				return {"disabled": cmd_missing(), "sub": _cost_text(d), "sub_color": Spec.text_dim()}
+			return {"disabled": true, "sub": 可用性文案.text(r), "sub_color": Color(0.95, 0.52, 0.42)},
 		"action": func(): _call("request_build", bid),
 	}
 

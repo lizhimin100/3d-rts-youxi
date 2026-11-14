@@ -11,6 +11,7 @@ const Production := preload("res://Model/core/production.gd")
 const Progression := preload("res://Model/core/progression.gd")
 const SaveSchema := preload("res://Model/save/save_schema.gd")
 const Skirmish := preload("res://Model/battle/skirmish.gd")
+const Avail := preload("res://Model/core/可用性.gd")
 
 
 static func run_all() -> Dictionary:
@@ -77,6 +78,72 @@ static func run_all() -> Dictionary:
 	var d5 := Damage.compute(10.0, 2.0, 0, 0.0, 0, rules, 0.0, 0.5)
 	var d6 := Damage.compute(10.0, 2.0, 0, 0.0, 0, rules, 0.999999, 0.5)
 	ok.call("spread 两端 = 基础±spread", float(d5["damage"]) < float(d6["damage"]) and absf(float(d5["damage"]) - 8.0) < 0.001 and absf(float(d6["damage"]) - 12.0) < 0.05)
+
+	# ---------- 可用性（训练/研究/建造） ----------
+	var train_ok := {"constructed": true, "trains": [&"footman"], "id": &"footman", "require_tier": 0,
+		"current_tier": 1, "queue_size": 0, "queue_max": 10, "food_cost": 2, "food_free": 10,
+		"gold": 200, "wood": 100, "gold_cost": 125, "wood_cost": 0}
+	ok.call("可用性：训练条件齐 → ok", bool(Avail.check_train(train_ok)["ok"]))
+	var t1 := train_ok.duplicate(true)
+	t1["trains"] = [&"archer"]
+	ok.call("可用性：建筑不能造这个兵 → not_in_trains", String(Avail.check_train(t1)["reason"]) == "not_in_trains")
+	var t2 := train_ok.duplicate(true)
+	t2["require_tier"] = 2
+	var rt2 := Avail.check_train(t2)
+	ok.call("可用性：二本兵在一本 → tier_locked", String(rt2["reason"]) == "tier_locked" and int(rt2["params"]["required"]) == 2)
+	var t3 := train_ok.duplicate(true)
+	t3["queue_size"] = 10
+	ok.call("可用性：队列满 → queue_full", String(Avail.check_train(t3)["reason"]) == "queue_full")
+	var t4 := train_ok.duplicate(true)
+	t4["upgrading"] = true
+	ok.call("可用性：升级中 → upgrading", String(Avail.check_train(t4)["reason"]) == "upgrading")
+	var t5 := train_ok.duplicate(true)
+	t5["gold"] = 100
+	var rt5 := Avail.check_train(t5)
+	ok.call("可用性：金币不足 → no_gold（差 25）", String(rt5["reason"]) == "no_gold" and int(rt5["params"]["short"]) == 25)
+	var t6 := train_ok.duplicate(true)
+	t6["food_free"] = 1
+	ok.call("可用性：人口不足 → no_food", String(Avail.check_train(t6)["reason"]) == "no_food")
+	ok.call("可用性：训练资格（trains+tier）单独可判",
+		bool(Avail.check_train_permission([&"footman"], &"footman", 0, 1)["ok"])
+		and String(Avail.check_train_permission([&"footman"], &"footman", 2, 1)["reason"]) == "tier_locked")
+
+	var research_ok := {"constructed": true, "researchable": true, "upgrading": false, "busy": false,
+		"level": 1, "max_level": 5, "gold": 200, "wood": 100, "gold_cost": 100, "wood_cost": 40}
+	ok.call("可用性：研究条件齐 → ok", bool(Avail.check_research(research_ok)["ok"]))
+	var av_r1 := research_ok.duplicate(true)
+	av_r1["busy"] = true
+	ok.call("可用性：已有研究 → research_busy", String(Avail.check_research(av_r1)["reason"]) == "research_busy")
+	var av_r2 := research_ok.duplicate(true)
+	av_r2["level"] = 5
+	ok.call("可用性：满级 → max_level", String(Avail.check_research(av_r2)["reason"]) == "max_level")
+	var av_r3 := research_ok.duplicate(true)
+	av_r3["upgrading"] = true
+	ok.call("可用性：升级中研究 → upgrading", String(Avail.check_research(av_r3)["reason"]) == "upgrading")
+	var av_r4 := research_ok.duplicate(true)
+	av_r4["wood"] = 0
+	ok.call("可用性：木材不足 → no_wood", String(Avail.check_research(av_r4)["reason"]) == "no_wood")
+
+	var build_ok := {"has_worker": true, "require_tier": 0, "current_tier": 1, "gold": 200, "wood": 100, "gold_cost": 80, "wood_cost": 20}
+	ok.call("可用性：建造条件齐 → ok", bool(Avail.check_build(build_ok)["ok"]))
+	var b1 := build_ok.duplicate(true)
+	b1["has_worker"] = false
+	ok.call("可用性：没农民 → no_worker", String(Avail.check_build(b1)["reason"]) == "no_worker")
+	var b2 := build_ok.duplicate(true)
+	b2["require_tier"] = 2
+	ok.call("可用性：二本建筑在一本 → tier_locked", String(Avail.check_build(b2)["reason"]) == "tier_locked")
+	var b3 := build_ok.duplicate(true)
+	b3["gold"] = 0
+	ok.call("可用性：建造金币不足 → no_gold", String(Avail.check_build(b3)["reason"]) == "no_gold")
+
+	var refit_ok := {"constructed": true, "busy": false, "gold": 200, "wood": 100, "gold_cost": 40, "wood_cost": 15}
+	ok.call("可用性：改造条件齐 → ok", bool(Avail.check_refit(refit_ok)["ok"]))
+	var rf1 := refit_ok.duplicate(true)
+	rf1["busy"] = true
+	ok.call("可用性：改造中 → upgrading", String(Avail.check_refit(rf1)["reason"]) == "upgrading")
+	var rf2 := refit_ok.duplicate(true)
+	rf2["gold"] = 10
+	ok.call("可用性：改造金币不足 → no_gold", String(Avail.check_refit(rf2)["reason"]) == "no_gold")
 
 	# ---------- 经济 ----------
 	ok.call("钱不够不能付", not Economy.can_afford(100, 50, 101, 50))

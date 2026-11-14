@@ -9,16 +9,23 @@ extends Node
 ##   · 游戏代码不许自己 new AudioStreamPlayer 并直接拼路径 —— 走 play_sfx(key)。
 
 const BUSES := ["Master", "Music", "SFX", "UI", "Voice"]
+const SynthPlayer := preload("res://Engine/audio/synth_player.gd")
+const SynthBank := preload("res://Engine/audio/synth_bank.gd")
 const BUS_DEFAULT_DB := {"Master": 0.0, "Music": -19.0, "SFX": -6.0, "UI": -16.0, "Voice": -8.0}
 
 var _sfx_players: Array[AudioStreamPlayer] = []
 var _music: AudioStreamPlayer = null
+## 合成音效播放器（AudioStreamGenerator）—— 音效默认走它，文件只作回落
+var _synth: Node = null
 var _muted := false
 var _play_count := 0
 
 
 func _ready() -> void:
 	ensure_buses()
+	_synth = SynthPlayer.new()
+	_synth.name = "Synth"
+	add_child(_synth)
 	if App != null and App.silent:
 		set_muted(true)
 
@@ -82,6 +89,9 @@ func is_silent() -> bool:
 
 
 func play_sfx(key: String, volume_db: float = 0.0) -> bool:
+	# 音效优先走 AudioStreamGenerator 合成；合成库没有的 key 才回落文件（音乐仍走文件）
+	if SynthBank.has(key):
+		return play_synth(key, volume_db)
 	if is_silent():
 		return false
 	var path := Keys.path("audio", key)
@@ -97,6 +107,27 @@ func play_sfx(key: String, volume_db: float = 0.0) -> bool:
 	player.play()
 	_play_count += 1
 	return true
+
+
+## 播放合成音效（AudioStreamGenerator）。静音/无头时返回"已接受"但不真的发声，
+## 这样游戏侧的节流/回落逻辑不会因为测试模式而改行为。
+func play_synth(key: String, volume_db: float = 0.0, pitch_scale: float = 1.0) -> bool:
+	if not SynthBank.has(key):
+		return false
+	if is_silent():
+		return true
+	if _synth == null:
+		return false
+	var ok: bool = bool(_synth.call("play", key, volume_db, pitch_scale))
+	if ok:
+		_play_count += 1
+	return ok
+
+
+func synth_stats() -> Dictionary:
+	if _synth == null:
+		return {"ok": false}
+	return _synth.call("stats")
 
 
 func play_music(key: String, volume_db: float = 0.0) -> bool:
@@ -131,4 +162,4 @@ func _free_sfx_player() -> AudioStreamPlayer:
 
 
 func stats() -> Dictionary:
-	return {"buses": bus_names(), "muted": is_silent(), "played": _play_count}
+	return {"buses": bus_names(), "muted": is_silent(), "played": _play_count, "synth": synth_stats()}
