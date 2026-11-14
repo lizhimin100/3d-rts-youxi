@@ -79,7 +79,7 @@
 		},
 		{
 			"path": "Game/ai/简单AI.gd",
-			"size": 356627
+			"size": 357888
 		},
 		{
 			"path": "Game/ai/简单AI.gd.uid",
@@ -110,16 +110,8 @@
 			"size": 19
 		},
 		{
-			"path": "Game/audio/语音表.gd",
-			"size": 1924
-		},
-		{
-			"path": "Game/audio/语音表.gd.uid",
-			"size": 20
-		},
-		{
 			"path": "Game/audio/音效管理.gd",
-			"size": 42266
+			"size": 29699
 		},
 		{
 			"path": "Game/audio/音效管理.gd.uid",
@@ -151,7 +143,7 @@
 		},
 		{
 			"path": "Game/config/card_store.gd",
-			"size": 3538
+			"size": 4533
 		},
 		{
 			"path": "Game/config/card_store.gd.uid",
@@ -299,7 +291,7 @@
 		},
 		{
 			"path": "Game/config/游戏配置.gd",
-			"size": 17988
+			"size": 18493
 		},
 		{
 			"path": "Game/config/游戏配置.gd.uid",
@@ -323,7 +315,7 @@
 		},
 		{
 			"path": "Game/config/配置入口.gd",
-			"size": 3568
+			"size": 3844
 		},
 		{
 			"path": "Game/config/配置入口.gd.uid",
@@ -331,7 +323,7 @@
 		},
 		{
 			"path": "Game/config/野怪营地定义.gd",
-			"size": 2987
+			"size": 3646
 		},
 		{
 			"path": "Game/config/野怪营地定义.gd.uid",
@@ -339,7 +331,7 @@
 		},
 		{
 			"path": "Game/config/野怪营地表.gd",
-			"size": 3108
+			"size": 4032
 		},
 		{
 			"path": "Game/config/野怪营地表.gd.uid",
@@ -399,7 +391,7 @@
 		},
 		{
 			"path": "Game/core/游戏状态.gd",
-			"size": 30178
+			"size": 30476
 		},
 		{
 			"path": "Game/core/游戏状态.gd.uid",
@@ -651,7 +643,7 @@
 		},
 		{
 			"path": "Game/units/单位.gd",
-			"size": 158517
+			"size": 164492
 		},
 		{
 			"path": "Game/units/单位.gd.uid",
@@ -667,7 +659,7 @@
 		},
 		{
 			"path": "Game/units/可采集物.gd",
-			"size": 11058
+			"size": 12051
 		},
 		{
 			"path": "Game/units/可采集物.gd.uid",
@@ -707,7 +699,7 @@
 		},
 		{
 			"path": "Views/hud/HUD.gd",
-			"size": 100034
+			"size": 104982
 		},
 		{
 			"path": "Views/hud/HUD.gd.uid",
@@ -1259,7 +1251,7 @@
 		},
 		{
 			"path": "Engine/audio/synth_bank.gd",
-			"size": 11388
+			"size": 9465
 		},
 		{
 			"path": "Engine/audio/synth_bank.gd.uid",
@@ -1331,7 +1323,7 @@
 		},
 		{
 			"path": "Engine/pin.json",
-			"size": 5761
+			"size": 5760
 		},
 		{
 			"path": "Engine/platform/platform_headless.gd",
@@ -1403,7 +1395,7 @@
 		},
 		{
 			"path": "Engine/util/json_codec.gd",
-			"size": 8017
+			"size": 8825
 		},
 		{
 			"path": "Engine/util/json_codec.gd.uid",
@@ -1427,7 +1419,7 @@
 		},
 		{
 			"path": "Tests/checks/check_all.gd",
-			"size": 28721
+			"size": 33576
 		},
 		{
 			"path": "Tests/checks/check_all.gd.uid",
@@ -1447,7 +1439,7 @@
 		},
 		{
 			"path": "Tests/checks/synth_probe.gd",
-			"size": 10825
+			"size": 10928
 		},
 		{
 			"path": "Tests/checks/synth_probe.gd.uid",
@@ -1787,7 +1779,7 @@
 		},
 		{
 			"path": "Tools/build/export_release.ps1",
-			"size": 3840
+			"size": 4366
 		},
 		{
 			"path": "Tools/build/pack_demo.ps1",
@@ -2202,22 +2194,6 @@
 			"size": 4200
 		},
 		{
-			"path": "Tools/音频/合成语音.py",
-			"size": 5059
-		},
-		{
-			"path": "Tools/音频/合成语音_v2.py",
-			"size": 10650
-		},
-		{
-			"path": "Tools/音频/合成音效.py",
-			"size": 32116
-		},
-		{
-			"path": "Tools/音频校验.py",
-			"size": 5218
-		},
-		{
 			"path": "Tools/验证.ps1",
 			"size": 11288
 		},
@@ -2283,19 +2259,19 @@
 		},
 		{
 			"path": "Content/data/cards/camps/camp_creep_den_1.json",
-			"size": 398
+			"size": 453
 		},
 		{
 			"path": "Content/data/cards/camps/camp_den.json",
-			"size": 375
+			"size": 429
 		},
 		{
 			"path": "Content/data/cards/camps/camp_gate.json",
-			"size": 381
+			"size": 435
 		},
 		{
 			"path": "Content/data/cards/camps/camp_shell.json",
-			"size": 401
+			"size": 457
 		},
 		{
 			"path": "Content/data/cards/skills/block_parry.json",
@@ -2363,7 +2339,7 @@
 		},
 		{
 			"path": "Content/data/game.json",
-			"size": 7115
+			"size": 7483
 		},
 		{
 			"path": "Content/data/harvestables.json",
@@ -2403,7 +2379,7 @@
 		},
 		{
 			"path": "Content/keys/assets.json",
-			"size": 15154
+			"size": 11893
 		},
 		{
 			"path": "addons/map_editor/plugin.cfg",
@@ -2415,7 +2391,7 @@
 		},
 		{
 			"path": "addons/map_editor/主屏.gd",
-			"size": 41798
+			"size": 42123
 		},
 		{
 			"path": "addons/map_editor/主屏.gd.uid",
@@ -2423,7 +2399,7 @@
 		},
 		{
 			"path": "addons/map_editor/停靠面板.gd",
-			"size": 89211
+			"size": 89219
 		},
 		{
 			"path": "addons/map_editor/停靠面板.gd.uid",
@@ -2431,7 +2407,7 @@
 		},
 		{
 			"path": "addons/map_editor/卡片弹窗.gd",
-			"size": 28393
+			"size": 28387
 		},
 		{
 			"path": "addons/map_editor/卡片弹窗.gd.uid",
@@ -2447,7 +2423,7 @@
 		},
 		{
 			"path": "addons/map_editor/技能弹窗.gd",
-			"size": 31019
+			"size": 31015
 		},
 		{
 			"path": "addons/map_editor/技能弹窗.gd.uid",
@@ -2463,7 +2439,7 @@
 		},
 		{
 			"path": "addons/map_editor/插件.gd",
-			"size": 31689
+			"size": 32356
 		},
 		{
 			"path": "addons/map_editor/插件.gd.uid",
@@ -2491,7 +2467,7 @@
 		},
 		{
 			"path": "addons/map_editor/营地弹窗.gd",
-			"size": 21707
+			"size": 21919
 		},
 		{
 			"path": "addons/map_editor/营地弹窗.gd.uid",

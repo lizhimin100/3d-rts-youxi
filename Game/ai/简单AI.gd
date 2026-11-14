@@ -1195,8 +1195,30 @@ func _manage_peasants(diff: DifficultyDef) -> void:
 		_log("排农民（现有 %d / 目标 %d，军队 %d）"
 				% [peasants, target, _army_units().size()])
 
-## 给闲着的农民派采集活：**采金 / 采木按"先扣工位、再截 8"分**，工位单独走"闲了就砍树"。
+## 场上还有几个"采金载位"（= 没采空的金矿数 × 每座的载位数）。
 ##
+## ★ 2026-11-14：金矿载位改成 1（玩家口径「一个矿只许一个农民进去，其他人等着」），
+##   所以 AI 的采金目标人数不能超过"矿数" —— 多派的人只能在矿外排队，
+##   等于白占一个农民。矿被采空时这个数会掉，AI 自然把人转去砍树。
+func _gold_mine_capacity() -> int:
+	if Game.level == null:
+		return PEASANT_GOLD_SOFT_CAP
+	var n: int = 0
+	for h in Game.level.resource_nodes():
+		if h == null or not is_instance_valid(h):
+			continue
+		if int(h.get("harvest_kind")) != RtsConst.Harvest.GOLD:
+			continue
+		if bool(h.call("is_depleted")):
+			continue
+		var slots: int = 1
+		if h.has_method("max_slots"):
+			slots = maxi(int(h.call("max_slots")), 1)
+		n += slots
+	return maxi(n, 1)
+
+
+## 给闲着的农民派采集活：**采金 / 采木按"先扣工位、再截 8"分**，工位单独走"闲了就砍树"。
 ## 2C-7 P0 改动（相对 2C-6）：
 ##   · 工位农民**不参与金木配比** —— 它没活时的默认工作是伐木（优先级最低）；
 ##   · 非工位农民按 `peasant_gold_want()` 分 8:3（满编 11 人 = 8 采金 + 3 采木）；
@@ -1244,6 +1266,9 @@ func _assign_workers(_diff: DifficultyDef) -> void:
 	#   见 PEASANT_WOOD_SURPLUS 的注释（10 min：木 1798 / 金 300）。
 	if _faction != null and _faction.wood >= PEASANT_WOOD_SURPLUS:
 		want_gold = maxi(want_gold, total - 1)
+	# ★ 2026-11-14：金矿每座只能进 1 个农民（见 可采集物.max_slots），
+	#   派超过"载位总数"的人只会在矿外干等 —— 按载位封顶，多的人去砍树。
+	want_gold = mini(want_gold, _gold_mine_capacity())
 	var base: Vector3 = RtsWorld.base_center(_faction)
 	var radius: float = Cfg.game.map_size * 0.75
 	# 木材的"收货点"每 tick 只算一次（伐木场优先，其次大本营）
@@ -1330,6 +1355,8 @@ func _rebalance_gatherers(total: int) -> void:
 	# 木头富裕：只剩 1 个人砍树（与 `_assign_workers` 同一口径，否则刚转去采金的人会被挪回来）
 	if _faction != null and _faction.wood >= PEASANT_WOOD_SURPLUS:
 		want_gold = maxi(want_gold, total - 1)
+	# 与 `_assign_workers` 同口径：金矿载位总数就是采金人数上限（多的人在矿外排队）
+	want_gold = mini(want_gold, _gold_mine_capacity())
 	var kind: int = -1
 	var pool: Array = []
 	if on_gold < want_gold and not wood_workers.is_empty():

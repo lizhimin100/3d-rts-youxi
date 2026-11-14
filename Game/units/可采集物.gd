@@ -16,6 +16,8 @@ const SINK_TIME: float = 0.5
 const DEPLETED_DARKEN: float = 0.32
 ## 表现层随机流（倒向哪边）。玩法随机仍走全局 randf，见 表现随机.gd
 const Fx := preload("res://Views/world/art/表现随机.gd")
+## 分流惩罚的基准值（米）：见 `crowd_cost()`
+const CROWD_COST: float = 18.0
 
 var def: UnitDef = null
 var remaining: int = 0
@@ -126,9 +128,25 @@ func mouth_point(from_pos: Vector3) -> Vector3:
 var _slots: Dictionary = {}
 
 
-## 这个资源点有几个载位（金矿 3、树 2）。改数量改这里，技能表的 slots 只是说明。
+## 这个资源点有几个载位（金矿 1、树 2）。改数量改这里，技能表的 slots 只是说明。
+##
+## ★ 2026-11-14 玩家口径：「每个金矿限制一名农民使用采集（只有一个农民能进去，
+##   其他农民要等待）」。以前金矿 3 个载位 + 抢不到也照采，等于一堆人叠在矿洞口。
+##   现在金矿 **1**：第二个人起由 `单位._order_gather` 的排队逻辑挡在矿外，
+##   载位一空（前一个人采满去卸货）下一个才进。树仍是 2（两棵树之间分摊）。
 func max_slots() -> int:
-	return 3 if harvest_kind == RtsConst.Harvest.GOLD else 2
+	return 1 if harvest_kind == RtsConst.Harvest.GOLD else 2
+
+
+## 分流用的"拥挤成本"（米）：**载位用满之后**每多一个人加这么多。
+##
+## 为什么要按载位算而不是按人头算：金矿载位 1 —— 第 2 个人去就是纯排队，
+## 打分要立刻把他推去下一座矿；树载位 2 —— 前两个人是并行干活，不该被罚。
+func crowd_cost(occupants: int) -> float:
+	var over: int = occupants - max_slots()
+	if over < 0:
+		return 0.0
+	return float(over + 1) * CROWD_COST
 
 
 ## 占一个载位，返回编号（0..n-1）。满了返回 -1（调用方退回通用站位）。

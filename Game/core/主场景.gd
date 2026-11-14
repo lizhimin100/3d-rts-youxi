@@ -400,7 +400,13 @@ func _mount_tests() -> void:
 		if a == "--perf-long" or a.begins_with("--perf-long="):
 			_mount_script("res://Tests/suites/性能探针.gd", "性能探针")
 			break
-	if "--gather-test" in args:
+	var want_gather: bool = "--gather-test" in args
+	if not want_gather:
+		for a in args:
+			if String(a).begins_with("--gather-test="):
+				want_gather = true
+				break
+	if want_gather:
 		_mount_script("res://Tests/suites/采集自检.gd", "采集自检")
 	# 木材专项：树按次数扣（20 次/棵）+ 砍完必须自己换树（-- --wood-test）
 	if "--wood-test" in args:

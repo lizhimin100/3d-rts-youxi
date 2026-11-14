@@ -10,8 +10,8 @@
 			"size": 20
 		},
 		"audio/synth_bank.gd": {
-			"sha256": "25ea11956b307efe89ffc64a63d35a8236095560cdf44fc68061cdd33350b702",
-			"size": 11388
+			"sha256": "ca48ca7e17d79ad145c3cab8d9bff78cd8289ccd420efbc8627b43a2e71ffd31",
+			"size": 9465
 		},
 		"audio/synth_bank.gd.uid": {
 			"sha256": "94eae879136d8942d47e3828872eb37b4b5fa41f38ade830586320d4d7f9ebcc",
@@ -150,8 +150,8 @@
 			"size": 20
 		},
 		"util/json_codec.gd": {
-			"sha256": "2f5814c5ed3204aa6e2604a77288668ad4fcb1240c74aa6ff234f17b4e83c790",
-			"size": 8017
+			"sha256": "e9cebeaa585f112daafdc5f002881e425a36bb7fe5d52fe4febefbe52f8f8f7b",
+			"size": 8825
 		},
 		"util/json_codec.gd.uid": {
 			"sha256": "9f64c947c718762a6e03839203db691a4fa812767cae0219c70f73bfcf60587c",

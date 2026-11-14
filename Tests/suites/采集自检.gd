@@ -1,31 +1,40 @@
 extends Node
-## **采集压力自检**：10 个农民同时采矿，逐秒采样"谁卡住了、卡在哪个阶段"。
+## **采集压力自检**：多个农民同时抢**一座**金矿，验证"排队进矿"。
 ##
 ## 启用：godot --headless --fixed-fps 60 --path . -- --gather-test
 ## 输出：结尾一行 `GATHERTEST {json}`
 ##
-## 判据（用户原话："一个农民都不许卡，十个农民一起去挤也不许卡"）：
-##   1. 90 模拟秒内金币必须明显增长（>= 150）
-##   2. 任何农民的"原地不动时长"不得超过 STUCK_LIMIT 秒（默认 6s）
-##   3. 每个农民都必须至少完成过一次卸货（deposits > 0）
-##   4. 结束时不允许有农民停在 TO_DROP/TO_NODE 且速度为 0
+## ★ 2026-11-14 判据改写（玩家口径「每个金矿限制一名农民使用采集，其他农民要等待」）：
+##   以前金矿 3 个载位、抢不到也照采，这个用例考的是"十个人挤一个矿不许卡死"。
+##   现在载位 = **1**，挤的人本来就要排队 —— "站着不动"不再等于卡住。新判据：
+##     1. 累计入库金币 >= 150（采集链路整体通）；
+##     2. **同一时刻进矿的农民不超过 1 个**（载位 1 的硬约束，最重要的一条）；
+##     3. 每个农民都至少完成过一次卸货（排队没有把人饿死）；
+##     4. 排队的农民必须待在矿 10m 内（不能一边等一边跑丢）。
 
 ## 超过这个秒数没位移就算"卡住"。
 ##
 ## ★ 2026-11-07 从 6.0 调到 8.0：这个用例是 **8 个农民抢 1 座金矿（3 个载位）**，
 ##   多出来的 5 个人必然要排队 —— 实测最长等待 7.5s（排队时人是不动的，不是卡住）。
 ##   上限留给「真的卡死」（以前矿心落点算错时是 28~85s，一测就红）。
-const STUCK_LIMIT: float = 8.0
+const STUCK_LIMIT: float = 8.0   # 仅用于日志（排队会站很久，不再作为判据）
 ## 总模拟时长（秒）
-const DURATION: float = 90.0
+## 总模拟时长（秒）。默认 75s：6 个农民抢 1 个载位，每人至少能轮上一趟。
+## 命令行可覆盖：`-- --gather-test=120`（想要长跑时用）。
+var DURATION: float = 75.0
 ## 额外塞多少个农民（玩家开局 5 个，再塞 5 个凑 10 个）
-const EXTRA_PEASANTS: int = 5
+## 额外塞多少个农民（玩家开局 5 个，再塞 1 个凑 6 个 —— 一座矿 1 个载位，
+## 6 个人排队已经能压出"轮流进矿"的完整链路，再多人只会让用例跑很久）
+const EXTRA_PEASANTS: int = 1
 
 var _report: Dictionary = {}
 var _done: bool = false
 
 
 func _ready() -> void:
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--gather-test="):
+			DURATION = clampf(float(a.substr(String("--gather-test=").length())), 20.0, 600.0)
 	_run.call_deferred()
 
 
@@ -65,6 +74,7 @@ func _run() -> void:
 		max_still.append(0.0)
 
 	var samples: Array = []
+	var max_in_mine: int = 0
 	var t: float = 0.0
 	var dt: float = 0.5
 	while t < DURATION:
@@ -81,6 +91,8 @@ func _run() -> void:
 				max_still[i] = maxf(max_still[i], still[i])
 			else:
 				still[i] = 0.0
+		var in_mine: int = _count_in_mine(peasants)
+		max_in_mine = maxi(max_in_mine, in_mine)
 		if int(t * 2.0) % 20 == 0:
 			samples.append(_snapshot(peasants, t))
 
@@ -113,8 +125,27 @@ func _run() -> void:
 			ph = int(p.call("debug_gather_phase"))
 		phases[str(ph)] = int(phases.get(str(ph), 0)) + 1
 
+	# 排队纪律：**停在矿边等**的人必须待在矿 10m 内。
+	#   · 只统计"站着排队"的：TO_NODE(1) + 没抢到载位 + state == IDLE；
+	#   · 从交汇点走回来的、正在起手/采集的、去卸货的都不算 ——
+	#     第一版没区分，把"刚卸完货往回走"的农民也算成跑丢，误判过一次。
+	var far_waiters: int = 0
+	for p in peasants:
+		if p == null or not is_instance_valid(p) or not p.is_alive():
+			continue
+		if int(p.call("debug_gather_phase")) != 1:
+			continue
+		if int(p.get("_gather_slot")) >= 0:
+			continue
+		if int(p.state) != RtsConst.State.IDLE:
+			continue
+		if p.global_position.distance_to(mine.global_position) > 10.0:
+			far_waiters += 1
+
 	_report = {
 		"农民数": peasants.size(),
+		"同时进矿峰值": max_in_mine,
+		"矿外跑丢人数": far_waiters,
 		"时长(秒)": DURATION,
 		"金币增长": gold_gain,
 		"最长原地不动(秒)": "%.1f" % worst_still,
@@ -137,13 +168,30 @@ func _run() -> void:
 	if deposited < 150:
 		ok = false
 		why = "累计入库不足（%d < 150），采集链路没跑通" % deposited
-	elif worst_still > STUCK_LIMIT:
+	elif max_in_mine > 1:
 		ok = false
-		why = "有农民原地不动 %.1fs（>%.0fs）" % [worst_still, STUCK_LIMIT]
+		why = "同一时刻有 %d 个农民在金矿里（载位上限 1）" % max_in_mine
 	elif min_deposits <= 0:
 		ok = false
 		why = "有农民一次货都没卸（采集/返程/卸货链路断了）"
+	elif far_waiters > 0:
+		ok = false
+		why = "有 %d 个农民在排队时跑到矿 10m 外" % far_waiters
 	_finish(ok, why)
+
+
+## 此刻有几个农民真的在矿里（ENTER=4 起手 / HARVEST=2 采集）
+func _count_in_mine(peasants: Array) -> int:
+	var n: int = 0
+	for p in peasants:
+		if p == null or not is_instance_valid(p) or not p.is_alive():
+			continue
+		if not p.has_method("debug_gather_phase"):
+			continue
+		var ph: int = int(p.call("debug_gather_phase"))
+		if ph == 4 or ph == 2:
+			n += 1
+	return n
 
 
 ## 采一份快照（给报告看趋势）
@@ -185,6 +233,14 @@ func _finish(ok: bool, reason: String) -> void:
 		return
 	_done = true
 	_report["结果"] = "通过" if ok else ("失败：" + reason if reason != "" else "失败")
-	print("GATHERTEST " + JSON.stringify(_report))
+	var line := "GATHERTEST " + JSON.stringify(_report)
+	print(line)
+	# 同时落盘一份：stdout 重定向到文件时会被块缓冲，进程退出可能把最后一行丢掉
+	# （2026-11-14 实测：日志里没有 GATHERTEST，但退出码是 1）。
+	var f := FileAccess.open("res://_qa/gather_report.json", FileAccess.WRITE)
+	if f != null:
+		f.store_string(line)
+		f.flush()
+		f.close()
 	await get_tree().create_timer(0.2).timeout
 	get_tree().quit(0 if ok else 1)

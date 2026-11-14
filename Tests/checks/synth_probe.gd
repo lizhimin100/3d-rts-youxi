@@ -3,17 +3,15 @@ extends SceneTree
 ## 属于：Tests/checks
 ## 用法：godot --headless --path . --script Tests/checks/synth_probe.gd
 ## 判据：全部通过打印 "SYNTH PASS n/N" 且退出码 0；否则打印 "SYNTH FAIL ..." 且退出码 1。
-## 覆盖：12 个预设齐全 / 非空 / 时长区间 / 峰值 / NaN/Inf / 首尾静音（防爆音）/
+## 覆盖：唯一预设 ui_ding 齐全 / 非空 / 时长区间 / 峰值 / NaN/Inf / 首尾静音（防爆音）/
 ##       describe() 自洽 / 16-bit PCM 转换 / AudioStreamGenerator 真填一次缓冲 /
 ##       SynthPlayer 的 play / set_enabled / 池抢占 / stop_all。
 
 const SynthBank := preload("res://Engine/audio/synth_bank.gd")
 const SynthPlayerScript := preload("res://Engine/audio/synth_player.gd")
 
-const REQUIRED_KEYS := [
-	"ui_click", "ui_open", "ui_error", "notify", "build_start", "build_done",
-	"hit_flesh", "hit_metal", "arrow_shot", "death", "level_up", "coin",
-]
+## 2026-11-14：全局只剩一条音效（UI 更新提示音"叮"），其余已按玩家要求删除。
+const REQUIRED_KEYS := ["ui_ding"]
 const MIN_DURATION := 0.05
 const MAX_DURATION := 0.80
 const PEAK_LIMIT := 1.0
@@ -56,12 +54,12 @@ func _cache_samples() -> void:
 
 func _check_keys() -> void:
 	var keys := SynthBank.keys()
-	_ok("预设数量 >= 12", keys.size() >= 12, "实际 %d" % keys.size())
+	_ok("预设数量 == 1（只留 UI 提示音）", keys.size() == 1, "实际 %d" % keys.size())
 	var missing: Array[String] = []
 	for key in REQUIRED_KEYS:
 		if not SynthBank.has(key):
 			missing.append(key)
-	_ok("12 个约定 key 齐全", missing.is_empty(), "缺：" + ", ".join(missing))
+	_ok("约定的 key 齐全", missing.is_empty(), "缺：" + ", ".join(missing))
 	var seen := {}
 	for key in keys:
 		seen[key] = true
@@ -168,7 +166,7 @@ func _check_generator() -> void:
 		print("[synth] 当前驱动没有 generator playback，跳过实际填充（不算失败）")
 		_generator_ok = false
 	else:
-		var frames := SynthBank.to_frames(_samples["ui_click"])
+		var frames := SynthBank.to_frames(_samples["ui_ding"])
 		var avail := gp.get_frames_available()
 		var pushed: int = mini(avail, frames.size())
 		var push_ok := false
@@ -196,19 +194,17 @@ func _check_player() -> void:
 	_ok("stats() 字段齐全",
 		st0.has("played") and st0.has("dropped") and st0.has("active") and st0.has("headless") and st0.has("driver"),
 		"缺字段")
-	var played: bool = synth.play("ui_click", -6.0)
+	var played: bool = synth.play("ui_ding", -6.0)
 	if _generator_ok:
-		_ok("play(ui_click) 返回 true", played, "生成器可用却播放失败")
+		_ok("play(ui_ding) 返回 true", played, "生成器可用却播放失败")
 	else:
 		print("[synth] 生成器不可用，play() 返回 %s（允许静默）" % str(played))
 	var st1: Dictionary = synth.stats()
 	_ok("播放计数 +1", (not played) or int(st1["played"]) == 1, "played=%d" % int(st1["played"]))
 	_ok("未知 key 返回 false", synth.play("no_such_synth_key") == false, "居然返回 true")
-	_ok("pitch_scale 变调不崩", synth.play("coin", -12.0, 1.5) == played or not _generator_ok, "")
-	var keys_to_spam := ["ui_click", "ui_open", "ui_error", "notify", "build_start",
-		"build_done", "coin", "level_up"]
-	for key in keys_to_spam:
-		synth.play(key, -18.0, 1.0)
+	_ok("pitch_scale 变调不崩", synth.play("ui_ding", -12.0, 1.5), "")
+	for i in 8:
+		synth.play("ui_ding", -18.0, 1.0)
 	var st2: Dictionary = synth.stats()
 	_ok("池压测后不超池", int(st2["active"]) <= int(st2["pool_size"]),
 		"active=%d pool=%d" % [int(st2["active"]), int(st2["pool_size"])])
@@ -216,11 +212,11 @@ func _check_player() -> void:
 		_ok("池满会抢占", int(st2["stolen"]) >= 1, "stolen=%d" % int(st2["stolen"]))
 	synth.set_enabled(false)
 	_ok("set_enabled(false) 生效", synth.is_enabled() == false, "仍为 true")
-	_ok("禁用后 play() 返回 false", synth.play("coin") == false, "禁用还能播")
+	_ok("禁用后 play() 返回 false", synth.play("ui_ding") == false, "禁用还能播")
 	synth.set_enabled(true)
 	_ok("set_enabled(true) 恢复", synth.is_enabled() == true, "仍为 false")
 	# 播完回收：时长 0.75s，等 0.9s 后槽位必须自己空出来
-	var recycled: bool = synth.play("death", -12.0)
+	var recycled: bool = synth.play("ui_ding", -12.0)
 	if recycled:
 		await create_timer(0.9).timeout
 		_ok("播完自动回收（active → 0）", int(synth.stats()["active"]) == 0,

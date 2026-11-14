@@ -264,11 +264,24 @@ func _check_card_io() -> void:
 	var tmp := "res://.test_profile/card_io/footman.json"
 	var err := CardStore.save_card(card, tmp)
 	var back := CardStore.load_card(tmp)
+	# 2026-11-14：卡的源路径改走 meta（`CardStore.path_of`），不再 take_over_path 到 .json
+	# （后者会让编辑器对 .json 做依赖扫描并报 "No loader found …(expected type: Resource)"）。
 	var same := (back != null
 		and String(back.get("card_id")) == String(card.get("card_id"))
 		and is_equal_approx(float(back.get("max_hp")), float(card.get("max_hp")))
-		and String(back.resource_path) == tmp)
+		and CardStore.path_of(back) == tmp
+		and String(back.resource_path).is_empty())
 	_ok("卡读写往返（编辑器保存路径 → JSON → 读回）", err == OK and same, "err=%d" % err)
+	# 反向验证：保存出来的 JSON 里**不许**再出现 metadata/* 字段
+	# （以前 set_meta("source_path") 会被 encode_resource 写进 props，读回来报"未知字段"）
+	var raw: Dictionary = (load("res://Engine/util/json_file.gd") as Script).call(
+		"read_dict", tmp, {})
+	var props: Dictionary = raw.get("props", {})
+	var meta_keys: Array[String] = []
+	for k in props.keys():
+		if String(k).begins_with("metadata/"):
+			meta_keys.append(String(k))
+	_ok("卡 JSON 不写 metadata/* 字段", meta_keys.is_empty(), "出现了：" + ", ".join(meta_keys))
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(tmp))
 	DirAccess.remove_absolute(ProjectSettings.globalize_path("res://.test_profile/card_io"))
 
@@ -556,11 +569,20 @@ func _check_audio() -> void:
 		_ok("AudioSvc 自动加载就绪", false)
 		return
 	var st: Dictionary = svc.call("synth_stats")
-	_ok("合成音效器有 12 个预设", int(st.get("presets", 0)) == 12, "presets=%d" % int(st.get("presets", 0)))
-	_ok("合成音效可被 AudioSvc 接受（未知 key 拒绝）",
-		bool(svc.call("play_synth", "ui_click")) and not bool(svc.call("play_synth", "no_such_key")))
+	# 2026-11-14：全局只剩一条音效（UI 更新提示音"叮"），其余按玩家要求整批删除。
+	_ok("合成音效器只有 1 个预设（ui_ding）", int(st.get("presets", 0)) == 1,
+		"presets=%d" % int(st.get("presets", 0)))
+	_ok("提示音可被 AudioSvc 接受（未知 key 拒绝）",
+		bool(svc.call("play_synth", "ui_ding")) and not bool(svc.call("play_synth", "no_such_key")))
 	var src := _read("res://Game/audio/音效管理.gd")
-	_ok("游戏音效走 AudioStreamGenerator 映射", src.contains("SYNTH_KEYS") and src.contains("_play_synth"))
+	_ok("UI 提示音走 AudioStreamGenerator（音效不依赖文件）",
+		src.contains("ui_ding") and src.contains("play_synth") and not src.contains("SYNTH_KEYS"))
+	var no_wav := true
+	for f in _walk("res://Content/audio"):
+		if String(f).get_extension().to_lower() == "wav":
+			no_wav = false
+			break
+	_ok("音效 wav 已全部删除（只留 BGM）", no_wav)
 
 
 func _check_integration() -> void:

@@ -250,7 +250,7 @@ func _popup_fit() -> void:
 func reload_if(path: String) -> void:
 	if _camp == null or not visible:
 		return
-	if String(_camp.resource_path) != path:
+	if CARD_STORE.path_of(_camp) != path:
 		return
 	# 优先换成缓存里那份（ResourceLoader 可能给了新实例；换掉才不会显示旧值）
 	var fresh: Resource = CAMP_TABLE.by_id(String(_camp.get("id")))
@@ -338,7 +338,7 @@ func _fill_form() -> void:
 	_sync_creep_list()
 	_rebuild_counts()
 	_syncing = false
-	var path: String = String(_camp.resource_path)
+	var path: String = CARD_STORE.path_of(_camp)
 	if path.is_empty():
 		_status.text = "新建配置：点「保存并应用」才会写盘，并落到这一座锚点上"
 	else:
@@ -484,7 +484,7 @@ func _save() -> void:
 		_status.text = "至少要勾一种野怪（不然这座营地什么也不刷）"
 		return
 	# 草稿才按 id 拼路径；已有卡一律写回它原本的文件（id 和文件名允许不一致）
-	var path: String = String(_camp.resource_path)
+	var path: String = CARD_STORE.path_of(_camp)
 	if path.is_empty():
 		path = CAMP_TABLE.CARD_DIR + cid + ".json"
 		if FileAccess.file_exists(path):
@@ -514,8 +514,10 @@ func _save() -> void:
 		return
 	# 草稿第一次落盘后必须认领这个路径：否则第二次点保存会走"新建"分支，
 	# 撞上"已有同名营地卡"的提示，等于刚存的这份再也改不了。
-	if String(_camp.resource_path) != path:
-		_camp.take_over_path(path)
+	# 卡的真实路径只认 meta（见 CardStore.path_of）：绝不再 take_over_path 到 .json，
+	# 否则编辑器会对这个路径做依赖扫描并报 "No loader found … (expected type: Resource)"。
+	if CARD_STORE.path_of(_camp) != path:
+		_camp.set_meta("source_path", path)
 	# 必须清缓存：营地表是静态缓存，不然刚存的配置要重启 Godot 才看得到
 	CAMP_TABLE.reload()
 

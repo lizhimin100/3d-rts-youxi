@@ -62,8 +62,9 @@ extends Resource
 ## Documents/AI经济与等级排查报告.md §2.4）。
 ## ★ 2026-11-13 玩家口径「一把金币值上调到 20」：15 → **20**。
 @export var harvest_carry_gold: int = 20
-## **农民一次采木携带量**（1 趟 = 搬这么多木）。保持 10 不变。
-@export var harvest_carry_wood: int = 10
+## **农民一次采木携带量**（1 趟 = 搬这么多木）。
+## ★ 2026-11-14 玩家口径：10 → **8**（树的可采次数同时 20 → 35，见 tree_charges）。
+@export var harvest_carry_wood: int = 8
 ## 采集一次所需时间（秒）
 @export var harvest_time_gold: float = 3.2
 @export var harvest_time_wood: float = 4.0
@@ -73,9 +74,15 @@ extends Resource
 ##   6000 让"家门口这座矿"能撑到分基地成型，扩张线才有意义。
 ## ★ 唯一生效点：`配置入口._rebuild()` 把它写进 goldmine 的 def（单位表里那个常量只是兜底）。
 @export var gold_mine_amount: int = 6000
-## 一棵树的储量。**当前不生效**：树的 `resource_amount` 语义是"还能采几次"（单位表里写死 20，
-## 见 可采集物.is_charge_based）。这个字段留着给"按吨位采木"的老口径，别拿它覆盖树的次数。
-@export var tree_amount: int = 260
+## **一棵树能采几次**（每次 = 农民来一趟，搬走 harvest_carry_wood 根木头）。
+##
+## ★ 2026-11-14 玩家口径：「每颗木头上限从 20 变为 35」，同时把这件事**真正接上**：
+##   以前这个字段叫 `tree_amount`（260，给"按吨位采木"的老口径留的死字段），
+##   而树的 `resource_amount` 一直没人写 —— 落到 `可采集物.setup` 的
+##   `maxi(resource_amount, 1)` 就是 **1 次**（一棵树只能砍一趟）。
+##   现在改名 `tree_charges` 并由 `配置入口._apply_resource_amounts` 写进所有树的 def，
+##   这是唯一生效点；`tree_amount` 已作废（2026-11-14）。
+@export var tree_charges: int = 35
 ## 单位重叠时的分离推力
 @export var separation_strength: float = 1.8
 

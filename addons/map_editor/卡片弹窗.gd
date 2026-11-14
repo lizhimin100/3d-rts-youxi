@@ -203,7 +203,7 @@ func _scan() -> void:
 func _sync_list() -> void:
 	if _list == null:
 		return
-	var keep_path: String = String(_card.resource_path) if _card != null else ""
+	var keep_path: String = CARD_STORE.path_of(_card) if _card != null else ""
 	_syncing = true
 	_list.clear()
 	var sel: int = -1
@@ -283,7 +283,7 @@ func _rebuild_form() -> void:
 		_build_building_form()
 	_syncing = false
 	_update_head()
-	_status.text = "编辑中：%s（保存后重开测试地图生效）" % String(_card.resource_path).get_file()
+	_status.text = "编辑中：%s（保存后重开测试地图生效）" % CARD_STORE.path_of(_card).get_file()
 
 
 func _build_unit_form() -> void:
@@ -540,7 +540,7 @@ func _save() -> void:
 	if _card == null:
 		_status.text = "先在左边选一张卡"
 		return
-	var path: String = String(_card.resource_path)
+	var path: String = CARD_STORE.path_of(_card)
 	if path.is_empty():
 		_status.text = "这张卡没有文件路径（不是从目录里读出来的），无法写回"
 		return

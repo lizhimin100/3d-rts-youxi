@@ -995,7 +995,7 @@ func _refresh_camps() -> void:
 		_camp_list.set_item_tooltip(_camp_list.item_count - 1,
 			"%s（锚点 %s）" % [String(res.get("display_name")),
 				String(res.get("den_building"))])
-		if not _camp_sel_path.is_empty() and String(res.resource_path) == _camp_sel_path:
+		if not _camp_sel_path.is_empty() and CARD_STORE.path_of(res) == _camp_sel_path:
 			sel = _camp_list.item_count - 1
 	if sel < 0 and _camp_cur == null and _camp_list.item_count > 0:
 		sel = 0
@@ -1019,7 +1019,7 @@ func _on_camp_selected(index: int) -> void:
 	var res: Resource = _camp_list.get_item_metadata(index) as Resource
 	if res == null:
 		return
-	_camp_sel_path = String(res.resource_path)
+	_camp_sel_path = CARD_STORE.path_of(res)
 	_load_camp(res)
 
 
@@ -1053,7 +1053,7 @@ func _load_camp(res: Resource) -> void:
 	_rebuild_camp_counts()
 	_syncing = false
 	_camp_status.text = "正在编辑：%s" % (
-		res.resource_path.get_file() if not String(res.resource_path).is_empty() else "（未保存）")
+		CARD_STORE.path_of(res).get_file() if not CARD_STORE.path_of(res).is_empty() else "（未保存）")
 
 
 ## 当前"归属"下拉的槽位号（-2 中立敌对 / -1 中立 / 0..11 玩家）
@@ -1231,7 +1231,7 @@ func _camp_delete() -> void:
 	if _camp_cur == null:
 		_camp_status.text = "先选一份营地再删除"
 		return
-	var path: String = String(_camp_cur.resource_path)
+	var path: String = CARD_STORE.path_of(_camp_cur)
 	if path.is_empty():
 		_camp_status.text = "这份营地还没保存过，没有文件可删"
 		return
@@ -1266,19 +1266,19 @@ func _camp_save() -> void:
 		return
 	# 草稿（还没落盘）才按 id 拼路径；已有的配置一律写回它原本的文件，
 	# 因为 id 和文件名允许不一致，按 id 重拼会把老文件复制成第二份、锚点重复。
-	var path: String = String(_camp_cur.resource_path)
+	var path: String = CARD_STORE.path_of(_camp_cur)
 	if path.is_empty():
 		path = CAMP_TABLE.CARD_DIR + nid + ".json"
 		if FileAccess.file_exists(path):
 			_camp_status.text = "已有 id 为「%s」的营地，换个 id 再存" % nid
 			return
 	# 2026-11-07：同一种锚点**允许多份配置**（逐实例用 camp_id 指定）。
-	# 只是提醒：不指定 camp_id 的锚点会落到"默认那份"（文件名排序第一）。
+	# 只是提醒：不指定 camp_id 的锚点会落到"默认那份"（`default_for_anchor = true` 的那份）。
 	for other in CAMP_TABLE.all():
 		if other == null or other == _camp_cur:
 			continue
-		var opath: String = String(other.resource_path)
-		if opath == path or opath == String(_camp_cur.resource_path):
+		var opath: String = CARD_STORE.path_of(other)
+		if opath == path or opath == CARD_STORE.path_of(_camp_cur):
 			continue
 		if String(other.get("den_building")) != den:
 			continue

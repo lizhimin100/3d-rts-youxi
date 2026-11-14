@@ -46,3 +46,11 @@ extends Resource
 @export var first_spawn_min: float = 0.0
 ## 之后每隔几分钟再刷一整波（分钟；0 = 只刷一次，之后只靠 respawn 补满）
 @export var spawn_interval_min: float = 0.0
+## 是不是这个锚点建筑的**默认配置**（没写 camp_id 的锚点用它）。
+##
+## 为什么要这个字段：同一种锚点允许多份配置（逐实例 camp_id 指定），
+## 但"谁是默认"不能靠文件名排序猜 —— `camp_creep_den_1.json` 排序在 `camp_den.json` 前面，
+## 以前就是它抢走了 creep_den 的默认位，还刷一条"锚点重复"警告。
+## 现在显式写：每类锚点挑一份标 true（当前是 camp_den / camp_gate / camp_shell），
+## 其余（camp_creep_den_1 这种"自定义"）保持 false，只在 camp_id 指定时生效，不告警。
+@export var default_for_anchor: bool = false

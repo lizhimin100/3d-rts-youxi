@@ -548,7 +548,12 @@ func find_trip_harvestable(faction: RtsFaction, from: Vector3, kind: int,
 				best_back = dd
 		if best_back < INF:
 			back = best_back
-		var score: float = d + back + float(used.get(h, 0)) * 14.0
+		# 拥挤成本按**载位**算（金矿载位 1：第二个人起就该被推去下一座矿），
+		# 资源点没实现 crowd_cost 时才退回老的"每人 14 米"口径。
+		var crowd_pen: float = float(used.get(h, 0)) * 14.0
+		if h.has_method("crowd_cost"):
+			crowd_pen = float(h.call("crowd_cost", int(used.get(h, 0))))
+		var score: float = d + back + crowd_pen
 		if score < best_score:
 			best_score = score
 			best = h

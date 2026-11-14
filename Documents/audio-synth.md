@@ -1,13 +1,16 @@
 # 程序化音效（AudioStreamGenerator）
 
-> 2026-11-14 已拍板：**音效改为运行时合成，不再依赖 wav/ogg 文件**（音乐仍可用文件）。
-> 模块自包含；**2026-11-14 已接入** `Engine/audio/audio_service.gd`（合成优先、文件回落）与 `Game/audio/音效管理.gd`（16 个游戏音效 id → 12 个预设）。
+> 2026-11-14 已拍板：**音效全部改为运行时合成，不再依赖 wav/ogg 文件**（音乐仍用玩家的 ogg）。
+> **同日第二次拍板（当前状态）**：删掉全部合成音效，只留一声 `ui_ding`（UI 更新时间"叮"）。
+> 于是合成库只剩 **1 个预设**；`Content/audio/` 下 0 个 wav。
+> 接入点：`Game/audio/音效管理.gd` 的 `ding()`（选中 / 下令 / 播报 / 建造完成）→
+> `AudioSvc.play_synth("ui_ding")` → `Engine/audio/synth_player.gd`。
 
 ## 1. 文件
 
 | 文件 | 作用 |
 |---|---|
-| `Engine/audio/synth_bank.gd` | 合成库（RefCounted，全静态函数）：12 个预设 → 44.1kHz / 16-bit / 单声道样本 |
+| `Engine/audio/synth_bank.gd` | 合成库（RefCounted，全静态函数）：**1 个预设** `ui_ding` → 44.1kHz / 16-bit / 单声道样本 |
 | `Engine/audio/synth_player.gd` | 播放器（Node）：`AudioStreamGenerator` + 6 个 `AudioStreamPlayer` 池 |
 | `Tests/checks/synth_probe.gd` | 无窗口自检（`extends SceneTree`） |
 | `Documents/audio-synth.md` | 本文 |
@@ -20,7 +23,7 @@
 const SynthBank := preload("res://Engine/audio/synth_bank.gd")
 
 SynthBank.SAMPLE_RATE                 # 44100
-SynthBank.keys()                      # Array[String]，12 个 key（按定义顺序）
+SynthBank.keys()                      # Array[String]，当前只有 ["ui_ding"]
 SynthBank.has(key)                    # bool
 SynthBank.spec(key)                   # Dictionary（参数副本，改它不影响内置表）
 SynthBank.duration(key)               # float，秒

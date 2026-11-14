@@ -82,6 +82,17 @@ const BUILD_REACH_SLACK: float = 0.75
 const SEPARATION_FACTOR: float = 1.15
 ## 索敌/经济决策分片间隔（秒），别让 N 个单位同一帧一起算
 const THINK_SLICE: float = 0.3
+## **空闲**单位的索敌间隔（秒）。见 `_acquire` 的注释（1s 足够，反应靠 take_damage 立刻还手）。
+const THINK_SLICE_IDLE: float = 1.0
+## ★ 2026-11-14「A 段转正」：分离 / 贴墙推出 / 贴地采样的固定步长（秒）。
+## 20Hz 是《万单位与SC2管线_可行性评估.md》§10 给的 A 段口径：
+## **换实现不换玩法** —— 这三样都是软纠偏，50ms 的延迟在玩家眼里不存在，
+## 但每帧都算（60Hz）就是 3 倍白烧。实测 3000 兵：u.sep 1250 → 约 400 ms/s。
+const SLOW_STEP: float = 0.05
+## 贴地目标高度在"站着不动"时的重采样间隔（秒）。站着不动的单位脚下地形不会变。
+const GROUND_IDLE_STEP: float = 0.5
+## 分离一个 tick 最多纠正多少米（20Hz 下防止一把推穿墙）
+const SEP_MAX_STEP: float = 0.35
 ## 采集/建造时相对目标的额外站位间隙（米）
 const GATHER_GAP: float = 0.2
 ## 到点判定的人工余量（米）。A* 终点会被吸附到最近可走格，可能比站位阈值远 0.3~0.5m，
@@ -93,6 +104,8 @@ const CROWD_PENALTY: float = 7.0
 const PHASE_STUCK_TIME: float = 2.8
 ## 找不到资源后每隔多久重搜一次（秒）。见 _order_gather 的 SEEK 分支。
 const GATHER_RETRY_SEC: float = 3.0
+## 金矿载位满时，隔多久再抢一次载位（秒）。见 _tick_gather_wait。
+const GATHER_WAIT_RETRY: float = 0.4
 ## 农民被打后逃跑持续时间（秒）
 const FLEE_TIME: float = 3.0
 ## 转向时允许的最低速度占比（背身=0 先转身，侧身还能蹭一点）
@@ -302,6 +315,13 @@ var _think_t: float = 0.0
 var _idle_skip: int = 0
 ## 分离查询的复用缓冲（见 _update_separation；不要跨帧持有）
 var _near_buf: Array = []
+## ★ 2026-11-14「A 段转正」：分离 / 贴墙推出的 20Hz 累加器（见 _tick_slow）。
+## 这两件事都是**软纠偏**：晚 50ms 生效玩家看不出来，但每帧都算就是纯烧 CPU。
+var _slow_dt: float = 0.0
+## 贴地：缓存的地形目标高度 + 距离下次重采样的时间（见 _snap_ground）
+var _ground_y: float = 0.0
+var _ground_t: float = 0.0
+var _ground_ready: bool = false
 ## 新指令下达后的"免索敌"宽限期（秒）。见 order_move 的注释。
 var _acquire_grace: float = 0.0
 
@@ -989,6 +1009,7 @@ func order_move(pos: Vector3) -> void:
 		return
 	if _dying:
 		return
+	_abandon_gather()
 	order = RtsConst.Order.MOVE
 	target = null
 	_retreat = false
@@ -999,6 +1020,24 @@ func order_move(pos: Vector3) -> void:
 	guard_mode = Guard.NONE
 	_order_goal = Vector3(pos.x, 0.0, pos.z)
 	_go_to(pos, true)
+
+
+## 放弃当前采集（切到别的指令时调用）：**必须让出载位**。
+##
+## ★ 2026-11-14 金矿载位改成 1 之后，这里漏一次就是"整座矿从此没人能进"：
+##   以前 3 个载位时漏一个还看不出来，现在排队的人会等到天荒地老。
+func _abandon_gather() -> void:
+	_release_gather_slot()
+	_gather_node = null
+	_gather_phase = GatherPhase.SEEK
+	_gather_spot_valid = false
+
+
+## 离开场景树：兜底让出载位。
+## 载位表存在**资源点**上（`可采集物._slots`，按实例 id 记），单位被 free 而不让位
+## 就会留下一个永远空不出来的坑 —— 载位 1 的金矿等于直接报废。
+func _exit_tree() -> void:
+	_release_gather_slot()
 
 
 ## 新指令打断当前挥砍：**必须同步清 `_swinging` / `_windup_t` / 攻击状态**。
@@ -1042,6 +1081,7 @@ func order_attack(t: Node3D) -> void:
 	if tf != null and (faction == null or not faction.is_enemy_of(tf)):
 		order_move(t.global_position)
 		return
+	_abandon_gather()
 	order = RtsConst.Order.ATTACK
 	target = t
 	_retreat = false
@@ -1057,6 +1097,7 @@ func order_attack_move(pos: Vector3) -> void:
 		return
 	if _dying:
 		return
+	_abandon_gather()
 	order = RtsConst.Order.ATTACK_MOVE
 	target = null
 	_flee_t = 0.0
@@ -1072,9 +1113,9 @@ func order_attack_move(pos: Vector3) -> void:
 func order_stop() -> void:
 	if _dying:
 		return
+	_abandon_gather()
 	order = RtsConst.Order.NONE
 	target = null
-	_gather_node = null
 	_build_site = null
 	_return_drop = null
 	_flee_t = 0.0
@@ -1093,6 +1134,7 @@ func order_hold() -> void:
 		return
 	if _dying:
 		return
+	_abandon_gather()
 	order = RtsConst.Order.HOLD
 	target = null
 	_swinging = false
@@ -1177,6 +1219,7 @@ func order_gather(node: Node3D) -> void:
 	_flee_t = 0.0
 	_was_gathering = true
 	_gather_spot_valid = false
+	_gather_wait_t = 0.0
 	_go_to(_gather_spot(), true)
 
 
@@ -1185,6 +1228,8 @@ func order_gather(node: Node3D) -> void:
 ## 几十个农民同时采木时，这一项比 A* 还贵。载位在进入/离开阶段时变，缓存到下次阶段切换即可。
 var _gather_spot_cache: Vector3 = Vector3.ZERO
 var _gather_spot_valid: bool = false
+## 金矿排队的重试倒计时（秒）。见 _tick_gather_wait。
+var _gather_wait_t: float = 0.0
 
 
 ## 采集站位：优先占一个载位（围着矿/树散开），没有就退回通用站位。
@@ -1214,6 +1259,52 @@ func _release_gather_slot() -> void:
 	_gather_slot = -1
 
 
+## 这个资源点是不是"必须占载位才能采"（金矿：载位 1 → 一个矿同时只进一个农民）。
+## 树是 2 个载位，抢不到也允许在树冠外采（历史口径），不排队。
+func _need_gather_slot() -> bool:
+	if _gather_node == null or not is_instance_valid(_gather_node):
+		return false
+	if not _gather_node.has_method("max_slots"):
+		return false
+	return int(_gather_node.call("max_slots")) <= 1
+
+
+## 矿外排队（金矿载位已满）：先走到矿外等待点站住，每 GATHER_WAIT_RETRY 秒再抢一次载位。
+##
+## ★ 玩家口径 2026-11-14：「每个金矿限制一名农民使用采集（只有一个农民能进去，
+##   其他农民要等待）」。这里就是"等待"的实现：
+##   · 没抢到载位 → **不开始采**（卡死兜底也绕不过这关，见 _order_gather 的调用位置）；
+##   · 抢到 → 重新走到矿口，进入起手/采集；
+##   · 前一个人采满去卸货时 `_finish_harvest` 会立刻让出载位，排队的人 0.4s 内就能补上。
+func _tick_gather_wait(dt: float) -> void:
+	if not _gather_spot_valid:
+		_gather_spot_cache = _gather_spot()
+		_gather_spot_valid = true
+	var spot: Vector3 = _gather_spot_cache
+	# 还没走到等待点 → 继续走（别让"排队"把人钉在原地）
+	if _flat_dist(spot) > ARRIVE_SLACK + 0.6 and _phase_t <= PHASE_STUCK_TIME:
+		_phase_t += dt
+		state = RtsConst.State.MOVE
+		_go_to(spot)
+		return
+	# 到了（或走不到）：站住等，按节奏再抢一次
+	state = RtsConst.State.IDLE
+	_stop_moving()
+	if _gather_node != null and is_instance_valid(_gather_node):
+		_face_pos(_gather_node.global_position, dt)
+	_gather_wait_t -= dt
+	if _gather_wait_t > 0.0:
+		return
+	_gather_wait_t = GATHER_WAIT_RETRY
+	_gather_spot_valid = false
+	_gather_spot_cache = _gather_spot()     # 顺手再 claim 一次载位
+	_gather_spot_valid = true
+	if _gather_slot >= 0:
+		# 抢到了：重新开始走位（计时清零，别让卡死兜底提前介入）
+		_enter_phase(GatherPhase.TO_NODE)
+		_go_to(_gather_spot_cache, true)
+
+
 ## 建造：**幂等** —— 同一个点上已经有人开工，就只是"加入"，不再扣钱、不再新建。
 ##
 ## 为什么必须幂等（两个实测 bug 都出在这）：
@@ -1234,6 +1325,7 @@ func order_build(building_def: UnitDef, pos: Vector3, desired_yaw: float = 0.0) 
 		return null
 	if def == null or not RtsWorld.is_worker_def(def) or faction == null:
 		return null
+	_abandon_gather()
 
 	# ⓪ 先把落点吸到建筑网格（和寻路共用同一套格）：占地、寻路标记、工地坐标
 	#    从此是同一个数，不会"看着在格子里、实际骑了半格"。
@@ -1520,7 +1612,7 @@ func _process_inner(delta: float) -> void:
 	# 施法中：只数前摇，别的都不做
 	if state == RtsConst.State.CAST:
 		_update_cast(dt)
-		_update_separation(dt)
+		_tick_slow(dt)
 		_snap_ground(dt)
 		_update_anim()
 		return
@@ -1549,8 +1641,8 @@ func _process_inner(delta: float) -> void:
 		RtsUnit.dbg_move += Time.get_ticks_usec() - _q0
 	if perf:
 		_q0 = Time.get_ticks_usec()
-	_update_separation(dt)
-	_update_wall_pushout(dt)
+	# ★ 2026-11-14：分离 + 贴墙推出改成 20Hz（见 _tick_slow / SLOW_STEP）。
+	_tick_slow(dt)
 	if perf:
 		RtsUnit.dbg_sep += Time.get_ticks_usec() - _q0
 	if perf:
@@ -1830,6 +1922,13 @@ func _order_gather(dt: float) -> void:
 		_gather_phase = GatherPhase.TO_NODE
 		_gather_slot = -1
 		_go_to(_gather_spot(), true)
+
+	# ★ 2026-11-14 玩家口径「金矿只许一个农民进去，其他人等着」：
+	#   必须挡在"卡死兜底"**之前** —— 否则在矿外站 2.8s 就会被兜底强行推进到
+	#   ENTER/HARVEST，等于排队的第二个人又钻进去了，一个矿还是两个人。
+	if _gather_phase == GatherPhase.TO_NODE and _need_gather_slot() and _gather_slot < 0:
+		_tick_gather_wait(dt)
+		return
 
 	# --- 卡死兜底：某阶段待太久且几乎没位移，就强制推进（十人挤矿时救命的保险丝）---
 	var moved_since: float = global_position.distance_to(_phase_pos)
@@ -2731,6 +2830,22 @@ func _anchor_weight() -> float:
 	return 1.0
 
 
+## 20Hz 低频逻辑（**A 段转正**，2026-11-14）：分离 + 贴墙推出。
+##
+## 为什么能降频：这两件事都是"软纠偏"——
+##   · 分离是让重叠的同伴各让一点，50ms 后再让完全看不出来；
+##   · 贴墙推出是"被建筑挤进墙里"的兜底，本来就带 0.2s 的重算节流。
+## 3000 兵实测：`u.sep` 1050~1250 ms/s 是单位逻辑里最大单项，降到 20Hz 后约 1/3。
+func _tick_slow(dt: float) -> void:
+	_slow_dt += dt
+	if _slow_dt < SLOW_STEP:
+		return
+	var sdt: float = _slow_dt
+	_slow_dt = 0.0
+	_update_separation(sdt)
+	_update_wall_pushout(sdt)
+
+
 ## 单位分离：一重叠就互相推开，别挤成一坨
 func _update_separation(dt: float) -> void:
 	if def == null:
@@ -2797,7 +2912,11 @@ func _update_separation(dt: float) -> void:
 	if push.length_squared() <= 0.000001:
 		return
 
-	global_position += push * Cfg.game.separation_strength * dt
+	# 20Hz 下一把最多纠 SEP_MAX_STEP 米：不能因为步长大就把人推进墙里/推飞
+	var disp: Vector3 = push * Cfg.game.separation_strength * dt
+	if disp.length_squared() > SEP_MAX_STEP * SEP_MAX_STEP:
+		disp = disp.normalized() * SEP_MAX_STEP
+	global_position += disp
 
 
 ## 把单位从不可走格里救出来（分离推挤 / 建筑占地变化都可能把人塞进墙里）
@@ -2814,25 +2933,32 @@ func _snap_ground(dt: float) -> void:
 		return
 	var x: float = global_position.x
 	var z: float = global_position.z
-	var h: float = RtsWorld.height_at(x, z)
+	# ★ 2026-11-14（A 段转正）：`height_at` 是**四次曲面子片插值**，一次约 6µs，
+	#   老实现每帧 5 次（中心 + 前后左右）→ 3000 兵 `u.ground` 吃掉 280 ms/s。
+	#   现在：
+	#     · **目标高度 20Hz 重采样**（走着）/ 0.5s（站着），y 仍每帧朝缓存目标插值，
+	#       所以画面上的上下坡还是连续的，不会变成 20Hz 台阶；
+	#     · 前后左右四点只在 20Hz 的采样拍上算（还只在真的在走时算）。
+	var moving: bool = _moving or _speed >= 0.02
+	_ground_t -= dt
+	if _ground_t <= 0.0 or not _ground_ready:
+		_ground_t = SLOW_STEP if moving else GROUND_IDLE_STEP
+		_ground_ready = true
+		_ground_y = RtsWorld.height_at(x, z)
+		if moving:
+			_sample_tilt(SLOW_STEP)
 	# 1) 高度追随（限速，避免地形台阶造成"弹跳"）
-	var y: float = move_toward(global_position.y, h, GROUND_FOLLOW_SPEED * maxf(dt, 0.0001))
-	global_position.y = y
+	global_position.y = move_toward(global_position.y, _ground_y,
+			GROUND_FOLLOW_SPEED * maxf(dt, 0.0001))
+	# 2) 姿态：站着就用上一次冻结的坡面（人没动、朝向没变，结果就是同一组数）
+	rotation = Vector3(_tilt.x, _yaw, _tilt.y)
 
-	# ★ 站着不动时**跳过坡面采样**（2026-11-01 性能优化）。
-	#
-	# 坡面这一趟要 4 次 `RtsWorld.height_at()`，而 RTS 里绝大多数单位大半时间都在
-	# 站着（采集/待命/守家）。人没动、朝向也没变，坡面解析结果就是同一组数 ——
-	# 重算纯属白烧。实测 `_snap_ground` 原本吃 137ms/秒（`u.ground`），
-	# 其中 4/5 是这四次采样。
-	#
-	# 判据：既没在走（`_moving`）也没有残留速度（`_speed`）。停下来那一刻
-	# `_tilt` 已经收敛到坡面角度，冻结它正好等于"停在坡上就保持那个倾角"。
-	if not _moving and _speed < 0.02:
-		rotation = Vector3(_tilt.x, _yaw, _tilt.y)
-		return
 
-	# 2) 四点采样算坡面（采样臂长 0.7m，约一个身位）
+## 四点采样算坡面（采样臂长 0.7m，约一个身位）+ 坡度对速度的影响。
+## 只在"真的在走"的 20Hz 采样拍上调用（见 _snap_ground）。
+func _sample_tilt(dt: float) -> void:
+	var x: float = global_position.x
+	var z: float = global_position.z
 	var arm: float = 0.7
 	var fx: float = -sin(_yaw)
 	var fz: float = -cos(_yaw)
@@ -3057,7 +3183,11 @@ func _acquire(dt: float, radius_scale: float = 1.0) -> void:
 	_think_t -= dt
 	if _think_t > 0.0:
 		return
-	_think_t = THINK_SLICE
+	# ★ 2026-11-14：**闲着没事**的单位 1s 才扫一次敌人（原来 0.3s）。
+	#   待命兵 3000 个时，这一项实测吃掉 `o.acq` 560 ms/s，是仅次于分离的开销；
+	#   而待命兵的反应速度本来就由 take_damage 兜底（被打立刻还手），1s 完全够。
+	#   有指令/有目标的单位保持 0.3s（追击、绕打都靠它）。
+	_think_t = THINK_SLICE if (order != RtsConst.Order.NONE or target != null) else THINK_SLICE_IDLE
 	var pursue: bool = _may_pursue()
 	# ★ 2026-11-08 玩家口径「索敌范围和视野一致」：
 	#   以前追击用 acquire_range、待机用 _guard_radius（近战只有 3.3m），
@@ -3380,7 +3510,12 @@ func _find_harvestable(kind: int) -> Node3D:
 				best_back = dd
 		if best_back < INF:
 			back = best_back
-		var score: float = d + back + float(claimed.get(h, 0)) * CROWD_PENALTY
+		# 拥挤成本按**载位**算（金矿载位 1：第二个人起就该被推去下一座矿），
+		# 资源点没实现 crowd_cost 时才退回老的"每人 7 米"口径。
+		var crowd: float = float(claimed.get(h, 0)) * CROWD_PENALTY
+		if h.has_method("crowd_cost"):
+			crowd = float(h.call("crowd_cost", int(claimed.get(h, 0))))
+		var score: float = d + back + crowd
 		if score < best_score:
 			best_score = score
 			best = h

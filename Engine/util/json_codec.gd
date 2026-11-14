@@ -80,6 +80,13 @@ static func encode_resource(res: Resource) -> Dictionary:
 		var name := String(p.name)
 		if name.begins_with("resource_") or name == "script":
 			continue
+		# ★ 2026-11-14：跳过 Object 的 metadata 段（`set_meta` 的字段会以
+		#   `metadata/xxx` 出现在属性表里，且带 PROPERTY_USAGE_STORAGE）。
+		#   以前 CardStore 用 `set_meta("source_path")` 记源文件，保存时就把
+		#   `metadata/source_path` 写进了 JSON，读回来又当成"未知字段"报错。
+		#   metadata 是运行时标记，不是卡的内容，永远不进 JSON。
+		if name.begins_with("metadata/"):
+			continue
 		props[name] = encode(res.get(name))
 	return out
 
@@ -105,6 +112,11 @@ static func apply(obj: Object, props: Dictionary) -> Array[String]:
 		infos[String(p.name)] = p
 	for key in props.keys():
 		if not infos.has(key):
+			# `metadata/*` 是旧版保存留下的编辑器标记（见 encode_resource 的注释）：
+			# 老文件里可能还带着，读的时候直接忽略，不当成"未知字段"报错 ——
+			# 否则每打开一次卡就刷一条 ERROR，真正的字段拼写错误反而被埋掉。
+			if String(key).begins_with("metadata/"):
+				continue
 			errs.append("未知字段：%s" % key)
 			continue
 		var info: Dictionary = infos[key]

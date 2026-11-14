@@ -124,9 +124,9 @@ func attach(b: Node3D, team_color: Color = Color.WHITE) -> void:
 		_build_scaffold()
 		_collect_clip()
 	set_progress(0.0)
-	# 工地落地的第一声（石料/木架/碎石）。完工音不在这里 —— 由 building_completed
-	# 信号统一交给 Sfx._on_built()，否则同一次完工会被播两遍。
-	Sfx.play_at("建造_放置", building.global_position, 0.0)
+	# UI 提示音（2026-11-14 起全局只剩这一声"叮"）：工地落地 = 玩家刚确认了一次操作。
+	# 完工不在这里 —— 由 building_completed 信号统一交给 Sfx._on_built()，避免同一件事响两遍。
+	Sfx.ui()
 
 
 ## 资产建造模型：找到 → 挂上并按进度驱动；缺档 / 缺 `build` 动画 → 返回 false（回落旧路径）
@@ -622,7 +622,6 @@ func strike(at: Vector3 = Vector3.ZERO) -> bool:
 
 	BuildFx.dust(hit, 5, 0.35, Color(0.66, 0.60, 0.48))
 	BuildFx.chips(hit, Color(0.60, 0.44, 0.26), 6)
-	Sfx.play_at("建造_锤击", hit, -5.0)
 	return true
 
 

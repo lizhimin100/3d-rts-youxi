@@ -59,6 +59,8 @@ static func _reload() -> void:
 	_all.clear()
 	_by_den.clear()
 	_by_id.clear()
+	# 锚点 → 该锚点的全部候选（选默认要看 `default_for_anchor`，见下面的注释）
+	var by_anchor: Dictionary = {}
 	for entry in CardStore.list(CardStore.DIR_CAMPS):
 		var f: String = entry["file"]
 		var res: Resource = entry["card"]
@@ -69,11 +71,30 @@ static func _reload() -> void:
 		if den.is_empty():
 			push_warning("[野怪营地表] %s 没有 den_building，已跳过" % f)
 			continue
-		# 同一个锚点只能有一份配置：否则"摆一座巢穴刷两套怪"，玩家根本对不出原因。
-		# 先到先得（文件名排序），后来的打警告但不覆盖。
 		_all.append(res)
 		_by_id[String(res.get("id"))] = res
-		if _by_den.has(den):
-			push_warning("[野怪营地表] 锚点「%s」重复默认配置（%s 只作为 camp_id 可选）" % [den, f])
-			continue
-		_by_den[den] = res
+		if not by_anchor.has(den):
+			by_anchor[den] = []
+		(by_anchor[den] as Array).append(res)
+	# 同类锚点允许多份配置（逐实例 camp_id 指定）。**默认那份**必须显式标
+	# `default_for_anchor = true`，不再按文件名排序猜 —— 否则 `camp_creep_den_1.json`
+	# 会排在 `camp_den.json` 前面抢走 creep_den，还每次启动刷一条"锚点重复"警告。
+	for den in by_anchor:
+		var list: Array = by_anchor[den]
+		var pick: Resource = null
+		var flagged: int = 0
+		for r in list:
+			if bool(r.get("default_for_anchor")):
+				flagged += 1
+				if pick == null:
+					pick = r
+		if pick == null:
+			# 一份都没标：退回"文件名排序第一"，并且只在真的有多份时提醒一次
+			pick = list[0]
+			if list.size() > 1:
+				push_warning("[CampTable] anchor %s: %d files, none marked default -> %s"
+						% [den, list.size(), String(pick.get("id"))])
+		elif flagged > 1:
+			push_warning("[CampTable] anchor %s: %d defaults -> %s"
+					% [den, flagged, String(pick.get("id"))])
+		_by_den[den] = pick

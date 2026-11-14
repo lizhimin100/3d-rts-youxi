@@ -66,10 +66,28 @@ static func load_card(path: String) -> Resource:
 		return null
 	var card := JsonCodec.restore(script_path, data)
 	if card != null:
-		# 让编辑器/旧代码里的 resource_path 继续可用（指向 .json 源文件）
-		card.take_over_path(path)
+		# ★ 2026-11-14：**不能再 `take_over_path(json 路径)`**。
+		#   以前为了让 `resource_path` 指向 .json 源文件做了这一手，后果是编辑器把
+		#   一个 Resource 登记在 `.json` 路径上，随后文件系统/依赖扫描用
+		#   `ResourceLoader.get_dependencies(path, "Resource")` 去问这个路径有哪些依赖 ——
+		#   `.json` 的加载器不认 "Resource" 类型，于是每次启动刷一串
+		#   `No loader found for resource: …camp_den.json (expected type: Resource)`。
+		#   现在改为只记 meta（见 path_of），卡对象的 resource_path 保持为空。
 		card.set_meta("source_path", path)
 	return card
+
+
+## 卡对应的源文件路径（编辑器保存/删除用）。
+##
+## 卡的 `resource_path` 现在是空的（不再 take_over_path 到 .json，见 load_card 的注释），
+## 真实路径一律读 meta `source_path`；老对象若还有 resource_path 也认（兼容）。
+static func path_of(card: Resource) -> String:
+	if card == null:
+		return ""
+	var p: String = String(card.get_meta("source_path", ""))
+	if not p.is_empty():
+		return p
+	return String(card.resource_path)
 
 
 static func save_card(card: Resource, path: String) -> Error:

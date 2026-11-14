@@ -90,6 +90,13 @@ var _fog_check: CheckButton = null
 var _fog_node: Node = null
 ## 战斗计时（资源条末段）
 var _time_label: Label = null
+## **右上角帧率表**（玩家口径 2026-11-14「要显示 fps」）。
+## 常驻显示，0.12s 刷新一次并用滑动平均 —— 逐帧数字会跳得没法读。
+var _fps_panel: PanelContainer = null
+var _fps_label: Label = null
+var _fps_smooth: float = 0.0
+var _fps_ready: bool = false
+var _fps_col: Color = Color(0, 0, 0, 0)
 
 ## 选中信息
 var _sel_panel: PanelContainer = null
@@ -225,6 +232,7 @@ func _ready() -> void:
 	_build_band_plate()
 	_build_tip_layer()
 	_build_stats()
+	_build_fps()
 	_build_toasts()
 	_build_minimap()
 	_build_selection_panel()
@@ -531,6 +539,9 @@ func _apply_layout() -> void:
 		_place(_stats_panel, 0.5, 0.0, 0.5, 0.0,
 				-_mets.stats_w * 0.5, m, _mets.stats_w * 0.5, m + _mets.stats_h)
 	# 小地图：左上（圆盘 + 下方图例条）
+	# 帧率表：右上角（资源条居中、提示在顶部中，右上一直空着）
+	if _fps_panel != null:
+		_place(_fps_panel, 1.0, 0.0, 1.0, 0.0, -m - 88.0, m, -m, m + 26.0)
 	# 据点提示：资源条正下方居中（**顶部播报的第一行**，宽高见 CRATE_BANNER_*）
 	if _crate_banner != null and _crate_banner.visible:
 		var cbw: float = CRATE_BANNER_W * 0.5
@@ -872,6 +883,32 @@ func _build_stats() -> void:
 	_food_label = _stat_pill(hb, "人口", Spec.food(), true, "pop")
 	# 战斗计时：常驻在资源条末尾，一眼知道打了多久
 	_time_label = _stat_pill(hb, "时间", Color(0.80, 0.86, 0.96), false, "clock")
+
+
+## 右上角帧率表（常驻）。
+##
+## 为什么要常驻而不是"调试开关才显示"：玩家反馈「7~8 分钟后单位变多就卡」，
+## 而卡不卡是**感觉**，得有一个能读的数才能对上"掉到多少帧"。默认一直显示，
+## 想拍干净画面用 F9 收 HUD（`--ui-hidden` 同样有效）。
+func _build_fps() -> void:
+	_fps_panel = PanelContainer.new()
+	_fps_panel.name = "fps"
+	_fps_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sb := Spec.panel_style(5, 0.80, 0.26, 8.0)
+	sb.content_margin_left = 8.0
+	sb.content_margin_right = 8.0
+	sb.content_margin_top = 2.0
+	sb.content_margin_bottom = 2.0
+	_fps_panel.add_theme_stylebox_override("panel", sb)
+	root.add_child(_fps_panel)
+	var hb := HBoxContainer.new()
+	hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hb.add_theme_constant_override("separation", 5)
+	_fps_panel.add_child(hb)
+	hb.add_child(Spec.label("FPS", Spec.FS_CAPTION, Spec.text_dim()))
+	_fps_label = Spec.label("--", Spec.FS_BODY, Spec.text_main(), HORIZONTAL_ALIGNMENT_RIGHT)
+	_fps_label.custom_minimum_size = Vector2(26.0, 0.0)
+	hb.add_child(_fps_label)
 
 
 ## 资源条上一枚胶囊的说明（金币 / 木材 / 人口 / 时间）
@@ -2004,6 +2041,7 @@ func _exit_tree() -> void:
 ##   NOTIFICATION_THEME_CHANGED，让整个控件重新解析主题并重绘。
 ##   这里每 0.12s 被调一次，不加守卫就是 8Hz 的闪烁（尤其是人口满/不满切换那一下）。
 func _refresh_stats() -> void:
+	_sync_fps()
 	var pl := Game.player_faction
 	if pl == null:
 		_set_label(_gold_label, "-")
@@ -2049,6 +2087,31 @@ func _refresh_stats() -> void:
 	if _pop_bar != null:
 		_pop_bar.set_ratio(float(used) / maxf(float(cap), 1.0), full)
 	_sync_crate_banner()
+
+
+## 帧率表刷新：滑动平均 + 掉帧变色（<30 红 / <50 黄 / 其余正常色）。
+##
+## 用 `Engine.get_frames_per_second()`（渲染帧率），和玩家实际手感一致；
+## 数字只在整数值变化时才写 Label（见 _set_label），颜色只在跨档时改一次。
+func _sync_fps() -> void:
+	if _fps_label == null:
+		return
+	var fps: float = float(Engine.get_frames_per_second())
+	if not _fps_ready:
+		_fps_ready = true
+		_fps_smooth = fps
+	else:
+		_fps_smooth = lerpf(_fps_smooth, fps, 0.35)
+	var shown: int = int(round(_fps_smooth))
+	_set_label(_fps_label, "%d" % shown)
+	var col: Color = Spec.text_main()
+	if shown < 30:
+		col = Color(0.98, 0.52, 0.42)
+	elif shown < 50:
+		col = Color(0.98, 0.82, 0.40)
+	if col != _fps_col:
+		_fps_col = col
+		_fps_label.add_theme_color_override("font_color", col)
 
 
 ## 据点资源箱的顶部倒计时（刷新前 30 秒出现）。

@@ -445,7 +445,18 @@ func _manage_idle_dispatch() -> void:
 	# --- 农民：闲着就去采 ---
 	if not workers.is_empty():
 		var drop: Vector3 = _wood_dropoff()
-		var kind: int = RtsConst.Harvest.WOOD if Game.is_night() else RtsConst.Harvest.GOLD
+		# ★ 2026-11-14：金矿每座只进 1 个农民（可采集物.max_slots），
+		#   采金的人已经占满所有载位时，再派人过去只能在矿外排队 —— 改去砍树。
+		var gold_cap: int = _gold_mine_capacity()
+		var on_gold: int = 0
+		for u in _faction.units:
+			if u == null or not is_instance_valid(u) or not u.is_alive():
+				continue
+			if int(u.call("gather_kind")) == RtsConst.Harvest.GOLD \
+					and int(u.order) == RtsConst.Order.GATHER:
+				on_gold += 1
+		var kind: int = RtsConst.Harvest.WOOD if (Game.is_night() or on_gold >= gold_cap) \
+				else RtsConst.Harvest.GOLD
 		var pool: Node3D = null
 		for w in workers:
 			pool = null

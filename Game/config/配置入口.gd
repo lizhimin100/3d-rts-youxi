@@ -51,8 +51,15 @@ func _apply_resource_amounts(cfg: GameConfig) -> void:
 	var mine := cfg.units.get(&"goldmine", null) as UnitDef
 	if mine != null:
 		mine.resource_amount = maxi(cfg.gold_mine_amount, 1)
-	# ★ 树**不能**用 `tree_amount` 覆盖：树的 resource_amount 是"还能采几次"（20），
-	#   而配置里那个 tree_amount=260 是给别的口径留下的死字段。写进去会让一棵树砍 260 趟。
+	# ★ 2026-11-14：树也在这里写"能采几次"（35），一处改全部生效。
+	#   以前树没人写 resource_amount → 落到 `maxi(…, 1)` 就变成一棵树只能砍 1 趟。
+	#   四季树（tree_春/夏/秋/冬）是同一类资源，一起覆盖。
+	for id in cfg.units.keys():
+		var d := cfg.units[id] as UnitDef
+		if d == null:
+			continue
+		if d.kind == RtsConst.Kind.HARVESTABLE and d.harvest_kind == RtsConst.Harvest.WOOD:
+			d.resource_amount = maxi(cfg.tree_charges, 1)
 
 
 ## 取单位定义

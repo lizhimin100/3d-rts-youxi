@@ -18,6 +18,6 @@
 		"owner_slot": -2,
 		"first_spawn_min": 2,
 		"spawn_interval_min": 2,
-		"metadata/source_path": "res://Content/data/cards/camps/camp_gate.json"
+		"default_for_anchor": true
 	}
 }

@@ -1,5 +1,6 @@
 extends RefCounted
 ## 职责：程序化音效合成库（纯函数：给 key 返回样本；不碰节点、不读文件、不进场景树）
+## 现状（2026-11-14）：只有一条 `ui_ding`（UI 更新时的"叮"），其余音效已全部删除。
 ## 属于：Engine/audio
 ## 对外：
 ##   keys() / has(key) / spec(key) / duration(key)
@@ -16,96 +17,31 @@ const DEFAULT_PEAK := 0.8
 const FADE_IN := 0.003
 const FADE_OUT := 0.012
 
-## 12 个预设。基础层字段直接写在顶层；需要多音（和弦/连击/低频垫底）时用 layers 叠加。
+## **唯一预设：UI 提示音"叮"**（2026-11-14）。
+##
+## 玩家口径：「删除所有合成音效，只在 UI 更新时出现提示音效叮（该音效在删除所有
+## 音效后再重新合成）」。所以这个库里现在只有一条 key；以前的 12 条
+## （点选/命中/死亡/建造/升级/金币…）连同 51 个 wav 一起删了。
+##
+## 音色设计（为什么是这三个音）：
+##   · 根音 E6(1318.5) + 上方五度 B6(1975.5) → 明亮但不刺耳，是"叮"不是"当"；
+##   · 底下垫一个低八度 E5(659.25) 只给 0.22 振幅 → 有厚度，小喇叭也听得见；
+##   · 起音 2ms（干脆）、指数衰减 120ms（余韵 0.4s）→ 短、干净、不拖泥带水；
+##   · 峰值 0.72 + 首尾淡入淡出 → 连续点选叠起来也不会削波。
+##
 ## 字段：duration 总时长(s)；wave 波形；f0→f1 频率滑动；attack 起音(s)；
 ##       decay 指数衰减时间常数(s)；noise 噪声混合 0~1；harmonics 泛音 0~1.5；
 ##       peak 归一化目标峰值；seed 随机种子（噪声可复现）。
 const PRESETS := {
-	"ui_click": {
-		"duration": 0.07, "wave": "sine", "f0": 1700.0, "f1": 820.0,
-		"attack": 0.001, "decay": 0.020, "noise": 0.06, "harmonics": 0.20,
-		"peak": 0.65, "seed": 1101,
-	},
-	"ui_open": {
-		"duration": 0.22, "wave": "sine", "f0": 380.0, "f1": 880.0,
-		"attack": 0.006, "decay": 0.110, "noise": 0.02, "harmonics": 0.35,
-		"peak": 0.75, "seed": 1102,
-	},
-	"ui_error": {
-		"duration": 0.30, "wave": "square", "f0": 190.0, "f1": 150.0,
-		"attack": 0.002, "decay": 0.090, "noise": 0.05, "harmonics": 0.00,
-		"peak": 0.70, "seed": 1103,
+	"ui_ding": {
+		"duration": 0.46, "wave": "sine", "f0": 1318.51, "f1": 1300.0,
+		"attack": 0.002, "decay": 0.120, "noise": 0.01, "harmonics": 0.55,
+		"peak": 0.72, "seed": 4242,
 		"layers": [
-			{"start": 0.15, "length": 0.13, "wave": "square", "f0": 165.0, "f1": 130.0,
-				"attack": 0.002, "decay": 0.060, "amp": 0.80, "noise": 0.04},
-		],
-	},
-	"notify": {
-		"duration": 0.40, "wave": "sine", "f0": 880.0, "f1": 872.0,
-		"attack": 0.003, "decay": 0.220, "noise": 0.01, "harmonics": 0.40,
-		"peak": 0.80, "seed": 1104,
-		"layers": [
-			{"start": 0.09, "length": 0.30, "f0": 1318.5, "f1": 1300.0, "amp": 0.55, "decay": 0.160},
-		],
-	},
-	"build_start": {
-		"duration": 0.42, "wave": "saw", "f0": 140.0, "f1": 320.0,
-		"attack": 0.010, "decay": 0.350, "noise": 0.18, "harmonics": 0.30,
-		"peak": 0.80, "seed": 1105,
-	},
-	"build_done": {
-		"duration": 0.60, "wave": "sine", "f0": 523.25, "f1": 526.0,
-		"attack": 0.004, "decay": 0.180, "noise": 0.02, "harmonics": 0.50,
-		"peak": 0.80, "seed": 1106,
-		"layers": [
-			{"start": 0.10, "length": 0.22, "f0": 659.25, "f1": 663.0, "amp": 0.80},
-			{"start": 0.20, "length": 0.40, "f0": 783.99, "f1": 790.0, "amp": 0.90, "decay": 0.250},
-			{"start": 0.00, "length": 0.18, "f0": 130.80, "f1": 98.00, "amp": 0.50, "decay": 0.120},
-		],
-	},
-	"hit_flesh": {
-		"duration": 0.18, "wave": "sine", "f0": 130.0, "f1": 55.0,
-		"attack": 0.001, "decay": 0.055, "noise": 0.55, "harmonics": 0.00,
-		"peak": 0.80, "seed": 1107,
-	},
-	"hit_metal": {
-		"duration": 0.26, "wave": "square", "f0": 1450.0, "f1": 1180.0,
-		"attack": 0.001, "decay": 0.075, "noise": 0.22, "harmonics": 0.60,
-		"peak": 0.75, "seed": 1108,
-	},
-	"arrow_shot": {
-		"duration": 0.16, "wave": "saw", "f0": 1100.0, "f1": 260.0,
-		"attack": 0.002, "decay": 0.045, "noise": 0.45, "harmonics": 0.15,
-		"peak": 0.70, "seed": 1109,
-	},
-	"death": {
-		"duration": 0.75, "wave": "saw", "f0": 190.0, "f1": 45.0,
-		"attack": 0.005, "decay": 0.500, "noise": 0.20, "harmonics": 0.25,
-		"peak": 0.80, "seed": 1110,
-		"layers": [
-			{"start": 0.00, "length": 0.70, "wave": "sine", "f0": 70.0, "f1": 38.0,
-				"amp": 0.60, "decay": 0.400},
-		],
-	},
-	"level_up": {
-		"duration": 0.78, "wave": "sine", "f0": 523.25, "f1": 530.0,
-		"attack": 0.004, "decay": 0.200, "noise": 0.01, "harmonics": 0.45,
-		"peak": 0.80, "seed": 1111,
-		"layers": [
-			{"start": 0.08, "length": 0.25, "f0": 659.25, "f1": 666.0, "amp": 0.75},
-			{"start": 0.16, "length": 0.30, "f0": 783.99, "f1": 792.0, "amp": 0.80},
-			{"start": 0.24, "length": 0.52, "f0": 1046.50, "f1": 1058.0, "amp": 0.90, "decay": 0.350},
-			{"start": 0.30, "length": 0.45, "wave": "sine", "f0": 2093.0, "f1": 2637.0,
-				"amp": 0.25, "decay": 0.250, "noise": 0.05},
-		],
-	},
-	"coin": {
-		"duration": 0.34, "wave": "sine", "f0": 987.77, "f1": 1000.0,
-		"attack": 0.002, "decay": 0.090, "noise": 0.02, "harmonics": 0.30,
-		"peak": 0.75, "seed": 1112,
-		"layers": [
-			{"start": 0.07, "length": 0.26, "f0": 1318.51, "f1": 1330.0,
-				"amp": 0.90, "decay": 0.160},
+			{"start": 0.055, "length": 0.36, "f0": 1975.53, "f1": 1960.0,
+				"amp": 0.42, "decay": 0.120},
+			{"start": 0.0, "length": 0.46, "f0": 659.25, "f1": 659.25,
+				"amp": 0.22, "decay": 0.180},
 		],
 	},
 }

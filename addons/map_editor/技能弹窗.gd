@@ -179,7 +179,7 @@ func _scan() -> void:
 func _sync_list() -> void:
 	if _list == null:
 		return
-	var keep: String = String(_card.resource_path) if _card != null else ""
+	var keep: String = CARD_STORE.path_of(_card) if _card != null else ""
 	_syncing = true
 	_list.clear()
 	var sel: int = -1
@@ -555,7 +555,7 @@ func _save() -> void:
 		_status.add_theme_color_override("font_color", Color(1.0, 0.42, 0.36))
 		return
 
-	var path: String = String(_card.resource_path)
+	var path: String = CARD_STORE.path_of(_card)
 	if path == "":
 		path = DIR + String(_card.get("id")) + ".json"
 	var e: int = CARD_STORE.save_card(_card, path)
