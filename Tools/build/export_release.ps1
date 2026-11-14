@@ -26,6 +26,14 @@ Assert-UnderDist $Stage | Out-Null
 if (Test-Path $Stage) { Remove-Item -Recurse -Force $Stage }
 New-Item -ItemType Directory -Force -Path $Stage | Out-Null
 
+# 让编辑器别去扫发布副本：dist/ 下有两份完整源码（各自带 project.godot 和全局类名），
+# 扫进去会重复登记脚本/插件，启动时刷 "Detected another project.godot at res://dist/demo"。
+# 只要 dist/ 根上有一个 .gdignore，整棵子树对 res:// 扫描就是透明的（不影响 dist 自己单独当项目跑）。
+$gdignore = Join-Path $Dist ".gdignore"
+if (-not (Test-Path $gdignore)) {
+    Set-Content -Path $gdignore -Value "editor: skip dist/" -Encoding utf8 -NoNewline
+}
+
 Write-Host "[release] 复制源码 → dist/release（排除 .git/.godot/_qa/.test_profile/dist）..."
 $excludeDirs = @(
     (Join-Path $Root ".git"), (Join-Path $Root ".godot"), (Join-Path $Root "_qa"),
