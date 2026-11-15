@@ -27,6 +27,8 @@
 | 跑验收 | `../AGENTS.md`「验证命令」 | `索引/测试索引.md` |
 | 编辑器/地图 | `地图编辑器UI.md` | `编辑器资产同步.md` |
 | 加资产/模型 | `美术规范.md` | `data-pipeline.md` §5（资源 key） |
+| 改短局 CP/人口/小队/建造 | **`短局-运营规则.md`** | `Content/data/cards/*.json`、`Model/core/可用性.gd` |
+| 改短局固定布局/血量继承 | **`短局-布局卡.md`** | `Content/data/layouts/*.json`、`Game/core/layout_runtime.gd` |
 
 ---
 
@@ -35,7 +37,7 @@
 | 状态 | 含义 | 文档 |
 |---|---|---|
 | **铁律** | 与玩家约定/契约，违反就是 bug | `界面说明.md`、`作战条令.md`、`动画规范.md`、`战斗射程口径.md`、`../AGENTS.md` |
-| **现行** | 与当前代码一致 | `concept.md`、`architecture.md`、`data-pipeline.md`、`debug-bridge.md`、`开发交接.md`、`技能系统.md`、`编辑器资产同步.md`、`地图编辑器UI.md`、`UI风格.md`、`美术规范.md`、`野怪营地.md`、`寻路评估_星际2对照.md`、`人群层.md`、各模块 `Game/*/README.md` |
+| **现行** | 与当前代码一致 | `concept.md`、`architecture.md`、`data-pipeline.md`、`debug-bridge.md`、`开发交接.md`、`技能系统.md`、`编辑器资产同步.md`、`地图编辑器UI.md`、`UI风格.md`、`美术规范.md`、`野怪营地.md`、`寻路评估_星际2对照.md`、`人群层.md`、`短局-运营规则.md`、`短局-布局卡.md`、各模块 `Game/*/README.md` |
 | **现行·待修** | 有用，但口径有已知缺陷 | `性能基线.md`（headless、单一规模） |
 | **设计** | 讲"为什么这么设计" | `反馈驱动战略_设计.md`、`程序化树木评估.md` |
 | **历史快照** | 某一天实测，数字会过期 | `AI经济与等级排查报告.md`、`AI目标层观测.md`、`文件梳理与Agent协作方案.md`（其"目录冻结"已被 2026-11-14 重排取代） |

@@ -121,10 +121,43 @@ func _run() -> void:
 	var queued2: bool = bool(barracks.call("queue_train", &"footman"))
 	_ok(queued2, "能再次排队训练（人口口径）")
 	if queued2:
-		_ok(pf.food_committed() == used0 + Cfg.unit(&"footman").food_cost,
+		# 2026-11-15：一次下单 = 一支小队，占的人口是卡上的 pop_cost（不是人头）。
+		_ok(pf.food_committed() == used0 + Cfg.unit(&"footman").pop_cost,
 				"下单立刻计入已用人口（%d → %d）" % [used0, pf.food_committed()])
 		barracks.call("cancel_train_at", 0)
 		_ok(pf.food_committed() == used0, "取消训练后已用人口回落（%d）" % pf.food_committed())
+
+	# --- 小队生产：一次训练 = 一小队（人数/人口来自卡，2026-11-15） ---
+	var fd: UnitDef = Cfg.unit(&"footman")
+	_ok(fd != null and int(fd.squad_size) == 5 and int(fd.pop_cost) == 8,
+			"步兵卡：5 人一队 / 占 8 人口")
+	_ok(Cfg.unit(&"peasant").squad_size == 4 and Cfg.unit(&"archer").squad_size == 4,
+			"农民/弩兵卡：4 人一队")
+	if fd != null and barracks != null:
+		var before_units: int = pf.count_units(&"footman")
+		var before_pop: int = pf.food_used()
+		barracks.set("train_queue", [&"footman"])
+		barracks.set("train_progress", 1.0)
+		barracks.call("_tick_train", 0.0)
+		await get_tree().create_timer(0.1).timeout
+		var after_units: int = pf.count_units(&"footman")
+		_ok(after_units == before_units + int(fd.squad_size),
+				"训练一次真的出 %d 人（%d → %d）" % [int(fd.squad_size), before_units, after_units])
+		var grown: int = pf.food_used() - before_pop
+		_ok(grown == int(fd.pop_cost), "小队人口按队算（+%d，不是按人头）" % grown)
+		var squad_ok: bool = false
+		for sq in Game.squads.call("all"):
+			if sq != null and int(sq.call("alive_count")) >= int(fd.squad_size):
+				squad_ok = true
+		_ok(squad_ok, "新出的兵编成一支小队")
+	_ok(absf(float(rc.call("execution_total")) - 180.0) < 0.1,
+			"执行阶段时长 = 3 分钟（%.0f 秒）" % float(rc.call("execution_total")))
+	# 人口超限时，0 人口的建筑（农场/大本营）仍然能下 —— 否则会被永久卡死
+	var keep_commits: Array = pf.squad_commits.duplicate()
+	pf.squad_commits.append({"pop": 9999, "members": [pf.units[0]], "squad_id": 0})
+	_ok(bool(pf.has_food(0)), "人口超限：0 人口建筑仍可下单")
+	_ok(not bool(pf.has_food(1)), "人口超限：1 人口单位被拦下")
+	pf.squad_commits = keep_commits
 
 	# --- 规划阶段界面：只在规划阶段出现 ---
 	var hud: Node = get_parent().get_node_or_null("界面")
@@ -139,6 +172,42 @@ func _run() -> void:
 		_ok(adj == null or not (adj as CanvasItem).visible, "规划阶段副官开关已隐藏")
 		var hit: Variant = hud.get("_planning_hit")
 		_ok(hit is Array and (hit as Array).size() >= 4, "规划界面登记了鼠标命中区域")
+		# --- 兵牌可点击（2026-11-15 玩家报"点兵牌/建筑牌没反应"） ---
+		var pmap: Variant = hud.get("_planning_map")
+		_ok(pmap != null and int(pmap.call("token_count")) > 0, "规划地图层登记了可点击兵牌")
+		if pmap != null:
+			var brect: Rect2 = pmap.call("token_rect", "building", true)
+			_ok(brect.size.x > 1.0, "有可点击的己方建筑牌")
+			if brect.size.x > 1.0:
+				var picked: bool = bool(hud.call("select_planning_token", brect.get_center()))
+				_ok(picked, "点建筑牌能选中建筑")
+				await get_tree().create_timer(0.2).timeout
+				var ph3: Variant = hud.get("_planning_hud")
+				var mode_b: int = int(ph3.get("_act_mode")) if ph3 != null else -1
+				_ok(mode_b == 2, "选中建筑后底部出现训练面板（mode=%d）" % mode_b)
+			var urect: Rect2 = pmap.call("token_rect", "unit", true)
+			_ok(urect.size.x > 1.0, "有可点击的己方兵牌")
+			if urect.size.x > 1.0:
+				var picked2: bool = bool(hud.call("select_planning_token", urect.get_center()))
+				_ok(picked2, "点兵牌能选中部队")
+				await get_tree().create_timer(0.2).timeout
+				var ph4: Variant = hud.get("_planning_hud")
+				var mode_u: int = int(ph4.get("_act_mode")) if ph4 != null else -1
+				var all_worker: bool = true
+				for u in sel.call("selected_units"):
+					var ud: UnitDef = (u as Node).get("def")
+					if ud == null or not RtsWorld.is_worker_def(ud):
+						all_worker = false
+				_ok(mode_u == (3 if all_worker else 1),
+						"点兵牌后面板与兵种匹配（mode=%d）" % mode_u)
+			var wrect: Rect2 = pmap.call("token_rect_of_id", "peasant", true)
+			_ok(wrect.size.x > 1.0, "有可点击的农民兵牌")
+			if wrect.size.x > 1.0:
+				hud.call("select_planning_token", wrect.get_center())
+				await get_tree().create_timer(0.2).timeout
+				var ph5: Variant = hud.get("_planning_hud")
+				var mode_w: int = int(ph5.get("_act_mode")) if ph5 != null else -1
+				_ok(mode_w == 3, "点农民兵牌出现建造面板（mode=%d）" % mode_w)
 
 	# 找两个玩家步兵
 	var foots: Array = []
@@ -266,10 +335,29 @@ func _run() -> void:
 		var stats2: Variant = hud.get("_stats_panel")
 		_ok(stats2 != null and (stats2 as CanvasItem).visible, "执行阶段顶部资源条恢复")
 
-	# 回合结束：未完成的训练作废（不退 CP）——规划结束按钮上那句警告就是这条规则
+	# 2026-11-15：执行阶段不能改队列、不能花 CP（训练只能在规划阶段下单）
 	var cp_before: float = pf.cp
 	var q3: bool = bool(barracks.call("queue_train", &"footman"))
-	_ok(q3, "执行阶段能排队训练")
+	_ok(not q3, "执行阶段不能排队训练（队列锁定）")
+	_ok(absf(pf.cp - cp_before) < 0.01, "执行阶段点训练不扣 CP（%.1f）" % pf.cp)
+	if hud != null:
+		var cp_lb: Variant = hud.get("_cp_label")
+		var cp_hidden: bool = cp_lb == null
+		if cp_lb is Label:
+			var row := (cp_lb as Label).get_parent()
+			var pill := row.get_parent() if row != null else null
+			cp_hidden = pill is CanvasItem and not (pill as CanvasItem).visible
+		_ok(cp_hidden, "执行阶段不显示 CP")
+	# 执行阶段不能凭空建：只有规划阶段下过单的建筑才能施工
+	var w0: Node3D = null
+	for u in pf.units:
+		if u != null and is_instance_valid(u) and u.is_alive() and u.def != null \
+				and RtsWorld.is_worker_def(u.def):
+			w0 = u
+			break
+	if w0 != null:
+		var ghost: Node3D = cmd.call("place_building", &"farm", base + Vector3(24.0, 0.0, 0.0), [w0], 0.0)
+		_ok(ghost == null, "执行阶段不能建没下单的建筑")
 	rc.call("end_execution", "test")
 	_ok(Game.phase == RtsConst.Phase.PLANNING, "结束执行回到规划阶段")
 	_ok(get_tree().paused, "结束执行后世界重新暂停")
@@ -277,10 +365,8 @@ func _run() -> void:
 		_ok(not town.visible, "回规划阶段重新隐藏 3D 模型")
 	if sandbox != null:
 		_ok(bool(sandbox.call("is_built")), "回规划阶段重建沙盘")
-	if q3:
-		_ok(barracks.train_queue.is_empty(), "回合结束未完成的训练已取消")
-		_ok(absf(pf.cp - (cp_before - float(Cfg.unit(&"footman").cp_cost))) < 0.01,
-				"取消不退 CP（%.1f）" % pf.cp)
+	# CP 每回合规划阶段由基地补满（上回合剩余清零）
+	_ok(absf(pf.cp - pf.cp_cap) < 0.01, "回规划阶段 CP 由基地补满（%.1f）" % pf.cp)
 
 	# 第二次执行：回合计数递增（波次没清完时只加回合，不叠兵）
 	var began2: bool = bool(rc.call("begin_execution"))
@@ -288,6 +374,48 @@ func _run() -> void:
 	rc.call("end_execution", "test2")
 	_ok(Game.is_planning(), "第二次结束回规划阶段")
 
+	# --- 布局卡：槽位绑定 / 存档 / 损毁态 / ReviveSlot（2026-11-15） ---
+	_ok(Game.layout != null and bool(Game.layout.call("is_active")), "布局卡运行时已启用")
+	var slot_ids: Array = Game.slot_ids()
+	_ok(slot_ids.size() >= 10, "布局卡槽位已绑定（%d 个）" % slot_ids.size())
+	var state_path: String = SaveSvc.root() + "skirmish_layout.json"
+	_ok(FileAccess.file_exists(state_path), "短局结束已写布局存档")
+	var state_data: Dictionary = {}
+	if FileAccess.file_exists(state_path):
+		var jv: Variant = JSON.parse_string(FileAccess.get_file_as_string(state_path))
+		if jv is Dictionary:
+			state_data = jv
+	var saved_slots: Dictionary = state_data.get("slots", {})
+	_ok(saved_slots.size() == slot_ids.size(), "存档记录了全部槽位（%d）" % saved_slots.size())
+	var farm_slot: String = ""
+	for sid in slot_ids:
+		var st: Dictionary = Game.slot_state(String(sid))
+		if String(st.get("id", "")) == "farm":
+			farm_slot = String(sid)
+			break
+	_ok(farm_slot != "", "布局卡里有农场槽位")
+	if farm_slot != "":
+		var farm_node: Node3D = Game.slot_entity(farm_slot)
+		_ok(farm_node != null and farm_node.get_meta("slot_id", "") == farm_slot,
+				"槽位能按 id 找回实体（内存绑定）")
+		if farm_node != null:
+			var init_hp: float = float(Game.slot_state(farm_slot).get("initial_hp", 1.0))
+			farm_node.take_damage(999999.0, 0, null)
+			await get_tree().create_timer(0.3).timeout
+			var st2: Dictionary = Game.slot_state(farm_slot)
+			_ok(bool(st2.get("destroyed", false)) and Game.slot_entity(farm_slot) == null,
+					"建筑归零 → 槽位锁定为损毁态（不可用）")
+			Game.layout.call("capture_and_save")
+			var jv2: Variant = JSON.parse_string(FileAccess.get_file_as_string(state_path))
+			var ds: Dictionary = (jv2 as Dictionary).get("slots", {}) if jv2 is Dictionary else {}
+			var rec2: Dictionary = ds.get(farm_slot, {})
+			_ok(bool(rec2.get("destroyed", false)), "损毁标记写进存档（不是只存在内存）")
+			var revived: Node3D = Game.revive_slot(farm_slot)
+			_ok(revived != null, "ReviveSlot 能把损毁槽位复活")
+			if revived != null:
+				_ok(absf(float(revived.get("hp")) - init_hp) < 0.5,
+						"复活后血量 = initial_hp（%.0f）" % float(revived.get("hp")))
+				_ok(not bool(Game.slot_state(farm_slot).get("destroyed", false)), "复活后槽位恢复可用")
 	# 成员死亡，小队继续存在（不做士气）
 	foots[1].take_damage(99999.0, 0, null)
 	await get_tree().create_timer(0.15).timeout

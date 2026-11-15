@@ -16,8 +16,7 @@ extends Node
 
 ## 每回合执行时长（秒）的兜底；优先读 Cfg.game.short_execution_seconds
 const EXEC_FALLBACK := 60.0
-## 清波后停留多久再回规划（让玩家看清战场）
-const CLEAR_GRACE := 2.0
+## 2026-11-15 起执行阶段不再"清波提前收工"：打满 3 分钟或基地被拆才结束。
 ## 波次编成（下标 = 回合-1；不够就复用最后一档）
 ## 只放已存在的 id；数量别太大，先保证 3 回合能跑完。
 const WAVES: Array = [
@@ -36,7 +35,6 @@ var execution_left: float = 0.0
 var last_reason: String = ""
 ## 本回合脚本生成的单位（清波判定只认它们，不误判地图上预置的敌人）
 var _wave_units: Array = []
-var _clear_timer: float = 0.0
 var _level: Node3D = null
 
 
@@ -51,7 +49,6 @@ func setup(level: Node3D) -> void:
 	round_index = 0
 	execution_left = 0.0
 	_wave_units.clear()
-	_clear_timer = 0.0
 
 
 func rounds() -> int:
@@ -103,7 +100,7 @@ func next_wave_text() -> String:
 		parts.append("%d %s" % [int(pack[id]), name])
 	var prefix: String = "第 %d 波" % (round_index + 1)
 	if wave_alive_count() > 0:
-		return "%s 已在场 · 清完再回规划" % prefix
+		return "%s 已在场 · 打满本回合" % prefix
 	return "%s：%s" % [prefix, " ".join(parts)]
 
 
@@ -148,7 +145,6 @@ func begin_execution() -> bool:
 	if cs != null and cs.has_method("execute_planned"):
 		cs.call("execute_planned")
 	round_index += 1
-	_clear_timer = 0.0
 	execution_left = execution_total()
 	Game.set_phase(RtsConst.Phase.RUNNING)
 	_spawn_wave()
@@ -161,10 +157,18 @@ func end_execution(reason: String = "") -> void:
 	if not Game.is_executing():
 		return
 	last_reason = reason
+	# 布局卡：回合边界先记一次血量/损毁（短局中途崩了也不至于全丢）。
+	if Game.layout != null and is_instance_valid(Game.layout) and Game.layout.has_method("capture_and_save"):
+		Game.layout.call("capture_and_save")
 	if round_index >= rounds() and wave_alive_count() == 0:
 		Game.trigger_victory()
 		return
 	Game.set_phase(RtsConst.Phase.PLANNING)
+	# ★ 2026-11-15：CP 每回合规划阶段由基地补满（上回合剩余清零）。
+	#   执行阶段不回复、不显示、不能花；这里是唯一发放点。
+	for f in Game.factions:
+		if f != null and is_instance_valid(f):
+			f.begin_planning_cp()
 	# 本回合没收尾的训练作废（不退 CP）——规划结束按钮上那句警告就是这条规则。
 	var lost: int = _cancel_unfinished_training()
 	Game.toast("规划阶段 · 第 %d / %d 回合" % [mini(round_index + 1, rounds()), rounds()],
@@ -204,14 +208,8 @@ func _process(delta: float) -> void:
 		if pf != null and pf.count_units() == 0 and pf.count_buildings() == 0:
 			Game.trigger_defeat()
 			return
-		# 清波：脚本波次全灭后停留 CLEAR_GRACE 秒，让玩家看清再回规划
-		if round_index > 0 and wave_alive_count() == 0:
-			_clear_timer += delta
-			if _clear_timer >= CLEAR_GRACE:
-				end_execution("清波")
-				return
-		else:
-			_clear_timer = 0.0
+		# ★ 2026-11-15 玩家口径：执行阶段打满 3 分钟，只有"到点"或"基地被拆"结束；
+		#   清波不再提前收工（提前收工 = 玩家排的建造/训练窗口被偷走）。
 		if execution_left <= 0.0:
 			end_execution("时间到")
 	elif Game.is_planning():

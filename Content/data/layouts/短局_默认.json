@@ -1,0 +1,184 @@
+{
+	"version": 1,
+	"id": "短局_默认",
+	"display_name": "短局 · 默认基础布局",
+	"map": "res://Content/maps/主场景地图.tres",
+	"origin": "townhall",
+	"replace_owner_slots": [
+		0
+	],
+	"slots": [
+		{
+			"slot_id": "P0_townhall",
+			"type": "building",
+			"id": "townhall",
+			"owner_slot": 0,
+			"pos": [
+				0,
+				0
+			],
+			"yaw": -3.141592653589793,
+			"initial_hp": 1600
+		},
+		{
+			"slot_id": "P0_barracks",
+			"type": "building",
+			"id": "barracks",
+			"owner_slot": 0,
+			"pos": [
+				-3.5,
+				-13
+			],
+			"yaw": -3.141592653589793,
+			"initial_hp": 950
+		},
+		{
+			"slot_id": "P0_blacksmith",
+			"type": "building",
+			"id": "blacksmith",
+			"owner_slot": 0,
+			"pos": [
+				15,
+				-15.5
+			],
+			"yaw": -3.141592653589793,
+			"initial_hp": 760
+		},
+		{
+			"slot_id": "P0_farm",
+			"type": "building",
+			"id": "farm",
+			"owner_slot": 0,
+			"pos": [
+				-13.5,
+				1
+			],
+			"yaw": -3.141592653589793,
+			"initial_hp": 450
+		},
+		{
+			"slot_id": "P0_watchtower",
+			"type": "building",
+			"id": "watchtower",
+			"owner_slot": 0,
+			"pos": [
+				-14.5,
+				-15.5
+			],
+			"yaw": -3.141592653589793,
+			"initial_hp": 520
+		},
+		{
+			"slot_id": "P0_lumbercamp",
+			"type": "building",
+			"id": "lumbercamp",
+			"owner_slot": 0,
+			"pos": [
+				5,
+				15.5
+			],
+			"yaw": -3.141592653589793,
+			"initial_hp": 550
+		},
+		{
+			"slot_id": "P0_tower",
+			"type": "building",
+			"id": "tower",
+			"owner_slot": 0,
+			"pos": [
+				1.5,
+				-30.5
+			],
+			"yaw": -3.141592653589793,
+			"initial_hp": 620
+		},
+		{
+			"slot_id": "P0_peasant_1",
+			"type": "unit",
+			"id": "peasant",
+			"owner_slot": 0,
+			"pos": [
+				1.5,
+				8.5
+			],
+			"initial_hp": 190
+		},
+		{
+			"slot_id": "P0_peasant_2",
+			"type": "unit",
+			"id": "peasant",
+			"owner_slot": 0,
+			"pos": [
+				-2.5,
+				8.5
+			],
+			"initial_hp": 190
+		},
+		{
+			"slot_id": "P0_peasant_3",
+			"type": "unit",
+			"id": "peasant",
+			"owner_slot": 0,
+			"pos": [
+				-7.5,
+				7.5
+			],
+			"initial_hp": 190
+		},
+		{
+			"slot_id": "P0_footman_1",
+			"type": "unit",
+			"id": "footman",
+			"owner_slot": 0,
+			"pos": [
+				10.5,
+				-7.5
+			],
+			"initial_hp": 400
+		},
+		{
+			"slot_id": "P0_footman_2",
+			"type": "unit",
+			"id": "footman",
+			"owner_slot": 0,
+			"pos": [
+				-20.5,
+				-13.5
+			],
+			"initial_hp": 400
+		},
+		{
+			"slot_id": "P0_archer_1",
+			"type": "unit",
+			"id": "archer",
+			"owner_slot": 0,
+			"pos": [
+				5.5,
+				-18.5
+			],
+			"initial_hp": 280
+		},
+		{
+			"slot_id": "P0_archer_2",
+			"type": "unit",
+			"id": "archer",
+			"owner_slot": 0,
+			"pos": [
+				-21.5,
+				-3.5
+			],
+			"initial_hp": 280
+		},
+		{
+			"slot_id": "P0_archer_3",
+			"type": "unit",
+			"id": "archer",
+			"owner_slot": 0,
+			"pos": [
+				-13.5,
+				-6.5
+			],
+			"initial_hp": 280
+		}
+	]
+}

@@ -47,7 +47,8 @@
 		"icon": "",
 		"description": "众多王国中勤劳而勇敢的农民们可开采黄金和砍伐木材，还能建造和修理建筑物，他们是联盟必不可少的一份子。",
 		"race": "联盟",
-		"cost_gold": 25,
-		"cost_wood": 0
+		"cp_cost": 1,
+		"pop_cost": 4,
+		"squad_size": 4
 	}
 }

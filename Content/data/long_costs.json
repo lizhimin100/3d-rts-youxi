@@ -1,0 +1,98 @@
+{
+	"archer": {
+		"gold": 105,
+		"wood": 15
+	},
+	"dwarf_musketeer": {
+		"gold": 140,
+		"wood": 40
+	},
+	"footman": {
+		"gold": 125,
+		"wood": 0
+	},
+	"gnoll_scout": {
+		"gold": 0,
+		"wood": 0
+	},
+	"gnoll_shaman": {
+		"gold": 0,
+		"wood": 0
+	},
+	"gnoll_warrior": {
+		"gold": 0,
+		"wood": 0
+	},
+	"golem": {
+		"gold": 420,
+		"wood": 110
+	},
+	"mage": {
+		"gold": 225,
+		"wood": 45
+	},
+	"peasant": {
+		"gold": 25,
+		"wood": 0
+	},
+	"spell_breaker": {
+		"gold": 215,
+		"wood": 35
+	},
+	"barracks": {
+		"gold": 160,
+		"wood": 45
+	},
+	"blacksmith": {
+		"gold": 155,
+		"wood": 45
+	},
+	"campfire": {
+		"gold": 0,
+		"wood": 20
+	},
+	"creep_den": {
+		"gold": 0,
+		"wood": 0
+	},
+	"creep_gate": {
+		"gold": 0,
+		"wood": 0
+	},
+	"creep_shell": {
+		"gold": 0,
+		"wood": 0
+	},
+	"farm": {
+		"gold": 120,
+		"wood": 25
+	},
+	"lumbercamp": {
+		"gold": 60,
+		"wood": 15
+	},
+	"sanctum": {
+		"gold": 275,
+		"wood": 85
+	},
+	"tower": {
+		"gold": 100,
+		"wood": 40
+	},
+	"townhall": {
+		"gold": 320,
+		"wood": 125
+	},
+	"townhall_2": {
+		"gold": 480,
+		"wood": 220
+	},
+	"watchtower": {
+		"gold": 70,
+		"wood": 15
+	},
+	"workshop": {
+		"gold": 195,
+		"wood": 100
+	}
+}

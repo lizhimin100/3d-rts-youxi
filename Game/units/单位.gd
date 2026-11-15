@@ -1321,7 +1321,7 @@ func _tick_gather_wait(dt: float) -> void:
 ## desired_yaw = 玩家/AI 期望朝向，落工地前一律过 `建筑网格.snap_yaw`（90° 档）。
 ## 朝向写在 `setup_construction` **之前**：RtsUnit.setup 会把 rotation.y 记进 _yaw，
 ## 建筑不可移动、之后没人再改它，所以工地和完工后的朝向必然一致。
-func order_build(building_def: UnitDef, pos: Vector3, desired_yaw: float = 0.0) -> Node3D:
+func order_build(building_def: UnitDef, pos: Vector3, desired_yaw: float = 0.0, skip_pay: bool = false) -> Node3D:
 	if is_building_locked():
 		_reject_while_building()
 		return null
@@ -1343,18 +1343,20 @@ func order_build(building_def: UnitDef, pos: Vector3, desired_yaw: float = 0.0) 
 		return existing
 
 	# ② 钱不够 / 位置不合法 → 给玩家提示，别默默失败
-	if not Game.can_afford(faction, building_def.id):
+	#    skip_pay = 短局执行阶段"把规划阶段已下过单的工地换个位置"：CP 已经在规划阶段
+	#    扣过，这里只重新立工地，绝不能再扣一次。
+	if not skip_pay and not Game.can_afford(faction, building_def.id):
 		if faction.is_player:
-			Game.toast("资源不足：%s" % building_def.display_name, Color(1, 0.5, 0.4))
+			Game.toast(I18n.t("avail.no_cp", {"short": 1}), Color(1, 0.5, 0.4))
 		return null
 	if not 建筑网格.can_place(pos, fp):
 		if faction.is_player:
 			Game.toast("这里不能建造", Color(1, 0.6, 0.35))
 		return null
 	# 真扣钱：同一块工地整支队伍只扣这一次
-	if not Game.pay(faction, building_def.id):
+	if not skip_pay and not Game.pay(faction, building_def.id):
 		if faction.is_player:
-			Game.toast("资源不足：%s" % building_def.display_name, Color(1, 0.5, 0.4))
+			Game.toast(I18n.t("avail.no_cp", {"short": 1}), Color(1, 0.5, 0.4))
 		return null
 
 	var site: RtsBuilding = RtsBuilding.new()

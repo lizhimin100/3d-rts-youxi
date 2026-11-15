@@ -47,7 +47,7 @@
 		"icon": "",
 		"description": "重工：提供人口。蒸汽重步兵线暂停（卡保留，见 steam_guard description）。",
 		"race": "联盟",
-		"cost_gold": 195,
-		"cost_wood": 100
+		"cp_cost": 7,
+		"pop_cost": 3
 	}
 }

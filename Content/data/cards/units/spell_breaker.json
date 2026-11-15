@@ -52,7 +52,8 @@
 		"icon": "",
 		"description": "神秘圣地的近战法刃。四刃投掷刃出手快、伤害是魔法类型，2 点中甲让他比法师更能站住前排；代价是血量和造价都比步兵高。",
 		"race": "联盟",
-		"cost_gold": 215,
-		"cost_wood": 35
+		"cp_cost": 5,
+		"pop_cost": 8,
+		"squad_size": 3
 	}
 }

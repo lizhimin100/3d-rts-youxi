@@ -196,6 +196,7 @@
 		"描边": "res://Content/art/着色器/描边.gdshader",
 		"暗角": "res://Content/art/着色器/暗角.gdshader",
 		"水": "res://Content/art/着色器/水.gdshader",
+		"沙盘光环": "res://Content/art/着色器/沙盘光环.gdshader",
 		"沙盘网格": "res://Content/art/着色器/沙盘网格.gdshader",
 		"特效加色": "res://Content/art/着色器/特效加色.gdshader",
 		"移动指示": "res://Content/art/着色器/移动指示.gdshader",

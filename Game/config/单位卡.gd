@@ -81,6 +81,9 @@ extends EntityCard
 @export var body_radius: float = 0.45
 @export var selection_radius: float = 0.7
 @export var food_cost: int = 0
+## **一小队几人**（2026-11-15 玩家口径：农民 4 / 步兵 5 / 弩兵 4）。
+## 训练一次 = 出这一小队；人口按 `EntityCard.pop_cost` 的"每队人口"算，不按人头。
+@export var squad_size: int = 1
 @export var train_time: float = 10.0
 @export var height: float = 1.8
 @export var gather_rate: float = 0.0

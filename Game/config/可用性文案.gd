@@ -24,6 +24,8 @@ static func text(result: Dictionary) -> String:
 	var code := String(result.get("reason", ""))
 	var p: Dictionary = result.get("params", {})
 	match code:
+		"not_planning":
+			return _t("avail.not_planning")
 		"not_constructed":
 			return _t("avail.not_constructed")
 		"not_in_trains":

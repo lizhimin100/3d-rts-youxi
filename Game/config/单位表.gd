@@ -171,8 +171,9 @@ static func _def_of_card(card: EntityCard) -> UnitDef:
 	var d := UnitDef.new()
 	d.id = StringName(card.card_id)
 	d.display_name = card.display_name
-	d.gold_cost = card.cost_gold
-	d.wood_cost = card.cost_wood
+	# 短局成本直接来自卡；长局金/木由 `配置入口._apply_long_costs()` 从金木价表补。
+	d.cp_cost = card.cp_cost
+	d.pop_cost = card.pop_cost
 	d.model_path = card.model_path
 	d.model_scale = card.model_scale
 	d.anim_set = card.anim_set
@@ -219,6 +220,7 @@ static func _def_of_card(card: EntityCard) -> UnitDef:
 			d.selection_radius = c.selection_radius
 			d.judge_radius = c.body_radius
 		d.food_cost = c.food_cost
+		d.squad_size = maxi(int(c.squad_size), 1)
 		d.require_tier = c.require_tier
 		d.train_time = c.train_time
 		d.height = c.height
@@ -263,6 +265,8 @@ static func _def_of_card(card: EntityCard) -> UnitDef:
 		d.aura_radius = b.aura_radius
 		d.aura_mana_regen = b.aura_mana_regen
 		d.train_time = b.train_time
+		# 建筑一次订单 = 一座，永远不按小队计数。
+		d.squad_size = 1
 	return d
 
 

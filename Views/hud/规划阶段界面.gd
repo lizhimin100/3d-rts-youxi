@@ -71,7 +71,8 @@ const DEPLOY_W := 116.0
 const DEPLOY_H := 96.0
 const CARD_W := 92.0
 const CARD_H := 112.0
-const BCARD_W := 104.0
+## 建造卡宽：图标(34) + 名字/成本两行；104 会把"人口 0"截掉（2026-11-15 截图实测）。
+const BCARD_W := 122.0
 const BCARD_H := 68.0
 ## 法术卷轴槽位
 const SLOT := 42.0
@@ -160,6 +161,21 @@ func desired_h() -> float:
 		Act.BUILD:
 			return H_BUILD
 	return 0.0
+
+
+## 部署输入当前模式（0 = 空闲）。HUD 点兵牌前先问它：部署模式吃左键，别抢。
+func deploy_mode() -> int:
+	var di := _deploy_node()
+	return int(di.call("mode")) if di != null and di.has_method("mode") else 0
+
+
+## 选中一组实体（走选择系统的唯一入口；HUD 点兵牌也调这里）。
+func select_units(list: Array) -> bool:
+	var ss := _selection_node()
+	if ss == null or not ss.has_method("select_units"):
+		return false
+	ss.call("select_units", list)
+	return true
 
 
 ## 当前形态下面板想要的**最小宽度**。
@@ -658,8 +674,12 @@ func _build_train(b: RtsBuilding, pl: RtsFaction) -> void:
 		return
 
 	if b.def.trains.is_empty():
-		# 没有训练项的建筑（农场/塔）：不摆一张空面板，收起
-		_action.visible = false
+		# 没有训练项的建筑（农场/塔）：给一句明确反馈，不要静默收起面板
+		# （玩家 2026-11-15 报"点建筑没反应"，静默收起就是原因之一。）
+		var lb := Spec.label(I18n.t("plan.no_trains"), Spec.FS_BODY, Spec.text_dim(),
+				HORIZONTAL_ALIGNMENT_CENTER)
+		lb.custom_minimum_size = Vector2(240.0, 0.0)
+		_act_body.add_child(lb)
 		return
 
 	for id in b.def.trains:
@@ -714,8 +734,10 @@ func _train_card(b: RtsBuilding, id: StringName) -> Button:
 	nm.clip_text = true
 	nm.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vb.add_child(nm)
-	# 价格只写"CP 数字"（不写句子）：规划阶段最要紧的就是这点信息
-	var cp := Spec.label("CP %d" % (d.cp_cost if d != null else 0), Spec.FS_CAPTION,
+	# 成本只写"CP + 人口"（不写句子）：2026-11-15 玩家要求卡上看 CP 与占人口。
+	var cp := Spec.label(I18n.t("plan.card_cost_compact", {
+			"cp": d.cp_cost if d != null else 0,
+			"pop": d.pop_cost if d != null else 0}), Spec.FS_CAPTION,
 			Spec.gold() if ok else Color(0.95, 0.60, 0.48), HORIZONTAL_ALIGNMENT_CENTER)
 	cp.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vb.add_child(cp)
@@ -797,7 +819,9 @@ func _build_card(bid: StringName) -> Button:
 	nm.clip_text = true
 	nm.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vb.add_child(nm)
-	var cp := Spec.label("CP %d" % (d.cp_cost if d != null else 0), Spec.FS_CAPTION,
+	var cp := Spec.label(I18n.t("plan.card_cost_compact", {
+			"cp": d.cp_cost if d != null else 0,
+			"pop": d.pop_cost if d != null else 0}), Spec.FS_CAPTION,
 			Spec.gold() if ok else Color(0.95, 0.60, 0.48), HORIZONTAL_ALIGNMENT_LEFT)
 	cp.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vb.add_child(cp)
@@ -1054,8 +1078,8 @@ func _cp_tip() -> Dictionary:
 		"icon": "flag", "icon_color": Color(0.72, 0.86, 1.0),
 		"title": "指挥点 %d / %d" % [cp, cap],
 		"tag": "规划资源",
-		"body": "短局唯一的运营资源：训练、建造都花 CP。\n规划阶段[color=#ffd27a]不回复[/color]，执行阶段按秒回复。\n\n点一下这枚菱形：\n  · 选中农民时展开建造菜单；\n  · 否则自动选中大本营，展开训练菜单。",
-		"foot": "回复 %.1f / 秒（执行阶段）" % (pl.cp_regen if pl != null else 0.0),
+		"body": "短局唯一的运营资源：训练、建造都花 CP。\n[color=#ffd27a]每回合规划阶段由基地补满，上回合剩余清零[/color]；执行阶段隐藏且不回复。\n\n点一下这枚菱形：\n  · 选中农民时展开建造菜单；\n  · 否则自动选中大本营，展开训练菜单。",
+		"foot": "执行阶段不可花 CP",
 	}
 
 
@@ -1101,7 +1125,7 @@ func _site_tip(b: RtsBuilding) -> Dictionary:
 		"icon_color": Color(0.92, 0.88, 0.78),
 		"title": (b.def.display_name if b != null and b.def != null else "工地") + " · 建造中",
 		"tag": "%d%%" % int(round(float(b.progress) * 100.0)) if b != null else "0%",
-		"body": "还需 %.0f 秒 · 农民在工地里施工。\n工地取消后不退 CP（已投的工时作废）。" % left,
+		"body": "还需 %.0f 秒 · 农民在工地里施工。\n规划阶段撤销会退 CP；执行阶段取消不退 CP，但订单保留、可以重新选址再建。" % left,
 		"foot": "点「取消建造」撤掉这处工地",
 	}
 
@@ -1113,7 +1137,8 @@ func _train_tip(b: RtsBuilding, id: StringName, ok: bool) -> Dictionary:
 	# ★ 不要读 `d.description`：那是**卡**（单位卡.gd）的字段，UnitDef 里没有
 	var stats: String = "—"
 	if d != null:
-		stats = "生命 %d · 攻击 %.0f · 护甲 %.0f" % [int(d.max_hp), d.attack_damage, d.armor]
+		stats = "生命 %d · 攻击 %.0f · 护甲 %.0f%s" % [int(d.max_hp), d.attack_damage, d.armor,
+			I18n.t("hint.squad", {"n": int(d.squad_size)})]
 	var qn: int = b.train_queue.size() if b != null else 0
 	var remain: String = ""
 	if b != null and qn > 0:
@@ -1126,7 +1151,7 @@ func _train_tip(b: RtsBuilding, id: StringName, ok: bool) -> Dictionary:
 		"title": d.display_name if d != null else String(id),
 		"tag": "训练",
 		"body": "%s\n\n占据人口 %d · 训练 %.0f 秒 · 花费 CP %d%s" % [
-			stats, d.food_cost if d != null else 0, d.train_time if d != null else 0.0,
+			stats, d.pop_cost if d != null else 0, d.train_time if d != null else 0.0,
 			d.cp_cost if d != null else 0, remain],
 		"foot": why if why != "" else "点一下立刻扣 CP，并立刻占用人口",
 	}
@@ -1143,8 +1168,9 @@ func _build_tip(bid: StringName, ok: bool) -> Dictionary:
 		"icon": "建筑/" + String(bid), "icon_color": Color(0.92, 0.90, 0.86),
 		"title": d.display_name if d != null else String(bid),
 		"tag": "建造",
-		"body": "%s\n\n花费 CP %d · 工期 %.0f 秒%s" % [
-			bstats, d.cp_cost if d != null else 0, d.train_time if d != null else 0.0,
+		"body": "%s\n\n花费 CP %d · 占人口 %d · 工期 %.0f 秒%s" % [
+			bstats, d.cp_cost if d != null else 0, d.pop_cost if d != null else 0,
+			d.train_time if d != null else 0.0,
 			("\n提供人口 +%d" % d.food_provided) if d != null and d.food_provided > 0 else ""],
 		"foot": why if why != "" else "点一下 → 在地图上选位置",
 	}
@@ -1155,7 +1181,7 @@ func _end_tip() -> Dictionary:
 		"icon": "play", "icon_color": Color(1.0, 0.86, 0.44),
 		"title": "规划结束",
 		"tag": "进入执行阶段",
-		"body": "[color=#ffd27a][b]结束规划进入执行阶段。未完成训练将在回合结束时取消，不退 CP。[/b][/color]\n\n· 执行阶段：世界解冻，部队按计划行动，CP 按秒回复；\n· 队列在执行阶段继续推进。",
+		"body": "[color=#ffd27a][b]结束规划进入执行阶段。未完成训练将在回合结束时取消，不退 CP。[/b][/color]\n\n· 执行阶段：世界解冻，部队按计划行动；\n· 队列在执行阶段推进，玩家不能改队列、不能取消；\n· 执行阶段不显示 CP，也不能再花 CP。",
 		"foot": "想稳一手：等训练读条走完再结束规划",
 	}
 

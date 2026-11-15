@@ -315,9 +315,16 @@ func is_under_construction() -> bool:
 func cancel_construction() -> bool:
 	if not is_under_construction():
 		return false
+	# ★ 2026-11-15 口径：
+	#   · 规划阶段撤销 = 反悔，退 CP / 退金木，订单一起删；
+	#   · 执行阶段取消 = 不退 CP（已投的 CP 不退），但订单**保留**，可以重新选址再建。
+	var planning: bool = Game.is_planning()
 	if faction != null and def != null:
-		# 短局退 CP、长局退金木；不要在业务层直接改资源字段。
-		Game.refund(faction, def.id)
+		if planning:
+			Game.refund(faction, def.id)
+			faction.drop_build_site(self)
+		else:
+			faction.release_build_site(self)
 	# 先把人放出来（release_builders 会给每人算一个占格外圈的落点）
 	release_builders()
 	_abort_work()
@@ -328,7 +335,8 @@ func cancel_construction() -> bool:
 	RtsWorld.clear_footprint(self)
 	Game.unregister(self)
 	if faction != null and faction.is_player:
-		Game.toast("已取消建造：%s（资源已退还）" % (def.display_name if def != null else "建筑"),
+		var key: String = "short.build_cancel_refund" if planning else "short.build_cancel_keep"
+		Game.toast(I18n.t(key, {"name": def.display_name if def != null else "—"}),
 				Color(0.92, 0.88, 0.62))
 	queue_free()
 	return true
@@ -388,8 +396,13 @@ func _complete_construction() -> void:
 # ===========================================================================
 
 ## 排一个单位进队列（**当场真扣钱**，扣不起返回 false）
+## ★ 2026-11-15：短局执行阶段**不能改队列/不能下单** —— 训练只能在规划阶段决定。
 func queue_train(id: StringName) -> bool:
 	if def == null:
+		return false
+	if Game.short_match and not Game.is_planning():
+		# 静默拒绝：玩家点击会在 `可用性查询` 那一层拿到 why（request_train 已经提示过）；
+		# AI/副官的尝试不该给玩家刷提示（2026-11-15 实测执行阶段连弹三条）。
 		return false
 	# 判据全部走 Model（完工/升级中/trains/tier/队列/人口/金币/木材）
 	var res := 可用性查询.train(self, id, faction)
@@ -479,15 +492,26 @@ func _train_time_multiplier() -> float:
 func _spawn_trained(id: StringName) -> void:
 	if faction == null:
 		return
-	var pos: Vector3 = spawn_point()
 	var world_parent: Node3D = RtsWorld.level()
 	if world_parent == null:
 		world_parent = get_parent() as Node3D
-	var u: Node3D = Game.spawn_unit(faction, id, pos, world_parent)
-	if u == null:
-		return
-	if u.has_method("order_move"):
-		u.call("order_move", rally_destination())
+	var d: UnitDef = Cfg.unit(id)
+	# ★ 短局：一次训练 = 一支小队（人数/人口在卡上，玩家可调）；长局保持 1 个/次。
+	var n: int = maxi(int(d.squad_size), 1) if Game.short_match and d != null else 1
+	var made: Array = []
+	for i in n:
+		var u: Node3D = Game.spawn_unit(faction, id, spawn_point(), world_parent)
+		if u == null:
+			continue
+		made.append(u)
+		if u.has_method("order_move"):
+			u.call("order_move", rally_destination())
+	if Game.short_match and not made.is_empty():
+		var sq = null
+		if Game.squads != null:
+			sq = Game.squads.call("create", faction, made)
+		var sid: int = int((sq as Object).get("id")) if sq != null else 0
+		faction.commit_squad(made, int(d.pop_cost) if d != null else int(made.size()), sid)
 
 
 ## 出兵点：建筑正前方（-Z 侧）散开

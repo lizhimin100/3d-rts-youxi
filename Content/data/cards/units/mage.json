@@ -55,7 +55,8 @@
 		"icon": "",
 		"description": "魔法远程 + 火球 AOE 技能，最能出特效的单位。",
 		"race": "联盟",
-		"cost_gold": 225,
-		"cost_wood": 45
+		"cp_cost": 5,
+		"pop_cost": 7,
+		"squad_size": 2
 	}
 }

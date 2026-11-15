@@ -298,7 +298,7 @@ func _build_unit_form() -> void:
 	var g := _grid()
 	_fields["display_name"] = _line(g, "显示名", _s("display_name"), "列表 / 游戏内铭牌上的名字")
 	_fields["description"] = _multiline(g, "介绍", _s("description"))
-	g.add_child(Spec.editor_label("卡 id（不可改）"))
+	g.add_child(Spec.editor_label("card_id"))
 	g.add_child(Spec.editor_label(_s("card_id"), &"EditorHint"))
 
 	_section("生命 / 法力")
@@ -326,8 +326,10 @@ func _build_unit_form() -> void:
 
 	_section("成本 / 训练")
 	g = _grid()
-	_fields["cost_gold"] = _num(g, "金币花费", _f("cost_gold"), 0.0, 99999.0, 5.0)
-	_fields["cost_wood"] = _num(g, "木材花费", _f("cost_wood"), 0.0, 99999.0, 5.0)
+	# ★ 2026-11-15：卡上只填短局成本（CP + 人口），金/木价挪到 Content/data/long_costs.json。
+	_fields["cp_cost"] = _num(g, "CP 花费", _f("cp_cost"), 0.0, 99.0, 1.0)
+	_fields["pop_cost"] = _num(g, "占用人口", _f("pop_cost"), 0.0, 200.0, 1.0)
+	_fields["squad_size"] = _num(g, "squad_size（每队人数）", _f("squad_size", 1.0), 1.0, 50.0, 1.0)
 	_fields["train_time"] = _num(g, "训练时间（秒）", _f("train_time", 10.0), 0.1, 600.0, 0.5)
 
 	_section("由哪些建筑训练")
@@ -355,7 +357,7 @@ func _build_building_form() -> void:
 	var g := _grid()
 	_fields["display_name"] = _line(g, "显示名", _s("display_name"), "列表 / 游戏内铭牌上的名字")
 	_fields["description"] = _multiline(g, "介绍", _s("description"))
-	g.add_child(Spec.editor_label("卡 id（不可改）"))
+	g.add_child(Spec.editor_label("card_id"))
 	g.add_child(Spec.editor_label(_s("card_id"), &"EditorHint"))
 
 	_section("生命 / 防御")
@@ -377,10 +379,11 @@ func _build_building_form() -> void:
 	_fields["train_time"] = _num(g, "建造耗时（秒）", _f("train_time", 10.0), 0.1, 600.0, 0.5)
 	_fields["food_provided"] = _num(g, "提供人口", _f("food_provided"), 0.0, 200.0, 1.0)
 
-	_section("成本")
+	_section("成本 / 人口")
 	g = _grid()
-	_fields["cost_gold"] = _num(g, "金币花费", _f("cost_gold"), 0.0, 99999.0, 5.0)
-	_fields["cost_wood"] = _num(g, "木材花费", _f("cost_wood"), 0.0, 99999.0, 5.0)
+	# 短局：建筑也占人口（农场/基地不占，见卡表）；金/木价走 long_costs.json。
+	_fields["cp_cost"] = _num(g, "CP 花费", _f("cp_cost"), 0.0, 99.0, 1.0)
+	_fields["pop_cost"] = _num(g, "占用人口", _f("pop_cost"), 0.0, 200.0, 1.0)
 
 	_section("攻击 / 视野")
 	g = _grid()
@@ -652,9 +655,10 @@ func _same_num(a: Variant, b: Variant) -> bool:
 func _written_keys() -> Array:
 	if _kind == "unit":
 		return ["range", "attack", "attack_cooldown", "max_hp", "max_mana", "defense",
-			"defense_type", "attack_type", "move_speed", "cost_gold", "cost_wood", "train_time"]
+			"defense_type", "attack_type", "move_speed", "cp_cost", "pop_cost",
+			"squad_size", "train_time"]
 	return ["range", "attack", "attack_cooldown", "max_hp", "defense", "defense_type",
-		"footprint", "food_provided", "cost_gold", "cost_wood", "train_time", "sight_range",
+		"footprint", "food_provided", "cp_cost", "pop_cost", "train_time", "sight_range",
 		"trains", "researches"]
 
 
@@ -692,8 +696,8 @@ func _save() -> void:
 	_card.set("display_name", _val_s("display_name", String(_card.get("card_id"))))
 	var desc: Variant = _val("description")
 	_card.set("description", String(desc) if desc != null else "")
-	_card.set("cost_gold", int(round(_val_f("cost_gold", 0.0))))
-	_card.set("cost_wood", int(round(_val_f("cost_wood", 0.0))))
+	_card.set("cp_cost", int(round(_val_f("cp_cost", 0.0))))
+	_card.set("pop_cost", int(round(_val_f("pop_cost", 0.0))))
 	_card.set("train_time", _val_f("train_time", 10.0))
 
 	if _kind == "unit":
@@ -710,6 +714,7 @@ func _save() -> void:
 		_card.set("range", _val_f("range", 0.0))
 		_card.set("defense", int(round(_val_f("defense", 0.0))))
 		_card.set("move_speed", _val_f("move_speed", 4.0))
+		_card.set("squad_size", maxi(1, int(round(_val_f("squad_size", 1.0)))))
 	else:
 		var dtype2 := _val("defense_type")
 		if dtype2 != null:
@@ -799,7 +804,9 @@ func _create_card() -> void:
 		res.set("range", 90.0)
 		res.set("attack_cooldown", 1.5)
 		res.set("move_speed", 4.2)
-		res.set("cost_gold", 100)
+		res.set("cp_cost", 2)
+		res.set("pop_cost", 8)
+		res.set("squad_size", 4)
 		res.set("volume", 1.0)
 		res.set("race", &"联盟")
 	else:
@@ -808,8 +815,8 @@ func _create_card() -> void:
 		res.set("display_name", "新建筑 " + str(n))
 		res.set("description", "（自己写：这座楼干什么用的）")
 		res.set("max_hp", 800.0)
-		res.set("cost_gold", 150)
-		res.set("cost_wood", 50)
+		res.set("cp_cost", 4)
+		res.set("pop_cost", 4)
 		res.set("footprint", Vector2i(3, 3))
 		res.set("height", 4.0)
 		res.set("race", &"联盟")

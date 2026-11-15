@@ -21,7 +21,10 @@ static func _ok() -> Dictionary:
 
 
 ## 训练：ctx 字段见下面注释；缺省值按"最宽松"处理，方便调用方只传关心的项。
+## phase_ok = false 只在短局执行阶段出现：训练必须在规划阶段下单，执行阶段只出队。
 static func check_train(ctx: Dictionary) -> Dictionary:
+	if not bool(ctx.get("phase_ok", true)):
+		return fail(&"not_planning")
 	if not bool(ctx.get("constructed", true)):
 		return fail(&"not_constructed")
 	var trains: Array = ctx.get("trains", [])
@@ -114,17 +117,24 @@ static func check_refit(ctx: Dictionary) -> Dictionary:
 
 
 ## 建造：ctx 字段：
-##   has_worker / require_tier / current_tier / gold / wood / gold_cost / wood_cost
+##   has_worker / phase_ok / require_tier / current_tier /
+##   food_free / pop_cost（短局：建筑也占人口）/ cp / cp_cost / gold / wood
 ## 放置合法性（越界/挡格/水面）不在这里 —— 那是地图网格的活，见 建筑网格.can_place。
 static func check_build(ctx: Dictionary) -> Dictionary:
 	if not bool(ctx.get("has_worker", true)):
 		return fail(&"no_worker")
+	if not bool(ctx.get("phase_ok", true)):
+		return fail(&"not_planning")
 	var required := int(ctx.get("require_tier", 0))
 	var current := int(ctx.get("current_tier", 1))
 	if required > current:
 		return fail(&"tier_locked", {"required": required, "current": current})
-	# 短局：只看 CP（金木不参与支付）
+	# 短局：只看 CP + 人口（建筑也占人口；金木不参与支付）
 	if bool(ctx.get("short", false)):
+		var need_pop := int(ctx.get("pop_cost", 0))
+		var free_pop := int(ctx.get("food_free", 0))
+		if need_pop > free_pop:
+			return fail(&"no_food", {"need": need_pop, "free": free_pop})
 		var cp := int(ctx.get("cp", 0))
 		var cost_cp := int(ctx.get("cp_cost", 0))
 		if cp < cost_cp:

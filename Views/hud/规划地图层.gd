@@ -61,6 +61,11 @@ var _base_icons: Dictionary = {}
 var _panel_rects: Array = []
 ## 每个阵营的兵牌包围盒（用于把意图牌摆在“整个基地”头顶，而不是单座建筑头顶）
 var _faction_bounds: Dictionary = {}
+## 本帧画出的**可点击兵牌**：[{rect, kind, node/units, faction, mine, key}]
+## 规划阶段玩家点兵牌/建筑牌/农民牌 → HUD 选择对应实体 → 底部操作面板换形态。
+var _token_hits: Array = []
+## 当前鼠标悬停的兵牌 key（金线高亮；空 = 没悬停）
+var _hover_key: String = ""
 
 
 func _ready() -> void:
@@ -85,6 +90,61 @@ func set_zoom(z: float) -> void:
 func set_safe_rect(r: Rect2) -> void:
 	if r.size.x > 120.0 and r.size.y > 80.0:
 		_safe = r
+
+
+# ===========================================================================
+# 兵牌点击（规划阶段：点牌 = 选实体 → 底部面板换形态）
+# ===========================================================================
+
+## 屏幕点命中了哪面兵牌？返回 {kind, node/units, faction, mine, key}；没命中 = {}。
+## 后画的盖住先画的 → 从后往前判，命中最上层。
+func hit_test(pos: Vector2) -> Dictionary:
+	for i in range(_token_hits.size() - 1, -1, -1):
+		var rec: Dictionary = _token_hits[i]
+		var r: Rect2 = rec.get("rect", Rect2())
+		if r.size.x <= 0.0 or r.size.y <= 0.0:
+			continue
+		if r.grow(3.0 * zoom).has_point(pos):
+			return rec
+	return {}
+
+
+## 鼠标悬停：换高亮 + 重绘（每帧只在 key 变化时重画）
+func set_hover(pos: Vector2) -> void:
+	var key: String = ""
+	if pos.x >= 0.0 and pos.y >= 0.0:
+		key = String(hit_test(pos).get("key", ""))
+	if key == _hover_key:
+		return
+	_hover_key = key
+	queue_redraw()
+
+
+## 自检/调试：当前登记的可点击兵牌（副本）
+func token_count() -> int:
+	return _token_hits.size()
+
+
+## 自检/调试：按**内容 id** 找兵牌矩形（截图脚本点"大本营牌"用，避免依赖屏幕坐标）
+func token_rect_of_id(id: String, mine: bool = true) -> Rect2:
+	for rec in _token_hits:
+		if String(rec.get("id", "")) != id:
+			continue
+		if mine and not bool(rec.get("mine", false)):
+			continue
+		return rec.get("rect", Rect2())
+	return Rect2()
+
+
+## 自检/调试：第一面指定类型的兵牌矩形
+func token_rect(kind: String, mine: bool = true) -> Rect2:
+	for rec in _token_hits:
+		if String(rec.get("kind", "")) != kind:
+			continue
+		if mine and not bool(rec.get("mine", false)):
+			continue
+		return rec.get("rect", Rect2())
+	return Rect2()
 
 
 ## 淡出（HUD 离开规划阶段时调；淡完自己藏，绝不打断"网格淡出"的节奏）
@@ -132,6 +192,7 @@ func _draw() -> void:
 	_base_icons.clear()
 	_panel_rects.clear()
 	_faction_bounds.clear()
+	_token_hits.clear()
 	_draw_preview(cam)
 	_draw_planned(cam)
 	_draw_entities(cam)
@@ -263,6 +324,7 @@ func _draw_entities(cam: Camera3D) -> void:
 		items.append({
 			"kind": "building", "rec": rec, "d": d, "sp": sp, "gp": gp,
 			"size": B_ICON * zoom, "constructed": constructed,
+			"key": "b%d" % int((node as Object).get_instance_id()),
 		})
 	for rec in sb.call("cluster_items"):
 		var d2: UnitDef = rec.get("def", null)
@@ -273,9 +335,11 @@ func _draw_entities(cam: Camera3D) -> void:
 		if sp2 == Vector2.INF:
 			continue
 		var gp2: Vector2 = _project(cam, c)
+		var us: Array = rec.get("units", [])
+		var uk: String = "u%d" % int((us[0] as Object).get_instance_id()) if not us.is_empty() else "u0"
 		items.append({
 			"kind": "unit", "rec": rec, "d": d2, "sp": sp2, "gp": gp2,
-			"size": U_ICON * zoom,
+			"size": U_ICON * zoom, "key": uk,
 		})
 	# 远的先画、近的后画（屏幕 y 越小越远）
 	items.sort_custom(func(a, b): return float(a["sp"].y) < float(b["sp"].y))
@@ -297,6 +361,10 @@ func _draw_building_token(it: Dictionary) -> void:
 	# ★ 建筑兵牌**绝不做图标避让**：它是“这座建筑在战场上的位置”，一旦被推开，
 	#   意图牌的图钉就钉到别的建筑/空地上了（2026-11-15 实测：农场把大本营挤下去 200px）。
 	var rect := Rect2(sp - Vector2(s, s) * 0.5, Vector2(s, s))
+	# 可点击：点建筑牌 = 选中这座建筑 → 底部出现训练面板（2026-11-15 玩家要求）
+	_token_hits.append({"rect": rect, "kind": "building", "node": rec.get("node"),
+		"units": [], "faction": rec.get("faction"), "mine": bool(rec.get("mine", false)),
+		"id": String(d.id) if d != null else "", "key": String(it.get("key", ""))})
 	# ---- 地面锚点 + 引线（“悬浮在实体正上方”的读法） ----
 	if gp != Vector2.INF and gp.y > rect.end.y - 2.0:
 		draw_circle(gp, 5.0 * zoom, Color(col.r, col.g, col.b, 0.10))
@@ -338,6 +406,10 @@ func _draw_building_token(it: Dictionary) -> void:
 	bb["bottom"] = maxf(float(bb["bottom"]), rect.end.y)
 	_faction_bounds[fid] = bb
 	_placed_rects.append(rect)
+	# 悬停：金线框（“这面牌点得动”的唯一视觉承诺）
+	if _hover_key == String(it.get("key", "")):
+		draw_rect(rect.grow(2.5 * zoom), Color(1.0, 0.88, 0.46, 0.95), false,
+				maxf(1.6, 2.0 * zoom))
 	if d != null and _is_townhall(d):
 		_base_icons[rec["faction"].get_instance_id()] = {
 			"rect": rect, "rec": rec, "sp": sp, "gp": gp,
@@ -354,6 +426,11 @@ func _draw_unit_token(it: Dictionary) -> void:
 	var rect := Rect2(sp - Vector2(s, s) * 0.5, Vector2(s, s))
 	rect = _avoid(rect, s)
 	var c := rect.get_center()
+	# 可点击：点兵牌 = 选中这面牌上的单位 → 底部出现部署/建造面板
+	_token_hits.append({"rect": rect, "kind": "unit", "node": null,
+		"units": rec.get("units", []), "faction": rec.get("faction"),
+		"mine": bool(rec.get("mine", false)), "id": String(d.id),
+		"key": String(it.get("key", ""))})
 	# ---- 短引线 + 地面点 ----
 	if gp != Vector2.INF and gp.y > rect.end.y - 1.0:
 		draw_circle(gp, 3.2 * zoom, Color(col.r, col.g, col.b, 0.10))
@@ -392,6 +469,10 @@ func _draw_unit_token(it: Dictionary) -> void:
 	ubb["bottom"] = maxf(float(ubb["bottom"]), rect.end.y)
 	_faction_bounds[ufid] = ubb
 	_placed_rects.append(rect)
+	# 悬停：金圈（圆牌外面套一圈，不压住 ×N 角标）
+	if _hover_key == String(it.get("key", "")):
+		draw_arc(c, s * 0.58, 0.0, TAU, 32, Color(1.0, 0.88, 0.46, 0.95),
+				maxf(1.6, 2.0 * zoom), true)
 
 
 ## 图标避让：只躲“已经画出来的兵牌”，不改变它和实体的归属（引线仍然指回原地）

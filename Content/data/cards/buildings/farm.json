@@ -18,7 +18,7 @@
 		"train_time": 28,
 		"is_dropoff": false,
 		"dropoff_kinds": [],
-		"food_provided": 8,
+		"food_provided": 20,
 		"trains": [],
 		"researches": [],
 		"sight_range": 12,
@@ -46,7 +46,7 @@
 		"icon": "",
 		"description": "提供人口。",
 		"race": "联盟",
-		"cost_gold": 120,
-		"cost_wood": 25
+		"cp_cost": 4,
+		"pop_cost": 0
 	}
 }

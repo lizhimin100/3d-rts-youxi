@@ -53,7 +53,8 @@
 		"icon": "",
 		"description": "失落野怪：豺狼人营地里的施法者。杖顶电球在中程连续放电，攻速快、血薄，先切它。",
 		"race": "中立",
-		"cost_gold": 0,
-		"cost_wood": 0
+		"cp_cost": 0,
+		"pop_cost": 1,
+		"squad_size": 1
 	}
 }

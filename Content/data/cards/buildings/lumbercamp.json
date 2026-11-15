@@ -52,7 +52,7 @@
 		"icon": "",
 		"description": "木材交汇点（只收木材）+ 两项木材经济研究。",
 		"race": "联盟",
-		"cost_gold": 60,
-		"cost_wood": 15
+		"cp_cost": 3,
+		"pop_cost": 2
 	}
 }

@@ -48,7 +48,7 @@
 		"icon": "",
 		"description": "夜间照明点：有血量、能被拆、能上小地图的纯功能建筑。",
 		"race": "联盟",
-		"cost_gold": 0,
-		"cost_wood": 20
+		"cp_cost": 1,
+		"pop_cost": 0
 	}
 }

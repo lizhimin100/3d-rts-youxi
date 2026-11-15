@@ -11,6 +11,7 @@ const Production := preload("res://Model/core/production.gd")
 const Progression := preload("res://Model/core/progression.gd")
 const SaveSchema := preload("res://Model/save/save_schema.gd")
 const Skirmish := preload("res://Model/battle/skirmish.gd")
+const LayoutCard := preload("res://Model/layout/layout_card.gd")
 const Avail := preload("res://Model/core/可用性.gd")
 
 
@@ -183,6 +184,44 @@ static func run_all() -> Dictionary:
 	var old := {"seed": 7}
 	var migrated := SaveSchema.migrate(old)
 	ok.call("v0 迁移补 version 与 stats", int(migrated["version"]) == SaveSchema.CURRENT_VERSION and migrated.has("stats"))
+
+
+	# ---------- 布局卡（静态/动态分离 + 血量继承） ----------
+	var card_data := {
+		"version": 1, "id": "t", "origin": "site", "replace_owner_slots": [0],
+		"slots": [
+			{"slot_id": "a", "type": "building", "id": "farm", "owner_slot": 0,
+			 "pos": [1.0, 2.0], "initial_hp": 450.0},
+			{"slot_id": "b", "type": "unit", "id": "footman", "owner_slot": 0,
+			 "pos": [3.0, 4.0], "initial_hp": 400.0, "count": 2},
+		],
+	}
+	var parsed := LayoutCard.parse(card_data)
+	ok.call("布局卡：合法卡通过", bool(parsed["ok"]), str(parsed["errors"]))
+	var parsed_card: Dictionary = parsed["card"]
+	ok.call("布局卡：槽位数保留", (parsed_card["slots"] as Array).size() == 2)
+	var bad_card := card_data.duplicate(true)
+	bad_card["slots"][0]["current_hp"] = 100.0
+	var bad_parsed := LayoutCard.parse(bad_card)
+	ok.call("布局卡：写 current_hp 直接判错（静态/动态分离）",
+			not bool(bad_parsed["ok"]) and str(bad_parsed["errors"]).contains("current_hp"))
+	var dup_card := card_data.duplicate(true)
+	dup_card["slots"][1]["slot_id"] = "a"
+	ok.call("布局卡：slot_id 重复被拦下", not bool(LayoutCard.parse(dup_card)["ok"]))
+	ok.call("血量继承：没有存档 → initial_hp",
+			is_equal_approx(LayoutCard.resolve_hp(450.0, 0.0, false), 450.0))
+	ok.call("血量继承：有存档 → 存档值",
+			is_equal_approx(LayoutCard.resolve_hp(450.0, 123.0, true), 123.0))
+	ok.call("血量继承：存档超上限被夹紧",
+			is_equal_approx(LayoutCard.resolve_hp(450.0, 9999.0, true), 450.0))
+	ok.call("血量继承：存档 0 血不是 0 血生成", LayoutCard.resolve_hp(450.0, 0.0, true) >= 1.0)
+	ok.call("结算：0 血 → 损毁标记", bool(LayoutCard.state_of(0.0, 450.0)["destroyed"]))
+	ok.call("结算：活着的血量夹在 0..initial",
+			is_equal_approx(float(LayoutCard.state_of(120.0, 450.0)["hp"]), 120.0))
+	ok.call("原点到世界：site 加锚点",
+			LayoutCard.world_pos("site", [3.0, 4.0], Vector2(10.0, 20.0)) == Vector2(13.0, 24.0))
+	ok.call("原点到世界：world 忽略锚点",
+			LayoutCard.world_pos("world", [3.0, 4.0], Vector2(10.0, 20.0)) == Vector2(3.0, 4.0))
 
 	# ---------- 推演 ----------
 	var stats := {

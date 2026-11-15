@@ -53,7 +53,8 @@
 		"icon": "",
 		"description": "中立野怪：双匕首贴身突进的刺客，1.25 秒一刀的普通攻击，血薄但咬人。",
 		"race": "中立",
-		"cost_gold": 0,
-		"cost_wood": 0
+		"cp_cost": 0,
+		"pop_cost": 1,
+		"squad_size": 1
 	}
 }

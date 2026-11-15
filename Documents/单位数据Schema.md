@@ -1,5 +1,10 @@
 # 单位数据 Schema 与覆盖度审计（第一段交付 · 6.2/6.3/6.4）
 
+> ⚠️ **2026-11-15 成本口径变更**：单位卡/建筑卡**不再填金币/木材**，只填 `cp_cost`（短局 CP）
+> 与 `pop_cost`（占人口；单位 = 一小队占多少）；单位卡另有 `squad_size`（一队几人）。
+> 长局金/木价挪到 `Content/data/long_costs.json`，由 `配置入口._apply_long_costs()` 写入 UnitDef。
+> 详见 `Documents/短局-运营规则.md`。
+>
 > ⚠️ **2026-11-14 口径变更**：数值唯一真源已从 `.tres` 卡改为 `Content/data/*.json`，
 > 卡装载器是 `Game/config/card_store.gd`。本文的字段口径仍有效，但「单位表.gd 是唯一权威」的表述已过期，
 > 以 `AGENTS.md` 与 `Documents/data-pipeline.md` 为准。

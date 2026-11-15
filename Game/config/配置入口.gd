@@ -13,6 +13,8 @@ extends Node
 ##   调试面板改数值也必须写回这个 JSON（Engine/debug/debug_tuner.gd 只允许写 Content/data/）。
 
 const GAME_JSON := "res://Content/data/game.json"
+## 长局金/木价表（短局完全不用；卡上只填 CP + 人口，见 实体卡.gd）
+const LONG_COSTS_JSON := "res://Content/data/long_costs.json"
 const JsonFile := preload("res://Engine/util/json_file.gd")
 const JsonCodec := preload("res://Engine/util/json_codec.gd")
 
@@ -36,6 +38,7 @@ func _rebuild() -> void:
 	cfg.units = UnitTable.build_units()
 	cfg.researches = UnitTable.build_researches()
 	_apply_resource_amounts(cfg)
+	_apply_long_costs(cfg)
 	_apply_short_costs(cfg)
 	cfg.ensure_default_difficulties()
 	game = cfg
@@ -63,17 +66,40 @@ func _apply_resource_amounts(cfg: GameConfig) -> void:
 			d.resource_amount = maxi(cfg.tree_charges, 1)
 
 
-## 把 game.json 的 `short_cp_costs` 写进 UnitDef.cp_cost。
-## **短局 CP 成本的唯一来源**：不写进单位卡，避免"同一张卡两套资源"互相污染。
-func _apply_short_costs(cfg: GameConfig) -> void:
+## 长局金/木成本表 → UnitDef.gold_cost / wood_cost。
+## **为什么单独一张表**：2026-11-15 玩家要求单位卡/建筑卡上只填 CP + 人口；
+## 长局的金币/木材价不能跟着消失，于是挪到 `Content/data/long_costs.json`，
+## 两套资源仍然完全隔离（短局不读这里，长局不读 CP）。
+func _apply_long_costs(cfg: GameConfig) -> void:
 	if cfg == null or cfg.units == null:
+		return
+	var table: Dictionary = JsonFile.read_dict(LONG_COSTS_JSON, {})
+	if table.is_empty():
 		return
 	for id in cfg.units.keys():
 		var d := cfg.units[id] as UnitDef
 		if d == null:
 			continue
-		var v: Variant = cfg.short_cp_costs.get(String(id), 0)
-		d.cp_cost = maxi(int(v), 0)
+		var v: Variant = table.get(String(id), null)
+		if not (v is Dictionary):
+			continue
+		d.gold_cost = maxi(int((v as Dictionary).get("gold", 0)), 0)
+		d.wood_cost = maxi(int((v as Dictionary).get("wood", 0)), 0)
+
+
+## 把 game.json 的 `short_cp_costs` 写进 UnitDef.cp_cost —— **只做显式覆盖**。
+## 2026-11-15 起 CP 成本的唯一来源是单位卡/建筑卡的 `cp_cost`；
+## 这个字典留作"临时全局改价"的开关，只认登记过的 id，没登记的不动。
+func _apply_short_costs(cfg: GameConfig) -> void:
+	if cfg == null or cfg.units == null or cfg.short_cp_costs.is_empty():
+		return
+	for id in cfg.units.keys():
+		var d := cfg.units[id] as UnitDef
+		if d == null:
+			continue
+		if not cfg.short_cp_costs.has(String(id)):
+			continue
+		d.cp_cost = maxi(int(cfg.short_cp_costs.get(String(id), 0)), 0)
 
 
 ## 取单位定义

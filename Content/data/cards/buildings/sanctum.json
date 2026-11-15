@@ -51,7 +51,7 @@
 		"icon": "",
 		"description": "法师产地 + 法力之泉光环。",
 		"race": "联盟",
-		"cost_gold": 275,
-		"cost_wood": 85
+		"cp_cost": 8,
+		"pop_cost": 3
 	}
 }

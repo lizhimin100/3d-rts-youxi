@@ -47,7 +47,7 @@
 		"icon": "",
 		"description": "只负责看的自卫建筑：大视野 + 预警，一箭不放。",
 		"race": "联盟",
-		"cost_gold": 70,
-		"cost_wood": 15
+		"cp_cost": 4,
+		"pop_cost": 2
 	}
 }

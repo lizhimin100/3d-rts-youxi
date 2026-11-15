@@ -464,10 +464,14 @@ func _train_entry(b: RtsBuilding, id: StringName) -> Dictionary:
 	var tier_hint: String = ""
 	if not ok and String(base.get("reason", "")) == "tier_locked":
 		tier_hint = "\n" + 可用性文案.text(base)
+	var need_pop: int = (d.pop_cost if Game.short_match else d.food_cost) if d != null else 0
+	var squad_hint: String = ""
+	if Game.short_match and d != null:
+		squad_hint = I18n.t("hint.squad", {"n": int(d.squad_size)})
 	return {
 		"label": label,
-		"hint": "%s  花费 %s  人口 %d  训练 %.0fs%s" % [
-			label, cost, d.food_cost if d != null else 0, d.train_time if d != null else 0.0,
+		"hint": "%s  花费 %s  人口 %d%s  训练 %.0fs%s" % [
+			label, cost, need_pop, squad_hint, d.train_time if d != null else 0.0,
 			tier_hint
 		],
 		"color": Color(0.90, 0.90, 0.86) if ok else Color(0.55, 0.55, 0.52),
@@ -542,11 +546,12 @@ func _build_entry(bid: StringName) -> Dictionary:
 	return {
 		"label": d.display_name if d != null else String(bid),
 		"hint": (("" if note.is_empty() else note + "\n")
-				+ "建造 %s：%s，占地 %d×%d（朝向统一，不需要转向）") % [
+				+ "建造 %s：%s，占地 %d×%d（朝向统一，不需要转向）%s") % [
 			d.display_name if d != null else "建筑",
 			_cost_text(d),
 			d.footprint.x if d != null else 0,
 			d.footprint.y if d != null else 0,
+			I18n.t("hint.pop", {"pop": int(d.pop_cost)}) if Game.short_match and d != null else "",
 		],
 		"color": Color(0.78, 0.92, 0.72) if ok else Color(0.55, 0.55, 0.52),
 		"glyph": (d.display_name if d != null else "建").substr(0, 1),

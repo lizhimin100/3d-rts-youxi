@@ -50,7 +50,7 @@
 		"icon": "",
 		"description": "出步兵 / 弩手。一座建筑只管一件事。",
 		"race": "联盟",
-		"cost_gold": 160,
-		"cost_wood": 45
+		"cp_cost": 6,
+		"pop_cost": 4
 	}
 }

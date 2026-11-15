@@ -20,7 +20,7 @@
 		"train_time": 42,
 		"is_dropoff": true,
 		"dropoff_kinds": [],
-		"food_provided": 24,
+		"food_provided": 60,
 		"trains": [
 			"peasant"
 		],
@@ -50,7 +50,7 @@
 		"icon": "",
 		"description": "资源交汇点 + 农民产地 + 人口来源；被拆即败。",
 		"race": "联盟",
-		"cost_gold": 320,
-		"cost_wood": 125
+		"cp_cost": 0,
+		"pop_cost": 0
 	}
 }

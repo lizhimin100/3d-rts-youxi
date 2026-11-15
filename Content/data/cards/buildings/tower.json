@@ -46,7 +46,7 @@
 		"icon": "",
 		"description": "有攻击的防御塔，但视野比哨塔小（它是箭，不是哨）。",
 		"race": "联盟",
-		"cost_gold": 100,
-		"cost_wood": 40
+		"cp_cost": 5,
+		"pop_cost": 2
 	}
 }

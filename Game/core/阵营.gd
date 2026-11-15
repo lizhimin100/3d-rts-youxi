@@ -70,10 +70,13 @@ var gold: int = 0
 var wood: int = 0
 
 # --- 短局指挥点（CP）---
-## 浮点存储，避免 0.8/秒 的回复被整数截断；显示时取整。
+## 浮点存储（以后如果要加"半 CP"也不用改口径）；显示时取整。
+## 2026-11-15 玩家拍板：CP **只在规划阶段出现并消耗**；每回合规划阶段由基地补满，
+## 上回合剩余清零；执行阶段不回复、不显示、不能花。
 var cp: float = 0.0
 var cp_cap: float = 24.0
-var cp_regen: float = 0.8
+## 已停用（保留字段只为旧 JSON 能读）：CP 不再按秒回复。
+var cp_regen: float = 0.0
 
 # --- 单位集合（由 游戏 维护）---
 ## Array[RtsUnit]
@@ -99,11 +102,16 @@ func setup_cp(p_start: int, p_cap: int, p_regen: float) -> void:
 	cp_regen = maxf(p_regen, 0.0)
 
 
-## 每帧回复（只在执行阶段由 Game 调用；规划阶段冻结）
-func tick_cp(dt: float) -> void:
-	if cp_regen <= 0.0 or cp >= cp_cap:
-		return
-	cp = minf(cp + cp_regen * maxf(dt, 0.0), cp_cap)
+## **每回合规划阶段由基地补满 CP**（上回合剩余清零，不是累加）。
+## 唯一调用点：回合控制.end_execution() / 开局 setup_factions()。
+func begin_planning_cp(grant: int = -1) -> void:
+	var v: float = cp_cap if grant < 0 else float(grant)
+	cp = clampf(v, 0.0, cp_cap)
+
+
+## 兼容旧调用名：不再按秒回复（执行阶段 CP 冻结且不可花）。
+func tick_cp(_dt: float) -> void:
+	pass
 
 
 ## 付 CP（不够一分不扣）
@@ -120,10 +128,90 @@ func add_cp(amount: int) -> void:
 	cp = clampf(cp + float(amount), 0.0, cp_cap)
 
 
-## 当前**已用人口**：所有存活单位的 food_cost 之和（不含在训队列）。
+# --- 短局小队人口账本（2026-11-15）---
+## 每支已出生小队一条：{"pop": 8, "members": [RtsUnit...], "squad_id": 3}
+## 人口按**小队**算（步兵 5 人一队占 8，不是每人 1.6）：成员减员不退还，
+## 整队打光才释放。"留一个残兵也占着一队人口"是明确的战场代价。
+var squad_commits: Array = []
+# --- 短局建造订单（规划阶段下单，执行阶段只认这些单）---
+## 每条：{"id": StringName, "site_id": int}；site_id = 0 表示工地已取消、可重新选址。
+var build_orders: Array = []
+
+
+## 取自动加载 `Game`（**不要写裸 `Game`**：--script 自检在 autoload 注册前编译依赖链，
+## 裸引用会整条编译失败 → RtsFaction 退化成 RefCounted，setup/pay 全部不存在）。
+static func game_node() -> Node:
+	var loop: MainLoop = Engine.get_main_loop()
+	if loop is SceneTree:
+		return (loop as SceneTree).root.get_node_or_null("Game")
+	return null
+
+
+## 是不是短局（CP/人口/小队口径只在短局生效；长局保持旧经济）
+func is_short() -> bool:
+	var g := game_node()
+	return g != null and bool(g.get("short_match"))
+
+
+## 登记一支刚出生/刚编组的小队（训练出队、开局编组都走这里）
+func commit_squad(members: Array, pop: int, squad_id: int = 0) -> void:
+	if members.is_empty() or pop <= 0:
+		return
+	squad_commits.append({"pop": int(pop), "members": members.duplicate(), "squad_id": squad_id})
+
+
+## 小队人口剪枝：整队死光/失效才释放。返回释放的人口。
+func prune_squads() -> int:
+	var kept: Array = []
+	var released: int = 0
+	for rec in squad_commits:
+		var alive: bool = false
+		for m in rec.get("members", []):
+			if m != null and is_instance_valid(m) and m.has_method("is_alive") and bool(m.call("is_alive")):
+				alive = true
+				break
+		if alive:
+			kept.append(rec)
+		else:
+			released += int(rec.get("pop", 0))
+	squad_commits = kept
+	return released
+
+
+## 这个单位是否已经被某支小队登记过（避免"小队人口 + 单兵 food_cost"重复计）
+func in_squad(u: Node) -> bool:
+	for rec in squad_commits:
+		if (rec.get("members", []) as Array).has(u):
+			return true
+	return false
+
+
+## 当前**已用人口**。
+## 短局 = 小队人口 + 不在小队里的单兵 food_cost + 存活建筑的 pop_cost；
+## 长局 = 所有存活单位的 food_cost（旧口径，一行没改）。
 ## UI 不要直接拿它当"已用"显示 —— 用 `food_committed()`（含在训）。
 func food_used() -> int:
 	var total: int = 0
+	if is_short():
+		prune_squads()
+		for rec in squad_commits:
+			total += int(rec.get("pop", 0))
+		for u in units:
+			if u == null or not is_instance_valid(u) or not u.is_alive():
+				continue
+			if in_squad(u):
+				continue
+			var d: UnitDef = u.def
+			if d != null:
+				total += d.food_cost
+		# 建筑占人口（基地 / 农场 pop_cost = 0，不占；兵营/铁匠铺等占）
+		for b in buildings:
+			if b == null or not is_instance_valid(b) or not b.is_alive():
+				continue
+			var bd: UnitDef = b.def
+			if bd != null:
+				total += bd.pop_cost
+		return total
 	for u in units:
 		if u == null or not is_instance_valid(u):
 			continue
@@ -170,7 +258,8 @@ func food_queued() -> int:
 		for id in (q as Array):
 			var d: UnitDef = cn.call("unit", id) if cn != null else null
 			if d != null:
-				total += d.food_cost
+				# 短局：一次下单 = 一支小队，按队伍人口算（不是人头）
+				total += d.pop_cost if is_short() else d.food_cost
 	return total
 
 
@@ -181,9 +270,96 @@ func food_committed() -> int:
 	return food_used() + food_queued()
 
 
-## 人口是否够用（已用（含在训）+ 本次申请 <= 上限）
+## 人口是否够用（已用（含在训）+ 本次申请 <= 上限）。
+## 申请 0 人口（农场/大本营）永远放行：否则"被拆光了农场、人口超上限"时
+## 连 0 人口的农场都造不出来 —— 玩家会被永久卡死（2026-11-15 自查发现）。
 func has_food(amount: int) -> bool:
+	if amount <= 0:
+		return true
 	return Economy.has_food(food_committed(), 0, amount, food_cap())
+
+
+# ===========================================================================
+# 短局建造订单（规划阶段下单 → 执行阶段只能施工这些单）
+# ===========================================================================
+
+## 记一条建造订单。`site` 为空 = 只下单还没落地（执行阶段可"只订单不选址"）。
+func plan_build_order(id: StringName, site: Node = null) -> void:
+	build_orders.append({
+		"id": id,
+		"site_id": int((site as Node).get_instance_id()) if site != null else 0,
+	})
+
+
+## 把某个工地绑到已有订单上（工地落地时调用）。没有对应订单返回 false。
+func bind_build_site(site: Node) -> bool:
+	if site == null or not is_instance_valid(site):
+		return false
+	var sd: Variant = site.get("def")
+	var id: StringName = StringName(String(sd.get("id"))) if sd != null else &""
+	for i in range(build_orders.size() - 1, -1, -1):
+		var rec: Dictionary = build_orders[i]
+		if StringName(rec.get("id", &"")) != id:
+			continue
+		if int(rec.get("site_id", 0)) != 0:
+			continue
+		build_orders[i] = {"id": id, "site_id": int(site.get_instance_id())}
+		return true
+	return false
+
+
+## 工地在列表里的下标（没有返回 -1）
+func find_build_order(site: Node) -> int:
+	if site == null or not is_instance_valid(site):
+		return -1
+	var sid: int = int(site.get_instance_id())
+	for i in build_orders.size():
+		if int((build_orders[i] as Dictionary).get("site_id", 0)) == sid:
+			return i
+	return -1
+
+
+## 规划阶段撤销工地（退了 CP）：订单整条删掉，不能靠它白嫖第二座。
+func drop_build_site(site: Node) -> bool:
+	var i: int = find_build_order(site)
+	if i < 0:
+		return false
+	build_orders.remove_at(i)
+	return true
+
+
+## 工地被取消：订单不消失，回到"可重新选址"（不退 CP）
+func release_build_site(site: Node) -> bool:
+	var i: int = find_build_order(site)
+	if i < 0:
+		return false
+	var rec: Dictionary = build_orders[i]
+	build_orders[i] = {"id": rec.get("id", &""), "site_id": 0}
+	return true
+
+
+## 还有几条"已下单、未落地/被取消"的某建筑订单（执行阶段允许落地的数量）
+func open_build_orders(id: StringName = &"") -> int:
+	var n: int = 0
+	for rec in build_orders:
+		var r: Dictionary = rec
+		if int(r.get("site_id", 0)) != 0:
+			continue
+		if id == &"" or StringName(r.get("id", &"")) == id:
+			n += 1
+	return n
+
+
+## 消耗一条未落地订单（执行阶段重新选址时用）。成功返回 true。
+func take_open_build_order(id: StringName) -> bool:
+	for i in build_orders.size():
+		var r: Dictionary = build_orders[i]
+		if int(r.get("site_id", 0)) != 0:
+			continue
+		if StringName(r.get("id", &"")) != id:
+			continue
+		return true
+	return false
 
 
 ## 资源是否够

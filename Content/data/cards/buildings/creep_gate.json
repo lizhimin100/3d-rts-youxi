@@ -44,7 +44,7 @@
 		"icon": "",
 		"description": "野怪营地的锚点建筑：本身不出兵、不还手，只负责给「野怪营地」系统当坐标与归属。",
 		"race": "失落",
-		"cost_gold": 0,
-		"cost_wood": 0
+		"cp_cost": 0,
+		"pop_cost": 0
 	}
 }

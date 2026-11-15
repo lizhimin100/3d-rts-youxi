@@ -4,23 +4,23 @@
 		"main": {
 			"description": "主场景全景（非交互）",
 			"scene": "res://Views/scenes/主场景.tscn",
-			"delay": 8.0
+			"delay": 8
 		},
 		"planning": {
 			"description": "规划阶段全景（新界面：指挥官卡/CP/局外资源/人口+日夜/底部操作面板/规划结束）",
 			"scene": "res://Views/scenes/主场景.tscn",
-			"delay": 8.0,
+			"delay": 8,
 			"select_unit": "peasant"
 		},
 		"planning_empty": {
 			"description": "规划阶段：什么都不选（操作面板收起，只剩头像/顶部条/人口/CP/规划结束）",
 			"scene": "res://Views/scenes/主场景.tscn",
-			"delay": 8.0
+			"delay": 8
 		},
 		"planning_deploy": {
 			"description": "规划阶段选中步兵 → 点「部署_进攻」→ 在地图上点一下 → 验证真的入计划（二段式交互）",
 			"scene": "res://Views/scenes/主场景.tscn",
-			"delay": 8.0,
+			"delay": 8,
 			"select_unit": "footman",
 			"click": "部署_进攻",
 			"expect": "规划结束",
@@ -33,7 +33,7 @@
 		"planning_preview": {
 			"description": "规划阶段选中步兵 → 点「部署_防守」→ 鼠标移到地图上 → 截防守区色块预览",
 			"scene": "res://Views/scenes/主场景.tscn",
-			"delay": 8.0,
+			"delay": 8,
 			"select_unit": "footman",
 			"click": "部署_防守",
 			"expect": "规划结束",
@@ -45,14 +45,14 @@
 		"planning_cp": {
 			"description": "规划阶段空选中 → 点左中 CP 菱形 → 自动选中大本营并展开训练菜单",
 			"scene": "res://Views/scenes/主场景.tscn",
-			"delay": 8.0,
+			"delay": 8,
 			"click": "CP点",
 			"expect": "训练_联盟农民"
 		},
 		"planning_switch": {
 			"description": "规划结束的一瞬间：阶段横幅（蚂蚁线 + 横带）正在播，验证换阶段有提示",
 			"scene": "res://Views/scenes/主场景.tscn",
-			"delay": 8.0,
+			"delay": 8,
 			"click": "规划结束",
 			"expect": "资源条",
 			"wait_after": 0.22
@@ -60,7 +60,7 @@
 		"planning_end": {
 			"description": "规划阶段点「规划结束」→ 过场（镜头拉近 / 网格淡出）走完 → 进入执行阶段（顶部资源条恢复）",
 			"scene": "res://Views/scenes/主场景.tscn",
-			"delay": 8.0,
+			"delay": 8,
 			"click": "规划结束",
 			"expect": "资源条",
 			"wait_after": 2.2
@@ -68,7 +68,7 @@
 		"hud": {
 			"description": "长局/执行底栏：选中农民 → 用真实输入点开「建造」→ 验证建造页出现（旧界面回归）",
 			"scene": "res://Views/scenes/主场景.tscn",
-			"delay": 8.0,
+			"delay": 8,
 			"select_unit": "peasant",
 			"click": "指令_建造",
 			"expect": "指令_农场"
@@ -76,7 +76,7 @@
 		"planning_build": {
 			"description": "规划阶段选中农民 → 点「建造_农场」→ 落点提示出现（规划界面点得动）",
 			"scene": "res://Views/scenes/主场景.tscn",
-			"delay": 8.0,
+			"delay": 8,
 			"select_unit": "peasant",
 			"click": "建造_农场",
 			"expect": "落点提示"
@@ -84,23 +84,39 @@
 		"planning_construction": {
 			"description": "规划阶段选中农民 → 点「建造_农场」→ 在地图上落点 → 生成工地（半透明虚线兵牌）",
 			"scene": "res://Views/scenes/主场景.tscn",
-			"delay": 8.0,
+			"delay": 8,
 			"select_unit": "peasant",
 			"click": "建造_农场",
 			"expect": "落点提示",
 			"map_click": [
 				0.629,
-				0.580
+				0.58
 			],
 			"wait_after": 1.2
 		},
 		"planning_tip": {
 			"description": "规划阶段把鼠标悬停在「规划结束」上 → 气泡层弹出警告（规划阶段 paused 也要能弹）",
 			"scene": "res://Views/scenes/主场景.tscn",
-			"delay": 8.0,
+			"delay": 8,
 			"hover_control": "规划结束",
 			"hover_wait": 1.2,
 			"expect": "气泡"
+		},
+		"planning_token": {
+			"description": "规划阶段点大本营兵牌 → 选中建筑 → 底部训练面板（任务1：点兵牌有反应）",
+			"scene": "res://Views/scenes/主场景.tscn",
+			"delay": 8,
+			"token_click": "townhall",
+			"expect": "训练_联盟农民",
+			"wait_after": 0.45
+		},
+		"planning_unit": {
+			"description": "规划阶段点步兵兵牌 → 选中部队 → 底部部署面板（任务1：点兵牌有反应）",
+			"scene": "res://Views/scenes/主场景.tscn",
+			"delay": 8,
+			"token_click": "footman",
+			"expect": "部署_进攻",
+			"wait_after": 0.45
 		}
 	}
 }

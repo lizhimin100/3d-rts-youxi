@@ -234,7 +234,19 @@ func _ready() -> void:
 			if camera != null and camera.has_method("focus_on"):
 				camera.call("focus_on", mid)
 			print("[QA] 据点资源箱已刷出 @%.0f,%.0f" % [mid.x, mid.z])
+	# 4.92 **布局卡（2026-11-15）**：短局固定基础布局 + 槽位绑定 + 血量继承。
+	#      · 必须在关卡/地图对象落位之后（要读得到我方的旧基地锚点再清场）；
+	#      · 必须在 HUD / AI / 回合控制器之前（它们要看到最终的单位集合）。
+	if Game.short_match:
+		var lr: Node = _mount_script("res://Game/core/layout_runtime.gd", "LayoutRuntime")
+		if lr != null:
+			Game.layout = lr
+			lr.call("setup", level)
+			lr.call("boot")
+		# 4.925 短局小队编组：布局卡/地图摆的散兵按 squad_size 编成小队（人口按队算）。
+		Game.normalize_squads()
 	# QA：--qa-spawn=<id>[,<id>…] 在玩家基地旁直接生成（验收新单位/建筑能不能跑起来）
+	#      ★ 必须排在布局卡之后：布局卡会清掉"我方旧布阵"，QA 单位先生成会被一起清掉。
 	_qa_spawn_stuff()
 	# QA：--qa-arrow 沿 +X 射一箭，10 帧后把箭身朝向打出来（验收"箭是不是歪的"）
 	if "--qa-arrow" in OS.get_cmdline_user_args():

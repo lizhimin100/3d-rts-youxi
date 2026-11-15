@@ -53,7 +53,8 @@
 		"icon": "",
 		"description": "中立野怪：对任何玩家/盟友敌对，没有大本营。",
 		"race": "中立",
-		"cost_gold": 0,
-		"cost_wood": 0
+		"cp_cost": 0,
+		"pop_cost": 1,
+		"squad_size": 1
 	}
 }

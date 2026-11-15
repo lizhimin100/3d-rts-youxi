@@ -990,8 +990,8 @@ func _resource_tip(title: String) -> Dictionary:
 			return {"icon": "flag", "icon_color": Color(0.72, 0.86, 1.0),
 				"title": "指挥点 %d / %d" % [cp_v, cp_cap],
 				"tag": "短局资源",
-				"body": "短局唯一的运营资源。规划阶段支付，执行阶段按秒回复。\n训练、建造都花 CP；人口仍由建筑提供。",
-				"foot": "回复 %.1f / 秒" % (pl.cp_regen if pl != null else 0.0)}
+				"body": "短局唯一的运营资源：只在规划阶段出现并消耗，每回合由基地补满。\n执行阶段不回复、不显示、不能花；训练与建造都在规划阶段下单。",
+				"foot": "指挥点不在执行阶段显示"}
 		"金币":
 			var g: int = pl.gold if pl != null else 0
 			return {"icon": "coin", "icon_color": Spec.gold(), "title": "金币 %d" % g,
@@ -1006,7 +1006,7 @@ func _resource_tip(title: String) -> Dictionary:
 			var used: int = pl.food_committed() if pl != null else 0
 			var cap: int = pl.food_cap() if pl != null else 0
 			return {"icon": "pop", "icon_color": Spec.food(), "title": "人口 %d / %d" % [used, cap],
-				"tag": "已用 / 上限", "body": "每个单位都占人口，每座农场 +8 上限。\n规划阶段点下训练/建造就立刻计入「已用」人口，不等出队。",
+				"tag": "已用 / 上限", "body": "单位按小队占人口、建筑也占人口；每座农场 +20 上限。\n规划阶段点下训练/建造就立刻计入「已用」人口，不等出队。",
 				"foot": "空闲 %d" % maxi(cap - used, 0)}
 		"时间":
 			var secs: int = maxi(0, int(Game.elapsed)) if Game != null else 0
@@ -1906,6 +1906,73 @@ func _show_hide_hint(text: String) -> void:
 	tw.tween_callback(func() -> void: _hide_hint.visible = false)
 
 
+## ===========================================================================
+## 规划阶段：点兵牌 / 建筑牌 / 农民牌 → 选中实体 → 底部操作面板换形态
+## ===========================================================================
+##
+## 为什么在 `_input` 自己算命中，而不是让地图层吃 GUI 事件：
+##   · 地图层 `mouse_filter = IGNORE`（绝不拦 3D 点击，这是它的纪律）；
+##   · 规划阶段 3D 模型又是隐藏的，玩家看得见的落点只有这层兵牌 ——
+##     不自己算命中，点上去就什么都不会发生（玩家 2026-11-15 报的正是这个）。
+func _input(event: InputEvent) -> void:
+	if not _planning_active():
+		return
+	if event is InputEventMouseMotion:
+		if _planning_map != null and is_instance_valid(_planning_map) and _planning_map.visible:
+			_planning_map.call("set_hover", (event as InputEventMouseMotion).position)
+		return
+	if not (event is InputEventMouseButton):
+		return
+	var mb := event as InputEventMouseButton
+	if mb.button_index != MOUSE_BUTTON_LEFT or not mb.pressed:
+		return
+	if select_planning_token(mb.position):
+		get_viewport().set_input_as_handled()
+
+
+## 命中兵牌 → 走选择系统的同一入口（选中后规划界面按"选了什么"换面板）。
+## 返回是否真的选中了东西（自检直接调它，不需要造鼠标事件）。
+func select_planning_token(pos: Vector2) -> bool:
+	if not _planning_active():
+		return false
+	if _planning_map == null or not is_instance_valid(_planning_map) or not _planning_map.visible:
+		return false
+	if covers_point(pos):
+		return false
+	var host := get_parent()
+	if host == null or _planning_hud == null or not is_instance_valid(_planning_hud):
+		return false
+	# 部署模式 / 建造/技能等待落点：左键归它们，别在这里抢
+	# ★ 部署模式与选择入口都问规划界面（它已经有这两个节点的引用，
+	#   不必在 HUD 里再写一遍中文节点名 —— 那会把文案预算顶爆）。
+	if int(_planning_hud.call("deploy_mode")) != 0:
+		return false
+	var cs := _command_system()
+	if cs != null and cs.has_method("has_pending") and bool(cs.call("has_pending")):
+		return false
+	var hit: Dictionary = _planning_map.call("hit_test", pos)
+	if hit.is_empty():
+		return false
+	var pl := Game.player_faction
+	if pl == null:
+		return false
+	var fac: Variant = hit.get("faction", null)
+	if fac != null and fac != pl and not pl.is_ally_of(fac):
+		return false   # 敌方兵牌只作情报，不归玩家选
+	var list: Array = []
+	if String(hit.get("kind", "")) == "building":
+		var n: Variant = hit.get("node", null)
+		if n != null and is_instance_valid(n):
+			list.append(n)
+	else:
+		for u in hit.get("units", []):
+			if u != null and is_instance_valid(u) and u.has_method("is_alive") and bool(u.call("is_alive")):
+				list.append(u)
+	if list.is_empty():
+		return false
+	return bool(_planning_hud.call("select_units", list))
+
+
 ## 键盘：F9 显隐；Ctrl+A 全选己方；Esc（没有等待落点时）取消选择。
 ## 走轮询而不是 _unhandled_input：选择系统/指令系统都会吃掉鼠标键盘事件，
 ## 这里抢事件容易和它们打架（表现就是"按了没反应"或"按一下触发两次"）。
@@ -2367,14 +2434,12 @@ func _refresh_stats() -> void:
 		_sync_adjutant()
 		if _adj_btn.visible != was_vis:
 			_apply_layout()
-	# 短局：只显示 CP + 人口；长局：金币/木材/人口（CP 隐藏）。
+	# 短局：执行阶段不显示 CP（CP 只在规划阶段出现并消耗）；长局：金币/木材/人口。
 	var short: bool = Game.short_match
-	_set_pill_visible(_cp_label, short)
+	_set_pill_visible(_cp_label, false)
 	_set_pill_visible(_gold_label, not short)
 	_set_pill_visible(_wood_label, not short)
-	if short:
-		_set_label(_cp_label, "%d/%d" % [int(pl.cp), int(pl.cp_cap)])
-	else:
+	if not short:
 		_set_label(_gold_label, "%d" % pl.gold)
 		_set_label(_wood_label, "%d" % pl.wood)
 	if _time_label != null:

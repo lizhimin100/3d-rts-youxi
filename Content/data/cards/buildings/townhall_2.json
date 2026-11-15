@@ -20,7 +20,7 @@
 		"train_time": 60,
 		"is_dropoff": true,
 		"dropoff_kinds": [],
-		"food_provided": 32,
+		"food_provided": 60,
 		"trains": [
 			"peasant"
 		],
@@ -50,7 +50,7 @@
 		"icon": "",
 		"description": "二本主城。资源交汇点 + 农民产地 + 人口来源；被拆即败。美术沿用大本营（等下周素材）。",
 		"race": "联盟",
-		"cost_gold": 480,
-		"cost_wood": 220
+		"cp_cost": 10,
+		"pop_cost": 0
 	}
 }

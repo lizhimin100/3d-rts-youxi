@@ -24,3 +24,17 @@ avail.research_busy,研究中,Research in progress,可用性
 avail.no_worker,需要选中农民,Select a worker first,可用性
 avail.not_defined,未定义,Undefined,可用性
 avail.unknown,条件不满足,Not available,可用性
+avail.not_planning,执行阶段不能下达（只能在规划阶段下单）,Not available during execution (planning only),可用性
+plan.card_cost,CP {cp} · 人口 {pop},CP {cp} · Pop {pop},规划卡成本行
+plan.card_squad,CP {cp} · 人口 {pop} · {n} 人/队,CP {cp} · Pop {pop} · {n} per squad,规划卡成本行（单位）
+plan.no_trains,这座建筑没有可训练的单位,No units trainable here,规划训练面板
+short.no_train_in_exec,执行阶段不能训练：训练在规划阶段下单,Training is locked during execution,短局
+short.no_build_in_exec,执行阶段只能施工规划阶段下单的建筑,Build only what was ordered in planning,短局
+short.build_no_order,这栋建筑没有规划订单，不能建,No planning order for this building,短局
+short.cp_hidden,执行阶段不显示 CP：CP 只在规划阶段出现并消耗,CP is hidden during execution,短局
+short.build_cancel_refund,已取消建造：{name}（规划阶段撤销，CP 已退还）,Construction cancelled: {name} (CP refunded),短局
+short.build_cancel_keep,已取消建造：{name}（执行阶段不退 CP，订单保留可重新选址）,Construction cancelled: {name} (no refund, order kept),短局
+hint.squad,（{n} 人一队）,({n} per squad),提示
+hint.pop,  占人口 {pop},  pop {pop},提示
+short.no_cancel_train,执行阶段不能取消训练（队列在下单时锁定）,Training is locked during execution,短局
+plan.card_cost_compact,CP {cp} · {pop}人,CP {cp} · {pop} pop,规划卡成本行（紧凑）

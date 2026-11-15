@@ -165,18 +165,18 @@
 		"terrain_resolution": 128,
 		"player_base_pos": {
 			"$t": "Vector2",
-			"x": -62.0,
-			"y": 58.0
+			"x": -62,
+			"y": 58
 		},
 		"enemy_base_pos": {
 			"$t": "Vector2",
-			"x": 62.0,
-			"y": -58.0
+			"x": 62,
+			"y": -58
 		},
 		"gold_mine_offset": {
 			"$t": "Vector2",
-			"x": -13.0,
-			"y": -17.0
+			"x": -13,
+			"y": -17
 		},
 		"tree_clusters": 7,
 		"tree_cluster_radius_min": 5,
@@ -205,22 +205,22 @@
 		"player_buildings": {
 			"townhall": {
 				"$t": "Vector2",
-				"x": 0.0,
-				"y": 0.0
+				"x": 0,
+				"y": 0
 			},
 			"barracks": {
 				"$t": "Vector2",
-				"x": 13.0,
-				"y": 3.0
+				"x": 13,
+				"y": 3
 			},
 			"blacksmith": {
 				"$t": "Vector2",
-				"x": -13.0,
-				"y": 3.0
+				"x": -13,
+				"y": 3
 			},
 			"farm": {
 				"$t": "Vector2",
-				"x": -1.0,
+				"x": -1,
 				"y": 13.5
 			},
 			"watchtower": {
@@ -238,22 +238,22 @@
 		"enemy_buildings": {
 			"townhall": {
 				"$t": "Vector2",
-				"x": 0.0,
-				"y": 0.0
+				"x": 0,
+				"y": 0
 			},
 			"barracks": {
 				"$t": "Vector2",
-				"x": -13.0,
-				"y": 3.0
+				"x": -13,
+				"y": 3
 			},
 			"blacksmith": {
 				"$t": "Vector2",
-				"x": 13.0,
-				"y": 3.0
+				"x": 13,
+				"y": 3
 			},
 			"farm": {
 				"$t": "Vector2",
-				"x": 1.0,
+				"x": 1,
 				"y": 13.5
 			},
 			"watchtower": {
@@ -280,43 +280,43 @@
 				"$t": "Color",
 				"r": 0.300000011920929,
 				"g": 0.620000004768372,
-				"b": 1.0,
-				"a": 1.0
+				"b": 1,
+				"a": 1
 			},
 			{
 				"$t": "Color",
-				"r": 1.0,
+				"r": 1,
 				"g": 0.319999992847443,
 				"b": 0.259999990463257,
-				"a": 1.0
+				"a": 1
 			},
 			{
 				"$t": "Color",
 				"r": 0.379999995231628,
 				"g": 0.839999973773956,
 				"b": 0.360000014305115,
-				"a": 1.0
+				"a": 1
 			},
 			{
 				"$t": "Color",
 				"r": 0.740000009536743,
 				"g": 0.449999988079071,
 				"b": 0.959999978542328,
-				"a": 1.0
+				"a": 1
 			},
 			{
 				"$t": "Color",
 				"r": 0.980000019073486,
 				"g": 0.779999971389771,
 				"b": 0.239999994635582,
-				"a": 1.0
+				"a": 1
 			},
 			{
 				"$t": "Color",
 				"r": 0.239999994635582,
 				"g": 0.819999992847443,
 				"b": 0.800000011920929,
-				"a": 1.0
+				"a": 1
 			}
 		],
 		"ally_color": {
@@ -324,28 +324,28 @@
 			"r": 0.180000007152557,
 			"g": 0.899999976158142,
 			"b": 0.899999976158142,
-			"a": 1.0
+			"a": 1
 		},
 		"player_color": {
 			"$t": "Color",
 			"r": 0.300000011920929,
 			"g": 0.620000004768372,
-			"b": 1.0,
-			"a": 1.0
+			"b": 1,
+			"a": 1
 		},
 		"enemy_color": {
 			"$t": "Color",
-			"r": 1.0,
+			"r": 1,
 			"g": 0.319999992847443,
 			"b": 0.259999990463257,
-			"a": 1.0
+			"a": 1
 		},
 		"gold_color": {
 			"$t": "Color",
-			"r": 1.0,
+			"r": 1,
 			"g": 0.819999992847443,
 			"b": 0.239999994635582,
-			"a": 1.0
+			"a": 1
 		},
 		"minimap_size": 236,
 		"minimap_margin": 14,
@@ -354,7 +354,7 @@
 			"r": 0.850000023841858,
 			"g": 0.709999978542328,
 			"b": 0.360000014305115,
-			"a": 1.0
+			"a": 1
 		},
 		"hud_bg": {
 			"$t": "Color",
@@ -364,36 +364,13 @@
 			"a": 0.860000014305115
 		},
 		"toast_duration": 3,
-		"short_cp_start": 12,
+		"short_cp_start": 24,
 		"short_cp_cap": 24,
-		"short_cp_regen": 0.8,
-		"short_execution_seconds": 60.0,
+		"short_cp_regen": 0,
+		"short_execution_seconds": 180,
 		"short_rounds": 3,
-		"short_cp_costs": {
-			"peasant": 1,
-			"footman": 2,
-			"archer": 3,
-			"mage": 5,
-			"dwarf_musketeer": 5,
-			"golem": 8,
-			"spell_breaker": 5,
-			"gnoll_scout": 0,
-			"gnoll_warrior": 0,
-			"gnoll_shaman": 0,
-			"townhall": 0,
-			"townhall_2": 10,
-			"barracks": 6,
-			"farm": 4,
-			"blacksmith": 5,
-			"sanctum": 8,
-			"workshop": 7,
-			"lumbercamp": 3,
-			"watchtower": 4,
-			"tower": 5,
-			"campfire": 1,
-			"creep_den": 0,
-			"creep_gate": 0,
-			"creep_shell": 0
-		}
+		"short_cp_costs": {},
+		"short_layout": "res://Content/data/layouts/短局_默认.json",
+		"short_layout_replace": true
 	}
 }

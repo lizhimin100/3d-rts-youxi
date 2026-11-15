@@ -52,7 +52,8 @@
 		"icon": "",
 		"description": "二本兵营出的远程火枪手：射程 8.25 米、单发伤害高、射速慢。需要大本营升到二本（联盟要塞）。",
 		"race": "联盟",
-		"cost_gold": 140,
-		"cost_wood": 40
+		"cp_cost": 5,
+		"pop_cost": 8,
+		"squad_size": 4
 	}
 }

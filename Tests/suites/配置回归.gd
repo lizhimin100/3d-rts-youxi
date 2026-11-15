@@ -761,15 +761,17 @@ func _case_2c6() -> void:
 			"%s（步兵 %.2f）" % [str(speeds), float(_cfg.unit(&"footman").move_speed)])
 
 	# --- P4 大本营：有成本 / 玩家可建 / AI 不建（接线，1 条）---
+	# 2026-11-15：卡上只填 CP + 人口；长局 320 金/125 木来自 Content/data/long_costs.json。
 	var th_card = UT.get_card(&"townhall")
-	_record("2C6：大本营 320 金/125 木 + 建造页含 townhall + AI 固定不建",
-			th_card != null and int(th_card.cost_gold) == 320 and int(th_card.cost_wood) == 125
+	var th_def: UnitDef = _cfg.unit(&"townhall")
+	_record("2C6：大本营 320 金/125 木（长局价表）+ 建造页含 townhall + AI 固定不建",
+			th_card != null and th_def != null and th_def.gold_cost == 320 and th_def.wood_cost == 125
 			and cmd_src.contains("&\"townhall\"")
 			and sa_src.contains("func can_build_townhall() -> bool:") \
 				and sa_src.contains("const EXPAND_BASE_MAX"),
 			"金=%d 木=%d 建造页=%s AI=%s" % [
-				int(th_card.cost_gold) if th_card != null else -1,
-				int(th_card.cost_wood) if th_card != null else -1,
+				th_def.gold_cost if th_def != null else -1,
+				th_def.wood_cost if th_def != null else -1,
 				str(cmd_src.contains("&\"townhall\"")),
 				str(sa_src.contains("const EXPAND_BASE_MAX"))])
 

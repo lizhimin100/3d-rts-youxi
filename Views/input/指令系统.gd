@@ -464,6 +464,9 @@ func request_train(unit_id: StringName) -> void:
 ## 不是队尾。要退指定的某一条，去中段队列里点那一格（RtsBuilding.cancel_train_at）。
 ## 没有训练在排队时，顺手取消当前研究。
 func request_cancel_train() -> void:
+	if Game.short_match and not Game.is_planning():
+		_toast(I18n.t("short.no_cancel_train"), _warn())
+		return
 	var b := _primary_building()
 	if b == null:
 		return
@@ -492,6 +495,9 @@ func request_cancel_research() -> void:
 
 ## 取消队列里指定的一项（建筑面板点格子走这里，保证提示/退款口径一致）
 func request_cancel_train_at(idx: int) -> void:
+	if Game.short_match and not Game.is_planning():
+		_toast(I18n.t("short.no_cancel_train"), _warn())
+		return
 	var b := _primary_building()
 	if b == null:
 		return
@@ -1093,6 +1099,13 @@ func place_building(building_id: StringName, ground: Vector3, workers: Array = [
 	if workers.is_empty():
 		_toast("需要农民才能建造", _warn())
 		return null
+	var pl := Game.player_faction
+	# ★ 2026-11-15：执行阶段只能施工规划阶段下过单的建筑。
+	#   `open_build_orders` = 已下单但工地被取消的条目；执行阶段落一座就少一条。
+	var in_exec: bool = Game.short_match and not Game.is_planning()
+	if in_exec and (pl == null or pl.open_build_orders(building_id) <= 0):
+		_toast(I18n.t("short.build_no_order"), _warn())
+		return null
 
 	# --- 1. 这里是否已经有一栋同类工地？有就"加入"，不重复建也不重复扣钱 ---
 	var existing := _find_pending_site(building_id, ground, d.footprint)
@@ -1113,7 +1126,7 @@ func place_building(building_id: StringName, ground: Vector3, workers: Array = [
 	if not _can_place(pos, d):
 		_toast("这里不能建造（越界 / 挡住已有建筑 / 水面 / 地形不可建）", _warn())
 		return null
-	if not Game.can_afford(Game.player_faction, building_id):
+	if not in_exec and not Game.can_afford(Game.player_faction, building_id):
 		_toast("资源不足：%s" % d.display_name, _warn())
 		return null
 	# ★ 2026-11-13 二本门槛：`request_build` 已经拦过一次，这里再兜一次
@@ -1131,10 +1144,16 @@ func place_building(building_id: StringName, ground: Vector3, workers: Array = [
 	if first == null:
 		_toast("需要农民才能建造", _warn())
 		return null
-	first.call("order_build", d, pos, 建筑网格.snap_yaw(desired_yaw))
+	first.call("order_build", d, pos, 建筑网格.snap_yaw(desired_yaw), in_exec)
 	var site: Node3D = first.get("_build_site") as Node3D
 	if site == null or not is_instance_valid(site) or not site.is_alive():
 		return null   # order_build 自己失败了，它已经给过提示
+	# --- 订单账本：规划阶段落地 = 新订单；执行阶段落地 = 消耗已有订单 ---
+	if pl != null:
+		if in_exec:
+			pl.bind_build_site(site)
+		else:
+			pl.plan_build_order(building_id, site)
 
 	# --- 4. 其余农民挂到同一块工地（不新建、不扣费）---
 	for w in workers:

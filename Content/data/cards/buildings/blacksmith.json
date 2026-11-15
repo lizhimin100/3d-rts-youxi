@@ -49,7 +49,7 @@
 		"icon": "",
 		"description": "攻防升级（武器锻造 / 护甲锻造）。",
 		"race": "联盟",
-		"cost_gold": 155,
-		"cost_wood": 45
+		"cp_cost": 5,
+		"pop_cost": 2
 	}
 }

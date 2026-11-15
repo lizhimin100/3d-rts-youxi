@@ -96,13 +96,19 @@ extends Resource
 @export var food_provided: int = 0
 
 @export_group("经济")
+## 长局金/木成本。**卡上不再填**：由 `Content/data/long_costs.json` 的金木价表在
+## `配置入口._apply_long_costs()` 里写进来；短局完全不读这两个字段。
 @export var gold_cost: int = 0
 @export var wood_cost: int = 0
 @export var food_cost: int = 0
-## **短局 CP 成本**。由 `Content/data/game.json` 的 `short_cp_costs` 字典在
-## `配置入口._apply_short_costs()` 里写进来；长局完全忽略。
-## 不放进单位卡：短局和长局是两套资源，混在一张卡上会被误改。
+## **短局 CP 成本**（2026-11-15 起唯一来源 = 单位卡/建筑卡的 `cp_cost`）。
+## 长局完全忽略；`game.json` 的 `short_cp_costs` 只在显式登记时做覆盖。
 @export var cp_cost: int = 0
+## **单笔订单占用的人口**（单位 = 一小队；建筑 = 一座）。
+## 短局的人口账本只认这一个字段：`RtsFaction.food_committed()`。
+@export var pop_cost: int = 0
+## **一小队几人**（单位专用；建筑恒为 1）。训练一次出这么多人。
+@export var squad_size: int = 1
 ## 训练 / 建造耗时（秒）
 @export var train_time: float = 10.0
 ## **主城等级**（建筑用）：1 = 一本 / 2 = 二本。只有大本营有意义。

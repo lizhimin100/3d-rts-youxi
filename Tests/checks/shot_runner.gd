@@ -163,6 +163,48 @@ func _run() -> void:
 		await get_tree().create_timer(0.35).timeout
 		print("[shot] 地图点击 (%.0f, %.0f)" % [pos.x, pos.y])
 
+
+	# --- 可选：点规划阶段的兵牌（真实输入事件；2026-11-15 玩家要求"点兵牌有反应"） ---
+	if recipe.has("token_click"):
+		var tid := String(recipe["token_click"])
+		var hud_n := _find(_scene, "界面")
+		if hud_n == null:
+			_fail("找不到界面，无法点兵牌")
+			return
+		var pmap: Variant = hud_n.get("_planning_map")
+		if pmap == null:
+			_fail("规划地图层没建好")
+			return
+		var tr: Rect2 = pmap.call("token_rect_of_id", tid, true)
+		if tr.size.x <= 1.0:
+			_fail("找不到可点的兵牌：" + tid)
+			return
+		var tp: Vector2 = tr.get_center()
+		var mm := InputEventMouseMotion.new()
+		mm.position = tp
+		mm.global_position = tp
+		get_viewport().push_input(mm, true)
+		await get_tree().process_frame
+		var dm := InputEventMouseButton.new()
+		dm.button_index = MOUSE_BUTTON_LEFT
+		dm.pressed = true
+		dm.position = tp
+		dm.global_position = tp
+		get_viewport().push_input(dm, true)
+		await get_tree().process_frame
+		var um: InputEventMouseButton = dm.duplicate()
+		um.pressed = false
+		get_viewport().push_input(um, true)
+		await get_tree().create_timer(float(recipe.get("wait_after", 0.35))).timeout
+		var want := String(recipe.get("expect", ""))
+		if want.is_empty():
+			_fail("token_click 必须配 expect（点了兵牌要验面板出现）")
+			return
+		var want_n := _find(_scene, want)
+		if want_n == null or not (want_n is Control) or not (want_n as Control).is_visible_in_tree():
+			_fail("点了兵牌 %s 但 %s 没出现" % [tid, want])
+			return
+		print("[shot] 交互通过：点击兵牌 %s → %s 出现" % [tid, want])
 	# --- 可选：点了以后必须真的产生计划命令（部署/移动这类"点地图"的验收） ---
 	if recipe.has("expect_planned"):
 		var want_n := int(recipe["expect_planned"])

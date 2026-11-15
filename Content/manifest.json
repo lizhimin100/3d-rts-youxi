@@ -79,7 +79,7 @@
 		},
 		{
 			"path": "Game/ai/简单AI.gd",
-			"size": 355429
+			"size": 355759
 		},
 		{
 			"path": "Game/ai/简单AI.gd.uid",
@@ -171,7 +171,7 @@
 		},
 		{
 			"path": "Game/config/单位卡.gd",
-			"size": 6581
+			"size": 6808
 		},
 		{
 			"path": "Game/config/单位卡.gd.uid",
@@ -179,7 +179,7 @@
 		},
 		{
 			"path": "Game/config/单位定义.gd",
-			"size": 7916
+			"size": 8353
 		},
 		{
 			"path": "Game/config/单位定义.gd.uid",
@@ -187,7 +187,7 @@
 		},
 		{
 			"path": "Game/config/单位表.gd",
-			"size": 17234
+			"size": 17460
 		},
 		{
 			"path": "Game/config/单位表.gd.uid",
@@ -219,7 +219,7 @@
 		},
 		{
 			"path": "Game/config/可用性文案.gd",
-			"size": 1880
+			"size": 1933
 		},
 		{
 			"path": "Game/config/可用性文案.gd.uid",
@@ -227,7 +227,7 @@
 		},
 		{
 			"path": "Game/config/可用性查询.gd",
-			"size": 4265
+			"size": 4959
 		},
 		{
 			"path": "Game/config/可用性查询.gd.uid",
@@ -243,7 +243,7 @@
 		},
 		{
 			"path": "Game/config/实体卡.gd",
-			"size": 1256
+			"size": 1849
 		},
 		{
 			"path": "Game/config/实体卡.gd.uid",
@@ -299,7 +299,7 @@
 		},
 		{
 			"path": "Game/config/游戏配置.gd",
-			"size": 19726
+			"size": 20330
 		},
 		{
 			"path": "Game/config/游戏配置.gd.uid",
@@ -323,7 +323,7 @@
 		},
 		{
 			"path": "Game/config/配置入口.gd",
-			"size": 4322
+			"size": 5509
 		},
 		{
 			"path": "Game/config/配置入口.gd.uid",
@@ -362,6 +362,14 @@
 			"size": 20
 		},
 		{
+			"path": "Game/core/layout_runtime.gd",
+			"size": 14787
+		},
+		{
+			"path": "Game/core/layout_runtime.gd.uid",
+			"size": 20
+		},
+		{
 			"path": "Game/core/README.md",
 			"size": 1348
 		},
@@ -375,7 +383,7 @@
 		},
 		{
 			"path": "Game/core/主场景.gd",
-			"size": 59238
+			"size": 61282
 		},
 		{
 			"path": "Game/core/主场景.gd.uid",
@@ -383,7 +391,7 @@
 		},
 		{
 			"path": "Game/core/关卡.gd",
-			"size": 64250
+			"size": 66857
 		},
 		{
 			"path": "Game/core/关卡.gd.uid",
@@ -391,7 +399,7 @@
 		},
 		{
 			"path": "Game/core/回合控制.gd",
-			"size": 9776
+			"size": 10155
 		},
 		{
 			"path": "Game/core/回合控制.gd.uid",
@@ -407,7 +415,7 @@
 		},
 		{
 			"path": "Game/core/游戏状态.gd",
-			"size": 35479
+			"size": 38833
 		},
 		{
 			"path": "Game/core/游戏状态.gd.uid",
@@ -415,7 +423,7 @@
 		},
 		{
 			"path": "Game/core/阵营.gd",
-			"size": 9199
+			"size": 15615
 		},
 		{
 			"path": "Game/core/阵营.gd.uid",
@@ -675,7 +683,7 @@
 		},
 		{
 			"path": "Game/units/单位.gd",
-			"size": 173540
+			"size": 173756
 		},
 		{
 			"path": "Game/units/单位.gd.uid",
@@ -707,7 +715,7 @@
 		},
 		{
 			"path": "Game/units/建筑.gd",
-			"size": 52792
+			"size": 54076
 		},
 		{
 			"path": "Game/units/建筑.gd.uid",
@@ -723,7 +731,7 @@
 		},
 		{
 			"path": "Views/camera/魔兽镜头.gd",
-			"size": 27902
+			"size": 33042
 		},
 		{
 			"path": "Views/camera/魔兽镜头.gd.uid",
@@ -731,7 +739,7 @@
 		},
 		{
 			"path": "Views/hud/HUD.gd",
-			"size": 117877
+			"size": 121585
 		},
 		{
 			"path": "Views/hud/HUD.gd.uid",
@@ -751,7 +759,7 @@
 		},
 		{
 			"path": "Views/hud/命令卡.gd",
-			"size": 40510
+			"size": 40817
 		},
 		{
 			"path": "Views/hud/命令卡.gd.uid",
@@ -855,7 +863,7 @@
 		},
 		{
 			"path": "Views/hud/规划地图层.gd",
-			"size": 23614
+			"size": 37360
 		},
 		{
 			"path": "Views/hud/规划地图层.gd.uid",
@@ -863,7 +871,7 @@
 		},
 		{
 			"path": "Views/hud/规划阶段界面.gd",
-			"size": 52110
+			"size": 53405
 		},
 		{
 			"path": "Views/hud/规划阶段界面.gd.uid",
@@ -931,7 +939,7 @@
 		},
 		{
 			"path": "Views/input/指令系统.gd",
-			"size": 59985
+			"size": 60848
 		},
 		{
 			"path": "Views/input/指令系统.gd.uid",
@@ -1255,7 +1263,7 @@
 		},
 		{
 			"path": "Views/world/规划沙盘.gd",
-			"size": 9849
+			"size": 20289
 		},
 		{
 			"path": "Views/world/规划沙盘.gd.uid",
@@ -1319,10 +1327,18 @@
 		},
 		{
 			"path": "Model/core/可用性.gd",
-			"size": 6106
+			"size": 6640
 		},
 		{
 			"path": "Model/core/可用性.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Model/layout/layout_card.gd",
+			"size": 7985
+		},
+		{
+			"path": "Model/layout/layout_card.gd.uid",
 			"size": 20
 		},
 		{
@@ -1515,7 +1531,7 @@
 		},
 		{
 			"path": "Tests/checks/check_all.gd",
-			"size": 34459
+			"size": 36935
 		},
 		{
 			"path": "Tests/checks/check_all.gd.uid",
@@ -1523,7 +1539,7 @@
 		},
 		{
 			"path": "Tests/checks/shot_runner.gd",
-			"size": 8699
+			"size": 10284
 		},
 		{
 			"path": "Tests/checks/shot_runner.gd.uid",
@@ -1543,7 +1559,7 @@
 		},
 		{
 			"path": "Tests/model/model_tests.gd",
-			"size": 11434
+			"size": 13628
 		},
 		{
 			"path": "Tests/model/model_tests.gd.uid",
@@ -1635,7 +1651,7 @@
 		},
 		{
 			"path": "Tests/suites/半回合自检.gd",
-			"size": 11182
+			"size": 21345
 		},
 		{
 			"path": "Tests/suites/半回合自检.gd.uid",
@@ -1859,7 +1875,7 @@
 		},
 		{
 			"path": "Tests/suites/配置回归.gd",
-			"size": 143800
+			"size": 143960
 		},
 		{
 			"path": "Tests/suites/配置回归.gd.uid",
@@ -2307,59 +2323,59 @@
 		},
 		{
 			"path": "Content/data/cards/buildings/barracks.json",
-			"size": 1104
+			"size": 1099
 		},
 		{
 			"path": "Content/data/cards/buildings/blacksmith.json",
-			"size": 1091
-		},
-		{
-			"path": "Content/data/cards/buildings/campfire.json",
-			"size": 1069
-		},
-		{
-			"path": "Content/data/cards/buildings/creep_den.json",
-			"size": 1128
-		},
-		{
-			"path": "Content/data/cards/buildings/creep_gate.json",
-			"size": 1123
-		},
-		{
-			"path": "Content/data/cards/buildings/creep_shell.json",
-			"size": 1125
-		},
-		{
-			"path": "Content/data/cards/buildings/farm.json",
-			"size": 1013
-		},
-		{
-			"path": "Content/data/cards/buildings/lumbercamp.json",
-			"size": 1126
-		},
-		{
-			"path": "Content/data/cards/buildings/sanctum.json",
-			"size": 1108
-		},
-		{
-			"path": "Content/data/cards/buildings/tower.json",
-			"size": 1085
-		},
-		{
-			"path": "Content/data/cards/buildings/townhall.json",
-			"size": 1114
-		},
-		{
-			"path": "Content/data/cards/buildings/townhall_2.json",
-			"size": 1179
-		},
-		{
-			"path": "Content/data/cards/buildings/watchtower.json",
 			"size": 1086
 		},
 		{
-			"path": "Content/data/cards/buildings/workshop.json",
+			"path": "Content/data/cards/buildings/campfire.json",
+			"size": 1066
+		},
+		{
+			"path": "Content/data/cards/buildings/creep_den.json",
+			"size": 1126
+		},
+		{
+			"path": "Content/data/cards/buildings/creep_gate.json",
 			"size": 1121
+		},
+		{
+			"path": "Content/data/cards/buildings/creep_shell.json",
+			"size": 1123
+		},
+		{
+			"path": "Content/data/cards/buildings/farm.json",
+			"size": 1009
+		},
+		{
+			"path": "Content/data/cards/buildings/lumbercamp.json",
+			"size": 1122
+		},
+		{
+			"path": "Content/data/cards/buildings/sanctum.json",
+			"size": 1103
+		},
+		{
+			"path": "Content/data/cards/buildings/tower.json",
+			"size": 1080
+		},
+		{
+			"path": "Content/data/cards/buildings/townhall.json",
+			"size": 1108
+		},
+		{
+			"path": "Content/data/cards/buildings/townhall_2.json",
+			"size": 1174
+		},
+		{
+			"path": "Content/data/cards/buildings/watchtower.json",
+			"size": 1082
+		},
+		{
+			"path": "Content/data/cards/buildings/workshop.json",
+			"size": 1115
 		},
 		{
 			"path": "Content/data/cards/camps/camp_creep_den_1.json",
@@ -2403,51 +2419,59 @@
 		},
 		{
 			"path": "Content/data/cards/units/archer.json",
-			"size": 1299
+			"size": 1314
 		},
 		{
 			"path": "Content/data/cards/units/dwarf_musketeer.json",
-			"size": 1242
+			"size": 1256
 		},
 		{
 			"path": "Content/data/cards/units/footman.json",
-			"size": 1429
+			"size": 1444
 		},
 		{
 			"path": "Content/data/cards/units/gnoll_scout.json",
-			"size": 1252
+			"size": 1269
 		},
 		{
 			"path": "Content/data/cards/units/gnoll_shaman.json",
-			"size": 1262
+			"size": 1279
 		},
 		{
 			"path": "Content/data/cards/units/gnoll_warrior.json",
-			"size": 1217
+			"size": 1234
 		},
 		{
 			"path": "Content/data/cards/units/golem.json",
-			"size": 1313
+			"size": 1326
 		},
 		{
 			"path": "Content/data/cards/units/mage.json",
-			"size": 1192
+			"size": 1206
 		},
 		{
 			"path": "Content/data/cards/units/peasant.json",
-			"size": 1245
+			"size": 1261
 		},
 		{
 			"path": "Content/data/cards/units/spell_breaker.json",
-			"size": 1290
+			"size": 1304
 		},
 		{
 			"path": "Content/data/game.json",
-			"size": 7719
+			"size": 7290
 		},
 		{
 			"path": "Content/data/harvestables.json",
 			"size": 7667
+		},
+		{
+			"path": "Content/data/layouts/短局_默认.json",
+			"size": 2774
+		},
+		{
+			"path": "Content/data/long_costs.json",
+			"size": 1129
 		},
 		{
 			"path": "Content/data/researches.json",
@@ -2455,7 +2479,7 @@
 		},
 		{
 			"path": "Content/data/screens.json",
-			"size": 3377
+			"size": 4250
 		},
 		{
 			"path": "Content/data/sim.json",
@@ -2467,19 +2491,19 @@
 		},
 		{
 			"path": "Content/i18n/ui.csv",
-			"size": 1732
+			"size": 3262
 		},
 		{
 			"path": "Content/i18n/ui.en.translation",
-			"size": 1528
+			"size": 2180
 		},
 		{
 			"path": "Content/i18n/ui.note.translation",
-			"size": 1493
+			"size": 1985
 		},
 		{
 			"path": "Content/i18n/ui.zh.translation",
-			"size": 1663
+			"size": 2611
 		},
 		{
 			"path": "Content/keys/assets.json",
@@ -2511,7 +2535,7 @@
 		},
 		{
 			"path": "addons/map_editor/卡片弹窗.gd",
-			"size": 34111
+			"size": 34505
 		},
 		{
 			"path": "addons/map_editor/卡片弹窗.gd.uid",

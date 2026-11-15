@@ -295,19 +295,24 @@ extends Resource
 # 短局（半回合制：规划阶段暂停 / 执行阶段实时 / CP 运营）
 # 归在「对局」组里，不新增 @export_group —— 旧界面文案预算冻结，新增分组名也算一条。
 # ---------------------------------------------------------------------------
-## 开局 CP
-@export var short_cp_start: int = 12
-## CP 上限
+## 开局 CP（第一回合规划阶段由基地提供）
+@export var short_cp_start: int = 24
+## CP 上限 = 每回合规划阶段基地补满到的值
 @export var short_cp_cap: int = 24
-## 每秒回复的 CP
-@export var short_cp_regen: float = 0.8
-## 每次执行阶段的时长（秒）；到点自动回到规划阶段
-@export var short_execution_seconds: float = 60.0
+## 已停用的每秒回复（保留字段只为旧存档/旧 JSON 能读；执行阶段绝不回复 CP）
+@export var short_cp_regen: float = 0.0
+## 每次执行阶段的时长（秒）；到点自动回到规划阶段。默认 3 分钟（一游戏日）
+@export var short_execution_seconds: float = 180.0
 ## 一局共几个执行回合
 @export var short_rounds: int = 3
-## id → CP 成本。**唯一数值来源**（不写进单位卡，避免和长局金木混在一起）。
-## 未登记的 id 按 0 CP 处理（只用于短局；长局完全忽略这个字典）。
+## id → CP 成本 **覆盖表**（可选）。空 = 全部读单位卡/建筑卡的 `cp_cost`。
+## 只用于临时全局改价；卡仍是唯一数值来源。
 @export var short_cp_costs: Dictionary = {}
+## 短局固定基础布局卡（开发工具，不暴露给玩家）。空 = 不用布局卡、按地图/配置布阵。
+## 格式见 Documents/短局-布局卡.md；运行时由 Game/core/布局运行时.gd 实例化。
+@export var short_layout: String = ""
+## 布局卡是否替换地图/配置里**我方槽位**已有的单位与建筑（默认替换 = 固定基础布局）。
+@export var short_layout_replace: bool = true
 
 
 ## 某槽位属于哪个队（越界按 1 队算）

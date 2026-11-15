@@ -84,6 +84,9 @@ var neutral_faction: RtsFaction = null
 var passive_faction: RtsFaction = null
 ## 关卡（由 主场景 挂上）
 var level: Node3D = null
+## **短局固定布局运行时**（Game/core/布局运行时.gd；长局 / 没配布局卡时为 null）。
+## 槽位（slot_id）绑定、血量继承、损毁态与复活都通过它，见 Documents/短局-布局卡.md。
+var layout = null
 
 ## **战争迷雾节点**（由 主场景 在 _setup_fog 里挂上；没有 = 无迷雾，全部可见）。
 ## ★ 单位索敌 / 开火都要问"我这一刻看不看得见他"，唯一出口是本文件的 `is_visible_to()`。
@@ -189,11 +192,8 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if phase == RtsConst.Phase.RUNNING:
 		elapsed += delta
-		# 短局：CP 是唯一运营资源，按秒回复（封顶）。
-		if short_match:
-			for f in factions:
-				if f != null and is_instance_valid(f):
-					f.tick_cp(delta)
+		# ★ 2026-11-15 玩家拍板：CP 只在规划阶段出现/消耗；执行阶段不回复、不显示。
+		#   每回合规划阶段由基地补满（回合控制.end_execution → begin_planning_cp）。
 	# 命令组状态机：组内全部 idle 才算"命令结束"，然后进宽限期。
 	if control != null:
 		control.tick(elapsed)
@@ -306,6 +306,80 @@ func setup_factions(slots_override: int = 0, teams: Array = [], colors: Array = 
 
 
 # ===========================================================================
+# 短局：小队编组 / 布局卡槽位
+# ===========================================================================
+
+## **短局开局编组**：把地图/布局卡摆的散兵按 `squad_size` 编成小队，并登记队伍人口。
+## 不编组的话 `food_used()` 会按人头算，和"训练出来的小队按队算"两套口径打架。
+## 幂等：已经在某支小队里的单位跳过。
+func normalize_squads() -> void:
+	if not short_match or squads == null:
+		return
+	for f in factions:
+		if f == null or not is_instance_valid(f):
+			continue
+		var by_id: Dictionary = {}
+		for u in f.units:
+			if u == null or not is_instance_valid(u) or not (u is RtsUnit):
+				continue
+			var ru := u as RtsUnit
+			if not ru.is_alive() or ru.def == null:
+				continue
+			if ru.def.kind != RtsConst.Kind.UNIT:
+				continue
+			if f.in_squad(ru):
+				continue
+			var key := String(ru.def.id)
+			if not by_id.has(key):
+				by_id[key] = []
+			(by_id[key] as Array).append(ru)
+		for key in by_id.keys():
+			var arr: Array = by_id[key]
+			var d: UnitDef = Cfg.unit(StringName(key))
+			var size: int = maxi(int(d.squad_size), 1) if d != null else 1
+			var pop: int = int(d.pop_cost) if d != null else 1
+			var i: int = 0
+			while i < arr.size():
+				var chunk: Array = []
+				for k in range(size):
+					if i + k < arr.size():
+						chunk.append(arr[i + k])
+				var sq = squads.call("create", f, chunk)
+				var sid: int = int((sq as Object).get("id")) if sq != null else 0
+				f.commit_squad(chunk, pop, sid)
+				i += size
+
+
+## 槽位 → 实体（布局卡绑定；没有 / 已损毁返回 null）
+func slot_entity(slot_id: String) -> Node3D:
+	if layout == null or not is_instance_valid(layout) or not layout.has_method("slot_entity"):
+		return null
+	return layout.call("slot_entity", slot_id) as Node3D
+
+
+## 全部槽位 id（布局卡；没有布局时为空）
+func slot_ids() -> Array:
+	if layout == null or not is_instance_valid(layout) or not layout.has_method("slot_ids"):
+		return []
+	return layout.call("slot_ids")
+
+
+## 槽位状态：{slot_id, id, kind, destroyed, hp, initial_hp}
+func slot_state(slot_id: String) -> Dictionary:
+	if layout == null or not is_instance_valid(layout) or not layout.has_method("slot_state"):
+		return {}
+	return layout.call("slot_state", slot_id)
+
+
+## **复活一个损毁槽位**（长局火堆节点调用；恢复到 initial_hp 或指定血量）。
+## 返回复活出来的节点；没有这个槽位/不该复活时返回 null。
+func revive_slot(slot_id: String, hp: float = -1.0) -> Node3D:
+	if layout == null or not is_instance_valid(layout) or not layout.has_method("revive_slot"):
+		return null
+	return layout.call("revive_slot", slot_id, hp) as Node3D
+
+
+# ===========================================================================
 # 队伍 / 敌我（**唯一判据**：team 相同即盟友）
 # ===========================================================================
 
@@ -381,6 +455,7 @@ func reset() -> void:
 	level = null
 	day_night = null
 	round_control = null
+	layout = null
 	phase = RtsConst.Phase.PLANNING
 	elapsed = 0.0
 	if squads != null:
@@ -759,7 +834,7 @@ func can_afford(faction: RtsFaction, unit_id: StringName) -> bool:
 	if short_match:
 		if d.cp_cost > 0 and faction.cp + 0.0001 < float(d.cp_cost):
 			return false
-		return faction.has_food(d.food_cost)
+		return faction.has_food(d.pop_cost)
 	return faction.can_afford(d) and faction.has_food(d.food_cost)
 
 
@@ -786,7 +861,7 @@ func pay(faction: RtsFaction, unit_id: StringName) -> bool:
 	var d: UnitDef = Cfg.unit(unit_id)
 	if d == null or faction == null:
 		return false
-	if not faction.has_food(d.food_cost):
+	if not faction.has_food(d.pop_cost if short_match else d.food_cost):
 		return false
 	if short_match:
 		if not faction.pay_cp(d.cp_cost):
@@ -860,6 +935,8 @@ func spawn_unit(faction: RtsFaction, unit_id: StringName, pos: Vector3,
 ## 玩家胜利。set_phase 会暂停世界（HUD 是 ALWAYS，遮罩照样能显示）。
 func trigger_victory() -> void:
 	if phase == RtsConst.Phase.RUNNING or phase == RtsConst.Phase.PLANNING:
+		if layout != null and is_instance_valid(layout) and layout.has_method("capture_and_save"):
+			layout.call("capture_and_save")
 		set_phase(RtsConst.Phase.VICTORY)
 		game_over.emit(true)
 
@@ -867,6 +944,8 @@ func trigger_victory() -> void:
 ## 玩家失败
 func trigger_defeat() -> void:
 	if phase == RtsConst.Phase.RUNNING or phase == RtsConst.Phase.PLANNING:
+		if layout != null and is_instance_valid(layout) and layout.has_method("capture_and_save"):
+			layout.call("capture_and_save")
 		set_phase(RtsConst.Phase.DEFEAT)
 		game_over.emit(false)
 

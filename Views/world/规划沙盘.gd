@@ -325,6 +325,9 @@ func _rebuild_clusters() -> void:
 					"def": lead.def,
 					"center": g["center"],
 					"count": int(g["n"]),
+					# 兵牌点击要能选回**这面牌上的真实单位**（不是另挑一个最近的）：
+					# 规划地图层只读这个数组，不自己再扫世界。
+					"units": (g["units"] as Array).duplicate(),
 				})
 
 

@@ -1555,6 +1555,11 @@ func _can_spend(id: StringName) -> bool:
 		return false
 	if Cfg.unit(id) == null:
 		return false
+	# ★ 2026-11-15：短局里 CP/人口是**玩家的战略决定**（规划阶段下单）。
+	#   副官只做 C 层战术微操、敌方是脚本波次，两边都不许花 CP ——
+	#   否则副官会在执行阶段抢着下单，玩家看到"执行阶段不能训练"的提示刷屏。
+	if Game.short_match:
+		return false
 	return Game.can_afford(_faction, id)
 
 

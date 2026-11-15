@@ -13,6 +13,7 @@ const ModelDamage := preload("res://Model/core/damage.gd")
 const ModelEconomy := preload("res://Model/core/economy.gd")
 const SaveSchema := preload("res://Model/save/save_schema.gd")
 const ModelTests := preload("res://Tests/model/model_tests.gd")
+const LAYOUT_CARD := preload("res://Model/layout/layout_card.gd")
 const CAMP := preload("res://Game/config/野怪营地表.gd")
 const SKILLS := preload("res://Game/config/技能表.gd")
 const SCREENS := "res://Content/data/screens.json"
@@ -35,6 +36,7 @@ func _run() -> void:
 	_check_layout()
 	_check_hard_paths()
 	_check_data_json()
+	_check_layout_cards()
 	_check_cards()
 	_check_card_io()
 	_check_maps()
@@ -139,6 +141,53 @@ func _check_hard_paths() -> void:
 # ===========================================================================
 # 2. JSON 数据
 # ===========================================================================
+
+# ===========================================================================
+# 布局卡（短局固定基础布局；开发工具，不暴露给玩家）
+# ===========================================================================
+func _check_layout_cards() -> void:
+	var dir := DirAccess.open("res://Content/data/layouts")
+	if dir == null:
+		_ok("布局卡目录存在（Content/data/layouts）", false)
+		return
+	var files: Array = []
+	for f in dir.get_files():
+		if f.ends_with(".json"):
+			files.append(f)
+	_ok("布局卡目录有卡（%d 张）" % files.size(), not files.is_empty())
+	var errors: Array[String] = []
+	var count: int = 0
+	for f in files:
+		var path := "res://Content/data/layouts/" + String(f)
+		var text := FileAccess.get_file_as_string(path)
+		var parsed: Dictionary = LAYOUT_CARD.parse(JSON.parse_string(text))
+		if not bool(parsed.get("ok", false)):
+			errors.append(f + " → " + str(parsed.get("errors", [])))
+			continue
+		count += 1
+		var card: Dictionary = parsed.get("card", {})
+		# 静态/动态分离：卡里出现 current_hp = 直接把运行时状态写进了内容资产。
+		if text.contains("current_hp"):
+			errors.append(f + " → 写了 current_hp（当前血量只能进存档）")
+		for rec in card.get("slots", []):
+			var s: Dictionary = rec
+			var id := StringName(String(s.get("id", "")))
+			var d: UnitDef = _cfg.call("unit", id) if _cfg != null else null
+			if d == null:
+				errors.append(f + " → 未知 id " + String(id))
+				continue
+			var want_building: bool = String(s.get("type", "")) == "building"
+			if want_building and d.kind != RtsConst.Kind.BUILDING:
+				errors.append(f + " → " + String(id) + " 不是建筑")
+			elif not want_building and d.kind != RtsConst.Kind.UNIT:
+				errors.append(f + " → " + String(id) + " 不是单位")
+			elif float(s.get("initial_hp", 0.0)) > d.max_hp + 0.01:
+				errors.append(f + " → " + String(id) + " 的 initial_hp 超过 max_hp")
+	_ok("布局卡可解析且引用闭环（%d 张）" % count, errors.is_empty(), "; ".join(errors.slice(0, 4)))
+	# 配置里登记的默认布局卡必须真实存在（否则短局会静默按地图布阵）
+	var cfg_path: String = String(_cfg.game.short_layout) if _cfg != null else ""
+	_ok("短局默认布局卡路径有效", cfg_path.is_empty() or FileAccess.file_exists(cfg_path), cfg_path)
+
 func _check_data_json() -> void:
 	var files := _walk("res://Content/data")
 	var count := 0

@@ -45,8 +45,10 @@ static func train(b: Node, id: StringName, faction) -> Dictionary:
 		"current_tier": _tier(faction),
 		"queue_size": queue.size(),
 		"queue_max": QUEUE_MAX,
-		"food_cost": int(d.food_cost),
+		# 短局一次下单 = 一支小队：人口按队伍算；长局照旧按人头。
+		"food_cost": int(d.pop_cost if Game.short_match else d.food_cost),
 		"food_free": _food_free(faction),
+		"phase_ok": (not Game.short_match) or Game.is_planning(),
 		# 短局：只看 CP；长局仍然看金木（short=false 时这些字段被忽略）
 		"short": Game.short_match,
 		"cp": int(faction.cp) if faction != null else 0,
@@ -87,11 +89,19 @@ static func build(id: StringName, faction, has_worker: bool = true) -> Dictionar
 	var d: UnitDef = Cfg.unit(id)
 	if d == null:
 		return A.fail(&"not_defined")
+	# 执行阶段只有"规划阶段下过单、工地被取消"的建筑还能重新选址（订单保留）。
+	var open_order: bool = false
+	if faction != null and faction.has_method("open_build_orders"):
+		open_order = int(faction.call("open_build_orders", id)) > 0
 	return A.check_build({
 		"has_worker": has_worker,
+		"phase_ok": (not Game.short_match) or Game.is_planning() or open_order,
 		"require_tier": int(d.require_tier),
 		"current_tier": _tier(faction),
 		"short": Game.short_match,
+		# 短局：建筑也占人口（农场/基地 pop_cost = 0），所以建造前先看空闲人口。
+		"food_free": _food_free(faction),
+		"pop_cost": int(d.pop_cost),
 		"cp": int(faction.cp) if faction != null else 0,
 		"cp_cost": int(d.cp_cost),
 		"gold": int(faction.gold) if faction != null else 0,
