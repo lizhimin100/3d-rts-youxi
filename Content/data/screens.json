@@ -12,6 +12,11 @@
 			"delay": 8.0,
 			"select_unit": "peasant"
 		},
+		"planning_empty": {
+			"description": "规划阶段：什么都不选（操作面板收起，只剩头像/顶部条/人口/CP/规划结束）",
+			"scene": "res://Views/scenes/主场景.tscn",
+			"delay": 8.0
+		},
 		"planning_deploy": {
 			"description": "规划阶段选中步兵 → 点「部署_进攻」→ 在地图上点一下 → 验证真的入计划（二段式交互）",
 			"scene": "res://Views/scenes/主场景.tscn",
@@ -44,12 +49,21 @@
 			"click": "CP点",
 			"expect": "训练_联盟农民"
 		},
-		"planning_end": {
-			"description": "规划阶段点「规划结束」→ 进入执行阶段（顶部资源条恢复可见）",
+		"planning_switch": {
+			"description": "规划结束的一瞬间：阶段横幅（蚂蚁线 + 横带）正在播，验证换阶段有提示",
 			"scene": "res://Views/scenes/主场景.tscn",
 			"delay": 8.0,
 			"click": "规划结束",
-			"expect": "资源条"
+			"expect": "资源条",
+			"wait_after": 0.22
+		},
+		"planning_end": {
+			"description": "规划阶段点「规划结束」→ 过场（镜头拉近 / 网格淡出）走完 → 进入执行阶段（顶部资源条恢复）",
+			"scene": "res://Views/scenes/主场景.tscn",
+			"delay": 8.0,
+			"click": "规划结束",
+			"expect": "资源条",
+			"wait_after": 2.2
 		},
 		"hud": {
 			"description": "长局/执行底栏：选中农民 → 用真实输入点开「建造」→ 验证建造页出现（旧界面回归）",

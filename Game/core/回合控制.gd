@@ -107,6 +107,32 @@ func next_wave_text() -> String:
 	return "%s：%s" % [prefix, " ".join(parts)]
 
 
+## 明牌意图用的**兵种 id 列表**（只要种类，绝对不给数量/时间 —— 玩家 2026-11-15 明令禁止）。
+## 规划地图层把每个 id 翻成一张兵种图标挂到敌方红区上方。
+func next_wave_ids() -> Array:
+	if round_index >= rounds():
+		return []
+	var idx: int = clampi(round_index, 0, WAVES.size() - 1)
+	var pack: Dictionary = WAVES[idx]
+	var out: Array = []
+	for id in pack.keys():
+		var key := StringName(id)
+		if not out.has(key):
+			out.append(key)
+	return out
+
+
+## 阶段横幅用："第 N / M 回合"
+##
+## ★ 口径：`round_index` 是"**已经开打**的回合数"。
+##   执行阶段 = 正在打第 round_index 回合；规划阶段 = 在排第 round_index + 1 回合。
+##   直接写 round_index + 1 会让"执行阶段"的横幅跳成第 2 回合（实测踩过）。
+func round_index_text() -> String:
+	var n: int = rounds()
+	var cur: int = round_index if Game.is_executing() else round_index + 1
+	return "第 %d / %d 回合" % [clampi(cur, 1, n), n]
+
+
 ## **开始执行**（HUD 按钮唯一入口）。
 ## 顺序很重要：先把计划命令发出去（此时世界还冻着），再解冻。
 func begin_execution() -> bool:

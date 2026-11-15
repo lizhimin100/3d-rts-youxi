@@ -261,18 +261,39 @@ func _ready() -> void:
 		if rc != null:
 			rc.call("setup", level)
 
+	# 4.935 **规划沙盘**（2026-11-15）：规划阶段铺在地面上的"固定势力范围"红蓝网格
+	#       （着色器：边缘发光 / 扫描线 / 流光）。只挂短局；淡入淡出由 phases 驱动。
+	if Game.short_match and level != null:
+		var ps_script := load("res://Views/world/规划沙盘.gd") as Script
+		if ps_script != null:
+			var ps := ps_script.call("new") as Node3D
+			if ps != null:
+				ps.name = "规划沙盘"
+				# 挂在「关卡」下：它是 3D 世界里的贴地面片，必须跟着关卡坐标系走
+				level.add_child(ps)
+
 	# 5) 起跑
 	Game.game_over.connect(_on_game_over)
 	# 规划阶段拉高镜头俯视全图；执行阶段回到默认距离（只在短局有意义）
+	# ★ 迷雾的整层淡入淡出也挂在这里：规划阶段收掉（沙盘要看得见红蓝区），
+	#   进入执行时 0.55s 淡回来（不然雾会"唰"地一下把画面切黑）。
 	Game.phase_changed.connect(func(_o: int, n: int) -> void:
-		_apply_phase_camera(n == RtsConst.Phase.PLANNING))
+		var planning: bool = n == RtsConst.Phase.PLANNING
+		_apply_phase_camera(planning)
+		var fog_node: Node = Game.get("fog_node")
+		if fog_node != null and is_instance_valid(fog_node) and fog_node.has_method("set_veil"):
+			fog_node.call("set_veil", planning))
+	if Game.short_match:
+		var fog0: Node = Game.get("fog_node")
+		if fog0 != null and is_instance_valid(fog0) and fog0.has_method("set_veil"):
+			fog0.call("set_veil", true, true)
 	# 长局先起跑；短局先停在 PLANNING（测试钩子也在暂停前挂好）。
 	if not Game.short_match:
 		Game.set_phase(RtsConst.Phase.RUNNING)
 		Game.notify.emit(_opening_message(), Cfg.game.hud_accent)
 	else:
 		Game.set_phase(RtsConst.Phase.PLANNING)
-		_apply_phase_camera(true)
+		_apply_phase_camera(true, true)
 		Game.notify.emit("规划阶段：世界已暂停。部署部队、排好训练后点「规划结束」。", Cfg.game.hud_accent)
 	# 副官不再弹提示：状态改由小地图下方的「副官 · 开/关」按钮表达（常驻、可点）。
 
@@ -324,21 +345,41 @@ func _apply_qa_camera() -> void:
 		camera.call("set_distance", _qa_cam_dist)
 
 
-## 阶段镜头：规划阶段**拉高俯视全图**（方便一眼看完整张战场布置部署），
-## 进入执行阶段回到默认距离。只改距离与注视点，不碰玩家当前的旋转角。
-func _apply_phase_camera(planning: bool) -> void:
+## 阶段镜头：规划阶段**拉高俯视全图**（沙盘视角，方便一眼看完整张战场布置部署），
+## 进入执行阶段**平滑拉近**到默认距离（玩家口径：点「规划结束」要看到镜头压下来，
+## 和红蓝网格淡出、战术图标淡出一起，读成"从作战台切回战场"）。
+## 只改距离与注视点，不碰玩家当前的旋转角。
+func _apply_phase_camera(planning: bool, instant: bool = false) -> void:
 	if camera == null:
 		return
 	var cfg: GameConfig = Cfg.game
 	if cfg == null:
 		return
 	if planning:
-		if camera.has_method("set_distance"):
-			camera.call("set_distance", cfg.camera_distance_max)
+		# 规划阶段 = 沙盘俯瞰：拉到战斗视距上限之外（44m 只够看 70×40m，红区根本不在画面里），
+		# 注视点压到地图中心，整张战场 + 红蓝势力区 + 明牌意图一次看全。
+		if camera.has_method("set_distance_overview"):
+			camera.call("set_distance_overview", _overview_distance(), instant)
+		if camera.has_method("focus_on") and level != null:
+			camera.call("focus_on", Vector3.ZERO)
+	elif camera.has_method("set_distance"):
+		# 拉近一档（比默认再近 15%）：这是唯一的"进入战斗"过场动作
+		var near: float = maxf(cfg.camera_distance_default * 0.85, cfg.camera_distance_min)
+		if instant:
+			camera.call("set_distance", near)
+		else:
+			camera.call("set_distance_smooth", near)
 		if camera.has_method("focus_on") and level != null and Game.player_faction != null:
 			camera.call("focus_on", level.base_center(Game.player_faction))
-	elif camera.has_method("set_distance"):
-		camera.call("set_distance", cfg.camera_distance_default)
+
+
+## 沙盘俯瞰距离：按地图尺寸算（224m 图 → 约 118m 机位）。
+## 目标不是"看全每一个单位"，而是**整张战场 + 红蓝势力区 + 两边的明牌意图**同框。
+func _overview_distance() -> float:
+	var size: float = 224.0
+	if Cfg != null and Cfg.game != null:
+		size = maxf(float(Cfg.game.map_size), 80.0)
+	return clampf(size * 0.53, 52.0, 150.0)
 
 
 ## 相机落位（有 focus_on 就用它，没有就直接 look_at 兜底）

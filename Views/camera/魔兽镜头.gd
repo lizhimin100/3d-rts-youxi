@@ -89,6 +89,30 @@ func set_distance(d: float) -> void:
 	_dist_target = _dist
 
 
+## **平滑**改距离：只改目标值，交给 `_update_lock` 的阻尼收敛。
+## 规划结束 → 执行阶段那一下的"镜头拉近"用它（玩家口径：过渡要顺，不许硬切）。
+func set_distance_smooth(d: float) -> void:
+	var cfg: GameConfig = _config()
+	var lo: float = cfg.camera_distance_min if cfg != null else 8.0
+	var hi: float = cfg.camera_distance_max if cfg != null else 44.0
+	_dist_target = clampf(d, lo, hi)
+
+
+## **俯瞰档**（规划阶段专用）：突破 `camera_distance_max` 的上限，拉到"看得见整张沙盘"。
+## 为什么必须开这个口子：规划阶段是一张势力沙盘（红蓝区 + 明牌意图都要能同时看到），
+## 而 44m 的战斗视距只够看 70×40m —— 敌方红区根本不在画面里，意图牌只能被夹到屏幕边上。
+## 只给过场/阶段镜头用；玩家的滚轮仍然受 Cfg 的 min~max 约束。
+func set_distance_overview(d: float, instant: bool = false) -> void:
+	var cfg: GameConfig = _config()
+	var lo: float = cfg.camera_distance_min if cfg != null else 8.0
+	var v: float = maxf(d, lo)
+	if instant:
+		_dist = v
+		_dist_target = v
+	else:
+		_dist_target = v
+
+
 ## 记录鼠标状态。
 ##
 ## ★ 这里踩过一个坑：原来要求"鼠标动过"才允许边缘滚动（_mouse_seen），
@@ -342,8 +366,11 @@ func _handle_zoom(cfg: GameConfig) -> void:
 
 ## 缩放 n 格（负数拉近）
 func _zoom_steps(cfg: GameConfig, steps: float) -> void:
+	# 上限取"配置上限"和"当前目标"的较大者：规划阶段用俯瞰档拉到了 44m 以外，
+	# 玩家一滚轮就按 44 硬夹会出现"唰"地跳到 44 —— 这里让它一格一格收回来。
+	var hi: float = maxf(cfg.camera_distance_max, _dist_target)
 	_dist_target = clampf(_dist_target + steps * cfg.camera_zoom_step,
-			cfg.camera_distance_min, cfg.camera_distance_max)
+			cfg.camera_distance_min, hi)
 
 
 ## Q/E 每次转 camera_rotate_step 度
@@ -579,7 +606,13 @@ func _clamp_focus(p: Vector3) -> Vector3:
 	var lv := _level()
 	if lv != null and cfg != null:
 		var pitch: float = deg_to_rad(cfg.camera_pitch_deg)
-		var reach: float = _dist * cos(pitch)          # 相机往后撤的水平距离
+		# ★ 用"当前距离与目标距离里**较小**的那个"算边界。
+		#   为什么不是 _dist：规划阶段用俯瞰档（118m）时，边界会被 reach 收到 ±40；
+		#   点「规划结束」后 `set_distance_smooth(25.5)` 只改目标值，`_dist` 要 0.3s 才降下来 ——
+		#   这 0.3s 里每帧的夹取都会把 `focus_on(玩家基地)` 的目标夹回地图中心，
+		#   结果就是过场结束后镜头对着荒地（实测黑屏，focus=(39.7,39.7)）。
+		var d: float = minf(_dist, _dist_target)
+		var reach: float = d * cos(pitch)             # 相机往后撤的水平距离
 		var limit: float = lv.world_size * 0.5 - reach + cfg.camera_bounds_margin
 		limit = maxf(limit, lv.world_size * 0.12)      # 兜底：至少还能在中间一小块活动
 		out.x = clampf(out.x, -limit, limit)

@@ -375,7 +375,7 @@
 		},
 		{
 			"path": "Game/core/主场景.gd",
-			"size": 56937
+			"size": 59238
 		},
 		{
 			"path": "Game/core/主场景.gd.uid",
@@ -391,7 +391,7 @@
 		},
 		{
 			"path": "Game/core/回合控制.gd",
-			"size": 8770
+			"size": 9776
 		},
 		{
 			"path": "Game/core/回合控制.gd.uid",
@@ -575,7 +575,7 @@
 		},
 		{
 			"path": "Game/systems/战争迷雾.gd",
-			"size": 12417
+			"size": 13839
 		},
 		{
 			"path": "Game/systems/战争迷雾.gd.uid",
@@ -723,7 +723,7 @@
 		},
 		{
 			"path": "Views/camera/魔兽镜头.gd",
-			"size": 25262
+			"size": 27902
 		},
 		{
 			"path": "Views/camera/魔兽镜头.gd.uid",
@@ -731,7 +731,7 @@
 		},
 		{
 			"path": "Views/hud/HUD.gd",
-			"size": 113986
+			"size": 117877
 		},
 		{
 			"path": "Views/hud/HUD.gd.uid",
@@ -790,12 +790,28 @@
 			"size": 20
 		},
 		{
+			"path": "Views/hud/徽记.gd",
+			"size": 11130
+		},
+		{
+			"path": "Views/hud/徽记.gd.uid",
+			"size": 20
+		},
+		{
 			"path": "Views/hud/按钮框.gd",
 			"size": 5610
 		},
 		{
 			"path": "Views/hud/按钮框.gd.uid",
 			"size": 20
+		},
+		{
+			"path": "Views/hud/敌方意图条.gd",
+			"size": 5243
+		},
+		{
+			"path": "Views/hud/敌方意图条.gd.uid",
+			"size": 19
 		},
 		{
 			"path": "Views/hud/数值列.gd",
@@ -839,7 +855,7 @@
 		},
 		{
 			"path": "Views/hud/规划地图层.gd",
-			"size": 14877
+			"size": 23614
 		},
 		{
 			"path": "Views/hud/规划地图层.gd.uid",
@@ -847,7 +863,7 @@
 		},
 		{
 			"path": "Views/hud/规划阶段界面.gd",
-			"size": 50096
+			"size": 52110
 		},
 		{
 			"path": "Views/hud/规划阶段界面.gd.uid",
@@ -894,6 +910,14 @@
 			"size": 20
 		},
 		{
+			"path": "Views/hud/阶段提示.gd",
+			"size": 8484
+		},
+		{
+			"path": "Views/hud/阶段提示.gd.uid",
+			"size": 20
+		},
+		{
 			"path": "Views/input/README.md",
 			"size": 1100
 		},
@@ -907,7 +931,7 @@
 		},
 		{
 			"path": "Views/input/指令系统.gd",
-			"size": 59063
+			"size": 59985
 		},
 		{
 			"path": "Views/input/指令系统.gd.uid",
@@ -931,7 +955,7 @@
 		},
 		{
 			"path": "Views/input/部署输入.gd",
-			"size": 12219
+			"size": 12631
 		},
 		{
 			"path": "Views/input/部署输入.gd.uid",
@@ -1230,6 +1254,14 @@
 			"size": 20
 		},
 		{
+			"path": "Views/world/规划沙盘.gd",
+			"size": 9849
+		},
+		{
+			"path": "Views/world/规划沙盘.gd.uid",
+			"size": 20
+		},
+		{
 			"path": "Model/ai/目标层.gd",
 			"size": 29024
 		},
@@ -1491,7 +1523,7 @@
 		},
 		{
 			"path": "Tests/checks/shot_runner.gd",
-			"size": 8040
+			"size": 8699
 		},
 		{
 			"path": "Tests/checks/shot_runner.gd.uid",
@@ -2423,7 +2455,7 @@
 		},
 		{
 			"path": "Content/data/screens.json",
-			"size": 2710
+			"size": 3377
 		},
 		{
 			"path": "Content/data/sim.json",
@@ -2431,7 +2463,7 @@
 		},
 		{
 			"path": "Content/i18n/legacy_budget.json",
-			"size": 8018
+			"size": 8497
 		},
 		{
 			"path": "Content/i18n/ui.csv",
@@ -2451,7 +2483,7 @@
 		},
 		{
 			"path": "Content/keys/assets.json",
-			"size": 11893
+			"size": 11965
 		},
 		{
 			"path": "addons/map_editor/plugin.cfg",

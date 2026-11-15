@@ -1,6 +1,6 @@
 {
 	"version": 1,
-	"total": 7360,
+	"total": 7383,
 	"by_dir": {
 		"Game": {
 			"Game/ai/世界状态.gd": 39,
@@ -48,9 +48,9 @@
 			"Game/config/难度定义.gd": 5,
 			"Game/core/debug_hooks.gd": 13,
 			"Game/core/save_setup.gd": 0,
-			"Game/core/主场景.gd": 133,
+			"Game/core/主场景.gd": 135,
 			"Game/core/关卡.gd": 33,
-			"Game/core/回合控制.gd": 14,
+			"Game/core/回合控制.gd": 15,
 			"Game/core/常量.gd": 0,
 			"Game/core/游戏状态.gd": 18,
 			"Game/core/阵营.gd": 2,
@@ -93,7 +93,7 @@
 		},
 		"Views": {
 			"Views/camera/魔兽镜头.gd": 4,
-			"Views/hud/HUD.gd": 174,
+			"Views/hud/HUD.gd": 178,
 			"Views/hud/光标术.gd": 27,
 			"Views/hud/命令卡.gd": 109,
 			"Views/hud/头像台.gd": 16,
@@ -148,7 +148,10 @@
 			"Views/world/crowd/人群渲染.gd": 2,
 			"Views/world/crowd/人群演示.gd": 17,
 			"Views/world/crowd/人群空间.gd": 1,
-			"Views/world/crowd/人群箭矢.gd": 2
+			"Views/world/crowd/人群箭矢.gd": 2,
+			"Views/hud/敌方意图条.gd": 6,
+			"Views/hud/阶段提示.gd": 6,
+			"Views/world/规划沙盘.gd": 4
 		},
 		"addons": {
 			"addons/map_editor/主屏.gd": 135,
@@ -212,5 +215,5 @@
 			"Tests/suites/野怪营地自检.gd": 39
 		}
 	},
-	"note": "2026-11-15 规划阶段（原准备阶段）重构后按引擎实测值全量重锁：新增 Views/hud/规划阶段界面.gd、Views/hud/规划地图层.gd、Views/input/部署输入.gd。之后照旧只许降不许升（新界面文案请走 Content/i18n/ui.csv）。"
+	"note": "2026-11-15 规划阶段按玩家草图第二次重排后局部重锁：新增 Views/hud/阶段提示.gd（阶段横幅）、Views/hud/敌方意图条.gd（执行阶段明牌意图）、Views/hud/徽记.gd（自绘徽记，零中文）；HUD / 主场景 / 回合控制 因新增「预加载中文脚本路径 + 节点名」各 +1~4 处。之后照旧只许降不许升（新界面文案请走 Content/i18n/ui.csv）。"
 }

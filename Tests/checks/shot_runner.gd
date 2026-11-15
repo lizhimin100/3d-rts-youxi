@@ -180,6 +180,19 @@ func _run() -> void:
 			return
 		print("[shot] 交互通过：计划条数 = %d" % got_n)
 
+	# --- 可选：所有交互跑完后**额外等一会**（过场/动画类画面：镜头拉近、网格淡出）---
+	# 只在配方写了 wait_after 时才生效；不写就等于原来的"立刻截"。
+	if recipe.has("wait_after"):
+		var extra := maxf(float(recipe["wait_after"]), 0.0)
+		await get_tree().create_timer(extra).timeout
+		print("[shot] 额外等待 %.2fs" % extra)
+		var cam_node := _find(_scene, "镜头")
+		if cam_node != null and cam_node.has_method("distance"):
+			print("[shot] 镜头 距离=%.1f 焦点=%s 锁定=%s" % [
+				float(cam_node.call("distance")),
+				str(cam_node.call("focus_point")),
+				str(cam_node.call("is_locked"))])
+
 	await RenderingServer.frame_post_draw
 	var saved := Screenshot.capture(_out, get_viewport())
 	if saved.is_empty():

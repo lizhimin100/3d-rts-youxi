@@ -53,6 +53,11 @@ var _acc: float = 0.0
 var _overlay: MeshInstance3D = null
 var _mat: ShaderMaterial = null
 var _cam: Camera3D = null
+## 整层淡入淡出：1 = 完全收掉（规划阶段），0 = 正常显示
+var _fade: float = 0.0
+var _fade_target: float = 0.0
+## 淡入淡出时长（秒）
+const VEIL_FADE := 0.55
 
 
 # ===========================================================================
@@ -116,6 +121,26 @@ func set_enabled(on: bool) -> void:
 		print("[迷雾] 已关闭")
 
 
+## **过场用的整层淡入淡出**（2026-11-15）：`hidden=true` = 把雾整层收掉。
+##
+## 为什么需要它：规划阶段是一张沙盘（世界冻结、不渲染这层雾），点「规划结束」以后
+## 雾会随着第一帧 `_process` 突然出现 —— 玩家看到的是一次"唰地变黑"，非常突兀。
+## 这里用 `GeometryInstance3D.transparency` 把整层雾淡进来（0.55s），
+## 读作"视线回到战场、雾重新合上"，和镜头拉近、网格淡出同一节奏。
+func set_veil(hidden: bool, instant: bool = false) -> void:
+	_fade_target = 1.0 if hidden else 0.0
+	# 收起来（进规划阶段）必须**立刻生效**：规划阶段整棵树是 paused 的，
+	# `_process_inner` 不会再跑，靠它慢慢淡就等于"雾永远留在沙盘上"。
+	if instant or hidden:
+		_fade = _fade_target
+		_apply_veil()
+
+
+func _apply_veil() -> void:
+	if _overlay != null and is_instance_valid(_overlay):
+		_overlay.transparency = clampf(_fade, 0.0, 1.0)
+
+
 func is_enabled() -> bool:
 	return _enabled
 
@@ -141,6 +166,10 @@ func _process_inner(delta: float) -> void:
 		_ensure_overlay()
 	if _overlay != null:
 		_sync_overlay_size()
+	# 整层淡入淡出（规划阶段收掉、执行阶段淡回来）
+	if not is_equal_approx(_fade, _fade_target):
+		_fade = move_toward(_fade, _fade_target, delta / VEIL_FADE)
+		_apply_veil()
 	if not _enabled or observer == null:
 		return
 	if Game.phase != RtsConst.Phase.RUNNING and Game.phase != RtsConst.Phase.PLANNING:
@@ -185,6 +214,7 @@ func _ensure_overlay() -> void:
 	cam.add_child(_overlay)
 	_cam = cam
 	_overlay.visible = _enabled
+	_overlay.transparency = clampf(_fade, 0.0, 1.0)
 	_sync_overlay_size()
 
 

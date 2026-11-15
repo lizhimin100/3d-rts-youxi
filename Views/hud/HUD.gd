@@ -48,6 +48,10 @@ const BUILDING_PANEL_SCRIPT := preload("res://Views/hud/建筑面板.gd")
 const PLANNING_HUD_SCRIPT := preload("res://Views/hud/规划阶段界面.gd")
 ## 规划阶段盖在 3D 战场上的"作战图"：部署预览 / 部署标记 / 敌方明牌意图
 const PLANNING_MAP_SCRIPT := preload("res://Views/hud/规划地图层.gd")
+## 阶段横幅：规划⇄执行切换时那一下"蚂蚁线 + 横带"（见 阶段提示.gd）
+const PHASE_BANNER_SCRIPT := preload("res://Views/hud/阶段提示.gd")
+## 执行阶段的"敌方意图条"（规划阶段那张明牌牌子的常驻版，见 敌方意图条.gd）
+const FOE_INTENT_SCRIPT := preload("res://Views/hud/敌方意图条.gd")
 
 ## 界面根节点（承载 theme，铺满视口）
 var root: Control = null
@@ -175,6 +179,10 @@ var _planning_map: Control = null
 var _planning_hit: Array = []
 ## 规划阶段底部操作面板的矩形（落点提示浮在它上面）
 var _planning_action_rect: Rect2 = Rect2()
+## 阶段横幅（规划⇄执行）：只在换阶段那一下出现
+var _phase_banner: Control = null
+## 执行阶段的"敌方意图条"（右上角，资源条下面）
+var _foe_intent: Control = null
 
 ## 等待落点提示
 var _pending_box: PanelContainer = null
@@ -557,6 +565,10 @@ func _apply_layout() -> void:
 	var planning: bool = _planning_active()
 	if _valid_selection().is_empty() or planning:
 		_hide_band_parts()
+	# ★ 2026-11-15 玩家口径：规划阶段**不保留执行阶段的任何常驻部件**
+	#   （小地图 / 小地图下面的战区指令条 / 金币木头资源条 / 副官 / 菜单 / 帧率表 /
+	#     据点播报 / 头顶血条）。规划阶段是一张"作战台"，只留规划界面自己的六块。
+	_set_planning_chrome(planning)
 	var m: float = _mets.margin
 
 	# 资源条：顶部**居中**（左上让给圆形小地图）。规划阶段由"局外资源 + 人口 + 日夜"接管。
@@ -624,6 +636,15 @@ func _apply_layout() -> void:
 		_apply_theme_scale()
 		_booted = true
 		return
+
+	# 执行阶段：敌方意图条贴右上（帧率表下面、资源条右侧），不挡战场中线
+	if _foe_intent != null and is_instance_valid(_foe_intent):
+		var show_intent: bool = bool(_foe_intent.call("should_show"))
+		_foe_intent.visible = show_intent
+		if show_intent:
+			var iw: float = maxf((_foe_intent as Control).custom_minimum_size.x, 128.0)
+			_place(_foe_intent, 1.0, 0.0, 1.0, 0.0,
+					-m - iw, m + 32.0, -m, m + 32.0 + 38.0)
 
 	var bh: float = _band_h()
 	_band_applied = bh
@@ -1089,15 +1110,27 @@ func _place_toasts() -> void:
 	if _toast_box == null or _mets == null:
 		return
 	var w: float = minf(680.0, _mets.vw * 0.62)
+	# ★ 规划阶段：提示改到**底栏上方**（自下而上堆）。
+	#   为什么：规划阶段的屏幕上方要留给"红蓝势力区 + 明牌意图"，实测三条部署提示
+	#   正好压在敌方意图牌上，把情报盖掉了。提示本质是"我刚才那一下干了什么"，
+	#   贴着操作面板反而更近。
+	if _planning_active():
+		_toast_box.alignment = BoxContainer.ALIGNMENT_END
+		var top: float = _mets.vh - _planning_action_rect.position.y
+		if _planning_action_rect.size.y <= 0.0:
+			top = 96.0
+		var pad: float = top + 10.0
+		_place(_toast_box, 0.5, 1.0, 0.5, 1.0, -w * 0.5, -pad - 240.0, w * 0.5, -pad)
+		return
+	_toast_box.alignment = BoxContainer.ALIGNMENT_BEGIN
 	# 资源条占着顶部正中；据点提示是"第一行播报"，普通提示从它下面开始 ——
 	# 2026-11-08 玩家口径：「新的 UI 提示要放在据点刷新的下面、不要覆盖，弄上下播报形式」。
 	# 所以这里把据点条**整段 + 12px 间隔**让出来（高度取实测值，见 _crate_banner_height）。
-	var top: float = _mets.margin + _mets.stats_h + _mets.gap
+	var t: float = _mets.margin + _mets.stats_h + _mets.gap
 	if _crate_banner != null and _crate_banner.visible:
 		# 播报条：top = 资源条下沿 + 6，高 H → 普通提示从它下面 12px 开始
-		top = _mets.margin + _mets.stats_h + 6.0 + _crate_banner_height() + 12.0
-	# 规划阶段的顶部让位由"局外资源"条吃掉了（同一行），普通提示按资源条高度起算即可。
-	_place(_toast_box, 0.5, 0.0, 0.5, 0.0, -w * 0.5, top, w * 0.5, top + 260.0)
+		t = _mets.margin + _mets.stats_h + 6.0 + _crate_banner_height() + 12.0
+	_place(_toast_box, 0.5, 0.0, 0.5, 0.0, -w * 0.5, t, w * 0.5, t + 260.0)
 
 
 ## 据点播报条的**实际高度**：下限 CRATE_BANNER_H，真撑起来比它高就按真高算。
@@ -1632,6 +1665,18 @@ func _build_planning_hud() -> void:
 	_planning_hud.visible = false
 	_planning_hud.connect("plan_end_pressed", _on_plan_end_pressed)
 	_planning_hud.connect("cancel_pressed", _on_plan_cancel_pressed)
+	# 操作面板换形态（部署/训练/建造）→ 高度变了 → 重摆一次（CP 与右列都在等它）
+	_planning_hud.connect("layout_dirty", func() -> void: _apply_layout())
+
+	# 阶段横幅（规划⇄执行）：压在最上层，穿透鼠标，只在换阶段那一下出现
+	_phase_banner = PHASE_BANNER_SCRIPT.new()
+	_phase_banner.name = "阶段提示"
+	root.add_child(_phase_banner)
+
+	# 执行阶段的敌方意图条（短局专用；规划阶段由地图层挂牌，执行阶段挪到右上角）
+	_foe_intent = FOE_INTENT_SCRIPT.new()
+	_foe_intent.name = "敌方意图条"
+	root.add_child(_foe_intent)
 
 
 ## 此刻是不是"规划阶段"（短局专用；长局永远 false）
@@ -1643,6 +1688,32 @@ func _planning_active() -> bool:
 	if Game.has_method("is_over") and bool(Game.call("is_over")):
 		return false
 	return Game.is_planning()
+
+
+## 规划阶段：把**执行阶段那套常驻部件**整组收起（玩家点名：不要小地图、不要它下面的
+## 指令条、不要金币木头那条资源栏）。
+##
+## 为什么集中在一个函数里：这些东西的显隐散落在 _refresh_stats / _sync_adjutant /
+## _refresh_crate_banner 好几处，各自写一遍必然会漏一个（实测漏了小地图，
+## 于是规划阶段左上一整块地图圆盘压着指挥官头像）。唯一出口，回执行阶段一次全放出来。
+func _set_planning_chrome(planning: bool) -> void:
+	var show_exec: bool = not planning
+	if _minimap != null and is_instance_valid(_minimap):
+		_minimap.visible = show_exec
+	if _war_bar != null and is_instance_valid(_war_bar):
+		_war_bar.visible = show_exec
+	if _menu_btn != null:
+		_menu_btn.visible = show_exec
+	if _fps_panel != null:
+		_fps_panel.visible = show_exec
+	if _crate_banner != null and planning:
+		_crate_banner.visible = false
+	if _overhead != null and is_instance_valid(_overhead):
+		_overhead.visible = show_exec
+	if _foe_intent != null and is_instance_valid(_foe_intent):
+		_foe_intent.visible = show_exec and bool(_foe_intent.call("should_show"))
+	# 副官开关的显隐有自己的判据（有没有副官节点 + 是不是规划阶段）→ 交给它自己算
+	_sync_adjutant()
 
 
 func _place_planning_hud() -> void:
@@ -1657,68 +1728,76 @@ func _place_planning_hud() -> void:
 	var m: float = _mets.margin
 	var vw: float = _mets.vw
 	var vh: float = _mets.vh
-	# --- 左上：指挥官卡（在规划阶段它占了最上面，小地图整体下移）---
-	var cmdr_w: float = clampf(_mets.minimap * 1.22, 214.0, 268.0)
-	var cmdr_h: float = 92.0
-	# --- 左中：CP 菱形（小地图 + 战区条 + 菜单之下；菜单底 = war_top+war_h+84）---
-	var war_top: float = m + cmdr_h + 8.0 + _mets.minimap + 8.0
-	var war_h: float = WAR_BTN_H * 2.0 + WAR_GAP
-	var cp_size: float = 86.0
-	var cp_top: float = war_top + war_h + 84.0 + 12.0
-	# --- 中上：局外资源（资源条那一条的位置）---
-	var ext_w: float = 300.0
-	var ext_h: float = 42.0
-	# --- 右上：人口 + 日夜（帧率表左边）---
-	var right_w: float = 232.0
-	var right_h: float = 58.0
-	# --- 底部：操作面板 + 右列（规划结束 / 取消）---
-	var col_w: float = 132.0
-	var act_w: float = clampf(vw * 0.52, 470.0, 720.0)
-	act_w = minf(act_w, vw - m * 2.0 - col_w - 18.0)
-	# 建造页要放 2 行卡片（5 列 × 2 行 = 10 栋），高度按屏高给到 30%
-	var act_h: float = clampf(vh * 0.30, 196.0, 272.0)
-	var act_x: float = (vw - act_w - col_w - 18.0) * 0.5
-	var act_y: float = vh - m - act_h
-	var col_h: float = minf(act_h, 130.0)
-	var col_y: float = act_y + act_h - col_h
+
+	# 玩家草图里的六块，位置全按图来（设计像素）：
+	#   左上 头像 + 下方基地血量 / 顶部一条带底的横条（金币·卷轴×3·日月）/
+	#   右上 人口 / 左下 CP 菱形 / 底部居中 操作面板 / 右下 规划结束 + 取消
+	#
+	# ★ 统一用一条**底部基准线** `bottom`：操作面板、CP、右列都坐在它上面。
+	#   面板高度随形态变（部署 132 / 训练 152 / 建造 178），CP 与右列跟着它走，
+	#   这样三种形态切换时，屏幕右下角不会跳来跳去。
+	var bottom: float = vh - m - 10.0
+	var act_h: float = float(_planning_hud.call("desired_h"))
+	var want_w: float = float(_planning_hud.call("desired_w"))
+	var act_w: float = clampf(maxf(vw * 0.42, want_w + 8.0), 500.0, vw * 0.72)
+	var act_x: float = (vw - act_w) * 0.5
+	var act_y: float = bottom - act_h
+
+	var portrait: float = 92.0
+	var topbar_w: float = clampf(430.0, 380.0, vw * 0.42)
+	var topbar_h: float = 62.0
+	var pop_w: float = 134.0
+	var pop_h: float = 54.0
+	var btn: float = 88.0
+	var btn_gap: float = 10.0
+	var col_h: float = btn * 2.0 + btn_gap
+	var cp: float = 94.0
+
+	var r_portrait := Rect2(m, m, portrait, portrait)
+	var r_topbar := Rect2(m + portrait + 16.0, m, topbar_w, topbar_h)
+	var r_pop := Rect2(vw - m - pop_w, m, pop_w, pop_h)
+	var r_cp := Rect2(m + 4.0, bottom - cp, cp, cp)
+	var r_action := Rect2(act_x, act_y, act_w, act_h) if act_h > 1.0 else Rect2()
+	var r_col := Rect2(vw - m - btn, bottom - col_h, btn, col_h)
 
 	_planning_hud.call("apply_rects", {
-		"commander": Rect2(m, m, cmdr_w, cmdr_h),
-		"cp": Rect2(m, cp_top, cp_size, cp_size),
-		"external": Rect2(vw * 0.5 - ext_w * 0.5, m, ext_w, ext_h),
-		"right": Rect2(vw - m - 88.0 - 8.0 - right_w, m, right_w, right_h),
-		"action": Rect2(act_x, act_y, act_w, act_h),
-		"right_col": Rect2(act_x + act_w + 18.0, col_y, col_w, col_h),
+		"portrait": r_portrait,
+		"topbar": r_topbar,
+		"pop": r_pop,
+		"cp": r_cp,
+		"action": r_action,
+		"right_col": r_col,
 	})
-	# covers_point 用：只有这几块真吃鼠标（地图层是穿透的）
-	_planning_action_rect = Rect2(act_x, act_y, act_w, act_h)
-	# 明牌意图的安全区：左让小地图列、上让播报/局外资源、下让操作面板、右让 FPS。
-	# ★ 一律用**控件真实屏幕矩形**（get_global_rect 已经算进 root 的 _zoom 缩放），
-	#   不要拿设计像素去反乘：地图层画在真实屏幕像素上，两套坐标混用会差一个 _zoom
-	#   （实测：牌子被压到小地图下面，前两个字读不到）。
+	_planning_action_rect = r_action
+
+	# 明牌意图的安全区：上让顶部横条、下让操作面板、左让 CP 列、右让右列。
+	# ★ 地图层画在**真实屏幕像素**上（它自己铺满视口、不吃 root 的 _zoom），
+	#   而这里算出来的是设计像素 → 必须乘一次 `_zoom`，否则 1280 档会整体偏一圈。
 	if _planning_map != null and is_instance_valid(_planning_map) and _planning_map.has_method("set_safe_rect"):
-		var vp_size2: Vector2 = get_viewport().get_visible_rect().size
-		var left: float = m
-		if _minimap != null and is_instance_valid(_minimap):
-			left = _minimap.get_global_rect().end.x
-		left += 16.0
-		var safe_top: float = 150.0
-		if _toast_box != null:
-			safe_top = maxf(_toast_box.get_global_rect().end.y + 12.0, 150.0)
-		var bottom: float = act_y * _zoom
-		if _planning_hud.has_method("action_global_rect"):
-			bottom = float((_planning_hud.call("action_global_rect") as Rect2).position.y)
-		_planning_map.call("set_safe_rect", Rect2(left, safe_top,
-				maxf(vp_size2.x - left - 180.0, 200.0),
-				maxf(bottom - safe_top - 12.0, 120.0)))
-	_planning_hit = [
-		Rect2(m, m, cmdr_w, cmdr_h),
-		Rect2(m, cp_top, cp_size, cp_size),
-		Rect2(vw * 0.5 - ext_w * 0.5, m, ext_w, ext_h),
-		Rect2(act_x, act_y, act_w, act_h),
-		Rect2(act_x + act_w + 18.0, col_y, col_w, col_h),
-		Rect2(vw - m - 88.0 - 8.0 - right_w, m, right_w, right_h),
-	]
+		var z: float = _zoom
+		var left_px: float = (m + 10.0) * z
+		var top_px: float = (m + topbar_h + 16.0) * z
+		var right_px: float = (vw - m - btn - 20.0) * z
+		var bottom_px: float = ((act_y if act_h > 1.0 else bottom) - 10.0) * z
+		_planning_map.call("set_safe_rect", Rect2(left_px, top_px,
+				maxf(right_px - left_px, 220.0),
+				maxf(bottom_px - top_px, 140.0)))
+
+	# covers_point 收的是**屏幕像素**（真实鼠标事件），所以命中区也乘一次 _zoom
+	_planning_hit = _scaled([r_portrait, r_topbar, r_pop, r_cp, r_col])
+	if act_h > 1.0:
+		_planning_hit.append(_scale_rect(r_action))
+
+
+func _scale_rect(r: Rect2) -> Rect2:
+	return Rect2(r.position * _zoom, r.size * _zoom)
+
+
+func _scaled(list: Array) -> Array:
+	var out: Array = []
+	for r in list:
+		out.append(_scale_rect(r as Rect2))
+	return out
 
 
 ## 规划界面每 0.12s 刷新一次（内部按签名重建，不每帧 new 控件）。
@@ -1792,7 +1871,8 @@ func set_hud_visible(on: bool, announce: bool = true) -> void:
 	if not on and _tips != null:
 		_tips.dismiss()
 	if _overhead != null and is_instance_valid(_overhead):
-		_overhead.visible = on
+		# 规划阶段不显示头顶血条（它是执行阶段的战斗信息）
+		_overhead.visible = on and not _planning_active()
 	# 收起界面时，等待落点的胶囊和结算遮罩也跟着走（它们是 root 的子节点，
 	# 但 root.visible=false 只是不画，这里额外清一下状态，避免"看不见却吃点击"）
 	if not on and _pending_box != null:
@@ -2360,6 +2440,8 @@ func _sync_crate_banner() -> void:
 	# ★ 先把文案写进去，再切可见性 + 重排。
 	#   反过来的话，第一次出现那一帧 `_crate_banner_height()` 量到的是**空 Label**
 	#   的最小高度，让位算少了 → 第一条普通提示会压在播报条上。
+	if _planning_active():
+		show_it = false   # 规划阶段世界冻结，据点倒计时不该出现
 	if show_it:
 		_set_label(_crate_label, txt)
 	if _crate_banner.visible != show_it:
@@ -2690,19 +2772,19 @@ func covers_point(p: Vector2) -> bool:
 		return false
 	if _overlay != null and _overlay.visible:
 		return true
-	if _minimap != null and _minimap.get_global_rect().has_point(p):
+	if _minimap != null and _minimap.visible and _minimap.get_global_rect().has_point(p):
 		return true
 	if _sel_panel != null and _sel_panel.visible and _sel_panel.get_global_rect().has_point(p):
 		return true
 	if _card_panel != null and _card_panel.visible and _card_panel.get_global_rect().has_point(p):
 		return true
-	if _stats_panel != null and _stats_panel.get_global_rect().has_point(p):
+	if _stats_panel != null and _stats_panel.visible and _stats_panel.get_global_rect().has_point(p):
 		return true
 	if _war_bar != null and _war_bar.visible and _war_bar.get_global_rect().has_point(p):
 		return true
 	if _adj_btn != null and _adj_btn.visible and _adj_btn.get_global_rect().has_point(p):
 		return true
-	if _menu_btn != null and _menu_btn.get_global_rect().has_point(p):
+	if _menu_btn != null and _menu_btn.visible and _menu_btn.get_global_rect().has_point(p):
 		return true
 	if _planning_hud != null and _planning_hud.visible:
 		for r in _planning_hit:

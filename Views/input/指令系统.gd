@@ -110,6 +110,9 @@ func planned_count() -> int:
 
 
 ## 给面板/自检用的只读快照（不含 Node 引用，只有文本与坐标）
+##
+## `defs` = 这条计划里出现的**兵种 id（去重）**：规划阶段的"明牌"牌子上要按
+## 同一种图标聚合方式显示"我要派谁去打"，所以这里必须给 id，不能只给数量。
 func planned_records() -> Array:
 	var out: Array = []
 	for r in planned:
@@ -119,7 +122,28 @@ func planned_records() -> Array:
 			"point": r.point,
 			"text": String(r.call("text")),
 			"units": int(r.unit_ids.size()),
+			"defs": _defs_of(r.unit_ids),
 		})
+	return out
+
+
+## 计划里的兵种 id（去重）。**先判 is_instance_valid 再取 def**：
+## 单位可能在规划阶段被打死/回收，直接 `instance_from_id(id) as X` 会刷
+## "Trying to cast a freed object"（引擎级报错，每帧几十条能把帧率吃掉）。
+func _defs_of(uids: Array) -> Array:
+	var out: Array = []
+	for uid in uids:
+		var raw: Variant = instance_from_id(int(uid))
+		if raw == null or not is_instance_valid(raw):
+			continue
+		var d: Variant = (raw as Node).get("def")
+		if d == null:
+			continue
+		var id: String = String(d.call("get", "id")) if d is Object else ""
+		if id == "":
+			continue
+		if not out.has(id):
+			out.append(id)
 	return out
 
 

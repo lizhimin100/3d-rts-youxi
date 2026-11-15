@@ -227,19 +227,19 @@ func _commit(screen_pos: Vector2) -> void:
 			cmd.call("queue_attack_move", target_pos)
 			done = int(cmd.call("planned_count")) > before
 			if done:
-				Game.toast("进攻部署：%d 个小队单位 → (%.0f, %.0f)" % [
-					_plan_unit_count(cmd), target_pos.x, target_pos.z], Color(0.98, 0.72, 0.45))
+				# 只报"派了多少人"，不写坐标：规划阶段屏上不出现数字坐标（玩家口径：
+				# 图上没写的东西不要加，坐标对玩家也没意义）。
+				Game.toast("进攻部署：%d 个单位" % _plan_unit_count(cmd),
+						Color(0.98, 0.72, 0.45))
 		WAR.DEFEND:
 			done = bool(cmd.call("queue_defend", target_pos, DEFEND_RADIUS))
 			if done:
-				Game.toast("防守部署：%.0fm 防区 → (%.0f, %.0f)" % [
-					DEFEND_RADIUS, target_pos.x, target_pos.z], Color(0.62, 0.82, 1.0))
+				Game.toast("防守部署：%.0fm 防区" % DEFEND_RADIUS, Color(0.62, 0.82, 1.0))
 		WAR.CAPTURE:
 			done = bool(cmd.call("queue_capture", target_pos))
 			if done:
-				Game.toast("占据部署：%s (%.0f, %.0f)" % [
-					"据点" if target_pos != g else "区域", target_pos.x, target_pos.z],
-					Color(0.98, 0.86, 0.46))
+				Game.toast("占据部署：%s" % ("据点" if target_pos != g else "区域"),
+						Color(0.98, 0.86, 0.46))
 	# 部署生效：指针恢复默认、按钮弹起（无论成功与否都收，避免"卡在等待态"）
 	cancel()
 
