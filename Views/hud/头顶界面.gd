@@ -52,6 +52,9 @@ const COL_PATROL := Color(1.0, 0.80, 0.34)
 
 
 func _ready() -> void:
+	# 规划阶段世界 paused，但选中单位的头顶血条/状态图标还要画
+	# （玩家在规划阶段依然要点选部队）。纯 UI，不推进世界时间。
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 

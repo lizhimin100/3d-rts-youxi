@@ -63,6 +63,29 @@ func _run() -> void:
 			return
 		await get_tree().create_timer(0.3).timeout
 
+	# --- 可选：把鼠标悬停在某个控件上（验收 tooltip：气泡层在规划阶段必须还能弹） ---
+	if recipe.has("hover_control"):
+		var hname := String(recipe["hover_control"])
+		var hn := _find(_scene, hname)
+		if hn == null or not (hn is Control):
+			_fail("找不到要悬停的控件：" + hname)
+			return
+		var hc := hn as Control
+		var hc_pos := hc.get_global_rect().get_center()
+		var hm := InputEventMouseMotion.new()
+		hm.position = hc_pos
+		hm.global_position = hc_pos
+		get_viewport().push_input(hm, true)
+		await get_tree().create_timer(float(recipe.get("hover_wait", 1.0))).timeout
+		# 只有悬停、没有点击的配方也要验 expect（否则 tooltip 这类"悬停才出现"的断言是假的）
+		if not recipe.has("click") and recipe.has("expect"):
+			var en := String(recipe["expect"])
+			var ec := _find(_scene, en)
+			if ec == null or not (ec is Control) or not (ec as Control).is_visible_in_tree():
+				_fail("悬停 %s 但 %s 没出现" % [hname, en])
+				return
+			print("[shot] 交互通过：悬停 %s → %s 出现" % [hname, en])
+
 	if recipe.has("click"):
 		var click_name := String(recipe["click"])
 		var node := _find(_scene, click_name)

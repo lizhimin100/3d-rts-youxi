@@ -711,6 +711,9 @@ func _train_card(b: RtsBuilding, id: StringName) -> Button:
 	vb.add_theme_constant_override("separation", 1)
 	btn.add_child(vb)
 	var icon := Spec.unit_icon(id)
+	if icon == null:
+		# 新兵种还没渲图时静默退回线描（和命令卡同一个兜底口径）
+		icon = Spec.icon_tex("sword")
 	if icon != null:
 		var tr := TextureRect.new()
 		tr.texture = icon
@@ -785,6 +788,8 @@ func _build_card(bid: StringName) -> Button:
 	vb.add_theme_constant_override("separation", 1)
 	btn.add_child(vb)
 	var icon := Spec.building_icon(bid)
+	if icon == null:
+		icon = Spec.icon_tex("house")
 	if icon != null:
 		var tr := TextureRect.new()
 		tr.texture = icon
@@ -1128,13 +1133,18 @@ func _train_tip(b: RtsBuilding, id: StringName, ok: bool) -> Dictionary:
 	var d: UnitDef = Cfg.unit(id)
 	var res := 可用性查询.train(b, id, Game.player_faction)
 	var why: String = "" if ok else 可用性文案.text(res)
+	# ★ 不要读 `d.description`：那是**卡**（`单位卡.gd`）的字段，运行时 UnitDef 里没有，
+	#   直接取会刷 "Invalid access to property 'description' on UnitDef"。
+	#   这里只列 UnitDef 真有的数值（生命/攻击/护甲）。
+	var stats: String = "—"
+	if d != null:
+		stats = "生命 %d · 攻击 %.0f · 护甲 %.0f" % [int(d.max_hp), d.attack_damage, d.armor]
 	return {
 		"icon": _unit_icon_name(id), "icon_color": Color(0.90, 0.90, 0.86),
 		"title": d.display_name if d != null else String(id),
 		"tag": "训练",
 		"body": "%s\n\n占据人口 %d · 训练 %.0f 秒 · 花费 CP %d" % [
-			d.description if d != null and not d.description.is_empty() else "—",
-			d.food_cost if d != null else 0, d.train_time if d != null else 0.0,
+			stats, d.food_cost if d != null else 0, d.train_time if d != null else 0.0,
 			d.cp_cost if d != null else 0],
 		"foot": why if why != "" else "点一下立刻扣 CP，并立刻占用人口",
 	}
@@ -1144,13 +1154,16 @@ func _build_tip(bid: StringName, ok: bool) -> Dictionary:
 	var d: UnitDef = Cfg.unit(bid)
 	var res := 可用性查询.build(bid, Game.player_faction, true)
 	var why: String = "" if ok else 可用性文案.text(res)
+	var bstats: String = "—"
+	if d != null:
+		bstats = "生命 %d · 护甲 %.0f · 视野 %.0fm" % [
+			int(d.max_hp), d.armor, d.sight_range]
 	return {
 		"icon": "建筑/" + String(bid), "icon_color": Color(0.90, 0.90, 0.86),
 		"title": d.display_name if d != null else String(bid),
 		"tag": "建造",
 		"body": "%s\n\n花费 CP %d · 工期 %.0f 秒%s" % [
-			d.description if d != null and not d.description.is_empty() else "—",
-			d.cp_cost if d != null else 0, d.train_time if d != null else 0.0,
+			bstats, d.cp_cost if d != null else 0, d.train_time if d != null else 0.0,
 			("\n提供人口 +%d" % d.food_provided) if d != null and d.food_provided > 0 else ""],
 		"foot": why if why != "" else "点一下 → 在地图上选位置",
 	}

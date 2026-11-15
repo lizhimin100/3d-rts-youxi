@@ -86,6 +86,10 @@ static func find_layer(host: Node) -> RtsTipLayer:
 # ===========================================================================
 
 func _ready() -> void:
+	# 规划阶段整棵树 paused，但**说明气泡必须还能弹**：
+	# 规划界面里"规划结束的警告 / CP 怎么花 / 单位卡介绍"全挂在这层上。
+	# 它是纯 UI（只读鼠标位置、不推进任何世界时间），属于 ALWAYS 白名单。
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	add_to_group("tip_layer")
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_anchors_preset(Control.PRESET_FULL_RECT)

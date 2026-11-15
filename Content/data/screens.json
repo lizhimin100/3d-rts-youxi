@@ -66,6 +66,14 @@
 			"select_unit": "peasant",
 			"click": "建造_农场",
 			"expect": "落点提示"
+		},
+		"planning_tip": {
+			"description": "规划阶段把鼠标悬停在「规划结束」上 → 气泡层弹出警告（规划阶段 paused 也要能弹）",
+			"scene": "res://Views/scenes/主场景.tscn",
+			"delay": 8.0,
+			"hover_control": "规划结束",
+			"hover_wait": 1.2,
+			"expect": "气泡"
 		}
 	}
 }

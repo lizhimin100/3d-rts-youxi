@@ -1,6 +1,6 @@
 {
 	"version": 1,
-	"total": 7358,
+	"total": 7360,
 	"by_dir": {
 		"Game": {
 			"Game/ai/世界状态.gd": 39,
@@ -107,7 +107,7 @@
 			"Views/hud/经验条.gd": 1,
 			"Views/hud/装饰.gd": 1,
 			"Views/hud/规划地图层.gd": 16,
-			"Views/hud/规划阶段界面.gd": 103,
+			"Views/hud/规划阶段界面.gd": 105,
 			"Views/hud/触感回声.gd": 2,
 			"Views/hud/词条.gd": 135,
 			"Views/hud/说明气泡.gd": 3,

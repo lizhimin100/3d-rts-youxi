@@ -731,7 +731,7 @@
 		},
 		{
 			"path": "Views/hud/HUD.gd",
-			"size": 113936
+			"size": 113986
 		},
 		{
 			"path": "Views/hud/HUD.gd.uid",
@@ -767,7 +767,7 @@
 		},
 		{
 			"path": "Views/hud/头顶界面.gd",
-			"size": 18668
+			"size": 18881
 		},
 		{
 			"path": "Views/hud/头顶界面.gd.uid",
@@ -847,7 +847,7 @@
 		},
 		{
 			"path": "Views/hud/规划阶段界面.gd",
-			"size": 49504
+			"size": 50096
 		},
 		{
 			"path": "Views/hud/规划阶段界面.gd.uid",
@@ -871,7 +871,7 @@
 		},
 		{
 			"path": "Views/hud/说明气泡.gd",
-			"size": 10897
+			"size": 11205
 		},
 		{
 			"path": "Views/hud/说明气泡.gd.uid",
@@ -1491,7 +1491,7 @@
 		},
 		{
 			"path": "Tests/checks/shot_runner.gd",
-			"size": 6959
+			"size": 8040
 		},
 		{
 			"path": "Tests/checks/shot_runner.gd.uid",
@@ -2423,7 +2423,7 @@
 		},
 		{
 			"path": "Content/data/screens.json",
-			"size": 2402
+			"size": 2710
 		},
 		{
 			"path": "Content/data/sim.json",
