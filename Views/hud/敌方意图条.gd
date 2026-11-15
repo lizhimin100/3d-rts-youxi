@@ -15,15 +15,18 @@ extends Control
 const Spec := preload("res://Views/hud/界面规格.gd")
 const 徽记 := preload("res://Views/hud/徽记.gd")
 
-const CHIP := 26.0
-const GAP := 5.0
-const PAD := 8.0
-const H := 38.0
+const CHIP := 30.0
+const GAP := 6.0
+const PAD := 9.0
+const H := 42.0
 const COL := Color(1.0, 0.42, 0.34)
 
 var _chips: Array = []
 var _sig: String = ""
 var _t: float = 0.0
+## 字体**只取一次**：在 `_draw` 里现 new SystemFont 时，字形图集还没准备好，
+## 画出来会是一个实心方块（实测"中路"变成一块橘色）。和 规划地图层 同一个口径。
+var _font: Font = null
 
 
 func _ready() -> void:
@@ -31,7 +34,10 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	visible = false
-	custom_minimum_size = Vector2(150.0, H)
+	_font = Spec.cjk_font()
+	# 宽度**固定**、内容在内部右对齐：HUD 只在换阶段摆一次位，
+	# 如果让控件自己按内容改宽，下一波编成变了就会溢出屏幕右缘（实测被裁掉"中路"）。
+	custom_minimum_size = Vector2(260.0, H)
 
 
 ## 该不该出现：短局 + 不在规划阶段 + 对局没结束
@@ -81,12 +87,6 @@ func _rebuild() -> void:
 		return
 	_sig = sig
 	_chips = chips
-	var w: float = PAD * 2.0 + float(chips.size()) * CHIP + GAP * float(maxi(chips.size() - 1, 0))
-	for c in chips:
-		if String(c.get("kind", "")) == "lane":
-			w += 4.0 + 34.0
-	custom_minimum_size = Vector2(w, H)
-	size = Vector2(w, H)
 	queue_redraw()
 
 
@@ -118,6 +118,13 @@ func _draw() -> void:
 	var box := Rect2(Vector2.ZERO, size)
 	if box.size.x < 40.0:
 		return
+	# 先量一下这排图标有多宽，再把它**右对齐**画进固定宽的控件里
+	var cw: float = PAD * 2.0 + float(_chips.size()) * CHIP + GAP * float(maxi(_chips.size() - 1, 0))
+	for c in _chips:
+		if String(c.get("kind", "")) == "lane":
+			cw += 4.0 + 34.0
+	cw = maxf(cw, 60.0)
+	box = Rect2(size.x - cw, 0.0, cw, H)
 	# 底：暗色 + 敌方红描边（和规划阶段的牌子同一套观感，只做小一号）
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = Color(0.038, 0.030, 0.032, 0.86)
@@ -139,9 +146,12 @@ func _draw() -> void:
 				c0 + Vector2(-3.0 * dir, -5.0),
 				c0 + Vector2(-3.0 * dir, 5.0),
 			]), Color(COL.r, COL.g, COL.b, 0.95))
-			var f: Font = Spec.cjk_font()
-			draw_string(f, Vector2(x + CHIP + 6.0, box.position.y + H * 0.5 + 4.5),
-					String(c.get("text", "")), HORIZONTAL_ALIGNMENT_LEFT, -1,
+			var txt: String = String(c.get("text", ""))
+			var f: Font = _font if _font != null else ThemeDB.fallback_font
+			var tp := Vector2(x + CHIP + 6.0, box.position.y + H * 0.5 + 4.5)
+			draw_string_outline(f, tp, txt, HORIZONTAL_ALIGNMENT_LEFT, -1,
+					Spec.FS_CAPTION, 3, Color(0.0, 0.0, 0.0, 0.66))
+			draw_string(f, tp, txt, HORIZONTAL_ALIGNMENT_LEFT, -1,
 					Spec.FS_CAPTION, Color(1.0, 0.86, 0.80))
 			x += CHIP + 4.0 + 34.0 + GAP
 		elif kind == "cmd":

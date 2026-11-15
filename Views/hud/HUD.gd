@@ -644,7 +644,7 @@ func _apply_layout() -> void:
 		if show_intent:
 			var iw: float = maxf((_foe_intent as Control).custom_minimum_size.x, 128.0)
 			_place(_foe_intent, 1.0, 0.0, 1.0, 0.0,
-					-m - iw, m + 32.0, -m, m + 32.0 + 38.0)
+					-m - iw, m + 32.0, -m, m + 32.0 + 42.0)
 
 	var bh: float = _band_h()
 	_band_applied = bh
