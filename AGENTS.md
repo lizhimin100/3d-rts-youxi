@@ -90,7 +90,7 @@ addons/     Godot 编辑器插件（地图编辑器）。不进发行版。
 - **通过判据**：`--check` 退出码 0 且输出 `CHECK 通过 N 项 / 失败 0`；`--shot` 退出码 0 且输出 `SHOT PASS`；`--simulate` 退出码 0 且有 `SIM {...}`。**不接受"0 条断言算通过"**。
 - 截图不是证据链：判断"点得动"看 `SHOT PASS` 前的交互行（`点击 指令_建造 → 指令_农场 出现`）。
 - 历史自检（`Tests/suites/`）仍可用：`godot --headless --path . --script Tests/suites/配置回归.gd` 等；入口与常红项见 `Documents/索引/测试索引.md`。
-- 常红状态：2026-11-14 起 `配置回归` 为 **282/0**（部门制 `dept=on` 已转正，测试同步更新）；历史常红记录见 `Documents/verification.md`。
+- 常红状态：2026-11-15 复测 `配置回归` 为 **287/0**（部门制 `dept=on` 已转正，测试同步更新）；历史常红记录见 `Documents/verification.md`。
 
 ### 长局 / 对照局的硬规定（沿用）
 
@@ -114,7 +114,7 @@ addons/     Godot 编辑器插件（地图编辑器）。不进发行版。
 - **2026-11-14 `run-game` 是唯一入口**：`--check/--simulate/--shot`；脚本在 `Tools/run-game.ps1`。
 - **2026-11-14 文档分级**：AGENTS.md 只放流程与约定；设计真相在 `Documents/concept.md`；专题各一篇。
 - **2026-11-14 项目定名《战争原岛》**（不再叫"铁血战歌"）；代码/文档/窗口标题统一。
-- **2026-11-14 `--dept=on` 转正**：部门制是默认主线；`--dept=off` 只保留作 2C-8 对照。
+- **2026-11-14 `--dept=on` 转正；2026-11-15（2C-15）起默认 on**：不带参数 = 新架构（dept+goal）；A 组 2C-8 对照必须显式传 `--dept=off`，非法参数回落 off，不要回滚代码再编译两次。
 - **2026-11-14 保留 4 队混战为主场景**（默认 `match_slots = 4`）。
 - **2026-11-14 音效只留一声"叮"**：删掉全部合成音效与 51 个 wav（`Content/audio/` 只剩 BGM），
   全局唯一音效 = `synth_bank.PRESETS["ui_ding"]`（运行时合成，UI 更新时响）；

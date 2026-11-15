@@ -79,7 +79,7 @@
 		},
 		{
 			"path": "Game/ai/简单AI.gd",
-			"size": 355759
+			"size": 355844
 		},
 		{
 			"path": "Game/ai/简单AI.gd.uid",
@@ -127,7 +127,7 @@
 		},
 		{
 			"path": "Game/config/AI判定模式.gd",
-			"size": 18980
+			"size": 19349
 		},
 		{
 			"path": "Game/config/AI判定模式.gd.uid",
@@ -1575,7 +1575,7 @@
 		},
 		{
 			"path": "Tests/suites/AI基准.gd",
-			"size": 64447
+			"size": 64953
 		},
 		{
 			"path": "Tests/suites/AI基准.gd.uid",
@@ -1875,7 +1875,7 @@
 		},
 		{
 			"path": "Tests/suites/配置回归.gd",
-			"size": 143960
+			"size": 144072
 		},
 		{
 			"path": "Tests/suites/配置回归.gd.uid",
@@ -1896,6 +1896,14 @@
 		{
 			"path": "Tests/suites/野怪营地自检.gd.uid",
 			"size": 20
+		},
+		{
+			"path": "Tools/analyze_2c13.py",
+			"size": 20578
+		},
+		{
+			"path": "Tools/analyze_2c14.py",
+			"size": 17017
 		},
 		{
 			"path": "Tools/build/export_release.ps1",
@@ -1976,6 +1984,10 @@
 		{
 			"path": "Tools/动画帧图.gd.uid",
 			"size": 19
+		},
+		{
+			"path": "Tools/历史基线_达成率_双口径.md",
+			"size": 4766
 		},
 		{
 			"path": "Tools/合并glb动作.py",
@@ -2507,7 +2519,7 @@
 		},
 		{
 			"path": "Content/keys/assets.json",
-			"size": 11965
+			"size": 12037
 		},
 		{
 			"path": "addons/map_editor/plugin.cfg",

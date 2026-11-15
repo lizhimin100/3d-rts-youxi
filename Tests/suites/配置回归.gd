@@ -1231,15 +1231,15 @@ func _case_2c9() -> void:
 			_near(float(bm.demand_coef("训练_威胁系数")), 0.8, 0.000001)
 			and _near(float(bm.demand_coef("不存在的键", 0.7)), 0.7, 0.000001),
 			"训练_威胁系数=0.8；未知键回落 0.7")
-	# 2026-11-14：部门制（dept=on）转正；off 只保留作 2C-8 旧路径对照
-	_record("2C9/2C12：dept 开关（默认 on，已转正；非法值回落 on；off 可显式开作对照）",
+	# 2C-15 转正：默认 on；非法参数保守回落 off 旧主线；A 组实验必须显式 --dept=off
+	_record("2C9/2C12/2C15：dept 开关 on/off（默认 on；非法值回落 off；on 可显式开）",
 			String(AIV.DEFAULT_DEPT_MODE) == "on"
 			and String(AIV.dept_mode()) == "on"
 			and bool(AIV.dept_on())
-			and String(AIV.set_dept_mode("乱写")) == "on"
-			and String(AIV.set_dept_mode("off")) == "off"
-			and bool(AIV.dept_off()),
-			"默认 %s（2C-13 起转正）" % String(AIV.DEFAULT_DEPT_MODE))
+			and String(AIV.set_dept_mode("乱写")) == "off"
+			and String(AIV.set_dept_mode("on")) == "on"
+			and bool(AIV.dept_on()),
+			"默认 %s（转正）/ 非法值回落 off（旧主线）" % String(AIV.DEFAULT_DEPT_MODE))
 	AIV.reset_defaults()
 	_record("2C9：不变式守门（判定表窗口/系数/分母/修理线/gap 一个字没动）",
 			_near(float(bm.VD_TIME_GOOD), 0.8, 0.0001)
@@ -1731,13 +1731,13 @@ func _case_2c11() -> void:
 			and bench11.contains("\"并发上限驳回率\"")
 			and bench11.contains("\"建造停滞恢复率\"")
 			and bench11.contains("\"同时做事数实际分布\"")
-			and bench11.contains("\"储备充足率\"")
+			and bench11.contains("\"金币≥G(t)周期占比\"")
 			and bench11.contains("储蓄过度，AI 接近停摆"),
-			"驳回率分母=总诉求数；充足率分母=总周期数")
-	_record("2C11：储备充足率由产品侧逐周期计数（只记录，不进决策）",
-			sa11.contains("\"saving_sufficient_cycles\"")
+			"驳回率分母=总诉求数；金币≥G(t)占比分母=总周期数（AI-only）")
+	_record("2C11/2C15：金币≥G(t)周期占比由产品侧逐周期计数（只记录，不进决策）",
+			sa11.contains("\"gold_ge_g_cycles\"")
 			and sa11.contains("if float(_faction.gold) >= reserve:"),
-			"gold >= G(t) 的周期数 / cycles")
+			"AI-only；gold >= G(t) 的周期数 / cycles；无仲裁周期置 N/A")
 
 
 # ===========================================================================

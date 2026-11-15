@@ -86,10 +86,11 @@ const DEFAULT_ARMY_POP_CAP: bool = true
 const DEPT_ON: String = "on"
 const DEPT_OFF: String = "off"
 const DEPT_MODES: Array[String] = [DEPT_ON, DEPT_OFF]
-## ★ 2C-12 处置（A 组判失败）：默认值 `on` → **`off`**。
-##   2C-12 长局实测两项都明显低于 off（cap −11.90% / 农场 −46.67%），按任务书 §6.1
-##   「部门制失败 → 回退 2C-8 为主线」。部门制冻结为实验分支，用 `--dept=on` 显式开启。
-##   保留：储蓄纯函数 / 建造恢复 / 判定层 / 诊断数据 / 承诺表代码（都还在，只是不再默认走）。
+## ★ 2C-15 转正：默认改回 **`on`**（2C-12 的「回退 2C-8 为主线」结论已由玩家口径推翻）。
+##   2C-12 当时长局实测 cap −11.90% / 农场 −46.67% 判 A 失败、把默认切到 off；
+##   2026-11-08 起改为「别攒着不花」的新架构并转正，A 组实验必须**显式** `--dept=off`。
+##   保留：储蓄纯函数 / 建造恢复 / 判定层 / 诊断数据 / 承诺表代码（都还在）。
+##   注意：非法参数不跟随默认值，见 `set_dept_mode()` —— 保守回落 `DEPT_OFF` 旧主线。
 const DEFAULT_DEPT_MODE: String = DEPT_ON
 
 ## 2C-12 P0：**承诺表开关**（占位机制，只对金币）
@@ -106,7 +107,7 @@ const DEFAULT_PROMISE_MODE: String = PROMISE_ON
 ##                → 执行层读主目标调优先级；**没目标就空过**（不花钱）；
 ##                承诺并入目标（承诺表在 goal=on 时不参与），跟目标同生共死。
 ##   off = 2C-12 的部门制动作级仲裁（承诺表照旧），只为单变量对照保留。
-## ★ 与 --dept 正交但**只在 dept=on 时生效**：dept=off 是 2C-8 主线，走不到这里。
+## ★ 与 --dept 正交但**只在 dept=on 时生效**：`--dept=off` 是 2C-8 旧主线（A 组实验须显式传），走不到这里。
 const GOAL_ON: String = "on"
 const GOAL_OFF: String = "off"
 const GOAL_MODES: Array[String] = [GOAL_ON, GOAL_OFF]
@@ -278,8 +279,10 @@ static func dept_mode() -> String:
 
 static func set_dept_mode(m: String) -> String:
 	var u: String = m.strip_edges().to_lower()
-	# 2C-12：非法值回落**默认值**（现在是 off），不再硬编码回 on
-	_dept_mode = u if DEPT_MODES.has(u) else DEFAULT_DEPT_MODE
+	# ★ 2C-15：转正后默认 on，非法参数保守回落旧主线（DEPT_OFF），不跟随默认值。
+	#   理由：显式传错参数说明调用方想要「保守/主线」，静默跑进新架构比跑回旧主线更危险；
+	#   A 组实验一律显式 `--dept=off`，不依赖这条回落。
+	_dept_mode = u if DEPT_MODES.has(u) else DEPT_OFF
 	return _dept_mode
 
 
