@@ -143,7 +143,7 @@ func _process_inner(delta: float) -> void:
 		_sync_overlay_size()
 	if not _enabled or observer == null:
 		return
-	if Game.phase != RtsConst.Phase.RUNNING and Game.phase != RtsConst.Phase.PREPARE:
+	if Game.phase != RtsConst.Phase.RUNNING and Game.phase != RtsConst.Phase.PLANNING:
 		return
 	_acc += delta
 	if _acc < UPDATE_INTERVAL:

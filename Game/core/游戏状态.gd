@@ -24,7 +24,7 @@ signal building_completed(building: Node3D)
 signal resources_changed(faction: RtsFaction)
 ## 选择集合变化
 signal selection_changed(units: Array)
-## 对局阶段变化（准备 → 执行 → 胜利/失败）
+## 对局阶段变化（规划 → 执行 → 胜利/失败）
 ## ★ 唯一入口是 set_phase()；不要再直接写 phase = ...
 signal phase_changed(old_phase: int, new_phase: int)
 ## 战斗命中（伤害数字、火花、震屏都靠它）
@@ -49,10 +49,10 @@ signal adjutant_hint(payload: Dictionary)
 # 状态
 # ===========================================================================
 ## 游戏阶段（RtsConst.Phase）
-var phase: int = RtsConst.Phase.PREPARE
+var phase: int = RtsConst.Phase.PLANNING
 ## 已经进行的秒数（只在 RUNNING 阶段累加）
 var elapsed: float = 0.0
-## **短局模式**：准备阶段（世界暂停）+ 执行阶段（实时）+ CP 运营。
+## **短局模式**：规划阶段（世界暂停）+ 执行阶段（实时）+ CP 运营。
 ## 长局（默认）仍是原来的即时战略；短局由 `--short` 或 `--round-test` 开启。
 ## ★ 必须在 HUD/主场景 _ready 之前定下来（Game 是自动加载，先于主场景）。
 var short_match: bool = false
@@ -203,29 +203,34 @@ func _process(delta: float) -> void:
 # 阶段（唯一入口）
 # ===========================================================================
 
-## 切阶段。**不要直接写 phase**——准备/结束阶段必须同时冻结世界。
+## 切阶段。**不要直接写 phase**——规划/结束阶段必须同时冻结世界。
 ##
 ## 冻结口径：`SceneTree.paused = true`。这样单位/建筑/AI/据点/日夜/投射物/
-## Timer/AnimationPlayer 默认全停；HUD/镜头/选择/指令等 UI 节点在各自 _ready
-## 里设了 `PROCESS_MODE_ALWAYS`，所以准备阶段仍然可以看、可以点、可以排命令。
+## Timer/AnimationPlayer 默认全停；规划阶段仍然可以看、可以点、可以排命令，
+## 靠的是**显式白名单**（`PROCESS_MODE_ALWAYS`）：
+##   · UI：HUD / 规划阶段界面 / 说明气泡 / 镜头 / 光标术 / 头顶界面；
+##   · 输入：选择系统 / 指令系统 / 战区指令输入 / 部署输入；
+##   · 玩法胶水：回合控制（它负责切阶段本身）、副官（规划里只读不写）。
+## **白名单只准加"不推进世界时间"的节点**：任何会移动单位、推进计时、
+## 生成投射物、跑 AI 判定的脚本都不许设 ALWAYS，否则"绝对冻结"就漏了。
 func set_phase(p: int) -> void:
 	var old: int = phase
 	phase = p
-	# 即使 old == p 也要重设 paused：建局时 phase 初始就是 PREPARE，
+	# 即使 old == p 也要重设 paused：建局时 phase 初始就是 PLANNING，
 	# 这里必须把树冻上，不能因为"值没变"就跳过。
 	if is_inside_tree():
 		var tree := get_tree()
 		if tree != null:
-			tree.paused = (p == RtsConst.Phase.PREPARE
+			tree.paused = (p == RtsConst.Phase.PLANNING
 					or p == RtsConst.Phase.VICTORY
 					or p == RtsConst.Phase.DEFEAT)
 	if old != p:
 		phase_changed.emit(old, p)
 
 
-## 准备阶段（短局：世界暂停，可排命令/建造/训练）
-func is_prepare() -> bool:
-	return phase == RtsConst.Phase.PREPARE
+## 规划阶段（短局：世界暂停，可排命令/建造/训练）
+func is_planning() -> bool:
+	return phase == RtsConst.Phase.PLANNING
 
 
 ## 执行阶段（短局：实时推进）
@@ -296,7 +301,7 @@ func setup_factions(slots_override: int = 0, teams: Array = [], colors: Array = 
 	_harvestables.clear()
 	if squads != null:
 		squads.call("reset")
-	phase = RtsConst.Phase.PREPARE
+	phase = RtsConst.Phase.PLANNING
 	elapsed = 0.0
 
 
@@ -376,7 +381,7 @@ func reset() -> void:
 	level = null
 	day_night = null
 	round_control = null
-	phase = RtsConst.Phase.PREPARE
+	phase = RtsConst.Phase.PLANNING
 	elapsed = 0.0
 	if squads != null:
 		squads.call("reset")
@@ -854,14 +859,14 @@ func spawn_unit(faction: RtsFaction, unit_id: StringName, pos: Vector3,
 
 ## 玩家胜利。set_phase 会暂停世界（HUD 是 ALWAYS，遮罩照样能显示）。
 func trigger_victory() -> void:
-	if phase == RtsConst.Phase.RUNNING or phase == RtsConst.Phase.PREPARE:
+	if phase == RtsConst.Phase.RUNNING or phase == RtsConst.Phase.PLANNING:
 		set_phase(RtsConst.Phase.VICTORY)
 		game_over.emit(true)
 
 
 ## 玩家失败
 func trigger_defeat() -> void:
-	if phase == RtsConst.Phase.RUNNING or phase == RtsConst.Phase.PREPARE:
+	if phase == RtsConst.Phase.RUNNING or phase == RtsConst.Phase.PLANNING:
 		set_phase(RtsConst.Phase.DEFEAT)
 		game_over.emit(false)
 

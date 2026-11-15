@@ -126,7 +126,7 @@ func _run() -> void:
 	var queued: int = 0
 	while queued < 20 and barracks.queue_train(&"footman"):
 		queued += 1
-	var reserved: int = pf.food_reserved()
+	var reserved: int = pf.food_queued()
 	_check(reserved == queued * 2, "队列预留人口 = %d（%d 个步兵）" % [queued * 2, queued])
 	_check(used + reserved <= cap, "排队后占用 %d <= 上限 %d（不会预留爆表）" % [used + reserved, cap])
 	_check(not barracks.queue_train(&"footman"),

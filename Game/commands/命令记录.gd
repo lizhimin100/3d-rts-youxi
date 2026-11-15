@@ -2,7 +2,7 @@ extends RefCounted
 ## **命令记录**：把"动词"变成"名词"。
 ##
 ## 旧架构里玩家下令就是直接调 `u.order_move()` —— 没有命令对象、没有队列、
-## 无法"准备阶段先排好、执行阶段再统一发"。半回合制必须先有这一层。
+## 无法"规划阶段先排好、执行阶段再统一发"。半回合制必须先有这一层。
 ##
 ## 设计口径：
 ##   · 只存 **instance_id + 坐标**，不跨阶段持有 Node 引用（单位可能已 free）；
@@ -108,6 +108,10 @@ func text() -> String:
 			return "送回资源"
 		RtsConst.Order.REPAIR:
 			return "修理"
+		RtsConst.Order.DEFEND:
+			return "防守"
+		RtsConst.Order.CAPTURE:
+			return "占据"
 	return "指令"
 
 

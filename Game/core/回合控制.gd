@@ -1,10 +1,10 @@
 extends Node
-## **回合控制器（短局）**：准备阶段 ⇄ 执行阶段。
+## **回合控制器（短局）**：规划阶段 ⇄ 执行阶段。
 ##
 ## 职责：
-##   · 准备阶段：世界 `paused`，玩家排命令 / 放建筑 / 排队训练；
+##   · 规划阶段：世界 `paused`，玩家排命令 / 放建筑 / 排队训练；
 ##   · 开始执行：把 `CommandSystem.planned` 里的命令一次性发给单位，解冻世界；
-##   · 执行阶段：倒计时；清波或时间到 → 回准备阶段；
+##   · 执行阶段：倒计时；清波或时间到 → 回规划阶段；
 ##   · 3 个执行回合一局，清完最后一波判胜。
 ##
 ## 明确不做：
@@ -16,7 +16,7 @@ extends Node
 
 ## 每回合执行时长（秒）的兜底；优先读 Cfg.game.short_execution_seconds
 const EXEC_FALLBACK := 60.0
-## 清波后停留多久再回准备（让玩家看清战场）
+## 清波后停留多久再回规划（让玩家看清战场）
 const CLEAR_GRACE := 2.0
 ## 波次编成（下标 = 回合-1；不够就复用最后一档）
 ## 只放已存在的 id；数量别太大，先保证 3 回合能跑完。
@@ -41,7 +41,7 @@ var _level: Node3D = null
 
 
 func _ready() -> void:
-	# 准备阶段整棵树 paused，但本节点要负责"开始执行/结束执行"，必须常驻。
+	# 规划阶段整棵树 paused，但本节点要负责"开始执行/结束执行"，必须常驻。
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	Game.round_control = self
 
@@ -64,8 +64,8 @@ func execution_total() -> float:
 
 ## HUD 用：当前阶段一句话
 func phase_text() -> String:
-	if Game.is_prepare():
-		return "准备阶段 · 第 %d / %d 回合" % [mini(round_index + 1, rounds()), rounds()]
+	if Game.is_planning():
+		return "规划阶段 · 第 %d / %d 回合" % [mini(round_index + 1, rounds()), rounds()]
 	if Game.is_executing():
 		return "执行阶段 · 剩余 %02d 秒" % int(ceil(execution_left))
 	if Game.phase == RtsConst.Phase.VICTORY:
@@ -87,10 +87,30 @@ func wave_alive_count() -> int:
 	return n
 
 
+## **敌方明牌意图**（规划地图层挂在敌方大本营头顶的那行字）。
+##
+## 短局的敌人是脚本波次，所以"明牌"就是**下一波编成**——这是诚实的情报，
+## 不是预测：玩家可以据此决定这一回合先造兵还是先补农场。
+func next_wave_text() -> String:
+	var idx: int = clampi(round_index, 0, WAVES.size() - 1)
+	if round_index >= rounds():
+		return "最后一波已出 · 清完即胜"
+	var pack: Dictionary = WAVES[idx]
+	var parts := PackedStringArray()
+	for id in pack.keys():
+		var d: UnitDef = Cfg.unit(StringName(id))
+		var name: String = d.display_name if d != null else String(id)
+		parts.append("%d %s" % [int(pack[id]), name])
+	var prefix: String = "第 %d 波" % (round_index + 1)
+	if wave_alive_count() > 0:
+		return "%s 已在场 · 清完再回规划" % prefix
+	return "%s：%s" % [prefix, " ".join(parts)]
+
+
 ## **开始执行**（HUD 按钮唯一入口）。
 ## 顺序很重要：先把计划命令发出去（此时世界还冻着），再解冻。
 func begin_execution() -> bool:
-	if not Game.is_prepare():
+	if not Game.is_planning():
 		return false
 	if Game.player_faction == null:
 		return false
@@ -110,7 +130,7 @@ func begin_execution() -> bool:
 	return true
 
 
-## **结束执行**：回到准备阶段（世界重新冻结）。清完最后一波则判胜。
+## **结束执行**：回到规划阶段（世界重新冻结）。清完最后一波则判胜。
 func end_execution(reason: String = "") -> void:
 	if not Game.is_executing():
 		return
@@ -118,9 +138,36 @@ func end_execution(reason: String = "") -> void:
 	if round_index >= rounds() and wave_alive_count() == 0:
 		Game.trigger_victory()
 		return
-	Game.set_phase(RtsConst.Phase.PREPARE)
-	Game.toast("准备阶段 · 第 %d / %d 回合" % [mini(round_index + 1, rounds()), rounds()],
+	Game.set_phase(RtsConst.Phase.PLANNING)
+	# 本回合没收尾的训练作废（不退 CP）——规划结束按钮上那句警告就是这条规则。
+	var lost: int = _cancel_unfinished_training()
+	Game.toast("规划阶段 · 第 %d / %d 回合" % [mini(round_index + 1, rounds()), rounds()],
 			Cfg.game.hud_accent)
+	if lost > 0:
+		Game.toast("未完成的训练已取消：%d 项（不退 CP）" % lost, Color(0.95, 0.66, 0.42))
+
+
+## 玩家阵营**未完成的训练**作废（不退 CP）。返回被取消的条目数。
+##
+## 为什么在"回合结束"结算、而不是"规划结束"结算：
+##   训练读条只在世界解冻（执行阶段）时才走，规划阶段是绝对冻结的。
+##   如果在规划结束时清队列，短局就永远造不出任何兵 —— 那不是规则，那是 bug。
+##   所以"未完成将取消"落在**回合边界**：排太多、这一回合跑不完的，下一回合重排。
+func _cancel_unfinished_training() -> int:
+	var pl := Game.player_faction
+	if pl == null:
+		return 0
+	var n: int = 0
+	for b in pl.buildings:
+		if b == null or not is_instance_valid(b):
+			continue
+		var q: Variant = b.get("train_queue")
+		if q is Array and not (q as Array).is_empty():
+			n += (q as Array).size()
+			(q as Array).clear()
+			if b.get("train_progress") != null:
+				b.set("train_progress", 0.0)
+	return n
 
 
 func _process(delta: float) -> void:
@@ -131,7 +178,7 @@ func _process(delta: float) -> void:
 		if pf != null and pf.count_units() == 0 and pf.count_buildings() == 0:
 			Game.trigger_defeat()
 			return
-		# 清波：脚本波次全灭后停留 CLEAR_GRACE 秒，让玩家看清再回准备
+		# 清波：脚本波次全灭后停留 CLEAR_GRACE 秒，让玩家看清再回规划
 		if round_index > 0 and wave_alive_count() == 0:
 			_clear_timer += delta
 			if _clear_timer >= CLEAR_GRACE:
@@ -141,7 +188,7 @@ func _process(delta: float) -> void:
 			_clear_timer = 0.0
 		if execution_left <= 0.0:
 			end_execution("时间到")
-	elif Game.is_prepare():
+	elif Game.is_planning():
 		var pf2 := Game.player_faction
 		if pf2 != null and round_index > 0 and pf2.count_units() == 0 and pf2.count_buildings() == 0:
 			Game.trigger_defeat()

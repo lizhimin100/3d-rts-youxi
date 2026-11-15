@@ -7,7 +7,7 @@
 		},
 		{
 			"path": "Game/ai/世界状态.gd",
-			"size": 8826
+			"size": 8844
 		},
 		{
 			"path": "Game/ai/世界状态.gd.uid",
@@ -15,7 +15,7 @@
 		},
 		{
 			"path": "Game/ai/副官.gd",
-			"size": 20365
+			"size": 21060
 		},
 		{
 			"path": "Game/ai/副官.gd.uid",
@@ -23,7 +23,7 @@
 		},
 		{
 			"path": "Game/ai/反愚蠢.gd",
-			"size": 15114
+			"size": 15051
 		},
 		{
 			"path": "Game/ai/反愚蠢.gd.uid",
@@ -47,7 +47,7 @@
 		},
 		{
 			"path": "Game/ai/战斗模型.gd",
-			"size": 78016
+			"size": 78031
 		},
 		{
 			"path": "Game/ai/战斗模型.gd.uid",
@@ -79,7 +79,7 @@
 		},
 		{
 			"path": "Game/ai/简单AI.gd",
-			"size": 355508
+			"size": 355429
 		},
 		{
 			"path": "Game/ai/简单AI.gd.uid",
@@ -111,7 +111,7 @@
 		},
 		{
 			"path": "Game/audio/音效管理.gd",
-			"size": 29627
+			"size": 28868
 		},
 		{
 			"path": "Game/audio/音效管理.gd.uid",
@@ -119,7 +119,7 @@
 		},
 		{
 			"path": "Game/commands/命令记录.gd",
-			"size": 3673
+			"size": 3762
 		},
 		{
 			"path": "Game/commands/命令记录.gd.uid",
@@ -227,7 +227,7 @@
 		},
 		{
 			"path": "Game/config/可用性查询.gd",
-			"size": 4291
+			"size": 4265
 		},
 		{
 			"path": "Game/config/可用性查询.gd.uid",
@@ -299,7 +299,7 @@
 		},
 		{
 			"path": "Game/config/游戏配置.gd",
-			"size": 19629
+			"size": 19726
 		},
 		{
 			"path": "Game/config/游戏配置.gd.uid",
@@ -375,7 +375,7 @@
 		},
 		{
 			"path": "Game/core/主场景.gd",
-			"size": 56958
+			"size": 56937
 		},
 		{
 			"path": "Game/core/主场景.gd.uid",
@@ -391,7 +391,7 @@
 		},
 		{
 			"path": "Game/core/回合控制.gd",
-			"size": 6691
+			"size": 8770
 		},
 		{
 			"path": "Game/core/回合控制.gd.uid",
@@ -399,7 +399,7 @@
 		},
 		{
 			"path": "Game/core/常量.gd",
-			"size": 3527
+			"size": 3988
 		},
 		{
 			"path": "Game/core/常量.gd.uid",
@@ -407,7 +407,7 @@
 		},
 		{
 			"path": "Game/core/游戏状态.gd",
-			"size": 35293
+			"size": 35479
 		},
 		{
 			"path": "Game/core/游戏状态.gd.uid",
@@ -415,7 +415,7 @@
 		},
 		{
 			"path": "Game/core/阵营.gd",
-			"size": 8613
+			"size": 9199
 		},
 		{
 			"path": "Game/core/阵营.gd.uid",
@@ -575,7 +575,7 @@
 		},
 		{
 			"path": "Game/systems/战争迷雾.gd",
-			"size": 12416
+			"size": 12417
 		},
 		{
 			"path": "Game/systems/战争迷雾.gd.uid",
@@ -731,7 +731,7 @@
 		},
 		{
 			"path": "Views/hud/HUD.gd",
-			"size": 108563
+			"size": 113936
 		},
 		{
 			"path": "Views/hud/HUD.gd.uid",
@@ -743,18 +743,10 @@
 		},
 		{
 			"path": "Views/hud/光标术.gd",
-			"size": 23003
+			"size": 27646
 		},
 		{
 			"path": "Views/hud/光标术.gd.uid",
-			"size": 20
-		},
-		{
-			"path": "Views/hud/准备面板.gd",
-			"size": 6750
-		},
-		{
-			"path": "Views/hud/准备面板.gd.uid",
 			"size": 20
 		},
 		{
@@ -823,7 +815,7 @@
 		},
 		{
 			"path": "Views/hud/界面规格.gd",
-			"size": 49407
+			"size": 49729
 		},
 		{
 			"path": "Views/hud/界面规格.gd.uid",
@@ -843,6 +835,22 @@
 		},
 		{
 			"path": "Views/hud/装饰.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/hud/规划地图层.gd",
+			"size": 14877
+		},
+		{
+			"path": "Views/hud/规划地图层.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/hud/规划阶段界面.gd",
+			"size": 49504
+		},
+		{
+			"path": "Views/hud/规划阶段界面.gd.uid",
 			"size": 20
 		},
 		{
@@ -899,7 +907,7 @@
 		},
 		{
 			"path": "Views/input/指令系统.gd",
-			"size": 56303
+			"size": 59063
 		},
 		{
 			"path": "Views/input/指令系统.gd.uid",
@@ -919,6 +927,14 @@
 		},
 		{
 			"path": "Views/input/选择系统.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Views/input/部署输入.gd",
+			"size": 12219
+		},
+		{
+			"path": "Views/input/部署输入.gd.uid",
 			"size": 20
 		},
 		{
@@ -1323,7 +1339,7 @@
 		},
 		{
 			"path": "Engine/debug/debug_bridge.gd",
-			"size": 9478
+			"size": 9338
 		},
 		{
 			"path": "Engine/debug/debug_bridge.gd.uid",
@@ -1475,7 +1491,7 @@
 		},
 		{
 			"path": "Tests/checks/shot_runner.gd",
-			"size": 4890
+			"size": 6959
 		},
 		{
 			"path": "Tests/checks/shot_runner.gd.uid",
@@ -1579,7 +1595,7 @@
 		},
 		{
 			"path": "Tests/suites/升级自检.gd",
-			"size": 13548
+			"size": 13546
 		},
 		{
 			"path": "Tests/suites/升级自检.gd.uid",
@@ -1587,7 +1603,7 @@
 		},
 		{
 			"path": "Tests/suites/半回合自检.gd",
-			"size": 4667
+			"size": 11182
 		},
 		{
 			"path": "Tests/suites/半回合自检.gd.uid",
@@ -1891,7 +1907,7 @@
 		},
 		{
 			"path": "Tools/run-game.ps1",
-			"size": 4868
+			"size": 6760
 		},
 		{
 			"path": "Tools/修举盾姿势.py",
@@ -2407,7 +2423,7 @@
 		},
 		{
 			"path": "Content/data/screens.json",
-			"size": 556
+			"size": 2402
 		},
 		{
 			"path": "Content/data/sim.json",
@@ -2415,27 +2431,27 @@
 		},
 		{
 			"path": "Content/i18n/legacy_budget.json",
-			"size": 6814
+			"size": 8018
 		},
 		{
 			"path": "Content/i18n/ui.csv",
-			"size": 1627
+			"size": 1732
 		},
 		{
 			"path": "Content/i18n/ui.en.translation",
-			"size": 1488
+			"size": 1528
 		},
 		{
 			"path": "Content/i18n/ui.note.translation",
-			"size": 1469
+			"size": 1493
 		},
 		{
 			"path": "Content/i18n/ui.zh.translation",
-			"size": 1603
+			"size": 1663
 		},
 		{
 			"path": "Content/keys/assets.json",
-			"size": 11680
+			"size": 11893
 		},
 		{
 			"path": "addons/map_editor/plugin.cfg",

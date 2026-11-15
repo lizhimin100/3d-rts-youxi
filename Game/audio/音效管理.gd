@@ -132,7 +132,7 @@ static func attach(tree: SceneTree) -> void:
 		return
 	_inst = Sfx.new()
 	_inst.name = "音效"
-	# 准备阶段整棵树 paused；BGM/UI 提示音仍要能淡入淡出、泵合成缓冲。
+	# 规划阶段整棵树 paused；BGM/UI 提示音仍要能淡入淡出、泵合成缓冲。
 	_inst.process_mode = Node.PROCESS_MODE_ALWAYS
 	# 主场景还在 _ready 里挂子节点，此时 add_child 会因"父节点正在建树"失败，
 	# 必须走 call_deferred；初始化（含 BGM）同理。

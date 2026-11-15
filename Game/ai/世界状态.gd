@@ -118,7 +118,7 @@ static func region_id_valid(id: String) -> bool:
 ## 造一份快照。**每次调用都返回全新的 Dictionary** —— 不允许在旧快照上增量写。
 ##
 ## `inp` 由 `简单AI._world_tick()` 采集（只做取值，不做判断）：
-##   gold, wood, pop_cap, pop_used, pop_reserved, army_n,
+##   gold, wood, pop_cap, pop_used, pop_reserved（在训人口）, army_n,
 ##   defense_locked, troop_locked, phase, night, threat,
 ##   buildings: {id: 座数}, enemy_buildings: [{id,type,pos,hp}],
 ##   allies: [Vector3], resources: [{kind,pos}],

@@ -43,8 +43,11 @@ const CRATE_BANNER_H := 46.0
 
 ## 建筑面板脚本（用 preload 而不是直接写 class_name：新类还没进全局 class 缓存时也能跑）
 const BUILDING_PANEL_SCRIPT := preload("res://Views/hud/建筑面板.gd")
-## 短局准备/执行面板（阶段标题 + 计划列表 + 开始/结束执行）
-const PREPARE_PANEL_SCRIPT := preload("res://Views/hud/准备面板.gd")
+## **规划阶段界面**（2026-11-15 重构：指挥官卡/CP 菱形/局外资源/人口+日夜/
+## 底部操作面板/右下规划结束+取消）。只在规划阶段显示，执行阶段的底栏原样保留。
+const PLANNING_HUD_SCRIPT := preload("res://Views/hud/规划阶段界面.gd")
+## 规划阶段盖在 3D 战场上的"作战图"：部署预览 / 部署标记 / 敌方明牌意图
+const PLANNING_MAP_SCRIPT := preload("res://Views/hud/规划地图层.gd")
 
 ## 界面根节点（承载 theme，铺满视口）
 var root: Control = null
@@ -164,10 +167,14 @@ var _card: RtsCommandCard = null
 var _card_panel: PanelContainer = null
 var _card_sig: String = ""
 
-## 短局：准备/执行面板（长局隐藏）
-var _prepare_panel: PanelContainer = null
-## 准备面板上一次的屏幕矩形（covers_point 用）
-var _prepare_rect: Rect2 = Rect2()
+## 短局 · 规划阶段界面（长局 / 执行阶段隐藏）
+var _planning_hud: Control = null
+## 规划阶段的地图覆盖层（部署预览 + 部署标记 + 敌方明牌意图）
+var _planning_map: Control = null
+## 规划阶段会吃鼠标的几块矩形（covers_point 用；由 _place_planning_hud 写入）
+var _planning_hit: Array = []
+## 规划阶段底部操作面板的矩形（落点提示浮在它上面）
+var _planning_action_rect: Rect2 = Rect2()
 
 ## 等待落点提示
 var _pending_box: PanelContainer = null
@@ -225,7 +232,7 @@ class MiniBar extends Control:
 # ===========================================================================
 
 func _ready() -> void:
-	# 准备阶段整棵树是 paused 的；HUD 必须继续跑，否则看不到面板也点不了按钮。
+	# 规划阶段整棵树是 paused 的；HUD 必须继续跑，否则看不到面板也点不了按钮。
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	layer = 1
 	root = Control.new()
@@ -251,7 +258,7 @@ func _ready() -> void:
 	_build_card()
 	_build_overhead()
 	_build_pending_label()
-	_build_prepare_panel()
+	_build_planning_hud()
 	_build_overlay()
 	_build_hide_hint()
 	_install_fx()
@@ -365,7 +372,7 @@ func _process_inner(delta: float) -> void:
 	_refresh_selection()
 	_refresh_pending()
 	_refresh_card(false)
-	_refresh_prepare_panel()
+	_refresh_planning_hud()
 	# 底栏高度要等控件重排后才算准（命令卡行数变了尤其明显）。
 	# 每 0.12s 比对一次"该多高 vs 现在多高"，差 1px 就重摆 ——
 	# 否则右下角会裁掉半行字，或者选中卡比命令卡矮一截（就是"一边低一边高"）。
@@ -544,12 +551,17 @@ func _apply_layout() -> void:
 	# "没选中，屏幕下面还挂着一条 UI"。
 	# 这里把"空选中"当成唯一判据做硬短路：不管上面谁留了尾巴，一律收干净。
 	# ★ 只收底栏这一条带的三块 + 底板，**不要动**资源条/小Content/maps/提示（它们永远在）。
-	if _valid_selection().is_empty():
+	#
+	# 2026-11-15：**规划阶段的底栏整条让位**给"规划阶段界面"（底部操作面板 + 右列）。
+	# 执行阶段照旧：这一条魔兽底栏一个像素都不改。
+	var planning: bool = _planning_active()
+	if _valid_selection().is_empty() or planning:
 		_hide_band_parts()
 	var m: float = _mets.margin
 
-	# 资源条：顶部**居中**（左上让给圆形小地图）
+	# 资源条：顶部**居中**（左上让给圆形小地图）。规划阶段由"局外资源 + 人口 + 日夜"接管。
 	if _stats_panel != null:
+		_stats_panel.visible = not planning
 		_place(_stats_panel, 0.5, 0.0, 0.5, 0.0,
 				-_mets.stats_w * 0.5, m, _mets.stats_w * 0.5, m + _mets.stats_h)
 	# 小地图：左上（圆盘 + 下方图例条）
@@ -563,12 +575,14 @@ func _apply_layout() -> void:
 		var cbh: float = _crate_banner_height()
 		_place(_crate_banner, 0.5, 0.0, 0.5, 0.0,
 				-cbw, cty, cbw, cty + cbh)
+	# 规划阶段：左上角让给"指挥官卡"，小地图整体下移一格（卡 92 + 8）
+	var minimap_top: float = m + (100.0 if planning else 0.0)
 	if _minimap != null:
 		# 正方形：圆盘 = 控件内切圆，图例浮在圆内底部（不再额外占高度）
 		_place(_minimap, 0.0, 0.0, 0.0, 0.0,
-				m, m, m + _mets.minimap, m + _mets.minimap)
+				m, minimap_top, m + _mets.minimap, minimap_top + _mets.minimap)
 	# --- 战区指令条：小地图正下方的 2×2 网格 ---
-	var war_top: float = m + _mets.minimap + 8.0
+	var war_top: float = minimap_top + _mets.minimap + 8.0
 	var war_h: float = WAR_BTN_H * 2.0 + WAR_GAP
 	if _war_bar != null:
 		_place(_war_bar, 0.0, 0.0, 0.0, 0.0,
@@ -594,6 +608,23 @@ func _apply_layout() -> void:
 				m + _mets.minimap, war_top + war_h + 84.0)
 
 	# --- 底栏：一条带子，三块内容 ---
+	# ★ 规划阶段整条底栏让位给"规划阶段界面"：它有自己的操作面板（底部居中）和
+	#   右列按钮。这里**提前返回**，避免后面那段"按选中重排三块"又把面板显示回来。
+	if planning:
+		_hide_band_parts()
+		_place_planning_hud()
+		# 落点提示（建造/技能等）浮在规划操作面板正上方：
+		# `_place_pending_label` 用的是 `margin + _band_applied + 10`（自底向上），
+		# 所以把 _band_applied 换成"操作面板到屏幕底的距离"。
+		var act_rect: Rect2 = _planning_action_rect
+		if act_rect.size.y > 0.0:
+			_band_applied = maxf(_mets.vh - act_rect.position.y, 0.0)
+		_place_toasts()
+		_place_pending_label()
+		_apply_theme_scale()
+		_booted = true
+		return
+
 	var bh: float = _band_h()
 	_band_applied = bh
 	if _card != null and _card.has_method("set_tile"):
@@ -710,7 +741,7 @@ func _apply_layout() -> void:
 		if _band_plate.show_medallion:
 			_band_plate.medallion_x = (gap_x0 + gap_x1) * 0.5 - plate_left
 
-	_place_prepare_panel()
+	_place_planning_hud()
 	_place_toasts()
 	# 气泡层铺满整个 root：**必须显式摆**，光靠 full-rect 锚点在这套
 	# "root 尺寸由 offset 反算"的结构里量到的是 (0,0)，气泡会挤在左上角。
@@ -938,7 +969,7 @@ func _resource_tip(title: String) -> Dictionary:
 			return {"icon": "flag", "icon_color": Color(0.72, 0.86, 1.0),
 				"title": "指挥点 %d / %d" % [cp_v, cp_cap],
 				"tag": "短局资源",
-				"body": "短局唯一的运营资源。准备阶段支付，执行阶段按秒回复。\n训练、建造都花 CP；人口仍由建筑提供。",
+				"body": "短局唯一的运营资源。规划阶段支付，执行阶段按秒回复。\n训练、建造都花 CP；人口仍由建筑提供。",
 				"foot": "回复 %.1f / 秒" % (pl.cp_regen if pl != null else 0.0)}
 		"金币":
 			var g: int = pl.gold if pl != null else 0
@@ -951,10 +982,10 @@ func _resource_tip(title: String) -> Dictionary:
 				"tag": "主资源", "body": "造农场 / 兵营 / 箭塔和大部分科技都要木材。\n伐木场是木材专用交汇点，背木头的农民优先去那里。",
 				"foot": ""}
 		"人口":
-			var used: int = pl.food_used() if pl != null else 0
+			var used: int = pl.food_committed() if pl != null else 0
 			var cap: int = pl.food_cap() if pl != null else 0
 			return {"icon": "pop", "icon_color": Spec.food(), "title": "人口 %d / %d" % [used, cap],
-				"tag": "上限", "body": "每个单位都占人口，每座农场 +8 上限。\n人口满了就训练不出新兵（按钮会变灰）。",
+				"tag": "已用 / 上限", "body": "每个单位都占人口，每座农场 +8 上限。\n规划阶段点下训练/建造就立刻计入「已用」人口，不等出队。",
 				"foot": "空闲 %d" % maxi(cap - used, 0)}
 		"时间":
 			var secs: int = maxi(0, int(Game.elapsed)) if Game != null else 0
@@ -1065,9 +1096,7 @@ func _place_toasts() -> void:
 	if _crate_banner != null and _crate_banner.visible:
 		# 播报条：top = 资源条下沿 + 6，高 H → 普通提示从它下面 12px 开始
 		top = _mets.margin + _mets.stats_h + 6.0 + _crate_banner_height() + 12.0
-	# 短局准备面板占着资源条下方：普通提示继续往下让位，别压面板。
-	if _prepare_panel != null and _prepare_panel.visible:
-		top = _prepare_panel.position.y + _prepare_panel.size.y + 8.0
+	# 规划阶段的顶部让位由"局外资源"条吃掉了（同一行），普通提示按资源条高度起算即可。
 	_place(_toast_box, 0.5, 0.0, 0.5, 0.0, -w * 0.5, top, w * 0.5, top + 260.0)
 
 
@@ -1454,7 +1483,9 @@ func _sync_adjutant() -> void:
 	if _adjutant == null:
 		_adj_btn.visible = false
 		return
-	_adj_btn.visible = true
+	# ★ 2026-11-15 玩家口径：**规划阶段彻底隐藏副官开关**（副官只在执行阶段生效）。
+	#   这里判、`_apply_layout` 也判：前者管 8Hz 轮询，后者管阶段切换当帧。
+	_adj_btn.visible = not _planning_active()
 	var on: bool = _adjutant.get("enabled") == true
 	_adj_btn.text = "副官 · 开" if on else "副官 · 关"
 	_adj_btn.add_theme_color_override("font_color",
@@ -1581,47 +1612,151 @@ func _place_pending_label() -> void:
 			-pw * 0.5, -y - 26.0, pw * 0.5, -y)
 
 
-## 短局准备/执行面板：顶部居中、资源条下方。
-func _build_prepare_panel() -> void:
-	_prepare_panel = PREPARE_PANEL_SCRIPT.new()
-	_prepare_panel.name = "准备面板"
-	root.add_child(_prepare_panel)
-	_prepare_panel.visible = false
+## 规划阶段界面：一张 "作战台"（左上指挥卡 / 左中 CP / 中上局外资源 / 右上人口+日夜 /
+## 底部操作面板 / 右下规划结束+取消），外加一层盖在 3D 上的地图覆盖层。
+##
+## ★ 只在**短局 + 规划阶段**显示；执行阶段仍然用原来那条魔兽底栏，一个像素都不改。
+func _build_planning_hud() -> void:
+	# 地图层挂在 CanvasLayer 上（屏幕像素对齐 3D 投影），必须画在面板之下
+	_planning_map = PLANNING_MAP_SCRIPT.new()
+	_planning_map.name = "规划地图层"
+	add_child(_planning_map)
+	move_child(_planning_map, 0)
+	_planning_map.call("setup", self)
+	_planning_map.visible = false
+
+	_planning_hud = PLANNING_HUD_SCRIPT.new()
+	_planning_hud.name = "规划阶段界面"
+	root.add_child(_planning_hud)
+	_planning_hud.call("setup", self, _planning_map)
+	_planning_hud.visible = false
+	_planning_hud.connect("plan_end_pressed", _on_plan_end_pressed)
+	_planning_hud.connect("cancel_pressed", _on_plan_cancel_pressed)
 
 
-func _place_prepare_panel() -> void:
-	if _prepare_panel == null or _mets == null:
+## 此刻是不是"规划阶段"（短局专用；长局永远 false）
+func _planning_active() -> bool:
+	if Game == null:
+		return false
+	if not Game.short_match:
+		return false
+	if Game.has_method("is_over") and bool(Game.call("is_over")):
+		return false
+	return Game.is_planning()
+
+
+func _place_planning_hud() -> void:
+	if _planning_hud == null or _mets == null:
 		return
-	var on: bool = Game.short_match and not Game.is_over()
-	_prepare_panel.visible = on
+	var on: bool = _planning_active()
+	_planning_hud.call("set_active", on)
+	_planning_hud.visible = on
 	if not on:
-		_prepare_rect = Rect2()
+		_planning_hit.clear()
 		return
-	var w: float = minf(420.0, _mets.vw * 0.34)
-	var y: float = _mets.margin + _mets.stats_h + 8.0
-	# 据点播报条在同一个位置：有它就往下让，别两条叠在一起。
-	if _crate_banner != null and _crate_banner.visible:
-		y = _mets.margin + _mets.stats_h + 6.0 + _crate_banner_height() + 10.0
-	# 高度跟内容走（计划 0 条时不留一大块空面板）；上下限防止挤压战场。
-	var need: float = _prepare_panel.get_combined_minimum_size().y
-	var h: float = clampf(need, 148.0, minf(236.0, _mets.vh * 0.34))
-	_place(_prepare_panel, 0.5, 0.0, 0.5, 0.0,
-			-w * 0.5, y, w * 0.5, y + h)
-	_prepare_rect = _prepare_panel.get_global_rect()
+	var m: float = _mets.margin
+	var vw: float = _mets.vw
+	var vh: float = _mets.vh
+	# --- 左上：指挥官卡（在规划阶段它占了最上面，小地图整体下移）---
+	var cmdr_w: float = clampf(_mets.minimap * 1.22, 214.0, 268.0)
+	var cmdr_h: float = 92.0
+	# --- 左中：CP 菱形（小地图 + 战区条 + 菜单之下；菜单底 = war_top+war_h+84）---
+	var war_top: float = m + cmdr_h + 8.0 + _mets.minimap + 8.0
+	var war_h: float = WAR_BTN_H * 2.0 + WAR_GAP
+	var cp_size: float = 86.0
+	var cp_top: float = war_top + war_h + 84.0 + 12.0
+	# --- 中上：局外资源（资源条那一条的位置）---
+	var ext_w: float = 300.0
+	var ext_h: float = 42.0
+	# --- 右上：人口 + 日夜（帧率表左边）---
+	var right_w: float = 232.0
+	var right_h: float = 58.0
+	# --- 底部：操作面板 + 右列（规划结束 / 取消）---
+	var col_w: float = 132.0
+	var act_w: float = clampf(vw * 0.52, 470.0, 720.0)
+	act_w = minf(act_w, vw - m * 2.0 - col_w - 18.0)
+	# 建造页要放 2 行卡片（5 列 × 2 行 = 10 栋），高度按屏高给到 30%
+	var act_h: float = clampf(vh * 0.30, 196.0, 272.0)
+	var act_x: float = (vw - act_w - col_w - 18.0) * 0.5
+	var act_y: float = vh - m - act_h
+	var col_h: float = minf(act_h, 130.0)
+	var col_y: float = act_y + act_h - col_h
+
+	_planning_hud.call("apply_rects", {
+		"commander": Rect2(m, m, cmdr_w, cmdr_h),
+		"cp": Rect2(m, cp_top, cp_size, cp_size),
+		"external": Rect2(vw * 0.5 - ext_w * 0.5, m, ext_w, ext_h),
+		"right": Rect2(vw - m - 88.0 - 8.0 - right_w, m, right_w, right_h),
+		"action": Rect2(act_x, act_y, act_w, act_h),
+		"right_col": Rect2(act_x + act_w + 18.0, col_y, col_w, col_h),
+	})
+	# covers_point 用：只有这几块真吃鼠标（地图层是穿透的）
+	_planning_action_rect = Rect2(act_x, act_y, act_w, act_h)
+	# 明牌意图的安全区：左让小地图列、上让播报/局外资源、下让操作面板、右让 FPS。
+	# ★ 一律用**控件真实屏幕矩形**（get_global_rect 已经算进 root 的 _zoom 缩放），
+	#   不要拿设计像素去反乘：地图层画在真实屏幕像素上，两套坐标混用会差一个 _zoom
+	#   （实测：牌子被压到小地图下面，前两个字读不到）。
+	if _planning_map != null and is_instance_valid(_planning_map) and _planning_map.has_method("set_safe_rect"):
+		var vp_size2: Vector2 = get_viewport().get_visible_rect().size
+		var left: float = m
+		if _minimap != null and is_instance_valid(_minimap):
+			left = _minimap.get_global_rect().end.x
+		left += 16.0
+		var safe_top: float = 150.0
+		if _toast_box != null:
+			safe_top = maxf(_toast_box.get_global_rect().end.y + 12.0, 150.0)
+		var bottom: float = act_y * _zoom
+		if _planning_hud.has_method("action_global_rect"):
+			bottom = float((_planning_hud.call("action_global_rect") as Rect2).position.y)
+		_planning_map.call("set_safe_rect", Rect2(left, safe_top,
+				maxf(vp_size2.x - left - 180.0, 200.0),
+				maxf(bottom - safe_top - 12.0, 120.0)))
+	_planning_hit = [
+		Rect2(m, m, cmdr_w, cmdr_h),
+		Rect2(m, cp_top, cp_size, cp_size),
+		Rect2(vw * 0.5 - ext_w * 0.5, m, ext_w, ext_h),
+		Rect2(act_x, act_y, act_w, act_h),
+		Rect2(act_x + act_w + 18.0, col_y, col_w, col_h),
+		Rect2(vw - m - 88.0 - 8.0 - right_w, m, right_w, right_h),
+	]
 
 
-## 短局面板每 0.12s 刷新一次（内部按签名重建列表，不会每帧 new 控件）。
-func _refresh_prepare_panel() -> void:
-	if _prepare_panel == null or not is_instance_valid(_prepare_panel):
+## 规划界面每 0.12s 刷新一次（内部按签名重建，不每帧 new 控件）。
+func _refresh_planning_hud() -> void:
+	if _planning_hud == null or not is_instance_valid(_planning_hud):
 		return
-	if _prepare_panel.has_method("refresh"):
-		_prepare_panel.call("refresh")
-	# 计划列表增减会改变面板最小高度：差 2px 以上就重摆（不会每帧抖）。
-	if _prepare_panel.visible:
-		var want: float = clampf(_prepare_panel.get_combined_minimum_size().y, 148.0,
-				minf(236.0, _mets.vh * 0.34))
-		if absf(_prepare_panel.size.y - want) > 2.0:
-			_place_prepare_panel()
+	if not _planning_hud.visible:
+		return
+	if _planning_hud.has_method("refresh"):
+		_planning_hud.call("refresh")
+
+
+## 「规划结束」：走回合控制器的唯一入口（它会先发计划命令、再解冻世界）
+func _on_plan_end_pressed() -> void:
+	var rc: Node = Game.round_control
+	if rc != null and rc.has_method("begin_execution"):
+		rc.call("begin_execution")
+
+
+## 「取消」：按顺序撤 —— ① 部署等待态 ② 建造/技能落点 ③ 最后一条计划
+func _on_plan_cancel_pressed() -> void:
+	var host := get_parent()
+	var di: Node = host.get_node_or_null("部署输入") if host != null else null
+	if di != null and di.has_method("mode") and int(di.call("mode")) != 0:
+		di.call("cancel")
+		Game.toast("已取消部署", Color(0.92, 0.88, 0.72))
+		return
+	var cs := _command_system()
+	if cs != null and cs.has_method("has_pending") and bool(cs.call("has_pending")):
+		cs.call("request_cancel")
+		Game.toast("已取消落点", Color(0.92, 0.88, 0.72))
+		return
+	if cs != null and cs.has_method("pop_last_plan"):
+		var t: String = String(cs.call("pop_last_plan"))
+		if t != "":
+			Game.toast("已撤销计划：%s" % t, Color(0.92, 0.88, 0.72))
+			return
+	Game.toast("没有可取消的操作", Color(0.86, 0.84, 0.76))
 
 
 # ===========================================================================
@@ -2115,6 +2250,16 @@ func _exit_tree() -> void:
 ##   这里每 0.12s 被调一次，不加守卫就是 8Hz 的闪烁（尤其是人口满/不满切换那一下）。
 func _refresh_stats() -> void:
 	_sync_fps()
+	# 规划阶段：顶部资源条整条让位给"规划阶段界面"（局外资源 / 人口 / 日夜）。
+	# 副官开关也要在规划阶段收起，所以这里先同步一次副官的显隐。
+	if _adj_btn != null:
+		_sync_adjutant()
+	if _planning_active():
+		if _stats_panel != null:
+			_stats_panel.visible = false
+		return
+	if _stats_panel != null:
+		_stats_panel.visible = true
 	var pl := Game.player_faction
 	if pl == null:
 		_set_label(_gold_label, "-")
@@ -2156,7 +2301,8 @@ func _refresh_stats() -> void:
 		else:
 			var secs: int = maxi(0, int(Game.elapsed))
 			_set_label(_time_label, "%02d:%02d" % [secs / 60, secs % 60])
-	var used: int = pl.food_used()
+	# 已用人口 = 存活单位 + 在训队列（规划阶段下单即占，见 RtsFaction.food_committed）
+	var used: int = pl.food_committed()
 	var cap: int = pl.food_cap()
 	_set_label(_food_label, "%d/%d" % [used, cap])
 	var full: bool = cap > 0 and used >= cap
@@ -2315,6 +2461,12 @@ func _refresh_pending() -> void:
 ## 命令卡（签名没变就不重建，避免悬停时闪烁；可用性仍每拍就地刷新）
 func _refresh_card(force: bool) -> void:
 	if _card == null:
+		return
+	# 规划阶段：命令卡让位给规划操作面板（训练卡/建造卡在那里）
+	if _planning_active():
+		if _card_panel != null and _card_panel.visible:
+			_card_panel.visible = false
+			_apply_layout()
 		return
 	# 【显隐】没有选中 / 选中的不是己方（敌方、中立金矿）→ 整块命令卡收起，不占位。
 	# 收起时整条底栏要重摆（底板可能只剩选中卡那一半，甚至整条消失）。
@@ -2552,6 +2704,8 @@ func covers_point(p: Vector2) -> bool:
 		return true
 	if _menu_btn != null and _menu_btn.get_global_rect().has_point(p):
 		return true
-	if _prepare_panel != null and _prepare_panel.visible and _prepare_panel.get_global_rect().has_point(p):
-		return true
+	if _planning_hud != null and _planning_hud.visible:
+		for r in _planning_hit:
+			if (r as Rect2).has_point(p):
+				return true
 	return false

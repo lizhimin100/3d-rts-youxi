@@ -38,7 +38,7 @@ const FORMATION_SPACING := 1.9
 const REFIT := preload("res://Game/systems/建筑改造.gd")
 const 可用性查询 := preload("res://Game/config/可用性查询.gd")
 const 可用性文案 := preload("res://Game/config/可用性文案.gd")
-## 命令记录（名词化后的命令；准备阶段入队，执行阶段统一发出）
+## 命令记录（名词化后的命令；规划阶段入队，执行阶段统一发出）
 const CmdRecord := preload("res://Game/commands/命令记录.gd")
 ## 计划命令上限：面板只显示 6 条，留 2 条余量
 const PLAN_MAX := 8
@@ -60,7 +60,7 @@ var pending_ability: StringName = &""
 ## 等待设置集结点的建筑（null = 用当前选中的建筑）
 var _rally_building: Node = null
 
-## **计划命令**（准备阶段入队；执行阶段由 execute_planned 统一发出）
+## **计划命令**（规划阶段入队；执行阶段由 execute_planned 统一发出）
 ## 元素 = 命令记录（Game/commands/命令记录.gd）
 var planned: Array = []
 
@@ -81,7 +81,7 @@ var _hud: Node = null
 # ===========================================================================
 
 func _ready() -> void:
-	# 准备阶段要能排队命令/放建筑/点训练，必须无视 paused。
+	# 规划阶段要能排队命令/放建筑/点训练，必须无视 paused。
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	Game.game_over.connect(_on_game_over)
 
@@ -102,7 +102,7 @@ func has_pending() -> bool:
 
 
 # ===========================================================================
-# 计划命令（短局：准备阶段排队，执行阶段统一发出）
+# 计划命令（短局：规划阶段排队，执行阶段统一发出）
 # ===========================================================================
 
 func planned_count() -> int:
@@ -241,6 +241,37 @@ func queue_hold() -> void:
 		_add_plan(RtsConst.Order.HOLD, units, Vector3.ZERO, null, &"", "驻守")
 
 
+## **计划：防守某片区域**（规划阶段的「防守」部署）。
+## 语义 = 带着编队走到防区、路上遇敌就打（执行成 ATTACK_MOVE），到点后原地警戒。
+## 和 `queue_hold` 的区别：驻守是"原地不动"，防守是"先去那片区域"。
+func queue_defend(center: Vector3, radius: float = 10.0) -> bool:
+	var units := _plan_units()
+	if units.is_empty():
+		return false
+	var slots := _formation_points(center, units.size(), FORMATION_SPACING)
+	return _add_plan(RtsConst.Order.DEFEND, units, center, null, &"",
+			"防守 %.0fm 区域" % radius, slots)
+
+
+## **计划：占据某片区域 / 据点**（规划阶段的「占据」部署）。
+## 语义 = 走过去站住；中立据点靠"驻留 15 秒"归你（见 Game/systems/据点.gd）。
+func queue_capture(center: Vector3) -> bool:
+	var units := _plan_units()
+	if units.is_empty():
+		return false
+	var slots := _formation_points(center, units.size(), FORMATION_SPACING)
+	return _add_plan(RtsConst.Order.CAPTURE, units, center, null, &"", "占据", slots)
+
+
+## 撤销**最后一条**计划（规划界面「取消」按钮在没有待发状态时用它）。
+## 返回被撤掉的那条文案；没有计划返回空串。
+func pop_last_plan() -> String:
+	if planned.is_empty():
+		return ""
+	var rec = planned.pop_back()
+	return String(rec.call("text"))
+
+
 ## 计划：采集
 func queue_gather(node: Node3D) -> void:
 	var workers := _selected_workers()
@@ -304,6 +335,20 @@ func _execute_record(rec) -> void:
 					u2.call("order_attack_move", rec.call("slot_at", i, point))
 				elif u2.has_method("order_move"):
 					u2.order_move(rec.call("slot_at", i, point))
+		# 防守 = 带编队走过去 + 路上迎击；到点后单位自己进入警戒/索敌。
+		RtsConst.Order.DEFEND:
+			for i in units.size():
+				var ud = units[i]
+				if ud.has_method("order_attack_move"):
+					ud.call("order_attack_move", rec.call("slot_at", i, point))
+				elif ud.has_method("order_move"):
+					ud.order_move(rec.call("slot_at", i, point))
+		# 占据 = 走过去站住（据点按驻留计时判定归属，不需要额外指令）。
+		RtsConst.Order.CAPTURE:
+			for i in units.size():
+				var uc = units[i]
+				if uc.has_method("order_move"):
+					uc.order_move(rec.call("slot_at", i, point))
 		RtsConst.Order.ATTACK:
 			for u3 in units:
 				if target != null and is_instance_valid(target) and u3.has_method("order_attack"):
@@ -558,7 +603,7 @@ func request_ability(ability_id: StringName) -> void:
 
 ## 对自己/对全队施放一个无目标技能（开关类）
 func _cast_self(ability_id: StringName) -> void:
-	if Game.is_prepare():
+	if Game.is_planning():
 		var us := _selected_units()
 		if not us.is_empty():
 			queue_cast(ability_id, (us[0] as Node3D).global_position, null)
@@ -623,8 +668,8 @@ func _patrol(ground: Vector3) -> void:
 	var units := _selected_units()
 	if units.is_empty():
 		return
-	# 准备阶段没有"往返巡逻"的计划语义：先按攻击移动记一条（执行阶段照样会打）。
-	if Game.is_prepare():
+	# 规划阶段没有"往返巡逻"的计划语义：先按攻击移动记一条（执行阶段照样会打）。
+	if Game.is_planning():
 		queue_attack_move(ground, null)
 		return
 	var did: int = 0
@@ -669,7 +714,7 @@ func repair_building(b: Node3D) -> int:
 	var workers := _selected_workers()
 	if workers.is_empty() or b == null:
 		return 0
-	if Game.is_prepare():
+	if Game.is_planning():
 		queue_repair(b)
 		return workers.size()
 	var did: int = 0
@@ -764,7 +809,7 @@ func _on_pending_left_click(screen_pos: Vector2) -> void:
 
 ## 快捷键（每帧轮询 action；注意输入配置里 攻击移动 是 F，不是 A）
 func _handle_hotkeys() -> void:
-	# 准备阶段允许 B（建造）/F（攻击移动）/X/H（停止/驻守）——
+	# 规划阶段允许 B（建造）/F（攻击移动）/X/H（停止/驻守）——
 	# 它们会被下面的 _issue_* 走"计划"分支；对局结束才整体禁用。
 	if Game.is_over():
 		return
@@ -834,7 +879,7 @@ func _context_order(screen_pos: Vector2) -> void:
 		var node := target as RtsHarvestable
 		var workers := _selected_workers()
 		if not workers.is_empty():
-			if Game.is_prepare():
+			if Game.is_planning():
 				queue_gather(node)
 				return
 			for w in workers:
@@ -850,7 +895,7 @@ func _context_order(screen_pos: Vector2) -> void:
 	if target is RtsUnit and pl != null and target.get("faction") != pl:
 		var foe := target as RtsUnit
 		if foe.is_alive():
-			if Game.is_prepare():
+			if Game.is_planning():
 				queue_attack(foe)
 				return
 			for u in units:
@@ -882,7 +927,7 @@ func _context_order(screen_pos: Vector2) -> void:
 			if b.can_repair():
 				repair_building(b)
 				return
-			if Game.is_prepare():
+			if Game.is_planning():
 				queue_move(_walkable(b.global_position))
 				return
 			for w in workers:
@@ -901,7 +946,7 @@ func _context_order(screen_pos: Vector2) -> void:
 func _issue_move(units: Array, center: Vector3) -> void:
 	if units.is_empty():
 		return
-	if Game.is_prepare():
+	if Game.is_planning():
 		queue_move(center)
 		return
 	var pts := _formation_points(center, units.size(), FORMATION_SPACING)
@@ -928,7 +973,7 @@ func _attack_move(center: Vector3, screen_pos: Vector2) -> void:
 		var t := _pick_any(ro, rd)
 		if t is RtsUnit and t.get("faction") != Game.player_faction and (t as RtsUnit).is_alive():
 			near_foe = t as Node3D
-	if Game.is_prepare():
+	if Game.is_planning():
 		queue_attack_move(center, near_foe)
 		return
 	var pts := _formation_points(center, units.size(), FORMATION_SPACING)
@@ -956,7 +1001,7 @@ func _cast_at(ability: StringName, ground: Vector3, screen_pos: Vector2) -> void
 		var ro: Vector3 = cam.project_ray_origin(screen_pos)
 		var rd: Vector3 = cam.project_ray_normal(screen_pos)
 		target = _pick_any(ro, rd)
-	if Game.is_prepare():
+	if Game.is_planning():
 		queue_cast(ability, ground, target)
 		return
 	var any: bool = false
@@ -975,7 +1020,7 @@ func _issue_simple(order: int, label: String) -> void:
 	var units := _selected_units()
 	if units.is_empty():
 		return
-	if Game.is_prepare():
+	if Game.is_planning():
 		if order == RtsConst.Order.STOP:
 			queue_stop()
 		elif order == RtsConst.Order.HOLD:

@@ -99,7 +99,7 @@ func setup_cp(p_start: int, p_cap: int, p_regen: float) -> void:
 	cp_regen = maxf(p_regen, 0.0)
 
 
-## 每帧回复（只在执行阶段由 Game 调用；准备阶段冻结）
+## 每帧回复（只在执行阶段由 Game 调用；规划阶段冻结）
 func tick_cp(dt: float) -> void:
 	if cp_regen <= 0.0 or cp >= cp_cap:
 		return
@@ -120,7 +120,8 @@ func add_cp(amount: int) -> void:
 	cp = clampf(cp + float(amount), 0.0, cp_cap)
 
 
-## 当前人口占用（所有存活单位的 food_cost 之和）
+## 当前**已用人口**：所有存活单位的 food_cost 之和（不含在训队列）。
+## UI 不要直接拿它当"已用"显示 —— 用 `food_committed()`（含在训）。
 func food_used() -> int:
 	var total: int = 0
 	for u in units:
@@ -151,10 +152,12 @@ func food_cap() -> int:
 	return total
 
 
-## 训练队列已经"预定"的人口。
-## 只看已出队单位会漏掉排队中的部队：上限 20 / 已用 18 时还能连排 5 个 2 人口的兵，
-## 出队瞬间直接 28/20。把队列里的 food_cost 一起算进占用，排队时就该卡住。
-func food_reserved() -> int:
+## **在训人口**：训练队列里已下单、还没出队的单位占的 food_cost 之和。
+##
+## 2026-11-15 口径（玩家拍板）：**取消"预留人口"这个说法** ——
+## 规划阶段点下训练的那一瞬间就扣 CP、同时**立刻算进"已用人口"**。
+## 所以这个函数只是 `food_used()` 的一个增量项，对外统一走 `food_committed()`。
+func food_queued() -> int:
 	var total: int = 0
 	for b in buildings:
 		if b == null or not is_instance_valid(b):
@@ -171,9 +174,16 @@ func food_reserved() -> int:
 	return total
 
 
-## 人口是否够用（已用 + 队列预定 + 本次申请）
+## **已用人口 = 存活单位 + 在训队列**。界面上那个 `当前已用/上限` 的唯一出口。
+## 为什么把队列算进"已用"：规划阶段下单即占，玩家看到 6/30 就是"这 6 人口已经被我花掉了"，
+## 不需要再理解"预留"这层概念。
+func food_committed() -> int:
+	return food_used() + food_queued()
+
+
+## 人口是否够用（已用（含在训）+ 本次申请 <= 上限）
 func has_food(amount: int) -> bool:
-	return Economy.has_food(food_used(), food_reserved(), amount, food_cap())
+	return Economy.has_food(food_committed(), 0, amount, food_cap())
 
 
 ## 资源是否够

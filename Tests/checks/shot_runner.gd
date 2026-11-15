@@ -103,6 +103,60 @@ func _run() -> void:
 			return
 		print("[shot] 交互通过：点击 %s → %s 出现" % [click_name, expect_name])
 
+	# --- 可选：只把鼠标移到地图上（不点）—— 验收"部署预览跟着鼠标画" ---
+	if recipe.has("hover_map"):
+		var hf: Array = recipe["hover_map"]
+		var vp3 := get_viewport()
+		var vs3: Vector2 = vp3.get_visible_rect().size
+		var hp3 := Vector2(vs3.x * float(hf[0]), vs3.y * float(hf[1]))
+		var m3 := InputEventMouseMotion.new()
+		m3.position = hp3
+		m3.global_position = hp3
+		vp3.push_input(m3, true)
+		await get_tree().create_timer(0.25).timeout
+		print("[shot] 地图悬停 (%.0f, %.0f)" % [hp3.x, hp3.y])
+
+	# --- 可选：在地图上再点一次（验收"二段式部署"这类交互的第二步） ---
+	if recipe.has("map_click"):
+		var frac: Array = recipe["map_click"]
+		var vp2 := get_viewport()
+		var vs: Vector2 = vp2.get_visible_rect().size
+		var pos := Vector2(vs.x * float(frac[0]), vs.y * float(frac[1]))
+		var m2 := InputEventMouseMotion.new()
+		m2.position = pos
+		m2.global_position = pos
+		vp2.push_input(m2, true)
+		await get_tree().process_frame
+		var d2 := InputEventMouseButton.new()
+		d2.button_index = MOUSE_BUTTON_LEFT
+		d2.pressed = true
+		d2.position = pos
+		d2.global_position = pos
+		vp2.push_input(d2, true)
+		await get_tree().process_frame
+		var u2: InputEventMouseButton = d2.duplicate()
+		u2.pressed = false
+		vp2.push_input(u2, true)
+		await get_tree().create_timer(0.35).timeout
+		print("[shot] 地图点击 (%.0f, %.0f)" % [pos.x, pos.y])
+
+	# --- 可选：点了以后必须真的产生计划命令（部署/移动这类"点地图"的验收） ---
+	if recipe.has("expect_planned"):
+		var want_n := int(recipe["expect_planned"])
+		var cmd: Variant = null
+		for c in _scene.get_children():
+			if String(c.name) == "指令系统":
+				cmd = c
+				break
+		if cmd == null or not cmd.has_method("planned_count"):
+			_fail("找不到指令系统，无法验证计划条数")
+			return
+		var got_n := int(cmd.call("planned_count"))
+		if got_n < want_n:
+			_fail("点了地图但计划条数没涨（期望 ≥%d，实际 %d）" % [want_n, got_n])
+			return
+		print("[shot] 交互通过：计划条数 = %d" % got_n)
+
 	await RenderingServer.frame_post_draw
 	var saved := Screenshot.capture(_out, get_viewport())
 	if saved.is_empty():

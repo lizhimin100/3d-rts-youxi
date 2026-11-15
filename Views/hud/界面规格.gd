@@ -922,6 +922,13 @@ static func mono_font() -> Font:
 	])
 	return f
 
+
+## 中文正文/标题用的无衬线字体（公开出口）。
+## 给**不在 root 里**的自绘层用（例如规划地图层用 `draw_string` 画"明牌意图"）——
+## 那些 Control 不继承 HUD 的 Theme，拿不到 default_font，只能自己取一份。
+static func cjk_font() -> Font:
+	return _cjk_font()
+
 # ===========================================================================
 # 编辑器 Theme 资源（token → 正经 Theme，而不是一堆散落 add_theme_*_override）
 # ===========================================================================

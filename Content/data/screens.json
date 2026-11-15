@@ -6,13 +6,66 @@
 			"scene": "res://Views/scenes/主场景.tscn",
 			"delay": 8.0
 		},
+		"planning": {
+			"description": "规划阶段全景（新界面：指挥官卡/CP/局外资源/人口+日夜/底部操作面板/规划结束）",
+			"scene": "res://Views/scenes/主场景.tscn",
+			"delay": 8.0,
+			"select_unit": "peasant"
+		},
+		"planning_deploy": {
+			"description": "规划阶段选中步兵 → 点「部署_进攻」→ 在地图上点一下 → 验证真的入计划（二段式交互）",
+			"scene": "res://Views/scenes/主场景.tscn",
+			"delay": 8.0,
+			"select_unit": "footman",
+			"click": "部署_进攻",
+			"expect": "规划结束",
+			"map_click": [
+				0.62,
+				0.42
+			],
+			"expect_planned": 1
+		},
+		"planning_preview": {
+			"description": "规划阶段选中步兵 → 点「部署_防守」→ 鼠标移到地图上 → 截防守区色块预览",
+			"scene": "res://Views/scenes/主场景.tscn",
+			"delay": 8.0,
+			"select_unit": "footman",
+			"click": "部署_防守",
+			"expect": "规划结束",
+			"hover_map": [
+				0.63,
+				0.4
+			]
+		},
+		"planning_cp": {
+			"description": "规划阶段空选中 → 点左中 CP 菱形 → 自动选中大本营并展开训练菜单",
+			"scene": "res://Views/scenes/主场景.tscn",
+			"delay": 8.0,
+			"click": "CP点",
+			"expect": "训练_联盟农民"
+		},
+		"planning_end": {
+			"description": "规划阶段点「规划结束」→ 进入执行阶段（顶部资源条恢复可见）",
+			"scene": "res://Views/scenes/主场景.tscn",
+			"delay": 8.0,
+			"click": "规划结束",
+			"expect": "资源条"
+		},
 		"hud": {
-			"description": "选中农民 → 用真实输入点开「建造」→ 验证建造页出现",
+			"description": "长局/执行底栏：选中农民 → 用真实输入点开「建造」→ 验证建造页出现（旧界面回归）",
 			"scene": "res://Views/scenes/主场景.tscn",
 			"delay": 8.0,
 			"select_unit": "peasant",
 			"click": "指令_建造",
 			"expect": "指令_农场"
+		},
+		"planning_build": {
+			"description": "规划阶段选中农民 → 点「建造_农场」→ 落点提示出现（规划界面点得动）",
+			"scene": "res://Views/scenes/主场景.tscn",
+			"delay": 8.0,
+			"select_unit": "peasant",
+			"click": "建造_农场",
+			"expect": "落点提示"
 		}
 	}
 }

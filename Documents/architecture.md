@@ -59,15 +59,15 @@ Content/data/cards/units/*.json
 
 - **开关**：**正常启动默认短局**（`Game.short_match = true`）；`--long` 回旧长局；`--short` 显式短局；
   `--round-test` 短局自检。测试/QA（`App.test_mode`）默认长局，除非显式 `--short`。长局完全不挂回合控制器。
-- **阶段**：`Game.set_phase(PREPARE/RUNNING/VICTORY/DEFEAT)` 是唯一入口；准备/结束阶段 `SceneTree.paused = true`。
-  HUD/镜头/选择/指令/移动指示/战区输入/光标/准备面板设 `PROCESS_MODE_ALWAYS`；`Game`/单位/AI/据点/日夜保持默认（被冻结）。
+- **阶段**：`Game.set_phase(PLANNING/RUNNING/VICTORY/DEFEAT)` 是唯一入口；规划/结束阶段 `SceneTree.paused = true`。
+  HUD/镜头/选择/指令/移动指示/战区输入/光标/规划面板设 `PROCESS_MODE_ALWAYS`；`Game`/单位/AI/据点/日夜保持默认（被冻结）。
 - **命令**：`Views/input/指令系统.gd` 的 `planned` 存 `Game/commands/命令记录.gd`（kind / squad_id / unit_ids / slots / target_id）；
-  准备阶段入队，`execute_planned()` 在执行阶段统一发 `order_issued`。
+  规划阶段入队，`execute_planned()` 在执行阶段统一发 `order_issued`。
 - **小队**：`Game/systems/小队.gd` + `小队注册表.gd`（RefCounted，`Game.squads`）。不进场景树、不做碰撞/迷雾，**不做士气**；
   命令记录以 `squad_id` 为一等公民，成员死亡由注册表自动剪枝。
 - **短局资源**：`RtsFaction.cp/cp_cap/cp_regen`；成本唯一来源 `Content/data/game.json` 的 `short_cp_costs`；
   `Game.can_afford/pay/refund` 按 `short_match` 切换 CP / 金木。短局禁采集，农民保留为工程兵。
-- **验证**：`./Tools/run-game.ps1 --round-test`（准备/执行/CP/小队/控制组/多回合，41 项断言）。
+- **验证**：`./Tools/run-game.ps1 --round-test`（规划/执行/CP/小队/控制组/多回合/部署，66 项断言）。
 
 ## 目录对照（旧 → 新）
 

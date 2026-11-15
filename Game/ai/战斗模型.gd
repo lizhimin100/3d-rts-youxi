@@ -1285,7 +1285,7 @@ static func demand_score_fixed(kind: String) -> float:
 # ===========================================================================
 
 ## 人口占用率 = (当前人口占用 + 在训人口) / 当前人口上限。
-## ★ 必须含在训（food_reserved）：刚点兵就按"还有空位"算，会让 90% 触发整整晚一轮。
+## ★ 必须含在训（food_queued / food_committed）：刚点兵就按"还有空位"算，会让 90% 触发整整晚一轮。
 static func pop_pressure(used: int, reserved: int, cap: int) -> float:
 	if cap <= 0:
 		return 0.0

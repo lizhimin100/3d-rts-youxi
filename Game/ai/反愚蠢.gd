@@ -93,7 +93,7 @@ func _check_supply(ctx: Dictionary) -> void:
 	var faction: RtsFaction = ctx.get("faction")
 	if faction == null:
 		return
-	var headroom: int = faction.food_cap() - faction.food_used() - faction.food_reserved()
+	var headroom: int = faction.food_cap() - faction.food_committed()
 	var building: bool = false
 	for b in faction.buildings:
 		if b == null or not is_instance_valid(b) or b.def == null:
@@ -142,7 +142,7 @@ func _check_production(ctx: Dictionary) -> void:
 	if prod.is_empty():
 		_episode("production_idle", false, ctx)
 		return
-	var headroom: int = faction.food_cap() - faction.food_used() - faction.food_reserved()
+	var headroom: int = faction.food_cap() - faction.food_committed()
 	# ★ 2026-11-08 玩家口径：**删掉「金币 > 260 才补兵」这条囤积线**。
 	#   旧判据要求手上压着 260 金才肯排兵 —— AI 于是先攒钱、攒够又被别的开销花掉，
 	#   10 分钟局只出几个兵（"造几个就不造了"）。现在只要队列是空的、人口够、
@@ -167,7 +167,7 @@ func _check_gold_float(ctx: Dictionary) -> void:
 	var faction: RtsFaction = ctx.get("faction")
 	if faction == null:
 		return
-	var headroom: int = faction.food_cap() - faction.food_used() - faction.food_reserved()
+	var headroom: int = faction.food_cap() - faction.food_committed()
 	var on: bool = faction.gold > GOLD_FLOAT_LIMIT and headroom >= 2
 	_episode("gold_float", on, ctx)
 	if not on or not _can_fix("gold_float", ctx):

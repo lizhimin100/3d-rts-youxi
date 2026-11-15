@@ -4,7 +4,7 @@ extends RefCounted
 ## 职责：创建/查找/回收小队，并在单位死亡时自动剔除成员（空队回收）。
 ## 不参与移动/战斗/寻路：这些仍由单位自己的 order_* 执行。
 ##
-## 为什么放在 Game 上而不是场景节点：命令记录要跨"准备 → 执行"存活，
+## 为什么放在 Game 上而不是场景节点：命令记录要跨"规划 → 执行"存活，
 ## 而场景节点在重开时会被 reload；注册表跟着 Game.reset() 清空，生命周期更清楚。
 
 const SquadScript := preload("res://Game/systems/小队.gd")

@@ -250,7 +250,11 @@ func _ready() -> void:
 	#      只发"意图"不碰单位，实际下令走副官的调度器（控制权过滤照旧）。
 	_mount_script("res://Views/input/战区指令输入.gd", "战区指令输入")
 
-	# 4.93 **短局回合控制器**：准备阶段暂停 / 执行阶段实时 / 脚本波次。
+	# 4.945 **部署输入**（2026-11-15 规划阶段）：进攻 / 防守 / 占据 的二段式纯地图操作。
+	#       只在短局 + 规划阶段生效；执行阶段自动收摊（见 部署输入._can_deploy）。
+	_mount_script("res://Views/input/部署输入.gd", "部署输入")
+
+	# 4.93 **短局回合控制器**：规划阶段暂停 / 执行阶段实时 / 脚本波次。
 	#      长局不挂，原即时战略流程一行不改。
 	if Game.short_match:
 		var rc: Node = _mount_script("res://Game/core/回合控制.gd", "回合控制")
@@ -259,13 +263,17 @@ func _ready() -> void:
 
 	# 5) 起跑
 	Game.game_over.connect(_on_game_over)
-	# 长局先起跑；短局先停在 PREPARE（测试钩子也在暂停前挂好）。
+	# 规划阶段拉高镜头俯视全图；执行阶段回到默认距离（只在短局有意义）
+	Game.phase_changed.connect(func(_o: int, n: int) -> void:
+		_apply_phase_camera(n == RtsConst.Phase.PLANNING))
+	# 长局先起跑；短局先停在 PLANNING（测试钩子也在暂停前挂好）。
 	if not Game.short_match:
 		Game.set_phase(RtsConst.Phase.RUNNING)
 		Game.notify.emit(_opening_message(), Cfg.game.hud_accent)
 	else:
-		Game.set_phase(RtsConst.Phase.PREPARE)
-		Game.notify.emit("准备阶段：世界已暂停。排好命令后点「开始执行」。", Cfg.game.hud_accent)
+		Game.set_phase(RtsConst.Phase.PLANNING)
+		_apply_phase_camera(true)
+		Game.notify.emit("规划阶段：世界已暂停。部署部队、排好训练后点「规划结束」。", Cfg.game.hud_accent)
 	# 副官不再弹提示：状态改由小地图下方的「副官 · 开/关」按钮表达（常驻、可点）。
 
 	# 6) 测试挂载（只有命令行显式要求时才挂）
@@ -314,6 +322,23 @@ func _apply_qa_camera() -> void:
 			_qa_cam_dist = 18.0
 	if _qa_cam_dist > 0.0 and camera.has_method("set_distance"):
 		camera.call("set_distance", _qa_cam_dist)
+
+
+## 阶段镜头：规划阶段**拉高俯视全图**（方便一眼看完整张战场布置部署），
+## 进入执行阶段回到默认距离。只改距离与注视点，不碰玩家当前的旋转角。
+func _apply_phase_camera(planning: bool) -> void:
+	if camera == null:
+		return
+	var cfg: GameConfig = Cfg.game
+	if cfg == null:
+		return
+	if planning:
+		if camera.has_method("set_distance"):
+			camera.call("set_distance", cfg.camera_distance_max)
+		if camera.has_method("focus_on") and level != null and Game.player_faction != null:
+			camera.call("focus_on", level.base_center(Game.player_faction))
+	elif camera.has_method("set_distance"):
+		camera.call("set_distance", cfg.camera_distance_default)
 
 
 ## 相机落位（有 focus_on 就用它，没有就直接 look_at 兜底）

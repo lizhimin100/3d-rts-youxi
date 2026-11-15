@@ -5820,7 +5820,7 @@ func _saving_urgency() -> Array:
 	var cap: int = _faction.food_cap()
 	var rate: float = 0.0
 	if cap > 0:
-		var used_sum: int = maxi(_faction.food_used(), 0) + maxi(_faction.food_reserved(), 0)
+		var used_sum: int = maxi(_faction.food_committed(), 0)
 		rate = float(used_sum) / float(cap)
 	var fid: StringName = _food_building_id()
 	var has_site: bool = fid != &"" and _has_site_of(fid)
@@ -5998,8 +5998,7 @@ func _promise_spawn(now: float, diff: DifficultyDef) -> void:
 			var cap: int = _faction.food_cap()
 			var rate: float = 0.0
 			if cap > 0:
-				rate = float(maxi(_faction.food_used(), 0)
-						+ maxi(_faction.food_reserved(), 0)) / float(cap)
+				rate = float(maxi(_faction.food_committed(), 0)) / float(cap)
 			var gap: bool = _farm_urgent() or _farm_wanted(diff)
 			if rate > BM.PROMISE_POP_RATE and gap and not _has_site_of(fid):
 				_promise_add("建造", farm_disp, int(fd.gold_cost),
@@ -6189,7 +6188,7 @@ func _world_tick(now: float) -> void:
 	var inp: Dictionary = {
 		"gold": _faction.gold, "wood": _faction.wood,
 		"pop_cap": _faction.food_cap(), "pop_used": _faction.food_used(),
-		"pop_reserved": _faction.food_reserved(),
+		"pop_reserved": _faction.food_queued(),
 		"army_n": army_n, "defense_locked": _defense_reserved(army_n),
 		"troop_locked": maxi(army_n - raw_troops, 0),
 		"phase": _ws_phase(), "night": Game.is_night(),
@@ -7040,7 +7039,7 @@ func _pop90_tick(now: float) -> void:
 		return
 	var cap: int = _faction.food_cap()
 	var used: int = _faction.food_used()
-	var reserved: int = _faction.food_reserved()
+	var reserved: int = _faction.food_queued()
 	var rate: float = 0.0
 	if cap > 0:
 		rate = float(maxi(used, 0) + maxi(reserved, 0)) / float(cap)
@@ -7333,11 +7332,11 @@ func _demand_builds(diff: DifficultyDef, threat_n: int) -> Array:
 				var fs: float = float(_model_call("demand_scale",
 						["农场急建" if urgent else "农场不急"]))
 				# 2C-10 P0-B：70% 人口压力动态系数（**只乘农场建造诉求分**）。
-				# 占用率必须含在训人口（food_reserved），否则刚点兵就误判"还有空位"。
+				# 占用率必须含在训人口（food_queued / food_committed），否则刚点兵就误判"还有空位"。
 				var fcap: int = _faction.food_cap()
 				var frate: float = 0.0
 				if fcap > 0:
-					frate = float(_faction.food_used() + _faction.food_reserved()) / float(fcap)
+					frate = float(_faction.food_committed()) / float(fcap)
 				var pf: float = float(_model_call("farm_pressure_factor", [frate]))
 				dept_stats["farm_factor_last"] = pf
 				if pf > 1.000001:

@@ -29,7 +29,9 @@ const SWITCH_MS := 60
 ## 图标边长
 const ICON := 32
 
-## 六种图标索引
+## 九种图标索引
+## 前六种是"悬停语义"（看鼠标指到谁）；后三种是**部署模式覆盖**（2026-11-15 规划阶段）：
+## 玩家点了【进攻】【防守】【占据】之后，指针整段变成对应形状，直到落点/取消。
 enum Shape {
 	ARROW = 0,
 	ALLY = 1,       ## 自己的
@@ -37,12 +39,17 @@ enum Shape {
 	PICK = 3,
 	HAMMER = 4,
 	TEAMMATE = 5,   ## 同队盟友（青）
+	ATTACK = 6,     ## 部署 · 进攻（红橙箭头 + 虚线尾）
+	DEFEND = 7,     ## 部署 · 防守（蓝盾）
+	CAPTURE = 8,    ## 部署 · 占据（金旗）
 }
 
 ## 生成的贴图（建一次，全程复用）
 var _tex: Array[ImageTexture] = []
 ## 当前正在用的形态
 var _current: int = -1
+## **部署模式覆盖**（-1 = 不覆盖，按悬停对象走；≥0 = 强制这个形态）
+var _override: int = -1
 ## 上次切换时刻（毫秒）
 var _last_switch_ms: int = -1000
 ## 帧计数
@@ -59,9 +66,11 @@ var _dormant: bool = false
 # ===========================================================================
 
 func _ready() -> void:
-	# 准备阶段世界暂停，光标仍要随悬停对象变化。
+	# 规划阶段世界暂停，光标仍要随悬停对象变化。
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	name = "光标符文"
+	# 部署输入（规划阶段）靠组名找它换指针 —— 不要写死父子路径。
+	add_to_group("glyph_cursor")
 	_dormant = DisplayServer.get_name() == "headless"
 	var dump: bool = "--dump-cursors" in OS.get_cmdline_user_args()
 	# headless 下没有鼠标，连图标都不生成（省得在退出时占着 5 张纹理不放）
@@ -211,6 +220,7 @@ func _exit_tree() -> void:
 		Input.set_custom_mouse_cursor(null, Input.CURSOR_ARROW)
 	_tex.clear()
 	_current = -1
+	_override = -1
 	_selection.clear()
 
 
@@ -231,8 +241,28 @@ func note_selection(units: Array) -> void:
 # 拾取（纯数学，不碰物理）
 # ===========================================================================
 
+## 部署模式覆盖：shape ≥ 0 时指针一直保持该形态（不再随悬停对象变）；
+## -1 解除覆盖，回到"看谁指谁"的默认行为。
+## 由 `Views/input/部署输入.gd` 在进入/退出进攻·防守·占据时调用。
+func set_override(shape: int) -> void:
+	var v: int = shape if shape >= 0 and shape < _tex.size() else -1
+	if v == _override:
+		return
+	_override = v
+	if _dormant:
+		return
+	if _override >= 0:
+		_apply(_override, true)
+	else:
+		_apply(Shape.ARROW, true)
+
+
 func _poll() -> void:
-	if Game.phase != RtsConst.Phase.RUNNING and Game.phase != RtsConst.Phase.PREPARE:
+	# 部署模式优先：这时候指针表达的是"你正在下哪种部署"，不是"指着谁"
+	if _override >= 0:
+		_apply(_override)
+		return
+	if Game.phase != RtsConst.Phase.RUNNING and Game.phase != RtsConst.Phase.PLANNING:
 		_apply(Shape.ARROW)
 		return
 	var vp := get_viewport()
@@ -384,6 +414,9 @@ func _hotspot(shape: int) -> Vector2:
 		Shape.ENEMY: return Vector2(25.0, 5.0)     # 剑尖
 		Shape.PICK: return Vector2(24.0, 6.0)      # 镐尖
 		Shape.HAMMER: return Vector2(21.0, 11.0)   # 锤头
+		Shape.ATTACK: return Vector2(26.0, 6.0)    # 箭头尖
+		Shape.DEFEND: return Vector2(16.0, 16.0)   # 盾心
+		Shape.CAPTURE: return Vector2(8.0, 4.0)    # 旗杆顶
 		_: return Vector2(5.0, 3.0)                # 箭头尖
 
 
@@ -399,6 +432,9 @@ func _build_icons() -> void:
 	_tex.append(ImageTexture.create_from_image(_icon_pick()))
 	_tex.append(ImageTexture.create_from_image(_icon_hammer()))
 	_tex.append(ImageTexture.create_from_image(_icon_teammate()))
+	_tex.append(ImageTexture.create_from_image(_icon_deploy_attack()))
+	_tex.append(ImageTexture.create_from_image(_icon_deploy_defend()))
+	_tex.append(ImageTexture.create_from_image(_icon_deploy_capture()))
 
 
 ## 调试：把五张图标拼成一张对照表存到工程里，方便人眼看
@@ -406,9 +442,9 @@ func _dump_icons() -> void:
 	var dir := OS.get_executable_path().get_base_dir()
 	var out_dir := OS.get_user_data_dir().path_join("debug")
 	DirAccess.make_dir_recursive_absolute(out_dir)
-	var sheet := Image.create(ICON * 7, ICON, false, Image.FORMAT_RGBA8)
+	var sheet := Image.create(ICON * 9, ICON, false, Image.FORMAT_RGBA8)
 	sheet.fill(Color(0.16, 0.17, 0.20, 1.0))
-	var names := ["箭头", "己方", "敌方", "采集", "建造", "盟友"]
+	var names := ["箭头", "己方", "敌方", "采集", "建造", "盟友", "进攻", "防守", "占据"]
 	for i in _tex.size():
 		var img := _tex[i].get_image()
 		if img == null:
@@ -553,6 +589,84 @@ func _icon_hammer() -> Image:
 		c + u * (hw - 1.0) - v * 0.2, c - u * (hw - 1.0) - v * 0.2,
 	])
 	_fill_poly(img, lit, Color(0.95, 0.97, 1.0))
+	return img
+
+
+# ===========================================================================
+# 部署模式指针（2026-11-15 规划阶段：进攻 / 防守 / 占据）
+# ===========================================================================
+#
+# 这三张不是"悬停语义"，而是"你正在下哪种部署"的状态指示：
+#   · 进攻 = 红橙箭头 + 虚线尾（和地图上的虚线箭头预览同一个视觉语言）；
+#   · 防守 = 蓝盾（和防区色块同色）；
+#   · 占据 = 金旗（和据点金圈同色）。
+# 全部代码画，不加载外部素材 —— 和前面六张同一个口径。
+
+## 部署 · 进攻：虚线尾 + 箭头
+func _icon_deploy_attack() -> Image:
+	var img := _new_img()
+	var hot := Color(1.0, 0.58, 0.30)
+	var dark := Color(0.22, 0.06, 0.02, 0.95)
+	# 虚线尾：三段斜线（从右下往左上）
+	var a := Vector2(5.0, 28.0)
+	var b := Vector2(17.0, 16.0)
+	for k in 3:
+		var t0: float = 0.06 + 0.30 * float(k)
+		var t1: float = t0 + 0.18
+		var p0: Vector2 = a.lerp(b, t0)
+		var p1: Vector2 = a.lerp(b, t1)
+		_line(img, p0, p1, 3.2, dark)
+		_line(img, p0, p1, 1.8, hot)
+	# 箭头：一个实心三角 + 深色描边
+	var tri := PackedVector2Array([
+		Vector2(27.0, 4.5), Vector2(12.5, 10.5), Vector2(18.0, 15.5),
+	])
+	_outline_poly(img, tri, hot)
+	return img
+
+
+## 部署 · 防守：蓝盾（厚边 + 内亮面 + 金铆钉）
+func _icon_deploy_defend() -> Image:
+	var img := _new_img()
+	var cx: float = 16.0
+	var cy: float = 15.0
+	var shield := PackedVector2Array([
+		Vector2(cx - 8.5, cy - 9.0), Vector2(cx + 8.5, cy - 9.0),
+		Vector2(cx + 8.5, cy + 1.0), Vector2(cx, cy + 10.5),
+		Vector2(cx - 8.5, cy + 1.0),
+	])
+	var rim := Color(0.34, 0.62, 1.0)
+	_outline_poly(img, shield, Color(0.06, 0.16, 0.32))
+	_fill_poly(img, shield, rim)
+	var inner := PackedVector2Array()
+	for p in shield:
+		inner.append((p - Vector2(cx, cy)) * 0.74 + Vector2(cx, cy))
+	_fill_poly(img, inner, Color(0.62, 0.82, 1.0))
+	# 中央竖线（盾徽的中脊）
+	_line(img, Vector2(cx, cy - 6.4), Vector2(cx, cy + 6.0), 2.2, Color(0.10, 0.24, 0.44))
+	_line(img, Vector2(cx, cy - 5.6), Vector2(cx, cy + 5.2), 1.0, Color(0.86, 0.94, 1.0))
+	# 金铆钉
+	_disc(img, cx, cy - 7.2, 1.6, Color(0.98, 0.84, 0.40))
+	return img
+
+
+## 部署 · 占据：金旗（旗杆 + 三角旗）
+func _icon_deploy_capture() -> Image:
+	var img := _new_img()
+	# 旗杆
+	_line(img, Vector2(8.5, 29.0), Vector2(8.5, 4.0), 3.4, Color(0.18, 0.12, 0.04))
+	_line(img, Vector2(8.5, 29.0), Vector2(8.5, 4.0), 2.0, Color(0.72, 0.58, 0.34))
+	# 三角旗
+	var flag := PackedVector2Array([
+		Vector2(9.5, 5.0), Vector2(26.0, 9.5), Vector2(9.5, 15.0),
+	])
+	_outline_poly(img, flag, Color(0.98, 0.80, 0.30))
+	var inner := PackedVector2Array([
+		Vector2(11.0, 6.6), Vector2(23.4, 9.6), Vector2(11.0, 13.4),
+	])
+	_fill_poly(img, inner, Color(1.0, 0.90, 0.56))
+	# 旗杆顶的圆头
+	_disc(img, 8.5, 3.4, 2.0, Color(0.98, 0.84, 0.40))
 	return img
 
 

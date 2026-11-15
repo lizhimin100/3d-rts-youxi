@@ -15,7 +15,7 @@ const QUEUE_MAX := A.TRAIN_QUEUE_MAX
 static func _food_free(faction) -> int:
 	if faction == null:
 		return 0
-	return maxi(int(faction.food_cap()) - int(faction.food_used()) - int(faction.food_reserved()), 0)
+	return maxi(int(faction.food_cap()) - int(faction.food_committed()), 0)
 
 
 static func _tier(faction) -> int:
