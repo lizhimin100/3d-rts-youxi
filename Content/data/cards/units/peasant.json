@@ -4,7 +4,7 @@
 		"unit_class": "陆军",
 		"roles": [],
 		"counters": [],
-		"range": 65,
+		"range": 75,
 		"attack": 6,
 		"attack_type": "普通",
 		"defense": 0,

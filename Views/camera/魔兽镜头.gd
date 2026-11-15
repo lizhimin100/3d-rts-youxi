@@ -52,6 +52,18 @@ var _dragging: bool = false
 ##   只能把鼠标死死停在中间 —— 体验非常别扭。锁定时整条输入与平滑链一起停。
 var locked: bool = false
 
+## **规划阶段沙盘取景**（2026-11-15 第三版）：
+## 规划阶段不是“把镜头拉远看地图中心”，而是按两家基地的实际锚点**自动取景**：
+## 俯角更陡、距离由画面安全区反解、注视点偏向玩家基地（近端）。
+## 为什么必须自适应：主场景地图把基地挪到了 ±78 的对角，固定 118m 时近端基地
+## 被底栏挡住、远端基地被顶栏挡住 —— 意图面板只能贴屏幕边，读不出挂在谁头上。
+var _planning_view: bool = false
+## 沙盘俯角（比战斗视角 50° 更接近俯视，读得清网格与图标）
+const PLANNING_PITCH_DEG: float = 58.0
+## 规划阶段允许的缩放范围（滚轮不会把 250m 的沙盘一格拉回 44m 战斗视距）
+const PLANNING_ZOOM_MIN: float = 96.0
+const PLANNING_ZOOM_MAX: float = 420.0
+
 ## 鼠标是否已经在窗口里出现过（出现过才允许边缘滚动）
 ## 为什么要这个：启动瞬间光标可能停在屏幕角落（无头运行时更是固定 0,0），
 ## 没有这道闸，镜头会从开局第一帧就自己往角落里跑，截图与自动化全废。
@@ -111,6 +123,93 @@ func set_distance_overview(d: float, instant: bool = false) -> void:
 		_dist_target = v
 	else:
 		_dist_target = v
+
+
+## **规划沙盘取景**：把 points（基地/建筑/领地边缘）装进屏幕安全区 safe（真实像素）。
+##
+## 为什么要“反解距离”而不是写死一个俯瞰距离：
+##   主场景地图的两家基地在对角 ±78m，固定距离下近端基地会被底栏切掉、远端基地会被
+##   顶栏切掉；而玩家随时可能在编辑器挪基地，写死距离必然再次失效。
+## 做法：
+##   ① 注视点 = 锚点包围盒中心向玩家基地偏 55%（玩家在近端，不能被底栏顶出去）；
+##   ② 二分距离，让所有点在 safe 里都投得下；距离越大投影越靠中心，单调可二分；
+##   ③ 俯角切到 58°，整张图读成“作战台”而不是战斗追尾视角。
+## 结束后**不锁镜头**：玩家仍可平移/滚轮，只是缩放范围换成沙盘档（见 _zoom_steps）。
+func frame_planning(points: PackedVector3Array, focus_hint: Vector3, safe: Rect2) -> void:
+	var cfg: GameConfig = _config()
+	if cam == null or cfg == null or points.is_empty():
+		return
+	_planning_view = true
+	var lo := Vector2(INF, INF)
+	var hi := Vector2(-INF, -INF)
+	for p in points:
+		lo.x = minf(lo.x, p.x)
+		lo.y = minf(lo.y, p.z)
+		hi.x = maxf(hi.x, p.x)
+		hi.y = maxf(hi.y, p.z)
+	if lo.x == INF:
+		return
+	var center := Vector3((lo.x + hi.x) * 0.5, 0.0, (lo.y + hi.y) * 0.5)
+	var hint := Vector3(focus_hint.x, 0.0, focus_hint.z)
+	var focus: Vector3 = center.lerp(hint, 0.55)
+	# 只做**纵向**偏向：玩家基地在近端，注视点往它挪一点，基地不会被底栏顶出去。
+	# 横向保持居中 —— 两边基地本来就在对角，横向再偏就会把整张地图推到屏幕一侧。
+	focus.x = center.x
+	focus.x = clampf(focus.x, lo.x, hi.x)
+	focus.z = clampf(focus.z, lo.y, hi.y)
+	focus.y = _ground_y(focus.x, focus.z)
+
+	var best: float = PLANNING_ZOOM_MAX
+	if _planning_fits(points, focus, PLANNING_ZOOM_MAX, safe):
+		var a: float = PLANNING_ZOOM_MIN
+		var b: float = PLANNING_ZOOM_MAX
+		for i in 18:
+			var mid: float = (a + b) * 0.5
+			if _planning_fits(points, focus, mid, safe):
+				b = mid
+			else:
+				a = mid
+		best = b
+	_focus_target = focus
+	_focus = focus
+	_dist = best
+	_dist_target = best
+	_pan_vel = Vector3.ZERO
+	_placed = true
+	_apply_pose(cfg, 0.0)
+
+
+## 退出沙盘取景：俯角恢复 Cfg 的战斗视角（距离/注视点由调用方接着设置）。
+func end_planning_view() -> void:
+	_planning_view = false
+
+
+## 规划俯角（战斗视角仍读 Cfg）。
+func _pitch_deg(cfg: GameConfig) -> float:
+	if _planning_view:
+		return PLANNING_PITCH_DEG
+	return cfg.camera_pitch_deg if cfg != null else 50.0
+
+
+## 候选距离下，所有点是否都落在 safe 里（会真的把相机摆过去再投影）。
+func _planning_fits(points: PackedVector3Array, focus: Vector3, d: float,
+		safe: Rect2) -> bool:
+	var cfg: GameConfig = _config()
+	if cfg == null or cam == null:
+		return false
+	_dist = d
+	_focus = focus
+	_apply_pose(cfg, 0.0)
+	for p in points:
+		var w := Vector3(p.x, _ground_y(p.x, p.z) + 1.2, p.z)
+		if cam.is_position_behind(w):
+			return false
+		var sp: Vector2 = cam.unproject_position(w)
+		if sp.x < safe.position.x or sp.x > safe.end.x:
+			return false
+		if sp.y < safe.position.y or sp.y > safe.end.y:
+			return false
+	return true
 
 
 ## 记录鼠标状态。
@@ -366,6 +465,11 @@ func _handle_zoom(cfg: GameConfig) -> void:
 
 ## 缩放 n 格（负数拉近）
 func _zoom_steps(cfg: GameConfig, steps: float) -> void:
+	# 规划阶段走沙盘档：滚轮一格 14m，范围 96~420m。
+	# 不这么分档的话，俯瞰档 250m 一滚轮就按战斗上限 44 硬夹，画面会“唰”地砸回地面。
+	if _planning_view:
+		_dist_target = clampf(_dist_target + steps * 14.0, PLANNING_ZOOM_MIN, PLANNING_ZOOM_MAX)
+		return
 	# 上限取"配置上限"和"当前目标"的较大者：规划阶段用俯瞰档拉到了 44m 以外，
 	# 玩家一滚轮就按 44 硬夹会出现"唰"地跳到 44 —— 这里让它一格一格收回来。
 	var hi: float = maxf(cfg.camera_distance_max, _dist_target)
@@ -496,7 +600,7 @@ func _update_pan(cfg: GameConfig, delta: float) -> void:
 
 ## 把姿态算出来写进子相机（含抖动）
 func _apply_pose(cfg: GameConfig, delta: float) -> void:
-	var pitch: float = deg_to_rad(cfg.camera_pitch_deg)
+	var pitch: float = deg_to_rad(_pitch_deg(cfg))
 	var off := Vector3(
 		sin(_yaw) * cos(pitch),
 		sin(pitch),
@@ -517,7 +621,9 @@ func _apply_pose(cfg: GameConfig, delta: float) -> void:
 	pos = _protect_from_terrain(pos)
 
 	cam.global_position = pos
-	var look := _focus + Vector3.UP * (_dist * 0.06)
+	# 规划沙盘：注视点就压在地面上（不要战斗视角那 6% 抬升），
+	# 否则整张地图会被抬高的视线推向下半屏，取景只能越拉越远。
+	var look := _focus + Vector3.UP * ((0.0 if _planning_view else _dist * 0.06))
 	if pos.distance_squared_to(look) > 0.25:
 		cam.look_at(look, Vector3.UP)
 
@@ -604,8 +710,16 @@ func _clamp_focus(p: Vector3) -> Vector3:
 	var out := p
 	out.y = 0.0
 	var lv := _level()
+	if _planning_view and lv != null:
+		# 沙盘点一下看全图：允许相机在整张地图里自由平移（不再按战斗视距收窄边界，
+		# 否则 250m 俯瞰档的 reach 会把注视点夹在中心 ±27m，玩家一拖就“弹回去”）。
+		var lim: float = maxf(lv.world_size * 0.5 - 6.0, 20.0)
+		out.x = clampf(out.x, -lim, lim)
+		out.z = clampf(out.z, -lim, lim)
+		out.y = _ground_y(out.x, out.z)
+		return out
 	if lv != null and cfg != null:
-		var pitch: float = deg_to_rad(cfg.camera_pitch_deg)
+		var pitch: float = deg_to_rad(_pitch_deg(cfg))
 		# ★ 用"当前距离与目标距离里**较小**的那个"算边界。
 		#   为什么不是 _dist：规划阶段用俯瞰档（118m）时，边界会被 reach 收到 ±40；
 		#   点「规划结束」后 `set_distance_smooth(25.5)` 只改目标值，`_dist` 要 0.3s 才降下来 ——

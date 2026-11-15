@@ -1775,10 +1775,20 @@ func _place_planning_hud() -> void:
 	#   而这里算出来的是设计像素 → 必须乘一次 `_zoom`，否则 1280 档会整体偏一圈。
 	if _planning_map != null and is_instance_valid(_planning_map) and _planning_map.has_method("set_safe_rect"):
 		var z: float = _zoom
+		# 地图层是 HUD 根节点之外的自绘层（不吃 root 的 _zoom），必须把缩放显式传下去，
+		# 否则 1280 档上兵牌/明牌会比面板明显大一截。
+		_planning_map.call("set_zoom", z)
 		var left_px: float = (m + 10.0) * z
 		var top_px: float = (m + topbar_h + 16.0) * z
 		var right_px: float = (vw - m - btn - 20.0) * z
+		# ★ 底边不能再用“推算的 act_y”：面板形态切换时 desired_h 会先返回 0，
+		#   安全区就一路铺到屏幕底，明牌意图牌会压到操作面板上（2026-11-15 实测）。
+		#   直接读规划界面里操作面板的真实 global rect（HUD 根已缩放，单位就是屏幕像素）。
 		var bottom_px: float = ((act_y if act_h > 1.0 else bottom) - 10.0) * z
+		if _planning_hud != null and _planning_hud.has_method("action_global_rect"):
+			var ar: Rect2 = _planning_hud.call("action_global_rect")
+			if ar.size.y > 8.0:
+				bottom_px = maxf(ar.position.y - 8.0, top_px + 140.0)
 		_planning_map.call("set_safe_rect", Rect2(left_px, top_px,
 				maxf(right_px - left_px, 220.0),
 				maxf(bottom_px - top_px, 140.0)))

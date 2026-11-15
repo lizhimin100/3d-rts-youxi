@@ -79,6 +79,8 @@ var _qa_star_pick: int = 0
 var _qa_upgrade: bool = false
 ## 地图编辑器：--map=<路径> 直接加载 MapDef（地图编辑器 Test Map 用）
 var _map_path: String = ""
+## 规划沙盘节点（第三版：全图网格 + 建筑辐射势力场 + 兵牌锚点）
+var _planning_sandbox: Node3D = null
 ## 开局提前读到的地图（阵营数量要用它，见 _ready 第 1 步）
 var _pending_map: MapDef = null
 ## --dump-mapdef=<路径>：把当前程序化地图导出成 MapDef（验证"统一口径"用）
@@ -271,6 +273,7 @@ func _ready() -> void:
 				ps.name = "规划沙盘"
 				# 挂在「关卡」下：它是 3D 世界里的贴地面片，必须跟着关卡坐标系走
 				level.add_child(ps)
+				_planning_sandbox = ps
 
 	# 5) 起跑
 	Game.game_over.connect(_on_game_over)
@@ -356,13 +359,33 @@ func _apply_phase_camera(planning: bool, instant: bool = false) -> void:
 	if cfg == null:
 		return
 	if planning:
-		# 规划阶段 = 沙盘俯瞰：拉到战斗视距上限之外（44m 只够看 70×40m，红区根本不在画面里），
-		# 注视点压到地图中心，整张战场 + 红蓝势力区 + 明牌意图一次看全。
+		# ★ 2026-11-15 第三版：**按实际锚点取景**，不再"固定俯瞰距离 + 看地图中心"。
+		#   主场景地图把两家基地挪到了 ±78 的对角，固定 118m 时近端基地被底栏挡住、
+		#   远端基地被顶栏挡住，意图牌只能贴屏幕边。frame_planning 会二分距离，
+		#   把所有基地/建筑装进安全区（顶部横条与底部操作面板之间）。
+		if _planning_sandbox != null and is_instance_valid(_planning_sandbox) \
+				and _planning_sandbox.has_method("camera_points") \
+				and camera.has_method("frame_planning"):
+			var pts: PackedVector3Array = _planning_sandbox.call("camera_points")
+			if pts.size() >= 2:
+				var vp_size: Vector2 = get_viewport().get_visible_rect().size
+				if vp_size.x < 10.0 or vp_size.y < 10.0:
+					vp_size = Vector2(1600.0, 900.0)
+				# 底边留到 76%：底部操作面板只在“选中单位/建筑”时出现，
+				# 取景要按它出现后的高度算，否则玩家一选兵，基地兵牌就被面板顶出去。
+				var safe := Rect2(vp_size.x * 0.07, vp_size.y * 0.13,
+						vp_size.x * 0.86, vp_size.y * 0.63)
+				camera.call("frame_planning", pts,
+						_planning_sandbox.call("focus_hint"), safe)
+				return
+		# 没有沙盘（长局/空图）时才退回旧口径
 		if camera.has_method("set_distance_overview"):
 			camera.call("set_distance_overview", _overview_distance(), instant)
 		if camera.has_method("focus_on") and level != null:
 			camera.call("focus_on", Vector3.ZERO)
 	elif camera.has_method("set_distance"):
+		if camera.has_method("end_planning_view"):
+			camera.call("end_planning_view")
 		# 拉近一档（比默认再近 15%）：这是唯一的"进入战斗"过场动作
 		var near: float = maxf(cfg.camera_distance_default * 0.85, cfg.camera_distance_min)
 		if instant:

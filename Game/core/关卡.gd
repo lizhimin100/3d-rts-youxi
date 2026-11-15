@@ -33,8 +33,10 @@ var map_data: MapGenerator.MapData = null
 var map_def: MapDef = null
 ## 是否由自建地图建关（true 时**不生成远景山脊**：那层是给 200m 默认图配的）
 var from_map_def: bool = false
-## 玩家基地中心 / 敌人基地中心
+## 玩家基地中心 / 敌人基地中心（槽位数据；基地实际位置优先读建筑，见 base_center）
 var _base_pos: Dictionary = {}
+## base_center 的 250ms 短缓存：instance_id → {pos, town, t}
+var _anchor_cache: Dictionary = {}
 ## 建筑列表（占格用）
 var _buildings: Array = []
 ## 建筑实例 id → 实际写入寻路网格的格子矩形（含 1 格净空）。
@@ -87,6 +89,7 @@ func build_from_data(data: MapGenerator.MapData, cfg_override: GameConfig = null
 		return
 	map_data = data
 	world_size = data.size
+	_anchor_cache.clear()
 	# 出生点：地图给了"每个槽位一个基地"就用它（竞技场图 / 4 队），
 	# 否则退回旧的双人配置（点对称）。
 	_base_pos.clear()
@@ -894,9 +897,73 @@ func walkable_pos(p: Vector3) -> Vector3:
 
 ## 阵营基地中心（世界坐标，已贴地）
 func base_center(faction: RtsFaction) -> Vector3:
-	var idx: int = faction.index if faction != null else RtsConst.Faction.PLAYER
+	if faction == null:
+		return Vector3.ZERO
+	# ★ 2026-11-15 第三版：优先读实际大本营（地图编辑器挪基地只挪建筑，
+	#   players[].start_pos 不会跟着动；继续用 _base_pos 会让镜头/波次出生点/
+	#   规划沙盘锚点全部落在空地）。顺序：大本营 → 最大占地活建筑 → 活建筑中心 → 槽位点。
+	var now: int = Time.get_ticks_msec()
+	var key: int = faction.get_instance_id()
+	var hit: Dictionary = _anchor_cache.get(key, {})
+	if not hit.is_empty() and now - int(hit.get("t", -999)) < 250:
+		var cached_town: Variant = hit.get("town", null)
+		if cached_town == null or (is_instance_valid(cached_town as Object)
+				and (cached_town as Node).is_inside_tree()):
+			return hit.get("pos", Vector3.ZERO)
+	var anchor: Vector3 = _base_anchor(faction)
+	if anchor != Vector3.ZERO:
+		_anchor_cache[key] = {"pos": anchor, "town": _townhall_of(faction), "t": now}
+		return anchor
+	var idx: int = faction.index
 	var p: Vector2 = _base_pos.get(idx, Vector2.ZERO)
 	return snap_to_ground(Vector3(p.x, 0.0, p.y))
+
+
+## 阵营真实基地锚点：实际大本营优先（has_townhall 同一套能力判据，不写死 id）。
+func _base_anchor(faction: RtsFaction) -> Vector3:
+	var town: Node3D = _townhall_of(faction)
+	if town != null:
+		return snap_to_ground(town.global_position)
+	var biggest: Node3D = null
+	var biggest_area: float = -1.0
+	var sum := Vector3.ZERO
+	var n: int = 0
+	for b in faction.buildings:
+		if b == null or not is_instance_valid(b) or not (b is RtsBuilding):
+			continue
+		var bb := b as RtsBuilding
+		if not bb.is_alive() or bb.def == null:
+			continue
+		var area: float = float(maxi(bb.def.footprint.x, 1) * maxi(bb.def.footprint.y, 1))
+		if area > biggest_area:
+			biggest_area = area
+			biggest = bb
+		sum += bb.global_position
+		n += 1
+	if biggest != null:
+		return snap_to_ground(biggest.global_position)
+	if n > 0:
+		return snap_to_ground(sum / float(n))
+	return Vector3.ZERO
+
+
+## 阵营的大本营节点（按能力认：资源交汇 + 收全部资源 + 提供人口；和 has_townhall 同口径）。
+## 工地也算 —— 二本升级途中不能突然“基地没了”。
+func _townhall_of(faction: RtsFaction) -> Node3D:
+	if faction == null:
+		return null
+	for b in faction.buildings:
+		if b == null or not is_instance_valid(b) or not (b is RtsBuilding):
+			continue
+		var bb := b as RtsBuilding
+		if not bb.is_alive() or bb.def == null:
+			continue
+		if not bb.def.is_dropoff or not bb.def.dropoff_kinds.is_empty():
+			continue
+		if bb.def.food_provided <= 0:
+			continue
+		return bb
+	return null
 
 
 ## 资源交汇点（大本营）

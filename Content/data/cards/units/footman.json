@@ -8,7 +8,7 @@
 		"counters": [
 			"轻甲"
 		],
-		"range": 90,
+		"range": 100,
 		"attack": 14,
 		"attack_type": "普通",
 		"defense": 2,

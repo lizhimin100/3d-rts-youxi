@@ -57,6 +57,38 @@ func _run() -> void:
 	var pf: RtsFaction = Game.player_faction
 	_ok(pf.cp_cap >= 1.0, "CP 上限已装配")
 	_ok(Cfg.unit(&"footman").cp_cost > 0, "步兵有 CP 成本（%d）" % Cfg.unit(&"footman").cp_cost)
+	# --- 规划沙盘第三版（2026-11-15）：锚点=实际大本营 / 只画有建筑的阵营 / 藏模型 ---
+	var sandbox: Node = get_tree().get_first_node_in_group("planning_sandbox")
+	_ok(sandbox != null, "规划沙盘节点存在")
+	var town: RtsBuilding = null
+	for b in pf.buildings:
+		if b != null and is_instance_valid(b) and b is RtsBuilding and b.def != null \
+				and b.def.is_dropoff and b.def.dropoff_kinds.is_empty() and b.def.food_provided > 0:
+			town = b
+			break
+	_ok(town != null, "找到玩家大本营")
+	if town != null:
+		_ok(RtsWorld.base_center(pf).distance_to(town.global_position) < 3.0,
+				"基地锚点 = 实际大本营（不是地图槽位出生点）")
+		_ok(not town.visible, "规划阶段隐藏 3D 建筑模型")
+	if sandbox != null:
+		var fis: Array = sandbox.call("faction_items")
+		var expected: int = 0
+		for f in Game.factions:
+			var has_b: bool = false
+			for b in f.buildings:
+				if b != null and is_instance_valid(b) and b.is_alive():
+					has_b = true
+					break
+			if has_b:
+				expected += 1
+		_ok(fis.size() == expected, "势力范围只画有建筑的阵营（%d/%d）" % [fis.size(), Game.factions.size()])
+		var anchored: bool = false
+		for it in fis:
+			if it.get("faction", null) == pf:
+				var a: Vector3 = it.get("anchor", Vector3.ZERO)
+				anchored = town != null and a.distance_to(town.global_position) < 3.0
+		_ok(anchored, "玩家领地锚点 = 实际大本营")
 	var barracks: RtsBuilding = null
 	for b in pf.buildings:
 		if b != null and is_instance_valid(b) and b.is_alive() and b.def != null \
@@ -180,10 +212,44 @@ func _run() -> void:
 	if Game.strongpoint != null:
 		_ok(absf(float(Game.strongpoint.get("_countdown")) - sp_c0) < 0.001, "规划阶段据点倒计时冻结")
 
+	# --- 工地兵牌（数据面）：真的放一座农场工地，规划沙盘要把它收进来（constructed=false） ---
+	if sandbox != null:
+		var peasant: RtsUnit = null
+		for u in pf.units:
+			if u != null and is_instance_valid(u) and u is RtsUnit and u.is_alive() \
+					and u.def != null and u.def.id == &"peasant":
+				peasant = u
+				break
+		var site: Node3D = null
+		if peasant != null:
+			var c0: Vector3 = RtsWorld.base_center(pf)
+			var offs: Array = [Vector3(-20, 0, 0), Vector3(20, 0, 0), Vector3(0, 0, 22),
+				Vector3(0, 0, -22), Vector3(-24, 0, -14), Vector3(-24, 0, 14),
+				Vector3(24, 0, -14), Vector3(24, 0, 14), Vector3(-34, 0, 0),
+				Vector3(34, 0, 0), Vector3(0, 0, 34), Vector3(0, 0, -34),
+				Vector3(-30, 0, -24), Vector3(30, 0, -24)]
+			for off in offs:
+				if site != null:
+					break
+				var p: Vector3 = RtsWorld.walkable_pos(c0 + off)
+				site = cmd.call("place_building", &"farm", p, [peasant], 0.0) as Node3D
+		_ok(site != null, "能放下农场工地（用于验证虚线兵牌）")
+		if site != null:
+			await get_tree().create_timer(0.55).timeout
+			var found: bool = false
+			for rec in sandbox.call("building_items"):
+				if rec.get("node", null) == site and not bool(rec.get("constructed", true)):
+					found = true
+			_ok(found, "工地进入规划沙盘数据（半透明虚线兵牌）")
+			site.call("cancel_construction")
+			await get_tree().create_timer(0.4).timeout
+
 	var began: bool = bool(rc.call("begin_execution"))
 	_ok(began, "开始执行成功")
 	_ok(Game.phase == RtsConst.Phase.RUNNING, "阶段切到 RUNNING")
 	_ok(not get_tree().paused, "执行阶段世界已解冻")
+	if town != null:
+		_ok(town.visible, "执行阶段恢复 3D 建筑模型")
 	_ok(int(cmd.call("planned_count")) == 0, "计划已清空")
 	_ok(int(rc.get("round_index")) == 1, "回合计数为 1")
 	var wave_arr: Variant = rc.get("_wave_units")
@@ -207,6 +273,10 @@ func _run() -> void:
 	rc.call("end_execution", "test")
 	_ok(Game.phase == RtsConst.Phase.PLANNING, "结束执行回到规划阶段")
 	_ok(get_tree().paused, "结束执行后世界重新暂停")
+	if town != null:
+		_ok(not town.visible, "回规划阶段重新隐藏 3D 模型")
+	if sandbox != null:
+		_ok(bool(sandbox.call("is_built")), "回规划阶段重建沙盘")
 	if q3:
 		_ok(barracks.train_queue.is_empty(), "回合结束未完成的训练已取消")
 		_ok(absf(pf.cp - (cp_before - float(Cfg.unit(&"footman").cp_cost))) < 0.01,

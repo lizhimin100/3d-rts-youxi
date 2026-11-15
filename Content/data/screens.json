@@ -81,6 +81,19 @@
 			"click": "建造_农场",
 			"expect": "落点提示"
 		},
+		"planning_construction": {
+			"description": "规划阶段选中农民 → 点「建造_农场」→ 在地图上落点 → 生成工地（半透明虚线兵牌）",
+			"scene": "res://Views/scenes/主场景.tscn",
+			"delay": 8.0,
+			"select_unit": "peasant",
+			"click": "建造_农场",
+			"expect": "落点提示",
+			"map_click": [
+				0.629,
+				0.580
+			],
+			"wait_after": 1.2
+		},
 		"planning_tip": {
 			"description": "规划阶段把鼠标悬停在「规划结束」上 → 气泡层弹出警告（规划阶段 paused 也要能弹）",
 			"scene": "res://Views/scenes/主场景.tscn",
