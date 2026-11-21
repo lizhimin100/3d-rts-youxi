@@ -4,7 +4,7 @@ extends Node3D
 ## 属于：Screens/editor/map_shell（开发工具，不进发行版）
 ##
 ## 四件事：
-##   1 地形与地表笔刷（起伏雕刻 / 地表材质涂抹 / 环境光 / 水面高度）
+##   1 地形与地表笔刷（起伏雕刻 / 地表材质涂抹 / 环境光）—— **带立体厚度的 3D 地块**，没有水
 ##   2 纯视觉装饰（**只实例化 asset_manifest 里已登记的现有场景/GLB**，不现拼占位网格）
 ##   3 弯曲行军脊线（通道宽度与走向；赛道圆环式分区已下线）
 ##   4 战术地形格子（TacticalTile：建筑位 = 左上角、出兵位 = 正中心）
@@ -28,7 +28,7 @@ signal region_cancelled()
 
 const ShellStore := preload("res://Screens/editor/shell_store.gd")
 const ShellText := preload("res://Screens/editor/map_shell/shell_text.gd")
-## 树 / 岩石 / 草 / 碎石 / 金矿 / 水面：走装饰库的既有场景（场景里写着阴影与可见距离）
+## 树 / 岩石 / 草 / 碎石 / 金矿：走装饰库的既有场景（场景里写着阴影与可见距离）
 ## 选中圈：编辑器与局内**同一个**资产（不给编辑器单独做一套圈）
 ##
 ## 两条路径都含中文目录：用 \u 转义拼出来 + 运行时 load（preload 的字面量会被
@@ -51,9 +51,9 @@ const REGION_Y_LIFT := 0.07
 ## 俯角 = 游戏内魔兽镜头 camera_pitch_deg（50°）；FOV 与 魔兽镜头.gd 一致（52）。
 const CAM_PITCH_DEG := 50.0
 const CAM_FOV := 52.0
-## 缩放范围：上限不是「能拉多远」，而是「拉远之后还看得见地图」。
+## 缩放范围：**上限要能看清画布的冗余空间**（地图 + 四周 45%），不再被地块尺寸锁死。
 const CAM_DIST_MIN := 12.0
-const CAM_DIST_MAX := 200.0
+const CAM_DIST_MAX := 420.0
 ## 默认距离：224m 图上大约看半张图；底壳更小，先保持同一手感再靠滚轮调。
 const CAM_DIST_DEFAULT := 90.0
 ## Ctrl+Shift+C 跳到玩家区（主堡格子）时的距离 = 游戏默认镜头距离。
@@ -70,12 +70,14 @@ const CAM_FOG_DENSITY := 0.0032
 const GRID_STEP := 4.0
 const GRID_COLOR := Color(0.85, 0.92, 1.0, 0.16)
 const BORDER_COLOR := Color(1.0, 0.85, 0.35, 0.9)
+## 画布（= 地图 + 四周冗余）的外框：比地图边框暗一档，读成"可编辑范围"
+const CANVAS_COLOR := Color(0.55, 0.70, 0.86, 0.34)
+## 底板侧面的倒角宽（米）：从顶面外缘往里收，再垂直落到土壁
+const BLOCK_BEVEL_SEG := 2
 
 # ── 地形：**和游戏里同一份材质与贴图**（唯一真源 RtsTerrain / 地形.gdshader）──
 ## 路径全部转发 RtsTerrain / ArtKit 的常量 —— 编辑器不写第二份资源路径。
 const TERRAIN_MAT := RtsTerrain.MATERIAL_PATH
-const WATER_MAT := RtsTerrain.WATER_MATERIAL_PATH
-const RIPPLE_NORMAL := RtsTerrain.RIPPLE_NORMAL_PATH
 const BATTLE_ENV := ArtKit.PATH_ENV
 const ATLAS_PATH := RtsTerrain.ATLAS_PATH
 const ATLAS_N_PATH := RtsTerrain.ATLAS_N_PATH
@@ -87,6 +89,15 @@ const ROCK_DETAIL_PATH := RtsTerrain.ROCK_DETAIL_PATH
 const TILE_M := RtsTerrain.TILE_M
 ## 底壳没有生态字段，按温带取色（与 MapDef.biome_tint 的默认档一致）。
 const SHELL_BIOME := "temperate"
+
+# ── 可换皮的棋盘材质（**独立 .tres**，制作人换主题只改这两个文件）─────────────
+## 双色微差：A/B 只差 5%~10% 明度，靠贴图而不是粗线框出"棋盘感"。
+const BOARD_TILE_A := "res://Content/art/材质/棋盘格子A.tres"
+const BOARD_TILE_B := "res://Content/art/材质/棋盘格子B.tres"
+const BOARD_RIM := "res://Content/art/材质/棋盘边框.tres"
+## 立体地块的侧面 / 底面（土层与岩壁，走既有的 泥土.png，不现画一条灰带）
+const BLOCK_SIDE := "res://Content/art/材质/地块侧面.tres"
+const BLOCK_BOTTOM := "res://Content/art/材质/地块底面.tres"
 
 var shell: Dictionary = {}
 var tool := TOOL_TERRAIN
@@ -101,6 +112,10 @@ var brush_strength := 0.6
 var brush_mode := "raise"
 var surface_layer := 1
 var decor_kind := "tree"
+## 格子拖拽：true = 对齐网格（PvZ 的规范感），false = 自由拖拽（0.05m 精度）。
+var snap_to_grid := true
+## 对齐步长（米）；0 = 跟随底壳 board.snap，1.0 是默认格子间距的一半。
+var snap_step := 1.0
 
 # 选择（多选：框选 / Shift 点选）
 var selected_tiles: Array[int] = []
@@ -145,20 +160,25 @@ var sun: DirectionalLight3D = null
 var fill: DirectionalLight3D = null
 var world_env: WorldEnvironment = null
 var terrain_mesh: MeshInstance3D = null
-var water_mesh: MeshInstance3D = null
 var grid_mesh: MeshInstance3D = null
 var border_mesh: MeshInstance3D = null
+var canvas_mesh: MeshInstance3D = null
 var decal_mesh: MeshInstance3D = null
 var ribbon_mesh: MeshInstance3D = null
 var regions_root: Node3D = null
 var region_draft_root: Node3D = null
 var tiles_root: Node3D = null
 var tile_markers_root: Node3D = null
+var chess_trim_root: Node3D = null
 var decor_root: Node3D = null
 var selection_root: Node3D = null
 
 var _terrain_mat: ShaderMaterial = null
-var _water_mat: Material = null
+var _side_mat: Material = null
+var _bottom_mat: Material = null
+var _tile_mat_a: Material = null
+var _tile_mat_b: Material = null
+var _tile_rim_mat: Material = null
 var _void_plane: MeshInstance3D = null
 var _hmin := 0.0
 var _hmax := 0.0
@@ -222,9 +242,6 @@ func build_world() -> void:
 	terrain_mesh = MeshInstance3D.new()
 	terrain_mesh.name = "Terrain"
 	add_child(terrain_mesh)
-	water_mesh = MeshInstance3D.new()
-	water_mesh.name = "Water"
-	add_child(water_mesh)
 	decal_mesh = MeshInstance3D.new()
 	decal_mesh.name = "SurfaceDecals"
 	decal_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -236,6 +253,10 @@ func build_world() -> void:
 	border_mesh.name = "Border"
 	border_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(border_mesh)
+	canvas_mesh = MeshInstance3D.new()
+	canvas_mesh.name = "CanvasFrame"
+	canvas_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(canvas_mesh)
 	ribbon_mesh = MeshInstance3D.new()
 	ribbon_mesh.name = "Ribbon"
 	add_child(ribbon_mesh)
@@ -245,6 +266,9 @@ func build_world() -> void:
 	region_draft_root = Node3D.new()
 	region_draft_root.name = "RegionDraft"
 	add_child(region_draft_root)
+	chess_trim_root = Node3D.new()
+	chess_trim_root.name = "ChessTrim"
+	add_child(chess_trim_root)
 	tiles_root = Node3D.new()
 	tiles_root.name = "Tiles"
 	add_child(tiles_root)
@@ -302,8 +326,12 @@ func load_shell(p_shell: Dictionary, keep_camera: bool = false) -> void:
 	shell = p_shell
 	if shell.is_empty():
 		return
-	# 新建 / 旧图迁移：三块区域缺了就补默认矩形（几何在 Model 里算）
+	# 新建 / 旧图迁移：三块区域缺了就补默认矩形（几何在 Model 里算）；底板缺了就补默认厚度
 	ShellStore.ensure_regions(shell)
+	ShellStore.ensure_board(shell)
+	var board := ShellStore.board_of(shell)
+	snap_step = float(board["snap"])
+	snap_to_grid = snap_step > 0.0
 	heights = ShellStore.heights_or_procedural(shell)
 	surface = ShellStore.surface_index(shell)
 	_clear_selection()
@@ -319,19 +347,41 @@ func rebuild_all() -> void:
 	if camera == null:
 		build_world()
 	_build_terrain()
-	_build_water()
 	_build_grid()
 	_build_ribbon()
 	_build_regions()
 	_build_tiles()
 	_build_decor()
 	_rebuild_selection_rings()
+	# 扩容/改尺寸后画布变了：先夹一次注视点，否则镜头会停在旧边界外
+	_clamp_target()
 	_update_camera()
 
 
 # ===========================================================================
-# 地形 / 地表
+# 地形 / 地表 —— **立体厚度地块**（顶面 + 土层侧壁 + 倒角 + 底面）
 # ===========================================================================
+## 网格的世界范围（**不是** size 的精确半长：size 除不尽 1.5m 时以格点为准，
+## 否则顶面与侧壁之间会裂出一条缝）。
+func grid_extent() -> Dictionary:
+	var g: Dictionary = ShellStore.grid_of(shell)
+	var cell := float(g["cell"])
+	return {
+		"x0": float(g["origin_x"]),
+		"z0": float(g["origin_z"]),
+		"x1": float(g["origin_x"]) + float(int(g["cols"]) - 1) * cell,
+		"z1": float(g["origin_z"]) + float(int(g["rows"]) - 1) * cell,
+		"cell": cell,
+		"cols": int(g["cols"]),
+		"rows": int(g["rows"]),
+	}
+
+
+func block_base_y() -> float:
+	var depth := float(ShellStore.board_of(shell)["depth"])
+	return _hmin - depth
+
+
 func _build_terrain() -> void:
 	var g: Dictionary = ShellStore.grid_of(shell)
 	var cols := int(g["cols"])
@@ -346,6 +396,7 @@ func _build_terrain() -> void:
 	for h in heights:
 		_hmin = minf(_hmin, h)
 		_hmax = maxf(_hmax, h)
+	# 顶面顶点（与原来完全一致：顶点色只做乘法染色 + 干度，配色交给地形材质）
 	var verts := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var colors := PackedColorArray()
@@ -401,9 +452,174 @@ func _build_terrain() -> void:
 	arrays[Mesh.ARRAY_INDEX] = indices
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	mesh.surface_set_material(0, _terrain_material())
+	_add_block_surfaces(mesh)
 	terrain_mesh.mesh = mesh
-	terrain_mesh.material_override = _terrain_material()
 	_build_surface_decals()
+
+
+## 土层侧壁 + 倒角 + 底面：**同一个 ArrayMesh 的 2/3 号 surface**（材质分开，面数一条不浪费）。
+##
+## 几何口径：
+##   · 侧壁顶点直接取高度场边界上的格点（与顶面共边，不会裂缝）；
+##   · 倒角 = 顶面沿内法线收 `bevel` 米、同时下压 `bevel × 0.75`（45° 左右的斜切）；
+##   · 侧壁落到 `min(高度) - depth`，再补一张底面把块体封口 —— 从任何角度看都是实心块，不是纸片。
+##   面数 = 周长 × 2 个四边形 + 2 个三角面：120×63 的图约 250 个四边形，低中端手机毫无压力。
+func _add_block_surfaces(mesh: ArrayMesh) -> void:
+	var ext := grid_extent()
+	var cols := int(ext["cols"])
+	var rows := int(ext["rows"])
+	var cell := float(ext["cell"])
+	var ox := float(ext["x0"])
+	var oz := float(ext["z0"])
+	var board := ShellStore.board_of(shell)
+	var bevel := clampf(float(board["bevel"]), 0.0, 1.2)
+	var base_y := block_base_y()
+
+	# --- 周长（CCW：南 → 东 → 北 → 西，与顶面绕序同一套）---
+	var ring: Array = []
+	for col in cols:
+		ring.append([col, 0])
+	for row in range(1, rows):
+		ring.append([cols - 1, row])
+	for col in range(cols - 2, -1, -1):
+		ring.append([col, rows - 1])
+	for row in range(rows - 2, 0, -1):
+		ring.append([0, row])
+	var n := ring.size()
+	if n < 4:
+		return
+	# 每个周长点的内法线（相邻两条边的内法线取平均，转角才不会有缝）
+	var inward: Array[Vector2] = []
+	inward.resize(n)
+	for i in n:
+		var prev: Array = ring[(i - 1 + n) % n]
+		var cur: Array = ring[i]
+		var next: Array = ring[(i + 1) % n]
+		var p := Vector2(ox + float(cur[0]) * cell, oz + float(cur[1]) * cell)
+		var pp := Vector2(ox + float(prev[0]) * cell, oz + float(prev[1]) * cell)
+		var pn := Vector2(ox + float(next[0]) * cell, oz + float(next[1]) * cell)
+		var d0 := (p - pp).normalized()
+		var d1 := (pn - p).normalized()
+		# 周长是 CCW（南→东→北→西），左法线 = 指向地图内部
+		var n0 := Vector2(-d0.y, d0.x)
+		var n1 := Vector2(-d1.y, d1.x)
+		inward[i] = (n0 + n1).normalized()
+		if inward[i].length_squared() < 0.001:
+			inward[i] = Vector2.ZERO
+
+	var sv := PackedVector3Array()
+	var sn := PackedVector3Array()
+	var sc := PackedColorArray()
+	var suv := PackedVector2Array()
+	var si := PackedInt32Array()
+	var run := 0.0
+	for i in n:
+		var j := (i + 1) % n
+		var a: Array = ring[i]
+		var b: Array = ring[j]
+		var ax := ox + float(a[0]) * cell
+		var az := oz + float(a[1]) * cell
+		var bx := ox + float(b[0]) * cell
+		var bz := oz + float(b[1]) * cell
+		var ay := _h(ax, az)
+		var by := _h(bx, bz)
+		var seg := maxf(Vector2(bx - ax, bz - az).length(), 0.001)
+		var dir := Vector3(bx - ax, 0.0, bz - az).normalized()
+		var out := Vector3.UP.cross(dir).normalized()
+		if out.length_squared() < 0.001:
+			out = Vector3.FORWARD
+		var ia := inward[i]
+		var ib := inward[j]
+		var ca := Vector2(ax + ia.x * bevel, az + ia.y * bevel)
+		var cb := Vector2(bx + ib.x * bevel, bz + ib.y * bevel)
+		var cay := ay - bevel * 0.75
+		var cby := by - bevel * 0.75
+		var base := sv.size()
+		# 0 顶A / 1 顶B / 2 倒角A / 3 倒角B / 4 底A / 5 底B
+		sv.append(Vector3(ax, ay, az))
+		sv.append(Vector3(bx, by, bz))
+		sv.append(Vector3(ca.x, cay, ca.y))
+		sv.append(Vector3(cb.x, cby, cb.y))
+		sv.append(Vector3(ax, base_y, az))
+		sv.append(Vector3(bx, base_y, bz))
+		for q in 6:
+			sn.append(out)
+		# 倒角：越靠下越暗一点（土层）
+		sc.append(Color(1.06, 1.02, 0.96))
+		sc.append(Color(1.06, 1.02, 0.96))
+		sc.append(Color(0.92, 0.88, 0.82))
+		sc.append(Color(0.92, 0.88, 0.82))
+		sc.append(Color(0.62, 0.58, 0.54))
+		sc.append(Color(0.62, 0.58, 0.54))
+		suv.append(Vector2(run, 0.0))
+		suv.append(Vector2(run + seg, 0.0))
+		suv.append(Vector2(run, 0.4))
+		suv.append(Vector2(run + seg, 0.4))
+		suv.append(Vector2(run, maxf(ay - base_y, 0.1) * 0.25 + 0.5))
+		suv.append(Vector2(run + seg, maxf(by - base_y, 0.1) * 0.25 + 0.5))
+		# 绕序：A顶→B顶→B倒角→A倒角（顺时针朝外）
+		si.append_array([base + 0, base + 1, base + 3, base + 0, base + 3, base + 2])
+		si.append_array([base + 2, base + 3, base + 5, base + 2, base + 5, base + 4])
+		run += seg
+
+	var arrays: Array = []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = sv
+	arrays[Mesh.ARRAY_NORMAL] = sn
+	arrays[Mesh.ARRAY_COLOR] = sc
+	arrays[Mesh.ARRAY_TEX_UV] = suv
+	arrays[Mesh.ARRAY_INDEX] = si
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	mesh.surface_set_material(mesh.get_surface_count() - 1, _side_material())
+
+	# --- 底面（两块三角，法线朝下；用 CULL_DISABLED 的深色材质，从下方也看不到"破洞"）---
+	var bv := PackedVector3Array([
+		Vector3(ox, base_y, oz),
+		Vector3(ox, base_y, oz + float(rows - 1) * cell),
+		Vector3(ox + float(cols - 1) * cell, base_y, oz + float(rows - 1) * cell),
+		Vector3(ox + float(cols - 1) * cell, base_y, oz),
+	])
+	var bn := PackedVector3Array([Vector3.DOWN, Vector3.DOWN, Vector3.DOWN, Vector3.DOWN])
+	var bi := PackedInt32Array([0, 1, 2, 0, 2, 3])
+	var b_arrays: Array = []
+	b_arrays.resize(Mesh.ARRAY_MAX)
+	b_arrays[Mesh.ARRAY_VERTEX] = bv
+	b_arrays[Mesh.ARRAY_NORMAL] = bn
+	b_arrays[Mesh.ARRAY_INDEX] = bi
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, b_arrays)
+	mesh.surface_set_material(mesh.get_surface_count() - 1, _bottom_material())
+
+
+## 地块侧面材质：真实 泥土.png + 三平面投影（侧壁不拉伸），颜色偏土黄。
+func _side_material() -> Material:
+	if _side_mat == null:
+		_side_mat = _load_material(BLOCK_SIDE)
+	if _side_mat == null:
+		var std := StandardMaterial3D.new()
+		std.albedo_color = Color(0.34, 0.27, 0.20)
+		std.roughness = 0.96
+		std.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+		_side_mat = std
+	return _side_mat
+
+
+func _bottom_material() -> Material:
+	if _bottom_mat == null:
+		_bottom_mat = _load_material(BLOCK_BOTTOM)
+	if _bottom_mat == null:
+		var std := StandardMaterial3D.new()
+		std.albedo_color = Color(0.11, 0.09, 0.075)
+		std.roughness = 1.0
+		std.cull_mode = BaseMaterial3D.CULL_DISABLED
+		_bottom_mat = std
+	return _bottom_mat
+
+
+func _load_material(path: String) -> Material:
+	if not ResourceLoader.exists(path):
+		return null
+	return load(path) as Material
 
 
 ## 地形材质 = **游戏里那一份**（Content/art/材质/地形材质.tres → 地形.gdshader）。
@@ -621,59 +837,35 @@ func _splat_tri(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3,
 		st.add_vertex(pts[i])
 
 
-func _build_water() -> void:
-	var sz := ShellStore.size_of(shell)
-	var level := float((shell.get("terrain", {}) as Dictionary).get("water_level", ShellStore.WATER_DEFAULT))
-	if water_mesh.mesh == null:
-		var plane := PlaneMesh.new()
-		plane.size = Vector2(sz.x, sz.y)
-		water_mesh.mesh = plane
-	water_mesh.position = Vector3(0.0, level, 0.0)
-	water_mesh.material_override = _water_material()
-
-
-## 水面沿用游戏里的 水材质.tres（卡通水面 + 波纹法线），不另调一块蓝玻璃。
-func _water_material() -> Material:
-	if _water_mat == null and ResourceLoader.exists(WATER_MAT):
-		_water_mat = load(WATER_MAT) as Material
-	if _water_mat == null:
-		var std := StandardMaterial3D.new()
-		std.albedo_color = Color(0.16, 0.36, 0.52, 0.85)
-		std.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		std.roughness = 0.12
-		std.metallic = 0.35
-		_water_mat = std
-	if _water_mat is ShaderMaterial and ResourceLoader.exists(RIPPLE_NORMAL):
-		(_water_mat as ShaderMaterial).set_shader_parameter("ripple_normal", load(RIPPLE_NORMAL))
-	return _water_mat
-
-
-## 编辑器辅助网格：和旧编辑器一样**贴着地形走**（4m 一格 + 地图边界框）。
+## 编辑器辅助网格：和旧编辑器一样**贴着地形走**（4m 一格）+ 地图边框 + 画布外框。
+## 画布 = 地图 + 四周冗余（board.margin），比地图大一圈：拖边缘地块/扩容时看得见落脚点。
 func _build_grid() -> void:
 	if grid_mesh == null:
 		return
-	var sz := ShellStore.size_of(shell)
-	var hx := sz.x * 0.5
-	var hz := sz.y * 0.5
+	var ext := grid_extent()
+	var x0 := float(ext["x0"])
+	var z0 := float(ext["z0"])
+	var x1 := float(ext["x1"])
+	var z1 := float(ext["z1"])
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_LINES)
-	var x := -hx
-	while x <= hx + 0.01:
-		var prev := Vector3(x, _h(x, -hz) + 0.10, -hz)
-		var z := -hz
-		while z < hz:
-			var nz := minf(z + GRID_STEP, hz)
+	var x := x0
+	while x <= x1 + 0.01:
+		var prev := Vector3(x, _h(x, z0) + 0.10, z0)
+		var z := z0
+		while z < z1:
+			var nz := minf(z + GRID_STEP, z1)
 			var p := Vector3(x, _h(x, nz) + 0.10, nz)
 			_grid_line(st, prev, p)
 			prev = p
 			z = nz
 		x += GRID_STEP
-	var z2 := -hz
-	while z2 <= hz + 0.01:
-		var prev2 := Vector3(-hx, _h(-hx, z2) + 0.10, z2)
-		var xx := -hx
-		while xx < hx:
-			var nx := minf(xx + GRID_STEP, hx)
+	var z2 := z0
+	while z2 <= z1 + 0.01:
+		var prev2 := Vector3(x0, _h(x0, z2) + 0.10, z2)
+		var xx := x0
+		while xx < x1:
+			var nx := minf(xx + GRID_STEP, x1)
 			var p2 := Vector3(nx, _h(nx, z2) + 0.10, z2)
 			_grid_line(st, prev2, p2)
 			prev2 = p2
@@ -686,6 +878,7 @@ func _build_grid() -> void:
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	grid_mesh.material_override = mat
 	_build_border()
+	_build_canvas_frame()
 
 
 func _grid_line(st: SurfaceTool, a: Vector3, b: Vector3) -> void:
@@ -695,38 +888,81 @@ func _grid_line(st: SurfaceTool, a: Vector3, b: Vector3) -> void:
 	st.add_vertex(b)
 
 
-## 地图边界框（始终显示，跟网格开关无关）
+## 地图边界框（始终显示，跟网格开关无关）—— 用格点范围，和顶面/侧壁严丝合缝。
 func _build_border() -> void:
 	if border_mesh == null:
 		return
+	var ext := grid_extent()
+	var corners: Array[Vector2] = [
+		Vector2(float(ext["x0"]), float(ext["z0"])),
+		Vector2(float(ext["x1"]), float(ext["z0"])),
+		Vector2(float(ext["x1"]), float(ext["z1"])),
+		Vector2(float(ext["x0"]), float(ext["z1"])),
+	]
+	border_mesh.mesh = _loop_lines(corners, BORDER_COLOR, 0.12, 32)
+	var mat := _flat_vertex_mat()
+	border_mesh.material_override = mat
+
+
+## 画布外框：地图之外那圈冗余空间的可编辑边界（暗蓝，不抢地图金框的注意力）。
+func _build_canvas_frame() -> void:
+	if canvas_mesh == null:
+		return
 	var sz := ShellStore.size_of(shell)
-	var hx := sz.x * 0.5
-	var hz := sz.y * 0.5
+	var canvas := ShellStore.canvas_size_of(shell)
+	var hx := canvas.x * 0.5
+	var hz := canvas.y * 0.5
 	var corners: Array[Vector2] = [
 		Vector2(-hx, -hz), Vector2(hx, -hz), Vector2(hx, hz), Vector2(-hx, hz),
 	]
+	# 冗余空间在地图外没有地形：贴在基面上（比地块底面高一档，避免和 void 底板打架）
+	var y := block_base_y() + 0.05
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_LINES)
 	for i in 4:
 		var a: Vector2 = corners[i]
 		var b: Vector2 = corners[(i + 1) % 4]
-		var seg := 32
-		var prev := Vector3(a.x, _h(a.x, a.y) + 0.12, a.y)
+		var seg := 12
+		var prev := Vector3(a.x, y, a.y)
 		for k in range(1, seg + 1):
-			var t := float(k) / float(seg)
-			var p: Vector2 = a.lerp(b, t)
-			var cur := Vector3(p.x, _h(p.x, p.y) + 0.12, p.y)
-			st.set_color(BORDER_COLOR)
+			var p: Vector2 = a.lerp(b, float(k) / float(seg))
+			var cur := Vector3(p.x, y, p.y)
+			st.set_color(CANVAS_COLOR)
 			st.add_vertex(prev)
-			st.set_color(BORDER_COLOR)
+			st.set_color(CANVAS_COLOR)
 			st.add_vertex(cur)
 			prev = cur
-	border_mesh.mesh = st.commit()
+	canvas_mesh.mesh = st.commit()
+	canvas_mesh.material_override = _flat_vertex_mat()
+	# 让 sz 参与一次，避免"改了尺寸但画布框没刷新"这种低级错误
+	if sz.x <= 0.0:
+		canvas_mesh.mesh = null
+
+
+func _loop_lines(corners: Array[Vector2], col: Color, lift: float, seg_per_edge: int) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_LINES)
+	for i in 4:
+		var a: Vector2 = corners[i]
+		var b: Vector2 = corners[(i + 1) % 4]
+		var prev := Vector3(a.x, _h(a.x, a.y) + lift, a.y)
+		for k in range(1, seg_per_edge + 1):
+			var p: Vector2 = a.lerp(b, float(k) / float(seg_per_edge))
+			var cur := Vector3(p.x, _h(p.x, p.y) + lift, p.y)
+			st.set_color(col)
+			st.add_vertex(prev)
+			st.set_color(col)
+			st.add_vertex(cur)
+			prev = cur
+	return st.commit()
+
+
+func _flat_vertex_mat() -> StandardMaterial3D:
 	var mat := StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.vertex_color_use_as_albedo = true
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	border_mesh.material_override = mat
+	return mat
 
 
 # ===========================================================================
@@ -983,9 +1219,27 @@ func _build_tiles() -> void:
 		node.name = "T%d" % idx
 		node.set_meta("tile_index", idx)
 		tiles_root.add_child(node)
+	_build_chess_trim()
 	_refresh_tile_markers()
 
 
+## 棋盘格的双色微差：按**世界格点**取奇偶（不是数组下标），
+## 这样拖到哪儿、增删哪个格子，棋盘感都不会跳。步长跟随对齐开关。
+func _tile_parity(td: Dictionary) -> int:
+	var step := _effective_snap()
+	var gx := int(floor(float(td.get("x", 0.0)) / step + 0.0001))
+	var gz := int(floor(float(td.get("z", 0.0)) / step + 0.0001))
+	return posmod(gx + gz, 2)
+
+
+func _effective_snap() -> float:
+	if snap_to_grid:
+		return maxf(snap_step, 0.5)
+	return 1.0
+
+
+## 一块格子 = 顶板（A/B 双色）+ 一圈收边（比顶板低 2cm 的细边框）+ 索引牌。
+## **没有粗线框**：收边只露出 7cm，读成"草坪砖之间的缝"，不是画框。
 func _make_tile_node(td: Dictionary, active: bool) -> Node3D:
 	var idx := int(td.get("index", 0))
 	var side := String(td.get("side", "player"))
@@ -996,75 +1250,54 @@ func _make_tile_node(td: Dictionary, active: bool) -> Node3D:
 	var holder := Node3D.new()
 	holder.position = Vector3(float(td.get("x", 0.0)), ty, float(td.get("z", 0.0)))
 	holder.rotation = Vector3(0.0, deg_to_rad(float(td.get("yaw", 0.0))), 0.0)
-	var accent: Color = ShellStore.REGION_COLORS.get(side, Color.WHITE)
-	if role == "keep":
-		accent = Color("#F0B95A")
-	if not active:
-		accent = Color("#6E7480")
 	var is_sel := selected_tiles.has(idx)
+	var is_hover := hovered_tile == idx
 
-	# 底盘：一块贴着地形的薄石板（编辑器辅助几何，不是游戏美术资产）
+	# --- 收边（先挂，顶板压在上面）：一块略大的板，只露出 7cm 的一圈 ---
+	var rim := BoxMesh.new()
+	rim.size = Vector3(w + 0.14, 0.30, d + 0.14)
+	var rmi := MeshInstance3D.new()
+	rmi.name = "Rim"
+	rmi.mesh = rim
+	rmi.position = Vector3(0.0, 0.13, 0.0)
+	rmi.material_override = _tile_rim_material(is_sel, is_hover, active)
+	rmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	holder.add_child(rmi)
+
+	# --- 顶板：A/B 双色微差，材质来自独立 .tres（换皮只改那两个文件）---
 	var plate := BoxMesh.new()
-	plate.size = Vector3(w, 0.22, d)
+	plate.size = Vector3(w, 0.30, d)
 	var pmi := MeshInstance3D.new()
 	pmi.name = "Plate"
 	pmi.mesh = plate
-	pmi.position = Vector3(0.0, 0.14, 0.0)
-	var pmat := StandardMaterial3D.new()
-	pmat.albedo_color = Color("#3A4352") if active else Color("#252A33")
-	pmat.roughness = 0.85
-	if is_sel:
-		pmat.emission_enabled = true
-		pmat.emission = Color("#F0B95A")
-		pmat.emission_energy_multiplier = 0.25
-	pmi.material_override = pmat
-	pmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	pmi.position = Vector3(0.0, 0.15, 0.0)
+	pmi.material_override = _tile_plate_material(_tile_parity(td), active)
+	pmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	holder.add_child(pmi)
 
-	# 边框：四个角的世界折线（贴地，跟着地形）
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_LINES)
-	var hw := w * 0.5
-	var hd := d * 0.5
-	var corners: Array[Vector2] = [
-		Vector2(-hw, -hd), Vector2(hw, -hd), Vector2(hw, hd), Vector2(-hw, hd),
-	]
-	var line_col := Color(accent.r, accent.g, accent.b, 0.95 if is_sel else 0.55)
-	for i in 4:
-		var a: Vector2 = corners[i]
-		var b: Vector2 = corners[(i + 1) % 4]
-		var seg := maxi(1, int(ceil(a.distance_to(b) / 1.5)))
-		var prev := _tile_world(a, w, d, td) + Vector3(0.0, 0.2, 0.0)
-		for k in range(1, seg + 1):
-			var t := float(k) / float(seg)
-			var cur := _tile_world(a.lerp(b, t), w, d, td) + Vector3(0.0, 0.2, 0.0)
-			st.set_color(line_col)
-			st.add_vertex(prev)
-			st.set_color(line_col)
-			st.add_vertex(cur)
-			prev = cur
-	var omi := MeshInstance3D.new()
-	omi.name = "Outline"
-	omi.mesh = st.commit()
-	var omat := StandardMaterial3D.new()
-	omat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	omat.vertex_color_use_as_albedo = true
-	omat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	omi.material_override = omat
-	omi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	holder.add_child(omi)
+	# --- 主堡位：一抹金色顶饰（不是粗描边），一眼能认出主堡格 ---
+	if role == "keep":
+		var cap := BoxMesh.new()
+		cap.size = Vector3(w * 0.34, 0.02, d * 0.12)
+		var cmi := MeshInstance3D.new()
+		cmi.name = "KeepMark"
+		cmi.mesh = cap
+		cmi.position = Vector3(0.0, 0.305, 0.0)
+		cmi.material_override = _flat_mat(Color("#F0B95A"), 0.9)
+		cmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		holder.add_child(cmi)
 
 	# 索引牌（始终可见：一眼知道布局卡引用的是哪个号）
 	var label := Label3D.new()
 	label.name = "Label"
 	label.text = "T%d" % idx
 	label.font_size = 72
-	label.pixel_size = 0.015
+	label.pixel_size = 0.012
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	label.no_depth_test = true
 	label.outline_size = 12
 	label.modulate = Color(1.0, 1.0, 1.0, 0.96) if active else Color(0.55, 0.6, 0.7, 0.9)
-	label.position = Vector3(0.0, 1.3, 0.0)
+	label.position = Vector3(0.0, 1.0, 0.0)
 	# 选中/悬停时由两个锚点标记接管画面，索引牌先让位（否则三行字叠在一起）
 	label.visible = not is_sel
 	holder.add_child(label)
@@ -1074,35 +1307,125 @@ func _make_tile_node(td: Dictionary, active: bool) -> Node3D:
 	return holder
 
 
+## 玩家区外围收边：把玩家侧所有格子围成一块"棋盘"，只做一圈矮路缘（2.4cm 高）。
+## 不做每格粗框，靠这一圈 + 双色微差建立规范感。
+func _build_chess_trim() -> void:
+	if chess_trim_root == null:
+		return
+	for c in chess_trim_root.get_children():
+		c.queue_free()
+	var min_x := INF
+	var max_x := -INF
+	var min_z := INF
+	var max_z := -INF
+	var count := 0
+	for t in ShellStore.tiles(shell):
+		var td: Dictionary = t
+		if String(td.get("side", "player")) != "player":
+			continue
+		var pts := ShellStore.tile_corners(td)
+		for p in pts:
+			min_x = minf(min_x, p.x)
+			max_x = maxf(max_x, p.x)
+			min_z = minf(min_z, p.y)
+			max_z = maxf(max_z, p.y)
+		count += 1
+	if count == 0:
+		return
+	var curb := 0.24
+	var h := 0.24
+	var mid_y := _h((min_x + max_x) * 0.5, (min_z + max_z) * 0.5) + h * 0.5
+	var rim_mat := _tile_rim_material(false, false, true)
+	var spans := [
+		[Vector3((min_x + max_x) * 0.5, mid_y, min_z - curb * 0.5), Vector3(max_x - min_x + curb * 2.0, h, curb)],
+		[Vector3((min_x + max_x) * 0.5, mid_y, max_z + curb * 0.5), Vector3(max_x - min_x + curb * 2.0, h, curb)],
+		[Vector3(min_x - curb * 0.5, mid_y, (min_z + max_z) * 0.5), Vector3(curb, h, max_z - min_z)],
+		[Vector3(max_x + curb * 0.5, mid_y, (min_z + max_z) * 0.5), Vector3(curb, h, max_z - min_z)],
+	]
+	for row in spans:
+		var pos: Vector3 = row[0]
+		var box := BoxMesh.new()
+		box.size = row[1]
+		var mi := MeshInstance3D.new()
+		mi.mesh = box
+		mi.position = pos
+		mi.material_override = rim_mat
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		chess_trim_root.add_child(mi)
+
+
+func _tile_plate_material(parity: int, active: bool) -> Material:
+	var path := BOARD_TILE_A if parity == 0 else BOARD_TILE_B
+	var mat: Material = null
+	if parity == 0 and _tile_mat_a != null:
+		mat = _tile_mat_a
+	elif parity == 1 and _tile_mat_b != null:
+		mat = _tile_mat_b
+	else:
+		mat = _load_material(path)
+		if parity == 0:
+			_tile_mat_a = mat
+		else:
+			_tile_mat_b = mat
+	if mat == null:
+		var std := StandardMaterial3D.new()
+		std.albedo_color = Color("#6C7C46") if parity == 0 else Color("#63723F")
+		std.roughness = 0.94
+		std.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+		mat = std
+	if not active:
+		# 未激活 = 碎石遗迹：压暗一档（不改 .tres，避免污染皮肤）
+		var std2 := StandardMaterial3D.new()
+		std2.albedo_color = Color(0.34, 0.36, 0.40)
+		std2.roughness = 0.96
+		std2.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+		return std2
+	return mat
+
+
+func _tile_rim_material(is_sel: bool, is_hover: bool, active: bool) -> Material:
+	if _tile_rim_mat == null:
+		_tile_rim_mat = _load_material(BOARD_RIM)
+	var base: Material = _tile_rim_mat
+	if base == null:
+		var std := StandardMaterial3D.new()
+		std.albedo_color = Color("#4A5340")
+		std.roughness = 0.9
+		std.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+		base = std
+	if not active:
+		return base
+	if is_sel or is_hover:
+		# 选中/悬停：同一条收边发光（duplicate，绝不改共享 .tres）
+		var mat := StandardMaterial3D.new()
+		var c := Color("#F0B95A") if is_sel else Color("#CFE3B0")
+		mat.albedo_color = c
+		mat.emission_enabled = true
+		mat.emission = c
+		mat.emission_energy_multiplier = 0.55 if is_sel else 0.25
+		mat.roughness = 0.6
+		mat.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+		return mat
+	return base
+
+
 ## 未激活格子 = 碎石遗迹（和旧候选石台的 ruin 同语义：能看见、不能建造）。
+## 石头压在顶板**上面**（顶板上表面 = 0.30），否则会陷进板子里只剩几个黑点。
 func _build_tile_ruin(holder: Node3D, w: float, d: float) -> void:
 	var stone := StandardMaterial3D.new()
 	stone.albedo_color = Color("#2B3038")
 	stone.roughness = 0.9
 	for i in 5:
 		var box := BoxMesh.new()
-		var s := minf(w, d) * (0.12 + 0.03 * float(i % 3))
+		var s := minf(w, d) * (0.10 + 0.025 * float(i % 3))
 		box.size = Vector3(s * 1.6, s * 0.7, s * 1.2)
 		var mi := MeshInstance3D.new()
 		mi.mesh = box
 		var ang := float(i) / 5.0 * TAU
-		mi.position = Vector3(cos(ang) * w * 0.2, 0.14, sin(ang) * d * 0.2)
+		mi.position = Vector3(cos(ang) * w * 0.18, 0.30 + s * 0.35, sin(ang) * d * 0.18)
 		mi.rotation = Vector3(0.0, ang, 0.12 * float(i - 2))
 		mi.material_override = stone
 		holder.add_child(mi)
-
-
-## 边框顶点是**局部坐标**（挂在一个已经平移/旋转过的 holder 下）：
-## 只把"世界地形高度差"折算进来，绝不能再把 tile 的 x/z 加一遍 ——
-## 否则边框会以两倍偏移漂到地图外面（2026-11-21 截图自检抓到的就是这个）。
-func _tile_world(local_xz: Vector2, _w: float, _d: float, td: Dictionary) -> Vector3:
-	var yaw := deg_to_rad(float(td.get("yaw", 0.0)))
-	var c := cos(yaw)
-	var s := sin(yaw)
-	var wx := float(td.get("x", 0.0)) + local_xz.x * c + local_xz.y * s
-	var wz := float(td.get("z", 0.0)) - local_xz.x * s + local_xz.y * c
-	var dy := _h(wx, wz) - float(td.get("terrain_y", 0.0))
-	return Vector3(local_xz.x, dy + 0.28, local_xz.y)
 
 
 ## 只给"选中 / 悬停"的格子画两个锚点标记：左上角建筑位 + 正中心出兵位。
@@ -1449,17 +1772,20 @@ func focus_selected() -> void:
 
 ## 镜头边界（玩家口径「最多只能看到地图边界外一点点，禁止甩进无尽虚空」）。
 ##
+## **2026-11-21 起边界改成"画布"而不是"地图"**：地图四周有 40%~50% 的冗余空间（board.margin），
+## 制作人要能在那里拖边缘地块 / 扩容，镜头就不能被地块尺寸锁死。
+##
 ## 与游戏 魔兽镜头 / 旧编辑器 视口._clamp_target() 同一套算法：
 ##   相机会在注视点后面后退 `dist × cos(俯角)` 米，所以能看的范围要**先扣掉这段后撤**，
 ##   否则拉远之后注视点还在图内、画面早已越过边界。
 func _clamp_target() -> void:
-	var sz := ShellStore.size_of(shell)
-	if sz.x <= 0.0 or sz.y <= 0.0:
+	var canvas := ShellStore.canvas_size_of(shell)
+	if canvas.x <= 0.0 or canvas.y <= 0.0:
 		return
 	var pitch := -deg_to_rad(cam_pitch)
 	var reach := cam_dist * cos(pitch)
-	var hx := maxf(sz.x * 0.5 - reach + CAM_BOUNDS_MARGIN, sz.x * 0.12)
-	var hz := maxf(sz.y * 0.5 - reach + CAM_BOUNDS_MARGIN, sz.y * 0.12)
+	var hx := maxf(canvas.x * 0.5 - reach + CAM_BOUNDS_MARGIN, canvas.x * 0.12)
+	var hz := maxf(canvas.y * 0.5 - reach + CAM_BOUNDS_MARGIN, canvas.y * 0.12)
 	cam_target.x = clampf(cam_target.x, -hx, hx)
 	cam_target.z = clampf(cam_target.z, -hz, hz)
 	cam_target.y = _h(cam_target.x, cam_target.z)
@@ -1831,14 +2157,16 @@ func _drag_apply(g: Vector3) -> void:
 		_drag_moved = true
 	for row in _drag_offsets:
 		var d: Dictionary = row
-		var nx := snappedf(g.x + float(d["dx"]), 0.05)
-		var nz := snappedf(g.z + float(d["dz"]), 0.05)
-		if String(d["kind"]) == "tile":
+		var is_tile := String(d["kind"]) == "tile"
+		var nx := _snap_value(g.x + float(d["dx"]), is_tile)
+		var nz := _snap_value(g.z + float(d["dz"]), is_tile)
+		if is_tile:
 			var td := ShellStore.tile_by_index(shell, int(d["index"]))
 			if td.is_empty():
 				continue
 			td["x"] = nx
 			td["z"] = nz
+			td["side"] = ShellStore.side_of(nx)
 			td["terrain_y"] = snappedf(_h(nx, nz), 0.001)
 		else:
 			var list: Array = shell.get("decorations", [])
@@ -1853,6 +2181,13 @@ func _drag_apply(g: Vector3) -> void:
 	_build_decor()
 	_rebuild_selection_rings()
 	_refresh_tile_markers()
+
+
+## 拖拽落点：格子走对齐网格（board.snap / 面板开关），装饰只做 5cm 吸附。
+func _snap_value(v: float, is_tile: bool) -> float:
+	if is_tile and snap_to_grid:
+		return snappedf(v, _effective_snap())
+	return snappedf(v, 0.05)
 
 
 func _finish_box_select(from: Vector2, to: Vector2) -> void:
@@ -1963,7 +2298,6 @@ func _apply_brush(center: Vector3, _weight: float) -> void:
 		surf["index"] = surface
 		shell["surface"] = surf
 		_build_terrain()
-		_build_water()
 		_build_ribbon()
 		_build_regions()
 		_build_tiles()
@@ -2093,16 +2427,21 @@ func add_tile(g: Vector3) -> void:
 	push_undo()
 	var list: Array = shell.get("tiles", [])
 	var idx := ShellStore.next_index(shell)
+	var x := _snap_value(g.x, true)
+	var z := _snap_value(g.z, true)
+	var scale := float(ShellStore.board_of(shell)["tile_scale"])
 	list.append({
 		"index": idx,
-		"side": ShellStore.side_of(g.x),
+		"side": ShellStore.side_of(x),
 		"role": "build",
-		"x": snappedf(g.x, 0.05),
-		"z": snappedf(g.z, 0.05),
-		"w": ShellStore.TILE_SIZE_DEFAULT,
-		"d": ShellStore.TILE_SIZE_DEFAULT,
+		"x": x,
+		"z": z,
+		"w": snappedf(ShellStore.TILE_SIZE_DEFAULT * scale, 0.05),
+		"d": snappedf(ShellStore.TILE_SIZE_DEFAULT * scale, 0.05),
+		"base_w": ShellStore.TILE_SIZE_DEFAULT,
+		"base_d": ShellStore.TILE_SIZE_DEFAULT,
 		"yaw": 0.0,
-		"terrain_y": snappedf(ShellStore.height_at_shell(shell, heights, g.x, g.z), 0.001),
+		"terrain_y": snappedf(ShellStore.height_at_shell(shell, heights, x, z), 0.001),
 	})
 	shell["tiles"] = list
 	_select_only_tile(idx)
@@ -2116,10 +2455,12 @@ func move_tile(index: int, g: Vector3) -> void:
 	var td := ShellStore.tile_by_index(shell, index)
 	if td.is_empty():
 		return
-	td["x"] = snappedf(g.x, 0.05)
-	td["z"] = snappedf(g.z, 0.05)
-	td["side"] = ShellStore.side_of(float(td["x"]))
-	td["terrain_y"] = snappedf(ShellStore.height_at_shell(shell, heights, float(td["x"]), float(td["z"])), 0.001)
+	var x := _snap_value(g.x, true)
+	var z := _snap_value(g.z, true)
+	td["x"] = x
+	td["z"] = z
+	td["side"] = ShellStore.side_of(x)
+	td["terrain_y"] = snappedf(ShellStore.height_at_shell(shell, heights, x, z), 0.001)
 	_build_tiles()
 	_rebuild_selection_rings()
 	changed.emit()
@@ -2210,6 +2551,112 @@ func renumber_tiles() -> void:
 	_build_tiles()
 	_rebuild_selection_rings()
 	changed.emit()
+
+
+# ===========================================================================
+# 编辑：底板（厚度 / 画布冗余 / 格子倍率 / 地图尺寸）
+# ===========================================================================
+## 对齐网格开关。step &gt; 0 时同时改步长；关掉 = 自由拖拽（0.05m）。
+func set_snap_enabled(on: bool, step: float = -1.0) -> void:
+	snap_to_grid = on
+	if step > 0.0:
+		snap_step = step
+	var board := ShellStore.board_of(shell)
+	board["snap"] = snap_step if on else 0.0
+	shell["board"] = board
+	_build_tiles()
+	changed.emit()
+
+
+func set_snap_step(step: float) -> void:
+	snap_step = clampf(step, 0.5, 8.0)
+	var board := ShellStore.board_of(shell)
+	board["snap"] = snap_step if snap_to_grid else 0.0
+	shell["board"] = board
+	_build_tiles()
+	changed.emit()
+
+
+func tile_scale() -> float:
+	return float(ShellStore.board_of(shell)["tile_scale"])
+
+
+## 格子统一缩放（幂等：从 base_w/base_d 算，不叠乘）。返回空 = 成功。
+## **不入撤销栈**：面板上是滑块，每拖一格入一次会把 Ctrl+Z 变成垃圾场。
+func set_tile_scale(scale: float) -> Array:
+	var before := ShellStore.board_of(shell)
+	var before_tiles: Array = ShellStore.tiles(shell).duplicate(true)
+	ShellStore.apply_tile_scale(shell, scale)
+	var errs := ShellStore.board_validate(shell)
+	if not errs.is_empty():
+		shell["board"] = before
+		shell["tiles"] = before_tiles
+		return errs
+	_build_tiles()
+	_rebuild_selection_rings()
+	changed.emit()
+	return []
+
+
+## 底板单值（depth / bevel / margin / snap）。会顺手重建地块与画布框。
+func set_board_value(key: String, value: float) -> Array:
+	if not ShellStore.BOARD_FALLBACK.has(key):
+		return ["unknown board key " + key]
+	var before := ShellStore.board_of(shell)
+	ShellStore.set_board_value(shell, key, value)
+	var errs := ShellStore.board_validate(shell)
+	if not errs.is_empty():
+		shell["board"] = before
+		return errs
+	if key == "snap":
+		snap_step = value
+		snap_to_grid = value > 0.0
+	rebuild_all()
+	changed.emit()
+	return []
+
+
+func canvas_size() -> Vector2:
+	return ShellStore.canvas_size_of(shell)
+
+
+## 改地图整体尺寸：高度场/地表重采样 + 区域/脊线/装饰/格子按比例联动。
+## 返回空 = 成功；非空 = 拒绝（整份底壳原样不动）。
+func resize_map(sx: float, sz: float, scale_tiles: bool) -> Array:
+	push_undo()
+	var errs := ShellStore.apply_map_size(shell, Vector2(sx, sz), scale_tiles)
+	if not errs.is_empty():
+		undo()
+		return errs
+	heights = ShellStore.heights_or_procedural(shell)
+	surface = ShellStore.surface_index(shell)
+	_clear_selection()
+	rebuild_all()
+	changed.emit()
+	return []
+
+
+## 一键新增地块：按百分比把整张底壳放大（>= 1.05），布局随之联动。
+func grow_map(percent: float = 0.25) -> Array:
+	var sz := ShellStore.size_of(shell)
+	var k := clampf(percent, 0.05, 1.0)
+	var step := 1.5
+	var nx := minf(snappedf(sz.x * (1.0 + k), step), 400.0)
+	var nz := minf(snappedf(sz.y * (1.0 + k), step), 400.0)
+	if nx <= sz.x + 0.01 and nz <= sz.y + 0.01:
+		return ["map already at max size"]
+	return resize_map(nx, nz, true)
+
+
+## 把镜头拉到"看得见整张画布"（含四周冗余），验收/扩容后一眼看全。
+func frame_canvas() -> void:
+	var canvas := ShellStore.canvas_size_of(shell)
+	var span := maxf(canvas.x, canvas.y)
+	cam_target = Vector3.ZERO
+	cam_dist = clampf(span * 0.95, CAM_DIST_MIN, CAM_DIST_MAX)
+	cam_pitch = -CAM_PITCH_DEG
+	_clamp_target()
+	_update_camera()
 
 
 # ===========================================================================

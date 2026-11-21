@@ -1441,6 +1441,56 @@ namespace WarIsland.Bridge
             return arr;
         }
 
+        // =================================================================
+        // 2026-11-21 地图底板：立体厚度 / 画布冗余 / 格子统一倍率
+        // =================================================================
+        /// <summary>底板参数校验（厚度 / 倒角 / 冗余 / 格子倍率 / 地图尺寸）。</summary>
+        public Godot.Collections.Array MapBoardValidate(double sizeX, double sizeZ, double depth,
+            double bevel, double margin, double tileScale)
+        {
+            return ToGodotArray(MapBoard.Validate(sizeX, sizeZ, depth, bevel, margin, tileScale));
+        }
+
+        /// <summary>画布尺寸（= 地图尺寸 × (1 + 2 × 冗余)），返回 [w, h]。</summary>
+        public Godot.Collections.Array MapCanvasSize(double sizeX, double sizeZ, double margin)
+        {
+            return new Godot.Collections.Array
+            {
+                MapBoard.CanvasSizeX(sizeX, margin),
+                MapBoard.CanvasSizeZ(sizeZ, margin),
+            };
+        }
+
+        /// <summary>某个原尺寸格子允许的最大统一倍率（不是写死的 2.0）。</summary>
+        public double MapMaxTileScale(double width, double depth) => MapBoard.MaxScaleFor(width, depth);
+
+        /// <summary>
+        /// 地图扩容时一个格子怎么走：位置按 X/Z 比例缩放 + 宽深按倍率缩放。
+        /// 失败（新尺寸放不下）返回 ok=false + error，调用方必须原地不动。
+        /// </summary>
+        public Godot.Collections.Dictionary MapResizeTile(double x, double z, double width, double depth,
+            double oldSizeX, double oldSizeZ, double newSizeX, double newSizeZ, double tileScale)
+        {
+            bool ok = MapBoard.TryResizeTile(x, z, width, depth, oldSizeX, oldSizeZ,
+                newSizeX, newSizeZ, tileScale, out double nx, out double nz, out double nw,
+                out double nd, out string error);
+            return new Godot.Collections.Dictionary
+            {
+                { "ok", ok },
+                { "error", error },
+                { "x", nx },
+                { "z", nz },
+                { "w", nw },
+                { "d", nd },
+            };
+        }
+
+        /// <summary>点是否还在画布冗余范围内（编辑器相机/装饰边界用）。</summary>
+        public bool MapInsideCanvas(double x, double z, double sizeX, double sizeZ, double margin)
+        {
+            return MapBoard.InsideCanvas(x, z, sizeX, sizeZ, margin);
+        }
+
         private static Godot.Collections.Array PointsToGodot(IEnumerable<Vec2> points)
         {
             var arr = new Godot.Collections.Array();

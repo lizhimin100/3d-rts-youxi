@@ -1,0 +1,12 @@
+[gd_resource type="StandardMaterial3D" load_steps=2 format=3]
+
+[ext_resource type="Texture2D" path="res://Content/art/贴图/地形/草地.png" id="1_grass"]
+
+[resource]
+resource_name = "BoardTileB"
+albedo_color = Color(0.50, 0.59, 0.34, 1)
+albedo_texture = ExtResource("1_grass")
+uv1_scale = Vector3(0.28, 0.28, 0.28)
+roughness = 0.94
+metallic = 0.0
+specular_mode = 2

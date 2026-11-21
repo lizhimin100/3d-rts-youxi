@@ -1,0 +1,15 @@
+[gd_resource type="StandardMaterial3D" load_steps=2 format=3]
+
+[ext_resource type="Texture2D" path="res://Content/art/贴图/地形/泥土.png" id="1_dirt"]
+
+[resource]
+resource_name = "DioramaBlockSide"
+albedo_color = Color(0.92, 0.88, 0.82, 1)
+albedo_texture = ExtResource("1_dirt")
+vertex_color_use_as_albedo = true
+uv1_scale = Vector3(0.34, 0.34, 0.34)
+uv1_triplanar = true
+uv1_triplanar_sharpness = 3.0
+roughness = 0.97
+metallic = 0.0
+specular_mode = 2

@@ -453,10 +453,9 @@ shell.terrain.surface,涂抹地表,Paint surface,笔刷
 shell.terrain.radius,笔刷半径,Brush radius,地形字段
 shell.terrain.strength,强度,Strength,地形字段
 shell.terrain.layer,地表材质,Surface layer,地形字段
-shell.terrain.water,水面高度,Water level,地形字段
 shell.terrain.ambient,环境光,Ambient light,地形字段
 shell.terrain.fog,雾密度,Fog density,地形字段
-shell.terrain.hint,左键按住连续刷；地形与地表都直接写回 map_shells.json。水面是全局平面，环境光作用于整张底壳。,Hold the left button to keep brushing; terrain and surface write straight back to map_shells.json.,地形面板提示
+shell.terrain.hint,左键按住连续刷；地形与地表都直接写回 map_shells.json。底壳是带厚度的立体地块，没有水面层。,Hold the left button to keep brushing; terrain and surface write straight back to map_shells.json. The shell is a solid block with thickness — no water layer.,地形面板提示
 shell.decor.title,3D 装饰品,3D doodads,装饰面板
 shell.decor.eyebrow,02 · DOODADS,02 · DOODADS,装饰面板眉
 shell.decor.kind,装饰类型,Doodad kind,装饰字段
@@ -485,7 +484,7 @@ shell.status.counts,{t} 个格子 · {d} 个装饰 · {r}/3 个区域 · 通道 
 shell.status.gap,最小行军间隙 {v} m,Min march gap {v} m,状态栏
 shell.dock.title,地图底壳,Map shell,Dock 标题
 shell.dock.save,保存底壳,Save shell,Dock 按钮
-shell.dock.hint,4 个工具：地形/地表、装饰品、脊线、战术格子。只写 map_shells.json。,Four tools: terrain; doodads; spine; tactical tiles. Writes map_shells.json only.,Dock 提示
+shell.dock.hint,三分组：地块与格子 / 多边形三区 / 地图尺寸。只写 map_shells.json。,Three groups: board and tiles / zone polygons / map size. Writes map_shells.json only.,Dock 提示
 shell.none,没有底壳,No shell,底壳选择空态
 shell.undo,撤销,Undo,顶栏
 shell.region.player,定义玩家区,Define player zone,区域绘制
@@ -518,7 +517,6 @@ shell.tile.role_build,建造位,Build,格子角色
 shell.decor.grass,草丛,Grass,装饰类型
 shell.decor.rubble,碎石,Rubble,装饰类型
 shell.decor.goldmine,金矿,Gold mine,装饰类型
-shell.decor.water,水面,Water,装饰类型
 shell.decor.barrel,木桶,Barrel,装饰类型
 shell.decor.tent,帐篷,Tent,装饰类型
 shell.decor.wall,断墙,Broken wall,装饰类型
@@ -558,3 +556,19 @@ squad.result.timeout,时间到 · 本轮结束,Time up · round over,小队战�
 squad.train_only_planning,执行阶段不能训练,Training is planning-only,小队战场提示
 squad.no_handle,小队会话创建失败,Squad session failed,小队战场错误
 squad.order_none,先框选一支小队,Select a squad first,小队战场提示
+shell.region.group,多边形三区,Zone polygons,Dock 分组
+shell.region.group_hint,左键放顶点；点第一个顶点或回车闭合；右键 / Esc 取消；不足 3 个顶点会被 Model 拒绝。,LMB adds vertices; click the first vertex or press Enter to close; RMB / Esc cancels; fewer than 3 vertices is rejected by Model.,Dock 提示
+shell.map.group,地图尺寸与底板,Map size and board,Dock 分组
+shell.map.w,长,Length,地图尺寸
+shell.map.d,宽,Width,地图尺寸
+shell.map.scale_tiles,同步缩放格子,Scale tiles too,地图尺寸
+shell.map.apply,应用尺寸,Apply size,地图尺寸
+shell.map.grow,新增地块 +25%,Add a block +25%,地图尺寸
+shell.map.frame,看全画布,Frame canvas,地图尺寸
+shell.map.depth,地块厚度,Block depth,底板
+shell.map.bevel,边缘倒角,Edge bevel,底板
+shell.map.margin,四周冗余,Canvas margin,底板
+shell.map.tile_scale,格子倍率,Tile scale,底板
+shell.map.canvas,画布 {w} × {d} m（含四周冗余）,Canvas {w} × {d} m (with margin),底板
+shell.tile.snap_grid,对齐网格,Snap to grid,格子面板
+shell.state.invalid,参数无效：{msg},Invalid: {msg},状态

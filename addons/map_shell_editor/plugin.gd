@@ -23,6 +23,7 @@ const TOOLS := ["terrain", "decor", "spine", "tile"]
 var _root: Control = null
 var _ms: Control = null
 var _dock: VBoxContainer = null
+var _dock_panel: Control = null
 var _plugin_name := ""
 
 
@@ -63,8 +64,11 @@ func _enter_tree() -> void:
 
 
 func _exit_tree() -> void:
+	if _dock_panel != null:
+		remove_control_from_docks(_dock_panel)
+		_dock_panel.queue_free()
+		_dock_panel = null
 	if _dock != null:
-		remove_control_from_docks(_dock)
 		_dock.queue_free()
 		_dock = null
 	if _root != null and _root.get_parent() != null:
@@ -119,36 +123,20 @@ func _read_name() -> String:
 	return "Map Shell Editor"
 
 
+## 底部专用 Dock：**原生停靠面板**，不悬浮、不压场景树/属性栏。
+## 内容由主屏脚本 build_control_dock 生成（三分组：地块与格子 / 多边形三区 / 地图尺寸），
+## 这里只负责把它挂进 Dock —— 插件不做第二份 UI。
 func _build_dock() -> void:
 	_dock = VBoxContainer.new()
 	_dock.name = "MapShellTools"
 	_dock.add_theme_constant_override("separation", 4)
-	var title := Label.new()
-	title.text = ShellText.t("shell.dock.title")
-	title.add_theme_font_override("font", ThemeKit.bold_font())
-	title.add_theme_font_size_override("font_size", 12)
-	title.add_theme_color_override("font_color", ShellTheme.LEGACY_GOLD_HI)
-	_dock.add_child(title)
-	for id in TOOLS:
-		var b := Button.new()
-		b.text = ShellText.t("shell.tool." + id)
-		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		b.add_theme_font_size_override("font_size", 12)
-		b.pressed.connect(_dock_tool.bind(id))
-		_dock.add_child(b)
-	var save := Button.new()
-	save.text = ShellText.t("shell.dock.save")
-	save.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	save.add_theme_font_size_override("font_size", 12)
-	save.pressed.connect(_dock_save)
-	_dock.add_child(save)
-	var hint := Label.new()
-	hint.text = ShellText.t("shell.dock.hint")
-	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	hint.add_theme_font_size_override("font_size", 11)
-	hint.add_theme_color_override("font_color", ShellTheme.TEXT_DIM)
-	_dock.add_child(hint)
-	add_control_to_dock(DOCK_SLOT_RIGHT_UL, _dock)
+	_dock_panel = PanelContainer.new()
+	_dock_panel.name = "MapShellDock"
+	_dock_panel.custom_minimum_size = Vector2(0.0, 300.0)
+	_dock_panel.add_child(_dock)
+	add_control_to_dock(DOCK_SLOT_BOTTOM, _dock_panel)
+	if _root != null and _root.has_method("attach_control_dock"):
+		_root.call("attach_control_dock", _dock)
 
 
 func _dock_tool(id: String) -> void:
@@ -186,6 +174,16 @@ func _find(n: Node, target: String) -> Node:
 	return null
 
 
+## 控件既可能在主屏（视口/顶栏），也可能在底部 Dock（三分组操作面板）。
+func _find_any(target: String) -> Node:
+	var hit := _find(_root, target) if _root != null else null
+	if hit != null:
+		return hit
+	if _dock != null:
+		return _find(_dock, target)
+	return null
+
+
 func _selftest() -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame
@@ -194,15 +192,28 @@ func _selftest() -> void:
 		problems.append("root")
 	for n in ["shell_tool_terrain", "shell_tool_decor", "shell_tool_spine", "shell_tool_tile",
 			"shell_viewport", "shell_picker", "shell_layout_preview",
-			"shell_region_player", "shell_region_neutral", "shell_region_enemy", "shell_undo"]:
-		if _root == null or _find(_root, n) == null:
+			"shell_region_player", "shell_region_neutral", "shell_region_enemy", "shell_undo",
+			"shell_map_w", "shell_map_d", "shell_map_apply", "shell_map_grow",
+			"shell_tile_snap_toggle", "shell_tile_snap_step"]:
+		if _find_any(n) == null:
 			problems.append(n)
+	# 面板必须是**可见且没被裁掉**的（1080p 下三组都完整可见）
+	if _dock == null or not _dock.is_visible_in_tree():
+		problems.append("dock-hidden")
+	else:
+		var dock_rect := _dock.get_global_rect()
+		for n in ["shell_tool_scroll", "shell_region_player", "shell_map_apply"]:
+			var c := _find_any(n) as Control
+			if c == null or not c.is_visible_in_tree() or c.size.x < 8.0 or c.size.y < 8.0:
+				problems.append("dock-size:" + n)
+			elif not dock_rect.encloses(c.get_global_rect()):
+				problems.append("dock-clip:" + n)
 	# 四个工具面板各自的关键控件（切一次工具就重建一次检查器）
 	var probes := {
 		"terrain": ["shell_brush_raise", "shell_layer_0", "shell_brush_surface"],
 		"decor": ["shell_decor_tree", "shell_decor_fence"],
 		"spine": ["shell_spine_width"],
-		"tile": ["shell_add_tile", "shell_tile_1", "shell_role_keep"],
+		"tile": ["shell_add_tile", "shell_tile_1", "shell_role_keep", "shell_tile_snap_toggle"],
 	}
 	for tool_id in probes.keys():
 		if _root == null:
@@ -210,8 +221,11 @@ func _selftest() -> void:
 		_root.call("_show_tool", String(tool_id))
 		await get_tree().process_frame
 		for n in (probes[tool_id] as Array):
-			if _find(_root, String(n)) == null:
+			if _find_any(String(n)) == null:
 				problems.append(String(tool_id) + ":" + String(n))
+	# ── 水体：底壳里不许再有水面节点（水层字段等 view 取到以后再查）──
+	if _find(_root, "Water") != null:
+		problems.append("water-node")
 	# ── 镜头口径 + 地形材质：直接喂事件给真实的 handle_input，不是看源码猜 ──
 	var view = null
 	if _root != null:
@@ -224,18 +238,44 @@ func _selftest() -> void:
 			problems.append("cam-pitch")
 		if not is_equal_approx(float(view.get("cam_dist")), 90.0):
 			problems.append("cam-dist")
-		# 地形必须挂游戏里那一份 地形.gdshader（不是自绘顶点色）
-		var mesh = view.get("terrain_mesh")
-		var mat = mesh.material_override if mesh != null else null
-		if not (mat is ShaderMaterial):
-			problems.append("terrain-material")
-		elif (mat as ShaderMaterial).shader == null \
-				or (mat as ShaderMaterial).get_shader_parameter("mat_map") == null \
-				or (mat as ShaderMaterial).get_shader_parameter("tile_m") == null:
-			# mat_map / tile_m 是 地形.gdshader 独有的 uniform：有它们就是游戏那份材质
-			problems.append("terrain-shader")
-		elif (mat as ShaderMaterial).get_shader_parameter("atlas_rgba") == null:
-			problems.append("terrain-atlas")
+		var shell_now: Dictionary = view.get("shell")
+		if (shell_now.get("terrain", {}) as Dictionary).has("water_level"):
+			problems.append("water-level-field")
+		# 立体地块：顶面 + 侧壁 + 底面 = 3 个 surface；侧面材质必须存在
+		var mesh_i = view.get("terrain_mesh")
+		var tmesh: ArrayMesh = mesh_i.mesh if mesh_i != null else null
+		if tmesh == null or tmesh.get_surface_count() < 3:
+			problems.append("block-surfaces=%d" % (0 if tmesh == null else tmesh.get_surface_count()))
+		else:
+			var top_mat: Material = tmesh.surface_get_material(0)
+			var side_mat: Material = tmesh.surface_get_material(1)
+			if not (top_mat is ShaderMaterial):
+				problems.append("terrain-material")
+			elif (top_mat as ShaderMaterial).shader == null \
+					or (top_mat as ShaderMaterial).get_shader_parameter("mat_map") == null \
+					or (top_mat as ShaderMaterial).get_shader_parameter("tile_m") == null:
+				# mat_map / tile_m 是 地形.gdshader 独有的 uniform：有它们就是游戏那份材质
+				problems.append("terrain-shader")
+			elif (top_mat as ShaderMaterial).get_shader_parameter("atlas_rgba") == null:
+				problems.append("terrain-atlas")
+			if side_mat == null:
+				problems.append("block-side-material")
+			elif String(side_mat.resource_path).is_empty():
+				problems.append("block-side-not-tres")
+		# 棋盘：A/B 两份独立 .tres，相邻格子必须取到不同的一份
+		var plate_paths := {}
+		for c in (view.get("tiles_root") as Node).get_children():
+			var pm := _find(c, "Plate") as MeshInstance3D
+			if pm != null and pm.material_override != null:
+				plate_paths[String(pm.material_override.resource_path)] = true
+		if not plate_paths.has("res://Content/art/材质/棋盘格子A.tres") \
+				or not plate_paths.has("res://Content/art/材质/棋盘格子B.tres"):
+			problems.append("checker-materials=%s" % str(plate_paths.keys()))
+		# 画布冗余：必须严格大于地图（至少 40%）
+		var canvas: Vector2 = ShellStore.canvas_size_of(shell_now)
+		var map_size := ShellStore.size_of(shell_now)
+		if canvas.x < map_size.x * 1.79 or canvas.y < map_size.y * 1.79:
+			problems.append("canvas-margin=%.2fx%.2f" % [canvas.x / map_size.x, canvas.y / map_size.y])
 		# 右键拖动 = 平移（方向与旧编辑器一致）
 		var t0: Vector3 = view.get("cam_target")
 		var rmb := InputEventMouseButton.new()
@@ -371,6 +411,72 @@ func _selftest() -> void:
 		if (errs as Array).is_empty():
 			problems.append("region-need3")
 		view.call("cancel_region")
+
+		# ── 真点底部 Dock 的「新增格子」：必须真的 +1（不是只看按钮存在）──
+		var add_btn := _find_any("shell_add_tile") as Control
+		if add_btn == null or not add_btn.is_visible_in_tree():
+			problems.append("add-tile-button")
+		else:
+			var n0: int = (view.get("shell").get("tiles", []) as Array).size()
+			var center := add_btn.get_global_rect().get_center()
+			var mv := InputEventMouseMotion.new()
+			mv.position = center
+			mv.global_position = center
+			get_viewport().push_input(mv, true)
+			var dn := InputEventMouseButton.new()
+			dn.button_index = MOUSE_BUTTON_LEFT
+			dn.pressed = true
+			dn.position = center
+			dn.global_position = center
+			get_viewport().push_input(dn, true)
+			await get_tree().process_frame
+			var up2: InputEventMouseButton = dn.duplicate()
+			up2.pressed = false
+			get_viewport().push_input(up2, true)
+			await get_tree().process_frame
+			await get_tree().process_frame
+			var n1: int = (view.get("shell").get("tiles", []) as Array).size()
+			if n1 != n0 + 1:
+				problems.append("add-tile-click %d/%d" % [n0, n1])
+			view.call("undo")
+			var n2: int = (view.get("shell").get("tiles", []) as Array).size()
+			if n2 != n0:
+				problems.append("add-tile-undo %d/%d" % [n0, n2])
+
+		# ── 地图扩容：尺寸 / 高度场 / 格子都按规则联动，撤销后原样回来 ──
+		var before_size := ShellStore.size_of(view.get("shell"))
+		var before_rows := int(ShellStore.grid_of(view.get("shell"))["rows"])
+		var grow_errs: Array = view.call("resize_map", before_size.x + 30.0, before_size.y + 15.0, true)
+		if not (grow_errs as Array).is_empty():
+			problems.append("resize-map:" + str(grow_errs))
+		else:
+			var after_size := ShellStore.size_of(view.get("shell"))
+			var after_rows := int(ShellStore.grid_of(view.get("shell"))["rows"])
+			var hs: PackedFloat32Array = view.get("heights")
+			if not is_equal_approx(after_size.x, before_size.x + 30.0) or after_rows <= before_rows:
+				problems.append("resize-map-size")
+			elif hs.size() != int(ShellStore.grid_of(view.get("shell"))["cols"]) * after_rows:
+				problems.append("resize-map-heights=%d" % hs.size())
+			view.call("undo")
+			var back := ShellStore.size_of(view.get("shell"))
+			if not is_equal_approx(back.x, before_size.x):
+				problems.append("resize-map-undo")
+
+		# ── 反向验错：冗余 < 40% 必须被 Model 拒绝 ──
+		var bad_board: Array = view.call("set_board_value", "margin", 0.2)
+		if (bad_board as Array).is_empty():
+			problems.append("margin-guard")
+		var good_board: Array = view.call("set_board_value", "margin", 0.45)
+		if not (good_board as Array).is_empty():
+			problems.append("margin-ok:" + str(good_board))
+
+		# ── 对齐网格开关：关 → board.snap = 0；开 → 回到步长 ──
+		view.call("set_snap_enabled", false)
+		if float(ShellStore.board_of(view.get("shell"))["snap"]) > 0.0:
+			problems.append("snap-off")
+		view.call("set_snap_enabled", true, 1.0)
+		if float(ShellStore.board_of(view.get("shell"))["snap"]) <= 0.0:
+			problems.append("snap-on")
 	print("[MapShell] selftest=", "PASS" if problems.is_empty() else "FAIL " + str(problems))
 	get_tree().quit(0 if problems.is_empty() else 1)
 

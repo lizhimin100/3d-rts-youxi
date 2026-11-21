@@ -14,11 +14,20 @@ extends RefCounted
 
 const R1 := 0.015
 const CELL := 1.5
-const WATER_DEFAULT := 0.2
 const TILE_SIZE_DEFAULT := 6.0
 const TILE_SIZE_KEEP := 10.0
 const MIN_GAP_M := 1.0
 const T_DENOM := 1000.0
+
+## 底板（立体厚度地块 + 画布冗余 + 格子统一倍率）的默认值。
+## **规则不在这里**：取值范围与算式在 Model/Map/MapBoard.cs，这里只做 JSON ↔ Variant 转换。
+const BOARD_FALLBACK := {
+	"depth": 6.0,
+	"bevel": 0.35,
+	"margin": 0.45,
+	"tile_scale": 1.0,
+	"snap": 1.0,
+}
 
 ## 三个势力区域（顺序 = 顶栏按钮顺序）。字符串契约与 Model/Map/RegionPolygon.cs 一致。
 const REGION_IDS := ["player", "neutral", "enemy"]
@@ -34,7 +43,7 @@ const REGION_COLORS := {
 }
 const TILE_SIDES := ["player", "enemy", "neutral"]
 const TILE_ROLES := ["keep", "build"]
-const DECOR_KINDS := ["tree", "rock", "grass", "rubble", "goldmine", "water",
+const DECOR_KINDS := ["tree", "rock", "grass", "rubble", "goldmine",
 	"fence", "flag", "stump", "crate", "barrel", "tent", "wall", "signpost", "bones"]
 
 ## 装饰注册表（真实资产路径只写在 JSON 里，源码保持 ASCII）。
@@ -221,6 +230,242 @@ static func palette_color(shell: Dictionary, index: int) -> Color:
 	var arr := palette(shell)
 	var row: Dictionary = arr[clampi(index, 0, arr.size() - 1)]
 	return Color(String(row.get("color", "#5D6B3F")))
+
+
+# ===========================================================================
+# 底板：立体厚度 / 画布冗余 / 格子统一倍率
+# ===========================================================================
+## 底板参数（缺字段补默认；**不写回**，写回走 ensure_board）。
+static func board_of(shell: Dictionary) -> Dictionary:
+	var b: Variant = shell.get("board", {})
+	var d: Dictionary = b if b is Dictionary else {}
+	return {
+		"depth": float(d.get("depth", BOARD_FALLBACK["depth"])),
+		"bevel": float(d.get("bevel", BOARD_FALLBACK["bevel"])),
+		"margin": float(d.get("margin", BOARD_FALLBACK["margin"])),
+		"tile_scale": float(d.get("tile_scale", BOARD_FALLBACK["tile_scale"])),
+		"snap": float(d.get("snap", BOARD_FALLBACK["snap"])),
+	}
+
+
+## 老图迁移：没有 board 就补一份默认，返回 true = 改动过（调用方要置脏）。
+static func ensure_board(shell: Dictionary) -> bool:
+	var b: Variant = shell.get("board", null)
+	if b is Dictionary and (b as Dictionary).size() >= 5:
+		return false
+	var out: Dictionary = {}
+	for k in BOARD_FALLBACK.keys():
+		out[k] = (b as Dictionary).get(k, BOARD_FALLBACK[k]) if b is Dictionary else BOARD_FALLBACK[k]
+	shell["board"] = out
+	return true
+
+
+static func set_board_value(shell: Dictionary, key: String, value: float) -> void:
+	var d := board_of(shell)
+	if not d.has(key):
+		return
+	d[key] = value
+	shell["board"] = d
+
+
+## 画布尺寸（地图 + 四周冗余）。唯一算式在 Model/Map/MapBoard.cs；桥不可用时按同一公式兜底。
+static func canvas_size_of(shell: Dictionary) -> Vector2:
+	var sz := size_of(shell)
+	var margin := float(board_of(shell)["margin"])
+	var b := bridge()
+	if b != null:
+		var arr: Array = b.call("MapCanvasSize", sz.x, sz.y, margin) as Array
+		if arr.size() >= 2:
+			return Vector2(float(arr[0]), float(arr[1]))
+	return Vector2(sz.x * (1.0 + 2.0 * margin), sz.y * (1.0 + 2.0 * margin))
+
+
+## 底板参数校验（Model 的唯一实现）。
+static func board_validate(shell: Dictionary) -> Array:
+	var sz := size_of(shell)
+	var d := board_of(shell)
+	var b := bridge()
+	if b == null:
+		return ["model bridge unavailable"]
+	return b.call("MapBoardValidate", sz.x, sz.y, float(d["depth"]), float(d["bevel"]),
+		float(d["margin"]), float(d["tile_scale"])) as Array
+
+
+## 某个格子的"原始尺寸"：拖动/缩放都从它算，倍率才是幂等的。
+static func tile_base(tile: Dictionary) -> Vector2:
+	var w := float(tile.get("base_w", tile.get("w", TILE_SIZE_DEFAULT)))
+	var d := float(tile.get("base_d", tile.get("d", TILE_SIZE_DEFAULT)))
+	return Vector2(w, d)
+
+
+## 让**所有**格子按 tile_scale 缩放（幂等：从 base_w/base_d 算，不叠乘）。
+## 放不下的极端倍率由 Model 的 MaxScaleFor 收回来，绝不产生非法格子。
+static func apply_tile_scale(shell: Dictionary, scale: float) -> void:
+	var b := bridge()
+	var board := board_of(shell)
+	board["tile_scale"] = scale
+	shell["board"] = board
+	for t in tiles(shell):
+		var td: Dictionary = t
+		var base := tile_base(td)
+		if not td.has("base_w"):
+			td["base_w"] = base.x
+			td["base_d"] = base.y
+		var use := scale
+		if b != null:
+			var cap := float(b.call("MapMaxTileScale", base.x, base.y))
+			if cap > 0.0:
+				use = minf(use, cap)
+		td["w"] = clampf(snappedf(base.x * use, 0.05), 2.0, 24.0)
+		td["d"] = clampf(snappedf(base.y * use, 0.05), 2.0, 24.0)
+	shell["board"] = board
+
+
+## 地图扩容 / 改形：高度场与地表重采样，区域 / 脊线 / 装饰 / 格子按比例联动。
+## 返回 [] = 成功；非空 = 拒绝（**整份底壳原样不动**，不做半成品）。
+static func apply_map_size(shell: Dictionary, new_size: Vector2, scale_tiles: bool) -> Array:
+	var old := size_of(shell)
+	if new_size.x < 40.0 or new_size.y < 40.0 or new_size.x > 400.0 or new_size.y > 400.0:
+		return ["size %.0fx%.0f outside 40..400" % [new_size.x, new_size.y]]
+	if is_equal_approx(old.x, new_size.x) and is_equal_approx(old.y, new_size.y):
+		return []
+	var ratio := Vector2(new_size.x / maxf(old.x, 0.001), new_size.y / maxf(old.y, 0.001))
+
+	# ---- 1. 高度场 / 地表：按归一化坐标重采样（形状不变，密度随尺寸走）----
+	var old_heights := heights_or_procedural(shell)
+	var old_surface := surface_index(shell)
+	var old_grid := grid_of(shell)
+	var old_cols := int(old_grid["cols"])
+	var old_rows := int(old_grid["rows"])
+
+	var resized: Dictionary = shell.duplicate(true)
+	resized["size"] = {"x": snappedf(new_size.x, 0.01), "z": snappedf(new_size.y, 0.01)}
+	var new_grid := grid_of(resized)
+	var cols := int(new_grid["cols"])
+	var rows := int(new_grid["rows"])
+	var out_h := PackedFloat32Array()
+	out_h.resize(cols * rows)
+	var out_s: Array = []
+	out_s.resize(cols * rows)
+	for row in rows:
+		for col in cols:
+			var w := world_of_cell(resized, col, row)
+			var u := (w.x + new_size.x * 0.5) / maxf(new_size.x, 0.001)
+			var v := (w.y + new_size.y * 0.5) / maxf(new_size.y, 0.001)
+			var ox := -old.x * 0.5 + u * old.x
+			var oz := -old.y * 0.5 + v * old.y
+			var i := row * cols + col
+			out_h[i] = _height_of_arrays(old_grid, old_heights, ox, oz)
+			out_s[i] = _surface_of_arrays(old_grid, old_surface, ox, oz)
+	var terrain: Dictionary = resized.get("terrain", {})
+	terrain["heights"] = _floats_to_array(out_h)
+	resized["terrain"] = terrain
+	var surf: Dictionary = resized.get("surface", {})
+	surf["index"] = out_s
+	resized["surface"] = surf
+
+	# ---- 2. 区域 / 脊线：顶点按同一比例缩放（相对关系不丢）----
+	var regions: Dictionary = resized.get("regions", {})
+	for kind in REGION_IDS:
+		var pts := region_points(resized, kind)
+		var moved := PackedVector2Array()
+		for p in pts:
+			moved.append(Vector2(p.x * ratio.x, p.y * ratio.y))
+		set_region_points(resized, kind, moved)
+	resized["regions"] = regions
+	var spine: Dictionary = resized.get("spine", {})
+	var spts: Array = spine.get("points", [])
+	for p in spts:
+		var row: Dictionary = p
+		row["x"] = snappedf(float(row.get("x", 0.0)) * ratio.x, 0.01)
+		row["z"] = snappedf(float(row.get("z", 0.0)) * ratio.y, 0.01)
+	spine["points"] = spts
+	spine["width_m"] = snappedf(float(spine.get("width_logic", 420.0)) * R1, 0.001)
+	resized["spine"] = spine
+
+	# ---- 3. 装饰：位置跟着走（y 由视口按新地形重贴）----
+	var decor_list: Array = resized.get("decorations", [])
+	for dec in decor_list:
+		var dd: Dictionary = dec
+		dd["x"] = snappedf(float(dd.get("x", 0.0)) * ratio.x, 0.01)
+		dd["z"] = snappedf(float(dd.get("z", 0.0)) * ratio.y, 0.01)
+	resized["decorations"] = decor_list
+
+	# ---- 4. 格子：位置按比例 + 宽深按"同步缩放"开关 ----
+	var scale := float(board_of(resized)["tile_scale"]) if scale_tiles else 1.0
+	var b := bridge()
+	var tile_list: Array = resized.get("tiles", [])
+	for t in tile_list:
+		var td: Dictionary = t
+		var base := tile_base(td)
+		if not td.has("base_w"):
+			td["base_w"] = base.x
+			td["base_d"] = base.y
+		var nx := snappedf(float(td.get("x", 0.0)) * ratio.x, 0.05)
+		var nz := snappedf(float(td.get("z", 0.0)) * ratio.y, 0.05)
+		var nw := base.x
+		var nd := base.y
+		if scale_tiles:
+			var use := scale
+			if b != null:
+				var cap := float(b.call("MapMaxTileScale", base.x, base.y))
+				if cap > 0.0:
+					use = minf(use, cap)
+			nw = clampf(snappedf(base.x * use, 0.05), 2.0, 24.0)
+			nd = clampf(snappedf(base.y * use, 0.05), 2.0, 24.0)
+		td["x"] = nx
+		td["z"] = nz
+		td["w"] = nw
+		td["d"] = nd
+		td["side"] = side_of(nx)
+	resized["tiles"] = tile_list
+	if scale_tiles:
+		var board := board_of(resized)
+		board["tile_scale"] = scale
+		resized["board"] = board
+
+	# ---- 5. 一次性替换（保持 shell 引用不变，dev_data 里那份才认得）----
+	shell.clear()
+	for k in resized.keys():
+		shell[k] = resized[k]
+	return []
+
+
+static func _height_of_arrays(g: Dictionary, heights: PackedFloat32Array, x: float, z: float) -> float:
+	var cols := int(g["cols"])
+	var rows := int(g["rows"])
+	var cell := float(g["cell"])
+	if heights.size() != cols * rows:
+		return 0.0
+	var fx := clampf((x - float(g["origin_x"])) / cell, 0.0, float(cols - 1))
+	var fz := clampf((z - float(g["origin_z"])) / cell, 0.0, float(rows - 1))
+	var c0 := int(floor(fx))
+	var r0 := int(floor(fz))
+	var c1 := mini(c0 + 1, cols - 1)
+	var r1 := mini(r0 + 1, rows - 1)
+	var tx := fx - float(c0)
+	var tz := fz - float(r0)
+	var a := lerpf(heights[r0 * cols + c0], heights[r0 * cols + c1], tx)
+	var b := lerpf(heights[r1 * cols + c0], heights[r1 * cols + c1], tx)
+	return lerpf(a, b, tz)
+
+
+static func _surface_of_arrays(g: Dictionary, surface: Array, x: float, z: float) -> int:
+	var cols := int(g["cols"])
+	var rows := int(g["rows"])
+	var cell := float(g["cell"])
+	var col := clampi(int(round((x - float(g["origin_x"])) / cell)), 0, cols - 1)
+	var row := clampi(int(round((z - float(g["origin_z"])) / cell)), 0, rows - 1)
+	var i := row * cols + col
+	return int(surface[i]) if i >= 0 and i < surface.size() else 0
+
+
+static func _floats_to_array(values: PackedFloat32Array) -> Array:
+	var out: Array = []
+	out.resize(values.size())
+	for i in values.size():
+		out[i] = snappedf(values[i], 0.001)
+	return out
 
 
 # ===========================================================================
@@ -556,9 +801,9 @@ static func validate_shell(shell: Dictionary) -> Array:
 		if int(surf[i]) < 0 or int(surf[i]) >= 4:
 			bad.append(id + " surface[%d]=%d out of range" % [i, int(surf[i])])
 			break
-	var water := float((shell.get("terrain", {}) as Dictionary).get("water_level", WATER_DEFAULT))
-	if water < -5.0 or water > 10.0:
-		bad.append(id + " water_level out of range")
+	# 底板：厚度 / 倒角 / 四周冗余 / 格子倍率（唯一实现 Model/Map/MapBoard.cs）
+	for msg in board_validate(shell):
+		bad.append(id + " " + String(msg))
 	var amb: Dictionary = (shell.get("terrain", {}) as Dictionary).get("ambient", {})
 	for k in ["energy", "tint", "fog_density"]:
 		if not amb.has(k):

@@ -53,7 +53,6 @@ var _region_buttons: Dictionary = {}
 
 var _radius_slider: HSlider = null
 var _strength_slider: HSlider = null
-var _water_slider: HSlider = null
 var _ambient_slider: HSlider = null
 var _fog_slider: HSlider = null
 var _brush_buttons: Dictionary = {}
@@ -68,6 +67,18 @@ var _tile_info: Label = null
 var _role_buttons: Dictionary = {}
 var _tile_w_slider: HSlider = null
 var _tile_d_slider: HSlider = null
+## 底部 Dock（三分组操作面板）
+var _dock_root: VBoxContainer = null
+var _map_w_edit: LineEdit = null
+var _map_d_edit: LineEdit = null
+var _scale_check: CheckBox = null
+var _snap_check: CheckBox = null
+var _snap_opt: OptionButton = null
+var _depth_slider: HSlider = null
+var _bevel_slider: HSlider = null
+var _margin_slider: HSlider = null
+var _tile_scale_slider: HSlider = null
+var _canvas_label: Label = null
 
 
 func _ready() -> void:
@@ -105,20 +116,207 @@ func _build_ui() -> void:
 	add_child(root)
 	root.add_child(_build_topbar())
 
-	var body := HBoxContainer.new()
+	# 主屏只留 3D 视口：操作面板全部搬到 Godot 原生底部 Dock（见 _build_control_dock），
+	# 这样再窄的主屏也不会把按钮挤出屏幕，更不会压到场景树/属性栏上。
+	var body := VBoxContainer.new()
+	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	body.add_theme_constant_override("separation", 0)
 	root.add_child(body)
-	body.add_child(_build_rail())
 	body.add_child(_build_viewport())
-	body.add_child(_build_inspector())
 	root.add_child(_build_status())
+
+	# Dock 内容先挂在编辑器根下（隐藏）：插件 _enter_tree 时主屏还没就绪，
+	# 等插件调 attach_control_dock() 再 reparent 到真正的底部 Dock。
+	_dock_root = _build_control_dock()
+	_dock_root.visible = false
+	add_child(_dock_root)
 
 	_save_timer = Timer.new()
 	_save_timer.one_shot = true
 	_save_timer.wait_time = 1.2
 	_save_timer.timeout.connect(_save)
 	add_child(_save_timer)
+
+
+## 插件入口：把三分组面板挂到 Godot 的底部 Dock（原生停靠，零遮挡）。
+func attach_control_dock(parent: Control) -> void:
+	if _dock_root == null or parent == null:
+		return
+	if _dock_root.get_parent() != null:
+		_dock_root.get_parent().remove_child(_dock_root)
+	parent.add_child(_dock_root)
+	_dock_root.visible = true
+	_dock_root.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_dock_root.size_flags_vertical = Control.SIZE_EXPAND_FILL
+
+
+func dock_root() -> Control:
+	return _dock_root
+
+
+# ===========================================================================
+# 三分组操作面板（地块与格子 / 多边形三区 / 地图尺寸）
+# ===========================================================================
+func _build_control_dock() -> VBoxContainer:
+	var wrap := VBoxContainer.new()
+	wrap.name = "shell_dock"
+	wrap.add_theme_constant_override("separation", 6)
+	wrap.custom_minimum_size = Vector2(760.0, 296.0)
+
+	# --- 标题行：工具页签 + 撤销 ---
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 8)
+	wrap.add_child(head)
+	var title := ThemeKit.label(T("shell.dock.title"), &"EditorH2", ShellTheme.LEGACY_GOLD_HI)
+	title.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	head.add_child(title)
+	var group := ButtonGroup.new()
+	for d in [["terrain", "shell.tool.terrain"], ["decor", "shell.tool.decor"],
+			["spine", "shell.tool.spine"], ["tile", "shell.tool.tile"]]:
+		var id := String(d[0])
+		var b := Button.new()
+		b.name = "shell_tool_" + id
+		b.text = T(String(d[1]))
+		b.toggle_mode = true
+		b.button_group = group
+		b.focus_mode = Control.FOCUS_NONE
+		b.custom_minimum_size = Vector2(96.0, 30.0)
+		b.add_theme_font_size_override("font_size", 12)
+		b.add_theme_color_override("font_color", ShellTheme.TEXT_SUB)
+		b.add_theme_color_override("font_pressed_color", ShellTheme.LEGACY_GOLD_HI)
+		b.add_theme_stylebox_override("normal", ThemeKit.box(ShellTheme.PANEL, ShellTheme.STROKE, 7, 1, 6.0, 4.0))
+		b.add_theme_stylebox_override("hover", ThemeKit.box(ShellTheme.PANEL_HI, ShellTheme.STROKE, 7, 1, 6.0, 4.0))
+		b.add_theme_stylebox_override("pressed", ThemeKit.box(Color(ShellTheme.LEGACY_GOLD.r, ShellTheme.LEGACY_GOLD.g, ShellTheme.LEGACY_GOLD.b, 0.18), ShellTheme.LEGACY_GOLD, 7, 1, 6.0, 4.0))
+		b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+		b.pressed.connect(_show_tool.bind(id))
+		head.add_child(b)
+		_tool_buttons[id] = b
+	_undo_btn = ThemeKit.small_button(T("shell.undo"), ShellTheme.TEXT_SUB)
+	_undo_btn.name = "shell_undo"
+	_undo_btn.custom_minimum_size = Vector2(64.0, 30.0)
+	_undo_btn.pressed.connect(_on_undo)
+	head.add_child(_undo_btn)
+	head.add_child(ThemeKit.spacer())
+	var dock_hint := ThemeKit.caption(T("shell.dock.hint"), ShellTheme.TEXT_DIM)
+	dock_hint.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	head.add_child(dock_hint)
+
+	# --- 三列：工具面板 / 多边形三区 / 地图尺寸 ---
+	var body := HBoxContainer.new()
+	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	body.add_theme_constant_override("separation", 10)
+	wrap.add_child(body)
+
+	var scroll := ScrollContainer.new()
+	scroll.name = "shell_tool_scroll"
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.custom_minimum_size = Vector2(420.0, 220.0)
+	body.add_child(scroll)
+	_inspector = VBoxContainer.new()
+	_inspector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_inspector.add_theme_constant_override("separation", 8)
+	scroll.add_child(_inspector)
+
+	body.add_child(_build_region_group())
+	body.add_child(_build_map_size_group())
+	return wrap
+
+
+func _build_region_group() -> Control:
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(230.0, 0.0)
+	panel.add_theme_stylebox_override("panel", ThemeKit.box(ShellTheme.PANEL, ShellTheme.STROKE, 8, 1, 8.0, 8.0))
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 6)
+	panel.add_child(v)
+	v.add_child(ThemeKit.field_label(T("shell.region.group")))
+	var group := ButtonGroup.new()
+	for kind in ShellStore.REGION_IDS:
+		var col: Color = ShellStore.REGION_COLORS.get(kind, Color.WHITE)
+		var b := Button.new()
+		b.name = "shell_region_" + String(kind)
+		b.text = T(REGION_KEY + String(kind))
+		b.toggle_mode = true
+		b.button_group = group
+		b.focus_mode = Control.FOCUS_NONE
+		b.custom_minimum_size = Vector2(0.0, 32.0)
+		b.add_theme_font_size_override("font_size", 12)
+		b.add_theme_color_override("font_color", ShellTheme.TEXT_SUB)
+		b.add_theme_color_override("font_pressed_color", col)
+		b.add_theme_stylebox_override("normal", ThemeKit.box(ShellTheme.PANEL, ShellTheme.STROKE, 7, 1, 6.0, 4.0))
+		b.add_theme_stylebox_override("hover", ThemeKit.box(ShellTheme.PANEL_HI, col, 7, 1, 6.0, 4.0))
+		b.add_theme_stylebox_override("pressed", ThemeKit.box(Color(col.r, col.g, col.b, 0.2), col, 7, 1, 6.0, 4.0))
+		b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+		b.pressed.connect(_on_region_button.bind(String(kind), b))
+		v.add_child(b)
+		_region_buttons[kind] = b
+	var rhint := ThemeKit.caption(T("shell.region.group_hint"), ShellTheme.TEXT_DIM)
+	rhint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	v.add_child(rhint)
+	return panel
+
+
+func _build_map_size_group() -> Control:
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(330.0, 0.0)
+	panel.add_theme_stylebox_override("panel", ThemeKit.box(ShellTheme.PANEL, ShellTheme.STROKE, 8, 1, 8.0, 8.0))
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 6)
+	panel.add_child(v)
+	v.add_child(ThemeKit.field_label(T("shell.map.group")))
+
+	var size_row := HBoxContainer.new()
+	size_row.add_theme_constant_override("separation", 6)
+	size_row.add_child(ThemeKit.caption(T("shell.map.w"), ShellTheme.TEXT_SUB))
+	var shell: Dictionary = view.get("shell")
+	var sz := ShellStore.size_of(shell)
+	_map_w_edit = ThemeKit.num_field("%.1f" % sz.x, 60.0)
+	_map_w_edit.name = "shell_map_w"
+	size_row.add_child(_map_w_edit)
+	size_row.add_child(ThemeKit.caption(T("shell.map.d"), ShellTheme.TEXT_SUB))
+	_map_d_edit = ThemeKit.num_field("%.1f" % sz.y, 60.0)
+	_map_d_edit.name = "shell_map_d"
+	size_row.add_child(_map_d_edit)
+	v.add_child(size_row)
+
+	_scale_check = CheckBox.new()
+	_scale_check.name = "shell_map_scale_tiles"
+	_scale_check.text = T("shell.map.scale_tiles")
+	_scale_check.button_pressed = true
+	_scale_check.focus_mode = Control.FOCUS_NONE
+	_scale_check.add_theme_font_size_override("font_size", 11)
+	v.add_child(_scale_check)
+
+	var ops := HBoxContainer.new()
+	ops.add_theme_constant_override("separation", 6)
+	var apply := ThemeKit.small_button(T("shell.map.apply"), ThemeKit.CYAN)
+	apply.name = "shell_map_apply"
+	apply.pressed.connect(_on_map_size_apply)
+	ops.add_child(apply)
+	var grow := ThemeKit.small_button(T("shell.map.grow"), ShellTheme.LEGACY_GOLD_HI)
+	grow.name = "shell_map_grow"
+	grow.pressed.connect(_on_map_grow)
+	ops.add_child(grow)
+	var frame := ThemeKit.small_button(T("shell.map.frame"), ShellTheme.TEXT_SUB)
+	frame.name = "shell_map_frame"
+	frame.pressed.connect(func(): view.call("frame_canvas"))
+	ops.add_child(frame)
+	v.add_child(ops)
+
+	var board := ShellStore.board_of(shell)
+	_depth_slider = _slider(v, T("shell.map.depth"), 1.0, 24.0, float(board["depth"]), _on_depth)
+	_bevel_slider = _slider(v, T("shell.map.bevel"), 0.0, 1.2, float(board["bevel"]), _on_bevel)
+	_margin_slider = _slider(v, T("shell.map.margin"), 0.40, 0.50, float(board["margin"]), _on_margin)
+	_tile_scale_slider = _slider(v, T("shell.map.tile_scale"), 0.6, 2.0, float(board["tile_scale"]), _on_tile_scale)
+
+	_canvas_label = ThemeKit.caption("", ShellTheme.TEXT_DIM)
+	v.add_child(_canvas_label)
+	_refresh_canvas_label()
+	return panel
 
 
 func _build_topbar() -> Control:
@@ -151,79 +349,20 @@ func _build_topbar() -> Control:
 	_layout_opt.item_selected.connect(_on_layout_preview)
 	h.add_child(_layout_opt)
 
-	# --- 区域绘制按钮（玩家 / 中立 / 敌方）---
-	var region_row := HBoxContainer.new()
-	region_row.add_theme_constant_override("separation", 4)
-	var group := ButtonGroup.new()
-	for kind in ShellStore.REGION_IDS:
-		var col: Color = ShellStore.REGION_COLORS.get(kind, Color.WHITE)
-		var b := Button.new()
-		b.name = "shell_region_" + String(kind)
-		b.text = T(REGION_KEY + String(kind))
-		b.toggle_mode = true
-		b.button_group = group
-		b.focus_mode = Control.FOCUS_NONE
-		b.custom_minimum_size = Vector2(86.0, 34.0)
-		b.add_theme_font_size_override("font_size", 12)
-		b.add_theme_color_override("font_color", ShellTheme.TEXT_SUB)
-		b.add_theme_color_override("font_pressed_color", col)
-		b.add_theme_stylebox_override("normal", ThemeKit.box(ShellTheme.PANEL, ShellTheme.STROKE, 7, 1, 6.0, 4.0))
-		b.add_theme_stylebox_override("hover", ThemeKit.box(ShellTheme.PANEL_HI, col, 7, 1, 6.0, 4.0))
-		b.add_theme_stylebox_override("pressed", ThemeKit.box(Color(col.r, col.g, col.b, 0.2), col, 7, 1, 6.0, 4.0))
-		b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
-		b.pressed.connect(_on_region_button.bind(String(kind), b))
-		region_row.add_child(b)
-		_region_buttons[kind] = b
-	h.add_child(region_row)
-
-	_undo_btn = ThemeKit.small_button(T("shell.undo"), ShellTheme.TEXT_SUB)
-	_undo_btn.name = "shell_undo"
-	_undo_btn.custom_minimum_size = Vector2(64.0, 34.0)
-	_undo_btn.pressed.connect(_on_undo)
-	h.add_child(_undo_btn)
-
+	# 区域绘制 / 撤销 / 地图尺寸都在底部 Dock（原生停靠面板），顶栏只留全局状态。
 	h.add_child(ThemeKit.spacer())
+	var saved := ThemeKit.small_button(T("shell.save"), ShellTheme.LEGACY_GOLD_HI)
+	saved.name = "shell_save_top"
+	saved.custom_minimum_size = Vector2(92.0, 30.0)
+	saved.pressed.connect(_save.bind(true))
+	h.add_child(saved)
 	h.add_child(ThemeKit.chip(T("shell.r1"), ThemeKit.CYAN))
 	return bar
 
 
 func _build_rail() -> Control:
-	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(104.0, 0.0)
-	var sb := ThemeKit.box(ShellTheme.PANEL, ShellTheme.STROKE, 0, 0, 8.0, 12.0)
-	sb.border_width_right = 1
-	panel.add_theme_stylebox_override("panel", sb)
-	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 8)
-	panel.add_child(v)
-	var defs := [
-		["terrain", "shell.tool.terrain"],
-		["decor", "shell.tool.decor"],
-		["spine", "shell.tool.spine"],
-		["tile", "shell.tool.tile"],
-	]
-	var group := ButtonGroup.new()
-	for d in defs:
-		var id := String(d[0])
-		var b := Button.new()
-		b.name = "shell_tool_" + id
-		b.text = T(String(d[1]))
-		b.toggle_mode = true
-		b.button_group = group
-		b.focus_mode = Control.FOCUS_NONE
-		b.custom_minimum_size = Vector2(88.0, 62.0)
-		b.add_theme_font_size_override("font_size", 13)
-		b.add_theme_color_override("font_color", ShellTheme.TEXT_SUB)
-		b.add_theme_color_override("font_pressed_color", ShellTheme.LEGACY_GOLD_HI)
-		b.add_theme_stylebox_override("normal", ThemeKit.box(ShellTheme.PANEL, ShellTheme.STROKE, 9, 1, 6.0, 6.0))
-		b.add_theme_stylebox_override("hover", ThemeKit.box(ShellTheme.PANEL_HI, ShellTheme.STROKE, 9, 1, 6.0, 6.0))
-		b.add_theme_stylebox_override("pressed", ThemeKit.box(Color(ShellTheme.LEGACY_GOLD.r, ShellTheme.LEGACY_GOLD.g, ShellTheme.LEGACY_GOLD.b, 0.18), ShellTheme.LEGACY_GOLD, 9, 1, 6.0, 6.0))
-		b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
-		b.pressed.connect(_show_tool.bind(id))
-		v.add_child(b)
-		_tool_buttons[id] = b
-	v.add_child(ThemeKit.spacer())
-	return panel
+	# 旧版左侧工具导轨已并入底部 Dock 的标题行（保留函数名不影响自检对 shell_tool_* 的查找）
+	return Control.new()
 
 
 func _build_viewport() -> Control:
@@ -264,23 +403,6 @@ func _build_viewport() -> Control:
 	_svc.gui_input.connect(_on_view_input)
 	_svc.resized.connect(_sync_viewport)
 	return wrap
-
-
-func _build_inspector() -> Control:
-	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(392.0, 0.0)
-	var sb := ThemeKit.box(ShellTheme.BG, ShellTheme.STROKE, 0, 0, 0.0, 0.0)
-	sb.border_width_left = 1
-	panel.add_theme_stylebox_override("panel", sb)
-	var scroll := ScrollContainer.new()
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	panel.add_child(scroll)
-	_inspector = VBoxContainer.new()
-	_inspector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_inspector.add_theme_constant_override("separation", 10)
-	_inspector.custom_minimum_size = Vector2(376.0, 0.0)
-	scroll.add_child(_inspector)
-	return panel
 
 
 func _build_status() -> Control:
@@ -638,8 +760,6 @@ func _build_terrain_panel() -> void:
 	v.add_child(layers)
 
 	v.add_child(ThemeKit.hairline())
-	var water := float((view.get("shell").get("terrain", {}) as Dictionary).get("water_level", 0.2))
-	_water_slider = _slider(v, T("shell.terrain.water"), -3.0, 6.0, water, _on_water)
 	var amb: Dictionary = (view.get("shell").get("terrain", {}) as Dictionary).get("ambient", {})
 	_ambient_slider = _slider(v, T("shell.terrain.ambient"), 0.2, 2.0, float(amb.get("energy", 0.55)), _on_ambient)
 	_fog_slider = _slider(v, T("shell.terrain.fog"), 0.0, 0.05, float(amb.get("fog_density", 0.0032)), _on_fog)
@@ -689,16 +809,105 @@ func _on_layer(index: int) -> void:
 
 
 func _on_water(value: float) -> void:
+	# 水体已彻底移除（2026-11-21）：底壳只有立体地块，没有水面层。
+	# 保留空函数只是为了让旧的 .tscn/外部脚本调用不炸；新代码不许再调它。
+	if value < 0.0:
+		return
+
+
+func _on_depth(value: float) -> void:
 	if not _ready_done:
+		return
+	_apply_board("depth", snappedf(value, 0.01))
+
+
+func _on_bevel(value: float) -> void:
+	if not _ready_done:
+		return
+	_apply_board("bevel", snappedf(value, 0.01))
+
+
+func _on_margin(value: float) -> void:
+	if not _ready_done:
+		return
+	_apply_board("margin", snappedf(value, 0.01))
+	_refresh_canvas_label()
+
+
+func _on_tile_scale(value: float) -> void:
+	if not _ready_done:
+		return
+	var errs: Array = view.call("set_tile_scale", snappedf(value, 0.05))
+	_show_errors(errs)
+	_dirty_now()
+	_refresh_canvas_label()
+	if _active_tool() == "tile":
+		_rebuild_tile_list()
+		_refresh_tile_detail()
+
+
+func _apply_board(key: String, value: float) -> void:
+	var errs: Array = view.call("set_board_value", key, value)
+	_show_errors(errs)
+	if (errs as Array).is_empty():
+		_dirty_now()
+
+
+func _show_errors(errs: Array) -> void:
+	if (errs as Array).is_empty():
+		return
+	var text := "; ".join(PackedStringArray(errs))
+	_set_state(T("shell.state.invalid", {"msg": text}), ThemeKit.RED)
+
+
+func _refresh_canvas_label() -> void:
+	if _canvas_label == null:
 		return
 	var shell: Dictionary = view.get("shell")
 	if shell.is_empty():
 		return
-	var terrain: Dictionary = shell.get("terrain", {})
-	terrain["water_level"] = snappedf(value, 0.01)
-	shell["terrain"] = terrain
-	view.call("_build_water")
+	var canvas: Vector2 = ShellStore.canvas_size_of(shell)
+	_canvas_label.text = T("shell.map.canvas", {
+		"w": "%.0f" % canvas.x,
+		"d": "%.0f" % canvas.y,
+	})
+
+
+func _on_map_size_apply() -> void:
+	var shell: Dictionary = view.get("shell")
+	if shell.is_empty():
+		return
+	var sx := float(_map_w_edit.text) if _map_w_edit.text.is_valid_float() else ShellStore.size_of(shell).x
+	var sz := float(_map_d_edit.text) if _map_d_edit.text.is_valid_float() else ShellStore.size_of(shell).y
+	var scale_tiles: bool = _scale_check != null and _scale_check.button_pressed
+	var errs: Array = view.call("resize_map", sx, sz, scale_tiles)
+	_show_errors(errs)
+	if not (errs as Array).is_empty():
+		return
 	_dirty_now()
+	_after_map_changed()
+
+
+func _on_map_grow() -> void:
+	var errs: Array = view.call("grow_map", 0.25)
+	_show_errors(errs)
+	if not (errs as Array).is_empty():
+		return
+	_dirty_now()
+	_after_map_changed()
+
+
+func _after_map_changed() -> void:
+	var shell: Dictionary = view.get("shell")
+	var sz := ShellStore.size_of(shell)
+	if _map_w_edit != null:
+		_map_w_edit.text = "%.1f" % sz.x
+	if _map_d_edit != null:
+		_map_d_edit.text = "%.1f" % sz.y
+	_refresh_canvas_label()
+	_refresh_status()
+	_show_tool(_active_tool())
+	_rebuild_layout_options()
 
 
 func _on_ambient(value: float) -> void:
@@ -933,6 +1142,28 @@ func _build_tile_panel() -> void:
 	)
 	ops.add_child(renum)
 	v.add_child(ops)
+
+	# --- 对齐网格 / 自由拖拽 ---
+	var snap_row := HBoxContainer.new()
+	snap_row.add_theme_constant_override("separation", 6)
+	_snap_check = CheckBox.new()
+	_snap_check.name = "shell_tile_snap_toggle"
+	_snap_check.text = T("shell.tile.snap_grid")
+	_snap_check.button_pressed = bool(view.get("snap_to_grid"))
+	_snap_check.focus_mode = Control.FOCUS_NONE
+	_snap_check.add_theme_font_size_override("font_size", 11)
+	_snap_check.toggled.connect(_on_snap_toggled)
+	snap_row.add_child(_snap_check)
+	_snap_opt = OptionButton.new()
+	_snap_opt.name = "shell_tile_snap_step"
+	_snap_opt.custom_minimum_size = Vector2(82.0, 26.0)
+	for step in [0.5, 1.0, 2.0, 4.0]:
+		_snap_opt.add_item("%.1f m" % step)
+		_snap_opt.set_item_metadata(_snap_opt.item_count - 1, step)
+	_snap_opt.item_selected.connect(_on_snap_step)
+	snap_row.add_child(_snap_opt)
+	v.add_child(snap_row)
+	_sync_snap_controls()
 	_tile_list = VBoxContainer.new()
 	_tile_list.add_theme_constant_override("separation", 3)
 	v.add_child(_tile_list)
@@ -1013,6 +1244,39 @@ func _on_add_tile() -> void:
 	_dirty_now()
 	_rebuild_tile_list()
 	_refresh_tile_detail()
+
+
+func _on_snap_toggled(on: bool) -> void:
+	var step := 0.0
+	if _snap_opt != null:
+		step = float(_snap_opt.get_item_metadata(_snap_opt.selected))
+	view.call("set_snap_enabled", on, step)
+	if _snap_opt != null:
+		_snap_opt.disabled = not on
+	_dirty_now()
+
+
+func _on_snap_step(index: int) -> void:
+	if _snap_opt == null:
+		return
+	var step := float(_snap_opt.get_item_metadata(index))
+	view.call("set_snap_enabled", true, step)
+	if _snap_check != null:
+		_snap_check.button_pressed = true
+	_dirty_now()
+
+
+func _sync_snap_controls() -> void:
+	if _snap_check == null or _snap_opt == null:
+		return
+	var on := bool(view.get("snap_to_grid"))
+	var step := float(view.get("snap_step"))
+	_snap_check.set_pressed_no_signal(on)
+	_snap_opt.disabled = not on
+	for i in _snap_opt.item_count:
+		if is_equal_approx(float(_snap_opt.get_item_metadata(i)), step):
+			_snap_opt.select(i)
+			break
 
 
 func _on_delete_tiles() -> void:
