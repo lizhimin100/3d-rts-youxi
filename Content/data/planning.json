@@ -1,19 +1,19 @@
 {
-	"version": 1,
+	"version": 1.0,
 	"note": "规划阶段唯一数值源：CP / 人口 / 手牌 / 建筑 / 卡牌 / 升星。建造牌打出即 Exhaust（本局不再回到牌堆）；训练牌与策略牌循环。建筑 3 合 1 升满 3 星（同名同星，累计 3 座）。",
 	"cp": {
-		"start": 16,
-		"per_planning": 16,
-		"cap": 24
+		"start": 16.0,
+		"per_planning": 16.0,
+		"cap": 24.0
 	},
 	"pop": {
-		"base": 12,
+		"base": 12.0,
 		"note": "基地自带 12；每座农场再提供 10 × 星级倍率。人口只限制训练，不限制建造。"
 	},
 	"max_drain_reduction": 0.45,
 	"hand": {
-		"draw": 6,
-		"max": 8,
+		"draw": 6.0,
+		"max": 8.0,
 		"opening": [
 			"build_barracks",
 			"build_farm",
@@ -24,113 +24,113 @@
 		]
 	},
 	"merge": {
-		"required": 3,
-		"max_star": 3,
+		"required": 3.0,
+		"max_star": 3.0,
 		"note": "拖同名建筑 3 合 1：每吃掉一座同名建筑 +1 合并数，星级 = 1 + 合并数，满 3 星（不要求同星，累计 3 座即可）。"
 	},
 	"star": {
 		"attack_mult": [
-			1,
+			1.0,
 			1.35,
 			1.8
 		],
 		"hp_mult": [
-			1,
+			1.0,
 			1.4,
-			2
+			2.0
 		],
 		"pop_mult": [
-			1,
+			1.0,
 			1.4,
-			2
+			2.0
 		]
 	},
 	"board": {
-		"plots": 10,
+		"plots": 10.0,
 		"start": [
 			{
 				"building": "keep",
-				"plot": 0
+				"plot": 0.0
 			},
 			{
 				"building": "farm",
-				"plot": 1
+				"plot": 1.0
 			},
 			{
 				"building": "farm",
-				"plot": 2
+				"plot": 2.0
 			},
 			{
 				"building": "barracks",
-				"plot": 3
+				"plot": 3.0
 			}
 		],
 		"platforms": [
 			{
-				"plot": 0,
+				"plot": 0.0,
 				"x": 0.34,
 				"y": 0.5,
 				"radius": 0.078,
 				"kind": "keep"
 			},
 			{
-				"plot": 1,
+				"plot": 1.0,
 				"x": 0.17,
 				"y": 0.26,
 				"radius": 0.052,
 				"kind": "farm"
 			},
 			{
-				"plot": 2,
+				"plot": 2.0,
 				"x": 0.17,
 				"y": 0.74,
 				"radius": 0.052,
 				"kind": "farm"
 			},
 			{
-				"plot": 3,
+				"plot": 3.0,
 				"x": 0.48,
 				"y": 0.26,
 				"radius": 0.058,
 				"kind": "barracks"
 			},
 			{
-				"plot": 4,
+				"plot": 4.0,
 				"x": 0.09,
 				"y": 0.5,
 				"radius": 0.045,
 				"kind": ""
 			},
 			{
-				"plot": 5,
+				"plot": 5.0,
 				"x": 0.3,
 				"y": 0.15,
 				"radius": 0.042,
 				"kind": ""
 			},
 			{
-				"plot": 6,
+				"plot": 6.0,
 				"x": 0.3,
 				"y": 0.85,
 				"radius": 0.042,
 				"kind": ""
 			},
 			{
-				"plot": 7,
+				"plot": 7.0,
 				"x": 0.49,
 				"y": 0.74,
 				"radius": 0.045,
 				"kind": ""
 			},
 			{
-				"plot": 8,
+				"plot": 8.0,
 				"x": 0.61,
 				"y": 0.5,
 				"radius": 0.045,
 				"kind": ""
 			},
 			{
-				"plot": 9,
+				"plot": 9.0,
 				"x": 0.59,
 				"y": 0.88,
 				"radius": 0.042,
@@ -138,8 +138,8 @@
 			}
 		],
 		"camp_m": [
-			28,
-			16
+			28.0,
+			16.0
 		],
 		"note": "类自走棋独立石台：plots 是逻辑槽位，platforms 是可视化坐标（0..1）；石台之间留出行军间隙，不做连线格。"
 	},
@@ -148,32 +148,32 @@
 			"id": "keep",
 			"display_name": "基地",
 			"tag": "base",
-			"armor": 8,
+			"armor": 8.0,
 			"armor_type": "坚固甲",
-			"hp": 4000,
-			"pop": 0,
+			"hp": 4000.0,
+			"pop": 0.0,
 			"buildable": false,
 			"trains": [],
-			"base_drain_reduction": 0,
+			"base_drain_reduction": 0.0,
 			"produce_tag": "base",
 			"model_path": "res://Content/art/模型/大本营.glb",
 			"model_scale": 0.5,
 			"use_placeholder_mesh": false,
 			"star_output": [
 				{
-					"pop": 0,
-					"train_slots": 0,
-					"drain_reduction": 0
+					"pop": 0.0,
+					"train_slots": 0.0,
+					"drain_reduction": 0.0
 				},
 				{
-					"pop": 0,
-					"train_slots": 0,
-					"drain_reduction": 0
+					"pop": 0.0,
+					"train_slots": 0.0,
+					"drain_reduction": 0.0
 				},
 				{
-					"pop": 0,
-					"train_slots": 0,
-					"drain_reduction": 0
+					"pop": 0.0,
+					"train_slots": 0.0,
+					"drain_reduction": 0.0
 				}
 			]
 		},
@@ -181,32 +181,32 @@
 			"id": "farm",
 			"display_name": "农场",
 			"tag": "farm",
-			"armor": 4,
+			"armor": 4.0,
 			"armor_type": "坚固甲",
-			"hp": 450,
-			"pop": 10,
+			"hp": 450.0,
+			"pop": 10.0,
 			"buildable": true,
 			"trains": [],
-			"base_drain_reduction": 0,
+			"base_drain_reduction": 0.0,
 			"produce_tag": "farm",
 			"model_path": "res://Content/art/模型/农场.glb",
 			"model_scale": 0.5,
 			"use_placeholder_mesh": false,
 			"star_output": [
 				{
-					"pop": 10,
-					"train_slots": 0,
-					"drain_reduction": 0
+					"pop": 10.0,
+					"train_slots": 0.0,
+					"drain_reduction": 0.0
 				},
 				{
-					"pop": 14,
-					"train_slots": 0,
-					"drain_reduction": 0
+					"pop": 14.0,
+					"train_slots": 0.0,
+					"drain_reduction": 0.0
 				},
 				{
-					"pop": 20,
-					"train_slots": 0,
-					"drain_reduction": 0
+					"pop": 20.0,
+					"train_slots": 0.0,
+					"drain_reduction": 0.0
 				}
 			]
 		},
@@ -214,9 +214,9 @@
 			"id": "barracks",
 			"display_name": "兵营",
 			"tag": "barracks",
-			"armor": 6,
+			"armor": 6.0,
 			"armor_type": "坚固甲",
-			"hp": 900,
+			"hp": 900.0,
 			"buildable": true,
 			"trains": [
 				"alliance_footman",
@@ -224,26 +224,26 @@
 				"alliance_archer",
 				"alliance_crossbowman"
 			],
-			"base_drain_reduction": 0,
+			"base_drain_reduction": 0.0,
 			"produce_tag": "barracks",
 			"model_path": "res://Content/art/模型/兵营.glb",
 			"model_scale": 0.5,
 			"use_placeholder_mesh": false,
 			"star_output": [
 				{
-					"pop": 0,
-					"train_slots": 1,
-					"drain_reduction": 0
+					"pop": 0.0,
+					"train_slots": 1.0,
+					"drain_reduction": 0.0
 				},
 				{
-					"pop": 0,
-					"train_slots": 1,
-					"drain_reduction": 0
+					"pop": 0.0,
+					"train_slots": 1.0,
+					"drain_reduction": 0.0
 				},
 				{
-					"pop": 0,
-					"train_slots": 2,
-					"drain_reduction": 0
+					"pop": 0.0,
+					"train_slots": 2.0,
+					"drain_reduction": 0.0
 				}
 			]
 		},
@@ -251,10 +251,10 @@
 			"id": "watchtower",
 			"display_name": "哨塔",
 			"tag": "tower",
-			"armor": 8,
+			"armor": 8.0,
 			"armor_type": "坚固甲",
-			"hp": 650,
-			"pop": 0,
+			"hp": 650.0,
+			"pop": 0.0,
 			"buildable": true,
 			"trains": [],
 			"base_drain_reduction": 0.15,
@@ -265,18 +265,18 @@
 			"use_placeholder_mesh": false,
 			"star_output": [
 				{
-					"pop": 0,
-					"train_slots": 0,
+					"pop": 0.0,
+					"train_slots": 0.0,
 					"drain_reduction": 0.15
 				},
 				{
-					"pop": 0,
-					"train_slots": 0,
+					"pop": 0.0,
+					"train_slots": 0.0,
 					"drain_reduction": 0.22
 				},
 				{
-					"pop": 0,
-					"train_slots": 0,
+					"pop": 0.0,
+					"train_slots": 0.0,
 					"drain_reduction": 0.3
 				}
 			]
@@ -302,27 +302,27 @@
 			"display_name": "农场",
 			"kind": "build",
 			"building": "farm",
-			"cost_cp": 4,
+			"cost_cp": 4.0,
 			"exhaust": true,
-			"count": 2
+			"count": 2.0
 		},
 		{
 			"id": "build_barracks",
 			"display_name": "兵营",
 			"kind": "build",
 			"building": "barracks",
-			"cost_cp": 6,
+			"cost_cp": 6.0,
 			"exhaust": true,
-			"count": 2
+			"count": 2.0
 		},
 		{
 			"id": "build_tower",
 			"display_name": "哨塔",
 			"kind": "build",
 			"building": "watchtower",
-			"cost_cp": 5,
+			"cost_cp": 5.0,
 			"exhaust": true,
-			"count": 1
+			"count": 1.0
 		},
 		{
 			"id": "train_footman",
@@ -330,9 +330,9 @@
 			"kind": "train",
 			"unit": "alliance_footman",
 			"tag": "barracks",
-			"cost_cp": 2,
+			"cost_cp": 2.0,
 			"exhaust": false,
-			"count": 1
+			"count": 1.0
 		},
 		{
 			"id": "train_pikeman",
@@ -340,9 +340,9 @@
 			"kind": "train",
 			"unit": "alliance_pikeman",
 			"tag": "barracks",
-			"cost_cp": 2,
+			"cost_cp": 2.0,
 			"exhaust": false,
-			"count": 1
+			"count": 1.0
 		},
 		{
 			"id": "train_archer",
@@ -350,9 +350,9 @@
 			"kind": "train",
 			"unit": "alliance_archer",
 			"tag": "barracks",
-			"cost_cp": 3,
+			"cost_cp": 3.0,
 			"exhaust": false,
-			"count": 1
+			"count": 1.0
 		},
 		{
 			"id": "train_crossbow",
@@ -360,40 +360,40 @@
 			"kind": "train",
 			"unit": "alliance_crossbowman",
 			"tag": "barracks",
-			"cost_cp": 3,
+			"cost_cp": 3.0,
 			"exhaust": false,
-			"count": 1
+			"count": 1.0
 		},
 		{
 			"id": "strategy_forced_march",
 			"display_name": "急行军",
 			"kind": "strategy",
 			"effect": "forced_march",
-			"cost_cp": 2,
+			"cost_cp": 2.0,
 			"exhaust": false,
-			"count": 1
+			"count": 1.0
 		},
 		{
 			"id": "strategy_bulwark",
 			"display_name": "坚壁",
 			"kind": "strategy",
 			"effect": "bulwark",
-			"cost_cp": 2,
+			"cost_cp": 2.0,
 			"exhaust": false,
-			"count": 1
+			"count": 1.0
 		},
 		{
 			"id": "strategy_focus",
 			"display_name": "致命瞄准",
 			"kind": "strategy",
 			"effect": "focus",
-			"cost_cp": 2,
+			"cost_cp": 2.0,
 			"exhaust": false,
-			"count": 1
+			"count": 1.0
 		}
 	],
 	"deck": {
-		"size": 12,
+		"size": 12.0,
 		"start": [
 			"build_farm",
 			"build_farm",

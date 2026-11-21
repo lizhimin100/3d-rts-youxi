@@ -1,5 +1,5 @@
 {
-	"version": 1,
+	"version": 1.0,
 	"note": "关卡表：第 1 关 = 联盟 vs 豺狼人。一场两轮，各 90 秒：第 1 轮进攻（敌方按波次守家），第 2 轮防守（敌方按波次压家）。基地血量跨轮保留，轮末清空全部部队。 2026-11-21：lane.segments / intent_pool / enemy_buildings 供开发者编辑器读改；C# 只读原有 lane 字段，三段长度之和必须等于 lane.length。",
 	"levels": [
 		{
@@ -7,75 +7,75 @@
 			"display_name": "第一关 · 灰牙前哨",
 			"player_faction": "alliance",
 			"enemy_faction": "bandit",
-			"player_base_hp": 2600,
-			"enemy_base_hp": 3200,
-			"round_seconds": 90,
+			"player_base_hp": 2600.0,
+			"enemy_base_hp": 3200.0,
+			"round_seconds": 90.0,
 			"lane": {
-				"length": 4000,
-				"width": 420,
-				"zone_depth": 600,
-				"zone_dps_per_squad": 9,
-				"spawn_offset": 250,
-				"base_stop": 120,
+				"length": 4000.0,
+				"width": 420.0,
+				"zone_depth": 600.0,
+				"zone_dps_per_squad": 9.0,
+				"spawn_offset": 250.0,
+				"base_stop": 120.0,
 				"note": "全部是游戏数值（×0.015 米）：4000 = 60 米长，420 = 6.3 米宽，600 = 9 米敌区。",
 				"template": "平势",
 				"segments": [
 					{
 						"name_key": "editor.level.segment_1",
-						"length": 1200,
-						"width": 420,
+						"length": 1200.0,
+						"width": 420.0,
 						"role": "player"
 					},
 					{
 						"name_key": "editor.level.segment_2",
-						"length": 1400,
-						"width": 460,
+						"length": 1400.0,
+						"width": 460.0,
 						"role": "neutral"
 					},
 					{
 						"name_key": "editor.level.segment_3",
-						"length": 1400,
-						"width": 380,
+						"length": 1400.0,
+						"width": 380.0,
 						"role": "enemy"
 					}
 				],
 				"templates": {
 					"平势": {
 						"lengths": [
-							1200,
-							1400,
-							1400
+							1200.0,
+							1400.0,
+							1400.0
 						],
 						"widths": [
-							420,
-							460,
-							380
+							420.0,
+							460.0,
+							380.0
 						],
 						"note": "三段等势，适合第一次读战场。"
 					},
 					"劣势": {
 						"lengths": [
-							1050,
-							1300,
-							1650
+							1050.0,
+							1300.0,
+							1650.0
 						],
 						"widths": [
-							380,
-							400,
-							360
+							380.0,
+							400.0,
+							360.0
 						],
 						"note": "敌区更深、通道更窄，逼玩家先守后推。"
 					},
 					"优势": {
 						"lengths": [
-							1400,
-							1500,
-							1100
+							1400.0,
+							1500.0,
+							1100.0
 						],
 						"widths": [
-							460,
-							500,
-							420
+							460.0,
+							500.0,
+							420.0
 						],
 						"note": "接敌段更宽，适合多小队平推与侧翼展开。"
 					}
@@ -87,58 +87,58 @@
 					"label": "进攻战 · 拆掉灰牙前哨",
 					"enemy_waves": [
 						{
-							"t": 0,
+							"t": 0.0,
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 2
+									"count": 2.0
 								},
 								{
 									"unit": "bandit_marauder",
-									"count": 2
+									"count": 2.0
 								}
 							]
 						},
 						{
-							"t": 24,
+							"t": 24.0,
 							"squads": [
 								{
 									"unit": "bandit_marauder",
-									"count": 2
+									"count": 2.0
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 1
+									"count": 1.0
 								}
 							]
 						},
 						{
-							"t": 48,
+							"t": 48.0,
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 2
+									"count": 2.0
 								},
 								{
 									"unit": "bandit_marauder",
-									"count": 2
+									"count": 2.0
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 1
+									"count": 1.0
 								}
 							]
 						},
 						{
-							"t": 70,
+							"t": 70.0,
 							"squads": [
 								{
 									"unit": "bandit_marauder",
-									"count": 2
+									"count": 2.0
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 1
+									"count": 1.0
 								}
 							]
 						}
@@ -149,63 +149,63 @@
 					"label": "防守战 · 守住渡口",
 					"enemy_waves": [
 						{
-							"t": 0,
+							"t": 0.0,
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 2
+									"count": 2.0
 								},
 								{
 									"unit": "bandit_marauder",
-									"count": 2
+									"count": 2.0
 								}
 							]
 						},
 						{
-							"t": 20,
+							"t": 20.0,
 							"squads": [
 								{
 									"unit": "bandit_marauder",
-									"count": 2
+									"count": 2.0
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 1
+									"count": 1.0
 								}
 							]
 						},
 						{
-							"t": 40,
+							"t": 40.0,
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 2
+									"count": 2.0
 								},
 								{
 									"unit": "bandit_marauder",
-									"count": 2
+									"count": 2.0
 								}
 							]
 						},
 						{
-							"t": 60,
+							"t": 60.0,
 							"squads": [
 								{
 									"unit": "bandit_marauder",
-									"count": 2
+									"count": 2.0
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 1
+									"count": 1.0
 								}
 							]
 						},
 						{
-							"t": 76,
+							"t": 76.0,
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 2
+									"count": 2.0
 								}
 							]
 						}
@@ -216,55 +216,55 @@
 				{
 					"id": "probe",
 					"display_name": "斥候试探",
-					"weight": 28,
+					"weight": 28.0,
 					"note": "小股轻甲压前，逼你交第一轮技能。"
 				},
 				{
 					"id": "press",
 					"display_name": "正面压上",
-					"weight": 34,
+					"weight": 34.0,
 					"note": "战士顶前，萨满在射程外铺火力。"
 				},
 				{
 					"id": "shaman",
 					"display_name": "萨满火力",
-					"weight": 22,
+					"weight": 22.0,
 					"note": "魔法 650 打中甲 0.75，专治重甲阵。"
 				},
 				{
 					"id": "flank",
 					"display_name": "侧翼绕后",
-					"weight": 10,
+					"weight": 10.0,
 					"note": "从横道边缘切入远程小队。"
 				},
 				{
 					"id": "allin",
 					"display_name": "全军突击",
-					"weight": 6,
+					"weight": 6.0,
 					"note": "最后 20 秒的孤注一掷。"
 				}
 			],
 			"intent_templates": {
 				"平势": [
-					28,
-					34,
-					22,
-					10,
-					6
+					28.0,
+					34.0,
+					22.0,
+					10.0,
+					6.0
 				],
 				"劣势": [
-					20,
-					30,
-					30,
-					12,
-					8
+					20.0,
+					30.0,
+					30.0,
+					12.0,
+					8.0
 				],
 				"优势": [
-					38,
-					32,
-					14,
-					10,
-					6
+					38.0,
+					32.0,
+					14.0,
+					10.0,
+					6.0
 				]
 			},
 			"enemy_buildings": [
@@ -272,19 +272,19 @@
 					"building": "watchtower",
 					"x": 0.775,
 					"y": 0.3,
-					"star": 2
+					"star": 2.0
 				},
 				{
 					"building": "barracks",
 					"x": 0.875,
 					"y": 0.54,
-					"star": 3
+					"star": 3.0
 				},
 				{
 					"building": "watchtower",
 					"x": 0.8,
 					"y": 0.78,
-					"star": 2
+					"star": 2.0
 				}
 			],
 			"camp": {

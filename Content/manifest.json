@@ -2507,7 +2507,7 @@
 		},
 		{
 			"path": "Content/data/levels.json",
-			"size": 5563
+			"size": 5731
 		},
 		{
 			"path": "Content/data/long_costs.json",
@@ -2515,7 +2515,7 @@
 		},
 		{
 			"path": "Content/data/planning.json",
-			"size": 7512
+			"size": 7710
 		},
 		{
 			"path": "Content/data/researches.json",
@@ -2531,7 +2531,7 @@
 		},
 		{
 			"path": "Content/data/units.json",
-			"size": 9631
+			"size": 9949
 		},
 		{
 			"path": "Content/i18n/legacy_budget.json",
