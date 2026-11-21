@@ -527,3 +527,34 @@ shell.decor.bones,尸骨,Bones,装饰类型
 shell.decor.selected_n,已选 {n} 个 · {k} · x {x} z {z} · 缩放 {s},{n} selected · {k} · x {x} z {z} · scale {s},装饰面板
 shell.state.undo,已撤销一步,Undone,状态
 shell.tool.tile,战术格子,Tactical tiles,左侧工具
+squad.title,小队战场,Squad Field,真小队试玩画面标题
+squad.phase.planning,规划阶段,Planning,小队战场阶段
+squad.phase.executing,执行阶段 · {t}s,Executing · {t}s,小队战场阶段（倒计时）
+squad.phase.executing_plain,执行阶段,Executing,小队战场阶段（秒数单独显示）
+squad.phase.finished,本轮结束,Round over,小队战场阶段
+squad.start,开始执行,Start,小队战场按钮
+squad.restart,重开一局,Restart,小队战场按钮
+squad.base.player,我方基地 {hp}/{max},Our base {hp}/{max},小队战场顶栏
+squad.base.enemy,敌方基地 {hp}/{max},Enemy base {hp}/{max},小队战场顶栏
+squad.cp,CP {cp},CP {cp},小队战场顶栏
+squad.pop,人口 {used}/{cap},Pop {used}/{cap},小队战场顶栏
+squad.selected,已选 {n} 队,{n} squads selected,小队战场顶栏
+squad.card_cost,{name} · {cost} CP,{name} · {cost} CP,训练牌按钮
+squad.spawned,已出战：{name} ×{n},Deployed: {name} ×{n},训练牌回执
+squad.receipt.move,移动 {n} 队,Move {n} squads,指令回执
+squad.receipt.attack,集火 {n} 队,Focus fire {n} squads,指令回执
+squad.receipt.hold,驻守 {n} 队,Hold {n} squads,指令回执
+squad.receipt.stop,停止 {n} 队,Stop {n} squads,指令回执
+squad.receipt.attack_move,攻击移动 {n} 队,Attack-move {n} squads,指令回执
+squad.tips,左键框选 · 右键移动 · 右键敌人集火 · H 驻守 · S 停止 · A 攻击移动 · 空格全选 · 方向键平移 · 滚轮缩放 · 开局 3 队为演示小队（不计 CP/人口）,Drag to box-select · Right-click to move · Right-click enemy to focus · H hold · S stop · A attack-move · Space select all · Arrows pan · Wheel zoom · 3 demo squads ignore CP/pop,小队战场操作提示
+squad.reason.not_in_hand,不在手牌,Not in hand,训练牌不可用原因
+squad.reason.no_cp,CP 不够,Not enough CP,训练牌不可用原因
+squad.reason.no_building,没有对应建筑,No building,训练牌不可用原因
+squad.reason.no_pop,人口不够,Not enough pop,训练牌不可用原因
+squad.reason.ok,可训练,Ready,训练牌可用
+squad.result.win,胜利 · 敌方基地已破,Victory · enemy base destroyed,小队战场结算
+squad.result.lose,战败 · 我方基地被破,Defeat · our base destroyed,小队战场结算
+squad.result.timeout,时间到 · 本轮结束,Time up · round over,小队战场结算
+squad.train_only_planning,执行阶段不能训练,Training is planning-only,小队战场提示
+squad.no_handle,小队会话创建失败,Squad session failed,小队战场错误
+squad.order_none,先框选一支小队,Select a squad first,小队战场提示

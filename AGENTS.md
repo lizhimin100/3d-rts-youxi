@@ -13,7 +13,7 @@
 
 ```
 Engine/     自研引擎层：启动/存档/多语言/音频/对话/平台/调试接口。共享库，游戏只调用。
-Model/      **纯 C# 规则内核**（net8.0 类库，零 Godot）：R1 换算、伤害、经济、成长、可用性、确定性推演。
+Model/      **纯 C# 规则内核**（net8.0 类库，零 Godot）：R1 换算、伤害、经济、成长、可用性、确定性推演；`Squad/` 是真小队（编制/脊线寻路/队级战斗）。
 Screens/    3D 表现与输入：bridge/（C# 桥）hud/ input/ camera/ world/（美术/人群/沙盘）scenes/。
 Game/       引擎耦合的玩法装配（core/systems/units/map/config/adapters）。**迁移期资产，新代码不进这里。**
 Content/    内容与资产：data/（JSON 唯一数值源）i18n/ keys/ art/ audio/ maps/ legacy/（旧 .tres 留档）。
@@ -57,9 +57,11 @@ addons/     Godot 编辑器插件：war_island_editor=数据工作台（默认�
 
 ```powershell
 ./Tools/run-game.ps1 --check                  # 无窗口体检（会先 dotnet build 内核）
-./Tools/run-game.ps1 --simulate --games=100   # 第 1 关 100 局（联盟 vs 豺狼人），末行 SIM {json}
+./Tools/run-game.ps1 --simulate --games=100   # 真小队 100 局：胜率 / DPS / 寻路 / 阵型，末行 SIM {json}
+./Tools/run-game.ps1 --simulate --lane        # 旧横道口径（只做历史基线对照）
+./Tools/run-game.ps1 --squad                  # 试玩真小队：框选 / 右键移动 / 右键集火 / H 驻守
 ./Tools/run-game.ps1 --round-test             # 半回合自检：规划/执行/CP/小队/部署
-./Tools/run-game.ps1 --shot main _qa/main.png # 离屏截图（交互画面会真点一次并验状态）
+./Tools/run-game.ps1 --shot squad _qa/squad.png # 真点训练牌 + 真右键移动（另有 squad_box/focus/hold/exec）
 ./Tools/run-game.ps1 --import                 # 新增 class_name / 场景 / 资源后跑一次
 dotnet build 战争原岛.csproj                   # 只编译内核 + 宿主
 ```
@@ -86,6 +88,7 @@ dotnet build 战争原岛.csproj                   # 只编译内核 + 宿主
 - **2026-11-21 规划与双 90 秒**：`planning.json` 管 CP/人口/卡牌/3 合 1；`levels.json` 管第 1 关两轮波次；建造牌 Exhaust、训练牌按 Tag 全场产兵、策略牌循环；轮末清场，定性复盘按 code 聚合。详见 `Documents/战斗与规划.md`。
 - **2026-11-21 地图底壳 × 玩家布局卡 × 敌人遭遇卡 三分离**：旧 3D 地图编辑器下线，换成 `addons/map_shell_editor`（只做地形/地表笔刷、纯视觉装饰、弯曲脊线、三块势力区域多边形、战术格子）。玩家激活哪几个格子与开局建筑写 `Content/data/player_layouts.json`；敌方阵营/基地血量/格子固定建筑/按轮次权重的攻防意图池写 `Content/data/enemy_encounters.json`；`levels.json` 只放 `assembly = {shell, player_layout, enemy_encounter}` 与组合生成的关卡。未激活格子局内状态为 `ruin`（唯一实现在 `Game/map/关卡装配.gd`）。详见 `Documents/地图底壳与关卡组装.md`。
 - **2026-11-21 底壳编辑器重构（取代赛道圆环 + 候选石台）**：① 删除 4 个分割环，`regions` 存玩家/中立/敌方三块 **XZ 多边形**，点在多边形内与校验的唯一实现在 `Model/Map/RegionPolygon.cs`（桥转发 `RegionContains / RegionValidate`）；② 候选石台改 **TacticalTile**，唯一定义在 `Model/Map/TacticalTile.cs`：`BuildingAnchor = 左上角`、`SquadSpawnAnchor = 正中心`，格间边到边间隙 ≥ 1.0 m；③ 编辑器支持点选/拖框多选/拖动贴合地形/Delete/Ctrl+Z，选中脚下复用 `Content/art/特效/选中圈.tscn`；④ 装饰只准实例化 `Content/docs/asset_manifest.md` 登记的现有资产，**禁止**现拼占位树/水/地面材质。
+- **2026-11-21 真小队（Squad）重建**：`Model/Squad/` 是唯一小队实体；`units.json` 每兵种带 `formation`（square/scatter/wedge）+ `squad_radius`（三位数游戏数值）；质心沿底壳 `spine.points` 做 A* + 走廊平滑，成员只跟弹性槽位；**建筑不参与寻路**；训练牌在格子的 `SquadSpawnAnchor` 瞬间出整队；`Screens/` 只读 `SquadView` 画胶囊 + 单条聚合血条。验证：`--simulate`（100 局胜率/DPS）、`--squad`（试玩）、`--check`（20 条小队断言）。详见 `Documents/小队系统.md`。
 - **2026-11-14 按「七块砖」重排**：`Engine/Model/Screens/Game/Content/Tests/Tools/Documents` 八目录（七块砖 + 迁移期 Game/）。
 - **2026-11-14 数值真源 = JSON**：`Content/data/*.json`；旧 `.tres` 卡退役到 `Content/legacy/cards/`。
 - **2026-11-14 测试模式默认隔离**：静音、无焦点、存档 `res://.test_profile/`；测试不碰玩家真实存档。

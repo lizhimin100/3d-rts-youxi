@@ -94,6 +94,12 @@ namespace WarIsland.Model
         public int CpAtStart { get; private set; }
         public int PopBlocked { get; private set; }
 
+        /// <summary>
+        /// 即时出兵（SquadSession 的"训练牌立刻在格子中心生成整队"）占的人口。
+        /// 这些队不进 <see cref="Army"/>（已经落地了），但人口必须照算，否则会无限刷兵。
+        /// </summary>
+        public int ExtraPop { get; private set; }
+
         private readonly Rng _rng;
 
         public PlanningMatch(PlanningConfig cfg, UnitCatalog units, int seed)
@@ -129,6 +135,7 @@ namespace WarIsland.Model
             Mods.Reset();
             Actions.Clear();
             PopBlocked = 0;
+            ExtraPop = 0;
             Hand.Clear();
 
             if (PlanningIndex == 1 && Cfg.OpeningHand.Count > 0)
@@ -239,7 +246,7 @@ namespace WarIsland.Model
 
         public int PopUsed()
         {
-            int used = 0;
+            int used = ExtraPop;
             foreach (var s in Army) used += s.PopCost;
             return used;
         }
@@ -336,7 +343,14 @@ namespace WarIsland.Model
         }
 
         /// <summary>训练牌：全场同类建筑各产 1 队（人口不够的建筑跳过并计数）。</summary>
-        public int PlayTrain(string cardId)
+        public int PlayTrain(string cardId) => PlayTrainOut(cardId, null, true);
+
+        /// <summary>
+        /// 训练牌的可观测版本：<paramref name="produced"/> 会收到"哪座建筑产了哪一队"，
+        /// 供 SquadSession 把每队落到对应格子的出兵锚点。
+        /// <paramref name="addToArmy"/> = false 时，队伍已经即时落地，只记人口（<see cref="ExtraPop"/>）。
+        /// </summary>
+        public int PlayTrainOut(string cardId, List<PlannedSquad> produced, bool addToArmy)
         {
             if (!CanPlayTrain(cardId)) return 0;
             var card = Cfg.Cards[cardId];
@@ -345,7 +359,7 @@ namespace WarIsland.Model
             Hand.Remove(cardId);
             Discard.Add(cardId);
 
-            int produced = 0;
+            int n = 0;
             foreach (var b in Buildings)
             {
                 var def = DefOf(b);
@@ -355,17 +369,20 @@ namespace WarIsland.Model
                     PopBlocked += 1;
                     continue;
                 }
-                Army.Add(new PlannedSquad
+                var squad = new PlannedSquad
                 {
                     UnitId = unit.Id,
                     Star = b.Star,
                     SourceBuilding = b.DefId,
                     PopCost = unit.PopCost,
-                });
-                produced += 1;
+                };
+                if (addToArmy) Army.Add(squad);
+                else ExtraPop += unit.PopCost;
+                produced?.Add(squad);
+                n += 1;
             }
-            Actions.Add($"train:{unit.Id}x{produced}");
-            return produced;
+            Actions.Add($"train:{unit.Id}x{n}");
+            return n;
         }
 
         public bool CanPlayStrategy(string cardId)

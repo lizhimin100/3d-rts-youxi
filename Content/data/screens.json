@@ -165,6 +165,74 @@
 			"click": "tab_assembly",
 			"expect": "page_assembly",
 			"wait_after": 0.25
+		},
+		"squad": {
+			"description": "真小队战场：训练牌在格子中心出整队 + 框选/右键移动（真输入）",
+			"scene": "res://Screens/scenes/小队战场.tscn",
+			"delay": 3.0,
+			"click": "TrainCard_train_footman",
+			"expect": "SpawnTip",
+			"squad_select_all": true,
+			"map_right_click": [
+				0.58,
+				0.55
+			],
+			"expect_scene_state": [
+				"last_order",
+				"移动"
+			],
+			"wait_after": 0.5
+		},
+		"squad_box": {
+			"description": "小队：真实左键拖框 → 整队选中（不是单兵）",
+			"scene": "res://Screens/scenes/小队战场.tscn",
+			"delay": 3.0,
+			"squad_spawn_enemy": true,
+			"map_drag": [
+				0.03,
+				0.2,
+				0.55,
+				0.82
+			],
+			"expect_scene_state": [
+				"selected_count",
+				"3"
+			]
+		},
+		"squad_focus": {
+			"description": "小队：全选 → 右键敌方小队 → 集火（整队）",
+			"scene": "res://Screens/scenes/小队战场.tscn",
+			"delay": 3.0,
+			"squad_spawn_enemy": true,
+			"squad_select_all": true,
+			"map_right_click_enemy": true,
+			"expect_scene_state": [
+				"last_order",
+				"集火"
+			]
+		},
+		"squad_hold": {
+			"description": "小队：全选 → 按 H → 整队驻守",
+			"scene": "res://Screens/scenes/小队战场.tscn",
+			"delay": 3.0,
+			"squad_select_all": true,
+			"press_key": "H",
+			"expect_scene_state": [
+				"last_order",
+				"驻守"
+			]
+		},
+		"squad_exec": {
+			"description": "小队：点「开始执行」→ 敌方波次沿脊线压上，打 22 秒看交火与聚合血条",
+			"scene": "res://Screens/scenes/小队战场.tscn",
+			"delay": 3.0,
+			"squad_select_all": true,
+			"click": "StartButton",
+			"expect_scene_state": [
+				"phase_name",
+				"executing"
+			],
+			"wait_after": 22.0
 		}
 	}
 }

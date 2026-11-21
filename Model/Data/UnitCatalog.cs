@@ -29,6 +29,15 @@ namespace WarIsland.Model
         /// <summary>一队几个模型。</summary>
         public int SquadSize = 1;
 
+        /// <summary>阵型模板：square（方阵）/ scatter（散阵）/ wedge（楔形）。</summary>
+        public string Formation = SquadFormations.Square;
+
+        /// <summary>
+        /// 小队半径（**游戏数值**，三位数标准值）。这是导航半径：
+        /// 质心避障、抵达判定、阵型槽位预算都读这一处；表现层 × R1 得米。
+        /// </summary>
+        public double SquadRadius = 120.0;
+
         public double Hp;
         public double AttackDamage;
         public double AttackCooldown = 1.0;
@@ -184,6 +193,9 @@ namespace WarIsland.Model
                 if (u.BodyRadius <= 0.0 || u.BodyRadius > 2.0)
                     errors.Add($"{tag}：body_radius={u.BodyRadius} 越界（0..2 米）");
 
+                // 小队编制闭环：阵型模板 + 三位数小队半径 + 槽位数 = squad_size + 槽位贴合半径
+                errors.AddRange(SquadFormations.Validate(u));
+
                 // 近战无投射物、远程必须生成投射物
                 if (u.IsMelee && u.Projectile)
                     errors.Add($"{tag}：近战（{u.AttackRange}）不该有投射物");
@@ -315,6 +327,8 @@ namespace WarIsland.Model
                     Faction = JVal.Str(ud, "faction", ""),
                     Enabled = JVal.Bool(ud, "enabled", true),
                     SquadSize = JVal.Int(ud, "squad_size", 1),
+                    Formation = JVal.Str(ud, "formation", SquadFormations.Square),
+                    SquadRadius = JVal.Double(ud, "squad_radius", 0.0),
                     Hp = JVal.Double(ud, "hp", 0.0),
                     AttackDamage = JVal.Double(ud, "attack_damage", 0.0),
                     AttackCooldown = JVal.Double(ud, "attack_cooldown", 1.0),

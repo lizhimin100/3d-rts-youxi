@@ -651,7 +651,7 @@
 		},
 		{
 			"path": "Screens/bridge/ModelBridge.cs",
-			"size": 45148
+			"size": 78403
 		},
 		{
 			"path": "Screens/bridge/ModelBridge.cs.uid",
@@ -691,7 +691,7 @@
 		},
 		{
 			"path": "Screens/editor/dev_data.gd",
-			"size": 43606
+			"size": 43502
 		},
 		{
 			"path": "Screens/editor/dev_data.gd.uid",
@@ -767,7 +767,7 @@
 		},
 		{
 			"path": "Screens/editor/map_shell/shell_view.gd",
-			"size": 79571
+			"size": 79585
 		},
 		{
 			"path": "Screens/editor/map_shell/shell_view.gd.uid",
@@ -815,7 +815,7 @@
 		},
 		{
 			"path": "Screens/editor/shell_store.gd",
-			"size": 22041
+			"size": 21740
 		},
 		{
 			"path": "Screens/editor/shell_store.gd.uid",
@@ -872,6 +872,14 @@
 		{
 			"path": "Screens/hud/小地图.gd.uid",
 			"size": 20
+		},
+		{
+			"path": "Screens/hud/小队HUD.gd",
+			"size": 9736
+		},
+		{
+			"path": "Screens/hud/小队HUD.gd.uid",
+			"size": 19
 		},
 		{
 			"path": "Screens/hud/建筑面板.gd",
@@ -1014,6 +1022,14 @@
 			"size": 1100
 		},
 		{
+			"path": "Screens/input/小队指挥.gd",
+			"size": 2423
+		},
+		{
+			"path": "Screens/input/小队指挥.gd.uid",
+			"size": 20
+		},
+		{
 			"path": "Screens/input/指令系统.gd",
 			"size": 58515
 		},
@@ -1060,6 +1076,10 @@
 		{
 			"path": "Screens/scenes/四季演示.tscn",
 			"size": 280
+		},
+		{
+			"path": "Screens/scenes/小队战场.tscn",
+			"size": 199
 		},
 		{
 			"path": "Screens/screens/README.md",
@@ -1342,6 +1362,30 @@
 			"size": 20
 		},
 		{
+			"path": "Screens/world/squad/小队层.gd",
+			"size": 8377
+		},
+		{
+			"path": "Screens/world/squad/小队层.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Screens/world/squad/小队战场.gd",
+			"size": 20527
+		},
+		{
+			"path": "Screens/world/squad/小队战场.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Screens/world/squad/小队血条.gd",
+			"size": 2523
+		},
+		{
+			"path": "Screens/world/squad/小队血条.gd.uid",
+			"size": 20
+		},
+		{
 			"path": "Screens/world/规划沙盘.gd",
 			"size": 20289
 		},
@@ -1471,7 +1515,7 @@
 		},
 		{
 			"path": "Model/Data/UnitCatalog.cs",
-			"size": 15087
+			"size": 15880
 		},
 		{
 			"path": "Model/Data/UnitCatalog.cs.uid",
@@ -1503,7 +1547,7 @@
 		},
 		{
 			"path": "Model/Planning/PlanningMatch.cs",
-			"size": 15097
+			"size": 16046
 		},
 		{
 			"path": "Model/Planning/PlanningMatch.cs.uid",
@@ -1520,6 +1564,70 @@
 		{
 			"path": "Model/README.md",
 			"size": 2128
+		},
+		{
+			"path": "Model/Squad/RouteGraph.cs",
+			"size": 10088
+		},
+		{
+			"path": "Model/Squad/RouteGraph.cs.uid",
+			"size": 20
+		},
+		{
+			"path": "Model/Squad/SquadArena.cs",
+			"size": 23023
+		},
+		{
+			"path": "Model/Squad/SquadArena.cs.uid",
+			"size": 20
+		},
+		{
+			"path": "Model/Squad/SquadBattle.cs",
+			"size": 60054
+		},
+		{
+			"path": "Model/Squad/SquadBattle.cs.uid",
+			"size": 20
+		},
+		{
+			"path": "Model/Squad/SquadFormation.cs",
+			"size": 8926
+		},
+		{
+			"path": "Model/Squad/SquadFormation.cs.uid",
+			"size": 20
+		},
+		{
+			"path": "Model/Squad/SquadMatch.cs",
+			"size": 13614
+		},
+		{
+			"path": "Model/Squad/SquadMatch.cs.uid",
+			"size": 19
+		},
+		{
+			"path": "Model/Squad/SquadSession.cs",
+			"size": 13328
+		},
+		{
+			"path": "Model/Squad/SquadSession.cs.uid",
+			"size": 19
+		},
+		{
+			"path": "Model/Squad/SquadSimulator.cs",
+			"size": 11891
+		},
+		{
+			"path": "Model/Squad/SquadSimulator.cs.uid",
+			"size": 20
+		},
+		{
+			"path": "Model/Squad/SquadState.cs",
+			"size": 6037
+		},
+		{
+			"path": "Model/Squad/SquadState.cs.uid",
+			"size": 20
 		},
 		{
 			"path": "Model/WarIsland.Model.csproj",
@@ -1703,7 +1811,7 @@
 		},
 		{
 			"path": "Tests/checks/check_all.gd",
-			"size": 88595
+			"size": 101522
 		},
 		{
 			"path": "Tests/checks/check_all.gd.uid",
@@ -1711,7 +1819,7 @@
 		},
 		{
 			"path": "Tests/checks/shot_runner.gd",
-			"size": 10286
+			"size": 15596
 		},
 		{
 			"path": "Tests/checks/shot_runner.gd.uid",
@@ -1739,7 +1847,7 @@
 		},
 		{
 			"path": "Tests/sim/run_simulate.gd",
-			"size": 7802
+			"size": 13821
 		},
 		{
 			"path": "Tests/sim/run_simulate.gd.uid",
@@ -2055,7 +2163,7 @@
 		},
 		{
 			"path": "Tools/run-game.ps1",
-			"size": 7640
+			"size": 8014
 		},
 		{
 			"path": "Tools/修举盾姿势.py",
@@ -2583,7 +2691,7 @@
 		},
 		{
 			"path": "Content/data/map_shells.json",
-			"size": 85584
+			"size": 85605
 		},
 		{
 			"path": "Content/data/planning.json",
@@ -2599,7 +2707,7 @@
 		},
 		{
 			"path": "Content/data/screens.json",
-			"size": 6157
+			"size": 7876
 		},
 		{
 			"path": "Content/data/shell_decor.json",
@@ -2610,28 +2718,32 @@
 			"size": 802
 		},
 		{
+			"path": "Content/data/squad.json",
+			"size": 354
+		},
+		{
 			"path": "Content/data/units.json",
-			"size": 9949
+			"size": 10573
 		},
 		{
 			"path": "Content/i18n/legacy_budget.json",
-			"size": 6649
+			"size": 6867
 		},
 		{
 			"path": "Content/i18n/ui.csv",
-			"size": 40666
+			"size": 43287
 		},
 		{
 			"path": "Content/i18n/ui.en.translation",
-			"size": 23200
+			"size": 24388
 		},
 		{
 			"path": "Content/i18n/ui.note.translation",
-			"size": 22813
+			"size": 24001
 		},
 		{
 			"path": "Content/i18n/ui.zh.translation",
-			"size": 26459
+			"size": 27755
 		},
 		{
 			"path": "Content/keys/assets.json",
@@ -2643,7 +2755,7 @@
 		},
 		{
 			"path": "addons/map_shell_editor/plugin.gd",
-			"size": 12181
+			"size": 15091
 		},
 		{
 			"path": "addons/map_shell_editor/plugin.gd.uid",

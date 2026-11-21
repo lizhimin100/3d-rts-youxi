@@ -118,13 +118,15 @@ func _run() -> void:
 		await get_tree().create_timer(0.35).timeout
 		var expect_name := String(recipe.get("expect", ""))
 		if expect_name.is_empty():
-			_fail("画面配了 click 却没有 expect（点完拿什么判定？）")
-			return
-		var expect := _find(_scene, expect_name)
-		if expect == null or not (expect is Control) or not (expect as Control).is_visible_in_tree():
-			_fail("点了 %s 但 %s 没出现（点不动 / 事件没进去）" % [click_name, expect_name])
-			return
-		print("[shot] 交互通过：点击 %s → %s 出现" % [click_name, expect_name])
+			if not recipe.has("expect_scene_state"):
+				_fail("画面配了 click 却没有 expect（点完拿什么判定？）")
+				return
+		else:
+			var expect := _find(_scene, expect_name)
+			if expect == null or not (expect is Control) or not (expect as Control).is_visible_in_tree():
+				_fail("点了 %s 但 %s 没出现（点不动 / 事件没进去）" % [click_name, expect_name])
+				return
+			print("[shot] 交互通过：点击 %s → %s 出现" % [click_name, expect_name])
 
 	# --- 可选：只把鼠标移到地图上（不点）—— 验收"部署预览跟着鼠标画" ---
 	if recipe.has("hover_map"):
@@ -163,6 +165,149 @@ func _run() -> void:
 		await get_tree().create_timer(0.35).timeout
 		print("[shot] 地图点击 (%.0f, %.0f)" % [pos.x, pos.y])
 
+
+	# --- 可选：小队战场放一支敌方演示队（验证右键集火能点到敌人） ---
+	if recipe.has("squad_spawn_enemy"):
+		if not _scene.has_method("spawn_enemy_demo"):
+			_fail("scene has no spawn_enemy_demo")
+			return
+		_scene.call("spawn_enemy_demo")
+		await get_tree().process_frame
+		print("[shot] squad enemy spawned")
+
+	# --- 可选：真实左键拖框（框选整队） ---
+	if recipe.has("map_drag"):
+		var da: Array = recipe["map_drag"]
+		if da.size() < 4:
+			_fail("map_drag needs [x0,y0,x1,y1]")
+			return
+		var vpd := get_viewport()
+		var vsd: Vector2 = vpd.get_visible_rect().size
+		var p0 := Vector2(vsd.x * float(da[0]), vsd.y * float(da[1]))
+		var p1 := Vector2(vsd.x * float(da[2]), vsd.y * float(da[3]))
+		var mv0 := InputEventMouseMotion.new()
+		mv0.position = p0
+		mv0.global_position = p0
+		vpd.push_input(mv0, true)
+		var dn := InputEventMouseButton.new()
+		dn.button_index = MOUSE_BUTTON_LEFT
+		dn.pressed = true
+		dn.position = p0
+		dn.global_position = p0
+		vpd.push_input(dn, true)
+		await get_tree().process_frame
+		var mv1 := InputEventMouseMotion.new()
+		mv1.position = p1
+		mv1.global_position = p1
+		vpd.push_input(mv1, true)
+		await get_tree().process_frame
+		var up := InputEventMouseButton.new()
+		up.button_index = MOUSE_BUTTON_LEFT
+		up.pressed = false
+		up.position = p1
+		up.global_position = p1
+		vpd.push_input(up, true)
+		await get_tree().create_timer(0.35).timeout
+		print("[shot] map drag")
+
+	# --- 可选：真实按键（驻守 H / 停止 S / 攻击移动 A / 全选 SPACE） ---
+	if recipe.has("press_key"):
+		var kn := String(recipe["press_key"]).to_upper()
+		var code := KEY_NONE
+		match kn:
+			"H": code = KEY_H
+			"S": code = KEY_S
+			"A": code = KEY_A
+			"SPACE": code = KEY_SPACE
+		if code == KEY_NONE:
+			_fail("unsupported key: " + kn)
+			return
+		var kd := InputEventKey.new()
+		kd.keycode = code
+		kd.physical_keycode = code
+		kd.pressed = true
+		get_viewport().push_input(kd, true)
+		await get_tree().process_frame
+		var ku: InputEventKey = kd.duplicate()
+		ku.pressed = false
+		get_viewport().push_input(ku, true)
+		await get_tree().create_timer(0.2).timeout
+		print("[shot] key " + kn)
+
+	# --- 可选：右键点"敌方小队"（真实输入事件；焦点集火） ---
+	if recipe.has("map_right_click_enemy"):
+		if not _scene.has_method("screen_pos_of_enemy"):
+			_fail("scene has no screen_pos_of_enemy")
+			return
+		var ep: Vector2 = _scene.call("screen_pos_of_enemy")
+		if ep.x < 0.0:
+			_fail("no enemy squad to right-click")
+			return
+		var vpe := get_viewport()
+		var me := InputEventMouseMotion.new()
+		me.position = ep
+		me.global_position = ep
+		vpe.push_input(me, true)
+		await get_tree().process_frame
+		var de := InputEventMouseButton.new()
+		de.button_index = MOUSE_BUTTON_RIGHT
+		de.pressed = true
+		de.position = ep
+		de.global_position = ep
+		vpe.push_input(de, true)
+		await get_tree().process_frame
+		var ue: InputEventMouseButton = de.duplicate()
+		ue.pressed = false
+		vpe.push_input(ue, true)
+		await get_tree().create_timer(0.35).timeout
+		print("[shot] map right click enemy")
+
+	# --- 可选：小队战场全选（真实交互链：先全选，再右键地图下令） ---
+	if recipe.has("squad_select_all"):
+		if not _scene.has_method("select_all_squads"):
+			_fail("scene has no select_all_squads")
+			return
+		_scene.call("select_all_squads")
+		await get_tree().process_frame
+		print("[shot] squad select all")
+
+	# --- 可选：在地图上右键一次（小队移动/集火；真实输入事件） ---
+	if recipe.has("map_right_click"):
+		var rf: Array = recipe["map_right_click"]
+		var vpr := get_viewport()
+		var vsr: Vector2 = vpr.get_visible_rect().size
+		var rpos := Vector2(vsr.x * float(rf[0]), vsr.y * float(rf[1]))
+		var rm := InputEventMouseMotion.new()
+		rm.position = rpos
+		rm.global_position = rpos
+		vpr.push_input(rm, true)
+		await get_tree().process_frame
+		var rd := InputEventMouseButton.new()
+		rd.button_index = MOUSE_BUTTON_RIGHT
+		rd.pressed = true
+		rd.position = rpos
+		rd.global_position = rpos
+		vpr.push_input(rd, true)
+		await get_tree().process_frame
+		var ru: InputEventMouseButton = rd.duplicate()
+		ru.pressed = false
+		vpr.push_input(ru, true)
+		await get_tree().create_timer(0.35).timeout
+		print("[shot] map right click (%.0f, %.0f)" % [rpos.x, rpos.y])
+
+	# --- 可选：读取场景属性做状态断言（例如 last_order 必须包含某个词） ---
+	if recipe.has("expect_scene_state"):
+		var pair: Array = recipe["expect_scene_state"]
+		if pair.size() < 2:
+			_fail("expect_scene_state needs [property, substring]")
+			return
+		var prop := String(pair[0])
+		var needle := String(pair[1])
+		var got := str(_scene.get(prop))
+		if not got.contains(needle):
+			_fail("scene.%s = '%s' (want '%s')" % [prop, got, needle])
+			return
+		print("[shot] state ok: %s = %s" % [prop, got])
 
 	# --- 可选：点规划阶段的兵牌（真实输入事件；2026-11-15 玩家要求"点兵牌有反应"） ---
 	if recipe.has("token_click"):

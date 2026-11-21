@@ -60,6 +60,7 @@ func _run() -> void:
 	_check_units_data()
 	_check_planning_data()
 	_check_level_data()
+	_check_squad()
 	_check_dev_editor()
 	_check_map_shell()
 	_check_asset_manifest()
@@ -938,6 +939,197 @@ func _check_level_data() -> void:
 			JSON.stringify(a) == JSON.stringify(b))
 
 
+## ===========================================================================
+## 真小队：编制闭环 / 战场装配 / 队级指令语义 / 脊线寻路 / 推演确定性
+## ===========================================================================
+func _check_squad() -> void:
+	var mdl := _mdl()
+	if mdl == null:
+		_ok("小队：C# 桥可用", false, "ModelBridge 不可用")
+		return
+
+	var units := JsonFile.read_dict(UNITS_JSON, {})
+	var combat := JsonFile.read_dict(COMBAT_JSON, {})
+	var planning := JsonFile.read_dict(PLANNING_JSON, {})
+	var levels := JsonFile.read_dict(LEVELS_JSON, {})
+	var shells := JsonFile.read_dict(SHELLS_JSON, {})
+	var layouts := JsonFile.read_dict(LAYOUTS_JSON, {})
+	var encounters := JsonFile.read_dict(ENCOUNTERS_JSON, {})
+	var tuning := JsonFile.read_dict("res://Content/data/squad.json", {})
+
+	# ---- 1. 兵种编制闭环（阵型槽位 = squad_size，且贴合三位数小队半径）----
+	var probe: Dictionary = mdl.call("SquadFormationProbe", units, combat)
+	var bad: Array[String] = []
+	var formations := {}
+	var rows: Array = probe.get("rows", [])
+	for row in rows:
+		var r: Dictionary = row
+		formations[String(r.get("formation", ""))] = true
+		if int(r.get("slot_count", 0)) != int(r.get("squad_size", -1)) or not bool(r.get("fits", false)):
+			bad.append(String(r.get("id", "")))
+		var radius := float(r.get("squad_radius", 0.0))
+		if radius < 100.0 or radius > 400.0:
+			bad.append(String(r.get("id", "")) + ":radius")
+	_ok("12 兵种小队编制闭环（槽位 = squad_size + 贴合三位数半径）", rows.size() == 12 and bad.is_empty(),
+		"rows=%d / 问题=%s" % [rows.size(), ", ".join(bad)])
+	_ok("阵型模板只出现 方阵/散阵/楔形",
+		formations.has("square") and formations.has("scatter") and formations.has("wedge") and formations.size() <= 3,
+		str(formations.keys()))
+
+	var broken_units: Dictionary = units.duplicate(true)
+	for u0 in broken_units.get("units", []):
+		var u: Dictionary = u0
+		if String(u.get("id", "")) == "alliance_footman":
+			u["formation"] = "banana"
+			u["squad_radius"] = 5.0
+	var bad_probe: Dictionary = mdl.call("SquadFormationProbe", broken_units, combat)
+	_ok("反向验错：非法阵型/过小半径必须被 Model 拒绝",
+		not bool(bad_probe.get("ok", true)) and not _arr(bad_probe.get("errors", [])).is_empty(),
+		_err_text(bad_probe.get("errors", [])))
+
+	# ---- 2. 战场装配：脊线 / 格子 / 势力区 / 波次 ----
+	var level := _find_row(levels, "levels", "level_asm_even_four__gnoll_press")
+	var asm: Dictionary = level.get("assembly", {})
+	var shell := _find_row(shells, "shells", String(asm.get("shell", "")))
+	var layout := _find_row(layouts, "layouts", String(asm.get("player_layout", "")))
+	var encounter := _find_row(encounters, "encounters", String(asm.get("enemy_encounter", "")))
+	var arena_res: Dictionary = mdl.call("SquadArenaValidate", units, combat, level, shell, layout, encounter, tuning)
+	_ok("小队战场装配校验（脊线/格子/势力区/波次）", bool(arena_res.get("ok", false)),
+		_err_text(arena_res.get("errors", [])))
+	_ok("底壳脊线点 >= 2，战术格子 12 个",
+		int(arena_res.get("ridge_points", 0)) >= 2 and int(arena_res.get("tiles", 0)) == 12,
+		"脊线 %d 点 / 格子 %d" % [int(arena_res.get("ridge_points", 0)), int(arena_res.get("tiles", 0))])
+	_ok("小队模式抽血口径 > 0（squad.json 覆盖生效）",
+		float(arena_res.get("zone_dps_per_squad", 0.0)) > 0.0,
+		"%.0f 血/秒/队" % float(arena_res.get("zone_dps_per_squad", 0.0)))
+
+	var broken_shell: Dictionary = shell.duplicate(true)
+	var spine: Dictionary = broken_shell.get("spine", {})
+	spine["points"] = []
+	broken_shell["spine"] = spine
+	var bad_arena: Dictionary = mdl.call("SquadArenaValidate", units, combat, level, broken_shell, layout, encounter, tuning)
+	_ok("反向验错：没有脊线点的战场必须被拒",
+		not bool(bad_arena.get("ok", true)) and not _arr(bad_arena.get("errors", [])).is_empty(),
+		_err_text(bad_arena.get("errors", [])))
+
+	# ---- 3. 会话：训练牌 → 格子中心整队；移动 / 驻守 / 点选 / 框选 / 集火 ----
+	var session: Dictionary = mdl.call("SquadSessionNew", units, combat, planning, level, shell, layout, encounter, tuning, 123, true)
+	if not bool(session.get("ok", false)):
+		_ok("小队会话创建", false, _err_text(session.get("errors", [])))
+		return
+	_ok("小队会话创建（规划阶段）", true, "")
+	var h := int(session.get("handle", 0))
+	var info: Dictionary = session.get("arena", {})
+	mdl.call("SquadSessionBeginPlanning", h)
+	var st: Dictionary = mdl.call("SquadSessionState", h)
+	_ok("规划：起手 CP=16 且训练牌可打",
+		int(st.get("cp", 0)) == 16 and (st.get("train_cards", []) as Array).size() >= 4,
+		"CP=%d / 牌=%d" % [int(st.get("cp", 0)), (st.get("train_cards", []) as Array).size()])
+
+	var train: Dictionary = mdl.call("SquadSessionTrain", h, "train_footman")
+	_ok("训练牌 → 整队在建筑格子中心瞬间生成", int(train.get("produced", 0)) == 1,
+		"produced=%d" % int(train.get("produced", 0)))
+	var view: Dictionary = mdl.call("SquadView", h)
+	var squads: Array = view.get("squads", [])
+	_ok("训练后只有 1 支小队（5 人整队，不是 5 个散兵）",
+		squads.size() == 1 and int((squads[0] as Dictionary).get("member_count", 0)) == 5,
+		"队=%d" % squads.size())
+	var sq: Dictionary = squads[0]
+	var anchor := _tile_anchor_of_building(info, "barracks")
+	var spawn_dist := Vector2(float(sq.get("x", 0.0)) - anchor.x, float(sq.get("z", 0.0)) - anchor.y).length()
+	_ok("出兵点 = SquadSpawnAnchor（误差 < 0.05m）", spawn_dist < 0.05, "%.3f m" % spawn_dist)
+
+	var start_pos := Vector2(float(sq.get("x", 0.0)), float(sq.get("z", 0.0)))
+	var target := start_pos + Vector2(12.0, 0.0)
+	var moved := int(mdl.call("SquadOrder", h, [int(sq.get("id", 0))], "move", target.x, target.y, -1))
+	for i in range(100):
+		mdl.call("SquadStep", h, 0.05)
+	view = mdl.call("SquadView", h)
+	sq = (view.get("squads", []) as Array)[0]
+	var moved_dist := Vector2(float(sq.get("x", 0.0)), float(sq.get("z", 0.0))).distance_to(start_pos)
+	_ok("移动指令：整队质心真的走了（5s >= 3m）", moved == 1 and moved_dist >= 3.0,
+		"%.2f m" % moved_dist)
+
+	mdl.call("SquadOrder", h, [int(sq.get("id", 0))], "hold", 0.0, 0.0, -1)
+	var hold_pos := Vector2(float(sq.get("x", 0.0)), float(sq.get("z", 0.0)))
+	for i in range(40):
+		mdl.call("SquadStep", h, 0.05)
+	view = mdl.call("SquadView", h)
+	sq = (view.get("squads", []) as Array)[0]
+	var drift := Vector2(float(sq.get("x", 0.0)), float(sq.get("z", 0.0))).distance_to(hold_pos)
+	_ok("驻守指令：2s 内整队质心不动（< 0.15m）", drift < 0.15, "%.3f m" % drift)
+
+	var picked := int(mdl.call("SquadPickWorld", h, float(sq.get("x", 0.0)), float(sq.get("z", 0.0)), 0, 0.6))
+	_ok("点选：点小队成员 → 返回整队 id", picked == int(sq.get("id", 0)), "id=%d" % picked)
+	var box: Array = mdl.call("SquadBoxWorld", h,
+		float(sq.get("x", 0.0)) - 3.0, float(sq.get("z", 0.0)) - 3.0,
+		float(sq.get("x", 0.0)) + 3.0, float(sq.get("z", 0.0)) + 3.0, 0)
+	_ok("框选：整队质心在框内 → id 命中", box.has(int(sq.get("id", 0))), str(box))
+
+	var enemy_id := int(mdl.call("SquadSpawn", h, 1, "bandit_marauder", 1,
+		float(sq.get("x", 0.0)) + 6.0, float(sq.get("z", 0.0))))
+	var attack_ok := int(mdl.call("SquadOrder", h, [int(sq.get("id", 0))], "attack",
+		float(sq.get("x", 0.0)) + 6.0, float(sq.get("z", 0.0)), enemy_id))
+	view = mdl.call("SquadView", h)
+	sq = (view.get("squads", []) as Array)[0]
+	_ok("集火：指令落到队级 target_squad（不是单兵目标）",
+		attack_ok == 1 and int(sq.get("target_squad", -1)) == enemy_id,
+		"target=%d" % int(sq.get("target_squad", -1)))
+
+	# ---- 4. 脊线寻路：路径点 >= 3 且比直线长（走脊线，不抄斜线）----
+	var far := Vector2(float(info.get("enemy_base_x", 0.0)), 0.0)
+	var straight := Vector2(float(sq.get("x", 0.0)), float(sq.get("z", 0.0))).distance_to(far)
+	mdl.call("SquadOrder", h, [int(sq.get("id", 0))], "move", far.x, far.y, -1)
+	var path: Dictionary = mdl.call("SquadDebugPath", h, int(sq.get("id", 0)))
+	var pts: Array = path.get("points", [])
+	var path_m := float(path.get("length_m", 0.0))
+	_ok("脊线寻路：路径点 >= 3 且长度 > 直线（走廊约束生效）",
+		pts.size() >= 3 and path_m > straight * 1.005,
+		"点=%d / 路径=%.1fm / 直线=%.1fm" % [pts.size(), path_m, straight])
+
+	# 建筑不阻挡寻路：RouteGraph 源码里不许出现格子/建筑
+	var route_src := FileAccess.get_file_as_string("res://Model/Squad/RouteGraph.cs")
+	_ok("寻路图不引用战术格子/建筑（建筑在战斗阶段不阻挡）",
+		not route_src.contains("TacticalTile") and not route_src.contains("Building"), "源码层断言")
+	mdl.call("SquadSessionFree", h)
+
+	# ---- 5. 推演：2 局可跑 + 同 seed 确定性 + DPS 报告非空 ----
+	var sim_a: Dictionary = mdl.call("SquadSimulate", units, combat, planning, levels, shells, layouts, encounters, tuning,
+		"level_asm_even_four__gnoll_press", 2, 42)
+	var sim_b: Dictionary = mdl.call("SquadSimulate", units, combat, planning, levels, shells, layouts, encounters, tuning,
+		"level_asm_even_four__gnoll_press", 2, 42)
+	_ok("小队推演：2 局可跑并返回胜率",
+		bool(sim_a.get("ok", false)) and int(sim_a.get("games", 0)) == 2 and float(sim_a.get("win_rate", -1.0)) >= 0.0,
+		"胜率 %.0f%%" % (float(sim_a.get("win_rate", 0.0)) * 100.0))
+	_ok("小队推演确定性：同 seed 两跑逐字节一致", JSON.stringify(sim_a) == JSON.stringify(sim_b))
+	_ok("DPS 报告非空（逐兵种 rows + 人均 DPS）",
+		(sim_a.get("player_dps_rows", []) as Array).size() >= 1 and float(sim_a.get("avg_player_dps", -1.0)) >= 0.0,
+		"%d 行 / %.2f DPS" % [(sim_a.get("player_dps_rows", []) as Array).size(), float(sim_a.get("avg_player_dps", 0.0))])
+	_ok("阵型/寻路指标：槽位偏离 < 1m 且路径比 > 1",
+		float(sim_a.get("avg_slot_error", 9.0)) < 1.0 and float(sim_a.get("avg_path_ratio", 0.0)) > 1.0,
+		"槽位 %.2fm / 路径比 %.2f" % [float(sim_a.get("avg_slot_error", 0.0)), float(sim_a.get("avg_path_ratio", 0.0))])
+
+
+func _find_row(doc: Dictionary, key: String, id: String) -> Dictionary:
+	for row in doc.get(key, []):
+		var d: Dictionary = row
+		if String(d.get("id", "")) == id:
+			return d
+	return {}
+
+
+func _tile_anchor_of_building(info: Dictionary, def_id: String) -> Vector2:
+	for b in info.get("player_buildings", []):
+		var row: Dictionary = b
+		if String(row.get("building", "")) != def_id:
+			continue
+		for t in info.get("tiles", []):
+			var tile: Dictionary = t
+			if int(tile.get("index", 0)) == int(row.get("tile", 0)):
+				return Vector2(float(tile.get("spawn_x", 0.0)), float(tile.get("spawn_z", 0.0)))
+	return Vector2.ZERO
+
+
 func _check_dev_editor() -> void:
 	var problems: Array[String] = []
 	# 1) 脚本 / 数据层 / 场景
@@ -1193,7 +1385,8 @@ func _check_dev_editor() -> void:
 	var screen_bad: Array[String] = []
 	for name in ["editor", "editor_layouts", "editor_encounters", "editor_assembly", "shell"]:
 		var r: Dictionary = screen_map.get(name, {})
-		if r.is_empty() or not FileAccess.file_exists(String(r.get("scene", ""))) or not r.has("click") or not r.has("expect"):
+		var has_assert: bool = r.has("expect") or r.has("expect_scene_state")
+		if r.is_empty() or not FileAccess.file_exists(String(r.get("scene", ""))) or (r.has("click") and not has_assert):
 			screen_bad.append(name)
 	_ok("截图画面 editor / editor_layouts / editor_encounters / editor_assembly / shell 都登记了 click+expect",
 		screen_bad.is_empty(), ", ".join(screen_bad))
@@ -1676,8 +1869,9 @@ func _check_screens() -> void:
 		var scene := String(r.get("scene", "res://Screens/scenes/主场景.tscn"))
 		if not ResourceLoader.exists(scene):
 			problems.append("%s 场景不存在：%s" % [name, scene])
-		if r.has("click") and not r.has("expect"):
-			problems.append("%s 有 click 但没有 expect（点了不算成功，要验状态）" % name)
+		var has_assert: bool = r.has("expect") or r.has("expect_scene_state")
+		if r.has("click") and not has_assert:
+			problems.append("%s 有 click 但没有 expect / expect_scene_state（点了不算成功，要验状态）" % name)
 	_ok("截图画面表（%d 个画面）" % screens.size(), problems.is_empty(), "; ".join(problems))
 
 

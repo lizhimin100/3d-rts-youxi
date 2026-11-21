@@ -1,0 +1,5 @@
+{
+	"version": 1.0,
+	"note": "真小队模式专属旋钮（2026-11-21）。小队是战斗实体：一支 4~6 人的队在敌区抽血按『队』算，所以比横道单模型口径更高。zone_dps_per_squad 覆盖 levels.json 的 lane 值；不填则沿用关卡。单轮时长仍由关卡 round_seconds = 90 决定。",
+	"zone_dps_per_squad": 18.0
+}

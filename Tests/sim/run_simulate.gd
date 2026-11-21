@@ -1,9 +1,15 @@
 extends SceneTree
-## 职责：--simulate 的入口（只用 Model 跑第 1 关，不渲染、不建场景）
-## 用法：godot --headless --path . --script Tests/sim/run_simulate.gd -- --games=100 --seed=1 [--level=<id>] [--out=<path>]
-## 数据：Content/data/{combat,units,planning,levels}.json（全部交给 C# 内核）
+## 职责：--simulate 的入口（纯 Model，无窗口）。
+##
+## 默认：**真小队攻防**（100 局）——
+##   规划（ScriptedPlanner）→ 训练牌按建筑格子中心出整队 → 质心沿脊线 A* 推进 →
+##   成员弹性槽位 → 6 步伤害结算 → 双 90 秒 → 胜率 / DPS / 寻路 / 阵型报告。
+## 兼容：`--lane` 走旧的横道模型（LevelSimulate），只用于对照历史基线。
+##
+## 用法：godot --headless --path . --script Tests/sim/run_simulate.gd -- \
+##          [--games=100] [--seed=1] [--level=<id>] [--out=<path>] [--lane]
+## 数据：Content/data/{units,combat,planning,levels,map_shells,player_layouts,enemy_encounters,squad}.json
 ## 输出：人读表格 + 3 个定性复盘样本 + 一行机器可读 `SIM {json}`；有错退出码 1。
-## --out：把同一份 summary 写成 JSON 文件（编辑器「战斗节点组装」页靠它拿胜率，不用抓 stdout）。
 
 const JsonFile := preload("res://Engine/util/json_file.gd")
 
@@ -11,9 +17,17 @@ const COMBAT_JSON := "res://Content/data/combat.json"
 const UNITS_JSON := "res://Content/data/units.json"
 const PLANNING_JSON := "res://Content/data/planning.json"
 const LEVELS_JSON := "res://Content/data/levels.json"
+const SHELLS_JSON := "res://Content/data/map_shells.json"
+const LAYOUTS_JSON := "res://Content/data/player_layouts.json"
+const ENCOUNTERS_JSON := "res://Content/data/enemy_encounters.json"
+const SQUAD_JSON := "res://Content/data/squad.json"
 
-var _level_id := "level_1"
+## 有 assembly（底壳 + 布局卡 + 遭遇卡）的默认关卡
+const DEFAULT_SQUAD_LEVEL := "level_asm_even_four__gnoll_press"
+
+var _level_id := ""
 var _out_path := ""
+var _use_lane := false
 
 
 func _initialize() -> void:
@@ -26,15 +40,8 @@ func _run() -> void:
 			_level_id = a0.substr(8)
 		if a0.begins_with("--out="):
 			_out_path = a0.substr(6)
-	print("========== %s 推演（联盟 vs 敌方 · 双 90 秒） ==========" % _level_id)
-	var bridge_sc := load("res://Game/adapters/bridge.gd")
-	if bridge_sc == null:
-		_fail("桥脚本加载失败")
-		return
-	var mdl: RefCounted = bridge_sc.call("get_bridge") as RefCounted
-	if mdl == null:
-		_fail("C# 内核没编译（ModelBridge 实例化失败）")
-		return
+		if a0 == "--lane":
+			_use_lane = true
 
 	var games := 100
 	var seed_base := 1
@@ -45,6 +52,15 @@ func _run() -> void:
 			seed_base = int(a.substr(7))
 	games = clampi(games, 1, 500)
 
+	var bridge_sc := load("res://Game/adapters/bridge.gd")
+	if bridge_sc == null:
+		_fail("桥脚本加载失败")
+		return
+	var mdl: RefCounted = bridge_sc.call("get_bridge") as RefCounted
+	if mdl == null:
+		_fail("C# 内核没编译（ModelBridge 实例化失败）")
+		return
+
 	var units := JsonFile.read_dict(UNITS_JSON, {})
 	var combat := JsonFile.read_dict(COMBAT_JSON, {})
 	var planning := JsonFile.read_dict(PLANNING_JSON, {})
@@ -53,46 +69,90 @@ func _run() -> void:
 		_fail("Content/data 四张表读不全")
 		return
 
-	var res: Dictionary = mdl.call("LevelSimulate", units, combat, planning, levels, _level_id, games, seed_base)
-	if not bool(res.get("ok", false)):
-		print("  ✗ 数据/推演错误：")
-		for e in res.get("errors", []):
-			print("    - " + str(e))
-		_fail("场景配置不合法")
+	if _use_lane:
+		_run_lane(mdl, units, combat, planning, levels, games, seed_base)
 		return
 
-	print("关卡：%s ｜ %d 局 ｜ 种子 %d..%d ｜ 每局两轮各 90s（轮末清场）" % [
-		String(res.get("level_name", _level_id)), int(res.get("games", 0)),
+	if _level_id.is_empty():
+		_level_id = DEFAULT_SQUAD_LEVEL
+	var shells := JsonFile.read_dict(SHELLS_JSON, {})
+	var layouts := JsonFile.read_dict(LAYOUTS_JSON, {})
+	var encounters := JsonFile.read_dict(ENCOUNTERS_JSON, {})
+	var tuning := JsonFile.read_dict(SQUAD_JSON, {})
+	if tuning.is_empty():
+		tuning = {"zone_dps_per_squad": 18.0}
+
+	var res: Dictionary = mdl.call("SquadSimulate",
+		units, combat, planning, levels, shells, layouts, encounters, tuning,
+		_level_id, games, seed_base)
+	if not bool(res.get("ok", false)):
+		var errs: Array = res.get("errors", [])
+		print("  ✗ 小队推演错误：")
+		for e in errs:
+			print("    - " + str(e))
+		_fail("；".join(errs) if not errs.is_empty() else "小队推演失败")
+		return
+
+	_print_squad_report(res, games, seed_base)
+	var summary := _squad_summary(res, games, seed_base)
+	print("SIM " + JSON.stringify(summary))
+	_write_out(summary)
+	quit(0)
+
+
+# ===========================================================================
+# 小队报告
+# ===========================================================================
+func _print_squad_report(res: Dictionary, games: int, seed_base: int) -> void:
+	print("========== 真小队推演 · %s ==========" % String(res.get("level", _level_id)))
+	print("战场：%s ｜ %d 局 ｜ 种子 %d..%d ｜ 每局两轮各 90s（轮末清场）" % [
+		String(res.get("arena_name", res.get("arena", ""))), int(res.get("games", games)),
 		seed_base, seed_base + games - 1])
-	print("说明：规划由脚本化规划器执行（可复现）；战斗是纯数学 + 确定性 RNG。")
-	print("---------------------------------------------------------------")
-	print("%-4s %-6s %-5s %-13s %-10s %-9s %-9s %-7s %-5s %-5s %-4s %-4s %s" % [
-		"idx", "seed", "res", "player_hp", "enemy_hp", "squads", "loss/kill", "base", "zone", "pike", "cp", "pop", "reason"])
+	print("说明：训练牌 → 建筑格子 SquadSpawnAnchor 瞬间整队；质心沿脊线 A* 推进；成员弹性槽位；6 步结算。")
+	print("------------------------------------------------------------------------------------------")
+	print("%-4s %-6s %-5s %-13s %-10s %-9s %-8s %-7s %-6s %-4s %-5s %s" % [
+		"idx", "seed", "res", "player_hp", "enemy_hp", "squads", "dmg", "dps/人", "zone", "卡住", "槽位", "reason"])
 
 	var rows: Array = res.get("rows", [])
 	for row in rows:
 		var r: Dictionary = row
-		print("%-4d %-6d %-5s %-13s %-10s %-9s %-9s %-7d %-5d %-5s %-4d %-4d %s" % [
+		print("%-4d %-6d %-5s %-13s %-10s %-9s %-8d %-7.2f %-6d %-4d %-5.2f %s" % [
 			int(r.get("index", 0)), int(r.get("seed", 0)), _outcome_en(String(r.get("outcome", ""))),
 			"%d (%d%%)" % [int(r.get("player_hp", 0)), int(r.get("player_hp_pct", 0))],
 			str(int(r.get("enemy_hp", 0))),
-			"%d/%d" % [int(r.get("player_squads", 0)), int(r.get("enemy_squads", 0))],
-			"%d/%d" % [int(r.get("player_losses", 0)), int(r.get("enemy_losses", 0))],
-			int(r.get("base_damage", 0)), int(r.get("zone_max", 0)),
-			"%d%%" % int(r.get("pike_formation_rate", 0)),
-			int(r.get("cp_left", 0)), int(r.get("pop_blocked", 0)),
+			"%d/%d 亡%d" % [int(r.get("player_squads", 0)), int(r.get("enemy_squads", 0)),
+				int(r.get("player_squads_lost", 0))],
+			int(r.get("player_damage", 0)),
+			float(r.get("dps_member", 0.0)),
+			int(r.get("zone_max", 0)), int(r.get("stuck_events", 0)),
+			float(r.get("slot_error", 0.0)),
 			String(r.get("top_reason", "")),
 		])
 
-	print("---------------------------------------------------------------")
+	print("------------------------------------------------------------------------------------------")
 	print("汇总：胜 %d ｜ 负 %d ｜ 平 %d ｜ 胜率 %.1f%% ｜ 平均 %.1fs" % [
 		int(res.get("wins", 0)), int(res.get("losses", 0)), int(res.get("draws", 0)),
 		float(res.get("win_rate", 0.0)) * 100.0, float(res.get("avg_seconds", 0.0))])
-	print("均值：我方基地剩 %.0f%% ｜ 敌基地剩 %.0f ｜ 出兵 %.1f 队 vs 敌方 %.1f 队" % [
+	print("均值：我方基地剩 %.0f%% ｜ 敌基地剩 %.0f ｜ 出兵 %.1f vs %.1f 队 ｜ 整队阵亡 %.1f 队" % [
 		float(res.get("avg_player_hp_pct", 0.0)), float(res.get("avg_enemy_hp", 0.0)),
-		float(res.get("avg_player_squads", 0.0)), float(res.get("avg_enemy_squads", 0.0))])
-	print("队形：长枪在步兵身后的时间占比 %.1f%% ｜ 平均间距 %.1f cm（理想 90）" % [
-		float(res.get("avg_pike_behind_rate", 0.0)) * 100.0, float(res.get("avg_pike_gap_cm", 0.0))])
+		float(res.get("avg_player_squads", 0.0)), float(res.get("avg_enemy_squads", 0.0)),
+		float(res.get("avg_player_squads_lost", 0.0))])
+	print("输出：我方总伤害 %.0f ｜ 战斗 DPS %.1f ｜ 人均 DPS %.2f" % [
+		float(res.get("avg_player_damage", 0.0)), float(res.get("avg_player_dps", 0.0)),
+		float(res.get("avg_player_dps_per_member", 0.0))])
+	print("寻路：平均路径 %.0f 游戏数值（直线比 %.2f）｜ 卡住脱困 %.1f 次/局 ｜ 槽位偏离 %.2f m" % [
+		float(res.get("avg_path_length", 0.0)), float(res.get("avg_path_ratio", 0.0)),
+		float(res.get("avg_stuck_events", 0.0)), float(res.get("avg_slot_error", 0.0))])
+
+	print("------------------------------------------------------------------------------------------")
+	print("DPS 明细（我方）：")
+	print("%-24s %-6s %-7s %-10s %-10s %-10s %s" % ["兵种", "队数", "人数", "总伤害", "DPS/人", "DPS/队", "击杀/阵亡"])
+	for row in res.get("player_dps_rows", []):
+		var d: Dictionary = row
+		print("%-24s %-6d %-7d %-10.0f %-10.2f %-10.2f %d/%d" % [
+			String(d.get("unit_id", "")), int(d.get("squads", 0)), int(d.get("models", 0)),
+			float(d.get("damage", 0.0)), float(d.get("dps_member", 0.0)), float(d.get("dps_squad", 0.0)),
+			int(d.get("kills", 0)), int(d.get("losses", 0))])
 
 	var counts: Dictionary = res.get("review_counts", {})
 	var keys: Array = counts.keys()
@@ -104,36 +164,41 @@ func _run() -> void:
 
 	var samples: Array = res.get("samples", [])
 	if not samples.is_empty():
-		print("---------------------------------------------------------------")
+		print("------------------------------------------------------------------------------------------")
 		print("定性复盘样本：")
 		for s in samples:
 			var d: Dictionary = s
-			print("  seed=%d ｜ %s ｜ 我方 %d / 敌方 %d ｜ 进攻 %d 队 / 防守 %d 队" % [
+			print("  seed=%d ｜ %s ｜ 我方 %d / 敌方 %d ｜ 伤害 %.0f ｜ 进攻 %d 队 / 防守 %d 队" % [
 				int(d.get("seed", 0)), String(d.get("outcome_text", "")),
 				int(d.get("player_hp", 0)), int(d.get("enemy_hp", 0)),
+				float(d.get("player_damage", 0.0)),
 				int(d.get("attack_squads", 0)), int(d.get("defend_squads", 0))])
 			for line in d.get("reviews", []):
 				print("    - " + String(line))
 
-	var sample_brief: Array = []
-	for s in samples:
+
+func _squad_summary(res: Dictionary, games: int, seed_base: int) -> Dictionary:
+	var samples_brief: Array = []
+	for s in res.get("samples", []):
 		var d: Dictionary = s
-		sample_brief.append({
+		samples_brief.append({
 			"seed": int(d.get("seed", 0)),
 			"outcome": String(d.get("outcome", "")),
 			"outcome_text": String(d.get("outcome_text", "")),
 			"player_hp": int(d.get("player_hp", 0)),
 			"enemy_hp": int(d.get("enemy_hp", 0)),
+			"player_damage": float(d.get("player_damage", 0.0)),
 			"reviews": d.get("reviews", []),
 			"review_codes": d.get("review_codes", []),
 		})
-
-	var summary := {
+	return {
 		"ok": true,
+		"mode": "squad",
 		"level": String(res.get("level", _level_id)),
-		"level_name": String(res.get("level_name", "")),
-		"games": int(res.get("games", 0)),
-		"seed_base": seed_base,
+		"arena": String(res.get("arena", "")),
+		"arena_name": String(res.get("arena_name", "")),
+		"games": int(res.get("games", games)),
+		"seed_base": int(res.get("seed_base", seed_base)),
 		"wins": int(res.get("wins", 0)),
 		"losses": int(res.get("losses", 0)),
 		"draws": int(res.get("draws", 0)),
@@ -143,10 +208,65 @@ func _run() -> void:
 		"avg_enemy_hp": float(res.get("avg_enemy_hp", 0.0)),
 		"avg_player_squads": float(res.get("avg_player_squads", 0.0)),
 		"avg_enemy_squads": float(res.get("avg_enemy_squads", 0.0)),
-		"avg_pike_behind_rate": float(res.get("avg_pike_behind_rate", 0.0)),
-		"avg_pike_gap_cm": float(res.get("avg_pike_gap_cm", 0.0)),
-		"review_counts": counts,
-		"samples": sample_brief,
+		"avg_player_squads_lost": float(res.get("avg_player_squads_lost", 0.0)),
+		"avg_player_damage": float(res.get("avg_player_damage", 0.0)),
+		"avg_player_dps": float(res.get("avg_player_dps", 0.0)),
+		"avg_player_dps_per_member": float(res.get("avg_player_dps_per_member", 0.0)),
+		"avg_path_length": float(res.get("avg_path_length", 0.0)),
+		"avg_path_ratio": float(res.get("avg_path_ratio", 0.0)),
+		"avg_stuck_events": float(res.get("avg_stuck_events", 0.0)),
+		"avg_slot_error": float(res.get("avg_slot_error", 0.0)),
+		"player_dps_rows": res.get("player_dps_rows", []),
+		"review_counts": res.get("review_counts", {}),
+		"samples": samples_brief,
+	}
+
+
+# ===========================================================================
+# 旧横道口径（--lane）
+# ===========================================================================
+func _run_lane(mdl: RefCounted, units: Dictionary, combat: Dictionary, planning: Dictionary,
+		levels: Dictionary, games: int, seed_base: int) -> void:
+	if _level_id.is_empty():
+		_level_id = "level_1"
+	print("========== %s 推演（横道旧口径 · 双 90 秒） ==========" % _level_id)
+	var res: Dictionary = mdl.call("LevelSimulate", units, combat, planning, levels, _level_id, games, seed_base)
+	if not bool(res.get("ok", false)):
+		for e in res.get("errors", []):
+			print("    - " + str(e))
+		_fail("场景配置不合法")
+		return
+	print("关卡：%s ｜ %d 局 ｜ 种子 %d..%d" % [
+		String(res.get("level_name", _level_id)), int(res.get("games", 0)), seed_base, seed_base + games - 1])
+	print("%-4s %-6s %-5s %-13s %-10s %-9s %-9s %-7s %-5s %-5s %s" % [
+		"idx", "seed", "res", "player_hp", "enemy_hp", "squads", "loss/kill", "base", "zone", "cp", "reason"])
+	for row in res.get("rows", []):
+		var r: Dictionary = row
+		print("%-4d %-6d %-5s %-13s %-10s %-9s %-9s %-7d %-5d %-4d %s" % [
+			int(r.get("index", 0)), int(r.get("seed", 0)), _outcome_en(String(r.get("outcome", ""))),
+			"%d (%d%%)" % [int(r.get("player_hp", 0)), int(r.get("player_hp_pct", 0))],
+			str(int(r.get("enemy_hp", 0))),
+			"%d/%d" % [int(r.get("player_squads", 0)), int(r.get("enemy_squads", 0))],
+			"%d/%d" % [int(r.get("player_losses", 0)), int(r.get("enemy_losses", 0))],
+			int(r.get("base_damage", 0)), int(r.get("zone_max", 0)), int(r.get("cp_left", 0)),
+			String(r.get("top_reason", "")),
+		])
+	print("汇总：胜 %d ｜ 负 %d ｜ 平 %d ｜ 胜率 %.1f%% ｜ 平均 %.1fs" % [
+		int(res.get("wins", 0)), int(res.get("losses", 0)), int(res.get("draws", 0)),
+		float(res.get("win_rate", 0.0)) * 100.0, float(res.get("avg_seconds", 0.0))])
+	var summary := {
+		"ok": true,
+		"mode": "lane",
+		"level": String(res.get("level", _level_id)),
+		"level_name": String(res.get("level_name", "")),
+		"games": int(res.get("games", 0)),
+		"seed_base": seed_base,
+		"wins": int(res.get("wins", 0)),
+		"losses": int(res.get("losses", 0)),
+		"draws": int(res.get("draws", 0)),
+		"win_rate": float(res.get("win_rate", 0.0)),
+		"avg_seconds": float(res.get("avg_seconds", 0.0)),
+		"review_counts": res.get("review_counts", {}),
 	}
 	print("SIM " + JSON.stringify(summary))
 	_write_out(summary)

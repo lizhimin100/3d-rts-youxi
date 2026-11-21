@@ -27,7 +27,9 @@ function Show-Usage {
   Tools/run-game.ps1                         正常启动（短局：规划/执行 + CP）
   Tools/run-game.ps1 --short                 显式短局（截图/QA 用；正常启动已是短局）
   Tools/run-game.ps1 --check                 无窗口体检（数据/文案/资源/分层/存档隔离/文档）
-  Tools/run-game.ps1 --simulate [--games=N]  只用 Model 跑推演并输出数值报告
+  Tools/run-game.ps1 --simulate [--games=N]  真小队 100 局：胜率 / DPS / 寻路 / 阵型
+  Tools/run-game.ps1 --simulate --lane       旧横道口径（历史基线对照）
+  Tools/run-game.ps1 --squad                 试玩真小队（框选 / 移动 / 集火 / 驻守）
   Tools/run-game.ps1 --shot <画面> <输出.png> 离屏截图（hud 画面会真点一次「建造」）
   Tools/run-game.ps1 --import                重新扫描资源（加了新类名/新场景后跑一次）
   Tools/run-game.ps1 --round-test            半回合制自检（规划/执行/CP/小队/部署，无窗口）
@@ -73,6 +75,7 @@ for ($i = 0; $i -lt $Rest.Count; $i++) {
         "--simulate" { $mode = "simulate"; continue }
         "--import"   { $mode = "import"; continue }
         "--round-test" { $mode = "round"; continue }
+        "--squad"    { $mode = "squad"; continue }
         "--short"    { $userMode = "--short"; continue }
         # 常见游戏参数：不能当引擎参数传，否则 Game 侧的 OS.get_cmdline_user_args() 收不到。
         "--map=*"     { $gameArgs += $a; continue }
@@ -134,6 +137,10 @@ switch ($mode) {
     }
     "round" {
         & $Godot --headless --path $Root -- --round-test
+        exit $LASTEXITCODE
+    }
+    "squad" {
+        & $Godot --path $Root "res://Screens/scenes/小队战场.tscn" @pass
         exit $LASTEXITCODE
     }
     "simulate" {

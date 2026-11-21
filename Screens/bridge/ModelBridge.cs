@@ -639,6 +639,744 @@ namespace WarIsland.Bridge
         }
 
         // =================================================================
+        // 2026-11-21 真小队：编制 / 脊线寻路 / 队级指令 / 100 局推演
+        // =================================================================
+        private readonly Dictionary<int, SquadSession> _squadSessions = new Dictionary<int, SquadSession>();
+        private int _nextSquadHandle = 1;
+
+        /// <summary>建一个"规划 + 执行"的小队会话；返回 { ok, handle, errors, arena }。</summary>
+        public Godot.Collections.Dictionary SquadSessionNew(
+            Godot.Collections.Dictionary unitsDict,
+            Godot.Collections.Dictionary combatDict,
+            Godot.Collections.Dictionary planningDict,
+            Godot.Collections.Dictionary levelDict,
+            Godot.Collections.Dictionary shellDict,
+            Godot.Collections.Dictionary layoutDict,
+            Godot.Collections.Dictionary encounterDict,
+            Godot.Collections.Dictionary tuningDict,
+            int seed,
+            bool instantTrain)
+        {
+            var notes = new List<string>();
+            var rules = CombatRules.FromDict(ToPlainDict(combatDict));
+            var units = UnitCatalog.FromDict(ToPlainDict(unitsDict), rules, notes);
+            var planning = PlanningConfig.FromDict(ToPlainDict(planningDict), units, notes);
+            var arena = SquadArena.FromDict(
+                ToPlainDict(levelDict), ToPlainDict(shellDict), ToPlainDict(layoutDict),
+                ToPlainDict(encounterDict), units, ToPlainDict(tuningDict));
+
+            var errors = new List<string>();
+            errors.AddRange(notes);
+            errors.AddRange(rules.Validate());
+            errors.AddRange(units.Validate());
+            errors.AddRange(planning.Validate(units));
+            errors.AddRange(arena.Validate(units));
+            if (errors.Count > 0)
+            {
+                return new Godot.Collections.Dictionary
+                {
+                    { "ok", false },
+                    { "handle", 0 },
+                    { "errors", ToGodotArray(errors) },
+                };
+            }
+
+            var session = new SquadSession(units, rules, planning, arena, seed, instantTrain);
+            int handle = _nextSquadHandle++;
+            _squadSessions[handle] = session;
+            return new Godot.Collections.Dictionary
+            {
+                { "ok", true },
+                { "handle", handle },
+                { "errors", new Godot.Collections.Array() },
+                { "arena", ArenaInfoDict(arena) },
+                { "instant_train", instantTrain },
+            };
+        }
+
+        public void SquadSessionFree(int handle)
+        {
+            _squadSessions.Remove(handle);
+        }
+
+        private SquadSession Session(int handle)
+        {
+            _squadSessions.TryGetValue(handle, out SquadSession session);
+            return session;
+        }
+
+        public Godot.Collections.Dictionary SquadSessionBeginPlanning(int handle)
+        {
+            var session = Session(handle);
+            if (session == null) return Err("会话已失效");
+            session.BeginPlanning();
+            return OkState(session);
+        }
+
+        public Godot.Collections.Dictionary SquadSessionTrain(int handle, string cardId)
+        {
+            var session = Session(handle);
+            if (session == null) return Err("会话已失效");
+            int n = session.PlayTrainCard(cardId);
+            var d = OkState(session);
+            d["produced"] = n;
+            return d;
+        }
+
+        public Godot.Collections.Dictionary SquadSessionBuild(int handle, string cardId)
+        {
+            var session = Session(handle);
+            if (session == null) return Err("会话已失效");
+            bool ok = session.PlayBuildCard(cardId);
+            var d = OkState(session);
+            d["built"] = ok;
+            return d;
+        }
+
+        public Godot.Collections.Dictionary SquadSessionEndPlanning(int handle)
+        {
+            var session = Session(handle);
+            if (session == null) return Err("会话已失效");
+            session.EndPlanning(true);
+            return OkState(session);
+        }
+
+        public Godot.Collections.Dictionary SquadSessionBeginExecution(int handle, int roundIndex)
+        {
+            var session = Session(handle);
+            if (session == null) return Err("会话已失效");
+            session.BeginExecution(roundIndex);
+            return OkState(session);
+        }
+
+        public Godot.Collections.Dictionary SquadSessionState(int handle)
+        {
+            var session = Session(handle);
+            if (session == null) return Err("会话已失效");
+            return OkState(session);
+        }
+
+        private static Godot.Collections.Dictionary Err(string msg)
+        {
+            return new Godot.Collections.Dictionary
+            {
+                { "ok", false },
+                { "error", msg },
+            };
+        }
+
+        private static Godot.Collections.Dictionary OkState(SquadSession session)
+        {
+            SquadSessionState st = session.State();
+            var cards = new Godot.Collections.Array();
+            foreach (SquadTrainEntry c in st.TrainCards)
+            {
+                cards.Add(new Godot.Collections.Dictionary
+                {
+                    { "card_id", c.CardId },
+                    { "display_name", c.DisplayName },
+                    { "unit_id", c.UnitId },
+                    { "unit_name", c.UnitName },
+                    { "tag", c.Tag },
+                    { "cost_cp", c.CostCp },
+                    { "squad_size", c.SquadSize },
+                    { "formation", c.Formation },
+                    { "squad_radius", c.SquadRadius },
+                    { "buildings", c.Buildings },
+                    { "in_hand", c.InHand },
+                    { "available", c.Available },
+                    { "reason", c.Reason },
+                });
+            }
+            return new Godot.Collections.Dictionary
+            {
+                { "ok", true },
+                { "phase", st.Phase },
+                { "planning_index", st.PlanningIndex },
+                { "cp", st.Cp },
+                { "cp_start", st.CpStart },
+                { "pop_used", st.PopUsed },
+                { "pop_cap", st.PopCap },
+                { "pop_blocked", st.PopBlocked },
+                { "army_squads", st.ArmySquads },
+                { "hand", ToGodotArray(st.Hand) },
+                { "train_cards", cards },
+                { "log", ToGodotArray(st.Log) },
+            };
+        }
+
+        public Godot.Collections.Dictionary SquadStep(int handle, double dt)
+        {
+            var session = Session(handle);
+            if (session == null) return Err("会话已失效");
+            session.Battle.Step(dt);
+            return new Godot.Collections.Dictionary
+            {
+                { "ok", true },
+                { "time", Math.Round(session.Battle.Time * 100.0) / 100.0 },
+                { "finished", session.Battle.Finished },
+                { "outcome", session.Battle.Outcome },
+            };
+        }
+
+        /// <summary>小队战场快照（世界坐标，米）。</summary>
+        public Godot.Collections.Dictionary SquadView(int handle)
+        {
+            var session = Session(handle);
+            if (session == null) return Err("会话已失效");
+            SquadBattleView view = session.Battle.View(true);
+            var squads = new Godot.Collections.Array();
+            foreach (SquadView s in view.Squads)
+            {
+                var members = new Godot.Collections.Array();
+                foreach (SquadMemberView m in s.Members)
+                {
+                    members.Add(new Godot.Collections.Dictionary
+                    {
+                        { "index", m.Index },
+                        { "x", m.X },
+                        { "z", m.Z },
+                        { "hp", m.Hp },
+                        { "max_hp", m.MaxHp },
+                        { "alive", m.Alive },
+                        { "slot_x", m.SlotX },
+                        { "slot_z", m.SlotZ },
+                        { "slot_error", Math.Round(m.SlotError, 3) },
+                    });
+                }
+                squads.Add(new Godot.Collections.Dictionary
+                {
+                    { "id", s.Id },
+                    { "side", s.Side },
+                    { "unit_id", s.UnitId },
+                    { "display_name", s.DisplayName },
+                    { "star", s.Star },
+                    { "x", s.X },
+                    { "z", s.Z },
+                    { "heading", s.Heading },
+                    { "hp", s.Hp },
+                    { "max_hp", s.MaxHp },
+                    { "alive_count", s.AliveCount },
+                    { "member_count", s.MemberCount },
+                    { "order", s.Order },
+                    { "target_squad", s.TargetSquad },
+                    { "radius", s.Radius },
+                    { "move_speed", s.MoveSpeed },
+                    { "kills", s.Kills },
+                    { "damage_dealt", s.DamageDealt },
+                    { "spawn_tile", s.SpawnTile },
+                    { "source_building", s.SourceBuilding },
+                    { "members", members },
+                });
+            }
+            return new Godot.Collections.Dictionary
+            {
+                { "ok", true },
+                { "time", view.Time },
+                { "finished", view.Finished },
+                { "outcome", view.Outcome },
+                { "player_hp", view.PlayerBaseHp },
+                { "player_hp_max", view.PlayerBaseHpMax },
+                { "enemy_hp", view.EnemyBaseHp },
+                { "enemy_hp_max", view.EnemyBaseHpMax },
+                { "squads", squads },
+                { "stats", StatsDict(view.Stats) },
+            };
+        }
+
+        private static Godot.Collections.Dictionary StatsDict(SquadBattleStats st)
+        {
+            if (st == null) return new Godot.Collections.Dictionary();
+            return new Godot.Collections.Dictionary
+            {
+                { "player_damage", st.PlayerDamage },
+                { "enemy_damage", st.EnemyDamage },
+                { "player_kills", st.PlayerKills },
+                { "enemy_kills", st.EnemyKills },
+                { "player_models_lost", st.PlayerModelsLost },
+                { "enemy_models_lost", st.EnemyModelsLost },
+                { "player_squads_lost", st.PlayerSquadsLost },
+                { "enemy_squads_lost", st.EnemySquadsLost },
+                { "player_squads_spawned", st.PlayerSquadsSpawned },
+                { "enemy_squads_spawned", st.EnemySquadsSpawned },
+                { "player_zone_seconds", st.PlayerZoneSeconds },
+                { "enemy_zone_seconds", st.EnemyZoneSeconds },
+                { "player_max_zone", st.PlayerMaxZone },
+                { "enemy_max_zone", st.EnemyMaxZone },
+                { "stuck_events", st.StuckEvents },
+                { "repaths", st.Repaths },
+                { "slot_error_m", st.AvgSlotErrorMeters },
+                { "path_length", st.AvgPathLength },
+                { "first_contact", st.FirstContactSecond },
+                { "player_by_unit", UnitStatsDict(st.PlayerByUnit) },
+                { "enemy_by_unit", UnitStatsDict(st.EnemyByUnit) },
+            };
+        }
+
+        private static Godot.Collections.Dictionary UnitStatsDict(Dictionary<string, SquadUnitStat> map)
+        {
+            var d = new Godot.Collections.Dictionary();
+            foreach (var kv in map)
+            {
+                d[kv.Key] = new Godot.Collections.Dictionary
+                {
+                    { "squads", kv.Value.Squads },
+                    { "models", kv.Value.Models },
+                    { "kills", kv.Value.Kills },
+                    { "losses", kv.Value.Losses },
+                    { "damage", kv.Value.Damage },
+                    { "dps_member", kv.Value.DpsPerMember },
+                    { "dps_squad", kv.Value.DpsPerSquad },
+                };
+            }
+            return d;
+        }
+
+        /// <summary>点选整队（世界米）。side -1 = 不限；返回 squad id，-1 = 没点到。</summary>
+        public int SquadPickWorld(int handle, double worldX, double worldZ, int side, double slack)
+        {
+            var session = Session(handle);
+            if (session == null) return -1;
+            return session.Battle.PickSquad(worldX, worldZ, side, slack);
+        }
+
+        /// <summary>框选整队（世界米）→ squad id 数组。</summary>
+        public Godot.Collections.Array SquadBoxWorld(int handle, double x0, double z0, double x1, double z1, int side)
+        {
+            var session = Session(handle);
+            var arr = new Godot.Collections.Array();
+            if (session == null) return arr;
+            foreach (int id in session.Battle.SquadsInRectWorld(x0, z0, x1, z1, side)) arr.Add(id);
+            return arr;
+        }
+
+        /// <summary>对一组小队下指令：move / attack_move / hold / stop / attack。</summary>
+        public int SquadOrder(int handle, Godot.Collections.Array ids, string order, double worldX, double worldZ, int targetSquad)
+        {
+            var session = Session(handle);
+            if (session == null) return 0;
+            var list = new List<int>();
+            foreach (Variant v in ids) list.Add(v.AsInt32());
+            return session.Battle.OrderMany(list, order, worldX, worldZ, targetSquad);
+        }
+
+        /// <summary>直接生成一支小队（试玩初始阵容 / 自检用）；世界米。</summary>
+        public int SquadSpawn(int handle, int side, string unitId, int star, double worldX, double worldZ)
+        {
+            var session = Session(handle);
+            if (session == null) return -1;
+            return session.Battle.AddSquad(side, unitId, star, worldX, worldZ);
+        }
+
+        public Godot.Collections.Dictionary SquadDebugPath(int handle, int squadId)
+        {
+            var session = Session(handle);
+            if (session == null) return Err("会话已失效");
+            var points = new Godot.Collections.Array();
+            foreach (System.Numerics.Vector2 p in session.Battle.DebugPath(squadId))
+            {
+                var w = session.Battle.Arena.LaneToWorld(p.X, p.Y);
+                points.Add(new Godot.Collections.Dictionary { { "x", w.X }, { "z", w.Y } });
+            }
+            return new Godot.Collections.Dictionary
+            {
+                { "ok", true },
+                { "length", session.Battle.DebugPathLength(squadId) },
+                { "length_m", session.Battle.DebugPathLength(squadId) * RtsUnits.R1 },
+                { "points", points },
+            };
+        }
+
+        /// <summary>战场几何（格子锚点 / 脊线 / 势力区），世界米。</summary>
+        public Godot.Collections.Dictionary SquadArenaInfo(int handle)
+        {
+            var session = Session(handle);
+            if (session == null) return Err("会话已失效");
+            return ArenaInfoDict(session.Arena);
+        }
+
+        private static Godot.Collections.Dictionary ArenaInfoDict(SquadArena arena)
+        {
+            var ridge = new Godot.Collections.Array();
+            foreach (System.Numerics.Vector2 p in arena.Route.Ridge)
+            {
+                var w = arena.LaneToWorld(p.X, p.Y);
+                ridge.Add(new Godot.Collections.Dictionary { { "x", w.X }, { "z", w.Y } });
+            }
+            var tiles = new Godot.Collections.Array();
+            foreach (TacticalTile t in arena.Tiles)
+            {
+                var spawn = t.SquadSpawnAnchorWorld();
+                var build = t.BuildingAnchorWorld();
+                tiles.Add(new Godot.Collections.Dictionary
+                {
+                    { "index", t.Index },
+                    { "side", t.Side },
+                    { "role", t.Role },
+                    { "x", t.X },
+                    { "z", t.Z },
+                    { "w", t.Width },
+                    { "d", t.Depth },
+                    { "yaw", t.YawDeg },
+                    { "terrain_y", t.TerrainY },
+                    { "spawn_x", spawn.X },
+                    { "spawn_z", spawn.Y },
+                    { "building_x", build.X },
+                    { "building_z", build.Y },
+                });
+            }
+            var playerBuildings = new Godot.Collections.Array();
+            foreach (ArenaBuilding b in arena.PlayerBuildings)
+            {
+                playerBuildings.Add(new Godot.Collections.Dictionary
+                {
+                    { "tile", b.Tile },
+                    { "building", b.DefId },
+                    { "star", b.Star },
+                });
+            }
+            var enemyBuildings = new Godot.Collections.Array();
+            foreach (ArenaBuilding b in arena.EnemyBuildings)
+            {
+                enemyBuildings.Add(new Godot.Collections.Dictionary
+                {
+                    { "tile", b.Tile },
+                    { "building", b.DefId },
+                    { "star", b.Star },
+                });
+            }
+            var playerBase = arena.LaneToWorld(arena.PlayerBaseX, 0.0);
+            var enemyBase = arena.LaneToWorld(arena.EnemyBaseX, 0.0);
+            var pZone = arena.LaneToWorld(arena.PlayerZoneEnd, 0.0);
+            var eZone = arena.LaneToWorld(arena.EnemyZoneStart, 0.0);
+            var min = arena.LaneToWorld(arena.MinX, arena.MinY);
+            var max = arena.LaneToWorld(arena.MaxX, arena.MaxY);
+            return new Godot.Collections.Dictionary
+            {
+                { "id", arena.Id },
+                { "display_name", arena.DisplayName },
+                { "player_faction", arena.PlayerFaction },
+                { "enemy_faction", arena.EnemyFaction },
+                { "round_seconds", arena.RoundSeconds },
+                { "min_x", min.X },
+                { "min_z", min.Y },
+                { "max_x", max.X },
+                { "max_z", max.Y },
+                { "player_base_x", playerBase.X },
+                { "player_base_z", playerBase.Y },
+                { "enemy_base_x", enemyBase.X },
+                { "enemy_base_z", enemyBase.Y },
+                { "player_zone_x", pZone.X },
+                { "enemy_zone_x", eZone.X },
+                { "ridge", ridge },
+                { "tiles", tiles },
+                { "player_buildings", playerBuildings },
+                { "enemy_buildings", enemyBuildings },
+                { "zone_dps_per_squad", arena.ZoneDpsPerSquad },
+            };
+        }
+
+        /// <summary>只校验小队战场（--check 的入口）。</summary>
+        public Godot.Collections.Dictionary SquadArenaValidate(
+            Godot.Collections.Dictionary unitsDict,
+            Godot.Collections.Dictionary combatDict,
+            Godot.Collections.Dictionary levelDict,
+            Godot.Collections.Dictionary shellDict,
+            Godot.Collections.Dictionary layoutDict,
+            Godot.Collections.Dictionary encounterDict,
+            Godot.Collections.Dictionary tuningDict)
+        {
+            var rules = CombatRules.FromDict(ToPlainDict(combatDict));
+            var units = UnitCatalog.FromDict(ToPlainDict(unitsDict), rules, new List<string>());
+            var arena = SquadArena.FromDict(
+                ToPlainDict(levelDict), ToPlainDict(shellDict), ToPlainDict(layoutDict),
+                ToPlainDict(encounterDict), units, ToPlainDict(tuningDict));
+            var errors = new List<string>();
+            errors.AddRange(rules.Validate());
+            errors.AddRange(units.Validate());
+            errors.AddRange(arena.Validate(units));
+            return new Godot.Collections.Dictionary
+            {
+                { "ok", errors.Count == 0 },
+                { "errors", ToGodotArray(errors) },
+                { "ridge_points", arena.Route != null ? arena.Route.Ridge.Count : 0 },
+                { "tiles", arena.Tiles.Count },
+                { "player_buildings", arena.PlayerBuildings.Count },
+                { "enemy_buildings", arena.EnemyBuildings.Count },
+                { "zone_dps_per_squad", arena.ZoneDpsPerSquad },
+            };
+        }
+
+        /// <summary>逐兵种阵型探针：槽位数 / 槽位最远半径 / 是否贴合小队半径。</summary>
+        public Godot.Collections.Dictionary SquadFormationProbe(
+            Godot.Collections.Dictionary unitsDict,
+            Godot.Collections.Dictionary combatDict)
+        {
+            var rules = CombatRules.FromDict(ToPlainDict(combatDict));
+            var units = UnitCatalog.FromDict(ToPlainDict(unitsDict), rules, new List<string>());
+            var rows = new Godot.Collections.Array();
+            var errors = new List<string>();
+            foreach (UnitDef u in units.All)
+            {
+                errors.AddRange(SquadFormations.Validate(u));
+                var slots = SquadFormations.Slots(u);
+                double max = SquadFormations.MaxSlotRadius(u);
+                bool fits = u.SquadRadius > 0.0 && max <= u.SquadRadius * SquadFormations.FitRatio + 1e-6;
+                if (!fits) errors.Add($"{u.Id}：槽位 {max:0.#} 超出半径 {u.SquadRadius:0} 的 92%");
+                if (slots.Count != Math.Max(u.SquadSize, 1))
+                    errors.Add($"{u.Id}：槽位 {slots.Count} ≠ squad_size {u.SquadSize}");
+                var pts = new Godot.Collections.Array();
+                foreach (System.Numerics.Vector2 p in slots)
+                    pts.Add(new Godot.Collections.Dictionary { { "x", p.X }, { "z", p.Y } });
+                rows.Add(new Godot.Collections.Dictionary
+                {
+                    { "id", u.Id },
+                    { "formation", u.Formation },
+                    { "squad_size", u.SquadSize },
+                    { "squad_radius", u.SquadRadius },
+                    { "slot_count", slots.Count },
+                    { "max_slot_radius", max },
+                    { "fits", fits },
+                    { "slots", pts },
+                });
+            }
+            return new Godot.Collections.Dictionary
+            {
+                { "ok", errors.Count == 0 },
+                { "errors", ToGodotArray(errors) },
+                { "rows", rows },
+            };
+        }
+
+        /// <summary>100 局纯 Model 小队攻防推演（胜率 + DPS + 阵型/寻路指标）。</summary>
+        public Godot.Collections.Dictionary SquadSimulate(
+            Godot.Collections.Dictionary unitsDict,
+            Godot.Collections.Dictionary combatDict,
+            Godot.Collections.Dictionary planningDict,
+            Godot.Collections.Dictionary levelsDict,
+            Godot.Collections.Dictionary shellsDict,
+            Godot.Collections.Dictionary layoutsDict,
+            Godot.Collections.Dictionary encountersDict,
+            Godot.Collections.Dictionary tuningDict,
+            string levelId,
+            int games,
+            int seedBase)
+        {
+            var rules = CombatRules.FromDict(ToPlainDict(combatDict));
+            var notes = new List<string>();
+            var units = UnitCatalog.FromDict(ToPlainDict(unitsDict), rules, notes);
+            var planning = PlanningConfig.FromDict(ToPlainDict(planningDict), units, notes);
+            var levels = LevelSet.FromDict(ToPlainDict(levelsDict), units, notes);
+
+            var errors = new List<string>();
+            errors.AddRange(notes);
+            errors.AddRange(rules.Validate());
+            errors.AddRange(units.Validate());
+            errors.AddRange(planning.Validate(units));
+            errors.AddRange(levels.Validate(units));
+
+            LevelDef level = levels.Get(levelId);
+            if (level == null)
+            {
+                errors.Add("找不到关卡：" + levelId);
+            }
+            string shellId = "";
+            string layoutId = "";
+            string encounterId = "";
+            if (level != null)
+            {
+                var lvDict = FindRow(ToPlainDict(levelsDict), "levels", levelId);
+                var asm = JValDict(lvDict, "assembly");
+                if (asm == null)
+                {
+                    errors.Add($"关卡 {levelId} 缺 assembly（底壳 / 布局卡 / 遭遇卡）");
+                }
+                else
+                {
+                    shellId = StrOf(asm, "shell");
+                    layoutId = StrOf(asm, "player_layout");
+                    encounterId = StrOf(asm, "enemy_encounter");
+                }
+            }
+            var shell = FindRow(ToPlainDict(shellsDict), "shells", shellId);
+            var layout = FindRow(ToPlainDict(layoutsDict), "layouts", layoutId);
+            var encounter = FindRow(ToPlainDict(encountersDict), "encounters", encounterId);
+            if (shell == null) errors.Add("找不到底壳：" + shellId);
+            if (layout == null) errors.Add("找不到玩家布局卡：" + layoutId);
+            if (encounter == null) errors.Add("找不到敌人遭遇卡：" + encounterId);
+
+            if (errors.Count > 0)
+            {
+                return new Godot.Collections.Dictionary
+                {
+                    { "ok", false },
+                    { "errors", ToGodotArray(errors) },
+                };
+            }
+
+            var arena = SquadArena.FromDict(
+                FindRow(ToPlainDict(levelsDict), "levels", levelId),
+                shell, layout, encounter, units, ToPlainDict(tuningDict));
+            errors.AddRange(arena.Validate(units));
+            if (errors.Count > 0)
+            {
+                return new Godot.Collections.Dictionary
+                {
+                    { "ok", false },
+                    { "errors", ToGodotArray(errors) },
+                };
+            }
+
+            var sim = SquadSimulator.Run(units, rules, planning, arena, games, seedBase);
+            var outDict = new Godot.Collections.Dictionary
+            {
+                { "ok", sim.Ok },
+                { "errors", ToGodotArray(sim.Errors) },
+                { "arena", sim.ArenaId },
+                { "arena_name", sim.ArenaName },
+                { "level", level.Id },
+                { "games", sim.Games },
+                { "seed_base", sim.SeedBase },
+                { "wins", sim.Wins },
+                { "losses", sim.Losses },
+                { "draws", sim.Draws },
+                { "win_rate", sim.WinRate },
+                { "avg_player_hp", sim.AvgPlayerHp },
+                { "avg_enemy_hp", sim.AvgEnemyHp },
+                { "avg_player_hp_pct", sim.AvgPlayerHpPct },
+                { "avg_seconds", sim.AvgSeconds },
+                { "avg_player_squads", sim.AvgPlayerSquads },
+                { "avg_enemy_squads", sim.AvgEnemySquads },
+                { "avg_player_squads_lost", sim.AvgPlayerSquadsLost },
+                { "avg_player_models_lost", sim.AvgPlayerModelsLost },
+                { "avg_enemy_models_lost", sim.AvgEnemyModelsLost },
+                { "avg_player_damage", sim.AvgPlayerDamage },
+                { "avg_player_dps", sim.AvgPlayerDps },
+                { "avg_player_dps_per_member", sim.AvgPlayerDpsPerMember },
+                { "avg_path_length", sim.AvgPathLength },
+                { "avg_path_ratio", sim.AvgPathStraightRatio },
+                { "avg_stuck_events", sim.AvgStuckEvents },
+                { "avg_slot_error", sim.AvgSlotError },
+                { "total_player_kills", sim.TotalPlayerKills },
+                { "total_enemy_kills", sim.TotalEnemyKills },
+                { "review_counts", ToGodotDict(sim.ReviewCounts) },
+                { "player_dps_rows", UnitStatsRows(sim.PlayerByUnit) },
+                { "enemy_dps_rows", UnitStatsRows(sim.EnemyByUnit) },
+            };
+
+            var rows = new Godot.Collections.Array();
+            foreach (SquadSimRow r in sim.Rows)
+            {
+                rows.Add(new Godot.Collections.Dictionary
+                {
+                    { "index", r.Index },
+                    { "seed", r.Seed },
+                    { "outcome", r.Outcome },
+                    { "outcome_text", r.OutcomeText },
+                    { "player_hp", r.PlayerHp },
+                    { "enemy_hp", r.EnemyHp },
+                    { "player_hp_pct", r.PlayerHpPct },
+                    { "player_squads", r.PlayerSquads },
+                    { "enemy_squads", r.EnemySquads },
+                    { "player_squads_lost", r.PlayerSquadsLost },
+                    { "enemy_squads_lost", r.EnemySquadsLost },
+                    { "player_models_lost", r.PlayerModelsLost },
+                    { "enemy_models_lost", r.EnemyModelsLost },
+                    { "player_damage", r.PlayerDamage },
+                    { "enemy_damage", r.EnemyDamage },
+                    { "dps_member", r.DpsPerMember },
+                    { "seconds", r.Seconds },
+                    { "zone_max", r.ZoneMax },
+                    { "stuck_events", r.StuckEvents },
+                    { "slot_error", r.SlotError },
+                    { "cp_left", r.CpLeft },
+                    { "pop_blocked", r.PopBlocked },
+                    { "top_reason", r.TopReason },
+                });
+            }
+            outDict["rows"] = rows;
+
+            var samples = new Godot.Collections.Array();
+            foreach (SquadMatchResult s in sim.Samples)
+            {
+                samples.Add(new Godot.Collections.Dictionary
+                {
+                    { "seed", s.Seed },
+                    { "outcome", s.Outcome },
+                    { "outcome_text", s.OutcomeText },
+                    { "player_hp", Math.Round(s.PlayerBaseHp) },
+                    { "enemy_hp", Math.Round(s.EnemyBaseHp) },
+                    { "player_damage", Math.Round(s.PlayerDamage) },
+                    { "attack_squads", s.AttackPlan != null ? s.AttackPlan.ArmySquads : 0 },
+                    { "defend_squads", s.DefendPlan != null ? s.DefendPlan.ArmySquads : 0 },
+                    { "reviews", ToGodotArray(s.Reviews) },
+                    { "review_codes", ToGodotArray(s.ReviewCodes) },
+                    { "dps_rows", UnitStatsRows(s.PlayerByUnit) },
+                });
+            }
+            outDict["samples"] = samples;
+            return outDict;
+        }
+
+        private static Godot.Collections.Array UnitStatsRows(Dictionary<string, SquadUnitStat> map)
+        {
+            var list = new List<SquadUnitStat>(map.Values);
+            list.Sort((a, b) =>
+            {
+                int c = b.Damage.CompareTo(a.Damage);
+                if (c != 0) return c;
+                return string.CompareOrdinal(a.UnitId, b.UnitId);
+            });
+            var rows = new Godot.Collections.Array();
+            foreach (SquadUnitStat s in list)
+            {
+                rows.Add(new Godot.Collections.Dictionary
+                {
+                    { "unit_id", s.UnitId },
+                    { "squads", s.Squads },
+                    { "models", s.Models },
+                    { "kills", s.Kills },
+                    { "losses", s.Losses },
+                    { "damage", s.Damage },
+                    { "dps_member", s.DpsPerMember },
+                    { "dps_squad", s.DpsPerSquad },
+                });
+            }
+            return rows;
+        }
+
+        private static IDictionary<string, object> FindRow(IDictionary<string, object> doc, string key, string id)
+        {
+            var list = JValList(doc, key);
+            if (list == null) return null;
+            foreach (object o in list)
+            {
+                var d = o as IDictionary<string, object>;
+                if (d == null) continue;
+                if (StrOf(d, "id") == id) return d;
+            }
+            return null;
+        }
+
+        private static IDictionary<string, object> JValDict(IDictionary<string, object> d, string key)
+        {
+            if (d == null || !d.TryGetValue(key, out object v)) return null;
+            return v as IDictionary<string, object>;
+        }
+
+        private static List<object> JValList(IDictionary<string, object> d, string key)
+        {
+            if (d == null || !d.TryGetValue(key, out object v)) return null;
+            return v as List<object>;
+        }
+
+        private static string StrOf(IDictionary<string, object> d, string key)
+        {
+            if (d == null || !d.TryGetValue(key, out object v) || v == null) return "";
+            return v.ToString();
+        }
+
+        // =================================================================
         // 2026-11-21 地图底壳：势力区域多边形 / 战术格子
         // =================================================================
         /// <summary>新建底壳的默认三块矩形（player / neutral / enemy，沿长轴切三条）。</summary>

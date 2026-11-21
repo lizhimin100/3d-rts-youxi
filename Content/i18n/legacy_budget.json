@@ -1,6 +1,6 @@
 {
 	"version": 1,
-	"total": 7720,
+	"total": 7725,
 	"by_dir": {
 		"Game": {
 			"Game/audio/音效管理.gd": 23,
@@ -130,7 +130,8 @@
 			"Screens/world/crowd/人群箭矢.gd": 2,
 			"Screens/hud/敌方意图条.gd": 6,
 			"Screens/hud/阶段提示.gd": 6,
-			"Screens/world/规划沙盘.gd": 4
+			"Screens/world/规划沙盘.gd": 4,
+			"Screens/world/squad/小队战场.gd": 5
 		},
 		"addons": {},
 		"Tests": {

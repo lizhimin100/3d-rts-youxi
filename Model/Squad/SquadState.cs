@@ -1,0 +1,162 @@
+using System;
+using System.Collections.Generic;
+
+namespace WarIsland.Model
+{
+    /// <summary>小队指令（原子单位：一支队只能有一个指令）。</summary>
+    public enum SquadOrder
+    {
+        None = 0,
+        Move = 1,
+        AttackMove = 2,
+        Hold = 3,
+        Attack = 4,
+        Stop = 5,
+    }
+
+    public static class SquadOrders
+    {
+        public const string None = "none";
+        public const string Move = "move";
+        public const string AttackMove = "attack_move";
+        public const string Hold = "hold";
+        public const string Attack = "attack";
+        public const string Stop = "stop";
+
+        public static SquadOrder Parse(string name)
+        {
+            switch ((name ?? "").Trim().ToLowerInvariant())
+            {
+                case Move: return SquadOrder.Move;
+                case AttackMove: return SquadOrder.AttackMove;
+                case Hold: return SquadOrder.Hold;
+                case Attack: return SquadOrder.Attack;
+                case Stop: return SquadOrder.Stop;
+                default: return SquadOrder.None;
+            }
+        }
+
+        public static string Name(SquadOrder order)
+        {
+            switch (order)
+            {
+                case SquadOrder.Move: return Move;
+                case SquadOrder.AttackMove: return AttackMove;
+                case SquadOrder.Hold: return Hold;
+                case SquadOrder.Attack: return Attack;
+                case SquadOrder.Stop: return Stop;
+                default: return None;
+            }
+        }
+    }
+
+    /// <summary>一名成员的快照（世界坐标，米）。</summary>
+    public sealed class SquadMemberView
+    {
+        public int Index;
+        public double X;
+        public double Z;
+        public double Hp;
+        public double MaxHp;
+        public bool Alive;
+        /// <summary>槽位锚（世界坐标，米）—— 调试"弹性槽位"用。</summary>
+        public double SlotX;
+        public double SlotZ;
+        /// <summary>当前离槽位的距离（米）。</summary>
+        public double SlotError;
+    }
+
+    /// <summary>一支小队的快照（世界坐标，米）。</summary>
+    public sealed class SquadView
+    {
+        public int Id;
+        public int Side;
+        public string UnitId = "";
+        public string DisplayName = "";
+        public int Star;
+        public double X;
+        public double Z;
+        public double Heading;
+        /// <summary>聚合血量：整队所有活着的成员之和。</summary>
+        public double Hp;
+        public double MaxHp;
+        public int AliveCount;
+        public int MemberCount;
+        public string Order = SquadOrders.None;
+        public int TargetSquad = -1;
+        public double Radius;
+        public double MoveSpeed;
+        public int Kills;
+        public double DamageDealt;
+        public int SpawnTile;
+        public string SourceBuilding = "";
+        public SquadMemberView[] Members = Array.Empty<SquadMemberView>();
+    }
+
+    /// <summary>单个兵种在本次战斗里的 DPS 统计。</summary>
+    public sealed class SquadUnitStat
+    {
+        public string UnitId = "";
+        public int Squads;
+        public int Models;
+        public int Kills;
+        public int Losses;
+        public double Damage;
+        public double MemberSeconds;
+        public double SquadSeconds;
+
+        public double DpsPerMember => MemberSeconds > 1e-6 ? Damage / MemberSeconds : 0.0;
+        public double DpsPerSquad => SquadSeconds > 1e-6 ? Damage / SquadSeconds : 0.0;
+    }
+
+    /// <summary>一场小队战斗的统计（复盘 / 100 局聚合的唯一读数口）。</summary>
+    public sealed class SquadBattleStats
+    {
+        public double PlayerDamage;
+        public double EnemyDamage;
+        public int PlayerKills;
+        public int EnemyKills;
+        public int PlayerModelsLost;
+        public int EnemyModelsLost;
+        public int PlayerSquadsLost;
+        public int EnemySquadsLost;
+        public int PlayerSquadsSpawned;
+        public int EnemySquadsSpawned;
+        public double PlayerZoneSeconds;
+        public double EnemyZoneSeconds;
+        public int PlayerMaxZone;
+        public int EnemyMaxZone;
+        public int StuckEvents;
+        public int Repaths;
+        public double SlotErrorSum;
+        public int SlotErrorSamples;
+        public double PlannedPathLength;
+        public int PathSamples;
+        /// <summary>规划时"起点→终点"的直线距离之和（和路径同一批样本）。</summary>
+        public double StraightLengthSum;
+        public double ActualTravelled;
+        public double FirstContactSecond = -1.0;
+
+        public readonly Dictionary<string, SquadUnitStat> PlayerByUnit = new Dictionary<string, SquadUnitStat>(StringComparer.Ordinal);
+        public readonly Dictionary<string, SquadUnitStat> EnemyByUnit = new Dictionary<string, SquadUnitStat>(StringComparer.Ordinal);
+
+        public double AvgSlotErrorMeters => SlotErrorSamples > 0 ? SlotErrorSum / SlotErrorSamples * RtsUnits.R1 : 0.0;
+        public double AvgPathLength => PathSamples > 0 ? PlannedPathLength / PathSamples : 0.0;
+        /// <summary>同一批路径的直线长度均值；AvgPathLength / 它 = 绕行比（脊线走廊 > 1）。</summary>
+        public double AvgStraightLength => PathSamples > 0 ? StraightLengthSum / PathSamples : 0.0;
+    }
+
+    /// <summary>整场战斗的快照（给 Screens 渲染）。</summary>
+    public sealed class SquadBattleView
+    {
+        public double Time;
+        public bool Finished;
+        public string Outcome = "";
+        public double PlayerBaseHp;
+        public double PlayerBaseHpMax;
+        public double EnemyBaseHp;
+        public double EnemyBaseHpMax;
+        public SquadView[] Squads = Array.Empty<SquadView>();
+        public SquadBattleStats Stats;
+    }
+}
