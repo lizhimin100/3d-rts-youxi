@@ -80,7 +80,7 @@ namespace WarIsland.Model
         public Wave Wave;
     }
 
-    /// <summary>一轮 90 秒的完整结果（给复盘/推演）。</summary>
+    /// <summary>一轮 60 秒的完整结果（给复盘/推演）。</summary>
     public sealed class RoundResult
     {
         public string Kind = "";
@@ -129,7 +129,7 @@ namespace WarIsland.Model
     }
 
     /// <summary>
-    /// 单通道横道战斗（90 秒）。
+    /// 单通道横道战斗（60 秒；旧口径 90 秒已作废）。
     ///
     /// 关键口径：
     ///   · 所有坐标/射程/速度都是**游戏数值**（R1 = 0.015 米），Model 层不出现米；

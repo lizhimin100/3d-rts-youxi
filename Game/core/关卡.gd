@@ -163,8 +163,6 @@ func _build_world(cfg: GameConfig) -> void:
 	# 竞技场图自己也会把 map_data.far_ridges 置 false。
 	var want_ridges: bool = (not from_map_def) and bool(map_data.get("far_ridges"))
 	terrain.build(world_size, map_data.resolution, map_data.heights, want_ridges)
-	if cfg != null and cfg.has_pond and map_data.pond_radius > 0.0:
-		terrain.build_water(map_data.pond_center, map_data.pond_radius, map_data.pond_level)
 
 	# --- 1.5 地表碎石的落位校准 ---
 	# 地图生成器的 rubble 是按"压平前"的高度落位的；地形层刚刚雕刻过崖壁/山脊，

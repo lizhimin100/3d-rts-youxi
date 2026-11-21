@@ -225,8 +225,12 @@ func _test_gorges(a: MapGenerator.MapData, cfg: GameConfig) -> void:
 	var bridge_h: float = a.height_at(g["bridge"].x, g["bridge"].y)
 	_ok("峡谷中间的石桥能走（谷深但桥面回到地面）", bridge_h > floor_h + 3.0,
 		"桥面 %.1f m / 谷底 %.1f m" % [bridge_h, floor_h])
-	_ok("峡谷中有水潭（沉在谷底）", a.pond_radius > 0.0 and a.pond_level < 0.0,
-		"半径 %.0f m / 水面 %.1f m" % [a.pond_radius, a.pond_level])
+	var gen_src := FileAccess.get_file_as_string("res://Game/map/地图生成.gd")
+	var def_src := FileAccess.get_file_as_string("res://Game/map/地图定义.gd")
+	_ok("水层整层删除（2026-11-21）：生成器与地图定义都不再出现 pond_/water 字段",
+		not gen_src.contains("pond_") and not def_src.contains("pond_") \
+		and not gen_src.contains("terrain_is_water") and not def_src.contains("is_water_at"),
+		"gen=%d def=%d" % [gen_src.count("pond_"), def_src.count("pond_")])
 
 
 # ===========================================================================
@@ -441,9 +445,7 @@ func _print_ascii(a: MapGenerator.MapData, cfg: GameConfig) -> void:
 			var h: float = a.height_at(wx, wz)
 			var walk: bool = a.is_walkable_at(wx, wz)
 			var ch: String = "."
-			if a.pond_radius > 0.0 and Vector2(wx, wz).distance_to(a.pond_center) < a.pond_radius:
-				ch = "~"
-			elif not walk:
+			if not walk:
 				ch = "#"
 			elif h > top - 1.0 and Vector2(wx, wz).length() < cfg.map_mesa_radius + 2.0:
 				ch = "^"

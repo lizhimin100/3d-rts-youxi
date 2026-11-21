@@ -24,6 +24,8 @@ const COL := Color(1.0, 0.42, 0.34)
 var _chips: Array = []
 var _sig: String = ""
 var _t: float = 0.0
+## 规划阶段的数据源（规划地图层）；执行阶段为 null，改读回合控制。
+var _source: Node = null
 ## 字体**只取一次**：在 `_draw` 里现 new SystemFont 时，字形图集还没准备好，
 ## 画出来会是一个实心方块（实测"中路"变成一块橘色）。和 规划地图层 同一个口径。
 var _font: Font = null
@@ -40,18 +42,32 @@ func _ready() -> void:
 	custom_minimum_size = Vector2(260.0, H)
 
 
-## 该不该出现：短局 + 不在规划阶段 + 对局没结束
+## 该不该出现：短局 + 对局没结束。
+## **2026-11-21：规划阶段也算**——敌方区域不再挤进 3D 画面，情报统一由这条顶部 UI 意图栏输出。
 func should_show() -> bool:
 	if Game == null or not Game.short_match:
 		return false
 	if Game.has_method("is_over") and bool(Game.call("is_over")):
 		return false
 	if Game.is_planning():
-		return false
+		return not _planning_items().is_empty()
 	var rc: Node = Game.round_control
 	if rc == null or not rc.has_method("next_wave_ids"):
 		return false
 	return not (rc.call("next_wave_ids") as Array).is_empty()
+
+
+## HUD 注入数据源（规划地图层）——规划阶段的敌方意图从它拿，执行阶段仍读回合控制。
+func set_source(node: Node) -> void:
+	_source = node
+
+
+func _planning_items() -> Array:
+	if _source == null or not is_instance_valid(_source):
+		return []
+	if not _source.has_method("enemy_intent_items"):
+		return []
+	return _source.call("enemy_intent_items") as Array
 
 
 func _process(delta: float) -> void:
@@ -69,14 +85,26 @@ func _process(delta: float) -> void:
 
 
 func _rebuild() -> void:
-	var rc: Node = Game.round_control
-	var ids: Array = rc.call("next_wave_ids") if rc != null else []
 	var chips: Array = []
-	for id in ids:
-		var tex := Spec.unit_icon(id)
-		if tex != null:
-			chips.append({"kind": "icon", "tex": tex})
-	chips.append({"kind": "cmd", "glyph": "attack"})
+	if Game != null and Game.is_planning():
+		# 规划阶段：证据来自规划地图层的 enemy_intent_items()（与旧 3D 牌子同一份数据）
+		for e in _planning_items():
+			var rec: Dictionary = e
+			for c in (rec.get("chips", []) as Array):
+				var cd: Dictionary = c
+				if String(cd.get("kind", "")) == "icon":
+					var t := cd.get("tex", null) as Texture2D
+					if t != null:
+						chips.append({"kind": "icon", "tex": t})
+		chips.append({"kind": "cmd", "glyph": "attack"})
+	else:
+		var rc: Node = Game.round_control
+		var ids: Array = rc.call("next_wave_ids") if rc != null else []
+		for id in ids:
+			var tex := Spec.unit_icon(id)
+			if tex != null:
+				chips.append({"kind": "icon", "tex": tex})
+		chips.append({"kind": "cmd", "glyph": "attack"})
 	var lane: String = _lane_text()
 	if lane != "":
 		chips.append({"kind": "lane", "text": lane})

@@ -33,6 +33,8 @@ var mdl: RefCounted = null
 var handle := 0
 var status_text := ""
 var last_order := ""
+## 战斗倍速（1x / 2x）；真值在 Model 的 SquadBattle.TimeScale。
+var _time_scale := 1.0
 
 var _units: Dictionary = {}
 var _combat: Dictionary = {}
@@ -56,7 +58,6 @@ var _round_left := 0.0
 var _seed := 20261121
 var _order_point := Vector3.ZERO
 var _has_order := false
-var _attack_move := false
 var _hud_tick := 0.0
 var selected_count := 0
 var phase_name := "planning"
@@ -162,7 +163,7 @@ func _new_session() -> bool:
 	_state = mdl.call("SquadSessionState", handle)
 	_view = mdl.call("SquadView", handle)
 	_phase = "planning"
-	_round_left = float(_arena.get("round_seconds", 90.0))
+	_round_left = float(_arena.get("round_seconds", 60.0))
 	_selected.clear()
 	_has_order = false
 	last_order = ""
@@ -423,6 +424,8 @@ func clear_selection() -> void:
 	status_text = I18n.t("squad.selected", {"n": 0})
 
 
+## 右键：**只认"点在某支敌方小队身上"** = 集火。
+## 2026-11-21 微操收敛：点地板不再移动（旧版会走 Move），推进由自动战斗与预设偏好负责。
 func context_order_screen(_pos: Vector2, world: Vector3) -> void:
 	if handle == 0:
 		return
@@ -433,29 +436,29 @@ func context_order_screen(_pos: Vector2, world: Vector3) -> void:
 	if enemy > 0:
 		order_selected("attack", world, enemy)
 		return
-	order_selected("attack_move" if _attack_move else "move", world, -1)
+	# 点空地：不发明令；给一行"只能集火"的提示（不静默吞掉，玩家要知道为什么没反应）。
+	status_text = I18n.t("squad.order_focus_only")
 
 
+## 玩家侧唯一合法指令：attack（集火）。其它字符串会被 Model 白名单拒掉并返回 0。
 func order_selected(order: String, world: Vector3 = Vector3.ZERO, target: int = -1) -> void:
 	if handle == 0:
 		return
 	if _selected.is_empty():
 		status_text = I18n.t("squad.order_none")
 		return
+	if not bool(mdl.call("SquadPlayerOrderAllowed", order)):
+		status_text = I18n.t("squad.order_focus_only")
+		return
 	var ids := _selected.duplicate()
-	if order == "hold" or order == "stop":
-		world = _selection_center()
 	var n := int(mdl.call("SquadOrder", handle, ids, order, world.x, world.z, target))
 	if n <= 0:
 		return
 	last_order = I18n.t("squad.receipt." + order, {"n": n})
 	status_text = last_order
 	_view = mdl.call("SquadView", handle)
-	if order == "hold" or order == "stop":
-		_has_order = false
-	else:
-		_order_point = world
-		_has_order = true
+	_order_point = world
+	_has_order = true
 
 
 func _selection_center() -> Vector3:
@@ -469,10 +472,12 @@ func _selection_center() -> Vector3:
 	return sum / float(count) if count > 0 else Vector3.ZERO
 
 
-func set_attack_move(on: bool) -> void:
-	_attack_move = on
-	if on:
-		status_text = I18n.t("squad.receipt.attack_move", {"n": _selected.size()})
+## 战斗倍速（1x / 2x）：走 Model 的 SquadBattle.TimeScale，只改推进速率。
+func set_time_scale(scale: float) -> void:
+	if handle == 0:
+		return
+	_time_scale = float(mdl.call("SquadSetTimeScale", handle, scale))
+	status_text = I18n.t("squad.speed", {"x": "%.0f" % _time_scale})
 
 
 func zoom_camera(factor: float) -> void:
@@ -562,7 +567,7 @@ func begin_execution() -> void:
 	mdl.call("SquadSessionBeginExecution", handle, 0)
 	_state = mdl.call("SquadSessionState", handle)
 	_phase = "executing"
-	_round_left = float(_arena.get("round_seconds", 90.0))
+	_round_left = float(_arena.get("round_seconds", 60.0))
 	status_text = I18n.t("squad.phase.executing", {"t": int(ceil(_round_left))})
 	_refresh_view(true)
 

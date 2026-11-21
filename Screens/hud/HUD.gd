@@ -1431,10 +1431,13 @@ func _build_planning_hud() -> void:
 	_phase_banner.name = "阶段提示"
 	root.add_child(_phase_banner)
 
-	# 执行阶段的敌方意图条（短局专用；规划阶段由地图层挂牌，执行阶段挪到右上角）
+	# 敌方意图条（短局专用）：**规划与执行都挂**。
+	# 规划阶段数据来自规划地图层的 enemy_intent_items()（3D 画面不再画敌方牌子），
+	# 执行阶段仍读回合控制.next_wave_ids()；位置在两个阶段各自摆。
 	_foe_intent = FOE_INTENT_SCRIPT.new()
 	_foe_intent.name = "敌方意图条"
 	root.add_child(_foe_intent)
+	_foe_intent.call("set_source", _planning_map)
 
 
 ## 此刻是不是"规划阶段"（短局专用；长局永远 false）
@@ -1523,6 +1526,16 @@ func _place_planning_hud() -> void:
 		"right_col": r_col,
 	})
 	_planning_action_rect = r_action
+
+	# **规划阶段的敌方意图栏**：顶部右侧、人口块下面（玩家口径：意图走顶部 UI，
+	# 3D 画面只留玩家区棋盘）。执行阶段同一控件挪到资源条右侧（见本函数上方）。
+	if _foe_intent != null and is_instance_valid(_foe_intent):
+		var show_i: bool = bool(_foe_intent.call("should_show"))
+		_foe_intent.visible = show_i
+		if show_i:
+			var iw: float = maxf((_foe_intent as Control).custom_minimum_size.x, 200.0)
+			var iy: float = m + pop_h + 10.0
+			_place(_foe_intent, 1.0, 0.0, 1.0, 0.0, -m - iw, iy, -m, iy + 42.0)
 
 	# 明牌意图的安全区：上让顶部横条、下让操作面板、左让 CP 列、右让右列。
 	# ★ 地图层画在**真实屏幕像素**上（它自己铺满视口、不吃 root 的 _zoom），

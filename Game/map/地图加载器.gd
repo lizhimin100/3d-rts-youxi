@@ -127,8 +127,6 @@ static func build_walkable_mask(m: MapDef, p_include_buildings: bool = true) -> 
 			if m.slope_degrees_at(p.x, p.y, 0.75) > WALK_SLOPE_LIMIT_DEG:
 				out[i] = 0
 				continue
-			if m.is_water_at(p):
-				out[i] = 0
 	# 对象占地。**唯一口径在 Game/map/占格规则.gd**（object_block_cells）：
 	#   树 0.95m 圆（格心判据）、金矿 4×4 格矩形、岩石 1.05×scale 圆、建筑 fp+2 矩形。
 	# 程序化地图（MapGenerator._apply_prop_blocks）、编辑器校验（地图校验）、
@@ -262,12 +260,6 @@ static func to_map_data(m: MapDef) -> MapGenerator.MapData:
 			d.mines.append(p)
 		else:
 			d.rocks.append({"pos": p, "scale": o.scale, "rot": o.rotation})
-	var spots: Array = m.water_spots()
-	if not spots.is_empty() and bool(m.water.get("enabled", false)):
-		var s: Dictionary = spots[0]
-		d.pond_center = s["center"]
-		d.pond_radius = float(s["radius"])
-		d.pond_level = float(s["level"])
 	d.plateau = {}
 	d.ramps = []
 	d.flat_zones = []
@@ -697,7 +689,6 @@ static func new_map(p_size: int, player_count: int, p_seed: int, blank: bool = f
 	var flat: bool = bool(opts.get("flat", blank))
 	m.height_resolution = MapDef.DEFAULT_HEIGHT_RES
 	m.ensure_arrays()
-	m.water = {"enabled": false, "spots": []}
 	# ★ 不再全图铺「生态底色」覆盖层。
 	#   地表观感现在由**地块材质**（8m 草/泥 + 图集硬边）和生态换色（biome_color/mix）负责，
 	#   和主场景地图、和游戏内是同一套。全图铺覆盖层会把下面的泥路整片盖住，

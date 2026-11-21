@@ -185,7 +185,9 @@ func _find_any(target: String) -> Node:
 
 
 func _selftest() -> void:
-	await get_tree().process_frame
+	# ★ 先把主屏切成 Map Shell：headless 编辑器里它默认不是当前主屏，
+	#   底部 Dock 与主屏控件全是 hidden —— 不切的话"可见性"断言全部假红（2026-11-21 实测）。
+	await _open_tab()
 	await get_tree().process_frame
 	var problems: Array[String] = []
 	if _root == null:
@@ -193,27 +195,34 @@ func _selftest() -> void:
 	for n in ["shell_tool_terrain", "shell_tool_decor", "shell_tool_spine", "shell_tool_tile",
 			"shell_viewport", "shell_picker", "shell_layout_preview",
 			"shell_region_player", "shell_region_neutral", "shell_region_enemy", "shell_undo",
-			"shell_map_w", "shell_map_d", "shell_map_apply", "shell_map_grow",
-			"shell_tile_snap_toggle", "shell_tile_snap_step"]:
+			"shell_map_w", "shell_map_d", "shell_map_apply", "shell_map_grow"]:
 		if _find_any(n) == null:
 			problems.append(n)
 	# 面板必须是**可见且没被裁掉**的（1080p 下三组都完整可见）
-	if _dock == null or not _dock.is_visible_in_tree():
+	#
+	# ★ headless 编辑器里底部 Dock 没有真实布局（父容器整体 hidden），
+	#   `is_visible_in_tree()` 恒为 false —— 那不是 UI 做错，是没窗口。
+	#   所以"可见性"只在有窗口时断言；headless 下改断言"在树里 + 有尺寸 + 在 Dock 里"。
+	var has_display: bool = DisplayServer.get_name() != "headless"
+	if _dock == null or not _dock.is_inside_tree():
+		problems.append("dock-missing")
+	elif has_display and not _dock.is_visible_in_tree():
 		problems.append("dock-hidden")
 	else:
 		var dock_rect := _dock.get_global_rect()
 		for n in ["shell_tool_scroll", "shell_region_player", "shell_map_apply"]:
 			var c := _find_any(n) as Control
-			if c == null or not c.is_visible_in_tree() or c.size.x < 8.0 or c.size.y < 8.0:
+			if c == null or not c.is_inside_tree() or c.size.x < 8.0 or c.size.y < 8.0:
 				problems.append("dock-size:" + n)
-			elif not dock_rect.encloses(c.get_global_rect()):
+			elif has_display and not dock_rect.encloses(c.get_global_rect()):
 				problems.append("dock-clip:" + n)
 	# 四个工具面板各自的关键控件（切一次工具就重建一次检查器）
 	var probes := {
 		"terrain": ["shell_brush_raise", "shell_layer_0", "shell_brush_surface"],
 		"decor": ["shell_decor_tree", "shell_decor_fence"],
 		"spine": ["shell_spine_width"],
-		"tile": ["shell_add_tile", "shell_tile_1", "shell_role_keep", "shell_tile_snap_toggle"],
+		"tile": ["shell_add_tile", "shell_tile_1", "shell_role_keep", "shell_tile_snap_toggle",
+			"shell_tile_snap_step", "shell_map_grow"],
 	}
 	for tool_id in probes.keys():
 		if _root == null:
@@ -263,19 +272,30 @@ func _selftest() -> void:
 			elif String(side_mat.resource_path).is_empty():
 				problems.append("block-side-not-tres")
 		# 棋盘：A/B 两份独立 .tres，相邻格子必须取到不同的一份
+		# 路径来自 Content/data/shell_board.json（源码保持 ASCII），所以这里也读表，不写死。
+		var want_a := ShellStore.board_material_path("tile_a")
+		var want_b := ShellStore.board_material_path("tile_b")
 		var plate_paths := {}
 		for c in (view.get("tiles_root") as Node).get_children():
 			var pm := _find(c, "Plate") as MeshInstance3D
 			if pm != null and pm.material_override != null:
 				plate_paths[String(pm.material_override.resource_path)] = true
-		if not plate_paths.has("res://Content/art/材质/棋盘格子A.tres") \
-				or not plate_paths.has("res://Content/art/材质/棋盘格子B.tres"):
+		if want_a.is_empty() or want_b.is_empty() or not plate_paths.has(want_a) \
+				or not plate_paths.has(want_b) or want_a == want_b:
 			problems.append("checker-materials=%s" % str(plate_paths.keys()))
+		# 皮肤表：5 个槽位都得指向真实存在的 .tres
+		var skin_errs: Array = ShellStore.board_table_errors()
+		if not skin_errs.is_empty():
+			problems.append("board-skin:%s" % str(skin_errs))
 		# 画布冗余：必须严格大于地图（至少 40%）
 		var canvas: Vector2 = ShellStore.canvas_size_of(shell_now)
 		var map_size := ShellStore.size_of(shell_now)
 		if canvas.x < map_size.x * 1.79 or canvas.y < map_size.y * 1.79:
 			problems.append("canvas-margin=%.2fx%.2f" % [canvas.x / map_size.x, canvas.y / map_size.y])
+		# 相机上限必须跟着画布长（扩容后还看得见冗余区）
+		var dmax := float(view.call("dist_max"))
+		if dmax < 199.0:
+			problems.append("dist-max=%.0f" % dmax)
 		# 右键拖动 = 平移（方向与旧编辑器一致）
 		var t0: Vector3 = view.get("cam_target")
 		var rmb := InputEventMouseButton.new()
@@ -301,7 +321,7 @@ func _selftest() -> void:
 		wheel.button_index = MOUSE_BUTTON_WHEEL_UP
 		wheel.pressed = true
 		view.call("handle_input", wheel, Vector2(240, 180))
-		if not is_equal_approx(float(view.get("cam_dist")), clampf(d0 * 0.88, 12.0, 200.0)):
+		if not is_equal_approx(float(view.get("cam_dist")), clampf(d0 * 0.88, 12.0, dmax)):
 			problems.append("wheel-zoom")
 		# 中键拖动 = 旋转
 		var yaw0 := float(view.get("cam_yaw"))
@@ -414,8 +434,20 @@ func _selftest() -> void:
 
 		# ── 真点底部 Dock 的「新增格子」：必须真的 +1（不是只看按钮存在）──
 		var add_btn := _find_any("shell_add_tile") as Control
-		if add_btn == null or not add_btn.is_visible_in_tree():
+		if add_btn == null or not add_btn.is_inside_tree():
 			problems.append("add-tile-button")
+		elif not has_display:
+			# headless：没有窗口就发不出真鼠标事件 → 退化成"发 pressed 信号"，
+			# 仍然走同一个按钮回调（不是直接调 view.add_tile），加法与撤销都要验。
+			var n0h: int = (view.get("shell").get("tiles", []) as Array).size()
+			add_btn.emit_signal("pressed")
+			await get_tree().process_frame
+			var n1h: int = (view.get("shell").get("tiles", []) as Array).size()
+			if n1h != n0h + 1:
+				problems.append("add-tile-signal %d/%d" % [n0h, n1h])
+			view.call("undo")
+			if (view.get("shell").get("tiles", []) as Array).size() != n0h:
+				problems.append("add-tile-undo-signal")
 		else:
 			var n0: int = (view.get("shell").get("tiles", []) as Array).size()
 			var center := add_btn.get_global_rect().get_center()

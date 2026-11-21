@@ -24,9 +24,6 @@ var resolution: int = 58
 var size: float = 116.0
 ## 高度场，(resolution+1)^2
 var heights: PackedFloat32Array = PackedFloat32Array()
-## 水面节点（没有水潭时为 null）
-var water: MeshInstance3D = null
-
 ## 台地地标（由 RtsLevel 在 build 前写入；着色与崖壁雕刻用）。
 ## 不能让 地形.gd 去读 MapGenerator：这一层只拿高度场，地标是"语义补充"。
 var plateau_center: Vector2 = Vector2.ZERO
@@ -885,10 +882,10 @@ const TEX_DIRT_PATH := "res://Content/art/贴图/地形/泥土.png"
 const TEX_CRACKED_PATH := "res://Content/art/贴图/地形/裂纹泥地.png"
 ## 崖壁细节（灰度，当噪声用；颜色由 rock_tint 给）
 const ROCK_DETAIL_PATH := "res://Content/art/贴图/rock_albedo.png"
-## 地形材质 / 水面材质 / 波纹法线：编辑器与游戏共用同一条资源路径
+## 地形材质：编辑器与游戏共用同一条资源路径
+## 2026-11-21：水面整层删除（水材质 / 波纹法线 / build_water），底壳改成实心立体地块后
+## 再铺一层半透明水面只会和土壁互相穿插 —— 这就是"穿模"的根源。
 const MATERIAL_PATH := "res://Content/art/材质/地形材质.tres"
-const WATER_MATERIAL_PATH := "res://Content/art/材质/水材质.tres"
-const RIPPLE_NORMAL_PATH := "res://Content/art/贴图/water_normal.png"
 ## 一格多少米。**必须与底材平铺距离一致**，否则交界和踩踏节奏对不上。
 const TILE_M: float = 8.0
 
@@ -1244,42 +1241,3 @@ func _add_far_tri(v: PackedVector3Array, n: PackedVector3Array, c: PackedColorAr
 	for _i in range(3):
 		n.append(light)
 		c.append(col)
-
-
-# ===========================================================================
-# 水面
-# ===========================================================================
-
-## 生成一片水面（水潭）
-func build_water(center: Vector2, radius: float, level_y: float) -> void:
-	if water != null and is_instance_valid(water):
-		water.queue_free()
-	water = MeshInstance3D.new()
-	water.name = "水面"
-	var disc := CylinderMesh.new()
-	disc.top_radius = radius
-	disc.bottom_radius = radius
-	disc.height = 0.25
-	disc.radial_segments = 28
-	disc.rings = 1
-	water.mesh = disc
-	water.position = Vector3(center.x, level_y, center.y)
-	var mat: Material = null
-	var path := WATER_MATERIAL_PATH
-	if ResourceLoader.exists(path):
-		mat = load(path)
-	if mat == null:
-		var std := StandardMaterial3D.new()
-		std.albedo_color = Color(0.16, 0.36, 0.52, 0.85)
-		std.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		std.roughness = 0.12
-		std.metallic = 0.35
-		mat = std
-	# v3.3：把波纹法线喂进水面着色器（俯视角下水面不再像一块静止蓝玻璃）
-	var sm := mat as ShaderMaterial
-	if sm != null:
-		var rp := RIPPLE_NORMAL_PATH
-		if ResourceLoader.exists(rp):
-			sm.set_shader_parameter("ripple_normal", load(rp))
-	water.material_override = mat
-	add_child(water)

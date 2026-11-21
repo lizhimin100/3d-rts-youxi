@@ -5,7 +5,7 @@
 
 ## 一句话
 
-**单通道 3D 长横道 + 规划阶段打牌/建造/升星三合一 + 90 秒攻防双场小队自动推进与局部微操**（Godot 4.7 宿主 + 纯 C# 规则内核）。玩家是**战场指挥官**而不是操作员：**规划阶段**（无限时、世界完全暂停）用手牌部署、建造与升星，按【规划结束】后进入 **90 秒执行阶段**——攻防两场同时推进，小队自动接战，玩家只做局部微操。目标平台 **Steam + 低中端手机**。
+**单通道 3D 长横道 + 规划阶段打牌/建造/升星三合一 + 60 秒攻防双场小队自动推进与局部微操**（Godot 4.7 宿主 + 纯 C# 规则内核）。玩家是**战场指挥官**而不是操作员：**规划阶段**（无限时、世界完全暂停）用手牌部署、建造与升星，按【规划结束】后进入 **60 秒执行阶段**——攻防两场同时推进，小队自动接战，玩家只做局部微操（**只有集火**）。目标平台 **Steam + 低中端手机**。
 
 > 设计原则：**指挥官不做操作员 · 规划决策 / 执行观察 · 单通道战场 · 小队是战斗实体 · 打牌=建造=升星 · 短局只认 CP+人口 · 规则只写一份（C#）· 引擎只做表现与适配。**
 
@@ -76,7 +76,7 @@ dotnet build 战争原岛.csproj                   # 只编译内核 + 宿主
 
 ### 已确认
 
-- **2026-11-20 正式转型《战争原岛》**：单通道 3D 长横道；规划阶段打牌/建造/升星三合一；执行阶段 90 秒攻防双场、小队自动推进 + 局部微操。
+- **2026-11-20 正式转型《战争原岛》**：单通道 3D 长横道；规划阶段打牌/建造/升星三合一；执行阶段攻防双场、小队自动推进 + 局部微操。
 - **2026-11-20 距离铁律 `R1 = 0.015`**：`Model/` 只认游戏数值，`Screens/` 才乘 R1 换米；真值只在 `Model/Core/RtsUnits.cs`。
 - **2026-11-20 `Model/` 改为纯 C# 内核**（`net8.0` 类库、零 Godot）；GDScript 侧经 `Game/adapters/` 转发；宿主 `战争原岛.csproj` 只留 `Screens/` 的桥与编辑器脚本。
 - **2026-11-20 `Views/` 物理更名为 `Screens/`**：3D 表现与输入统一入口；`res://Views` 全仓库清零。
@@ -85,7 +85,7 @@ dotnet build 战争原岛.csproj                   # 只编译内核 + 宿主
 - **2026-11-20 `run-game` 是唯一入口**：先 `dotnet build`，再 `--check/--simulate/--shot`。
 - **2026-11-21 新战斗内核**：6 步伤害唯一实现在 `Model/Combat/CombatCalculator.cs`（命中→暴击→穿透→承伤→6×6 克制→最终），表在 `Content/data/combat.json`；旧 `Model/Core/Damage.cs` 只服务旧 GDScript 战斗层，新代码不许调。
 - **2026-11-21 12 兵种进 `Content/data/units.json`**：三大阵营各 4；距离全用游戏数值；近战无投射物、远程有；默认命中/闪避/暴击 100/0/0；弩兵 `35%+3` 破甲；`bandit_lord` 暂 `enabled=false`；鱼人走占位网格。
-- **2026-11-21 规划与双 90 秒**：`planning.json` 管 CP/人口/卡牌/3 合 1；`levels.json` 管第 1 关两轮波次；建造牌 Exhaust、训练牌按 Tag 全场产兵、策略牌循环；轮末清场，定性复盘按 code 聚合。详见 `Documents/战斗与规划.md`。
+- **2026-11-21 规划与双 60 秒**：`planning.json` 管 CP/人口/卡牌/3 合 1；`levels.json` 管第 1 关两轮波次；建造牌 Exhaust、训练牌按 Tag 全场产兵、策略牌循环；轮末清场，定性复盘按 code 聚合。详见 `Documents/战斗与规划.md`。
 - **2026-11-21 地图底壳 × 玩家布局卡 × 敌人遭遇卡 三分离**：旧 3D 地图编辑器下线，换成 `addons/map_shell_editor`（只做地形/地表笔刷、纯视觉装饰、弯曲脊线、三块势力区域多边形、战术格子）。玩家激活哪几个格子与开局建筑写 `Content/data/player_layouts.json`；敌方阵营/基地血量/格子固定建筑/按轮次权重的攻防意图池写 `Content/data/enemy_encounters.json`；`levels.json` 只放 `assembly = {shell, player_layout, enemy_encounter}` 与组合生成的关卡。未激活格子局内状态为 `ruin`（唯一实现在 `Game/map/关卡装配.gd`）。详见 `Documents/地图底壳与关卡组装.md`。
 - **2026-11-21 底壳编辑器重构（取代赛道圆环 + 候选石台）**：① 删除 4 个分割环，`regions` 存玩家/中立/敌方三块 **XZ 多边形**，点在多边形内与校验的唯一实现在 `Model/Map/RegionPolygon.cs`（桥转发 `RegionContains / RegionValidate`）；② 候选石台改 **TacticalTile**，唯一定义在 `Model/Map/TacticalTile.cs`：`BuildingAnchor = 左上角`、`SquadSpawnAnchor = 正中心`，格间边到边间隙 ≥ 1.0 m；③ 编辑器支持点选/拖框多选/拖动贴合地形/Delete/Ctrl+Z，选中脚下复用 `Content/art/特效/选中圈.tscn`；④ 装饰只准实例化 `Content/docs/asset_manifest.md` 登记的现有资产，**禁止**现拼占位树/水/地面材质。
 - **2026-11-21 真小队（Squad）重建**：`Model/Squad/` 是唯一小队实体；`units.json` 每兵种带 `formation`（square/scatter/wedge）+ `squad_radius`（三位数游戏数值）；质心沿底壳 `spine.points` 做 A* + 走廊平滑，成员只跟弹性槽位；**建筑不参与寻路**；训练牌在格子的 `SquadSpawnAnchor` 瞬间出整队；`Screens/` 只读 `SquadView` 画胶囊 + 单条聚合血条。验证：`--simulate`（100 局胜率/DPS）、`--squad`（试玩）、`--check`（20 条小队断言）。详见 `Documents/小队系统.md`。
@@ -122,7 +122,8 @@ dotnet build 战争原岛.csproj                   # 只编译内核 + 宿主
 ### 建议（待试玩确认）
 
 - **手牌与 CP 的具体配比**：起手几张、每回合补几张、CP 上限（当前 24）待试玩。
-- **执行阶段 90 秒**：当前实现仍是 3 回合 × 60 秒的过渡值，切 90 秒要同步改 `game.json` 与波次表。
+- **执行阶段 60 秒**（2026-11-21 从 90 收到 60）：唯一真源 `Model/Battle/LevelDef.RoundSecondsSpec`；
+  改时长要同步 `Content/data/levels.json` 的 `round_seconds` 与波次时间 `enemy_waves[].t`（越界会被 `--check` 抓）。
 - **升星在局内的作用**：三星封顶是否够、是否要"升星消耗手牌"待定。
 - **手机操作**：默认自动施法 + 面板化指令；低端机降级项（阴影/单位数）待实测。
 - **C# 内核继续下沉**：下一步把布局卡、存档 schema、波次编排搬进 `Model/`，GDScript 只留表现。

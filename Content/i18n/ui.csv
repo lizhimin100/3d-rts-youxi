@@ -541,6 +541,8 @@ squad.card_cost,{name} · {cost} CP,{name} · {cost} CP,训练牌按钮
 squad.spawned,已出战：{name} ×{n},Deployed: {name} ×{n},训练牌回执
 squad.receipt.move,移动 {n} 队,Move {n} squads,指令回执
 squad.receipt.attack,集火 {n} 队,Focus fire {n} squads,指令回执
+squad.order_focus_only,只能集火敌方小队（推进由自动战斗负责）,Only focus fire on enemy squads,指令回执
+squad.speed,战斗倍速 {x}x,Battle speed {x}x,指令回执
 squad.receipt.hold,驻守 {n} 队,Hold {n} squads,指令回执
 squad.receipt.stop,停止 {n} 队,Stop {n} squads,指令回执
 squad.receipt.attack_move,攻击移动 {n} 队,Attack-move {n} squads,指令回执

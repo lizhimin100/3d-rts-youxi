@@ -135,7 +135,6 @@ func _build_synthetic() -> void:
 	_synth_data.trees.append(Vector2(-40.0, 28.0))
 	_synth_data.trees.append(Vector2(36.0, -40.0))
 	_synth_data.trees.append(Vector2(40.0, -28.0))
-	_synth_data.pond_radius = 0.0
 	_synth_data.plateau = {"center": Vector2.ZERO, "radius": SYNTH_MESA_R, "top": SYNTH_MESA_H}
 	_synth_data.plateau_area = PI * SYNTH_MESA_R * SYNTH_MESA_R
 

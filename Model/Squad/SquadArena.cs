@@ -52,7 +52,7 @@ namespace WarIsland.Model
         public double EnemyBaseX;
         public double PlayerBaseHp;
         public double EnemyBaseHp;
-        public double RoundSeconds = 90.0;
+        public double RoundSeconds = LevelDef.RoundSecondsSpec;
         public double ZoneDpsPerSquad = 9.0;
         /// <summary>底壳声明的脊线逻辑长度（游戏数值），用来校验脊线点没有丢段。</summary>
         public double SpineLengthLogic;
@@ -217,7 +217,7 @@ namespace WarIsland.Model
             arena.PlayerBaseHp = JVal.Double(level, "player_base_hp", 2600.0);
             double encHp = JVal.Double(encounter, "base_hp", 0.0);
             arena.EnemyBaseHp = encHp > 0.0 ? encHp : JVal.Double(level, "enemy_base_hp", 2000.0);
-            arena.RoundSeconds = JVal.Double(level, "round_seconds", 90.0);
+            arena.RoundSeconds = JVal.Double(level, "round_seconds", LevelDef.RoundSecondsSpec);
             var lane = JVal.Dict(level, "lane");
             arena.ZoneDpsPerSquad = JVal.Double(lane, "zone_dps_per_squad", 9.0);
             // 小队模式专属覆盖（Content/data/squad.json）：不填就沿用关卡横道口径。
@@ -416,7 +416,7 @@ namespace WarIsland.Model
             if (EnemyBaseTile == 0) errors.Add("arena：敌方侧没有主堡格（role=keep）");
             if (PlayerBaseHp <= 0.0) errors.Add($"arena：player_base_hp={PlayerBaseHp} 必须 > 0");
             if (EnemyBaseHp <= 0.0) errors.Add($"arena：enemy_base_hp={EnemyBaseHp} 必须 > 0");
-            if (RoundSeconds <= 0.0 || RoundSeconds > 180.0)
+            if (RoundSeconds <= 0.0 || RoundSeconds > 120.0)
                 errors.Add($"arena：round_seconds={RoundSeconds} 非法");
             if (ZoneDpsPerSquad <= 0.0)
                 errors.Add($"arena：zone_dps_per_squad={ZoneDpsPerSquad} 必须 > 0");

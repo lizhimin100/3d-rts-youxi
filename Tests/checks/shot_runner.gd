@@ -128,6 +128,15 @@ func _run() -> void:
 				return
 			print("[shot] 交互通过：点击 %s → %s 出现" % [click_name, expect_name])
 
+	# --- 可选：摆一个固定机位（证明"地块有厚度"这类需要低机位的验收） ---
+	if recipe.has("shot_camera"):
+		if not _scene.has_method("apply_shot_camera"):
+			_fail("scene has no apply_shot_camera")
+			return
+		_scene.call("apply_shot_camera", recipe["shot_camera"])
+		await get_tree().create_timer(0.4).timeout
+		print("[shot] camera applied")
+
 	# --- 可选：只把鼠标移到地图上（不点）—— 验收"部署预览跟着鼠标画" ---
 	if recipe.has("hover_map"):
 		var hf: Array = recipe["hover_map"]
@@ -210,7 +219,7 @@ func _run() -> void:
 		await get_tree().create_timer(0.35).timeout
 		print("[shot] map drag")
 
-	# --- 可选：真实按键（驻守 H / 停止 S / 攻击移动 A / 全选 SPACE） ---
+	# --- 可选：真实按键（倍速 1/2 / 全选 SPACE；H/S/A 旧微操已随 2026-11-21 收敛下线） ---
 	if recipe.has("press_key"):
 		var kn := String(recipe["press_key"]).to_upper()
 		var code := KEY_NONE
@@ -218,6 +227,8 @@ func _run() -> void:
 			"H": code = KEY_H
 			"S": code = KEY_S
 			"A": code = KEY_A
+			"1": code = KEY_1
+			"2": code = KEY_2
 			"SPACE": code = KEY_SPACE
 		if code == KEY_NONE:
 			_fail("unsupported key: " + kn)

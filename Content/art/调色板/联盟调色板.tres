@@ -42,7 +42,7 @@ colors = {
 "leaf_dark": Color(0.204, 0.345, 0.157, 1),
 "ore": Color(0.980, 0.760, 0.240, 1),
 "grass": Color(0.42, 0.561, 0.227, 1),
-"water": Color(0.18, 0.431, 0.557, 1),
+
 "dirt": Color(0.482, 0.388, 0.267, 1),
 "hay": Color(0.788, 0.663, 0.306, 1),
 "rope": Color(0.612, 0.518, 0.333, 1),
@@ -65,7 +65,7 @@ roughness = {
 "iron": 0.6,
 "crystal": 0.1,
 "glass": 0.2,
-"water": 0.1,
+
 "roof": 0.86,
 "roof_dark": 0.9,
 "roof_red": 0.84,

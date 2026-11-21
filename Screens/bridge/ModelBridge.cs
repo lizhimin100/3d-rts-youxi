@@ -278,7 +278,7 @@ namespace WarIsland.Bridge
         }
 
         // =================================================================
-        // 2026-11-21 新内核：6 步公式 / units.json / 规划 / 双 90 秒
+        // 2026-11-21 新内核：6 步公式 / units.json / 规划 / 双 60 秒
         // =================================================================
         /// <summary>一次把四张数据表全验一遍（--check 的唯一入口）。</summary>
         public Godot.Collections.Dictionary ContentValidate(
@@ -951,13 +951,49 @@ namespace WarIsland.Bridge
         }
 
         /// <summary>对一组小队下指令：move / attack_move / hold / stop / attack。</summary>
+        /// <summary>
+        /// 玩家侧小队指令：**只接受 attack（集火）**。
+        /// 2026-11-21 微操收敛：移动 / 攻击移动 / 停火 / 驻守从玩家手里移除，
+        /// 推进与接敌交给自动战斗与预设偏好；这里返回 0 就是"这条指令玩家拨不动"。
+        /// </summary>
         public int SquadOrder(int handle, Godot.Collections.Array ids, string order, double worldX, double worldZ, int targetSquad)
         {
             var session = Session(handle);
             if (session == null) return 0;
             var list = new List<int>();
             foreach (Variant v in ids) list.Add(v.AsInt32());
+            return session.Battle.OrderPlayerMany(list, order, targetSquad);
+        }
+
+        /// <summary>玩家侧指令是否被白名单接受（界面用它决定回执文案，不猜）。</summary>
+        public bool SquadPlayerOrderAllowed(string order) => SquadBattle.IsPlayerMicroOrder(order);
+
+        /// <summary>
+        /// **AI / 预设偏好 / 推演**用的队级指令（Move / AttackMove / Hold / Stop 全通）。
+        /// 不是玩家入口：玩家只能走 SquadOrder（只有集火）。自检用它对寻路/驻守做真验证。
+        /// </summary>
+        public int SquadAutoOrder(int handle, Godot.Collections.Array ids, string order, double worldX, double worldZ, int targetSquad)
+        {
+            var session = Session(handle);
+            if (session == null) return 0;
+            var list = new List<int>();
+            foreach (Variant v in ids) list.Add(v.AsInt32());
             return session.Battle.OrderMany(list, order, worldX, worldZ, targetSquad);
+        }
+
+        /// <summary>时间倍率（1x / 2x）：只改推进速率，不改任何数值。</summary>
+        public double SquadSetTimeScale(int handle, double scale)
+        {
+            var session = Session(handle);
+            if (session == null) return 0.0;
+            session.Battle.TimeScale = scale;
+            return session.Battle.TimeScale;
+        }
+
+        public double SquadTimeScale(int handle)
+        {
+            var session = Session(handle);
+            return session == null ? 0.0 : session.Battle.TimeScale;
         }
 
         /// <summary>直接生成一支小队（试玩初始阵容 / 自检用）；世界米。</summary>
@@ -1490,6 +1526,10 @@ namespace WarIsland.Bridge
         {
             return MapBoard.InsideCanvas(x, z, sizeX, sizeZ, margin);
         }
+
+        /// <summary>编辑器相机最大距离（随画布放大，扩容后仍能拉远看全图）。</summary>
+        public double MapCameraDistMax(double canvasX, double canvasZ) =>
+            MapBoard.CameraDistMax(canvasX, canvasZ);
 
         private static Godot.Collections.Array PointsToGodot(IEnumerable<Vec2> points)
         {

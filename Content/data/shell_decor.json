@@ -43,14 +43,6 @@
 			"radius": 2.2
 		},
 		{
-			"id": "water",
-			"label_key": "shell.decor.water",
-			"source": "scene",
-			"path": "res://Content/art/场景/水面_场景.tscn",
-			"scale": 1.0,
-			"radius": 1.4
-		},
-		{
 			"id": "fence",
 			"label_key": "shell.decor.fence",
 			"source": "glb",

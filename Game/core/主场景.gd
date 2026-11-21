@@ -345,14 +345,12 @@ func _apply_phase_camera(planning: bool, instant: bool = false) -> void:
 	if cfg == null:
 		return
 	if planning:
-		# ★ 2026-11-15 第三版：**按实际锚点取景**，不再"固定俯瞰距离 + 看地图中心"。
-		#   主场景地图把两家基地挪到了 ±78 的对角，固定 118m 时近端基地被底栏挡住、
-		#   远端基地被顶栏挡住，意图牌只能贴屏幕边。frame_planning 会二分距离，
-		#   把所有基地/建筑装进安全区（顶部横条与底部操作面板之间）。
+		# ★ 2026-11-21 第五版：**只框玩家区**（棋盘清晰居中），敌方意图改走顶部 UI 意图栏。
+		#   旧口径是把敌我双方基地一起塞进安全区 → 玩家区被压成一小团、红区还占掉半屏。
 		if _planning_sandbox != null and is_instance_valid(_planning_sandbox) \
-				and _planning_sandbox.has_method("camera_points") \
+				and _planning_sandbox.has_method("camera_points_player") \
 				and camera.has_method("frame_planning"):
-			var pts: PackedVector3Array = _planning_sandbox.call("camera_points")
+			var pts: PackedVector3Array = _planning_sandbox.call("camera_points_player")
 			if pts.size() >= 2:
 				var vp_size: Vector2 = get_viewport().get_visible_rect().size
 				if vp_size.x < 10.0 or vp_size.y < 10.0:
@@ -363,6 +361,10 @@ func _apply_phase_camera(planning: bool, instant: bool = false) -> void:
 						vp_size.x * 0.86, vp_size.y * 0.63)
 				camera.call("frame_planning", pts,
 						_planning_sandbox.call("focus_hint"), safe)
+				# 取景锁：平移范围收在玩家区，拖到边缘就停（棋盘不会跑出画面）
+				if camera.has_method("lock_planning_rect") \
+						and _planning_sandbox.has_method("player_view_rect"):
+					camera.call("lock_planning_rect", _planning_sandbox.call("player_view_rect"))
 				return
 		# 没有沙盘（长局/空图）时才退回旧口径
 		if camera.has_method("set_distance_overview"):

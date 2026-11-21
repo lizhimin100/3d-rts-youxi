@@ -167,19 +167,19 @@
 			"wait_after": 0.25
 		},
 		"squad": {
-			"description": "真小队战场：训练牌在格子中心出整队 + 框选/右键移动（真输入）",
+			"description": "真小队战场：训练牌在格子中心出整队 + 全选后右键点地板**不再移动**（只给集火提示，真输入）",
 			"scene": "res://Screens/scenes/小队战场.tscn",
 			"delay": 3.0,
 			"click": "TrainCard_train_footman",
 			"expect": "SpawnTip",
 			"squad_select_all": true,
 			"map_right_click": [
-				0.58,
-				0.55
+				0.12,
+				0.85
 			],
 			"expect_scene_state": [
-				"last_order",
-				"移动"
+				"status_text",
+				"只能集火"
 			],
 			"wait_after": 0.5
 		},
@@ -211,17 +211,6 @@
 				"集火"
 			]
 		},
-		"squad_hold": {
-			"description": "小队：全选 → 按 H → 整队驻守",
-			"scene": "res://Screens/scenes/小队战场.tscn",
-			"delay": 3.0,
-			"squad_select_all": true,
-			"press_key": "H",
-			"expect_scene_state": [
-				"last_order",
-				"驻守"
-			]
-		},
 		"squad_exec": {
 			"description": "小队：点「开始执行」→ 敌方波次沿脊线压上，打 22 秒看交火与聚合血条",
 			"scene": "res://Screens/scenes/小队战场.tscn",
@@ -233,6 +222,41 @@
 				"executing"
 			],
 			"wait_after": 22.0
+		},
+		"squad_speed": {
+			"description": "小队：按 2 切 2x 倍速（Model SquadBattle.TimeScale，只改推进速率）",
+			"scene": "res://Screens/scenes/小队战场.tscn",
+			"delay": 3.0,
+			"squad_select_all": true,
+			"press_key": "2",
+			"expect_scene_state": [
+				"_time_scale",
+				"2"
+			]
+		},
+		"shell_edge": {
+			"description": "底壳：低机位看地块侧壁与倒角（证明地块有立体厚度、不是纸片）",
+			"scene": "res://Screens/editor/map_shell/map_shell_editor.tscn",
+			"delay": 1.6,
+			"shot_camera": {
+				"yaw": 28.0,
+				"pitch": -22.0,
+				"dist": 72.0,
+				"x": -20.0,
+				"z": 20.0
+			}
+		},
+		"shell_board": {
+			"description": "底壳：玩家区棋盘俯视（双色微差 A/B + 收边 + 外围路缘，验证 PvZ 式规范感）",
+			"scene": "res://Screens/editor/map_shell/map_shell_editor.tscn",
+			"delay": 1.6,
+			"shot_camera": {
+				"yaw": 0.0,
+				"pitch": -62.0,
+				"dist": 26.0,
+				"x": -37.0,
+				"z": 0.0
+			}
 		}
 	}
 }

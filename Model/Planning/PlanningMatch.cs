@@ -74,7 +74,7 @@ namespace WarIsland.Model
     /// 一场比赛的规划状态：建筑、牌堆、手牌、CP、人口、训练出来的部队。
     ///
     /// 与战斗完全解耦：这里只产出 <see cref="Army"/> 与 <see cref="Mods"/>，
-    /// LaneBattle 拿过去跑 90 秒。规划本身无限时，所有操作都是纯函数式状态变更。
+    /// LaneBattle 拿过去跑 60 秒。规划本身无限时，所有操作都是纯函数式状态变更。
     /// </summary>
     public sealed class PlanningMatch
     {

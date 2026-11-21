@@ -70,7 +70,7 @@ namespace WarIsland.Model
     }
 
     /// <summary>
-    /// 小队对局批量推演：每局独立种子，跑完整两轮 90 秒（规划 + 出兵 + 脊线推进 + 6 步结算）。
+    /// 小队对局批量推演：每局独立种子，跑完整两轮 60 秒（规划 + 出兵 + 脊线推进 + 6 步结算）。
     /// 纯 Model，不读引擎时间/帧率；同 seed + 同配置 = 同结果。
     /// </summary>
     public static class SquadSimulator

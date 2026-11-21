@@ -54,7 +54,7 @@ namespace WarIsland.Model
     }
 
     /// <summary>
-    /// 第 1 关批量推演：每局独立种子，跑完整的两轮 90 秒 + 规划 + 复盘。
+    /// 第 1 关批量推演：每局独立种子，跑完整的两轮 60 秒 + 规划 + 复盘。
     /// 纯 Model 逻辑，不读引擎时间/帧率；同 seed + 同配置 = 同结果。
     /// </summary>
     public static class LevelSimulator

@@ -172,6 +172,26 @@ namespace WarIsland.Model
         public double Time => _time;
         public bool Finished => _finished;
         public string Outcome => _outcome;
+
+        // =================================================================
+        // 时间倍率（1x / 2x）
+        //
+        // 玩家口径（2026-11-21）："战斗控制器预留时间倍率接口（支持 1x / 2x 倍速）"。
+        // 实现口径：
+        //   · 只改**推进速率**，不改任何数值（伤害 / 射程 / 抽血一律按模型时间算），
+        //     所以 2x 与 1x 跑固定模型的最终结果**完全一致**，只是更快看完；
+        //   · 固定步长 Dt 不变（20Hz 逻辑），倍率乘在 Step 的输入 delta 上 ——
+        //     绝不把 Dt 乘大，否则碰撞/攻击节奏会变，等于换了一套物理。
+        // =================================================================
+        public const double TimeScaleMin = 1.0;
+        public const double TimeScaleMax = 2.0;
+        private double _timeScale = TimeScaleMin;
+
+        public double TimeScale
+        {
+            get => _timeScale;
+            set => _timeScale = Math.Max(TimeScaleMin, Math.Min(TimeScaleMax, value));
+        }
         public SquadBattleStats Stats => _stats;
         public int SquadCount
         {
@@ -406,6 +426,34 @@ namespace WarIsland.Model
             return true;
         }
 
+        /// <summary>
+        /// 玩家侧指令白名单（2026-11-21 微操收敛）：**只有集火**。
+        ///
+        /// 玩家口径：战斗阶段"仅允许选中我方小队 → 指定攻击/集火某支敌方小队"，
+        /// 手动移动 / 停火 / 驻守全部移除，推进与接敌交给自动战斗与预设偏好。
+        /// 其余指令（Move / AttackMove / Hold / Stop）仍然保留给 AI、波次与推演用，
+        /// 只是**玩家拨不动** —— 所以拒绝发生在这一层，不在界面层假装禁用。
+        /// </summary>
+        public static bool IsPlayerMicroOrder(string order)
+        {
+            return SquadOrders.Parse(order) == SquadOrder.Attack;
+        }
+
+        /// <summary>玩家侧指令唯一入口：只接受 attack（集火），其它一律返回 0。</summary>
+        public int OrderPlayerMany(IList<int> squadIds, string order, int targetSquadId)
+        {
+            if (!IsPlayerMicroOrder(order)) return 0;
+            if (squadIds == null || squadIds.Count == 0) return 0;
+            int ok = 0;
+            for (int i = 0; i < squadIds.Count; i++)
+            {
+                BattleSquad s = Find(squadIds[i]);
+                if (s == null || !s.Alive || s.Side != 0) continue;
+                if (OrderAttack(s.Id, targetSquadId)) ok += 1;
+            }
+            return ok;
+        }
+
         /// <summary>对一组小队下同一条指令（框选后的唯一入口）。</summary>
         public int OrderMany(IList<int> squadIds, string order, double worldX, double worldZ, int targetSquadId)
         {
@@ -535,7 +583,8 @@ namespace WarIsland.Model
         public void Step(double dt)
         {
             if (_finished || dt <= 0.0) return;
-            _acc += Math.Min(dt, 0.25);
+            // 倍速只乘在"这一帧推进了多少模型时间"上；固定步长 Dt 与所有数值不动。
+            _acc += Math.Min(dt * _timeScale, 0.25 * _timeScale);
             int guard = 0;
             while (_acc >= Dt - 1e-9 && !_finished && guard++ < 16)
             {

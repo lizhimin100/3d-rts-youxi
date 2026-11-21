@@ -151,12 +151,10 @@ static func migrate(def: MapDef) -> MapDef:
 	if def.version > MapDef.CURRENT_VERSION:
 		push_warning("[地图存储] 地图版本 %d 高于当前 %d，按当前版本尽力读取"
 			% [def.version, MapDef.CURRENT_VERSION])
-	# v1：只有 size/heightmap/objects，没有 splat/water/players/waves/camera_bounds
+	# v1：只有 size/heightmap/objects，没有 splat/players/waves/camera_bounds
 	if def.version < 2:
 		if def.splatmap.is_empty():
 			def.splatmap = PackedByteArray()
-		if def.water == null or not (def.water is Dictionary):
-			def.water = {"enabled": false, "spots": []}
 		if def.players.is_empty():
 			def.players = [
 				PlayerSlot.make(0, "player", Color(0.30, 0.62, 1.00), 0,

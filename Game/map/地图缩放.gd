@@ -97,15 +97,7 @@ static func expand(m: MapDef, add_meters: int) -> bool:
 		for i in pts.size():
 			pts[i] = pts[i] + d
 		r.points = pts
-	# 水面 / 地面叙事层
-	var water: Dictionary = m.water
-	var spots: Variant = water.get("spots", [])
-	if spots is Array:
-		for s in (spots as Array):
-			if s is Dictionary and (s as Dictionary).has("center"):
-				var c: Variant = (s as Dictionary)["center"]
-				if c is Vector2:
-					(s as Dictionary)["center"] = (c as Vector2) + d
+	# 地面叙事层（水面已在 2026-11-21 整层删除，这里不再跟着平移）
 	m.ground = _shift_ground(m.ground, d)
 
 	# --- 5) 尺寸字段最后写（前面的采样都靠旧值）---

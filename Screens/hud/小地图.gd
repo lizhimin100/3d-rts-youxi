@@ -292,14 +292,9 @@ func _draw() -> void:
 	else:
 		draw_rect(mr.grow(-1.0), Color(0.16, 0.22, 0.15, 1.0), true)
 
-	# --- 水面（圆形池塘）---
+	# --- 水面整层删除（2026-11-21）：小地图不再画池塘 ---
 	var lv: Node = Game.level
 	var md: Variant = lv.get("map_data") if lv != null else null
-	if md != null and float(md.get("pond_radius")) > 0.0:
-		var pc2: Vector2 = md.get("pond_center")
-		var pc: Vector2 = _world_to_map(Vector3(pc2.x, 0.0, pc2.y))
-		var pr: float = float(md.get("pond_radius")) / world_size * mr.size.x
-		draw_circle(pc, pr, Color(0.18, 0.34, 0.48, 0.85))
 
 	# --- 土路：真实路网映射上来，玩家才能"看图找路" ---
 	if md != null:

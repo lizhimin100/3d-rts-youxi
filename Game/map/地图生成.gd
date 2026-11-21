@@ -34,7 +34,6 @@ const SLOPE_WALK_MAX: float = 1.15        ## 1.2m 跨度内高差超过它 = 不
 ## 现在林带（距边界 4~17m）整段落在地形可走区之外，既挡不住视线也不参与寻路。
 const EDGE_MARGIN: float = 16.0
 const EDGE_START: float = 82.0            ## 外圈山脊起点（切比雪夫距离）
-const POND_RADIUS: float = 7.0            ## 峡谷水潭半径
 
 ## ★ 道具占格的**唯一口径**（和 地图加载器 / 关卡 共用，见 Game/map/占格规则.gd）
 const 占格 := preload("res://Game/map/占格规则.gd")
@@ -61,9 +60,6 @@ class MapData:
 	## 金矿落点（世界 XZ）
 	var mines: Array[Vector2] = []
 	## 水潭中心与半径
-	var pond_center: Vector2 = Vector2.ZERO
-	var pond_radius: float = 0.0
-	var pond_level: float = -0.5
 
 	# ------------------------------------------------------------------
 	# 新增字段（RIDGE / 测试可以读；旧字段全部保留）
@@ -254,12 +250,6 @@ static func build(cfg: GameConfig) -> MapData:
 	# 压平也会把岩脊（石门）抹平 —— 坡道落脚区的 blend 正好盖在脊上。
 	# 脊是"加法特征"，压完按原始地形重算一遍再取 max，石门才立得起来。
 	_reapply_ridges(data, cfg, ramps, ridges, gorges, n_low, n_detail, n_rim)
-
-	# --- 3. 峡谷底部的水潭（水在沟壑里，不占战场空间） ---
-	data.pond_radius = POND_RADIUS
-	data.pond_center = _gorge_point(gorges[0], 0.30)
-	_carve_bowl(data, data.pond_center, POND_RADIUS + 2.0, 1.8)
-	data.pond_level = data.height_at(data.pond_center.x, data.pond_center.y) + 1.0
 
 	# --- 4. 可走性（地形层） ---
 	var w: int = int(data.size)
@@ -736,9 +726,6 @@ static func _recompute_walkable(data: MapData, cfg: GameConfig, c0: Vector2i, c1
 			var ok: bool = true
 			if absf(wx) > half - EDGE_MARGIN or absf(wz) > half - EDGE_MARGIN:
 				ok = false
-			if ok and data.pond_radius > 0.0:
-				if Vector2(wx, wz).distance_to(data.pond_center) < data.pond_radius * 0.92:
-					ok = false
 			if ok:
 				var hx: float = data.height_at(wx + 0.6, wz) - data.height_at(wx - 0.6, wz)
 				var hz: float = data.height_at(wx, wz + 0.6) - data.height_at(wx, wz - 0.6)
@@ -775,24 +762,6 @@ static func _apply_flat_zone_heights(data: MapData, zones: Array) -> void:
 
 
 ## 在沟谷里挖一个水潭的碗
-static func _carve_bowl(data: MapData, pos: Vector2, radius: float, depth: float) -> void:
-	var res: int = data.resolution
-	var row: int = res + 1
-	var cell: float = data.size / float(res)
-	var half: float = data.size * 0.5
-	var r: int = int(ceil(radius / cell))
-	var cx: int = int(round((pos.x + half) / cell))
-	var cz: int = int(round((pos.y + half) / cell))
-	var h0: float = data.height_at(pos.x, pos.y)
-	for gz in range(maxi(0, cz - r), mini(res, cz + r) + 1):
-		for gx in range(maxi(0, cx - r), mini(res, cx + r) + 1):
-			var p := Vector2(-half + gx * cell, -half + gz * cell)
-			var d: float = p.distance_to(pos)
-			if d > radius:
-				continue
-			var w: float = 1.0 - _sstep(0.0, radius, d)
-			data.heights[gz * row + gx] = lerpf(data.heights[gz * row + gx], h0 - depth, w)
-
 
 ## ===========================================================================
 ## 连通性
@@ -956,8 +925,6 @@ static func _place_trees(data: MapData, cfg: GameConfig, rng: RandomNumberGenera
 				# 别让树长在土路正中（车辙里长树既难看又挡路）
 				if road_distance(data, p) < 4.2:
 					continue
-				if data.pond_radius > 0.0 and p.distance_to(data.pond_center) < data.pond_radius + 2.0:
-					continue
 				# 金矿周围留空：树冠直径 4~6m，长在矿口边上会从矿洞里穿出来
 				if _near_any(mines, p, 9.0):
 					continue
@@ -1054,8 +1021,6 @@ static func _tree_site_ok(data: MapData, cfg: GameConfig, p: Vector2,
 	for gg in gorges:
 		if _dist_to_segment(p, gg["a"], gg["b"]) < float(gg["width"]) * 0.5 + 6.0:
 			return false
-	if data.pond_radius > 0.0 and p.distance_to(data.pond_center) < data.pond_radius + 8.0:
-		return false
 	# 树簇必须落在平地：中心周围 8m 内高差 < 1.4m
 	var h0: float = data.height_at(p.x, p.y)
 	for i in 8:
@@ -1091,8 +1056,6 @@ static func _place_rocks(data: MapData, cfg: GameConfig, rng: RandomNumberGenera
 			if _near_any(data.trees, p, 2.8):
 				continue
 			if _near_rocks(data.rocks, p, 2.6):
-				continue
-			if data.pond_radius > 0.0 and p.distance_to(data.pond_center) < data.pond_radius + 3.0:
 				continue
 			# 别堵在"基地→台地"的主路上
 			var mouth_a: Vector2 = Vector2.ZERO
@@ -1138,8 +1101,6 @@ static func _place_decor(data: MapData, cfg: GameConfig, rng: RandomNumberGenera
 		tries += 1
 		var p := Vector2(rng.randf_range(-half + 10.0, half - 10.0),
 			rng.randf_range(-half + 10.0, half - 10.0))
-		if terrain_is_water(data, p):
-			continue
 		if _terrain_slope(data, p) > 0.32:
 			continue
 		if _near_any(data.trees, p, 2.2) or _near_rocks(data.rocks, p, 2.0):
@@ -1192,8 +1153,6 @@ static func _place_decor(data: MapData, cfg: GameConfig, rng: RandomNumberGenera
 		# 碎石堆在崖脚（坡度中等的过渡带）
 		if slope < 0.45 or slope > 1.3:
 			continue
-		if terrain_is_water(data, p):
-			continue
 		if _near_any(data.trees, p, 1.6):
 			continue
 		if road_distance(data, p) < 1.2:
@@ -1221,8 +1180,6 @@ static func _place_mushrooms(data: MapData, cfg: GameConfig, rng: RandomNumberGe
 		tries += 1
 		var p := Vector2(rng.randf_range(-half + 9.0, half - 9.0),
 			rng.randf_range(-half + 9.0, half - 9.0))
-		if terrain_is_water(data, p):
-			continue
 		var slope: float = _terrain_slope(data, p)
 		if slope > 1.05:
 			continue
@@ -1256,7 +1213,7 @@ static func _place_dead_trees(data: MapData, cfg: GameConfig, rng: RandomNumberG
 		var p: Vector2 = c["pos"] + Vector2(cos(ang), sin(ang)) * rad
 		if absf(p.x) > data.size * 0.5 - 10.0 or absf(p.y) > data.size * 0.5 - 10.0:
 			continue
-		if terrain_is_water(data, p) or _terrain_slope(data, p) > 0.5:
+		if _terrain_slope(data, p) > 0.5:
 			continue
 		if road_distance(data, p) < 3.0:
 			continue
@@ -1307,7 +1264,7 @@ static func _place_camp_props(data: MapData, cfg: GameConfig, rng: RandomNumberG
 				var ang: float = rng.randf() * TAU
 				var rr: float = rng.randf_range(2.2, 3.9)
 				q = center + Vector2(cos(ang), sin(ang)) * rr
-				if _terrain_slope(data, q) > 0.30 or terrain_is_water(data, q):
+				if _terrain_slope(data, q) > 0.30:
 					continue
 				if _near_any(placed, q, 1.5):
 					continue
@@ -1341,8 +1298,6 @@ static func _camp_site_ok(data: MapData, cfg: GameConfig, q: Vector2,
 	if q.distance_to(base) < 13.0 or q.distance_to(base) > 21.0:
 		return false
 	if _terrain_slope(data, q) > 0.22:
-		return false
-	if terrain_is_water(data, q):
 		return false
 	if road_distance(data, q) < 5.5:
 		return false
@@ -1380,7 +1335,7 @@ static func _place_ruins(data: MapData, cfg: GameConfig) -> void:
 				continue
 			for item in layout:
 				var q: Vector2 = c + (item["p"] as Vector2) * mirror
-				if _terrain_slope(data, q) > 0.32 or terrain_is_water(data, q):
+				if _terrain_slope(data, q) > 0.32:
 					continue
 				if road_distance(data, q) < 3.0:
 					continue
@@ -1390,7 +1345,7 @@ static func _place_ruins(data: MapData, cfg: GameConfig) -> void:
 			for k in range(7):
 				var a2: float = TAU * float(k) / 7.0 + 0.4
 				var q2: Vector2 = c + Vector2(cos(a2), sin(a2)) * (4.2 + 0.6 * float(k % 3))
-				if _terrain_slope(data, q2) > 0.4 or terrain_is_water(data, q2):
+				if _terrain_slope(data, q2) > 0.4:
 					continue
 				data.rubble.append({
 					"pos": Vector3(q2.x, data.height_at(q2.x, q2.y) + 0.02, q2.y),
@@ -1604,11 +1559,6 @@ static func _terrain_slope(data: MapData, p: Vector2) -> float:
 	var hz: float = data.height_at(p.x, p.y + 0.6) - data.height_at(p.x, p.y - 0.6)
 	return Vector2(hx, hz).length() / 1.2
 
-
-static func terrain_is_water(data: MapData, p: Vector2) -> bool:
-	if data.pond_radius <= 0.0:
-		return false
-	return p.distance_to(data.pond_center) < data.pond_radius
 
 
 static func _dist_to_segment(p: Vector2, a: Vector2, b: Vector2) -> float:

@@ -280,6 +280,16 @@ static func canvas_size_of(shell: Dictionary) -> Vector2:
 	return Vector2(sz.x * (1.0 + 2.0 * margin), sz.y * (1.0 + 2.0 * margin))
 
 
+## 编辑器相机最大拉远距离：规则在 Model/Map/MapBoard.CameraDistMax（随画布放大）。
+## 非 .NET 编辑器拿不到内核时按同一条口径手算一遍，数值一致，不会"换个编辑器就拉不远"。
+static func camera_dist_max_of(shell: Dictionary) -> float:
+	var canvas := canvas_size_of(shell)
+	var b := bridge()
+	if b != null:
+		return float(b.call("MapCameraDistMax", canvas.x, canvas.y))
+	return maxf(200.0, canvas.length() * 0.9)
+
+
 ## 底板参数校验（Model 的唯一实现）。
 static func board_validate(shell: Dictionary) -> Array:
 	var sz := size_of(shell)
@@ -771,6 +781,54 @@ static func decor_row(kind: String) -> Dictionary:
 		if String((row as Dictionary).get("id", "")) == kind:
 			return row as Dictionary
 	return {}
+
+
+# ===========================================================================
+# 棋盘皮肤（可换皮：路径只写在 Content/data/shell_board.json）
+#
+# 为什么要有这张表：格子顶面 A/B、收边、地块侧壁、底面一共 5 个材质，
+# 制作人换主题（草坪 → 石砖 → 沙地）时**只改这 5 条**，编辑器和局内一起换；
+# 路径放 JSON 而不是源码常量，源码才能保持 ASCII（编辑器零写死中文体检）。
+# ===========================================================================
+const BOARD_TABLE := "res://Content/data/shell_board.json"
+## 缺表时的兜底（空 = 调用方自己退回纯色，不至于崩）
+const BOARD_KEYS := ["tile_a", "tile_b", "rim", "block_side", "block_bottom"]
+static var _board_paths: Dictionary = {}
+static var _board_loaded := false
+
+
+static func board_material_paths() -> Dictionary:
+	if _board_loaded:
+		return _board_paths
+	_board_loaded = true
+	_board_paths = {}
+	var f := FileAccess.open(BOARD_TABLE, FileAccess.READ)
+	if f == null:
+		return _board_paths
+	var parsed: Variant = JSON.parse_string(f.get_as_text())
+	f.close()
+	if parsed is Dictionary:
+		var mats: Variant = (parsed as Dictionary).get("materials", {})
+		if mats is Dictionary:
+			_board_paths = mats as Dictionary
+	return _board_paths
+
+
+## 某个皮肤槽位的材质路径（找不到 = 空串，调用方退回纯色材质）。
+static func board_material_path(key: String) -> String:
+	return String(board_material_paths().get(key, ""))
+
+
+## 皮肤表是否齐（校验用：少一条就报出来，别静默变灰块）。
+static func board_table_errors() -> Array:
+	var errs: Array = []
+	for k in BOARD_KEYS:
+		var p := board_material_path(k)
+		if p.is_empty():
+			errs.append("board_skin: missing " + k)
+		elif not ResourceLoader.exists(p):
+			errs.append("board_skin: " + k + " -> " + p + " not found")
+	return errs
 
 
 # ===========================================================================

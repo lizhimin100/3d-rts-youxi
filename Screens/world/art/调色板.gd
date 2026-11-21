@@ -35,7 +35,6 @@ extends Resource
 	"leaf_dark": Color(0.204, 0.345, 0.157),
 	"ore": Color(0.914, 0.761, 0.290),
 	"grass": Color(0.420, 0.561, 0.227),
-	"water": Color(0.180, 0.431, 0.557),
 	"dirt": Color(0.482, 0.388, 0.267),
 	"hay": Color(0.788, 0.663, 0.306),
 	"rope": Color(0.612, 0.518, 0.333),
@@ -65,7 +64,7 @@ extends Resource
 @export var roughness: Dictionary = {
 	"steel": 0.45, "steel_dark": 0.55, "steel_light": 0.34, "gold": 0.38,
 	"gold_dark": 0.50, "iron": 0.60, "crystal": 0.10, "glass": 0.20,
-	"water": 0.10, "roof": 0.86, "roof_dark": 0.90, "hay": 0.95,
+	"roof": 0.86, "roof_dark": 0.90, "hay": 0.95,
 	"stone": 0.94, "stone_dark": 0.95, "stone_light": 0.92, "plaster": 0.95,
 	"wood": 0.90, "wood_dark": 0.92, "dirt": 0.98, "leaf": 0.90, "leaf_dark": 0.92,
 	"bark": 0.95, "grass": 0.95,

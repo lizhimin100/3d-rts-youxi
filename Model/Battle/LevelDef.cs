@@ -40,7 +40,7 @@ namespace WarIsland.Model
         public readonly List<Wave> Waves = new List<Wave>();
     }
 
-    /// <summary>一关：两轮各 90 秒，基地血量跨轮保留。</summary>
+    /// <summary>一关：两轮各 60 秒，基地血量跨轮保留。</summary>
     public sealed class LevelDef
     {
         public string Id = "";
@@ -49,7 +49,14 @@ namespace WarIsland.Model
         public string EnemyFaction = "";
         public double PlayerBaseHp = 2600.0;
         public double EnemyBaseHp = 2000.0;
-        public double RoundSeconds = 90.0;
+        /// <summary>
+        /// **单场限时（秒）的唯一真源**。2026-11-21 从 90 收到 60：
+        /// 规划阶段无限时 + 执行 60 秒攻防双场，一局 3~5 分钟。
+        /// 想改时长只改这里（+ levels.json 的 round_seconds），别在 GDScript 里写第二份。
+        /// </summary>
+        public const double RoundSecondsSpec = 60.0;
+
+        public double RoundSeconds = RoundSecondsSpec;
         public LaneConfig Lane = new LaneConfig();
         public readonly List<LevelRound> Rounds = new List<LevelRound>();
 
@@ -170,8 +177,8 @@ namespace WarIsland.Model
                 if (Rounds[1].Kind != "defend")
                     errors.Add($"关卡 {Id}：第 2 轮必须是 defend");
             }
-            if (Math.Abs(RoundSeconds - 90.0) > 1e-9)
-                errors.Add($"关卡 {Id}：round_seconds={RoundSeconds}，规格是 90 秒");
+            if (Math.Abs(RoundSeconds - RoundSecondsSpec) > 1e-9)
+                errors.Add($"关卡 {Id}：round_seconds={RoundSeconds}，规格是 {RoundSecondsSpec:0} 秒");
 
             foreach (var round in Rounds)
             {

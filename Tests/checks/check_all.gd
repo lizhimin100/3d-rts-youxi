@@ -61,6 +61,7 @@ func _run() -> void:
 	_check_planning_data()
 	_check_level_data()
 	_check_squad()
+	_check_planning_view()
 	_check_dev_editor()
 	_check_map_shell()
 	_check_asset_manifest()
@@ -610,6 +611,14 @@ func _mdl() -> RefCounted:
 	return bridge_sc.call("get_bridge") as RefCounted
 
 
+## 底板参数校验（一行调用 Model，检查里不重推公式）。返回空 = 合法。
+func mdl_board_errors(depth: float, margin: float, tile_scale: float) -> Array:
+	var mdl := _mdl()
+	if mdl == null:
+		return ["bridge=null"]
+	return mdl.call("MapBoardValidate", 120.0, 63.0, depth, 0.35, margin, tile_scale) as Array
+
+
 ## 四张数据表只验一次，后面几条检查共用（避免重复 parse）。
 func _content() -> Dictionary:
 	if not _content_cache.is_empty():
@@ -889,7 +898,7 @@ func _check_level_data() -> void:
 	var c := _content()
 	if c.is_empty():
 		return
-	_ok("关卡数据校验（两轮各 90 秒）", _arr(c.get("level_errors", [])).is_empty(), _err_text(c.get("level_errors", [])))
+	_ok("关卡数据校验（两轮各 60 秒）", _arr(c.get("level_errors", [])).is_empty(), _err_text(c.get("level_errors", [])))
 	var levels := JsonFile.read_dict(LEVELS_JSON, {})
 	var all_levels: Array = levels.get("levels", [])
 	var level_ids: Array[String] = []
@@ -907,9 +916,24 @@ func _check_level_data() -> void:
 	for r in rounds:
 		if (r.get("enemy_waves", []) as Array).is_empty():
 			wave_ok = false
-	_ok("第 1 关 = 进攻 90s + 防守 90s，且两轮都有波次",
-		kinds == ["attack", "defend"] and is_equal_approx(float(lv.get("round_seconds", 0.0)), 90.0) and wave_ok,
+	# 单场限时唯一真源 = LevelDef.RoundSecondsSpec = 60；反着验：每关都必须 60，
+	# 且**没有任何波次时间越界**（90 秒时代留下的 t=70/76 会在这里红）。
+	var spec60 := true
+	var wave_late: Array[String] = []
+	for lvx in all_levels:
+		var lvd: Dictionary = lvx
+		var rs := float(lvd.get("round_seconds", 0.0))
+		if not is_equal_approx(rs, 60.0):
+			spec60 = false
+		for r in (lvd.get("rounds", []) as Array):
+			for w in ((r as Dictionary).get("enemy_waves", []) as Array):
+				if float((w as Dictionary).get("t", 0.0)) > rs + 1e-6:
+					wave_late.append(String(lvd.get("id", "?")))
+	_ok("第 1 关 = 进攻 60s + 防守 60s，且两轮都有波次",
+		kinds == ["attack", "defend"] and is_equal_approx(float(lv.get("round_seconds", 0.0)), 60.0) and wave_ok,
 		"%s / %.0fs" % [str(kinds), float(lv.get("round_seconds", 0.0))])
+	_ok("全部关卡单场 60 秒，且没有波次时间越界（90 秒遗留会被抓出来）",
+		spec60 and wave_late.is_empty(), "越界=%s" % str(wave_late))
 	var lane: Dictionary = lv.get("lane", {})
 	_ok("横道几何完整（长/宽/敌区/抽血）",
 		float(lane.get("length", 0.0)) > float(lane.get("zone_depth", 0.0)) * 2.0 and float(lane.get("width", 0.0)) > 0.0 and float(lane.get("zone_dps_per_squad", 0.0)) > 0.0,
@@ -940,6 +964,54 @@ func _check_level_data() -> void:
 
 
 ## ===========================================================================
+## **规划阶段视角与微操口径（2026-11-21）**
+##
+## 玩家口径：
+##   ① 进规划阶段主相机自动锁定并聚焦**玩家区**（棋盘清晰居中），敌方情报改走顶部 UI 意图栏；
+##   ② 单场 60 秒、预留 1x/2x 倍速；
+##   ③ 微操只剩"选中我方小队 → 集火敌方小队"。
+## 这里只验"接线是否真的接上"（函数/调用点/白名单），数值本身在各自分组里反着验。
+func _check_planning_view() -> void:
+	var main_src := _read("res://Game/core/主场景.gd")
+	var cam_src := _read("res://Screens/camera/魔兽镜头.gd")
+	var map_src := _read("res://Screens/hud/规划地图层.gd")
+	var hud_src := _read("res://Screens/hud/HUD.gd")
+	var bar_src := _read("res://Screens/hud/敌方意图条.gd")
+
+	_ok("规划镜头：主场景优先调用 camera_points_player + lock_planning_rect（只框玩家区）",
+		main_src.contains("camera_points_player") and main_src.contains("lock_planning_rect")
+		and cam_src.contains("func lock_planning_rect") and cam_src.contains("_planning_lock"),
+		"主场景/镜头缺规划取景锁")
+
+	# 反着验：取景锁必须真的夹 _clamp_focus（否则只是存了个矩形没人用）
+	var clamp_fn := _slice_fn(cam_src, "_clamp_focus")
+	_ok("规划取景锁真的参与 _clamp_focus（存了不用的矩形会红）",
+		clamp_fn.contains("_planning_lock") and clamp_fn.contains("clampf"), "缺 clamp")
+
+	# 敌方意图：3D 层不再画敌方牌子；数据出口给意图栏
+	var draw_intents := _slice_fn(map_src, "_draw_intents")
+	_ok("规划 3D 层不再画敌方意图牌（只留我方/盟友），数据改由 enemy_intent_items() 输出",
+		map_src.contains("func enemy_intent_items") and not draw_intents.contains("COL_ENEMY"))
+	_ok("顶部 UI 意图栏：规划阶段也显示，且在 _place_planning_hud 里真的摆位",
+		bar_src.contains("_planning_items") and bar_src.contains("enemy_intent_items")
+		and _slice_fn(hud_src, "_place_planning_hud").contains("_foe_intent")
+		and hud_src.contains("set_source"))
+
+	# 60 秒唯一真源 + 倍速接口
+	_ok("单场 60 秒在 Model 里有唯一真源，且全仓库不再出现 90 秒规格",
+		_read("res://Model/Battle/LevelDef.cs").contains("RoundSecondsSpec = 60.0")
+		and not _read("res://Content/data/levels.json").contains("\"round_seconds\": 90"))
+	_ok("倍速接口留在 Model（SquadBattle.TimeScale，1x/2x），桥已转发",
+		_read("res://Model/Squad/SquadBattle.cs").contains("TimeScaleMax = 2.0")
+		and _read("res://Screens/bridge/ModelBridge.cs").contains("SquadSetTimeScale"))
+	# 反着验：小队指挥里必须有"集火"入口，但**不许**再有 H 驻守 / S 停火 键位
+	var cmd_src := _read("res://Screens/input/小队指挥.gd")
+	_ok("玩家微操白名单只有 attack（Model 唯一实现，界面不自己判；H/S 键位已移除）",
+		_read("res://Model/Squad/SquadBattle.cs").contains("IsPlayerMicroOrder")
+		and cmd_src.contains("context_order_screen")
+		and not cmd_src.contains("KEY_H:") and not cmd_src.contains("KEY_S:"))
+
+
 ## 真小队：编制闭环 / 战场装配 / 队级指令语义 / 脊线寻路 / 推演确定性
 ## ===========================================================================
 func _check_squad() -> void:
@@ -1041,7 +1113,17 @@ func _check_squad() -> void:
 
 	var start_pos := Vector2(float(sq.get("x", 0.0)), float(sq.get("z", 0.0)))
 	var target := start_pos + Vector2(12.0, 0.0)
-	var moved := int(mdl.call("SquadOrder", h, [int(sq.get("id", 0))], "move", target.x, target.y, -1))
+	# **玩家侧被移除的指令**：move / hold / stop / attack_move 一律返回 0（反着验一遍）
+	var player_move := int(mdl.call("SquadOrder", h, [int(sq.get("id", 0))], "move", target.x, target.y, -1))
+	var player_hold := int(mdl.call("SquadOrder", h, [int(sq.get("id", 0))], "hold", 0.0, 0.0, -1))
+	var player_stop := int(mdl.call("SquadOrder", h, [int(sq.get("id", 0))], "stop", 0.0, 0.0, -1))
+	var player_am := int(mdl.call("SquadOrder", h, [int(sq.get("id", 0))], "attack_move", target.x, target.y, -1))
+	_ok("微操收敛：玩家侧 move / hold / stop / attack_move 全被 Model 拒绝（只留集火）",
+		player_move == 0 and player_hold == 0 and player_stop == 0 and player_am == 0
+		and bool(mdl.call("SquadPlayerOrderAllowed", "attack")),
+		"move=%d hold=%d stop=%d am=%d" % [player_move, player_hold, player_stop, player_am])
+	# 推进本身仍然成立：走"预设偏好/AI"入口（SquadAutoOrder），寻路与移动逻辑不变
+	var moved := int(mdl.call("SquadAutoOrder", h, [int(sq.get("id", 0))], "move", target.x, target.y, -1))
 	for i in range(100):
 		mdl.call("SquadStep", h, 0.05)
 	view = mdl.call("SquadView", h)
@@ -1050,7 +1132,7 @@ func _check_squad() -> void:
 	_ok("移动指令：整队质心真的走了（5s >= 3m）", moved == 1 and moved_dist >= 3.0,
 		"%.2f m" % moved_dist)
 
-	mdl.call("SquadOrder", h, [int(sq.get("id", 0))], "hold", 0.0, 0.0, -1)
+	mdl.call("SquadAutoOrder", h, [int(sq.get("id", 0))], "hold", 0.0, 0.0, -1)
 	var hold_pos := Vector2(float(sq.get("x", 0.0)), float(sq.get("z", 0.0)))
 	for i in range(40):
 		mdl.call("SquadStep", h, 0.05)
@@ -1075,11 +1157,18 @@ func _check_squad() -> void:
 	_ok("集火：指令落到队级 target_squad（不是单兵目标）",
 		attack_ok == 1 and int(sq.get("target_squad", -1)) == enemy_id,
 		"target=%d" % int(sq.get("target_squad", -1)))
+	# 倍速接口：1x/2x 夹取，越界一律收进 [1,2]（反着验）
+	var ts2 := float(mdl.call("SquadSetTimeScale", h, 2.0))
+	var ts_hi := float(mdl.call("SquadSetTimeScale", h, 9.0))
+	var ts_lo := float(mdl.call("SquadSetTimeScale", h, 0.1))
+	_ok("战斗倍速接口：2.0 生效，9.0 夹到 2.0，0.1 夹回 1.0",
+		is_equal_approx(ts2, 2.0) and is_equal_approx(ts_hi, 2.0) and is_equal_approx(ts_lo, 1.0),
+		"%.1f / %.1f / %.1f" % [ts2, ts_hi, ts_lo])
 
 	# ---- 4. 脊线寻路：路径点 >= 3 且比直线长（走脊线，不抄斜线）----
 	var far := Vector2(float(info.get("enemy_base_x", 0.0)), 0.0)
 	var straight := Vector2(float(sq.get("x", 0.0)), float(sq.get("z", 0.0))).distance_to(far)
-	mdl.call("SquadOrder", h, [int(sq.get("id", 0))], "move", far.x, far.y, -1)
+	mdl.call("SquadAutoOrder", h, [int(sq.get("id", 0))], "move", far.x, far.y, -1)
 	var path: Dictionary = mdl.call("SquadDebugPath", h, int(sq.get("id", 0)))
 	var pts: Array = path.get("points", [])
 	var path_m := float(path.get("length_m", 0.0))
@@ -1426,9 +1515,11 @@ func _check_asset_manifest() -> void:
 		if not FileAccess.file_exists(path):
 			bad.append(path)
 	_ok("资产清单里的路径都真实存在（%d 条）" % checked, checked >= 20 and bad.is_empty(), ", ".join(bad.slice(0, 4)))
-	_ok("资产清单覆盖树 / 水 / 地形材质 / 着色器 / UI 主题",
-		src.contains("树_场景.tscn") and src.contains("水材质.tres") and src.contains("地形材质.tres")
-		and src.contains("地形.gdshader") and src.contains("游戏主题.tres"))
+	_ok("资产清单覆盖树 / 地形材质 / 棋盘皮肤 / 着色器 / UI 主题（水已整层删除、清单里不许再出现水材质）",
+		src.contains("树_场景.tscn") and src.contains("地形材质.tres")
+		and src.contains("棋盘格子A.tres") and src.contains("地块侧面.tres")
+		and src.contains("地形.gdshader") and src.contains("游戏主题.tres")
+		and not src.contains("水材质.tres"))
 
 
 func _check_map_shell() -> void:
@@ -1473,15 +1564,19 @@ func _check_map_shell() -> void:
 	_ok("底壳编辑器只保留 4 个纯视觉/空间划分工具（地形笔刷 / 装饰 / 脊线 / 战术格子）+ 区域绘制 + 框选",
 		tools_ok, ", ".join(tools_hit))
 
-	# 镜头口径继承：俯角 50° / 12~200m / 右键平移方向 / 中键旋转 / WASD / 边界夹取
+	# 镜头口径继承：俯角 50° / 12m 起 / 右键平移方向 / 中键旋转 / WASD / 边界夹取
+	# 2026-11-21 起**上限不再写死**：地图可扩到 400m，相机必须能跟着画布拉远，
+	# 所以断言"有 dist_max() 这个唯一出口"，数值本身在下面用 Model 反着验。
 	var camera_ok := view_src.contains("CAM_PITCH_DEG := 50.0") \
 		and view_src.contains("CAM_DIST_MIN := 12.0") \
-		and view_src.contains("CAM_DIST_MAX := 200.0") \
+		and view_src.contains("func dist_max()") \
+		and view_src.contains("ShellStore.camera_dist_max_of") \
 		and view_src.contains("0.0016 * cam_dist") \
 		and view_src.contains("_clamp_target") \
 		and view_src.contains("rad_to_deg(0.006)") \
-		and view_src.contains("KEY_W") and view_src.contains("KEY_Q")
-	_ok("底壳编辑器继承旧地图编辑器镜头口径（俯角 50 / 12-200m / 右键平移 / 中键旋转 / WASD·QE）",
+		and view_src.contains("KEY_W") and view_src.contains("KEY_Q") \
+		and not view_src.contains("clampf(cam_dist * 0.88, CAM_DIST_MIN, CAM_DIST_MAX)")
+	_ok("底壳编辑器继承旧地图编辑器镜头口径（俯角 50 / 12m 起 / 右键平移 / 中键旋转 / WASD·QE）",
 		camera_ok, "shell_view.gd 镜头常量或键位缺失")
 
 	# 地形材质：必须是游戏里那一份 地形材质.tres + 草泥图集 + 草/泥/裂纹泥地底材。
@@ -1547,7 +1642,7 @@ func _check_map_shell() -> void:
 		shell_src.contains("#12161F") and shell_src.contains("LEGACY_GOLD") and shell_src.contains("STONE"))
 
 	var allowed := ["id", "display_name", "biome", "size", "seed", "terrain", "surface",
-		"spine", "regions", "tiles", "decorations", "note"]
+		"spine", "regions", "tiles", "decorations", "note", "board"]
 	var extra: Array[String] = []
 	for s in (shells_doc_again() as Array):
 		for k in (s as Dictionary).keys():
@@ -1555,6 +1650,36 @@ func _check_map_shell() -> void:
 				extra.append(String(k))
 	_ok("底壳资产是纯净底壳：只有地形/地表/脊线/三块区域/战术格子/装饰（无兵种/触发器/波次/经济字段）",
 		extra.is_empty(), ", ".join(extra))
+
+	# ── 立体地块 / 画布冗余 / 可换皮皮肤表 ──────────────────────────────
+	var skin := JsonFile.read_dict("res://Content/data/shell_board.json", {})
+	var skin_mats: Dictionary = skin.get("materials", {})
+	var skin_bad: Array[String] = []
+	for sk in ["tile_a", "tile_b", "rim", "block_side", "block_bottom"]:
+		var sp := String(skin_mats.get(sk, ""))
+		if sp.is_empty() or not FileAccess.file_exists(sp):
+			skin_bad.append(sk)
+	var board_rows: Array = (shells_doc_again() as Array)
+	var no_board: Array[String] = []
+	for s in board_rows:
+		var bd: Variant = (s as Dictionary).get("board", null)
+		if not (bd is Dictionary) or float((bd as Dictionary).get("depth", 0.0)) <= 0.0:
+			no_board.append(String((s as Dictionary).get("id", "?")))
+	_ok("立体地块参数齐全（每张底壳都有 board.depth > 0；皮肤表 5 个 .tres 都存在）",
+		skin_bad.is_empty() and no_board.is_empty(),
+		"皮肤缺:%s / 缺厚度:%s" % [", ".join(skin_bad), ", ".join(no_board)])
+	# 反向验错：厚度 0 / 冗余 0.3 / 倍率 3.0 必须被 Model 拒绝
+	var board_bad: int = (mdl_board_errors(0.0, 0.30, 3.0) as Array).size() \
+		+ (mdl_board_errors(6.0, 0.30, 1.0) as Array).size() \
+		+ (mdl_board_errors(6.0, 0.45, 3.0) as Array).size()
+	var board_ok_n: int = (mdl_board_errors(6.0, 0.45, 1.0) as Array).size()
+	_ok("反向验错：厚度 0 / 冗余 30% / 倍率 3.0 都被 Model 拒绝，6m+45%+1.0x 通过",
+		board_bad >= 3 and board_ok_n == 0, "拒绝=%d 合法=%d" % [board_bad, board_ok_n])
+	# 相机距离必须随画布放大（不许写死）
+	var d_small := float(_mdl().call("MapCameraDistMax", 200.0, 200.0))
+	var d_big := float(_mdl().call("MapCameraDistMax", 1100.0, 1100.0))
+	_ok("相机上限随画布放大（小图 ≥200m，扩容后显著更长；写死 200 会红）",
+		d_small >= 199.0 and d_big > d_small * 2.5, "%.0f / %.0f" % [d_small, d_big])
 
 	# ── Model 反向验错：区域顶点不足 3 个必须被拒；3 个必须过 ──
 	var mdl := _mdl()

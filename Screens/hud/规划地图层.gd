@@ -501,18 +501,19 @@ func _draw_intents(cam: Camera3D) -> void:
 		var f: RtsFaction = it.get("faction", null)
 		if f == null or not is_instance_valid(f):
 			continue
+		# ★ 2026-11-21：**敌方意图不再画在 3D 画面里**（玩家口径：不需要把敌方区域硬塞进同屏）。
+		#   敌方情报统一走顶部 UI 意图栏（敌方意图条 → enemy_intent_items()），
+		#   这里只保留我方 / 盟友部署的图钉。
+		if not bool(it.get("mine", false)):
+			continue
 		var anchor: Dictionary = _base_icons.get(f.get_instance_id(), {})
 		if anchor.is_empty():
 			continue
 		var chips: Array = _chips_for(it)
 		var is_me: bool = f == Game.player_faction
-		var title: String = "我方部署" if is_me else ("盟军部署" if bool(it.get("mine", false)) else "敌方意图")
-		if bool(it.get("mine", false)):
-			entries.append({"it": it, "f": f, "anchor": anchor, "chips": chips,
-				"title": title, "col": COL_MINE if is_me else COL_ALLY, "is_me": is_me})
-		else:
-			entries.append({"it": it, "f": f, "anchor": anchor, "chips": chips,
-				"title": title, "col": COL_ENEMY, "is_me": false})
+		var title: String = "我方部署" if is_me else "盟军部署"
+		entries.append({"it": it, "f": f, "anchor": anchor, "chips": chips,
+			"title": title, "col": COL_MINE if is_me else COL_ALLY, "is_me": is_me})
 	if entries.is_empty():
 		return
 	# 上方基地先摆，避免下面的牌子把它顶出去
@@ -520,6 +521,30 @@ func _draw_intents(cam: Camera3D) -> void:
 		return float((a["anchor"] as Dictionary)["rect"].position.y) < float((b["anchor"] as Dictionary)["rect"].position.y))
 	for e in entries:
 		_draw_intent_panel(e)
+
+
+## **敌方意图数据出口（给顶部 UI 意图栏用）**：
+## 返回 [{faction_id, chips, title}] —— 只给"兵种图标 + 进攻徽记 + 左/中/右路"，
+## 没有数量、没有具体时刻、没有小队（与旧 3D 牌子同一套纪律）。
+## 3D 画面不再画敌方牌子，这条是唯一出口。
+func enemy_intent_items() -> Array:
+	var sb := _sandbox()
+	var out: Array = []
+	if sb == null:
+		return out
+	for it in sb.call("faction_items"):
+		var f: RtsFaction = it.get("faction", null)
+		if f == null or not is_instance_valid(f) or bool(it.get("mine", false)):
+			continue
+		var chips: Array = _chips_for(it)
+		if chips.is_empty():
+			continue
+		out.append({
+			"faction_id": f.get_instance_id(),
+			"chips": chips,
+			"title": "敌方意图",
+		})
+	return out
 
 
 func _draw_intent_panel(e: Dictionary) -> void:

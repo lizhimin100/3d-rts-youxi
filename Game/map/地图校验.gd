@@ -52,8 +52,6 @@ static func validate(m: MapDef) -> Dictionary:
 		if not m.in_bounds(sp, 1.0):
 			errors.append("%s 的出生点在边界外（%.1f, %.1f）" % [tag, sp.x, sp.y])
 			continue
-		if m.is_water_at(sp):
-			errors.append("%s 的出生点在水里（%.1f, %.1f）" % [tag, sp.x, sp.y])
 		var slope: float = m.slope_degrees_at(sp.x, sp.y)
 		if slope > MapLoader.WALK_SLOPE_LIMIT_DEG:
 			errors.append("%s 的出生点在陡坡上（%.0f° > %.0f°）"

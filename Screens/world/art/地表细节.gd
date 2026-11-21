@@ -257,10 +257,8 @@ func _road_vertex(p: Vector2, u: float, base: Color, rut: Color, si: int, sj: in
 	return {"p": Vector3(p.x, y, p.y), "c": c}
 
 
-## 这一段路是否贴着可走地面（悬崖/水里不画）
+## 这一段路是否贴着可走地面（悬崖不画；2026-11-21 水面整层删除）
 func _road_span_ok(a: Vector2, b: Vector2) -> bool:
-	if MapGenerator.terrain_is_water(_data, a) or MapGenerator.terrain_is_water(_data, b):
-		return false
 	return MapGenerator._terrain_slope(_data, a) < 0.9 \
 		and MapGenerator._terrain_slope(_data, b) < 0.9
 

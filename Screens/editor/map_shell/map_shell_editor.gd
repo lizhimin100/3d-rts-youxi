@@ -69,6 +69,8 @@ var _tile_w_slider: HSlider = null
 var _tile_d_slider: HSlider = null
 ## 底部 Dock（三分组操作面板）
 var _dock_root: VBoxContainer = null
+## 主屏根布局（顶部条 / 3D 视口 / 状态条 / 独立运行时的底部面板）
+var _ui_root: VBoxContainer = null
 var _map_w_edit: LineEdit = null
 var _map_d_edit: LineEdit = null
 var _scale_check: CheckBox = null
@@ -106,6 +108,20 @@ func T(key: String, params: Dictionary = {}) -> String:
 	return ShellText.t(key, params)
 
 
+## 面板构建期（view 还没建）拿"正在编辑的底壳"：优先 view，其次数据表第一张。
+func _shell_for_panel() -> Dictionary:
+	if view != null:
+		var s: Variant = view.get("shell")
+		if s is Dictionary and not (s as Dictionary).is_empty():
+			return s
+	if data == null:
+		return {}
+	var list: Array = data.call("shell_list")
+	if list.is_empty():
+		return {}
+	return list[0] as Dictionary
+
+
 # ===========================================================================
 # 盘子
 # ===========================================================================
@@ -114,6 +130,7 @@ func _build_ui() -> void:
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	root.add_theme_constant_override("separation", 0)
 	add_child(root)
+	_ui_root = root
 	root.add_child(_build_topbar())
 
 	# 主屏只留 3D 视口：操作面板全部搬到 Godot 原生底部 Dock（见 _build_control_dock），
@@ -128,9 +145,16 @@ func _build_ui() -> void:
 
 	# Dock 内容先挂在编辑器根下（隐藏）：插件 _enter_tree 时主屏还没就绪，
 	# 等插件调 attach_control_dock() 再 reparent 到真正的底部 Dock。
+	# ★ 必须挂在**主屏布局 VBox** 的末尾（= 屏幕底部一条），不是挂在根 Control 上：
+	#   挂在 Control 上会停在 (0,0) 盖住 3D 视口（2026-11-21 实测：面板压住半张地图）。
 	_dock_root = _build_control_dock()
 	_dock_root.visible = false
-	add_child(_dock_root)
+	_ui_root.add_child(_dock_root)
+	# **独立运行**（`--shot shell` / 直接 F6 这个场景）时没有编辑器插件来挂钩，
+	# 面板就退化成主屏底部条 —— 否则所有按钮都是 hidden，截图与自检直接判"控件不可见"。
+	# 在编辑器里（Engine.is_editor_hint）仍然只等 attach_control_dock()。
+	if not Engine.is_editor_hint():
+		_dock_root.visible = true
 
 	_save_timer = Timer.new()
 	_save_timer.one_shot = true
@@ -151,6 +175,20 @@ func attach_control_dock(parent: Control) -> void:
 	_dock_root.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
 
+## 截图专用固定机位（--shot shell_edge 用）：低俯角 + 贴近边缘，看得到侧壁厚度与倒角。
+## 只读参数、不写任何数据；正常编辑器不会调它。
+func apply_shot_camera(d: Dictionary) -> void:
+	if view == null:
+		return
+	view.call("set_camera",
+		float(d.get("yaw", view.get("cam_yaw"))),
+		float(d.get("pitch", -50.0)),
+		float(d.get("dist", 78.0)),
+		Vector3(float(d.get("x", 0.0)), 0.0, float(d.get("z", 0.0))))
+	await get_tree().process_frame
+	view.call("_update_camera")
+
+
 func dock_root() -> Control:
 	return _dock_root
 
@@ -162,7 +200,7 @@ func _build_control_dock() -> VBoxContainer:
 	var wrap := VBoxContainer.new()
 	wrap.name = "shell_dock"
 	wrap.add_theme_constant_override("separation", 6)
-	wrap.custom_minimum_size = Vector2(760.0, 296.0)
+	wrap.custom_minimum_size = Vector2(760.0, 300.0)
 
 	# --- 标题行：工具页签 + 撤销 ---
 	var head := HBoxContainer.new()
@@ -272,7 +310,9 @@ func _build_map_size_group() -> Control:
 	var size_row := HBoxContainer.new()
 	size_row.add_theme_constant_override("separation", 6)
 	size_row.add_child(ThemeKit.caption(T("shell.map.w"), ShellTheme.TEXT_SUB))
-	var shell: Dictionary = view.get("shell")
+	# **构建期 view 还不存在**（面板先建、_bind_view 后建），所以这里走 data 的第一张底壳；
+	# 之前直接 view.get("shell") 会在 --import / 编辑器启动时报 null.get()。
+	var shell: Dictionary = _shell_for_panel()
 	var sz := ShellStore.size_of(shell)
 	_map_w_edit = ThemeKit.num_field("%.1f" % sz.x, 60.0)
 	_map_w_edit.name = "shell_map_w"
@@ -307,11 +347,19 @@ func _build_map_size_group() -> Control:
 	ops.add_child(frame)
 	v.add_child(ops)
 
+	# 4 条滑杆走 **2×2 紧凑格**：竖排时这一列会比 Dock 高（1080p 下最后一条被屏幕下缘切掉），
+	# 2×2 之后整组高度压到 ~96px，三组在 1080p 里完整可见。
 	var board := ShellStore.board_of(shell)
-	_depth_slider = _slider(v, T("shell.map.depth"), 1.0, 24.0, float(board["depth"]), _on_depth)
-	_bevel_slider = _slider(v, T("shell.map.bevel"), 0.0, 1.2, float(board["bevel"]), _on_bevel)
-	_margin_slider = _slider(v, T("shell.map.margin"), 0.40, 0.50, float(board["margin"]), _on_margin)
-	_tile_scale_slider = _slider(v, T("shell.map.tile_scale"), 0.6, 2.0, float(board["tile_scale"]), _on_tile_scale)
+	var grid := GridContainer.new()
+	grid.name = "shell_board_grid"
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 8)
+	grid.add_theme_constant_override("v_separation", 2)
+	v.add_child(grid)
+	_depth_slider = _slider_compact(grid, T("shell.map.depth"), 1.0, 24.0, float(board["depth"]), _on_depth)
+	_bevel_slider = _slider_compact(grid, T("shell.map.bevel"), 0.0, 1.2, float(board["bevel"]), _on_bevel)
+	_margin_slider = _slider_compact(grid, T("shell.map.margin"), 0.40, 0.50, float(board["margin"]), _on_margin)
+	_tile_scale_slider = _slider_compact(grid, T("shell.map.tile_scale"), 0.6, 2.0, float(board["tile_scale"]), _on_tile_scale)
 
 	_canvas_label = ThemeKit.caption("", ShellTheme.TEXT_DIM)
 	v.add_child(_canvas_label)
@@ -797,6 +845,40 @@ func _slider(parent: VBoxContainer, title: String, lo: float, hi: float, value: 
 	return s
 
 
+## 紧凑滑杆（2×2 网格用）：上面一行"标题 + 数值"，下面一条滑杆，整格高度 ~44px。
+func _slider_compact(parent: GridContainer, title: String, lo: float, hi: float,
+		value: float, cb: Callable) -> HSlider:
+	var cell := VBoxContainer.new()
+	cell.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	cell.add_theme_constant_override("separation", 1)
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 4)
+	var l := ThemeKit.caption(title, ShellTheme.TEXT_SUB)
+	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(l)
+	var out := ThemeKit.value_label("%.2f" % value, ShellTheme.LEGACY_GOLD_HI)
+	out.custom_minimum_size = Vector2(40.0, 0.0)
+	out.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	out.add_theme_font_size_override("font_size", 10)
+	head.add_child(out)
+	cell.add_child(head)
+	var s := HSlider.new()
+	s.min_value = lo
+	s.max_value = hi
+	s.step = (hi - lo) / 200.0
+	s.value = value
+	s.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	s.custom_minimum_size = Vector2(0.0, 16.0)
+	cell.add_child(s)
+	parent.add_child(cell)
+	s.value_changed.connect(func(val):
+		out.text = "%.2f" % val
+		if cb.is_valid():
+			cb.call(val)
+	)
+	return s
+
+
 func _on_brush_mode(mode: String) -> void:
 	view.set("brush_mode", mode)
 
@@ -806,13 +888,6 @@ func _on_layer(index: int) -> void:
 	view.set("brush_mode", "surface")
 	for k in _brush_buttons.keys():
 		(_brush_buttons[k] as Button).button_pressed = String(k) == "surface"
-
-
-func _on_water(value: float) -> void:
-	# 水体已彻底移除（2026-11-21）：底壳只有立体地块，没有水面层。
-	# 保留空函数只是为了让旧的 .tscn/外部脚本调用不炸；新代码不许再调它。
-	if value < 0.0:
-		return
 
 
 func _on_depth(value: float) -> void:
@@ -863,7 +938,7 @@ func _show_errors(errs: Array) -> void:
 func _refresh_canvas_label() -> void:
 	if _canvas_label == null:
 		return
-	var shell: Dictionary = view.get("shell")
+	var shell: Dictionary = _shell_for_panel()
 	if shell.is_empty():
 		return
 	var canvas: Vector2 = ShellStore.canvas_size_of(shell)

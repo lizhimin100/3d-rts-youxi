@@ -354,8 +354,6 @@ func _is_terrain_blocked(c: Vector2) -> bool:
 		return true
 	if float(_def.call("slope_degrees_at", c.x, c.y, 0.75)) > 40.0:
 		return true
-	if bool(_def.call("is_water_at", c)):
-		return true
 	return false
 
 

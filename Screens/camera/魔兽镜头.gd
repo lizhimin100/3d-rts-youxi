@@ -58,10 +58,15 @@ var locked: bool = false
 ## 为什么必须自适应：主场景地图把基地挪到了 ±78 的对角，固定 118m 时近端基地
 ## 被底栏挡住、远端基地被顶栏挡住 —— 意图面板只能贴屏幕边，读不出挂在谁头上。
 var _planning_view: bool = false
+## 规划阶段的取景锁（世界 XZ 矩形）：空 = 不锁（旧行为，整张地图可平移）。
+## 规划阶段由 主场景 注入"玩家区 ±26m"，见 lock_planning_rect()。
+var _planning_lock: Rect2 = Rect2()
 ## 沙盘俯角（比战斗视角 50° 更接近俯视，读得清网格与图标）
 const PLANNING_PITCH_DEG: float = 58.0
 ## 规划阶段允许的缩放范围（滚轮不会把 250m 的沙盘一格拉回 44m 战斗视距）
-const PLANNING_ZOOM_MIN: float = 96.0
+## 2026-11-21：规划视角改成**只框玩家区**（±26m 棋盘），下限放到 42m 才能让棋盘铺满安全区；
+## 上限保持 420m，需要看全图时滚轮仍能拉远（敌方意图走 UI，不靠 3D 同屏）。
+const PLANNING_ZOOM_MIN: float = 42.0
 const PLANNING_ZOOM_MAX: float = 420.0
 
 ## 鼠标是否已经在窗口里出现过（出现过才允许边缘滚动）
@@ -182,6 +187,24 @@ func frame_planning(points: PackedVector3Array, focus_hint: Vector3, safe: Rect2
 ## 退出沙盘取景：俯角恢复 Cfg 的战斗视角（距离/注视点由调用方接着设置）。
 func end_planning_view() -> void:
 	_planning_view = false
+	_planning_lock = Rect2()
+
+
+## **规划阶段取景锁**（2026-11-21）：矩形是世界 XZ 范围，不是屏幕矩形。
+##
+## 玩家口径："进入规划阶段，主相机自动锁定并聚焦在玩家区域，玩家区棋盘清晰居中"。
+## 于是规划阶段不再是"整张战场随便拖"，而是**把平移范围收在玩家区**：
+## 拖到边缘就停住，敌方区域不进画面（敌方意图改为顶部 UI 意图栏输出）。
+## 传空 Rect2 = 解锁（退出规划阶段时由 end_planning_view 调）。
+func lock_planning_rect(r: Rect2) -> void:
+	_planning_lock = r
+	if r.size.x > 1.0 and r.size.y > 1.0:
+		_focus_target = _clamp_focus(_focus_target)
+		_focus = _clamp_focus(_focus)
+
+
+func planning_lock_rect() -> Rect2:
+	return _planning_lock
 
 
 ## 规划俯角（战斗视角仍读 Cfg）。
@@ -711,6 +734,13 @@ func _clamp_focus(p: Vector3) -> Vector3:
 	out.y = 0.0
 	var lv := _level()
 	if _planning_view and lv != null:
+		# **规划阶段取景锁**：只在玩家区矩形里平移（棋盘清晰居中，敌方区不进画面）。
+		# 没有注入矩形时退回旧行为：整张地图自由平移。
+		if _planning_lock.size.x > 1.0 and _planning_lock.size.y > 1.0:
+			out.x = clampf(out.x, _planning_lock.position.x, _planning_lock.end.x)
+			out.z = clampf(out.z, _planning_lock.position.y, _planning_lock.end.y)
+			out.y = _ground_y(out.x, out.z)
+			return out
 		# 沙盘点一下看全图：允许相机在整张地图里自由平移（不再按战斗视距收窄边界，
 		# 否则 250m 俯瞰档的 reach 会把注视点夹在中心 ±27m，玩家一拖就“弹回去”）。
 		var lim: float = maxf(lv.world_size * 0.5 - 6.0, 20.0)

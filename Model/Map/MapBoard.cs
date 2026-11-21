@@ -175,6 +175,21 @@ namespace WarIsland.Model
             return minX >= -hx - 0.5 && maxX <= hx + 0.5 && minZ >= -hz - 0.5 && maxZ <= hz + 0.5;
         }
 
+        /// <summary>
+        /// 编辑器相机允许的最大拉远距离（米）。
+        /// **为什么要跟着画布长**：地图可以从 40m 扩到 400m，四周还有 40%~50% 冗余，
+        /// 写死 200 的话扩容后连整张画布都装不进画面 —— 制作人就没法在冗余区里拖边缘地块。
+        /// 口径：至少 200m（旧编辑器手感不变），随画布对角线放大到 0.9×。
+        /// </summary>
+        public const double CameraDistFloor = 200.0;
+
+        public static double CameraDistMax(double canvasX, double canvasZ)
+        {
+            double diag = Math.Sqrt(Math.Max(canvasX, 0.0) * Math.Max(canvasX, 0.0)
+                + Math.Max(canvasZ, 0.0) * Math.Max(canvasZ, 0.0));
+            return Math.Max(CameraDistFloor, diag * 0.9);
+        }
+
         /// <summary>地面基准色 vs 侧面：编辑器用这个判断"这个点在不在画布里"。</summary>
         public static bool InsideCanvas(double x, double z, double sizeX, double sizeZ, double margin)
         {

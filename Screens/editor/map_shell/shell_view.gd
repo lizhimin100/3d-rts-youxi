@@ -51,9 +51,11 @@ const REGION_Y_LIFT := 0.07
 ## 俯角 = 游戏内魔兽镜头 camera_pitch_deg（50°）；FOV 与 魔兽镜头.gd 一致（52）。
 const CAM_PITCH_DEG := 50.0
 const CAM_FOV := 52.0
-## 缩放范围：**上限要能看清画布的冗余空间**（地图 + 四周 45%），不再被地块尺寸锁死。
+## 缩放范围：**上限不再写死**——地图可以从 40m 扩到 400m、四周还有 40%~50% 冗余，
+## 所以上限由 dist_max() 按画布对角线算（规则唯一实现在 Model/Map/MapBoard.CameraDistMax）。
+## CAM_DIST_MAX 只是「旧编辑器手感」的下限：小图时仍然是 200m。
 const CAM_DIST_MIN := 12.0
-const CAM_DIST_MAX := 420.0
+const CAM_DIST_MAX := 200.0
 ## 默认距离：224m 图上大约看半张图；底壳更小，先保持同一手感再靠滚轮调。
 const CAM_DIST_DEFAULT := 90.0
 ## Ctrl+Shift+C 跳到玩家区（主堡格子）时的距离 = 游戏默认镜头距离。
@@ -74,6 +76,9 @@ const BORDER_COLOR := Color(1.0, 0.85, 0.35, 0.9)
 const CANVAS_COLOR := Color(0.55, 0.70, 0.86, 0.34)
 ## 底板侧面的倒角宽（米）：从顶面外缘往里收，再垂直落到土壁
 const BLOCK_BEVEL_SEG := 2
+## 棋盘格板厚（米）。**要薄**：板一厚，立面就变成每条缝两边的黑边，读成"粗线框"；
+## 立体感由地块本体的侧壁负责，格子只是"草坪砖"。
+const TILE_H := 0.10
 
 # ── 地形：**和游戏里同一份材质与贴图**（唯一真源 RtsTerrain / 地形.gdshader）──
 ## 路径全部转发 RtsTerrain / ArtKit 的常量 —— 编辑器不写第二份资源路径。
@@ -90,14 +95,10 @@ const TILE_M := RtsTerrain.TILE_M
 ## 底壳没有生态字段，按温带取色（与 MapDef.biome_tint 的默认档一致）。
 const SHELL_BIOME := "temperate"
 
-# ── 可换皮的棋盘材质（**独立 .tres**，制作人换主题只改这两个文件）─────────────
+# ── 可换皮的棋盘材质（**独立 .tres**，制作人换主题只改 Content/data/shell_board.json）──
 ## 双色微差：A/B 只差 5%~10% 明度，靠贴图而不是粗线框出"棋盘感"。
-const BOARD_TILE_A := "res://Content/art/材质/棋盘格子A.tres"
-const BOARD_TILE_B := "res://Content/art/材质/棋盘格子B.tres"
-const BOARD_RIM := "res://Content/art/材质/棋盘边框.tres"
-## 立体地块的侧面 / 底面（土层与岩壁，走既有的 泥土.png，不现画一条灰带）
-const BLOCK_SIDE := "res://Content/art/材质/地块侧面.tres"
-const BLOCK_BOTTOM := "res://Content/art/材质/地块底面.tres"
+## 立体地块的侧面 / 底面（土层与岩壁，走既有的 泥土.png，不现画一条灰带）。
+## **路径不写在这里**：源码保持 ASCII，5 条路径统一在 shell_store.board_material_path()。
 
 var shell: Dictionary = {}
 var tool := TOOL_TERRAIN
@@ -594,7 +595,7 @@ func _add_block_surfaces(mesh: ArrayMesh) -> void:
 ## 地块侧面材质：真实 泥土.png + 三平面投影（侧壁不拉伸），颜色偏土黄。
 func _side_material() -> Material:
 	if _side_mat == null:
-		_side_mat = _load_material(BLOCK_SIDE)
+		_side_mat = _load_material(ShellStore.board_material_path("block_side"))
 	if _side_mat == null:
 		var std := StandardMaterial3D.new()
 		std.albedo_color = Color(0.34, 0.27, 0.20)
@@ -606,7 +607,7 @@ func _side_material() -> Material:
 
 func _bottom_material() -> Material:
 	if _bottom_mat == null:
-		_bottom_mat = _load_material(BLOCK_BOTTOM)
+		_bottom_mat = _load_material(ShellStore.board_material_path("block_bottom"))
 	if _bottom_mat == null:
 		var std := StandardMaterial3D.new()
 		std.albedo_color = Color(0.11, 0.09, 0.075)
@@ -1023,7 +1024,8 @@ func _build_regions() -> void:
 		label.no_depth_test = true
 		label.outline_size = 12
 		label.modulate = Color(col.r, col.g, col.b, 0.98)
-		label.position = Vector3(c.x, _h(c.x, c.y) + 2.4, c.y)
+		# 抬到 +9m：玩家区的重心正好压在 3×2 棋盘上，2.4m 会把"定义玩家区"糊在格子上。
+		label.position = Vector3(c.x, _h(c.x, c.y) + 9.0, c.y)
 		holder.add_child(label)
 	_build_region_draft()
 
@@ -1038,12 +1040,11 @@ func _region_fill_mesh(pts: PackedVector2Array, col: Color) -> MeshInstance3D:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var c := Color(col.r, col.g, col.b, REGION_FILL_ALPHA)
-	for i in idx:
-		var p := pts[i]
-		var y := _h(p.x, p.y) + REGION_Y_LIFT
-		st.set_color(c)
-		st.set_normal(Vector3.UP)
-		st.add_vertex(Vector3(p.x, y, p.y))
+	# ★ 必须**细分**：四角一张平面的做法在起伏地形上会一半埋进土里、一半浮在空中，
+	#   屏幕上就是一条突兀的斜边（2026-11-21 实测）。3 层中点细分 = 每个三角形 64 片，
+	#   顶点逐点取地形高度，填充才真的"贴地"。
+	for i in range(0, idx.size(), 3):
+		_subdiv_tri(st, pts[idx[i]], pts[idx[i + 1]], pts[idx[i + 2]], 3, c)
 	mi.mesh = st.commit()
 	var mat := StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -1053,6 +1054,23 @@ func _region_fill_mesh(pts: PackedVector2Array, col: Color) -> MeshInstance3D:
 	mat.disable_receive_shadows = true
 	mi.material_override = mat
 	return mi
+
+
+## 三角形中点细分：每层一分为四，终点逐点取地形高度（区域填充贴地用）。
+func _subdiv_tri(st: SurfaceTool, a: Vector2, b: Vector2, c: Vector2, level: int, col: Color) -> void:
+	if level <= 0:
+		for p in [a, b, c]:
+			st.set_color(col)
+			st.set_normal(Vector3.UP)
+			st.add_vertex(Vector3(p.x, _h(p.x, p.y) + REGION_Y_LIFT, p.y))
+		return
+	var ab := a.lerp(b, 0.5)
+	var bc := b.lerp(c, 0.5)
+	var ca := c.lerp(a, 0.5)
+	_subdiv_tri(st, a, ab, ca, level - 1, col)
+	_subdiv_tri(st, ab, b, bc, level - 1, col)
+	_subdiv_tri(st, ca, bc, c, level - 1, col)
+	_subdiv_tri(st, ab, bc, ca, level - 1, col)
 
 
 ## 贴地描边：逐段加密（2m 一段），跟着地形起伏走。
@@ -1224,9 +1242,17 @@ func _build_tiles() -> void:
 
 
 ## 棋盘格的双色微差：按**世界格点**取奇偶（不是数组下标），
-## 这样拖到哪儿、增删哪个格子，棋盘感都不会跳。步长跟随对齐开关。
+## 这样拖到哪儿、增删哪个格子，棋盘感都不会跳。
+##
+## ★ 步长必须用"格子自己的占地 + 缝"（6m 格 + 0.8m 缝 = 6.8m），
+##   不能用 1m 的对齐步长：6.8m 间距下 -37 与 -30.2 除以 1 都是负奇数，
+##   相邻两列会取到同一个颜色，棋盘直接断色（2026-11-21 实测）。
 func _tile_parity(td: Dictionary) -> int:
-	var step := _effective_snap()
+	var w := float(td.get("w", ShellStore.TILE_SIZE_DEFAULT))
+	var d := float(td.get("d", ShellStore.TILE_SIZE_DEFAULT))
+	var step := maxf(w, d) + ShellStore.MIN_GAP_M
+	if step < 2.0:
+		step = _effective_snap()
 	var gx := int(floor(float(td.get("x", 0.0)) / step + 0.0001))
 	var gz := int(floor(float(td.get("z", 0.0)) / step + 0.0001))
 	return posmod(gx + gz, 2)
@@ -1254,25 +1280,28 @@ func _make_tile_node(td: Dictionary, active: bool) -> Node3D:
 	var is_hover := hovered_tile == idx
 
 	# --- 收边（先挂，顶板压在上面）：一块略大的板，只露出 7cm 的一圈 ---
+	# 收边只露 4cm（原来是 7cm）：窄缝读成"草坪砖的拼缝"，宽了就成了黑框。
 	var rim := BoxMesh.new()
-	rim.size = Vector3(w + 0.14, 0.30, d + 0.14)
+	rim.size = Vector3(w + 0.06, TILE_H, d + 0.06)
 	var rmi := MeshInstance3D.new()
 	rmi.name = "Rim"
 	rmi.mesh = rim
-	rmi.position = Vector3(0.0, 0.13, 0.0)
+	rmi.position = Vector3(0.0, TILE_H * 0.5 - 0.002, 0.0)
 	rmi.material_override = _tile_rim_material(is_sel, is_hover, active)
 	rmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	holder.add_child(rmi)
 
 	# --- 顶板：A/B 双色微差，材质来自独立 .tres（换皮只改那两个文件）---
 	var plate := BoxMesh.new()
-	plate.size = Vector3(w, 0.30, d)
+	plate.size = Vector3(w, TILE_H, d)
 	var pmi := MeshInstance3D.new()
 	pmi.name = "Plate"
 	pmi.mesh = plate
-	pmi.position = Vector3(0.0, 0.15, 0.0)
+	pmi.position = Vector3(0.0, TILE_H * 0.5, 0.0)
 	pmi.material_override = _tile_plate_material(_tile_parity(td), active)
-	pmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	# 板只有 10cm 高：让它投影只会在邻格上糊出一条黑边（读成"粗线框"），
+	# 棋盘要的是**细缝**不是阴影 —— 所以顶板与收边都不投影；立体感由地块侧壁负责。
+	pmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	holder.add_child(pmi)
 
 	# --- 主堡位：一抹金色顶饰（不是粗描边），一眼能认出主堡格 ---
@@ -1282,7 +1311,7 @@ func _make_tile_node(td: Dictionary, active: bool) -> Node3D:
 		var cmi := MeshInstance3D.new()
 		cmi.name = "KeepMark"
 		cmi.mesh = cap
-		cmi.position = Vector3(0.0, 0.305, 0.0)
+		cmi.position = Vector3(0.0, TILE_H + 0.005, 0.0)
 		cmi.material_override = _flat_mat(Color("#F0B95A"), 0.9)
 		cmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		holder.add_child(cmi)
@@ -1355,7 +1384,7 @@ func _build_chess_trim() -> void:
 
 
 func _tile_plate_material(parity: int, active: bool) -> Material:
-	var path := BOARD_TILE_A if parity == 0 else BOARD_TILE_B
+	var path := ShellStore.board_material_path("tile_a" if parity == 0 else "tile_b")
 	var mat: Material = null
 	if parity == 0 and _tile_mat_a != null:
 		mat = _tile_mat_a
@@ -1385,7 +1414,7 @@ func _tile_plate_material(parity: int, active: bool) -> Material:
 
 func _tile_rim_material(is_sel: bool, is_hover: bool, active: bool) -> Material:
 	if _tile_rim_mat == null:
-		_tile_rim_mat = _load_material(BOARD_RIM)
+		_tile_rim_mat = _load_material(ShellStore.board_material_path("rim"))
 	var base: Material = _tile_rim_mat
 	if base == null:
 		var std := StandardMaterial3D.new()
@@ -1410,7 +1439,7 @@ func _tile_rim_material(is_sel: bool, is_hover: bool, active: bool) -> Material:
 
 
 ## 未激活格子 = 碎石遗迹（和旧候选石台的 ruin 同语义：能看见、不能建造）。
-## 石头压在顶板**上面**（顶板上表面 = 0.30），否则会陷进板子里只剩几个黑点。
+## 石头压在顶板**上面**（顶板上表面 = TILE_H），否则会陷进板子里只剩几个黑点。
 func _build_tile_ruin(holder: Node3D, w: float, d: float) -> void:
 	var stone := StandardMaterial3D.new()
 	stone.albedo_color = Color("#2B3038")
@@ -1422,7 +1451,7 @@ func _build_tile_ruin(holder: Node3D, w: float, d: float) -> void:
 		var mi := MeshInstance3D.new()
 		mi.mesh = box
 		var ang := float(i) / 5.0 * TAU
-		mi.position = Vector3(cos(ang) * w * 0.18, 0.30 + s * 0.35, sin(ang) * d * 0.18)
+		mi.position = Vector3(cos(ang) * w * 0.18, TILE_H + s * 0.35, sin(ang) * d * 0.18)
 		mi.rotation = Vector3(0.0, ang, 0.12 * float(i - 2))
 		mi.material_override = stone
 		holder.add_child(mi)
@@ -1679,7 +1708,7 @@ func _update_camera() -> void:
 func set_camera(yaw: float, pitch: float, dist: float, target: Vector3) -> void:
 	cam_yaw = yaw
 	cam_pitch = clampf(pitch, -88.0, -10.0)
-	cam_dist = clampf(dist, CAM_DIST_MIN, CAM_DIST_MAX)
+	cam_dist = clampf(dist, CAM_DIST_MIN, dist_max())
 	cam_target = target
 	_clamp_target()
 	_update_camera()
@@ -1709,7 +1738,7 @@ func focus_player() -> void:
 		var sz := ShellStore.size_of(shell)
 		target = Vector3(-sz.x * 0.25, _h(-sz.x * 0.25, 0.0), 0.0)
 	cam_target = target
-	cam_dist = clampf(CAM_DIST_PLAY, CAM_DIST_MIN, CAM_DIST_MAX)
+	cam_dist = clampf(CAM_DIST_PLAY, CAM_DIST_MIN, dist_max())
 	cam_yaw = 32.0
 	cam_pitch = -CAM_PITCH_DEG
 	_clamp_target()
@@ -1738,7 +1767,7 @@ func focus_on(world_pos: Vector3) -> void:
 
 
 func zoom_by(factor: float) -> void:
-	cam_dist = clampf(cam_dist * factor, CAM_DIST_MIN, CAM_DIST_MAX)
+	cam_dist = clampf(cam_dist * factor, CAM_DIST_MIN, dist_max())
 	_clamp_target()
 	_update_camera()
 
@@ -1770,12 +1799,17 @@ func focus_selected() -> void:
 		_update_camera()
 
 
+## 相机能拉多远：**跟着画布长**（规则在 Model/Map/MapBoard.CameraDistMax）。
+## 224m 的游戏图 = 200m（旧手感）；扩容到 400m 后画布对角线 ~1100m，上限自动涨到 ~990m。
+func dist_max() -> float:
+	return ShellStore.camera_dist_max_of(shell)
+
+
 ## 镜头边界（玩家口径「最多只能看到地图边界外一点点，禁止甩进无尽虚空」）。
 ##
 ## **2026-11-21 起边界改成"画布"而不是"地图"**：地图四周有 40%~50% 的冗余空间（board.margin），
 ## 制作人要能在那里拖边缘地块 / 扩容，镜头就不能被地块尺寸锁死。
-##
-## 与游戏 魔兽镜头 / 旧编辑器 视口._clamp_target() 同一套算法：
+#### 与游戏 魔兽镜头 / 旧编辑器 视口._clamp_target() 同一套算法：
 ##   相机会在注视点后面后退 `dist × cos(俯角)` 米，所以能看的范围要**先扣掉这段后撤**，
 ##   否则拉远之后注视点还在图内、画面早已越过边界。
 func _clamp_target() -> void:
@@ -1844,13 +1878,13 @@ func handle_input(event: InputEvent, pos: Vector2) -> bool:
 			MOUSE_BUTTON_WHEEL_UP:
 				if mb.pressed:
 					# 旧编辑器是**乘性**缩放（每格 12%），不是固定加减
-					cam_dist = clampf(cam_dist * 0.88, CAM_DIST_MIN, CAM_DIST_MAX)
+					cam_dist = clampf(cam_dist * 0.88, CAM_DIST_MIN, dist_max())
 					_clamp_target()
 					_update_camera()
 					return true
 			MOUSE_BUTTON_WHEEL_DOWN:
 				if mb.pressed:
-					cam_dist = clampf(cam_dist * 1.14, CAM_DIST_MIN, CAM_DIST_MAX)
+					cam_dist = clampf(cam_dist * 1.14, CAM_DIST_MIN, dist_max())
 					_clamp_target()
 					_update_camera()
 					return true
@@ -2653,7 +2687,7 @@ func frame_canvas() -> void:
 	var canvas := ShellStore.canvas_size_of(shell)
 	var span := maxf(canvas.x, canvas.y)
 	cam_target = Vector3.ZERO
-	cam_dist = clampf(span * 0.95, CAM_DIST_MIN, CAM_DIST_MAX)
+	cam_dist = clampf(span * 0.95, CAM_DIST_MIN, dist_max())
 	cam_pitch = -CAM_PITCH_DEG
 	_clamp_target()
 	_update_camera()

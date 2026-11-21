@@ -323,7 +323,7 @@
 		},
 		{
 			"path": "Game/core/主场景.gd",
-			"size": 56830
+			"size": 56963
 		},
 		{
 			"path": "Game/core/主场景.gd.uid",
@@ -331,7 +331,7 @@
 		},
 		{
 			"path": "Game/core/关卡.gd",
-			"size": 66483
+			"size": 66331
 		},
 		{
 			"path": "Game/core/关卡.gd.uid",
@@ -403,7 +403,7 @@
 		},
 		{
 			"path": "Game/map/地图加载器.gd",
-			"size": 47851
+			"size": 47534
 		},
 		{
 			"path": "Game/map/地图加载器.gd.uid",
@@ -411,7 +411,7 @@
 		},
 		{
 			"path": "Game/map/地图存储.gd",
-			"size": 8378
+			"size": 8268
 		},
 		{
 			"path": "Game/map/地图存储.gd.uid",
@@ -419,7 +419,7 @@
 		},
 		{
 			"path": "Game/map/地图定义.gd",
-			"size": 27881
+			"size": 25043
 		},
 		{
 			"path": "Game/map/地图定义.gd.uid",
@@ -435,7 +435,7 @@
 		},
 		{
 			"path": "Game/map/地图校验.gd",
-			"size": 11816
+			"size": 11711
 		},
 		{
 			"path": "Game/map/地图校验.gd.uid",
@@ -443,7 +443,7 @@
 		},
 		{
 			"path": "Game/map/地图生成.gd",
-			"size": 80297
+			"size": 78138
 		},
 		{
 			"path": "Game/map/地图生成.gd.uid",
@@ -451,7 +451,7 @@
 		},
 		{
 			"path": "Game/map/地图缩放.gd",
-			"size": 7395
+			"size": 7145
 		},
 		{
 			"path": "Game/map/地图缩放.gd.uid",
@@ -459,7 +459,7 @@
 		},
 		{
 			"path": "Game/map/地形.gd",
-			"size": 52298
+			"size": 50990
 		},
 		{
 			"path": "Game/map/地形.gd.uid",
@@ -651,7 +651,7 @@
 		},
 		{
 			"path": "Screens/bridge/ModelBridge.cs",
-			"size": 78403
+			"size": 81235
 		},
 		{
 			"path": "Screens/bridge/ModelBridge.cs.uid",
@@ -659,7 +659,7 @@
 		},
 		{
 			"path": "Screens/camera/魔兽镜头.gd",
-			"size": 32226
+			"size": 33904
 		},
 		{
 			"path": "Screens/camera/魔兽镜头.gd.uid",
@@ -739,7 +739,7 @@
 		},
 		{
 			"path": "Screens/editor/map_shell/map_shell_editor.gd",
-			"size": 38608
+			"size": 51338
 		},
 		{
 			"path": "Screens/editor/map_shell/map_shell_editor.gd.uid",
@@ -767,7 +767,7 @@
 		},
 		{
 			"path": "Screens/editor/map_shell/shell_view.gd",
-			"size": 79585
+			"size": 98519
 		},
 		{
 			"path": "Screens/editor/map_shell/shell_view.gd.uid",
@@ -815,7 +815,7 @@
 		},
 		{
 			"path": "Screens/editor/shell_store.gd",
-			"size": 21740
+			"size": 33438
 		},
 		{
 			"path": "Screens/editor/shell_store.gd.uid",
@@ -823,7 +823,7 @@
 		},
 		{
 			"path": "Screens/hud/HUD.gd",
-			"size": 110565
+			"size": 111329
 		},
 		{
 			"path": "Screens/hud/HUD.gd.uid",
@@ -867,7 +867,7 @@
 		},
 		{
 			"path": "Screens/hud/小地图.gd",
-			"size": 34548
+			"size": 34301
 		},
 		{
 			"path": "Screens/hud/小地图.gd.uid",
@@ -907,7 +907,7 @@
 		},
 		{
 			"path": "Screens/hud/敌方意图条.gd",
-			"size": 6168
+			"size": 7351
 		},
 		{
 			"path": "Screens/hud/敌方意图条.gd.uid",
@@ -955,7 +955,7 @@
 		},
 		{
 			"path": "Screens/hud/规划地图层.gd",
-			"size": 38309
+			"size": 39227
 		},
 		{
 			"path": "Screens/hud/规划地图层.gd.uid",
@@ -1023,7 +1023,7 @@
 		},
 		{
 			"path": "Screens/input/小队指挥.gd",
-			"size": 2423
+			"size": 2510
 		},
 		{
 			"path": "Screens/input/小队指挥.gd.uid",
@@ -1087,7 +1087,7 @@
 		},
 		{
 			"path": "Screens/world/art/地表细节.gd",
-			"size": 31235
+			"size": 31157
 		},
 		{
 			"path": "Screens/world/art/地表细节.gd.uid",
@@ -1223,7 +1223,7 @@
 		},
 		{
 			"path": "Screens/world/art/装饰库.gd",
-			"size": 12517
+			"size": 12444
 		},
 		{
 			"path": "Screens/world/art/装饰库.gd.uid",
@@ -1231,7 +1231,7 @@
 		},
 		{
 			"path": "Screens/world/art/调色板.gd",
-			"size": 4618
+			"size": 4565
 		},
 		{
 			"path": "Screens/world/art/调色板.gd.uid",
@@ -1371,7 +1371,7 @@
 		},
 		{
 			"path": "Screens/world/squad/小队战场.gd",
-			"size": 20736
+			"size": 20727
 		},
 		{
 			"path": "Screens/world/squad/小队战场.gd.uid",
@@ -1387,7 +1387,7 @@
 		},
 		{
 			"path": "Screens/world/规划沙盘.gd",
-			"size": 20289
+			"size": 21319
 		},
 		{
 			"path": "Screens/world/规划沙盘.gd.uid",
@@ -1395,7 +1395,7 @@
 		},
 		{
 			"path": "Model/Battle/LaneBattle.cs",
-			"size": 39822
+			"size": 39850
 		},
 		{
 			"path": "Model/Battle/LaneBattle.cs.uid",
@@ -1403,7 +1403,7 @@
 		},
 		{
 			"path": "Model/Battle/LevelDef.cs",
-			"size": 10577
+			"size": 11000
 		},
 		{
 			"path": "Model/Battle/LevelDef.cs.uid",
@@ -1411,7 +1411,7 @@
 		},
 		{
 			"path": "Model/Battle/LevelRunner.cs",
-			"size": 13315
+			"size": 13449
 		},
 		{
 			"path": "Model/Battle/LevelRunner.cs.uid",
@@ -1522,6 +1522,14 @@
 			"size": 20
 		},
 		{
+			"path": "Model/Map/MapBoard.cs",
+			"size": 10654
+		},
+		{
+			"path": "Model/Map/MapBoard.cs.uid",
+			"size": 19
+		},
+		{
 			"path": "Model/Map/RegionPolygon.cs",
 			"size": 11234
 		},
@@ -1575,7 +1583,7 @@
 		},
 		{
 			"path": "Model/Squad/SquadArena.cs",
-			"size": 23023
+			"size": 23065
 		},
 		{
 			"path": "Model/Squad/SquadArena.cs.uid",
@@ -1583,7 +1591,7 @@
 		},
 		{
 			"path": "Model/Squad/SquadBattle.cs",
-			"size": 60054
+			"size": 61160
 		},
 		{
 			"path": "Model/Squad/SquadBattle.cs.uid",
@@ -1599,7 +1607,7 @@
 		},
 		{
 			"path": "Model/Squad/SquadMatch.cs",
-			"size": 13614
+			"size": 13872
 		},
 		{
 			"path": "Model/Squad/SquadMatch.cs.uid",
@@ -1615,7 +1623,7 @@
 		},
 		{
 			"path": "Model/Squad/SquadSimulator.cs",
-			"size": 11891
+			"size": 11628
 		},
 		{
 			"path": "Model/Squad/SquadSimulator.cs.uid",
@@ -1811,7 +1819,7 @@
 		},
 		{
 			"path": "Tests/checks/check_all.gd",
-			"size": 101522
+			"size": 107513
 		},
 		{
 			"path": "Tests/checks/check_all.gd.uid",
@@ -1819,7 +1827,7 @@
 		},
 		{
 			"path": "Tests/checks/shot_runner.gd",
-			"size": 15596
+			"size": 15602
 		},
 		{
 			"path": "Tests/checks/shot_runner.gd.uid",
@@ -1915,7 +1923,7 @@
 		},
 		{
 			"path": "Tests/suites/地图生成自检.gd",
-			"size": 20603
+			"size": 20375
 		},
 		{
 			"path": "Tests/suites/地图生成自检.gd.uid",
@@ -1931,7 +1939,7 @@
 		},
 		{
 			"path": "Tests/suites/地形自检.gd",
-			"size": 32593
+			"size": 32562
 		},
 		{
 			"path": "Tests/suites/地形自检.gd.uid",
@@ -1955,7 +1963,7 @@
 		},
 		{
 			"path": "Tests/suites/建造自检.gd",
-			"size": 20049
+			"size": 19655
 		},
 		{
 			"path": "Tests/suites/建造自检.gd.uid",
@@ -2003,7 +2011,7 @@
 		},
 		{
 			"path": "Tests/suites/树占格自检.gd",
-			"size": 12851
+			"size": 12798
 		},
 		{
 			"path": "Tests/suites/树占格自检.gd.uid",
@@ -2683,7 +2691,7 @@
 		},
 		{
 			"path": "Content/data/levels.json",
-			"size": 24446
+			"size": 24537
 		},
 		{
 			"path": "Content/data/long_costs.json",
@@ -2691,7 +2699,7 @@
 		},
 		{
 			"path": "Content/data/map_shells.json",
-			"size": 85605
+			"size": 85991
 		},
 		{
 			"path": "Content/data/planning.json",
@@ -2707,11 +2715,15 @@
 		},
 		{
 			"path": "Content/data/screens.json",
-			"size": 7876
+			"size": 8633
+		},
+		{
+			"path": "Content/data/shell_board.json",
+			"size": 737
 		},
 		{
 			"path": "Content/data/shell_decor.json",
-			"size": 2917
+			"size": 2739
 		},
 		{
 			"path": "Content/data/sim.json",
@@ -2719,7 +2731,7 @@
 		},
 		{
 			"path": "Content/data/squad.json",
-			"size": 354
+			"size": 503
 		},
 		{
 			"path": "Content/data/units.json",
@@ -2731,23 +2743,23 @@
 		},
 		{
 			"path": "Content/i18n/ui.csv",
-			"size": 43287
+			"size": 44578
 		},
 		{
 			"path": "Content/i18n/ui.en.translation",
-			"size": 24388
+			"size": 25072
 		},
 		{
 			"path": "Content/i18n/ui.note.translation",
-			"size": 24001
+			"size": 24505
 		},
 		{
 			"path": "Content/i18n/ui.zh.translation",
-			"size": 27755
+			"size": 28495
 		},
 		{
 			"path": "Content/keys/assets.json",
-			"size": 12037
+			"size": 11720
 		},
 		{
 			"path": "addons/map_shell_editor/plugin.cfg",
@@ -2755,7 +2767,7 @@
 		},
 		{
 			"path": "addons/map_shell_editor/plugin.gd",
-			"size": 15091
+			"size": 22288
 		},
 		{
 			"path": "addons/map_shell_editor/plugin.gd.uid",

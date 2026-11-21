@@ -589,7 +589,7 @@ func compose_level(shell_id: String, layout_id: String, encounter_id: String) ->
 		"enemy_faction": String(enc.get("faction", "bandit")),
 		"player_base_hp": 2600.0,
 		"enemy_base_hp": float(enc.get("base_hp", 3200.0)),
-		"round_seconds": 90.0,
+		"round_seconds": 60.0,
 		"lane": {
 			"length": length_logic,
 			"width": width_logic,

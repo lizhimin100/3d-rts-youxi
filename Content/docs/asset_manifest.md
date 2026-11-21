@@ -1,15 +1,15 @@
 # 资产清单（asset_manifest）
 
 > 生成日期：2026-11-21 · 口径：**只登记磁盘上真实存在的文件**。
-> 用途：地图底壳编辑器（MapShellEditor）的笔刷、装饰、水面、环境**只准**引用本表里的路径。
-> 铁律：**不许**再为树 / 水 / 地面材质新建占位 Mesh 或临时调色材质。缺资产就报缺资产，
+> 用途：地图底壳编辑器（MapShellEditor）的笔刷、装饰、环境**只准**引用本表里的路径。
+> 铁律：**不许**再为树 / 地面材质新建占位 Mesh 或临时调色材质。缺资产就报缺资产，
 > 用纯逻辑数据或极简基础几何体（Box/Cylinder）做"逻辑标记"，不伪装成美术。
 
 ## 0. 唯一入口（代码里认常量，不认字面量）
 
 | 域 | 唯一入口 | 说明 |
 |---|---|---|
-| 地形 / 水 / 地表贴图 | `Game/map/地形.gd`（`RtsTerrain`） | `MATERIAL_PATH` / `WATER_MATERIAL_PATH` / `ATLAS_PATH` / `TEX_*` / `TILE_M` |
+| 地形 / 地表贴图 | `Game/map/地形.gd`（`RtsTerrain`） | `MATERIAL_PATH` / `ATLAS_PATH` / `TEX_*` / `TILE_M` |
 | 模型 / 环境 / UI 主题 | `Screens/world/art/美术接口.gd`（`ArtKit`） | `PATH_ENV` / `PATH_THEME` / `PATH_MAT_BUILDING` / `build_model()` |
 | 自然装饰场景 | `Screens/world/art/装饰库.gd`（`RtsDecorLib`） | `scene(kind)` / `instantiate(kind)` / `make_multimesh()` |
 | 自然物材质 | `Screens/world/art/自然材质.gd` | 树 / 草 / 岩石 / 金矿 / 木桩 / 尸骨统一材质 |
@@ -37,16 +37,28 @@
 > 底壳编辑器**必须**用这份材质，并按底壳尺寸重算 `mat_map` / `map_half` / `mat_cells`。
 > 岩石 / 沙地没有独立地块材质 → 走覆盖层贴花（`_build_surface_decals`），不许新建"灰色塑料布"材质。
 
-## 2. 水
+## 1.5 棋盘皮肤（可换皮，改这里就能整张换主题）
 
-| 资源 | 路径 | 大小 | 说明 |
-|---|---|---|---|
-| 水材质 | `res://Content/art/材质/水材质.tres` | 692 B | `水.gdshader` 实例，卡通阶梯菲涅尔 |
-| 水着色器 | `res://Content/art/着色器/水.gdshader` | — | 顶点正弦波 + 3 步菲涅尔，不做真反射 |
-| 波纹法线 | `res://Content/art/贴图/water_normal.png` | — | `ripple_normal`（编辑器 `RIPPLE_NORMAL`） |
-| 水面装饰场景 | `res://Content/art/场景/水面_场景.tscn` | 533 B | 水池 / 水洼（CylinderMesh + 水材质） |
+| 槽位 | 路径 | 说明 |
+|---|---|---|
+| 格子 A（偶） | `res://Content/art/材质/棋盘格子A.tres` | 玩家区棋盘双色之一 |
+| 格子 B（奇） | `res://Content/art/材质/棋盘格子B.tres` | 与 A 只差 5%~10% 明度（相邻双色微差） |
+| 格子收边 | `res://Content/art/材质/棋盘边框.tres` | 每格外面露出 7cm 的细缝，不用粗线框 |
+| 地块侧壁 | `res://Content/art/材质/地块侧面.tres` | 立体地块的土层 / 岩壁厚度 |
+| 地块底面 | `res://Content/art/材质/地块底面.tres` | 块体封口，仰视也不穿帮 |
 
-编辑器：水面高度滑杆只改 `terrain.water_level`，材质**永远**用 `水材质.tres`。
+**换皮只改 5 个 .tres 的贴图/颜色，或改 `Content/data/shell_board.json` 的路径**；
+编辑器与局内读同一张表，代码里没有第二份材质路径。
+
+## 2. 水（已整层删除）
+
+2026-11-21：底壳改成**实心立体地块**（顶面 + 侧壁 + 倒角 + 底面封口）以后，
+再叠一层半透明水面只会跟土壁互相穿插 —— 这就是穿模的来源。
+现在**全局没有水面节点 / 水材质 / 水着色器 / 波纹法线 / `water_level` 字段**：
+
+- 编辑器不再提供水面笔刷，底壳 `terrain` 里也没有 `water_level`；
+- 地图数据（`MapDef`）没有 `water` 字段，`MapGenerator` 不再挖水潭；
+- 想要"水"的观感，走**地表材质**（`地形材质.tres` 的泥/裂纹泥地）或覆盖层贴花，不新建水面。
 
 ## 3. 树与自然装饰
 
@@ -77,7 +89,7 @@
 | 路标 | `res://Content/art/模型/路标.glb` | 732 KB | `signpost` |
 | 尸骨 | `res://Content/art/模型/尸骨.glb` | 742 KB | `bones` |
 
-自然类（树/岩石/草/碎石/金矿/水面）走 §3 的场景；道具类走本节 GLB，两者都**不许**用
+自然类（树/岩石/草/碎石/金矿）走 §3 的场景；道具类走本节 GLB，两者都**不许**用
 `CylinderMesh + SphereMesh` 现拼。
 
 ## 5. 建筑与单位模型（只做索引，改动走资产仓库）
@@ -96,7 +108,6 @@
 | 着色器 | 用途 |
 |---|---|
 | `Content/art/着色器/地形.gdshader` | 双材质硬边地块（地形唯一） |
-| `Content/art/着色器/水.gdshader` | 卡通水面（水唯一） |
 | `Content/art/着色器/卡通主体.gdshader` | 角色 / 建筑 / 道具主材质 |
 | `Content/art/着色器/描边.gdshader` | 反向外壳描边（挂在卡通主体 `next_pass`） |
 | `Content/art/着色器/选中圈.gdshader` | 单位 / 建筑脚下选中光环 |

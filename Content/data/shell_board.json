@@ -1,0 +1,11 @@
+{
+	"version": 1.0,
+	"note": "底壳棋盘皮肤表（2026-11-21）。这里的 5 条路径就是『可换皮』的全部开关：制作人想换草坪/石砖/沙地主题，只改本文件的材质路径（或直接改这 5 个 .tres 的贴图与颜色），编辑器与局内都会跟着换。路径写在数据里而不是 GDScript 里，是为了让源码保持 ASCII（编辑器源码零写死中文体检）。",
+	"materials": {
+		"tile_a": "res://Content/art/材质/棋盘格子A.tres",
+		"tile_b": "res://Content/art/材质/棋盘格子B.tres",
+		"rim": "res://Content/art/材质/棋盘边框.tres",
+		"block_side": "res://Content/art/材质/地块侧面.tres",
+		"block_bottom": "res://Content/art/材质/地块底面.tres"
+	}
+}

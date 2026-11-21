@@ -157,6 +157,32 @@ func focus_hint() -> Vector3:
 	return Vector3.ZERO
 
 
+## **玩家区取景点（2026-11-21 规划视角锁定）**：
+## 规划阶段不再"把敌我两边硬塞进同一屏"，而是**只框玩家区**——棋盘清晰居中；
+## 敌方意图改由顶部 UI 意图栏输出（敌方意图条），3D 画面不必再挤进红区。
+## 玩家区半径：基地 ±26m（营地主体 + 一圈建造位），比旧的全图取景小得多。
+const PLAYER_VIEW_R = 26.0
+
+
+func camera_points_player() -> PackedVector3Array:
+	var out := PackedVector3Array()
+	var a := focus_hint()
+	var r := PLAYER_VIEW_R
+	out.append(a + Vector3(-r, 0.0, -r))
+	out.append(a + Vector3(r, 0.0, -r))
+	out.append(a + Vector3(r, 0.0, r))
+	out.append(a + Vector3(-r, 0.0, r))
+	return out
+
+
+## 规划阶段镜头允许活动的矩形（世界 XZ；玩家区 ±26m）。
+## 交给 魔兽镜头.lock_planning_rect()，玩家拖不出玩家区、棋盘永远在画面中心附近。
+func player_view_rect() -> Rect2:
+	var a := focus_hint()
+	var r := PLAYER_VIEW_R
+	return Rect2(a.x - r, a.z - r, r * 2.0, r * 2.0)
+
+
 # ===========================================================================
 # 生命周期 / 淡入淡出
 # ===========================================================================

@@ -148,11 +148,6 @@ static func biome_tint(id: String) -> Array:
 ## 地表层（每格一个字节，0/255=无，1=泥土 2=岩石 3=沙地 4=草地），索引 gz*res+gx
 @export var splatmap: PackedByteArray = PackedByteArray()
 
-## 水面：{"enabled": bool, "spots": [{"center": Vector2, "radius": float, "level": float}]}
-## 游戏侧 RtsTerrain 只支持一个水潭（build_water），取 spots[0]；
-## 其余水潭由 MapLoader 用同样的材质补一片圆盘，视觉一致。
-@export var water: Dictionary = {"enabled": false, "spots": []}
-
 ## ── 地块材质（魔兽 3 口径：材质存在共享格点上）──
 ## mat_nodes 是 (mat_cells+1)² 个格点的 0（草）/255（泥），一格读它四个角。
 ## 主场景竞技场图的土路、营地、矿点就画在这张表上；**不保存它，地图一进编辑器
@@ -247,8 +242,6 @@ func ensure_arrays() -> void:
 		splatmap.fill(SPLAT_NONE)
 	if camera_bounds.size == Vector2.ZERO:
 		camera_bounds = Rect2(Vector2(-half_size(), -half_size()), Vector2(size, size))
-	if not (water is Dictionary):
-		water = {"enabled": false, "spots": []}
 	# 地块格点表：尺寸对不上就当"没有"（宁可整图草地，也不要读越界）
 	if mat_cells <= 0 or mat_nodes.size() != (mat_cells + 1) * (mat_cells + 1):
 		mat_cells = 0
@@ -334,49 +327,6 @@ func grid_to_world(gx: int, gz: int) -> Vector2:
 	var c: float = cell_size()
 	var half: float = half_size()
 	return Vector2(-half + float(gx) * c, -half + float(gz) * c)
-
-
-# ===========================================================================
-# 水面
-# ===========================================================================
-
-## 归一化后的水潭列表（永远返回数组，字段缺省补齐）
-func water_spots() -> Array:
-	var out: Array = []
-	if not (water is Dictionary):
-		return out
-	var raw: Variant = (water as Dictionary).get("spots", [])
-	if raw is Array:
-		for s in raw:
-			if s is Dictionary and (s as Dictionary).has("center"):
-				var sp: Dictionary = s
-				out.append({
-					"center": sp.get("center", Vector2.ZERO),
-					"radius": float(sp.get("radius", 6.0)),
-					"level": float(sp.get("level", 0.0)),
-				})
-	return out
-
-
-## 某世界点是否在水里（用高度与水面比较，坡上不会误判）
-func is_water_at(p: Vector2) -> bool:
-	for s in water_spots():
-		var c: Vector2 = s["center"]
-		var r: float = float(s["radius"])
-		if p.distance_to(c) > r:
-			continue
-		if height_at(p.x, p.y) <= float(s["level"]):
-			return true
-	return false
-
-
-## 把一处水潭写进 water（编辑器水面笔刷用）
-func set_water_spot(center: Vector2, radius: float, level: float) -> void:
-	water = {"enabled": true, "spots": [{"center": center, "radius": radius, "level": level}]}
-
-
-func clear_water() -> void:
-	water = {"enabled": false, "spots": []}
 
 
 # ===========================================================================
@@ -474,7 +424,6 @@ func clone_def() -> MapDef:
 	d.height_resolution = height_resolution
 	d.heightmap = heightmap.duplicate()
 	d.splatmap = splatmap.duplicate()
-	d.water = water.duplicate(true)
 	d.objects = []
 	for o in objects:
 		if o != null:
@@ -524,14 +473,6 @@ func to_dict() -> Dictionary:
 	for w in waves:
 		if w != null:
 			wvs.append(w.to_dict())
-	var water_out: Dictionary = {"enabled": bool(water.get("enabled", false)), "spots": []}
-	for s in water_spots():
-		var c: Vector2 = s["center"]
-		(water_out["spots"] as Array).append({
-			"center": [c.x, c.y],
-			"radius": float(s["radius"]),
-			"level": float(s["level"]),
-		})
 	return {
 		"version": version,
 		"size": size,
@@ -540,7 +481,6 @@ func to_dict() -> Dictionary:
 		"height_resolution": height_resolution,
 		"heightmap": Array(heightmap),
 		"splatmap": Array(splatmap),
-		"water": water_out,
 		"objects": objs,
 		"regions": regs,
 		"players": pls,
@@ -586,25 +526,6 @@ static func from_dict(d: Dictionary) -> MapDef:
 	elif sm is PackedByteArray:
 		sarr = (sm as PackedByteArray).duplicate()
 	m.splatmap = sarr
-	var wv: Variant = d.get("water", {})
-	if wv is Dictionary:
-		var spots_out: Array = []
-		var raw: Variant = (wv as Dictionary).get("spots", [])
-		if raw is Array:
-			for s in raw:
-				if s is Dictionary:
-					var c: Variant = (s as Dictionary).get("center", [0, 0])
-					var cv := Vector2.ZERO
-					if c is Array and (c as Array).size() >= 2:
-						cv = Vector2(float(c[0]), float(c[1]))
-					elif c is Vector2:
-						cv = c
-					spots_out.append({
-						"center": cv,
-						"radius": float((s as Dictionary).get("radius", 6.0)),
-						"level": float((s as Dictionary).get("level", 0.0)),
-					})
-		m.water = {"enabled": bool((wv as Dictionary).get("enabled", false)), "spots": spots_out}
 	if d.has("objects") and d["objects"] is Array:
 		for o in d["objects"]:
 			if o is Dictionary:
@@ -682,8 +603,6 @@ static func from_map_data(data: MapGenerator.MapData, cfg: GameConfig = null) ->
 			var wx: float = -half + float(gx) * c
 			var wz: float = -half + float(gz) * c
 			m.heightmap[gz * m.row_points() + gx] = data.height_at(wx, wz)
-	if data.pond_radius > 0.0:
-		m.set_water_spot(data.pond_center, data.pond_radius, data.pond_level)
 	# --- 地块材质（魔兽 3 口径）---
 	m.mat_cells = data.mat_cells
 	m.mat_nodes = data.mat_nodes.duplicate()

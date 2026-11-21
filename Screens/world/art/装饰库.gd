@@ -30,7 +30,6 @@ const SCENE_FILE := {
 	&"goldmine": "金矿_场景.tscn",
 	&"grass": "草丛_场景.tscn",
 	&"rubble": "碎石_场景.tscn",
-	&"water": "水面_场景.tscn",
 }
 
 ## 中文别名（场景文件名可以直接当种类名用）
@@ -40,7 +39,6 @@ const ALIAS := {
 	&"金矿": &"goldmine",
 	&"草丛": &"grass",
 	&"碎石": &"rubble",
-	&"水面": &"water",
 }
 
 ## 可见距离（米）。合批实例上要再设一遍：MultiMeshInstance3D 的可见距离是**整批**的，
@@ -51,7 +49,6 @@ const VIEW_DISTANCE := {
 	&"goldmine": 150.0,
 	&"grass": 80.0,
 	&"rubble": 60.0,
-	&"water": 200.0,
 }
 
 ## 合批材质的粗糙度（装饰物不反光，省一次高光计算）

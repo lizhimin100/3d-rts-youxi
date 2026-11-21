@@ -200,16 +200,7 @@ func _test_reject() -> void:
 	_ok("越界（贴边放占地）被拒", not bool(_cmd.call("_can_place", edge, _bdef)),
 		"锚点 (%.1f, %.1f)" % [edge.x, edge.z])
 
-	# ② 压水
-	var md: Object = _level.get("map_data")
-	var radius: float = float(md.get("pond_radius"))
-	if radius > 0.0:
-		var pc: Vector2 = md.get("pond_center")
-		var water: Vector3 = _cmd.call("snap_build_pos", Vector3(pc.x, 0.0, pc.y), fp)
-		_ok("压在水面上被拒", not bool(_cmd.call("_can_place", water, _bdef)),
-			"水塘心 (%.1f, %.1f)，半径 %.0fm" % [pc.x, pc.y, radius])
-	else:
-		_ok("压在水面上被拒", true, "本局没开水体，跳过")
+	# ② 水层已整层删除（2026-11-21）：不再有"压水"这一条
 
 	# ③ 压已有建筑（大本营）
 	var th := _find_building(TOWNHALL)

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace WarIsland.Model
 {
-    /// <summary>一场（两轮 90 秒）的完整结果。</summary>
+    /// <summary>一场（两轮各 60 秒）的完整结果。</summary>
     public sealed class LevelResult
     {
         public string LevelId = "";
@@ -46,7 +46,7 @@ namespace WarIsland.Model
     }
 
     /// <summary>
-    /// 第 1 关的跑团：规划 → 90 秒进攻 → 再规划 → 90 秒防守 → 定性复盘。
+    /// 第 1 关的跑团：规划 → 60 秒进攻 → 再规划 → 60 秒防守 → 定性复盘。
     ///
     /// 基地血量跨轮保留；任一方基地归零立即结束；两轮结束都没拆掉敌方基地 = 未攻克。
     /// 轮末由这里负责“清空全部部队”（每轮 new 一个 LaneBattle，天然清场）。
@@ -163,8 +163,9 @@ namespace WarIsland.Model
             }
             else
             {
-                r.Outcome = "lose";
-                r.OutcomeText = "战败 · 两轮 90 秒内未攻克";
+                // 2026-11-21：到点未全歼 = 平局，不加伤、不破僵（与 SquadMatch 同口径）。
+                r.Outcome = "draw";
+                r.OutcomeText = "平局 · 60 秒未全歼（不减血、不加伤）";
             }
         }
     }

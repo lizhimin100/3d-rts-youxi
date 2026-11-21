@@ -17,7 +17,7 @@ namespace WarIsland.Model
         public SquadBattleStats Stats;
     }
 
-    /// <summary>一局（两轮 90 秒）的小队战斗结果。</summary>
+    /// <summary>一局（两轮各 60 秒）的小队战斗结果。</summary>
     public sealed class SquadMatchResult
     {
         public string ArenaId = "";
@@ -63,8 +63,12 @@ namespace WarIsland.Model
     }
 
     /// <summary>
-    /// 双 90 秒小队对局：规划（ScriptedPlanner）→ 出兵落格子锚点 → 脊线推进 → 6 步结算 → 轮末清场。
+    /// 双 60 秒小队对局：规划（ScriptedPlanner）→ 出兵落格子锚点 → 脊线推进 → 6 步结算 → 轮末清场。
     /// 纯 Model，不读引擎时间；同 seed + 同数据 = 同结果。
+    ///
+    /// 限时口径（2026-11-21）：单场 60 秒（<see cref="LevelDef.RoundSecondsSpec"/>）。
+    /// **60 秒未全歼 = 平局且不加伤**：没有"到点强行破僵 / 按剩余血量补刀"这类机制，
+    /// 到点就结算，基地血量只在抽血（zone_dps）真正发生时下降。
     /// </summary>
     public static class SquadMatch
     {
@@ -106,8 +110,9 @@ namespace WarIsland.Model
                 session.EndPlanning(true);
                 session.BeginExecution(ri);
 
-                // 我方固定战术：两轮都要拆敌方基地（胜利条件就是拆家）。
-                // 全线从 +Z 侧翼切入敌方基地抽血：Move 不恋战，直线绕过脊线上的波次。
+                // **预设偏好**（不是玩家微操）：两轮都要拆敌方基地（胜利条件就是拆家）。
+                // 全线从 +Z 侧翼切入敌方基地抽血：Move 强行军不恋战，直线绕过脊线上的波次。
+                // 玩家在战斗里只能改"打谁"（集火），推不推进由这条偏好决定。
                 var flank = arena.LaneToWorld(arena.EnemyBaseX, 16.0);
                 session.Battle.OrderSide(0, SquadOrders.Move, flank.X, flank.Y);
 
@@ -217,8 +222,9 @@ namespace WarIsland.Model
             }
             else
             {
-                r.Outcome = "lose";
-                r.OutcomeText = "战败 · 两轮 90 秒内未攻克";
+                // 2026-11-21：到点未全歼 = **平局**，不加伤、不破僵。
+                r.Outcome = "draw";
+                r.OutcomeText = "平局 · 60 秒未全歼（不减血、不加伤）";
             }
         }
 
