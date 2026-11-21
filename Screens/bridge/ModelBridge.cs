@@ -6,7 +6,7 @@ using WarIsland.Model;
 namespace WarIsland.Bridge
 {
     /// <summary>
-    /// Model ⇄ GDScript 的**唯一桥**（自动加载名 `Mdl`）。
+    /// Model ⇄ GDScript 的**唯一桥**（由 Game/adapters/桥.gd 懒建，不用自动加载）。
     ///
     /// 规矩：
     ///   · 这里是唯一允许 `using Godot` 的 Model 调用面；`Model/` 本身零 Godot 引用；
@@ -16,7 +16,7 @@ namespace WarIsland.Bridge
     /// GDScript 侧统一通过 `Game/adapters/*.gd` 调用，不直接摸 Mdl。
     /// </summary>
     [GlobalClass]
-    public partial class ModelBridge : Node
+    public partial class ModelBridge : RefCounted
     {
         // =================================================================
         // 距离铁律

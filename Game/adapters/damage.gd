@@ -7,20 +7,11 @@ extends RefCounted
 
 const DEFAULT_STRIDE := 5
 
-static var _mdl: Node = null
+const BRIDGE := preload("res://Game/adapters/bridge.gd")
 
 
-## 取桥（自动加载名 `Mdl`）。拿不到就报一次错并返回 null —— 由 --check 兜住。
-static func _bridge() -> Node:
-	if _mdl != null and is_instance_valid(_mdl):
-		return _mdl
-	var main := Engine.get_main_loop()
-	if main is SceneTree:
-		_mdl = (main as SceneTree).root.get_node_or_null("Mdl")
-	if _mdl == null:
-		push_error("[Model] bridge Mdl missing (C# kernel not built?)")
-	return _mdl
-
+static func _bridge() -> RefCounted:
+	return BRIDGE.get_bridge()
 
 static func armor_mitigation(armor: float, reduction: float, cap: float) -> float:
 	var m := _bridge()

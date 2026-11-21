@@ -7,19 +7,11 @@ extends RefCounted
 const TRAIN_QUEUE_MAX := 10
 const OK := &"ok"
 
-static var _mdl: Node = null
+const BRIDGE := preload("res://Game/adapters/bridge.gd")
 
 
-static func _bridge() -> Node:
-	if _mdl != null and is_instance_valid(_mdl):
-		return _mdl
-	var main := Engine.get_main_loop()
-	if main is SceneTree:
-		_mdl = (main as SceneTree).root.get_node_or_null("Mdl")
-	if _mdl == null:
-		push_error("[Model] bridge Mdl missing (C# kernel not built?)")
-	return _mdl
-
+static func _bridge() -> RefCounted:
+	return BRIDGE.get_bridge()
 
 static func fail(reason: StringName, params: Dictionary = {}) -> Dictionary:
 	return {"ok": false, "reason": reason, "params": params}

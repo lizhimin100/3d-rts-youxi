@@ -22,17 +22,11 @@ extends RefCounted
 ## ⚠ **R1 定死**。想改某个单位的射程就改它卡上的数值（125 → 150 就是 2.25 米），
 ##   不要动内核；改 R1 = 全游戏所有射程同时缩放，一般不要动。
 
-static var _mdl: Node = null
+const BRIDGE := preload("res://Game/adapters/bridge.gd")
 
 
-static func _bridge() -> Node:
-	if _mdl != null and is_instance_valid(_mdl):
-		return _mdl
-	var main := Engine.get_main_loop()
-	if main is SceneTree:
-		_mdl = (main as SceneTree).root.get_node_or_null("Mdl")
-	return _mdl
-
+static func _bridge() -> RefCounted:
+	return BRIDGE.get_bridge()
 
 ## 基准系数（真值在 C# 内核；这里只转发）
 static func r1() -> float:

@@ -36,8 +36,6 @@ const RANGE_BASE := preload("res://Game/config/射程基准.gd")
 ## ★ 体积派生：体积 → 模型缩放 / 碰撞半径 / 判定圈半径。全游戏只此一处
 ##   （见 Game/config/体积派生.gd；三种候选公式在那里切）
 const VOL := preload("res://Game/config/体积派生.gd")
-## 选兵权重公式（find_by_role 排序用；不用 power —— power 全 -1 未测）
-const CBM := preload("res://Game/ai/战斗模型.gd")
 
 ## 卡索引（card_id → EntityCard）与范围档索引（懒建）
 static var _cards: Dictionary = {}
@@ -105,8 +103,8 @@ static func find_by_class(cls: StringName) -> Array:
 	return out
 
 
-## 词表·职能筛选（roles 含该词）。排序按 **战斗模型.selection_weight**
-## （每金战力 × 职能权重 ÷ 过载），**不按 power**（power 全 -1 未测）。
+## 词表·职能筛选（roles 含该词）。排序按 card_id —— 稳定的字典序，
+## 不引入任何 AI 权重（旧的 selection_weight 随战斗模型一起删除）。
 static func find_by_role(role: StringName, function_weight: float = 1.0) -> Array:
 	ensure_index()
 	var hits: Array = []
@@ -114,15 +112,7 @@ static func find_by_role(role: StringName, function_weight: float = 1.0) -> Arra
 		var card: EntityCard = _cards[id]
 		if card is UnitCard and (card as UnitCard).roles.has(role):
 			hits.append(card)
-	# 中性画像（不依赖Screens/scenes/Cfg）：selection_weight 的分母与画像只影响倍率，不影响排序方向
-	var neutral: Dictionary = {
-		"armor": 0.0, "armor_mix": {RtsConst.ArmorType.LIGHT: 1.0},
-		"dmg_mix": {RtsConst.DamageType.NORMAL: 1.0}, "hp": 1.0,
-	}
-	hits.sort_custom(func(a, b):
-		var wa: float = float(CBM.selection_weight(_def_of_card(a), function_weight, 0, neutral))
-		var wb: float = float(CBM.selection_weight(_def_of_card(b), function_weight, 0, neutral))
-		return wa > wb)
+	hits.sort_custom(func(a, b): return String(a.card_id) < String(b.card_id))
 	return hits
 
 
@@ -331,31 +321,6 @@ static func _card_verify(built: Dictionary) -> void:
 		"结果": "通过" if problems.is_empty() and word_errs.is_empty() else "不通过",
 		"说明": "C5 起为结构校验（legacy 已删）；删除前最后一次字段级零差异=17卡/0差异/0词表错误",
 	}
-	# 2C-9：第 18 张卡 = 诉求分系数卡（不是 UnitDef 卡的子类，单独校验）
-	var coef_problems: Array = []
-	var coef_script: Script = load("res://Game/config/AI诉求系数.gd")
-	var coef_card: Resource = coef_script.call("load_from_json") if coef_script != null else null
-	if coef_card == null:
-		coef_problems.append("加载失败")
-	else:
-		var names: Array = [
-			"训练_威胁系数", "训练_缺口系数", "建造_农场缺口系数", "建造_农场紧迫系数",
-			"建造_兵营缺口系数", "建造_兵营紧迫系数", "修理_掉血系数", "出击_兵力比系数",
-			"防守_威胁系数", "侦查_固定分", "巡逻_固定分", "建塔_固定分", "分基地_固定分",
-		]
-		for nm in names:
-			var v = coef_card.get(nm)
-			# 2C-9 要求全部 =1.0；2C-10 标定一轮后不再有这个约束，只校验"在且为有限正数"
-			if v == null or not is_finite(float(v)) or float(v) <= 0.0:
-				coef_problems.append("%s 缺失/非正数" % nm)
-		var cyc = coef_card.get("周期秒")
-		if cyc == null or absf(float(cyc) - 2.0) > 0.000001:
-			coef_problems.append("周期秒≠2.0")
-	report["系数卡"] = {
-		"卡数": 1, "问题": coef_problems,
-		"结果": "通过" if coef_problems.is_empty() else "不通过",
-		"说明": "2C-10：13 个系数已标定一轮（不再要求 =1.0），只校验存在且为有限正数；刻度只在卡里改",
-	}
 	# 报告始终落盘（_qa/ 不入库，摘要进报告正文）
 	var path := ProjectSettings.globalize_path("res://_qa/card_verify.json")
 	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
@@ -363,9 +328,8 @@ static func _card_verify(built: Dictionary) -> void:
 	if fa != null:
 		fa.store_string(JSON.stringify(report, "  "))
 		fa.close()
-	print("[卡校验] %s（卡 %d 张，问题 %d，词表错误 %d）；系数卡 %s（1 张，问题 %d）"
-		% [report["结果"], _cards.size(), problems.size(), word_errs.size(),
-			report["系数卡"]["结果"], coef_problems.size()])
+	print("[卡校验] %s（卡 %d 张，问题 %d，词表错误 %d）"
+		% [report["结果"], _cards.size(), problems.size(), word_errs.size()])
 
 
 

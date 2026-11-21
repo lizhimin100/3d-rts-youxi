@@ -46,7 +46,6 @@ var creeps: Node = null
 @onready var selection_system: Node = get_node_or_null("选择系统")
 @onready var command_system: Node = get_node_or_null("指令系统")
 @onready var hud: Node = get_node_or_null("界面")
-@onready var ai: Node = get_node_or_null("AI")
 
 # --- 胜负判定计时 ---
 var _check_timer: float = 0.0
@@ -193,9 +192,6 @@ func _ready() -> void:
 		if sfx_script != null:
 			sfx_script.call("attach", get_tree())
 
-	# 4.97 每支 AI 阵营一个大脑（多队图：敌人可能有 2~3 个）
-	_mount_ai_brains()
-
 	# 4.98 **日夜**（只改两盏灯 + 背景能量）。
 	#      ★ 野怪已经在 3) 之前建好中立阵营了；这里只做收尾（收编兜底 + 打印数量）。
 	#      夜袭/自动刷怪已按玩家要求**整块删除** —— 野怪只由编辑器摆放。
@@ -204,7 +200,7 @@ func _ready() -> void:
 	day_night = _mount_script("res://Game/systems/日夜.gd", "日夜")
 	if day_night != null:
 		day_night.call("setup", 主光节点, 补光节点, 环境节点)
-		# 注册到全局（AI / 副官 / 营火读 Game.is_night()）：这是"夜里"的唯一出口
+		# 注册到全局（营火/界面读 Game.is_night()）：这是"夜里"的唯一出口
 		Game.day_night = day_night
 	if creeps != null:
 		creeps.call("setup", level, day_night)
@@ -252,17 +248,9 @@ func _ready() -> void:
 	if "--qa-arrow" in OS.get_cmdline_user_args():
 		_qa_arrow.call_deferred()
 
-	# 4.96 副官（玩家侧脚本 AI）：替玩家补农民/派采集/盖农场兵营，玩家下令即接管。
-	#      只碰农民，不碰任何战斗单位；`--no-adjutant` 可关。
-	_mount_script("res://Game/ai/副官.gd", "副官")
-
 	# 4.95 移动指示（绿色虚线 + 目的地标记）：一层只订阅 Game.order_issued 的观察者，
 	#       和 选择系统 / 指令系统 挂在同一层；脚本缺失时静默跳过，不影响开局。
 	_mount_script("res://Screens/input/移动指示.gd", "移动指示")
-
-	# 4.94 战区指令输入（2026-11-13）：F5 进攻 / F6 防守 / F7 占据 / F8 生产。
-	#      只发"意图"不碰单位，实际下令走副官的调度器（控制权过滤照旧）。
-	_mount_script("res://Screens/input/战区指令输入.gd", "战区指令输入")
 
 	# 4.945 **部署输入**（2026-11-15 规划阶段）：进攻 / 防守 / 占据 的二段式纯地图操作。
 	#       只在短局 + 规划阶段生效；执行阶段自动收摊（见 部署输入._can_deploy）。
@@ -310,8 +298,6 @@ func _ready() -> void:
 		Game.set_phase(RtsConst.Phase.PLANNING)
 		_apply_phase_camera(true, true)
 		Game.notify.emit("规划阶段：世界已暂停。部署部队、排好训练后点「规划结束」。", Cfg.game.hud_accent)
-	# 副官不再弹提示：状态改由小地图下方的「副官 · 开/关」按钮表达（常驻、可点）。
-
 	# 6) 测试挂载（只有命令行显式要求时才挂）
 	_mount_tests()
 
@@ -488,13 +474,6 @@ func _process(delta: float) -> void:
 ## 游戏结束：停掉 AI，交给界面出遮罩
 func _on_game_over(victory: bool) -> void:
 	_over_emitted = true
-	for n in get_tree().get_nodes_in_group("ai_brain"):
-		if n != null and is_instance_valid(n):
-			n.set_process(false)
-			n.set_physics_process(false)
-	if ai != null and is_instance_valid(ai):
-		ai.set_process(false)
-		ai.set_physics_process(false)
 	Game.notify.emit("胜利！" if victory else "战败……",
 		Cfg.game.hud_accent if victory else Cfg.game.enemy_color)
 
@@ -542,15 +521,6 @@ func _mount_tests() -> void:
 	# 野怪营地自检（营地依赖中立阵营 / 地图对象 / 寻路，必须在主场景里跑）
 	if "--camp-test" in args:
 		_mount_script("res://Tests/suites/野怪营地自检.gd", "野怪营地自检")
-	if "--war-test" in args:
-		_mount_script("res://Tests/suites/战区指令自检.gd", "战区指令自检")
-	if "--adjutant-test" in args:
-		_mount_script("res://Tests/suites/副官自检.gd", "副官自检")
-	# AI 基准（固定条件真实对局 + 情况文本 dump）：只读量测，不改 AI 行为
-	for a in args:
-		if a == "--ai-bench" or a.begins_with("--ai-bench"):
-			_mount_script("res://Tests/suites/AI基准.gd", "AI基准")
-			break
 	# 农民测试（2C-4 §4.4）：纯经济单变量——关 AI 脑、直接派工、采金/木/建造桶空转
 	if "--peasant-test" in args:
 		_mount_script("res://Tests/suites/农民测试.gd", "农民测试")
@@ -589,45 +559,6 @@ func _mount_tests() -> void:
 		if a.begins_with("--demo-shot="):
 			_mount_script("res://Tests/suites/演示导演.gd", "演示导演")
 			break
-
-
-## 每支 AI 阵营一个大脑。
-##
-## 场景里现有的 `AI` 节点接管"玩家最近的敌人"，其余敌人 / 盟友全部现场新建 ——
-## 这样 `主场景.tscn` 的节点树不用改，`命令`/`副官` 那条老链路也不受影响。
-func _mount_ai_brains() -> void:
-	if Game.player_faction == null:
-		return
-	# 短局：敌人由回合控制器按波次生成并下达攻击移动，不跑经济 AI。
-	# 这样 AI 不会因为"没有金币/没有农民"空转，也不会和 CP 预算打架。
-	if Game.short_match:
-		if ai != null and is_instance_valid(ai):
-			ai.set_process(false)
-		return
-	var script: Script = load("res://Game/ai/简单AI.gd") as Script
-	if script == null:
-		return
-	var ais: Array = []
-	for f in Game.factions:
-		if f == null or f.is_player:
-			continue
-		ais.append(f)
-	if ais.is_empty():
-		return
-	# 0 号：场景里那个 AI
-	if ai != null and is_instance_valid(ai):
-		ai.set("command_faction", ais[0])
-		ai.add_to_group("ai_brain")
-	ais.remove_at(0)
-	# 其余：现场 new（名字带队伍号，场景树里一眼能分清）
-	for f in ais:
-		var n: Node = script.call("new") as Node
-		if n == null:
-			continue
-		n.name = "AI_%d队" % f.team
-		n.set("command_faction", f)
-		n.add_to_group("ai_brain")
-		add_child(n)
 
 
 ## 本局一共几个队

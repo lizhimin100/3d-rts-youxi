@@ -18,7 +18,7 @@ extends Control
 
 const Spec := preload("res://Screens/hud/界面规格.gd")
 const 徽记 := preload("res://Screens/hud/徽记.gd")
-const WAR := preload("res://Game/ai/战区指令.gd")
+const DT := preload("res://Game/commands/部署类型.gd")
 
 const COL_ATTACK := Color(1.0, 0.60, 0.30)
 const COL_DEFEND := Color(0.40, 0.72, 1.0)
@@ -216,7 +216,7 @@ func _draw_preview(cam: Camera3D) -> void:
 		return
 	var ok: bool = bool(pv.get("ok", false))
 	match mode:
-		WAR.ATTACK:
+		DT.ATTACK:
 			var from: Vector3 = pv.get("from", Vector3.ZERO)
 			var a: Vector2 = _project(cam, _lift(from, 0.7))
 			var b: Vector2 = _project(cam, _lift(to, 0.3))
@@ -226,10 +226,10 @@ func _draw_preview(cam: Camera3D) -> void:
 			_arrow_head(b, (b - a).normalized(), 14.0 * zoom,
 					Color(COL_ATTACK, 0.98 if ok else 0.5))
 			_ring_world(cam, to, 1.1, Color(COL_ATTACK, 0.9), 2.0 * zoom)
-		WAR.DEFEND:
+		DT.DEFEND:
 			var r: float = float(pv.get("radius", 10.0))
 			_zone_world(cam, to, r, COL_DEFEND, ok)
-		WAR.CAPTURE:
+		DT.CAPTURE:
 			var snap: Variant = pv.get("snap", null)
 			var radius: float = 8.0 if snap != null else 6.0
 			_zone_world(cam, to, radius, COL_CAPTURE, ok)
@@ -689,19 +689,19 @@ func _plan_chip(is_me: bool, mine: bool) -> Dictionary:
 			match kind:
 				RtsConst.Order.ATTACK_MOVE, RtsConst.Order.ATTACK:
 					return {"kind": "cmd", "glyph": "attack", "color": COL_ATTACK,
-						"kind_id": WAR.ATTACK}
+						"kind_id": DT.ATTACK}
 				RtsConst.Order.DEFEND:
 					return {"kind": "cmd", "glyph": "defend", "color": COL_DEFEND,
-						"kind_id": WAR.DEFEND}
+						"kind_id": DT.DEFEND}
 				RtsConst.Order.CAPTURE:
 					return {"kind": "cmd", "glyph": "capture", "color": COL_CAPTURE,
-						"kind_id": WAR.CAPTURE}
+						"kind_id": DT.CAPTURE}
 		return {}
 	if mine:
 		return {}
 	if Game.short_match:
 		return {"kind": "cmd", "glyph": "attack", "color": COL_ATTACK,
-			"kind_id": WAR.ATTACK}
+			"kind_id": DT.ATTACK}
 	return {}
 
 
@@ -722,7 +722,7 @@ func _plan_defs() -> Array:
 
 
 func _lane_chip(f: RtsFaction, is_me: bool, kind_id: int) -> Dictionary:
-	if kind_id == WAR.DEFEND:
+	if kind_id == DT.DEFEND:
 		return {}
 	var lv: Node3D = RtsWorld.level()
 	if lv == null:

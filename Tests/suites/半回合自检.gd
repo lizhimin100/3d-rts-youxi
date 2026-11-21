@@ -12,7 +12,7 @@ extends Node
 ##
 ## 常量用 preload 取（`--round-test` 里不要裸写 class_name / 猜魔法数字）。
 
-const WAR := preload("res://Game/ai/战区指令.gd")
+const DT := preload("res://Game/commands/部署类型.gd")
 
 var _fails: int = 0
 var _passes: int = 0
@@ -263,11 +263,11 @@ func _run() -> void:
 	var di: Node = get_parent().get_node_or_null("部署输入")
 	_ok(di != null, "部署输入节点已挂载")
 	if di != null:
-		di.call("enter", WAR.ATTACK)
+		di.call("enter", DT.ATTACK)
 		await get_tree().create_timer(0.15).timeout
-		_ok(int(di.call("mode")) == WAR.ATTACK, "进入「进攻」部署模式")
+		_ok(int(di.call("mode")) == DT.ATTACK, "进入「进攻」部署模式")
 		var pv: Dictionary = di.call("preview")
-		_ok(int(pv.get("mode", 0)) == WAR.ATTACK, "地图预览跟随部署模式")
+		_ok(int(pv.get("mode", 0)) == DT.ATTACK, "地图预览跟随部署模式")
 		di.call("cancel")
 		_ok(int(di.call("mode")) == 0, "取消部署后模式归零")
 

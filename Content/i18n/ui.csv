@@ -38,3 +38,6 @@ hint.squad,（{n} 人一队）,({n} per squad),提示
 hint.pop,  占人口 {pop},  pop {pop},提示
 short.no_cancel_train,执行阶段不能取消训练（队列在下单时锁定）,Training is locked during execution,短局
 plan.card_cost_compact,CP {cp} · {pop}人,CP {cp} · {pop} pop,规划卡成本行（紧凑）
+deploy.attack,进攻,Attack,规划阶段部署类型
+deploy.defend,防守,Defend,规划阶段部署类型
+deploy.capture,占据,Capture,规划阶段部署类型

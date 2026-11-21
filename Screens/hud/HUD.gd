@@ -82,9 +82,6 @@ var _toast_box: VBoxContainer = null
 
 ## 小地图
 var _minimap: RtsMinimap = null
-## 副官开关（小地图正下方一条）
-var _adj_btn: Button = null
-var _adjutant: Node = null
 ## 主菜单（小地图下方）：设置 / 队伍 / 投降
 var _menu_btn: Button = null
 var _menu: PopupMenu = null
@@ -96,9 +93,6 @@ var _vol_slider: HSlider = null
 var _speed_slider: HSlider = null
 var _speed_label: Label = null
 var _adj_check: CheckButton = null
-## 战争迷雾开关（设置面板），以及缓存的迷雾节点
-var _fog_check: CheckButton = null
-var _fog_node: Node = null
 ## 战斗计时（资源条末段）
 var _time_label: Label = null
 ## **右上角帧率表**（玩家口径 2026-11-14「要显示 fps」）。
@@ -376,7 +370,6 @@ func _process_inner(delta: float) -> void:
 		return
 	_clock = 0.0
 	_refresh_stats()
-	_sync_war_bar()
 	_refresh_selection()
 	_refresh_pending()
 	_refresh_card(false)
@@ -593,31 +586,11 @@ func _apply_layout() -> void:
 		# 正方形：圆盘 = 控件内切圆，图例浮在圆内底部（不再额外占高度）
 		_place(_minimap, 0.0, 0.0, 0.0, 0.0,
 				m, minimap_top, m + _mets.minimap, minimap_top + _mets.minimap)
-	# --- 战区指令条：小地图正下方的 2×2 网格 ---
-	var war_top: float = minimap_top + _mets.minimap + 8.0
-	var war_h: float = WAR_BTN_H * 2.0 + WAR_GAP
-	if _war_bar != null:
-		_place(_war_bar, 0.0, 0.0, 0.0, 0.0,
-				m, war_top, m + _mets.minimap, war_top + war_h)
-		var bw: float = (_mets.minimap - WAR_GAP) * 0.5
-		for i in _war_btns.size():
-			var b: Button = _war_btns[i]["btn"]
-			if b == null or not is_instance_valid(b):
-				continue
-			var col: int = i % 2
-			var row: int = i / 2
-			b.position = Vector2(float(col) * (bw + WAR_GAP), float(row) * (WAR_BTN_H + WAR_GAP))
-			b.size = Vector2(bw, WAR_BTN_H)
-	if _adj_btn != null:
-		_sync_adjutant()
-		if _adj_btn.visible:
-			_place(_adj_btn, 0.0, 0.0, 0.0, 0.0,
-					m, war_top + war_h + 8.0,
-					m + _mets.minimap, war_top + war_h + 42.0)
+	# --- 菜单：小地图正下方（旧「战区指令条 / 副官开关」随旧 AI 一起删除）---
+	var menu_top: float = minimap_top + _mets.minimap + 8.0
 	if _menu_btn != null:
 		_place(_menu_btn, 0.0, 0.0, 0.0, 0.0,
-				m, war_top + war_h + 50.0,
-				m + _mets.minimap, war_top + war_h + 84.0)
+				m, menu_top, m + _mets.minimap, menu_top + 34.0)
 
 	# --- 底栏：一条带子，三块内容 ---
 	# ★ 规划阶段整条底栏让位给"规划阶段界面"：它有自己的操作面板（底部居中）和
@@ -1142,137 +1115,15 @@ func _crate_banner_height() -> float:
 	return maxf(CRATE_BANNER_H, _crate_banner.get_combined_minimum_size().y)
 
 
-## 战区指令条（2026-11-13 玩家口径：按钮放在小地图旁，红警3 那种按下态）
-##
-## 为什么不做进底栏：底栏"没选中任何东西"时整条会收起（`_hide_band_parts`），
-## 而战区指令是**随时可下**的战役级操作，不能跟着选择状态一起消失。
-## 位置：小地图正下方的左列（2×2 网格），副官/菜单顺次下移。
-const WAR := preload("res://Game/ai/战区指令.gd")
-const Lex := preload("res://Screens/hud/词条.gd")
-## 按钮高度 / 列间距（像素，设计坐标）
-const WAR_BTN_H := 30.0
-const WAR_GAP := 4.0
-var _war_bar: Control = null
-var _war_btns: Array = []          # [{kind, btn, frame}]
-var _war_sync_t: float = 0.0
-
-
 ## 左下小地图
 func _build_minimap() -> void:
 	_minimap = RtsMinimap.new()
 	_minimap.name = "小地图"
 	root.add_child(_minimap)
-	_build_war_bar()
-	_build_adjutant_toggle()
-
-
-## 战区指令按钮条：进攻 / 防守 / 占据 / 生产
-##
-## 图标走 `Content/art/图标/*.svg`（线描单色，靠 modulate 上色），和命令卡同一套观感。
-## 按下态 = 该指令正在"等落点"，再点一次或右键/ESC 取消。
-func _build_war_bar() -> void:
-	_war_bar = Control.new()
-	_war_bar.name = "战区指令条"
-	_war_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.add_child(_war_bar)
-	var specs: Array = [
-		[WAR.ATTACK, "sword", "进攻", "F5"],
-		[WAR.DEFEND, "shield", "防守", "F6"],
-		[WAR.CAPTURE, "flag", "占据", "F7"],
-		[WAR.PRODUCE, "anvil", "生产", "F8"],
-	]
-	for sp in specs:
-		var kind: int = int(sp[0])
-		var btn := Button.new()
-		btn.name = "战区_" + String(sp[2])
-		btn.focus_mode = Control.FOCUS_NONE
-		btn.toggle_mode = true
-		btn.add_theme_font_size_override("font_size", Spec.FS_CAPTION)
-		btn.add_theme_color_override("font_color", Spec.text_main())
-		btn.add_theme_color_override("font_pressed_color", Color(1.0, 0.93, 0.72))
-		btn.add_theme_color_override("font_hover_color", Color(1.0, 0.97, 0.88))
-		var icon: Texture2D = Spec.icon_tex(String(sp[1]))
-		if icon != null:
-			btn.icon = icon
-			btn.add_theme_constant_override("icon_max_width", 18)
-			btn.add_theme_color_override("icon_normal_color", Spec.text_main())
-			btn.add_theme_color_override("icon_pressed_color", Color(1.0, 0.93, 0.72))
-			btn.add_theme_color_override("icon_hover_color", Color(1.0, 0.97, 0.88))
-		btn.text = String(sp[2])
-		btn.add_theme_stylebox_override("normal",
-			Spec.button_style(Color(0.09, 0.10, 0.12, 0.94), Color(0.86, 0.72, 0.40, 0.50),
-				null, 5, 6.0, 3.0))
-		btn.add_theme_stylebox_override("hover",
-			Spec.button_style(Color(0.16, 0.18, 0.21, 0.96), Color(0.92, 0.78, 0.45, 0.95),
-				null, 5, 6.0, 3.0))
-		# 按下态：暖底 + 亮金边 —— 一眼看出"现在在等落点"
-		btn.add_theme_stylebox_override("pressed",
-			Spec.button_style(Color(0.24, 0.19, 0.09, 0.98), Color(1.0, 0.85, 0.45, 1.0),
-				Color(1.0, 0.85, 0.45, 1.0), 5, 6.0, 3.0))
-		btn.add_theme_stylebox_override("hover_pressed",
-			Spec.button_style(Color(0.28, 0.22, 0.10, 0.98), Color(1.0, 0.88, 0.50, 1.0),
-				Color(1.0, 0.88, 0.50, 1.0), 5, 6.0, 3.0))
-		btn.tooltip_text = ""
-		RtsTipLayer.bind(self, btn, func() -> Dictionary: return Lex.war(kind))
-		btn.pressed.connect(_on_war_btn.bind(kind))
-		_war_bar.add_child(btn)
-		_war_btns.append({"kind": kind, "btn": btn})
-
-
-## 点按钮 = 进入/退出该指令（同一颗再点一次 = 取消）
-func _on_war_btn(kind: int) -> void:
-	var wi := _war_input()
-	if wi != null and wi.has_method("enter_mode"):
-		wi.call("enter_mode", kind)
-	_sync_war_bar(true)
-
-
-## 战区指令输入节点（主场景挂的兄弟节点；可能比 HUD 晚建，所以每次现找）
-func _war_input() -> Node:
-	var p := get_parent()
-	if p == null:
-		return null
-	return p.get_node_or_null("战区指令输入")
-
-
-## 把按钮按下态同步成"模型里的待发指令"
-func _sync_war_bar(force: bool = false) -> void:
-	if _war_btns.is_empty():
-		return
-	var wi := _war_input()
-	var cur: int = 0
-	if wi != null and wi.has_method("pending_kind"):
-		cur = int(wi.call("pending_kind"))
-	for e in _war_btns:
-		var b: Button = e["btn"]
-		if b == null or not is_instance_valid(b):
-			continue
-		if force or b.button_pressed != (int(e["kind"]) == cur):
-			b.set_pressed_no_signal(int(e["kind"]) == cur)
-
-
-## 副官开关：**用一个小控件说清楚"副官开没开"**，比开局弹一条三秒就消失的
-## 长提示有用得多（那条提示已经删了）。
-func _build_adjutant_toggle() -> void:
-	_adj_btn = Button.new()
-	_adj_btn.name = "副官开关"
-	_adj_btn.focus_mode = Control.FOCUS_NONE
-	_adj_btn.add_theme_font_size_override("font_size", Spec.FS_BODY)
-	_adj_btn.add_theme_stylebox_override("normal",
-		Spec.button_style(Color(0.09, 0.10, 0.12, 0.94), Color(0.86, 0.72, 0.40, 0.55),
-			null, 6, 8.0, 4.0))
-	_adj_btn.add_theme_stylebox_override("hover",
-		Spec.button_style(Color(0.16, 0.18, 0.21, 0.96), Color(0.92, 0.78, 0.45, 0.95),
-			null, 6, 8.0, 4.0))
-	_adj_btn.add_theme_stylebox_override("pressed",
-		Spec.button_style(Color(0.20, 0.17, 0.10, 0.96), Color(0.95, 0.80, 0.42, 1.0),
-			Color(0.95, 0.80, 0.42, 1.0), 6, 8.0, 4.0))
-	_adj_btn.pressed.connect(_toggle_adjutant)
-	root.add_child(_adj_btn)
-	_sync_adjutant()
 	_build_menu()
 
 
+## 主菜单：设置 / 队伍 / 投降。图标复用资源条那套 SVG，风格统一。
 ## 主菜单：设置 / 队伍 / 投降。图标复用资源条那套 SVG，风格统一。
 func _build_menu() -> void:
 	_menu_btn = Button.new()
@@ -1381,52 +1232,7 @@ func _open_settings() -> void:
 			if _speed_label != null:
 				_speed_label.text = "×1.00")
 		vb.add_child(speed_reset)
-		_adj_check = CheckButton.new()
-		_adj_check.text = "副官接管"
-		_adj_check.add_theme_font_size_override("font_size", Spec.FS_BODY)
-		_adj_check.add_theme_color_override("font_color", Spec.text_main())
-		_adj_check.toggled.connect(func(on: bool) -> void:
-			if _adjutant != null and is_instance_valid(_adjutant):
-				if _adjutant.has_method("set_enabled"):
-					_adjutant.call("set_enabled", on)
-				else:
-					_adjutant.set("enabled", on)
-				_sync_adjutant())
-		vb.add_child(_adj_check)
-		_fog_check = CheckButton.new()
-		_fog_check.text = "战争迷雾"
-		_fog_check.add_theme_font_size_override("font_size", Spec.FS_BODY)
-		_fog_check.add_theme_color_override("font_color", Spec.text_main())
-		_fog_check.toggled.connect(func(on: bool) -> void:
-			var fog := _get_fog()
-			if fog != null and fog.has_method("set_enabled"):
-				fog.call("set_enabled", on))
-		vb.add_child(_fog_check)
-	# 每次打开都同步一次真实状态（迷雾/副官节点都可能比面板晚建）
-	var fog_now := _get_fog()
-	if _adj_check != null:
-		_adj_check.set_pressed_no_signal(_adjutant_on())
-	if _fog_check != null:
-		_fog_check.set_pressed_no_signal(fog_now == null or bool(fog_now.call("is_enabled")))
 	_dlg_settings.popup_centered(Vector2i(340, 0))
-
-
-## 副官当前是否接管（设置面板 / 自检共用；找不到人先补找一次）
-func _adjutant_on() -> bool:
-	_sync_adjutant()
-	if _adjutant == null or not is_instance_valid(_adjutant):
-		return false
-	return _adjutant.get("enabled") == true
-
-
-## 迷雾节点（运行时由 RtsFog 加入 fog_system 组）
-func _get_fog() -> Node:
-	if _fog_node != null and is_instance_valid(_fog_node):
-		return _fog_node
-	var tree := get_tree()
-	if tree != null:
-		_fog_node = tree.get_first_node_in_group("fog_system")
-	return _fog_node
 
 
 func _open_team() -> void:
@@ -1485,59 +1291,11 @@ func _open_surrender() -> void:
 		_dlg_surrender.cancel_button_text = "继续战斗"
 		_dlg_surrender.confirmed.connect(func() -> void:
 			# 必须走 trigger_defeat：它会 set_phase(DEFEAT) 并冻结世界。
-			# 只发 game_over 信号会让 phase 停在 RUNNING，副官/单位继续跑。
+			# 只发 game_over 信号会让 phase 停在 RUNNING，单位继续跑。
 			Game.trigger_defeat())
 		root.add_child(_dlg_surrender)
 	_dlg_surrender.popup_centered(Vector2i(360, 0))
 
-
-func _toggle_adjutant() -> void:
-	if _adjutant == null or not is_instance_valid(_adjutant):
-		return
-	var want: bool = _adjutant.get("enabled") != true
-	if _adjutant.has_method("set_enabled"):
-		_adjutant.call("set_enabled", want)
-	else:
-		_adjutant.set("enabled", want)
-	_sync_adjutant()
-
-
-func _sync_adjutant() -> void:
-	if _adj_btn == null:
-		return
-	if _adjutant == null or not is_instance_valid(_adjutant):
-		# 用组名找人：HUD 可能挂在 CanvasLayer 下、副官是主场景的子节点，
-		# 靠父子路径找会出现"有时找得到有时找不到"。副官 `_ready` 里 add_to_group。
-		var tree := get_tree()
-		if tree != null:
-			_adjutant = tree.get_first_node_in_group("adjutant")
-			if _adjutant == null and tree.current_scene != null:
-				_adjutant = tree.current_scene.get_node_or_null("副官")
-	if _adjutant == null:
-		_adj_btn.visible = false
-		return
-	# ★ 2026-11-15 玩家口径：**规划阶段彻底隐藏副官开关**（副官只在执行阶段生效）。
-	#   这里判、`_apply_layout` 也判：前者管 8Hz 轮询，后者管阶段切换当帧。
-	_adj_btn.visible = not _planning_active()
-	var on: bool = _adjutant.get("enabled") == true
-	_adj_btn.text = "副官 · 开" if on else "副官 · 关"
-	_adj_btn.add_theme_color_override("font_color",
-		Color(0.66, 0.90, 0.58) if on else Color(0.72, 0.70, 0.66))
-	# 说明走自己的气泡层（和底栏一致）；引擎 tooltip 只留空串免得两套同时弹
-	_adj_btn.tooltip_text = ""
-	if not bool(_adj_btn.get_meta("tip_on", false)):
-		_adj_btn.set_meta("tip_on", true)
-		RtsTipLayer.bind(self, _adj_btn, func() -> Dictionary:
-			var is_on: bool = _adjutant != null and _adjutant.get("enabled") == true
-			return {
-				"icon": "flag",
-				"icon_color": Color(0.66, 0.90, 0.58) if is_on else Color(0.72, 0.70, 0.66),
-				"title": "副官 · " + ("开" if is_on else "关"),
-				"tag": "AI 托管",
-				"body": ("副官正在替你：补农民、派采集、盖房、带兵推进。\n它不会花光你的钱 —— 总留 480 金 / 140 木给你自己指挥。"
-						if is_on else "副官已关闭，全部单位归你手动操作。\n点一下重新开启。"),
-				"foot": "点一下" + ("关掉" if is_on else "开启"),
-			})
 
 
 ## 底栏的**选中段**：左边紧贴屏幕左缘（不再被小地图挤开），
@@ -1700,8 +1458,6 @@ func _set_planning_chrome(planning: bool) -> void:
 	var show_exec: bool = not planning
 	if _minimap != null and is_instance_valid(_minimap):
 		_minimap.visible = show_exec
-	if _war_bar != null and is_instance_valid(_war_bar):
-		_war_bar.visible = show_exec
 	if _menu_btn != null:
 		_menu_btn.visible = show_exec
 	if _fps_panel != null:
@@ -1712,8 +1468,6 @@ func _set_planning_chrome(planning: bool) -> void:
 		_overhead.visible = show_exec
 	if _foe_intent != null and is_instance_valid(_foe_intent):
 		_foe_intent.visible = show_exec and bool(_foe_intent.call("should_show"))
-	# 副官开关的显隐有自己的判据（有没有副官节点 + 是不是规划阶段）→ 交给它自己算
-	_sync_adjutant()
 
 
 func _place_planning_hud() -> void:
@@ -1985,10 +1739,6 @@ func _poll_hotkeys() -> void:
 		var cmd := _command_system()
 		var pending: bool = cmd != null and cmd.has_method("has_pending") \
 			and bool(cmd.call("has_pending"))
-		# 战区指令也在等落点时，Esc 归它（否则一次 Esc 既取消模式又清空选择，底栏整条消失）
-		var wi := _war_input()
-		if wi != null and wi.has_method("pending_kind") and int(wi.call("pending_kind")) != 0:
-			pending = true
 		if not pending:
 			_on_clear_selection()
 
@@ -2408,9 +2158,6 @@ func _exit_tree() -> void:
 func _refresh_stats() -> void:
 	_sync_fps()
 	# 规划阶段：顶部资源条整条让位给"规划阶段界面"（局外资源 / 人口 / 日夜）。
-	# 副官开关也要在规划阶段收起，所以这里先同步一次副官的显隐。
-	if _adj_btn != null:
-		_sync_adjutant()
 	if _planning_active():
 		if _stats_panel != null:
 			_stats_panel.visible = false
@@ -2427,13 +2174,6 @@ func _refresh_stats() -> void:
 		if _pop_bar != null:
 			_pop_bar.set_ratio(0.0, false)
 		return
-	# 副官节点可能比 HUD 晚建好：这里的定时刷新负责"补挂"，
-	# 一旦从"找不到"变成"找到了"，立刻重摆一次版面（不然按钮永远不出现）。
-	if _adj_btn != null:
-		var was_vis: bool = _adj_btn.visible
-		_sync_adjutant()
-		if _adj_btn.visible != was_vis:
-			_apply_layout()
 	# 短局：执行阶段不显示 CP（CP 只在规划阶段出现并消耗）；长局：金币/木材/人口。
 	var short: bool = Game.short_match
 	_set_pill_visible(_cp_label, false)
@@ -2854,10 +2594,6 @@ func covers_point(p: Vector2) -> bool:
 	if _card_panel != null and _card_panel.visible and _card_panel.get_global_rect().has_point(p):
 		return true
 	if _stats_panel != null and _stats_panel.visible and _stats_panel.get_global_rect().has_point(p):
-		return true
-	if _war_bar != null and _war_bar.visible and _war_bar.get_global_rect().has_point(p):
-		return true
-	if _adj_btn != null and _adj_btn.visible and _adj_btn.get_global_rect().has_point(p):
 		return true
 	if _menu_btn != null and _menu_btn.visible and _menu_btn.get_global_rect().has_point(p):
 		return true

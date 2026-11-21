@@ -19,7 +19,6 @@ config/icon="res://icon.svg"
 
 [autoload]
 
-Mdl="*res://Screens/bridge/ModelBridge.cs"
 App="*res://Engine/boot/app.gd"
 Keys="*res://Engine/util/asset_keys.gd"
 I18n="*res://Engine/i18n/i18n_service.gd"

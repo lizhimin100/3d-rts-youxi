@@ -72,12 +72,12 @@ func _check_layout() -> void:
 			legacy.append(d)
 	_ok("旧目录已清空（代码/场景/美术/音频/地图/工具/文档）", legacy.is_empty(), "残留：" + ", ".join(legacy))
 	var text := _read("res://project.godot")
-	var autoloads := ["Mdl=", "App=", "Keys=", "I18n=", "SaveSvc=", "AudioSvc=", "Platform=", "Cfg=", "Game=", "DbgBridge="]
+	var autoloads := ["App=", "Keys=", "I18n=", "SaveSvc=", "AudioSvc=", "Platform=", "Cfg=", "Game=", "DbgBridge="]
 	var lack: Array[String] = []
 	for a in autoloads:
 		if not text.contains(a):
 			lack.append(a.trim_suffix("="))
-	_ok("自动加载已注册（%d 个，含 C# 桥 Mdl）" % autoloads.size(), lack.is_empty(), "缺：" + ", ".join(lack))
+	_ok("自动加载已注册（%d 个）" % autoloads.size(), lack.is_empty(), "缺：" + ", ".join(lack))
 
 
 # ===========================================================================
@@ -529,9 +529,12 @@ func _check_model_purity() -> void:
 	var dll := "res://Model/bin/Debug/net8.0/WarIsland.Model.dll"
 	_ok("C# 内核已编译（WarIsland.Model.dll）", FileAccess.file_exists(dll), dll)
 
-	# 桥挂上了（自动加载 Mdl）：这是"GDScript 能真的调到内核"的唯一证据
-	var mdl := root.get_node_or_null("Mdl")
-	_ok("桥 Mdl 已挂上（C# → GDScript 通路）", mdl != null)
+	# 桥能实例化：这是"GDScript 能真的调到内核"的唯一证据
+	var bridge_sc := load("res://Game/adapters/bridge.gd")
+	var mdl: RefCounted = null
+	if bridge_sc != null:
+		mdl = bridge_sc.call("get_bridge") as RefCounted
+	_ok("桥可实例化（C# → GDScript 通路）", mdl != null)
 	if mdl != null:
 		var r1: float = float(mdl.call("R1"))
 		_ok("内核 R1 = 0.015", is_equal_approx(r1, 0.015), "%.4f" % r1)
@@ -563,7 +566,8 @@ func _check_distance_law() -> void:
 	_ok("R1 字面量只在内核（规则层零 0.015）", hard.is_empty(), "; ".join(hard.slice(0, 5)))
 	# 升星镜像常量必须等于内核
 	var star := load("res://Game/systems/升星.gd")
-	var mdl := root.get_node_or_null("Mdl")
+	var bridge_sc := load("res://Game/adapters/bridge.gd")
+	var mdl: RefCounted = bridge_sc.call("get_bridge") as RefCounted if bridge_sc != null else null
 	if mdl != null:
 		var cap_ok: bool = int(star.get("STAR_CAP")) == int(mdl.call("StarCap"))
 		var exp_ok: bool = is_equal_approx(float(star.get("KILL_EXP")), float(mdl.call("StarKillExp")))

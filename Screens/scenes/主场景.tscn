@@ -7,7 +7,6 @@
 [ext_resource type="Script" uid="uid://c11pd86hgv1oh" path="res://Screens/input/选择系统.gd" id="5_sel"]
 [ext_resource type="Script" uid="uid://dfl15rwhe07nr" path="res://Screens/input/指令系统.gd" id="6_cmd"]
 [ext_resource type="Script" uid="uid://d01gbay5v0twh" path="res://Screens/hud/HUD.gd" id="7_hud"]
-[ext_resource type="Script" uid="uid://by1i3f10s0ipq" path="res://Game/ai/简单AI.gd" id="8_ai"]
 [ext_resource type="PackedScene" path="res://Content/art/特效/暗角.tscn" id="9_vig"]
 [ext_resource type="Resource" uid="uid://c1sveg6qvq6pn" path="res://Content/maps/主场景地图.tres" id="10_map"]
 
@@ -52,9 +51,6 @@ script = ExtResource("6_cmd")
 
 [node name="界面" type="CanvasLayer" parent="." unique_id=689765601]
 script = ExtResource("7_hud")
-
-[node name="AI" type="Node" parent="." unique_id=1445982483]
-script = ExtResource("8_ai")
 
 [node name="暗角" parent="." unique_id=480294901 instance=ExtResource("9_vig")]
 layer = 0

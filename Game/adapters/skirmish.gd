@@ -3,19 +3,11 @@ extends RefCounted
 ## 属于：Game/adapters（过渡层，调用方 API 不变）
 ## 真正实现：`Model/Battle/Skirmish.cs`。配置用纯 Dictionary 传进来，结果形状不变。
 
-static var _mdl: Node = null
+const BRIDGE := preload("res://Game/adapters/bridge.gd")
 
 
-static func _bridge() -> Node:
-	if _mdl != null and is_instance_valid(_mdl):
-		return _mdl
-	var main := Engine.get_main_loop()
-	if main is SceneTree:
-		_mdl = (main as SceneTree).root.get_node_or_null("Mdl")
-	if _mdl == null:
-		push_error("[Model] bridge Mdl missing (C# kernel not built?)")
-	return _mdl
-
+static func _bridge() -> RefCounted:
+	return BRIDGE.get_bridge()
 
 ## 返回错误字符串数组（空 = 合法）
 static func validate(config: Dictionary) -> Array:

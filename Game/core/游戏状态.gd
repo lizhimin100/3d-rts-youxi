@@ -39,10 +39,6 @@ signal notify(text: String, color: Color)
 signal game_over(victory: bool)
 ## 请求镜头抖动
 signal camera_shake(strength: float)
-## 副官给玩家的**建议**（只投递，不产生任何游戏行为）
-## payload 形如 {"code": "low_odds" / "request_control" / "under_attack",
-##               "severity": "info" / "warn", "message": "…", ...}
-signal adjutant_hint(payload: Dictionary)
 
 
 # ===========================================================================
@@ -151,10 +147,6 @@ func is_node_visible_to(f: RtsFaction, n: Node3D) -> bool:
 		return is_visible_to(f, n.global_position, true)
 	return is_visible_to(f, n.global_position, false)
 
-## **控制权登记表**（谁有权给单位下令）。由 _ready 建好，全项目共用一份：
-## 玩家下过令的单位在"命令组"生命周期内不许副官/人机碰（见 Game/ai/控制权.gd）。
-var control = null
-
 ## 全部存活单位（含建筑）。由 register/unregister 维护
 var _units: Array = []
 ## 全部存活建筑
@@ -163,8 +155,6 @@ var _buildings: Array = []
 var _harvestables: Array = []
 
 
-## 控制权登记表必须在**任何 AI 之前**建好：副官的 _ready 可能比本单例晚，
-## 但 _process 里的 tick 一定早于 AI 的思考（同一帧里自动加载先跑）。
 func _ready() -> void:
 	# 短局开关必须在主场景/HUD 之前定下来（Game 是自动加载，先于主场景树）。
 	#
@@ -183,21 +173,12 @@ func _ready() -> void:
 	if sq_script != null:
 		squads = sq_script.new()
 		squads.call("attach")
-	var s := load("res://Game/ai/控制权.gd")
-	if s != null:
-		control = s.new()
-		control.attach()
-
 
 func _process(delta: float) -> void:
 	if phase == RtsConst.Phase.RUNNING:
 		elapsed += delta
 		# ★ 2026-11-15 玩家拍板：CP 只在规划阶段出现/消耗；执行阶段不回复、不显示。
 		#   每回合规划阶段由基地补满（回合控制.end_execution → begin_planning_cp）。
-	# 命令组状态机：组内全部 idle 才算"命令结束"，然后进宽限期。
-	if control != null:
-		control.tick(elapsed)
-
 
 # ===========================================================================
 # 阶段（唯一入口）
@@ -460,17 +441,6 @@ func reset() -> void:
 	elapsed = 0.0
 	if squads != null:
 		squads.call("reset")
-	if control != null:
-		control.reset()
-
-
-## 副官的"建议"通道：**只投递，不产生行为**。
-## 与直接下令的区别是这条纪律：AI 与玩家意图冲突时只能建议（见 Game/ai/副官.gd）。
-func suggest(payload: Dictionary) -> void:
-	if payload == null or payload.is_empty():
-		return
-	adjutant_hint.emit(payload)
-
 
 # ===========================================================================
 # 注册表

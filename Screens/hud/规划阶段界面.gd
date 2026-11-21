@@ -35,7 +35,7 @@ extends Control
 
 const Spec := preload("res://Screens/hud/界面规格.gd")
 const 徽记 := preload("res://Screens/hud/徽记.gd")
-const WAR := preload("res://Game/ai/战区指令.gd")
+const DT := preload("res://Game/commands/部署类型.gd")
 const 可用性查询 := preload("res://Game/config/可用性查询.gd")
 const 可用性文案 := preload("res://Game/config/可用性文案.gd")
 
@@ -592,11 +592,11 @@ func _rebuild_action(mode: int, b: RtsBuilding, units: Array, pl: RtsFaction) ->
 ## 选中部队：三枚部署徽记按钮（按下态 = 正在等落点）
 func _build_deploy(_units: Array, _pl: RtsFaction) -> void:
 	var specs: Array = [
-		[WAR.ATTACK, "attack", "进攻", Color(1.0, 0.62, 0.34),
+		[DT.ATTACK, "attack", "进攻", Color(1.0, 0.62, 0.34),
 			"把选中的部队派去进攻这个方向/目标。点完在地图上点落点。"],
-		[WAR.DEFEND, "defend", "防守", Color(0.52, 0.80, 1.0),
+		[DT.DEFEND, "defend", "防守", Color(0.52, 0.80, 1.0),
 			"把选中的部队部署到防区（10m），路上遇敌就交战。"],
-		[WAR.CAPTURE, "capture", "占据", Color(1.0, 0.84, 0.42),
+		[DT.CAPTURE, "capture", "占据", Color(1.0, 0.84, 0.42),
 			"把选中的部队派去占据据点或一片区域；据点驻留 15 秒归你。"],
 	]
 	for sp in specs:
@@ -1107,9 +1107,9 @@ func _dial_tip() -> Dictionary:
 
 func _deploy_tip(kind: int, body: String) -> Dictionary:
 	return {
-		"icon": "sword" if kind == WAR.ATTACK else ("shield" if kind == WAR.DEFEND else "flag"),
+		"icon": "sword" if kind == DT.ATTACK else ("shield" if kind == DT.DEFEND else "flag"),
 		"icon_color": Color(0.96, 0.90, 0.78),
-		"title": String(WAR.NAMES[kind]),
+		"title": I18n.t("deploy." + String(DT.NAMES[kind])),
 		"tag": "部署",
 		"body": body + "\n\n点按钮后指针会变成对应图标，地图上实时预览；右键 / ESC 取消。",
 		"foot": "点地图落点后生效",

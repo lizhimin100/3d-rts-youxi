@@ -11,13 +11,12 @@ extends Node
 ##   · 指令系统是"单位级右键上下文"，这里是"战役级部署意图"，两套状态机互斥但不同源；
 ##   · 它需要在 `_input` 阶段抢在 GUI 之前处理左键（否则点地面会被选择系统当成框选起点）。
 ##
-## 和「战区指令输入」的区别：
-##   · 战区指令（F5–F8）是**给盟友 AI 的意图**，只写 `战区指令` 的意图表；
-##   · 部署（本文件）是**给自己部队的命令**，最终落成 `命令记录`，执行阶段统一发出。
+## 部署只做一件事：把「进攻 / 防守 / 占据」落成 `命令记录`，执行阶段统一发出。
+## （旧的「战区指令」给 AI 发意图那一套已随旧自由 AI 删除，见 Game/commands/部署类型.gd）
 
-const WAR := preload("res://Game/ai/战区指令.gd")
+const DT := preload("res://Game/commands/部署类型.gd")
 
-## 防守防区默认半径（米）。和战区指令的区域半径同一量级，玩家一眼能比。
+## 防守防区默认半径（米）。
 const DEFEND_RADIUS: float = 10.0
 ## 占据时"吸附到据点"的距离（米）：点在据点附近就自动对准据点中心
 const CAPTURE_SNAP: float = 14.0
@@ -25,7 +24,7 @@ const CAPTURE_SNAP: float = 14.0
 ## 模式切换（HUD 按钮按下态 / 地图预览都靠它）
 signal mode_changed(mode: int)
 
-## 当前部署模式（0 = 没有；其余用 战区指令 的 ATTACK/DEFEND/CAPTURE）
+## 当前部署模式（0 = 没有；其余见 部署类型.ATTACK/DEFEND/CAPTURE）
 var _mode: int = 0
 ## 鼠标下的地面点（无效时 Vector3.INF）
 var _ground: Vector3 = Vector3.INF
@@ -66,7 +65,7 @@ func mode() -> int:
 
 ## 进入某个部署模式（重复点同一个 = 取消，红警3 的按钮手感）
 func enter(kind: int) -> void:
-	if not WAR.NAMES.has(kind) or kind == WAR.PRODUCE:
+	if not DT.NAMES.has(kind):
 		return
 	if _mode == kind:
 		cancel()
@@ -75,10 +74,6 @@ func enter(kind: int) -> void:
 	var cmd := _command_system()
 	if cmd != null and cmd.has_method("request_cancel"):
 		cmd.call("request_cancel")
-	# 和给盟友 AI 的战区指令也互斥（它们共用 进攻/防守/占据 三个词）
-	var wi := _war_input()
-	if wi != null and wi.has_method("cancel_mode"):
-		wi.call("cancel_mode")
 	_mode = kind
 	_apply_cursor()
 	mode_changed.emit(_mode)
@@ -107,7 +102,7 @@ func preview() -> Dictionary:
 		"mode": _mode,
 		"from": from,
 		"to": _ground,
-		"radius": DEFEND_RADIUS if _mode == WAR.DEFEND else 0.0,
+		"radius": DEFEND_RADIUS if _mode == DT.DEFEND else 0.0,
 		"ok": _ok,
 		"snap": _snap,
 	}
@@ -160,7 +155,7 @@ func _poll_ground() -> void:
 		return
 	_ground = g
 	_ok = true
-	if _mode == WAR.CAPTURE:
+	if _mode == DT.CAPTURE:
 		# 占据：鼠标靠近中立据点就吸附（据点本体只有 8m，点边上也算点它）
 		var sp: Node = Game.strongpoint
 		if sp != null and is_instance_valid(sp) and sp.has_method("crate_pos"):
@@ -213,7 +208,7 @@ func _commit(screen_pos: Vector2) -> void:
 		return
 	# 占据：靠近据点就对准据点
 	var target_pos: Vector3 = g
-	if kind == WAR.CAPTURE:
+	if kind == DT.CAPTURE:
 		var sp: Node = Game.strongpoint
 		if sp != null and is_instance_valid(sp) and sp.has_method("crate_pos"):
 			var cp: Vector3 = sp.call("crate_pos")
@@ -223,7 +218,7 @@ func _commit(screen_pos: Vector2) -> void:
 			if cmd.has_method("planned_count") else 0
 	var done: bool = false
 	match kind:
-		WAR.ATTACK:
+		DT.ATTACK:
 			cmd.call("queue_attack_move", target_pos)
 			done = int(cmd.call("planned_count")) > before
 			if done:
@@ -231,11 +226,11 @@ func _commit(screen_pos: Vector2) -> void:
 				# 图上没写的东西不要加，坐标对玩家也没意义）。
 				Game.toast("进攻部署：%d 个单位" % _plan_unit_count(cmd),
 						Color(0.98, 0.72, 0.45))
-		WAR.DEFEND:
+		DT.DEFEND:
 			done = bool(cmd.call("queue_defend", target_pos, DEFEND_RADIUS))
 			if done:
 				Game.toast("防守部署：%.0fm 防区" % DEFEND_RADIUS, Color(0.62, 0.82, 1.0))
-		WAR.CAPTURE:
+		DT.CAPTURE:
 			done = bool(cmd.call("queue_capture", target_pos))
 			if done:
 				Game.toast("占据部署：%s" % ("据点" if target_pos != g else "区域"),
@@ -279,11 +274,11 @@ func _plan_unit_count(cmd: Node) -> int:
 
 func _enter_hint() -> String:
 	match _mode:
-		WAR.ATTACK:
+		DT.ATTACK:
 			return "部署 · 进攻：在地图上点目标方向（虚线箭头跟随鼠标，右键取消）"
-		WAR.DEFEND:
+		DT.DEFEND:
 			return "部署 · 防守：在地图上点防区中心（蓝色区域预览，右键取消）"
-		WAR.CAPTURE:
+		DT.CAPTURE:
 			return "部署 · 占据：点据点或一片区域（金圈高亮，右键取消）"
 	return ""
 
@@ -295,11 +290,11 @@ func _apply_cursor() -> void:
 		return
 	var shape: int = -1
 	match _mode:
-		WAR.ATTACK:
+		DT.ATTACK:
 			shape = 6   # RtsGlyphCursor.Shape.ATTACK
-		WAR.DEFEND:
+		DT.DEFEND:
 			shape = 7   # DEFEND
-		WAR.CAPTURE:
+		DT.CAPTURE:
 			shape = 8   # CAPTURE
 	cur.call("set_override", shape)
 
@@ -331,13 +326,6 @@ func _selection_system() -> Node:
 	return p.get_node_or_null("选择系统")
 
 
-func _war_input() -> Node:
-	var p := get_parent()
-	if p == null:
-		return null
-	return p.get_node_or_null("战区指令输入")
-
-
 func _hud_node() -> Node:
 	if _hud != null and is_instance_valid(_hud):
 		return _hud
@@ -358,7 +346,7 @@ func _ui_blocks(pos: Vector2) -> bool:
 	return false
 
 
-## 屏幕点 → 地面点（与战区指令输入同一套：先与 y=0 求交，再按地形高度迭代两次）
+## 屏幕点 → 地面点（先与 y=0 求交，再按地形高度迭代两次）
 func _ground_at(screen: Vector2) -> Vector3:
 	var cam: Camera3D = get_viewport().get_camera_3d()
 	if cam == null:

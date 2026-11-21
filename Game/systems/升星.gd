@@ -21,19 +21,11 @@ extends RefCounted
 const STAR_CAP: int = 3
 const KILL_EXP: float = 15.0
 
-static var _mdl: Node = null
+const BRIDGE := preload("res://Game/adapters/bridge.gd")
 
 
-static func _bridge() -> Node:
-	if _mdl != null and is_instance_valid(_mdl):
-		return _mdl
-	var main := Engine.get_main_loop()
-	if main is SceneTree:
-		_mdl = (main as SceneTree).root.get_node_or_null("Mdl")
-	if _mdl == null:
-		push_error("[Model] 桥 Mdl 不在（C# 内核没编译 / 自动加载没注册）")
-	return _mdl
-
+static func _bridge() -> RefCounted:
+	return BRIDGE.get_bridge()
 
 ## 升一星需要多少经验 = 金 × 2 + 木 × 3（每次升星都是这个数）
 static func exp_per_star(def: UnitDef) -> float:
