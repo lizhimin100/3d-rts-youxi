@@ -32,7 +32,6 @@ if ($LASTEXITCODE -ge 8) { throw "robocopy 失败（$LASTEXITCODE）" }
 
 $cuts = @(
     "Content/maps/_自动保存.tres",
-    "Content/maps/_测试地图.tres",
     "Content/maps/_编辑器链路自检.tres",
     "Content/maps/_最近地图.cfg"
 )

@@ -1,0 +1,126 @@
+{
+	"version": 1,
+	"note": "地图底壳编辑器的装饰注册表：每一个 id 都必须指向 Content/docs/asset_manifest.md 里已登记的现有资产。source=scene 走 RtsDecorLib 的场景（树/岩石/草/碎石/金矿/水面），source=glb 直接实例化道具模型。不许在这里写占位网格。",
+	"kinds": [
+		{
+			"id": "tree",
+			"label_key": "shell.decor.tree",
+			"source": "scene",
+			"path": "res://Content/art/场景/树_场景.tscn",
+			"scale": 1.0,
+			"radius": 1.6
+		},
+		{
+			"id": "rock",
+			"label_key": "shell.decor.rock",
+			"source": "scene",
+			"path": "res://Content/art/场景/岩石_场景.tscn",
+			"scale": 1.0,
+			"radius": 1.3
+		},
+		{
+			"id": "grass",
+			"label_key": "shell.decor.grass",
+			"source": "scene",
+			"path": "res://Content/art/场景/草丛_场景.tscn",
+			"scale": 1.0,
+			"radius": 1.0
+		},
+		{
+			"id": "rubble",
+			"label_key": "shell.decor.rubble",
+			"source": "scene",
+			"path": "res://Content/art/场景/碎石_场景.tscn",
+			"scale": 1.0,
+			"radius": 1.2
+		},
+		{
+			"id": "goldmine",
+			"label_key": "shell.decor.goldmine",
+			"source": "scene",
+			"path": "res://Content/art/场景/金矿_场景.tscn",
+			"scale": 1.0,
+			"radius": 2.2
+		},
+		{
+			"id": "water",
+			"label_key": "shell.decor.water",
+			"source": "scene",
+			"path": "res://Content/art/场景/水面_场景.tscn",
+			"scale": 1.0,
+			"radius": 1.4
+		},
+		{
+			"id": "fence",
+			"label_key": "shell.decor.fence",
+			"source": "glb",
+			"path": "res://Content/art/模型/栅栏.glb",
+			"scale": 1.0,
+			"radius": 1.2
+		},
+		{
+			"id": "flag",
+			"label_key": "shell.decor.flag",
+			"source": "glb",
+			"path": "res://Content/art/模型/旗帜.glb",
+			"scale": 1.0,
+			"radius": 0.8
+		},
+		{
+			"id": "stump",
+			"label_key": "shell.decor.stump",
+			"source": "glb",
+			"path": "res://Content/art/模型/木桩.glb",
+			"scale": 1.0,
+			"radius": 0.8
+		},
+		{
+			"id": "crate",
+			"label_key": "shell.decor.crate",
+			"source": "glb",
+			"path": "res://Content/art/模型/木箱.glb",
+			"scale": 1.0,
+			"radius": 0.7
+		},
+		{
+			"id": "barrel",
+			"label_key": "shell.decor.barrel",
+			"source": "glb",
+			"path": "res://Content/art/模型/木桶.glb",
+			"scale": 1.0,
+			"radius": 0.7
+		},
+		{
+			"id": "tent",
+			"label_key": "shell.decor.tent",
+			"source": "glb",
+			"path": "res://Content/art/模型/帐篷.glb",
+			"scale": 1.0,
+			"radius": 1.8
+		},
+		{
+			"id": "wall",
+			"label_key": "shell.decor.wall",
+			"source": "glb",
+			"path": "res://Content/art/模型/断墙.glb",
+			"scale": 1.0,
+			"radius": 1.6
+		},
+		{
+			"id": "signpost",
+			"label_key": "shell.decor.signpost",
+			"source": "glb",
+			"path": "res://Content/art/模型/路标.glb",
+			"scale": 1.0,
+			"radius": 0.7
+		},
+		{
+			"id": "bones",
+			"label_key": "shell.decor.bones",
+			"source": "glb",
+			"path": "res://Content/art/模型/尸骨.glb",
+			"scale": 1.0,
+			"radius": 0.9
+		}
+	]
+}

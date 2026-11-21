@@ -26,7 +26,7 @@ var boot_ms := 0
 var boot_id := ""
 
 const TEST_FLAGS := ["--test", "--check", "--simulate", "--shot", "--autotest", "--interact-test",
-	"--research-test", "--walk-test", "--map-editor-test", "--map-editor-selftest"]
+	"--research-test", "--walk-test"]
 const TEST_PREFIXES := ["--qa", "--shot", "--simulate", "--test", "--screen"]
 
 

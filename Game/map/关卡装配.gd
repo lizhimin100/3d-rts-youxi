@@ -4,12 +4,12 @@ extends RefCounted
 ##
 ## 口径：
 ##   · 关卡 = [地图底壳] + [玩家布局卡] + [敌人遭遇卡]，三张卡只在 levels.json 的 assembly 里汇合；
-##   · 玩家侧石台：布局卡激活 -> build / keep，未激活 -> ruin（碎石遗迹，不可建造）；
-##   · 敌方侧石台：遭遇卡放了固定建筑 -> build / keep，否则同样 ruining；
+##   · 玩家侧战术格子：布局卡激活 -> build / keep，未激活 -> ruin（碎石遗迹，不可建造）；
+##   · 敌方侧战术格子：遭遇卡放了固定建筑 -> build / keep，否则同样 ruining；
 ##   · 本层不复制规则，只读 JSON；要改数值改卡，不改这里。
 ##
-## 对外：level / shell / layout / encounter / platforms_of_level /
-##       platform_state / buildable_platforms / ruin_platforms / enemy_platforms
+## 对外：level / shell / layout / encounter / tiles_of_level /
+##       tile_state / buildable_tiles / ruin_tiles / enemy_tiles
 
 const JsonFile := preload("res://Engine/util/json_file.gd")
 
@@ -68,30 +68,30 @@ static func assembly_of(level_id: String) -> Dictionary:
 	return (level(level_id).get("assembly", {}) as Dictionary).duplicate(true)
 
 
-## 底壳上的全部石台（按序号升序）+ 局内状态。
-static func platforms_of_level(level_id: String) -> Array:
+## 底壳上的全部战术格子（按序号升序）+ 局内状态。
+static func tiles_of_level(level_id: String) -> Array:
 	var lv := level(level_id)
 	if lv.is_empty():
 		return []
 	var asm: Dictionary = lv.get("assembly", {})
 	var sh := shell(String(asm.get("shell", "")))
 	var out: Array = []
-	for p in (sh.get("platforms", []) as Array):
+	for p in (sh.get("tiles", []) as Array):
 		var row: Dictionary = (p as Dictionary).duplicate(true)
-		row["state"] = platform_state(level_id, int(row.get("index", 0)))
+		row["state"] = tile_state(level_id, int(row.get("index", 0)))
 		out.append(row)
 	out.sort_custom(func(a, b): return int(a.get("index", 0)) < int(b.get("index", 0)))
 	return out
 
 
-static func platform_state(level_id: String, index: int) -> String:
+static func tile_state(level_id: String, index: int) -> String:
 	var lv := level(level_id)
 	if lv.is_empty():
 		return STATE_MISSING
 	var asm: Dictionary = lv.get("assembly", {})
 	var sh := shell(String(asm.get("shell", "")))
 	var found: Dictionary = {}
-	for p in (sh.get("platforms", []) as Array):
+	for p in (sh.get("tiles", []) as Array):
 		if int((p as Dictionary).get("index", -1)) == index:
 			found = p as Dictionary
 			break
@@ -102,7 +102,7 @@ static func platform_state(level_id: String, index: int) -> String:
 	if side == "player":
 		var lay := layout(String(asm.get("player_layout", "")))
 		var active := false
-		for v in (lay.get("active_platforms", []) as Array):
+		for v in (lay.get("active_tiles", []) as Array):
 			if int(v) == index:
 				active = true
 				break
@@ -111,8 +111,8 @@ static func platform_state(level_id: String, index: int) -> String:
 	else:
 		var enc := encounter(String(asm.get("enemy_encounter", "")))
 		var placed := false
-		for row in (enc.get("platform_buildings", []) as Array):
-			if int((row as Dictionary).get("platform", -1)) == index:
+		for row in (enc.get("tile_buildings", []) as Array):
+			if int((row as Dictionary).get("tile", -1)) == index:
 				placed = true
 				break
 		if not placed:
@@ -120,35 +120,35 @@ static func platform_state(level_id: String, index: int) -> String:
 	return STATE_KEEP if role == STATE_KEEP else STATE_BUILD
 
 
-static func buildable_platforms(level_id: String) -> Array:
+static func buildable_tiles(level_id: String) -> Array:
 	var out: Array = []
-	for p in platforms_of_level(level_id):
+	for p in tiles_of_level(level_id):
 		var state := String((p as Dictionary).get("state", ""))
 		if state == STATE_KEEP or state == STATE_BUILD:
 			out.append(p)
 	return out
 
 
-static func ruin_platforms(level_id: String) -> Array:
+static func ruin_tiles(level_id: String) -> Array:
 	var out: Array = []
-	for p in platforms_of_level(level_id):
+	for p in tiles_of_level(level_id):
 		if String((p as Dictionary).get("state", "")) == STATE_RUIN:
 			out.append(p)
 	return out
 
 
-## 敌方侧：石台 + 遭遇卡挂的固定建筑（外观层读这个）。
-static func enemy_platforms(level_id: String) -> Array:
+## 敌方侧：战术格子 + 遭遇卡挂的固定建筑（外观层读这个）。
+static func enemy_tiles(level_id: String) -> Array:
 	var lv := level(level_id)
 	var asm: Dictionary = lv.get("assembly", {})
 	var enc := encounter(String(asm.get("enemy_encounter", "")))
 	var out: Array = []
-	for p in platforms_of_level(level_id):
+	for p in tiles_of_level(level_id):
 		var row: Dictionary = p
 		if String(row.get("side", "")) != "enemy":
 			continue
-		for b in (enc.get("platform_buildings", []) as Array):
-			if int((b as Dictionary).get("platform", -1)) == int(row.get("index", 0)):
+		for b in (enc.get("tile_buildings", []) as Array):
+			if int((b as Dictionary).get("tile", -1)) == int(row.get("index", 0)):
 				var merged: Dictionary = row.duplicate(true)
 				merged["building"] = String((b as Dictionary).get("building", ""))
 				merged["star"] = float((b as Dictionary).get("star", 1.0))

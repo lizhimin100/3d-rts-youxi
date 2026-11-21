@@ -493,7 +493,7 @@ func _camp_texture(key: String) -> Texture2D:
 	if _camp_icons.has(key):
 		return _camp_icons[key] as Texture2D
 	var tex: Texture2D = null
-	var path := "res://Content/art/图标/小Content/maps/%s.png" % key
+	var path := "res://Content/art/图标/小地图/%s.png" % key
 	if ResourceLoader.exists(path):
 		tex = load(path) as Texture2D
 	_camp_icons[key] = tex

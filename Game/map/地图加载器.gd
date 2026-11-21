@@ -14,8 +14,8 @@ extends RefCounted
 const WALK_SLOPE_LIMIT_DEG: float = 40.0
 ## 边界不可走内缩（米）：防止单位走出世界
 const EDGE_KEEP_OUT: float = 3.0
-## ★ 占格规则的**唯一实现**（挡格 / 释放都走它，见 Game/pathing/占格规则.gd）
-const 占格 := preload("res://Game/pathing/占格规则.gd")
+## ★ 占格规则的**唯一实现**（挡格 / 释放都走它，见 Game/map/占格规则.gd）
+const 占格 := preload("res://Game/map/占格规则.gd")
 ## 树的占格半径（米）。对外只暴露这一个数，避免各处再写字面量 0.95。
 const TREE_BLOCK_RADIUS: float = 占格.TREE_RADIUS
 
@@ -129,7 +129,7 @@ static func build_walkable_mask(m: MapDef, p_include_buildings: bool = true) -> 
 				continue
 			if m.is_water_at(p):
 				out[i] = 0
-	# 对象占地。**唯一口径在 Game/pathing/占格规则.gd**（object_block_cells）：
+	# 对象占地。**唯一口径在 Game/map/占格规则.gd**（object_block_cells）：
 	#   树 0.95m 圆（格心判据）、金矿 4×4 格矩形、岩石 1.05×scale 圆、建筑 fp+2 矩形。
 	# 程序化地图（MapGenerator._apply_prop_blocks）、编辑器校验（地图校验）、
 	# 砍树释放（关卡.release_prop）全部调同一套函数，所以"挡"和"放"严格互逆。
@@ -209,7 +209,7 @@ static func world_cell(m: MapDef, p: Vector2) -> Vector2i:
 
 
 # ===========================================================================
-# MapDef → MapGenerator.MapData（喂给现成的 RtsLevel / NavGrid）
+# MapDef → MapGenerator.MapData（喂给现成的 RtsLevel / RtsStandGrid）
 # ===========================================================================
 
 static func to_map_data(m: MapDef) -> MapGenerator.MapData:
@@ -383,7 +383,7 @@ static func spawn_map_objects(m: MapDef, level: RtsLevel) -> void:
 					# 保证游戏里的占地和寻路格、开发者眼里的"轴线"是同一套。
 					var fp: Vector2i = d.footprint
 					var anchor := 建筑网格.snap_point_in(Vector3(gx, 0.0, gz), fp,
-						level.world_size * 0.5, NavGrid.CELL)
+						level.world_size * 0.5, RtsStandGrid.CELL)
 					gx = anchor.x
 					gz = anchor.z
 					yaw = 建筑网格.snap_yaw(o.rotation)
@@ -1046,7 +1046,7 @@ static func _place_building(m: MapDef, slot: PlayerSlot, id: StringName, p: Vect
 	var fp: Vector2i = d.footprint if d != null else Vector2i(2, 2)
 	var safe: Vector2 = _clamp_in(m, p, float(maxi(fp.x, fp.y)) * 0.5 + 2.0)
 	var anchor := 建筑网格.snap_point_in(Vector3(safe.x, 0.0, safe.y), fp,
-		m.half_size(), NavGrid.CELL)
+		m.half_size(), RtsStandGrid.CELL)
 	m.objects.append(MapObject.make(id, MapObject.Category.BUILDING,
 		Vector3(anchor.x, m.height_at(anchor.x, anchor.z), anchor.z), yaw, 1.0, slot.id))
 

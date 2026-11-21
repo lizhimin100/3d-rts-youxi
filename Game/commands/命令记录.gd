@@ -6,15 +6,13 @@ extends RefCounted
 ##
 ## 设计口径：
 ##   · 只存 **instance_id + 坐标**，不跨阶段持有 Node 引用（单位可能已 free）；
-##   · `squad_id` 是**一等公民**：执行时优先按小队当前成员解析，成员死亡自动跳过；
-##   · 单位 id 列表是兜底（小队被解散时仍能按原成员执行）；
+##   · 2026-11-21：GDScript 侧的「假小队」已删 —— 命令只认成员 id 列表；
+##     真正的小队实体在 `Model/Battle/LaneBattle.cs`，不在这里持有；
 ##   · 不在这里做任何玩法判定（够不够钱/看不看得见/能不能到），
 ##     执行时由 RtsUnit.order_* 和可用性层自己判。
 
 ## RtsConst.Order
 var kind: int = 0
-## 小队 id（0 = 无小队）
-var squad_id: int = 0
 ## 成员 instance_id（与 slots 同序）
 var unit_ids: Array[int] = []
 ## 编队槽位（与 unit_ids 同序；攻击单目标时可为空）
@@ -31,12 +29,11 @@ var label: String = ""
 var issued_at: float = 0.0
 
 
-static func make(p_kind: int, p_squad_id: int, p_unit_ids: Array[int],
+static func make(p_kind: int, p_unit_ids: Array[int],
 		p_point: Vector3, p_target_id: int = 0, p_ability: StringName = &"",
 		p_label: String = "", p_slots: Array = []):
 	var r = load("res://Game/commands/命令记录.gd").new()
 	r.kind = p_kind
-	r.squad_id = p_squad_id
 	r.unit_ids = p_unit_ids.duplicate()
 	r.slots = p_slots.duplicate()
 	r.point = p_point
@@ -114,7 +111,6 @@ func text() -> String:
 func to_dict() -> Dictionary:
 	return {
 		"kind": kind,
-		"squad_id": squad_id,
 		"units": unit_ids.size(),
 		"point": {"x": point.x, "z": point.z},
 		"target": target_id,

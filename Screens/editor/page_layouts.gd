@@ -3,8 +3,8 @@ extends Control
 ## 03 · 玩家态势布局卡（player_layouts.json）
 ## 属于：Screens/editor（开发工具，不进发行版）
 ##
-## 口径：选平势/劣势/优势 + 可视化勾选激活底壳上的哪几座石台 + 给激活槽位指定开局预设建筑。
-## 未激活石台在局内渲染为不可建造的碎石遗迹（inactive_render = ruin）。
+## 口径：选平势/劣势/优势 + 可视化勾选激活底壳上的哪几座战术格子 + 给激活槽位指定开局预设建筑。
+## 未激活战术格子在局内渲染为不可建造的碎石遗迹（inactive_render = ruin）。
 ## 默认预设：1 主堡 + 2 农场 + 1 兵营。
 
 const ThemeKit := preload("res://Screens/editor/dev_theme.gd")
@@ -151,7 +151,7 @@ func _rebuild_list() -> void:
 		v.add_child(ThemeKit.label(String(d.get("display_name", id)), &"EditorH3"))
 		var sub := T("editor.layouts.card_sub", {
 			"kind": data.call("kind_display", kind),
-			"n": (d.get("active_platforms", []) as Array).size(),
+			"n": (d.get("active_tiles", []) as Array).size(),
 			"g": "%.1f" % float(data.call("min_gap_meters", String(d.get("shell", "")))),
 		})
 		v.add_child(ThemeKit.caption(sub, ThemeKit.TEXT_DIM))
@@ -195,7 +195,7 @@ func _build_center() -> Control:
 	_canvas.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_canvas.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_canvas.call("setup", editor, data)
-	_canvas.connect("platform_clicked", Callable(self, "_on_canvas_clicked"))
+	_canvas.connect("tile_clicked", Callable(self, "_on_canvas_clicked"))
 	v.add_child(_canvas)
 
 	var kinds := HBoxContainer.new()
@@ -274,7 +274,7 @@ func _refresh_all() -> void:
 	ThemeKit.set_chip(_preset_chip, T("editor.layouts.preset_value", {
 		"k": int(counts.get("base", 0)), "f": int(counts.get("farm", 0)), "b": int(counts.get("barracks", 0))
 	}), ThemeKit.GREEN)
-	ThemeKit.set_chip(_count_chip, T("editor.layouts.count_value", {"n": (layout.get("active_platforms", []) as Array).size()}), ThemeKit.ACCENT)
+	ThemeKit.set_chip(_count_chip, T("editor.layouts.count_value", {"n": (layout.get("active_tiles", []) as Array).size()}), ThemeKit.ACCENT)
 	ThemeKit.set_chip(_gap_chip, T("editor.layouts.gap_value", {"v": "%.2f" % float(data.call("min_gap_meters", shell_id))}), ThemeKit.CYAN)
 	var kind := String(layout.get("kind", ""))
 	for kid in _kind_buttons.keys():
@@ -291,7 +291,7 @@ func _refresh_all() -> void:
 func _rebuild_slots(shell: Dictionary, layout: Dictionary) -> void:
 	for c in _slot_rows.get_children():
 		c.queue_free()
-	for p in ShellStore.platforms(shell):
+	for p in ShellStore.tiles(shell):
 		var pd: Dictionary = p
 		var idx := int(pd.get("index", 0))
 		var side := String(pd.get("side", "player"))
@@ -339,7 +339,7 @@ func _rebuild_slots(shell: Dictionary, layout: Dictionary) -> void:
 # ===========================================================================
 func _on_pick(id: String) -> void:
 	_current = id
-	_canvas.call("select_platform", -1)
+	_canvas.call("select_tile", -1)
 	_refresh_all()
 
 
@@ -347,7 +347,7 @@ func _on_canvas_clicked(index: int) -> void:
 	var layout := _layout()
 	if layout.is_empty():
 		return
-	data.call("toggle_active_platform", String(layout.get("id", "")), index)
+	data.call("toggle_active_tile", String(layout.get("id", "")), index)
 	editor.call("mark_dirty")
 	_refresh_all()
 

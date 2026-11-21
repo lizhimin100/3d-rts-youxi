@@ -106,16 +106,16 @@ static func snap_y(pos: Vector3) -> Vector3:
 # 寻路
 # ===========================================================================
 
-## 取寻路器（没有返回 null）
-static func pathfinder() -> NavGrid:
+## 取站立网格（没有返回 null）
+static func stand_grid() -> RtsStandGrid:
 	var lv: Node3D = level()
-	if lv != null and lv.has_method("grid_pathfinder"):
-		return lv.call("grid_pathfinder") as NavGrid
+	if lv != null and lv.has_method("stand_grid_of"):
+		return lv.call("stand_grid_of") as RtsStandGrid
 	return null
 
 
 ## 取一条路径（**已带地形高度**）。不可达返回空数组。
-## radius < 0 = 寻路器的默认身位；大身位单位应传自己的净空（见 关卡.find_path 注释）。
+## radius < 0 = 站立网格的默认身位；大身位单位应传自己的净空（见 关卡.find_path 注释）。
 ## 性能计数（`--perf-long` 的探针读它）：这一局一共算了几次路、花了多少微秒。
 ## 为什么放在这里：`find_path` 是**全项目唯一的寻路入口**，A* 的开销只有在这里量得准。
 static var dbg_path_calls: int = 0
@@ -165,9 +165,9 @@ static func _find_path_impl(from: Vector3, to: Vector3, radius: float = -1.0) ->
 	return PackedVector3Array()
 
 
-## 某世界坐标是否可走（没有寻路器时认为处处可走，保证能测）
+## 某世界坐标是否可走（没有站立网格时认为处处可走，保证能测）
 static func is_walkable(pos: Vector3) -> bool:
-	var pf: NavGrid = pathfinder()
+	var pf: RtsStandGrid = stand_grid()
 	if pf == null:
 		return true
 	return pf.is_walkable(pos)
@@ -180,7 +180,7 @@ static func walkable_pos(pos: Vector3) -> Vector3:
 		var out: Variant = lv.call("walkable_pos", pos)
 		if out is Vector3:
 			return out
-	var pf: NavGrid = pathfinder()
+	var pf: RtsStandGrid = stand_grid()
 	if pf != null:
 		return snap_y(pf.clamp_to_walkable(pos))
 	return snap_y(pos)
@@ -245,7 +245,7 @@ static func is_buildable(pos: Vector3, footprint: Vector2i) -> bool:
 	var lv: Node3D = level()
 	if lv != null and lv.has_method("is_buildable"):
 		return bool(lv.call("is_buildable", pos, footprint))
-	var pf: NavGrid = pathfinder()
+	var pf: RtsStandGrid = stand_grid()
 	if pf == null:
 		return true
 	var center: Vector2i = pf.world_to_cell(pos)
@@ -258,14 +258,14 @@ static func is_buildable(pos: Vector3, footprint: Vector2i) -> bool:
 	return true
 
 
-## 把建筑占地写进寻路网格
+## 把建筑占地写进站立网格
 static func mark_footprint(building: Node3D) -> void:
 	var lv: Node3D = level()
 	if lv != null and lv.has_method("mark_footprint"):
 		lv.call("mark_footprint", building)
 		return
-	# 兜底：直接操作寻路器
-	var pf: NavGrid = pathfinder()
+	# 兜底：直接操作站立网格
+	var pf: RtsStandGrid = stand_grid()
 	if pf == null or building == null:
 		return
 	var d: UnitDef = building.def
@@ -280,7 +280,7 @@ static func clear_footprint(building: Node3D) -> void:
 	if lv != null and lv.has_method("clear_footprint"):
 		lv.call("clear_footprint", building)
 		return
-	var pf: NavGrid = pathfinder()
+	var pf: RtsStandGrid = stand_grid()
 	if pf == null or building == null:
 		return
 	var d: UnitDef = building.def

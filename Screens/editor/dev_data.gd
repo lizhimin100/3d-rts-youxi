@@ -263,19 +263,19 @@ func board() -> Dictionary:
 	return planning.get("board", {}) as Dictionary
 
 
-func platforms() -> Array:
+func tiles() -> Array:
 	var shell: Dictionary = shell_list()[0] as Dictionary if not shell_list().is_empty() else {}
 	if shell.is_empty():
 		return []
-	return ShellStore.platforms(shell)
+	return ShellStore.tiles(shell)
 
 
 func start_buildings() -> Array:
 	return board().get("start", []) as Array
 
 
-func platform_by_plot(plot: int) -> Dictionary:
-	for p in platforms():
+func tile_by_plot(plot: int) -> Dictionary:
+	for p in tiles():
 		if int(p.get("plot", -1)) == plot:
 			return p as Dictionary
 	return {}
@@ -539,12 +539,21 @@ func default_combos() -> Array:
 	]
 
 
-func active_platforms(layout: Dictionary) -> Array:
-	return layout.get("active_platforms", []) as Array
+func active_tiles(layout: Dictionary) -> Array:
+	return layout.get("active_tiles", []) as Array
 
 
-func divider_of(shell: Dictionary, id: String) -> Dictionary:
-	return ShellStore.divider(shell, id)
+## 某个区域多边形在 X 轴上的范围（米）。赛区分段不再读分割环，改由三块区域推出来。
+func region_x_extent(shell: Dictionary, kind: String) -> Vector2:
+	var pts := ShellStore.region_points(shell, kind)
+	if pts.is_empty():
+		return Vector2.ZERO
+	var lo := pts[0].x
+	var hi := pts[0].x
+	for p in pts:
+		lo = minf(lo, p.x)
+		hi = maxf(hi, p.x)
+	return Vector2(lo, hi)
 
 
 func point_at_t(shell: Dictionary, t: int) -> Vector2:
@@ -567,8 +576,9 @@ func compose_level(shell_id: String, layout_id: String, encounter_id: String) ->
 	var spine: Dictionary = shell.get("spine", {})
 	var length_logic := float(spine.get("length_logic", 4000.0))
 	var width_logic := float(spine.get("width_logic", 420.0))
-	var zone_depth := float(divider_of(shell, "player_zone_end").get("length_logic", 600.0))
-	var push := float(divider_of(shell, "push_line").get("length_logic", 2600.0))
+	# 赛区分段：玩家区右缘 = 第一段结束；敌方区左缘 = 第二段结束（米 → 游戏数值）
+	var zone_depth := ShellStore.logic_of(region_x_extent(shell, "player").y)
+	var push := ShellStore.logic_of(region_x_extent(shell, "enemy").x)
 	if push <= zone_depth or push >= length_logic:
 		return {}
 	var kind := String(layout.get("kind", "even"))
@@ -611,7 +621,7 @@ func compose_level(shell_id: String, layout_id: String, encounter_id: String) ->
 		"player_board": {
 			"layout": layout_id,
 			"kind": kind,
-			"active_platforms": active_platforms(layout),
+			"active_tiles": active_tiles(layout),
 			"slots": layout.get("slots", []),
 		},
 		"assembly": {
@@ -667,13 +677,13 @@ func _intent_pool_of(enc: Dictionary) -> Array:
 func _enemy_buildings_of(shell: Dictionary, enc: Dictionary) -> Array:
 	var sz := ShellStore.size_of(shell)
 	var out: Array = []
-	for row in (enc.get("platform_buildings", []) as Array):
+	for row in (enc.get("tile_buildings", []) as Array):
 		var d: Dictionary = row
-		var p := ShellStore.platform_by_index(shell, int(d.get("platform", -1)))
+		var p := ShellStore.tile_by_index(shell, int(d.get("tile", -1)))
 		if p.is_empty():
 			continue
 		out.append({
-			"platform": int(d.get("platform", 0)),
+			"tile": int(d.get("tile", 0)),
 			"building": String(d.get("building", "")),
 			"star": float(d.get("star", 1)),
 			"yaw": float(d.get("yaw", 0.0)),
@@ -727,7 +737,7 @@ func validate() -> Array:
 	out.append(_check("editor.check.deck", _validate_deck()))
 	out.append(_check("editor.check.shells", _validate_shells()))
 	out.append(_check("editor.check.spine", _validate_spine()))
-	out.append(_check("editor.check.platforms", _validate_platforms()))
+	out.append(_check("editor.check.tiles", _validate_tiles()))
 	out.append(_check("editor.check.layouts", _validate_layouts()))
 	out.append(_check("editor.check.encounters", _validate_encounters()))
 	out.append(_check("editor.check.assemblies", _validate_assemblies()))
@@ -799,27 +809,15 @@ func _validate_spine() -> Array:
 	for s in shell_list():
 		var shell: Dictionary = s
 		var spine: Dictionary = shell.get("spine", {})
-		var length_logic := float(spine.get("length_logic", 0.0))
 		var width_logic := float(spine.get("width_logic", 0.0))
 		if width_logic < 100.0 or width_logic > 999.0:
 			bad.append(String(shell.get("id", "")) + " width_logic")
-		var last := -1
-		for did in ShellStore.DIVIDER_IDS:
-			var d := divider_of(shell, did)
-			var t := int(d.get("t", -1))
-			if t < 100 or t > 999 or t <= last:
-				bad.append(String(shell.get("id", "")) + " " + did + " t=" + str(t))
-				continue
-			last = t
-			var logic := float(d.get("length_logic", -1.0))
-			if absf(logic - logic_of_t(t, length_logic)) > 0.5:
-				bad.append(String(shell.get("id", "")) + " " + did + " logic")
-			if absf(float(d.get("meters", -1.0)) - logic * ShellStore.R1) > 0.0001:
-				bad.append(String(shell.get("id", "")) + " " + did + " meters")
+		if (spine.get("points", []) as Array).size() < 2:
+			bad.append(String(shell.get("id", "")) + " spine points")
 	return [bad.is_empty(), "; ".join(bad.slice(0, 3))]
 
 
-func _validate_platforms() -> Array:
+func _validate_tiles() -> Array:
 	var bad: Array = []
 	for s in shell_list():
 		var shell: Dictionary = s
@@ -827,13 +825,13 @@ func _validate_platforms() -> Array:
 		if gap < ShellStore.MIN_GAP_M:
 			bad.append(String(shell.get("id", "")) + " gap=%.2f" % gap)
 		var keeps := {"player": 0, "enemy": 0}
-		for p in ShellStore.platforms(shell):
+		for p in ShellStore.tiles(shell):
 			var d: Dictionary = p
 			if String(d.get("role", "")) == "keep":
 				var side := String(d.get("side", "player"))
 				keeps[side] = int(keeps.get(side, 0)) + 1
 		if int(keeps["player"]) != 1 or int(keeps["enemy"]) != 1:
-			bad.append(String(shell.get("id", "")) + " keep anchors")
+			bad.append(String(shell.get("id", "")) + " keep tiles")
 	return [bad.is_empty(), "; ".join(bad.slice(0, 3))]
 
 
@@ -850,12 +848,12 @@ func _validate_layouts() -> Array:
 			continue
 		var kind := String(d.get("kind", ""))
 		kinds[kind] = true
-		var act: Array = active_platforms(d)
+		var act: Array = active_tiles(d)
 		if act.is_empty():
 			bad.append(String(d.get("id", "")) + " active empty")
 		var counts := {"base": 0, "farm": 0, "barracks": 0}
 		for idx in act:
-			if ShellStore.platform_by_index(shell, int(idx)).is_empty():
+			if ShellStore.tile_by_index(shell, int(idx)).is_empty():
 				bad.append(String(d.get("id", "")) + " active " + str(idx))
 			var slot := ShellStore.slot_at(d, int(idx))
 			if slot.is_empty():
@@ -894,15 +892,15 @@ func _validate_encounters() -> Array:
 			bad.append(String(d.get("id", "")) + " base_hp")
 		var shell := shell_by_id(String(d.get("shell", "")))
 		var seen := {}
-		for row in (d.get("platform_buildings", []) as Array):
+		for row in (d.get("tile_buildings", []) as Array):
 			var bd: Dictionary = row
-			var idx := int(bd.get("platform", -1))
+			var idx := int(bd.get("tile", -1))
 			if seen.has(idx):
-				bad.append(String(d.get("id", "")) + " dup platform")
+				bad.append(String(d.get("id", "")) + " dup tile")
 			seen[idx] = true
-			var p := ShellStore.platform_by_index(shell, idx)
+			var p := ShellStore.tile_by_index(shell, idx)
 			if p.is_empty() or String(p.get("side", "")) != "enemy":
-				bad.append(String(d.get("id", "")) + " platform " + str(idx))
+				bad.append(String(d.get("id", "")) + " tile " + str(idx))
 			if building_by_id(String(bd.get("building", ""))).is_empty():
 				bad.append(String(d.get("id", "")) + " building " + str(idx))
 		var roles: Dictionary = d.get("unit_roles", {})
@@ -969,7 +967,7 @@ func _validate_i18n() -> Array:
 	return [true, "%d keys" % csv_rows.size()]
 
 
-## 石台之间的最小边缘距离（米）——行军间隙的唯一口径。
+## 战术格子之间的最小边缘距离（米）——行军间隙的唯一口径。
 func min_gap_meters(shell_id: String = "") -> float:
 	var shell: Dictionary = {}
 	if not shell_id.is_empty():
@@ -1163,14 +1161,14 @@ func new_layout() -> Dictionary:
 	var active: Array = []
 	var slots: Array = []
 	var n := 0
-	for p in ShellStore.platforms(shell):
+	for p in ShellStore.tiles(shell):
 		var pd: Dictionary = p
 		if String(pd.get("side", "")) != "player":
 			continue
 		n += 1
 		active.append(int(pd.get("index", 0)))
 		var tag := "keep" if n == 1 else ("farm" if n <= 3 else "barracks")
-		slots.append({"platform": int(pd.get("index", 0)), "building": _building_for_tag(tag), "star": 1})
+		slots.append({"tile": int(pd.get("index", 0)), "building": _building_for_tag(tag), "star": 1})
 		if n >= 4:
 			break
 	var layout := {
@@ -1178,7 +1176,7 @@ func new_layout() -> Dictionary:
 		"display_name": i18n_zh("editor.layouts.new_name", id),
 		"kind": "even",
 		"shell": String(shell.get("id", "")),
-		"active_platforms": active,
+		"active_tiles": active,
 		"slots": slots,
 		"inactive_render": "ruin",
 		"note": "",
@@ -1226,23 +1224,23 @@ func set_layout_kind(id: String, kind: String) -> bool:
 	return true
 
 
-func toggle_active_platform(layout_id: String, index: int) -> bool:
+func toggle_active_tile(layout_id: String, index: int) -> bool:
 	var layout := layout_by_id(layout_id)
 	if layout.is_empty():
 		return false
-	var act: Array = layout.get("active_platforms", [])
+	var act: Array = layout.get("active_tiles", [])
 	for i in act.size():
 		if int(act[i]) == index:
 			act.remove_at(i)
 			var slots: Array = layout.get("slots", [])
 			for j in range(slots.size() - 1, -1, -1):
-				if int((slots[j] as Dictionary).get("platform", -1)) == index:
+				if int((slots[j] as Dictionary).get("tile", -1)) == index:
 					slots.remove_at(j)
 			return true
 	act.append(index)
 	act.sort()
 	var slots2: Array = layout.get("slots", [])
-	slots2.append({"platform": index, "building": _default_building_for(layout), "star": 1})
+	slots2.append({"tile": index, "building": _default_building_for(layout), "star": 1})
 	return true
 
 
@@ -1266,7 +1264,7 @@ func set_slot_building(layout_id: String, index: int, building: String) -> bool:
 		return false
 	var slot := ShellStore.slot_at(layout, index)
 	if slot.is_empty():
-		(layout.get("slots", []) as Array).append({"platform": index, "building": building, "star": 1})
+		(layout.get("slots", []) as Array).append({"tile": index, "building": building, "star": 1})
 		return true
 	slot["building"] = building
 	return true
@@ -1276,13 +1274,13 @@ func preset_layout(layout_id: String) -> bool:
 	var layout := layout_by_id(layout_id)
 	if layout.is_empty():
 		return false
-	var act: Array = layout.get("active_platforms", [])
+	var act: Array = layout.get("active_tiles", [])
 	act.sort()
 	var slots: Array = []
 	var plan := ["keep", "farm", "farm", "barracks"]
 	for i in act.size():
 		var tag := String(plan[i]) if i < plan.size() else "farm"
-		slots.append({"platform": int(act[i]), "building": _building_for_tag(tag), "star": 1})
+		slots.append({"tile": int(act[i]), "building": _building_for_tag(tag), "star": 1})
 	layout["slots"] = slots
 	return true
 
@@ -1305,12 +1303,12 @@ func new_encounter() -> Dictionary:
 	var shell: Dictionary = shell_list()[0] as Dictionary if not shell_list().is_empty() else {}
 	var rows: Array = []
 	var n := 0
-	for p in ShellStore.platforms(shell):
+	for p in ShellStore.tiles(shell):
 		var pd: Dictionary = p
 		if String(pd.get("side", "")) != "enemy":
 			continue
 		n += 1
-		rows.append({"platform": int(pd.get("index", 0)), "building": _building_for_tag("barracks"), "star": 1, "yaw": 180.0})
+		rows.append({"tile": int(pd.get("index", 0)), "building": _building_for_tag("barracks"), "star": 1, "yaw": 180.0})
 		if n >= 3:
 			break
 	var enc := {
@@ -1320,7 +1318,7 @@ func new_encounter() -> Dictionary:
 		"faction_display": faction_display_of("bandit"),
 		"shell": String(shell.get("id", "")),
 		"base_hp": 3000.0,
-		"platform_buildings": rows,
+		"tile_buildings": rows,
 		"unit_roles": {"light": "bandit_scout", "line": "bandit_marauder", "elite": "bandit_chief"},
 		"intent_pool": [
 			{"id": "probe", "display_name": i18n_zh("editor.encounters.intent_probe", "probe"),
@@ -1382,30 +1380,30 @@ func set_encounter_faction(id: String, faction: String) -> bool:
 	return true
 
 
-func encounter_platform_indices(enc: Dictionary) -> Array:
+func encounter_tile_indices(enc: Dictionary) -> Array:
 	var out: Array = []
-	for row in (enc.get("platform_buildings", []) as Array):
-		out.append(int((row as Dictionary).get("platform", -1)))
+	for row in (enc.get("tile_buildings", []) as Array):
+		out.append(int((row as Dictionary).get("tile", -1)))
 	return out
 
 
-func add_encounter_building(enc: Dictionary, platform: int, building: String) -> bool:
+func add_encounter_building(enc: Dictionary, tile: int, building: String) -> bool:
 	if enc.is_empty():
 		return false
-	for row in (enc.get("platform_buildings", []) as Array):
-		if int((row as Dictionary).get("platform", -1)) == platform:
+	for row in (enc.get("tile_buildings", []) as Array):
+		if int((row as Dictionary).get("tile", -1)) == tile:
 			(row as Dictionary)["building"] = building
 			return true
-	(enc.get("platform_buildings", []) as Array).append({
-		"platform": platform, "building": building, "star": 1, "yaw": 180.0,
+	(enc.get("tile_buildings", []) as Array).append({
+		"tile": tile, "building": building, "star": 1, "yaw": 180.0,
 	})
 	return true
 
 
-func remove_encounter_building(enc: Dictionary, platform: int) -> void:
-	var rows: Array = enc.get("platform_buildings", [])
+func remove_encounter_building(enc: Dictionary, tile: int) -> void:
+	var rows: Array = enc.get("tile_buildings", [])
 	for i in range(rows.size() - 1, -1, -1):
-		if int((rows[i] as Dictionary).get("platform", -1)) == platform:
+		if int((rows[i] as Dictionary).get("tile", -1)) == tile:
 			rows.remove_at(i)
 
 

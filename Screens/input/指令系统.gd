@@ -118,7 +118,6 @@ func planned_records() -> Array:
 	for r in planned:
 		out.append({
 			"kind": int(r.kind),
-			"squad_id": int(r.squad_id),
 			"point": r.point,
 			"text": String(r.call("text")),
 			"units": int(r.unit_ids.size()),
@@ -156,24 +155,9 @@ func remove_planned(i: int) -> void:
 		planned.remove_at(i)
 
 
-## 当前选中单位所属/新建的小队。**命令记录的第一等公民**：
-## 选中 2 人以上时，优先复用"包含这批人全部成员"的现有小队；
-## 否则新建一支（不会把单兵硬塞进别人的队）。
-func _squad_for(units: Array):
-	if Game.squads == null or Game.player_faction == null:
-		return null
-	if units.size() >= 2:
-		var found = Game.squads.call("find_containing", units)
-		if found != null:
-			return found
-	# 新建前先从旧队摘掉：一个单位只属于一支队（避免"同一人出现在两队"）。
-	Game.squads.call("detach_units", units)
-	return Game.squads.call("create", Game.player_faction, units)
-
-
-## 可编入小队的单位：只收"会动的"，建筑不进小队（塔的 orders 另走单点）。
-## **Squad 一等公民**：选中一个成员 → 自动扩展到整队（命令是下给队的，不是下给个人的）。
-## 想只动一个人，先把他从队里拆出去（当前版本不做"单体微操"）。
+## 可下令的单位：只收"会动的"，建筑不进计划（塔的 orders 另走单点）。
+## 2026-11-21：GDScript 侧的「假小队」已删 —— 选中谁就命令谁，不再自动扩展到整队。
+## 真正的小队是 Model 层的 LaneSquad（由纯 C# 推演创建），不参与这条输入链。
 func _plan_units() -> Array:
 	var out: Array = []
 	for u in _selected_units():
@@ -181,14 +165,7 @@ func _plan_units() -> Array:
 			continue
 		if not (u is RtsUnit) or not (u as RtsUnit).is_mobile():
 			continue
-		var sq = null
-		if Game.squads != null:
-			sq = Game.squads.call("find_by_member", u)
-		if sq != null:
-			for m in (sq.get("members") as Array):
-				if m != null and is_instance_valid(m) and not out.has(m):
-					out.append(m)
-		elif not out.has(u):
+		if not out.has(u):
 			out.append(u)
 	return out
 
@@ -209,14 +186,7 @@ func _add_plan(kind: int, units: Array, point: Vector3, target: Node3D = null,
 	if planned.size() >= PLAN_MAX:
 		_toast("计划最多 %d 条，先执行或清空" % PLAN_MAX, _warn())
 		return false
-	var sq = _squad_for(units)
-	if sq != null:
-		sq.set("anchor", point)
-		sq.set("stance", kind)
-		# 攻击记录共享目标；移动/停止/驻守必须清掉旧目标，否则小队面板还挂着上一场的敌人。
-		sq.set("shared_target", target if target != null and is_instance_valid(target) else null)
-	var rec = CmdRecord.make(kind, int(sq.id) if sq != null else 0,
-			_ids_of(units), point,
+	var rec = CmdRecord.make(kind, _ids_of(units), point,
 			int(target.get_instance_id()) if target != null and is_instance_valid(target) else 0,
 			ability, label, slots)
 	planned.append(rec)
@@ -324,8 +294,6 @@ func execute_planned() -> void:
 		return
 	for rec in batch:
 		_execute_record(rec)
-	if Game.squads != null:
-		Game.squads.call("prune_all")
 	_toast("执行计划：%d 条" % batch.size(), _accent())
 
 
@@ -1182,7 +1150,7 @@ func _find_pending_site(building_id: StringName, ground: Vector3, footprint: Vec
 ## 这里只额外兜一层"不与已有建筑（含工地）的占地重叠"。
 func _can_place(pos: Vector3, d: UnitDef) -> bool:
 	var lv := Game.level as RtsLevel
-	if lv == null or d == null or lv.grid_pathfinder() == null:
+	if lv == null or d == null or lv.stand_grid_of() == null:
 		return false
 	var fp: Vector2i = Vector2i(maxi(d.footprint.x, 1), maxi(d.footprint.y, 1))
 	if not 建筑网格.can_place(pos, fp):
@@ -1470,7 +1438,7 @@ func _walkable(p: Vector3) -> Vector3:
 	var lv := Game.level as RtsLevel
 	if lv == null:
 		return p
-	var pf: NavGrid = lv.grid_pathfinder()
+	var pf: RtsStandGrid = lv.stand_grid_of()
 	if pf != null and pf.has_method("nearest_standable"):
 		return lv.snap_to_ground(pf.nearest_standable(p, 0.5))
 	return lv.walkable_pos(p)

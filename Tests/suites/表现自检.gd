@@ -20,7 +20,7 @@ extends SceneTree
 ##  10. 受击：掉血会加裂缝
 ##
 ## ★ 满篇 call()/get() 的原因见 建造自检.gd 开头：--script 模式下 autoload 的全局标识符
-##   在本文件解析时还没注册，只能 load() + 鸭子调用。跑的仍是真关卡、真单位、真寻路网格。
+##   在本文件解析时还没注册，只能 load() + 鸭子调用。跑的仍是真关卡、真单位、真站立网格。
 
 const LEVEL_SCRIPT := "res://Game/core/关卡.gd"
 const CMD_SCRIPT := "res://Screens/input/指令系统.gd"
@@ -114,7 +114,7 @@ func _boot_world() -> void:
 	_game.set("phase", 1)
 	_faction = _game.get("player_faction")
 	_faction.call("add_res", 20000, 20000)
-	_pf = _level.get("pathfinder")
+	_pf = _level.get("stand_grid")
 	_cmd = load(CMD_SCRIPT).new()
 
 	var base: Vector3 = _level.call("base_center", _faction)

@@ -119,11 +119,11 @@
 			"wait_after": 0.45
 		},
 		"shell": {
-			"description": "3D 地图底壳编辑器：点「石台锚点」工具 → 石台列表与新增按钮出现（四工具 + 俯视底壳）",
+			"description": "3D 地图底壳编辑器：点「战术格子」工具 → 格子列表与新增按钮出现（含三块区域按钮与撤销）",
 			"scene": "res://Screens/editor/map_shell/map_shell_editor.tscn",
 			"delay": 1.6,
-			"click": "shell_tool_platform",
-			"expect": "shell_add_platform",
+			"click": "shell_tool_tile",
+			"expect": "shell_add_tile",
 			"wait_after": 0.3
 		},
 		"editor": {

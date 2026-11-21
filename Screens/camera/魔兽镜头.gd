@@ -317,7 +317,7 @@ func _toast(text: String) -> void:
 	Game.toast(text, col)
 
 
-## 当前相机到注视点的距离（小Content/maps/界面判断视野用）
+## 当前相机到注视点的距离（小地图/界面判断视野用）
 func distance() -> float:
 	return _dist
 

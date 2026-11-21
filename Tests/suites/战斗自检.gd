@@ -110,10 +110,10 @@ func _建世界() -> void:
 
 
 func _可走格数() -> int:
-	var pf = 关卡.call("grid_pathfinder")
+	var pf = 关卡.call("stand_grid_of")
 	if pf == null:
 		return -1
-	# 寻路器没有公开的尺寸字段（只有 _w / _h），以前写 pf.get("size") 取到 null，
+	# 站立网格没有公开的尺寸字段（只有 _w / _h），以前写 pf.get("size") 取到 null，
 	# 再 int(null) 直接报 "Nonexistent 'int' constructor" —— 自检自己先报错了。
 	# 自检脚本允许读内部状态：拿 _w/_h 逐格问可走性。
 	var 宽 = pf.get("_w")

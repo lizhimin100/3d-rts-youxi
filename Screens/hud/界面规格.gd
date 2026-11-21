@@ -156,7 +156,7 @@ static func metrics(vp: Vector2) -> Metrics:
 	m.card_w = m.tile * float(m.card_cols) + gap * float(m.card_cols - 1) + inner * 2.0
 	m.card_h = m.card_btn_h * 2.0 + gap + inner * 2.0
 
-	# 矮屏保护：小Content/maps/底栏各自不超过屏高的一定比例
+	# 矮屏保护：小地图/底栏各自不超过屏高的一定比例
 	m.minimap = minf(m.minimap, maxf(m.vh * 0.24, 150.0))
 	m.panel_h_single = minf(m.panel_h_single, m.vh * 0.22)
 	m.panel_h_multi = m.panel_h_single

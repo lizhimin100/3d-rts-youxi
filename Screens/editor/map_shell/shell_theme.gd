@@ -3,7 +3,7 @@ extends RefCounted
 ## 地图底壳编辑器的皮：深岩灰 #12161F 现代深色工具主题 + 旧地图编辑器的嵌入配色。
 ## 属于：Screens/editor/map_shell
 ##
-## 为什么保留旧配色：底壳编辑器是旧 3D 地图编辑器的继任者，石台/脊线/面板的强调色
+## 为什么保留旧配色：底壳编辑器是旧 3D 地图编辑器的继任者，战术格子/脊线/面板的强调色
 ## 沿用旧编辑器的石色与金色（编辑器皮肤 编辑器皮肤.gd 的 STONE / GOLD），底色换成 #12161F。
 
 const ThemeKit := preload("res://Screens/editor/dev_theme.gd")

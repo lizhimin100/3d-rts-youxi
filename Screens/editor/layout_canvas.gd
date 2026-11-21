@@ -1,13 +1,13 @@
 @tool
 extends Control
-## 地图底壳俯视图（卡片化）：把 map_shells 的脊线、分区、石台画成 2D 预览，
+## 地图底壳俯视图（卡片化）：把 map_shells 的脊线、势力区域多边形、战术格子画成 2D 预览，
 ## 给「玩家态势布局卡」与「敌人遭遇卡」做可视化勾选/摆放。
 ## 属于：Screens/editor（开发工具，不进发行版）
 ##
-## 口径：底壳管位置（石台坐标/半径/角色），布局卡管"激活哪几座"，遭遇卡管"敌方哪几座放了什么"。
-## 交互：点石台 = 切换激活（布局卡）/ 选中（遭遇卡）；不发任何写盘动作，写盘由页面调 dev_data。
+## 口径：底壳管位置（格子坐标/尺寸/角色），布局卡管"激活哪几个格子"，遭遇卡管"敌方哪个格子放了什么"。
+## 交互：点格子 = 切换激活（布局卡）/ 选中（遭遇卡）；不发任何写盘动作，写盘由页面调 dev_data。
 
-signal platform_clicked(index: int)
+signal tile_clicked(index: int)
 
 const ThemeKit := preload("res://Screens/editor/dev_theme.gd")
 const ShellStore := preload("res://Screens/editor/shell_store.gd")
@@ -55,7 +55,7 @@ func refresh() -> void:
 	queue_redraw()
 
 
-func select_platform(index: int) -> void:
+func select_tile(index: int) -> void:
 	selected = index
 	queue_redraw()
 
@@ -131,8 +131,9 @@ func _draw() -> void:
 	_map_rect = _map_box()
 	draw_rect(_map_rect, Color("#161B26"))
 	_draw_grid()
+	_draw_regions(shell)
 	_draw_lane(shell)
-	_draw_platforms(shell)
+	_draw_tiles(shell)
 	_draw_axis_hint(shell)
 
 
@@ -142,16 +143,32 @@ func _draw_grid() -> void:
 	var sz: Vector2 = ShellStore.size_of(shell)
 	var x: float = -floor(sz.x * 0.5 / step) * step
 	while x <= sz.x * 0.5:
-		var a := _to_px(x, -sz.y * 0.5)
-		var b := _to_px(x, sz.y * 0.5)
-		draw_line(a, b, Color(0.19, 0.23, 0.31, 0.45), 1.0)
+		draw_line(_to_px(x, -sz.y * 0.5), _to_px(x, sz.y * 0.5), Color(0.19, 0.23, 0.31, 0.45), 1.0)
 		x += step
 	var z: float = -floor(sz.y * 0.5 / step) * step
 	while z <= sz.y * 0.5:
-		var a2 := _to_px(-sz.x * 0.5, z)
-		var b2 := _to_px(sz.x * 0.5, z)
-		draw_line(a2, b2, Color(0.19, 0.23, 0.31, 0.45), 1.0)
+		draw_line(_to_px(-sz.x * 0.5, z), _to_px(sz.x * 0.5, z), Color(0.19, 0.23, 0.31, 0.45), 1.0)
 		z += step
+
+
+## 三块势力区域：填充 + 贴边描边（多边形就是唯一分区口径，不再画赛道圆环）
+func _draw_regions(shell: Dictionary) -> void:
+	for kind in ShellStore.REGION_IDS:
+		var pts := ShellStore.region_points(shell, kind)
+		if pts.size() < 3:
+			continue
+		var poly := PackedVector2Array()
+		for p in pts:
+			poly.append(_to_px(p.x, p.y))
+		var col: Color = ShellStore.REGION_COLORS.get(kind, Color.WHITE)
+		draw_colored_polygon(poly, Color(col.r, col.g, col.b, 0.10))
+		var outline := poly.duplicate()
+		outline.append(poly[0])
+		draw_polyline(outline, Color(col.r, col.g, col.b, 0.75), 1.4)
+		var c := ShellStore.region_centroid(pts)
+		var label := _t(ShellStore.REGION_KEYS.get(kind, kind))
+		draw_string(_font, _to_px(c.x, c.y) + Vector2(-50.0, -4.0), label, HORIZONTAL_ALIGNMENT_CENTER, 100.0, 10,
+			Color(col.r, col.g, col.b, 0.9))
 
 
 func _ribbon_polygon(shell: Dictionary, t0: int, t1: int, half_w: float) -> PackedVector2Array:
@@ -176,84 +193,63 @@ func _ribbon_polygon(shell: Dictionary, t0: int, t1: int, half_w: float) -> Pack
 
 func _draw_lane(shell: Dictionary) -> void:
 	var width_m := float((shell.get("spine", {}) as Dictionary).get("width_logic", 420.0)) * ShellStore.R1
-	var divs := ShellStore.sorted_dividers(shell)
-	var bounds: Array = []
-	for d in divs:
-		bounds.append(int(d["t"]))
-	var stops: Array = [0]
-	stops.append_array(bounds)
-	stops.append(999)
-	var colors: Array = [
-		Color(0.31, 0.63, 1.0, 0.22),
-		Color(0.58, 0.66, 0.78, 0.16),
-		Color(0.27, 0.84, 0.64, 0.18),
-		Color(0.36, 0.55, 0.43, 0.16),
-		Color(1.0, 0.43, 0.43, 0.20),
-	]
-	for i in range(stops.size() - 1):
-		var poly := _ribbon_polygon(shell, int(stops[i]), int(stops[i + 1]), width_m * 0.5)
-		if poly.size() >= 3:
-			draw_colored_polygon(poly, colors[mini(i, colors.size() - 1)])
 	var spine_poly := _ribbon_polygon(shell, 0, 999, maxf(width_m * 0.5, 0.4))
-	if spine_poly.size() >= 2:
+	if spine_poly.size() >= 3:
+		draw_colored_polygon(spine_poly, Color(0.94, 0.78, 0.42, 0.12))
 		var outline := spine_poly.duplicate()
 		outline.append(spine_poly[0])
 		draw_polyline(outline, Color(0.78, 0.64, 0.30, 0.75), 1.4)
-	for d2 in divs:
-		var t := int(d2["t"])
-		var p := ShellStore.point_at_t(shell, t)
-		var dir := ShellStore.direction_at_t(shell, t)
-		var n := Vector2(-dir.y, dir.x)
-		var span := maxf(width_m * 0.5 + 1.8, 3.0)
-		draw_line(_to_px(p.x + n.x * span, p.y + n.y * span), _to_px(p.x - n.x * span, p.y - n.y * span),
-			Color(0.94, 0.78, 0.42, 0.85), 1.6)
-		var row: Dictionary = ShellStore.divider(shell, String(d2["id"]))
-		var label := String(row.get("display_name", ""))
-		if not label.is_empty():
-			var lp := _to_px(p.x, p.y - span - 0.8)
-			draw_string(_mono, lp + Vector2(-70.0, 0.0), label, HORIZONTAL_ALIGNMENT_CENTER, 140.0, 10, Color(0.94, 0.78, 0.42, 0.95))
 
 
-func _draw_platforms(shell: Dictionary) -> void:
+## 战术格子：旋转矩形 + 左上角建筑位小方点 + 中心出兵位圆点。
+func _draw_tiles(shell: Dictionary) -> void:
 	var layout := _layout()
 	var enc := _encounter()
 	var enemy_rows := {}
-	for row in (enc.get("platform_buildings", []) as Array):
-		enemy_rows[int((row as Dictionary).get("platform", -1))] = row
-	for p in ShellStore.platforms(shell):
-		var pd: Dictionary = p
-		var idx := int(pd.get("index", 0))
-		var side := String(pd.get("side", "player"))
-		var role := String(pd.get("role", "build"))
-		var pos := _to_px(float(pd.get("x", 0.0)), float(pd.get("z", 0.0)))
-		var radius := maxf(float(pd.get("radius", 2.0)) / _m_per_px(), 5.0)
+	for row in (enc.get("tile_buildings", []) as Array):
+		enemy_rows[int((row as Dictionary).get("tile", -1))] = row
+	for t in ShellStore.tiles(shell):
+		var td: Dictionary = t
+		var idx := int(td.get("index", 0))
+		var side := String(td.get("side", "player"))
+		var role := String(td.get("role", "build"))
+		var corners := ShellStore.tile_corners(td)
+		var poly := PackedVector2Array()
+		for c in corners:
+			poly.append(_to_px(c.x, c.y))
 		var active := ShellStore.is_active(layout, idx) if mode == "layout" else true
 		var dimmed := mode == "encounter" and side != "enemy"
-		var col := ThemeKit.ACCENT if side == "player" else ThemeKit.RED
+		var col: Color = ShellStore.REGION_COLORS.get(side, Color.WHITE)
+		if role == "keep":
+			col = Color("#F0B95A")
 		if dimmed:
 			col = Color(0.35, 0.40, 0.50)
-		var fill := Color(col.r, col.g, col.b, 0.22 if active and not dimmed else 0.10)
+		var fill_a := 0.30 if active and not dimmed else 0.12
 		if mode == "encounter" and enemy_rows.has(idx):
-			fill = Color(col.r, col.g, col.b, 0.34)
-		draw_circle(pos, radius, fill)
-		var stroke := Color(col.r, col.g, col.b, 0.85 if active else 0.35)
-		draw_arc(pos, radius, 0.0, TAU, 28, stroke, 1.6)
-		if role == "keep":
-			draw_arc(pos, radius + 3.0, 0.0, TAU, 4, Color(0.94, 0.78, 0.42, 0.9), 1.6)
+			fill_a = 0.45
+		draw_colored_polygon(poly, Color(col.r, col.g, col.b, fill_a))
+		var outline := poly.duplicate()
+		outline.append(poly[0])
+		draw_polyline(outline, Color(col.r, col.g, col.b, 0.9 if active else 0.4), 1.6)
+		# 左上角 = 建筑位（与 Model 的定义一致）；中心 = 出兵位
+		var bl := _to_px(corners[0].x, corners[0].y)
+		draw_rect(Rect2(bl - Vector2(2.5, 2.5), Vector2(5.0, 5.0)), Color(0.94, 0.78, 0.42, 0.95), true)
+		var center := _to_px(float(td.get("x", 0.0)), float(td.get("z", 0.0)))
+		draw_circle(center, 2.6, Color(0.27, 0.84, 0.64, 0.95))
+		# 索引
+		draw_string(_mono, center + Vector2(-14.0, -6.0), str(idx), HORIZONTAL_ALIGNMENT_CENTER, 28.0, 10,
+			Color(0.93, 0.96, 1.0, 1.0) if active else Color(0.55, 0.60, 0.70))
 		if mode == "layout" and not active and not dimmed:
-			var k := radius * 0.55
-			draw_line(pos + Vector2(-k, -k), pos + Vector2(k, k), Color(0.55, 0.60, 0.70, 0.7), 1.2)
-			draw_line(pos + Vector2(-k, k), pos + Vector2(k, -k), Color(0.55, 0.60, 0.70, 0.7), 1.2)
-		var text := str(idx)
-		draw_circle(pos, radius * 0.52, Color(0.07, 0.09, 0.13, 0.82))
-		draw_string(_mono, pos + Vector2(-radius, 4.0), text, HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, 11,
-			Color(0.91, 0.94, 1.0, 1.0) if active else Color(0.55, 0.60, 0.70))
+			var k := 4.0
+			draw_line(center + Vector2(-k, -k), center + Vector2(k, k), Color(0.55, 0.60, 0.70, 0.8), 1.2)
+			draw_line(center + Vector2(-k, k), center + Vector2(k, -k), Color(0.55, 0.60, 0.70, 0.8), 1.2)
 		if mode == "encounter" and enemy_rows.has(idx):
 			var row2: Dictionary = enemy_rows[idx]
 			var bname := String(data.call("building_display", String(row2.get("building", ""))))
-			draw_string(_font, pos + Vector2(-radius * 2.0, radius + 13.0), bname, HORIZONTAL_ALIGNMENT_CENTER, radius * 4.0, 10, Color(0.95, 0.85, 0.65))
+			var radius := maxf(float(td.get("w", 6.0)) * 0.5 / _m_per_px(), 8.0)
+			draw_string(_font, center + Vector2(-radius * 2.0, radius + 12.0), bname, HORIZONTAL_ALIGNMENT_CENTER, radius * 4.0, 10, Color(0.95, 0.85, 0.65))
 		if idx == selected or idx == _hover:
-			draw_arc(pos, radius + 5.0, 0.0, TAU, 32, Color(0.97, 0.97, 1.0, 0.9), 1.4)
+			draw_arc(center, maxf(float(td.get("w", 6.0)) * 0.55 / _m_per_px(), 10.0), 0.0, TAU, 32, Color(0.97, 0.97, 1.0, 0.9), 1.4)
 
 
 func _draw_axis_hint(shell: Dictionary) -> void:
@@ -279,7 +275,7 @@ func _gui_input(event: InputEvent) -> void:
 			var idx := _hit(mb.position)
 			if idx >= 0:
 				selected = idx
-				platform_clicked.emit(idx)
+				tile_clicked.emit(idx)
 				queue_redraw()
 				accept_event()
 
@@ -290,11 +286,11 @@ func _hit(pos: Vector2) -> int:
 		return -1
 	var best := -1
 	var best_d := 22.0
-	for p in ShellStore.platforms(shell):
-		var pd: Dictionary = p
-		var center := _to_px(float(pd.get("x", 0.0)), float(pd.get("z", 0.0)))
+	for t in ShellStore.tiles(shell):
+		var td: Dictionary = t
+		var center := _to_px(float(td.get("x", 0.0)), float(td.get("z", 0.0)))
 		var d := center.distance_to(pos)
 		if d < best_d:
 			best_d = d
-			best = int(pd.get("index", -1))
+			best = int(td.get("index", -1))
 	return best

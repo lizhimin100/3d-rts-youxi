@@ -5,11 +5,14 @@ extends Control
 ##
 ## 三分离架构里的「地图底壳」：只保留 4 个纯视觉与空间划分工具
 ##   1 地形与地表笔刷（起伏雕刻 / 地表材质涂抹 / 环境光 / 水面高度）
-##   2 3D 装饰品笔刷（通道两侧与营地周围的树/岩石/栅栏/旗帜，纯视觉，无战斗碰撞）
-##   3 弯曲行军脊线 Path3D + 区域分割尺（4 个可拖动分割环 + 通道宽度，按 R1=0.015 换算写盘）
-##   4 候选独立石台锚点摆放器（射线吸附地形 + 石柱底座防悬空，主堡/普通锚点分开标记）
+##   2 3D 装饰品笔刷（**只实例化 asset_manifest 里登记的现有资产**，纯视觉、无战斗碰撞）
+##   3 弯曲行军脊线（通道宽度；赛道圆环式分区已下线，改由多边形区域负责）
+##   4 战术地形格子（TacticalTile：建筑位 = 左上角、出兵位 = 正中心）
 ##
-## 砍掉的：地图上直接摆兵种、写触发器、涂 A* 寻路网格、配经济。
+## 顶栏另有三个区域绘制按钮（玩家 / 中立 / 敌方）与撤销：
+##   · 左键依次放顶点；点第一个顶点或按回车闭合；右键 / Esc 取消；
+##   · 顶点不足 3 个 / 自交 / 退化 → 由 Model 报错，编辑器只显示结果。
+##
 ## 保存：直接写回 Content/data/map_shells.json（不写 user://，不写别的表）。
 
 const ThemeKit := preload("res://Screens/editor/dev_theme.gd")
@@ -18,12 +21,13 @@ const ShellText := preload("res://Screens/editor/map_shell/shell_text.gd")
 const ShellStore := preload("res://Screens/editor/shell_store.gd")
 const DataScript := preload("res://Screens/editor/dev_data.gd")
 const ShellView := preload("res://Screens/editor/map_shell/shell_view.gd")
+const BoxOverlay := preload("res://Screens/editor/map_shell/box_overlay.gd")
 
 ## 组合 key 的前缀（别在 T() 里直接拼字符串：体检会把它当成一个缺 key）。
 const DECOR_KEY := "shell.decor."
-const SIDE_KEY := "shell.platform.side_"
-const ROLE_KEY := "shell.platform.role_"
-const TOOL_KEY := "shell.tool."
+const SIDE_KEY := "shell.tile.side_"
+const ROLE_KEY := "shell.tile.role_"
+const REGION_KEY := "shell.region."
 
 var data: RefCounted = null
 var view: Node3D = null
@@ -41,6 +45,11 @@ var _gap_chip: PanelContainer = null
 var _hover_label: Label = null
 var _save_timer: Timer = null
 var _dirty := false
+## 面板初始化时 set_value 会触发 value_changed；那时还没"用户改动"，不该启动自动保存
+var _ready_done := false
+var _box: Control = null
+var _undo_btn: Button = null
+var _region_buttons: Dictionary = {}
 
 var _radius_slider: HSlider = null
 var _strength_slider: HSlider = null
@@ -53,13 +62,12 @@ var _decor_buttons: Dictionary = {}
 var _decor_info: Label = null
 var _decor_scale: HSlider = null
 var _width_edit: LineEdit = null
-var _divider_edits: Dictionary = {}
 var _points_label: Label = null
-var _platform_list: VBoxContainer = null
-var _platform_info: Label = null
+var _tile_list: VBoxContainer = null
+var _tile_info: Label = null
 var _role_buttons: Dictionary = {}
-var _radius_pl: HSlider = null
-var _base_pl: HSlider = null
+var _tile_w_slider: HSlider = null
+var _tile_d_slider: HSlider = null
 
 
 func _ready() -> void:
@@ -70,12 +78,17 @@ func _ready() -> void:
 	theme = ThemeKit.build_theme()
 	data = DataScript.new()
 	data.call("load_all")
+	_box = BoxOverlay.new()
+	_box.name = "shell_box_select"
+	_box.visible = false
+	add_child(_box)
 	_build_ui()
 	_bind_view()
 	_select_first_shell()
 	_show_tool("terrain")
 	_refresh_status()
 	_set_state(T("shell.state.saved"), ThemeKit.GREEN)
+	_ready_done = true
 
 
 func T(key: String, params: Dictionary = {}) -> String:
@@ -111,7 +124,7 @@ func _build_ui() -> void:
 func _build_topbar() -> Control:
 	var bar := PanelContainer.new()
 	bar.custom_minimum_size = Vector2(0.0, 68.0)
-	var sb := ThemeKit.box(ShellTheme.BG_DEEP, ShellTheme.STROKE, 0, 0, 18.0, 0.0)
+	var sb := ThemeKit.box(ShellTheme.BG_DEEP, ShellTheme.STROKE, 0, 0, 16.0, 0.0)
 	sb.border_width_bottom = 1
 	bar.add_theme_stylebox_override("panel", sb)
 	var h := HBoxContainer.new()
@@ -127,19 +140,50 @@ func _build_topbar() -> Control:
 
 	_shell_opt = OptionButton.new()
 	_shell_opt.name = "shell_picker"
-	_shell_opt.custom_minimum_size = Vector2(196.0, 34.0)
+	_shell_opt.custom_minimum_size = Vector2(180.0, 34.0)
 	_shell_opt.item_selected.connect(_on_shell_picked)
 	h.add_child(_shell_opt)
 
 	_layout_opt = OptionButton.new()
 	_layout_opt.name = "shell_layout_preview"
 	_layout_opt.tooltip_text = T("shell.preview_layout")
-	_layout_opt.custom_minimum_size = Vector2(158.0, 34.0)
+	_layout_opt.custom_minimum_size = Vector2(140.0, 34.0)
 	_layout_opt.item_selected.connect(_on_layout_preview)
 	h.add_child(_layout_opt)
 
-	h.add_child(ThemeKit.chip(T("shell.r1"), ThemeKit.CYAN))
+	# --- 区域绘制按钮（玩家 / 中立 / 敌方）---
+	var region_row := HBoxContainer.new()
+	region_row.add_theme_constant_override("separation", 4)
+	var group := ButtonGroup.new()
+	for kind in ShellStore.REGION_IDS:
+		var col: Color = ShellStore.REGION_COLORS.get(kind, Color.WHITE)
+		var b := Button.new()
+		b.name = "shell_region_" + String(kind)
+		b.text = T(REGION_KEY + String(kind))
+		b.toggle_mode = true
+		b.button_group = group
+		b.focus_mode = Control.FOCUS_NONE
+		b.custom_minimum_size = Vector2(86.0, 34.0)
+		b.add_theme_font_size_override("font_size", 12)
+		b.add_theme_color_override("font_color", ShellTheme.TEXT_SUB)
+		b.add_theme_color_override("font_pressed_color", col)
+		b.add_theme_stylebox_override("normal", ThemeKit.box(ShellTheme.PANEL, ShellTheme.STROKE, 7, 1, 6.0, 4.0))
+		b.add_theme_stylebox_override("hover", ThemeKit.box(ShellTheme.PANEL_HI, col, 7, 1, 6.0, 4.0))
+		b.add_theme_stylebox_override("pressed", ThemeKit.box(Color(col.r, col.g, col.b, 0.2), col, 7, 1, 6.0, 4.0))
+		b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+		b.pressed.connect(_on_region_button.bind(String(kind), b))
+		region_row.add_child(b)
+		_region_buttons[kind] = b
+	h.add_child(region_row)
+
+	_undo_btn = ThemeKit.small_button(T("shell.undo"), ShellTheme.TEXT_SUB)
+	_undo_btn.name = "shell_undo"
+	_undo_btn.custom_minimum_size = Vector2(64.0, 34.0)
+	_undo_btn.pressed.connect(_on_undo)
+	h.add_child(_undo_btn)
+
 	h.add_child(ThemeKit.spacer())
+	h.add_child(ThemeKit.chip(T("shell.r1"), ThemeKit.CYAN))
 	return bar
 
 
@@ -156,7 +200,7 @@ func _build_rail() -> Control:
 		["terrain", "shell.tool.terrain"],
 		["decor", "shell.tool.decor"],
 		["spine", "shell.tool.spine"],
-		["platform", "shell.tool.platform"],
+		["tile", "shell.tool.tile"],
 	]
 	var group := ButtonGroup.new()
 	for d in defs:
@@ -242,7 +286,7 @@ func _build_inspector() -> Control:
 func _build_status() -> Control:
 	var bar := PanelContainer.new()
 	bar.custom_minimum_size = Vector2(0.0, 34.0)
-	var sb := ThemeKit.box(ShellTheme.BG_DEEP, ShellTheme.STROKE, 0, 0, 18.0, 0.0)
+	var sb := ThemeKit.box(ShellTheme.BG_DEEP, ShellTheme.STROKE, 0, 0, 16.0, 0.0)
 	sb.border_width_top = 1
 	bar.add_theme_stylebox_override("panel", sb)
 	var h := HBoxContainer.new()
@@ -263,7 +307,7 @@ func _build_status() -> Control:
 	var save := ThemeKit.small_button(T("shell.save"), ShellTheme.LEGACY_GOLD_HI)
 	save.name = "shell_save"
 	save.custom_minimum_size = Vector2(76.0, 26.0)
-	save.pressed.connect(_save)
+	save.pressed.connect(_save.bind(true))
 	h.add_child(save)
 	h.add_child(ThemeKit.spacer())
 	h.add_child(ThemeKit.caption(T("shell.save_path"), ShellTheme.TEXT_DIM))
@@ -287,6 +331,10 @@ func _bind_view() -> void:
 	view.connect("changed", Callable(self, "_on_view_changed"))
 	view.connect("brushed", Callable(self, "_on_view_brushed"))
 	view.connect("picked", Callable(self, "_on_view_picked"))
+	view.connect("box_changed", Callable(self, "_on_box_changed"))
+	view.connect("box_cleared", Callable(self, "_on_box_cleared"))
+	view.connect("region_finished", Callable(self, "_on_region_finished"))
+	view.connect("region_cancelled", Callable(self, "_on_region_cancelled"))
 
 
 func _select_first_shell() -> void:
@@ -338,7 +386,7 @@ func _on_shell_picked(index: int) -> void:
 func _on_layout_preview(index: int) -> void:
 	var lid := String(_layout_opt.get_item_metadata(index))
 	view.set("preview_layout", data.call("layout_by_id", lid))
-	view.call("_build_platforms")
+	view.call("_build_tiles")
 	_refresh_status()
 
 
@@ -352,13 +400,8 @@ func _on_view_input(event: InputEvent) -> void:
 	if event is InputEventMouse:
 		pos = (event as InputEventMouse).position
 	var handled: bool = bool(view.call("handle_input", event, pos))
-	if handled:
+	if handled or event is InputEventMouseMotion:
 		_svc.accept_event()
-	if event is InputEventMouseMotion and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
-		# Alt+左键是转视角，不能顺手把选中的石台/装饰拖走
-		if bool(view.call("is_dragging")) and not bool(view.call("is_orbiting")):
-			view.call("drag_to", view.call("ground_at", pos))
-			_svc.accept_event()
 
 
 func _process(_delta: float) -> void:
@@ -366,6 +409,20 @@ func _process(_delta: float) -> void:
 		return
 	# 视口有没有键盘焦点：等价于旧编辑器的 has_focus()
 	view.set("keys_focus", _svc != null and _svc.has_focus())
+	_update_hover_label()
+	if _undo_btn != null:
+		_undo_btn.disabled = not bool(view.call("can_undo"))
+
+
+func _update_hover_label() -> void:
+	var region_mode := String(view.get("region_mode"))
+	if not region_mode.is_empty():
+		var draft: PackedVector2Array = view.get("region_draft")
+		_hover_label.text = T("shell.region.progress", {
+			"kind": T(REGION_KEY + region_mode),
+			"n": draft.size(),
+		})
+		return
 	var info: Dictionary = view.call("hover_info")
 	if bool(info.get("valid", false)):
 		_hover_label.text = T("shell.hover.value", {
@@ -399,8 +456,8 @@ func _show_tool(id: String) -> void:
 			_build_decor_panel()
 		"spine":
 			_build_spine_panel()
-		"platform":
-			_build_platform_panel()
+		"tile":
+			_build_tile_panel()
 	_refresh_status()
 
 
@@ -417,12 +474,14 @@ func _set_state(text: String, color: Color) -> void:
 		_state_label.add_theme_color_override("font_color", color)
 
 
-func _save() -> void:
+func _save(force: bool = false) -> void:
 	if _save_timer != null:
 		_save_timer.stop()
 	if data == null:
 		return
-	view.call("snap_platforms")
+	if not force and not _dirty:
+		return
+	view.call("snap_tiles")
 	var ok: bool = bool(data.call("save_shells"))
 	_dirty = not ok
 	_set_state(T("shell.state.saved") if ok else T("shell.state.failed"), ThemeKit.GREEN if ok else ThemeKit.RED)
@@ -435,11 +494,20 @@ func _on_reload() -> void:
 		_set_state(T("shell.state.reloaded"), ThemeKit.CYAN)
 
 
+func _on_undo() -> void:
+	if view.call("undo"):
+		_set_state(T("shell.state.undo"), ThemeKit.CYAN)
+		_refresh_status()
+		if _active_tool() == "tile":
+			_rebuild_tile_list()
+
+
 func _on_view_changed() -> void:
 	_dirty_now()
 	_refresh_status()
-	if _active_tool() == "platform":
-		_rebuild_platform_list()
+	if _active_tool() == "tile":
+		_rebuild_tile_list()
+		_refresh_tile_detail()
 
 
 func _on_view_brushed() -> void:
@@ -447,12 +515,68 @@ func _on_view_brushed() -> void:
 
 
 func _on_view_picked(kind: String, _index: int) -> void:
-	if kind == "platform":
-		_refresh_platform_detail()
+	if kind == "tile":
+		_refresh_tile_detail()
+		_rebuild_tile_list()
 	elif kind == "decor":
 		_refresh_decor_info()
-	elif kind == "divider":
-		_refresh_divider_fields()
+	elif kind == "region":
+		_refresh_status()
+
+
+func _on_box_changed(from: Vector2, to: Vector2) -> void:
+	if _box == null or _svc == null:
+		return
+	var origin := _svc.get_global_rect().position - get_global_rect().position
+	var a := from + origin
+	var b := to + origin
+	if a.distance_to(b) < 2.0:
+		_box.visible = false
+		return
+	_box.visible = true
+	_box.call("show_box", Rect2(a, b - a).abs())
+
+
+func _on_box_cleared() -> void:
+	if _box != null:
+		_box.visible = false
+
+
+# --- 区域绘制 -------------------------------------------------------------
+func _on_region_button(kind: String, btn: Button) -> void:
+	var current := String(view.get("region_mode"))
+	if current == kind:
+		view.call("cancel_region")
+		btn.button_pressed = false
+		_on_region_cancelled()
+		return
+	view.call("begin_region", kind)
+	_show_tool(_active_tool())
+	_set_state(T("shell.region.drawing", {"kind": T(REGION_KEY + kind)}), ShellStore.REGION_COLORS.get(kind, Color.WHITE))
+	_update_hover_label()
+
+
+func _on_region_finished(errors: Array) -> void:
+	if not (errors as Array).is_empty():
+		var msg := "; ".join(PackedStringArray(errors))
+		_set_state(T("shell.region.invalid", {"msg": msg}), ThemeKit.RED)
+		return
+	_set_state(T("shell.region.done"), ThemeKit.GREEN)
+	_sync_region_buttons()
+	_dirty_now()
+	_refresh_status()
+
+
+func _on_region_cancelled() -> void:
+	_set_state(T("shell.region.cancelled"), ShellTheme.TEXT_SUB)
+	_sync_region_buttons()
+	_update_hover_label()
+
+
+func _sync_region_buttons() -> void:
+	var mode := String(view.get("region_mode"))
+	for k in _region_buttons.keys():
+		(_region_buttons[k] as Button).button_pressed = String(k) == mode
 
 
 # --- 地形 -----------------------------------------------------------------
@@ -565,6 +689,8 @@ func _on_layer(index: int) -> void:
 
 
 func _on_water(value: float) -> void:
+	if not _ready_done:
+		return
 	var shell: Dictionary = view.get("shell")
 	if shell.is_empty():
 		return
@@ -576,6 +702,8 @@ func _on_water(value: float) -> void:
 
 
 func _on_ambient(value: float) -> void:
+	if not _ready_done:
+		return
 	var shell: Dictionary = view.get("shell")
 	if shell.is_empty():
 		return
@@ -589,6 +717,8 @@ func _on_ambient(value: float) -> void:
 
 
 func _on_fog(value: float) -> void:
+	if not _ready_done:
+		return
 	var shell: Dictionary = view.get("shell")
 	if shell.is_empty():
 		return
@@ -611,13 +741,15 @@ func _build_decor_panel() -> void:
 	body.add_child(v)
 	v.add_child(ThemeKit.field_label(T("shell.decor.kind")))
 	var grid := GridContainer.new()
-	grid.columns = 3
-	grid.add_theme_constant_override("h_separation", 6)
-	grid.add_theme_constant_override("v_separation", 6)
+	grid.columns = 5
+	grid.add_theme_constant_override("h_separation", 4)
+	grid.add_theme_constant_override("v_separation", 4)
 	for kind in ShellStore.DECOR_KINDS:
-		var b := ThemeKit.toggle(T(DECOR_KEY + String(kind)), String(kind) == "tree", ShellTheme.GREEN, 0.0)
+		var row := ShellStore.decor_row(String(kind))
+		var b := ThemeKit.toggle(T(String(row.get("label_key", DECOR_KEY + String(kind)))), String(kind) == "tree", ShellTheme.GREEN, 0.0)
 		b.name = "shell_decor_" + String(kind)
-		b.custom_minimum_size = Vector2(0.0, 34.0)
+		b.custom_minimum_size = Vector2(0.0, 30.0)
+		b.add_theme_font_size_override("font_size", 11)
 		b.pressed.connect(_on_decor_kind.bind(String(kind)))
 		grid.add_child(b)
 		_decor_buttons[kind] = b
@@ -647,37 +779,46 @@ func _on_decor_kind(kind: String) -> void:
 		(_decor_buttons[k] as Button).button_pressed = String(k) == kind
 
 
+func _selected_decor_indices() -> Array:
+	return Array(view.get("selected_decor"))
+
+
 func _on_decor_scale(value: float) -> void:
-	var idx := int(view.get("selected_decor"))
-	if idx >= 0:
-		view.call("set_decor_scale", idx, value)
+	for i in _selected_decor_indices():
+		view.call("set_decor_scale", int(i), value)
 
 
 func _on_decor_rotate() -> void:
-	var idx := int(view.get("selected_decor"))
-	if idx >= 0:
-		view.call("rotate_decor", idx, 45.0)
+	for i in _selected_decor_indices():
+		view.call("rotate_decor", int(i), 45.0)
 
 
 func _on_decor_delete() -> void:
-	var idx := int(view.get("selected_decor"))
-	if idx >= 0:
-		view.call("remove_decor", idx)
-		_refresh_decor_info()
+	var sel := _selected_decor_indices()
+	sel.sort()
+	sel.reverse()
+	for i in sel:
+		view.call("remove_decor", int(i))
+	_refresh_decor_info()
 
 
 func _refresh_decor_info() -> void:
 	if _decor_info == null:
 		return
-	var idx := int(view.get("selected_decor"))
+	var sel := _selected_decor_indices()
+	if sel.is_empty():
+		_decor_info.text = T("shell.decor.none")
+		return
+	var idx := int(sel[0])
 	var list: Array = (view.get("shell").get("decorations", []) as Array)
 	if idx < 0 or idx >= list.size():
 		_decor_info.text = T("shell.decor.none")
 		return
 	var d: Dictionary = list[idx]
-	_decor_info.text = T("shell.decor.selected", {
-		"n": idx + 1,
-		"k": T(DECOR_KEY + String(d.get("kind", ""))),
+	var row := ShellStore.decor_row(String(d.get("kind", "")))
+	_decor_info.text = T("shell.decor.selected_n", {
+		"n": sel.size(),
+		"k": T(String(row.get("label_key", DECOR_KEY + String(d.get("kind", ""))))),
 		"x": "%.1f" % float(d.get("x", 0.0)),
 		"z": "%.1f" % float(d.get("z", 0.0)),
 		"s": "%.2f" % float(d.get("scale", 1.0)),
@@ -710,10 +851,6 @@ func _build_spine_panel() -> void:
 	wh.add_child(wm)
 	v.add_child(wh)
 	v.add_child(ThemeKit.hairline())
-	v.add_child(ThemeKit.field_label(T("shell.spine.dividers")))
-	for id in ShellStore.DIVIDER_IDS:
-		v.add_child(_divider_row(shell, id))
-	v.add_child(ThemeKit.hairline())
 	var ph := HBoxContainer.new()
 	ph.add_theme_constant_override("separation", 6)
 	_points_label = ThemeKit.caption("", ShellTheme.TEXT_SUB)
@@ -739,29 +876,6 @@ func _build_spine_panel() -> void:
 	_refresh_spine_fields()
 
 
-func _divider_row(shell: Dictionary, id: String) -> Control:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 6)
-	var d: Dictionary = ShellStore.divider(shell, id)
-	var label_text := T(ShellStore.DIVIDER_KEYS.get(id, id))
-	var l := ThemeKit.label(label_text, &"EditorBody", Color(0.94, 0.78, 0.42))
-	l.custom_minimum_size = Vector2(132.0, 0.0)
-	row.add_child(l)
-	var le := ThemeKit.num_field("%d" % int(d.get("t", 0)), 64.0)
-	le.name = "shell_divider_" + id
-	le.text_submitted.connect(_on_divider.bind(id, le))
-	le.focus_exited.connect(_commit_divider.bind(id, le))
-	row.add_child(le)
-	var out := ThemeKit.caption(T("shell.spine.divider_value", {
-		"v": "%.0f" % float(d.get("length_logic", 0.0)),
-		"m": "%.1f" % float(d.get("meters", 0.0)),
-	}), ShellTheme.TEXT_SUB)
-	out.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(out)
-	_divider_edits[id] = {"edit": le, "label": out}
-	return row
-
-
 func _on_width(text: String) -> void:
 	_commit_width(text)
 
@@ -776,197 +890,199 @@ func _commit_width(text: String) -> void:
 	_refresh_spine_fields()
 
 
-func _on_divider(_text: String, id: String, le: LineEdit) -> void:
-	_commit_divider(id, le)
-
-
-func _commit_divider(id: String, le: LineEdit) -> void:
-	if not le.text.strip_edges().is_valid_float():
-		return
-	var t := clampi(int(round(float(le.text))), 0, 999)
-	view.call("set_divider_t", id, t)
-	le.text = str(t)
-	_dirty_now()
-	_refresh_spine_fields()
-
-
 func _refresh_spine_fields() -> void:
 	var shell: Dictionary = view.get("shell")
 	if shell.is_empty():
 		return
-	for id in _divider_edits.keys():
-		var row: Dictionary = _divider_edits[id]
-		var d: Dictionary = ShellStore.divider(shell, id)
-		(row["edit"] as LineEdit).text = "%d" % int(d.get("t", 0))
-		(row["label"] as Label).text = T("shell.spine.divider_value", {
-			"v": "%.0f" % float(d.get("length_logic", 0.0)),
-			"m": "%.1f" % float(d.get("meters", 0.0)),
-		})
+	if _width_edit != null:
+		_width_edit.text = "%.0f" % float((shell.get("spine", {}) as Dictionary).get("width_logic", 420.0))
 	if _points_label != null:
 		_points_label.text = T("shell.spine.points", {
 			"n": (ShellStore.spine_points(shell) as Array).size()
 		})
 
 
-func _refresh_divider_fields() -> void:
-	_refresh_spine_fields()
-
-
-# --- 石台 -----------------------------------------------------------------
-func _build_platform_panel() -> void:
-	_inspector.add_child(ThemeKit.section_head(T("shell.platform.title"), T("shell.platform.eyebrow"), ThemeKit.ACCENT))
+# --- 战术格子 -------------------------------------------------------------
+func _build_tile_panel() -> void:
+	_inspector.add_child(ThemeKit.section_head(T("shell.tile.title"), T("shell.tile.eyebrow"), ThemeKit.ACCENT))
 	var body := ThemeKit.inset()
 	_inspector.add_child(body)
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 8)
 	body.add_child(v)
-	v.add_child(ThemeKit.caption(T("shell.platform.hint"), ShellTheme.TEXT_DIM))
+	var hint := ThemeKit.caption(T("shell.tile.hint"), ShellTheme.TEXT_DIM)
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	v.add_child(hint)
 	var ops := HBoxContainer.new()
 	ops.add_theme_constant_override("separation", 6)
-	var add := ThemeKit.small_button(T("shell.platform.add"), ThemeKit.ACCENT)
-	add.name = "shell_add_platform"
-	add.pressed.connect(_on_add_platform)
+	var add := ThemeKit.small_button(T("shell.tile.add"), ThemeKit.ACCENT)
+	add.name = "shell_add_tile"
+	add.pressed.connect(_on_add_tile)
 	ops.add_child(add)
-	var snap := ThemeKit.small_button(T("shell.platform.snap"), ThemeKit.CYAN)
+	var snap := ThemeKit.small_button(T("shell.tile.snap"), ThemeKit.CYAN)
 	snap.pressed.connect(func():
-		view.call("snap_platforms")
+		view.call("snap_tiles")
 		_dirty_now()
 	)
 	ops.add_child(snap)
-	var renum := ThemeKit.small_button(T("shell.platform.renumber"), ShellTheme.TEXT_DIM)
+	var renum := ThemeKit.small_button(T("shell.tile.renumber"), ShellTheme.TEXT_DIM)
 	renum.pressed.connect(func():
-		view.call("renumber_platforms")
+		view.call("renumber_tiles")
 		_dirty_now()
-		_rebuild_platform_list()
+		_rebuild_tile_list()
 	)
 	ops.add_child(renum)
 	v.add_child(ops)
-	_platform_list = VBoxContainer.new()
-	_platform_list.add_theme_constant_override("separation", 3)
-	v.add_child(_platform_list)
+	_tile_list = VBoxContainer.new()
+	_tile_list.add_theme_constant_override("separation", 3)
+	v.add_child(_tile_list)
 	v.add_child(ThemeKit.hairline())
-	_platform_info = ThemeKit.caption("", ShellTheme.TEXT_SUB)
-	_platform_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	v.add_child(_platform_info)
+	_tile_info = ThemeKit.caption("", ShellTheme.TEXT_SUB)
+	_tile_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	v.add_child(_tile_info)
 	var roles := HBoxContainer.new()
 	roles.add_theme_constant_override("separation", 6)
-	for role in ShellStore.PLATFORM_ROLES:
+	for role in ShellStore.TILE_ROLES:
 		var b := ThemeKit.toggle(T(ROLE_KEY + role), false, ShellTheme.LEGACY_GOLD, 0.0)
 		b.name = "shell_role_" + role
-		b.pressed.connect(_on_role.bind(role))
+		b.pressed.connect(_on_tile_role.bind(role))
 		roles.add_child(b)
 		_role_buttons[role] = b
 	v.add_child(roles)
-	_radius_pl = _slider(v, T("shell.platform.radius"), 1.0, 6.0, 2.0, _on_platform_radius)
-	_base_pl = _slider(v, T("shell.platform.base"), 0.4, 4.0, 0.9, _on_platform_base)
-	var del := ThemeKit.small_button(T("shell.platform.delete"), ShellTheme.LEGACY_RED)
-	del.name = "shell_delete_platform"
-	del.pressed.connect(_on_delete_platform)
+	_tile_w_slider = _slider(v, T("shell.tile.width"), 2.0, 24.0, 6.0, _on_tile_width)
+	_tile_d_slider = _slider(v, T("shell.tile.depth"), 2.0, 24.0, 6.0, _on_tile_depth)
+	var rot := ThemeKit.small_button(T("shell.tile.rotate"), ThemeKit.CYAN)
+	rot.pressed.connect(func():
+		view.call("rotate_tiles", 15.0)
+		_dirty_now()
+	)
+	v.add_child(rot)
+	var del := ThemeKit.small_button(T("shell.tile.delete"), ShellTheme.LEGACY_RED)
+	del.name = "shell_delete_tile"
+	del.pressed.connect(_on_delete_tiles)
 	v.add_child(del)
-	_rebuild_platform_list()
-	_refresh_platform_detail()
+	_rebuild_tile_list()
+	_refresh_tile_detail()
 
 
-func _rebuild_platform_list() -> void:
-	if _platform_list == null:
+func _rebuild_tile_list() -> void:
+	if _tile_list == null:
 		return
-	for c in _platform_list.get_children():
+	for c in _tile_list.get_children():
 		c.queue_free()
 	var shell: Dictionary = view.get("shell")
-	var sel := int(view.get("selected_platform"))
-	for p in ShellStore.platforms(shell):
-		var d: Dictionary = p
+	var sel := Array(view.get("selected_tiles"))
+	for t in ShellStore.tiles(shell):
+		var d: Dictionary = t
 		var idx := int(d.get("index", 0))
 		var side := String(d.get("side", "player"))
 		var role := String(d.get("role", "build"))
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 6)
 		var b := Button.new()
-		b.name = "shell_platform_%d" % idx
+		b.name = "shell_tile_%d" % idx
 		b.toggle_mode = true
-		b.button_pressed = idx == sel
+		b.button_pressed = sel.has(idx)
 		b.focus_mode = Control.FOCUS_NONE
 		b.custom_minimum_size = Vector2(0.0, 30.0)
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		var col := ThemeKit.ACCENT if side == "player" else ShellTheme.RED
+		var col: Color = ShellStore.REGION_COLORS.get(side, Color.WHITE)
+		if role == "keep":
+			col = ShellTheme.LEGACY_GOLD
 		b.add_theme_stylebox_override("normal", ThemeKit.box(ShellTheme.PANEL, ShellTheme.STROKE, 7, 1, 8.0, 4.0))
 		b.add_theme_stylebox_override("hover", ThemeKit.box(ShellTheme.PANEL_HI, col, 7, 1, 8.0, 4.0))
 		b.add_theme_stylebox_override("pressed", ThemeKit.box(Color(col.r, col.g, col.b, 0.2), col, 7, 1, 8.0, 4.0))
 		b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
-		b.text = "%s  P%d  %s" % [T(SIDE_KEY + side), idx, T(ROLE_KEY + role)]
-		b.pressed.connect(_on_pick_platform.bind(idx))
+		b.text = "T%d  %s  %s  %.0f×%.0f" % [idx, T(SIDE_KEY + side), T(ROLE_KEY + role),
+			float(d.get("w", 6.0)), float(d.get("d", 6.0))]
+		b.pressed.connect(_on_pick_tile.bind(idx))
 		row.add_child(b)
-		_platform_list.add_child(row)
+		_tile_list.add_child(row)
 
 
-func _on_pick_platform(index: int) -> void:
-	view.call("select_platform", index)
-	_rebuild_platform_list()
-	_refresh_platform_detail()
+func _on_pick_tile(index: int) -> void:
+	view.call("select_tile", index)
+	_rebuild_tile_list()
+	_refresh_tile_detail()
 
 
-func _on_add_platform() -> void:
-	view.call("add_platform", Vector3(-16.0, 0.0, 0.0))
+func _on_add_tile() -> void:
+	var target: Vector3 = view.get("cam_target")
+	view.call("add_tile", Vector3(target.x, 0.0, target.z))
 	_dirty_now()
-	_rebuild_platform_list()
-	_refresh_platform_detail()
+	_rebuild_tile_list()
+	_refresh_tile_detail()
 
 
-func _on_delete_platform() -> void:
-	var idx := int(view.get("selected_platform"))
-	if idx >= 0:
-		view.call("remove_platform", idx)
-		_dirty_now()
-		_rebuild_platform_list()
-		_refresh_platform_detail()
-
-
-func _on_role(role: String) -> void:
-	var idx := int(view.get("selected_platform"))
-	if idx >= 0:
-		view.call("set_platform_role", idx, role)
-		_dirty_now()
-		_rebuild_platform_list()
-		_refresh_platform_detail()
-
-
-func _on_platform_radius(value: float) -> void:
-	var idx := int(view.get("selected_platform"))
-	if idx >= 0:
-		view.call("set_platform_radius", idx, value)
-		_dirty_now()
-
-
-func _on_platform_base(value: float) -> void:
-	var idx := int(view.get("selected_platform"))
-	if idx >= 0:
-		view.call("set_platform_base", idx, value)
-		_dirty_now()
-
-
-func _refresh_platform_detail() -> void:
-	if _platform_info == null:
+func _on_delete_tiles() -> void:
+	var sel := Array(view.get("selected_tiles"))
+	if sel.is_empty():
 		return
-	var idx := int(view.get("selected_platform"))
-	var pd := ShellStore.platform_by_index(view.get("shell"), idx)
-	if pd.is_empty():
-		_platform_info.text = T("shell.platform.none")
+	view.call("_delete_selected")
+	_dirty_now()
+	_rebuild_tile_list()
+	_refresh_tile_detail()
+
+
+func _on_tile_role(role: String) -> void:
+	var sel := Array(view.get("selected_tiles"))
+	if sel.is_empty():
 		return
-	var role := String(pd.get("role", "build"))
+	view.call("set_tile_role", int(sel[0]), role)
+	_dirty_now()
+	_rebuild_tile_list()
+	_refresh_tile_detail()
+
+
+func _on_tile_width(value: float) -> void:
+	var sel := Array(view.get("selected_tiles"))
+	if sel.is_empty():
+		return
+	var td := ShellStore.tile_by_index(view.get("shell"), int(sel[0]))
+	if td.is_empty():
+		return
+	view.call("set_tiles_size", value, float(td.get("d", 6.0)))
+	_dirty_now()
+
+
+func _on_tile_depth(value: float) -> void:
+	var sel := Array(view.get("selected_tiles"))
+	if sel.is_empty():
+		return
+	var td := ShellStore.tile_by_index(view.get("shell"), int(sel[0]))
+	if td.is_empty():
+		return
+	view.call("set_tiles_size", float(td.get("w", 6.0)), value)
+	_dirty_now()
+
+
+func _refresh_tile_detail() -> void:
+	if _tile_info == null:
+		return
+	var sel := Array(view.get("selected_tiles"))
+	if sel.is_empty():
+		_tile_info.text = T("shell.tile.none")
+		return
+	var td := ShellStore.tile_by_index(view.get("shell"), int(sel[0]))
+	if td.is_empty():
+		_tile_info.text = T("shell.tile.none")
+		return
+	var role := String(td.get("role", "build"))
 	for r in _role_buttons.keys():
 		(_role_buttons[r] as Button).button_pressed = String(r) == role
-	if _radius_pl != null:
-		_radius_pl.value = float(pd.get("radius", 2.0))
-	if _base_pl != null:
-		_base_pl.value = float(pd.get("base_h", 0.9))
-	_platform_info.text = T("shell.platform.selected", {
-		"i": idx,
-		"side": T(SIDE_KEY + String(pd.get("side", "player"))),
+	if _tile_w_slider != null:
+		_tile_w_slider.set_value_no_signal(float(td.get("w", 6.0)))
+	if _tile_d_slider != null:
+		_tile_d_slider.set_value_no_signal(float(td.get("d", 6.0)))
+	_tile_info.text = T("shell.tile.selected", {
+		"n": sel.size(),
+		"i": int(td.get("index", 0)),
+		"side": T(SIDE_KEY + String(td.get("side", "player"))),
 		"role": T(ROLE_KEY + role),
-		"y": "%.2f" % float(pd.get("terrain_y", 0.0)),
-		"h": "%.2f" % float(pd.get("base_h", 0.0)),
-		"r": "%.2f" % float(pd.get("radius", 0.0)),
+		"w": "%.0f" % float(td.get("w", 6.0)),
+		"d": "%.0f" % float(td.get("d", 6.0)),
+		"y": "%.2f" % float(td.get("terrain_y", 0.0)),
 	})
 
 
@@ -979,21 +1095,19 @@ func _refresh_status() -> void:
 	var shell: Dictionary = view.get("shell")
 	if shell.is_empty():
 		return
+	var region_ok := 0
+	for kind in ShellStore.REGION_IDS:
+		if ShellStore.region_points(shell, kind).size() >= 3:
+			region_ok += 1
 	_counts.text = T("shell.status.counts", {
-		"p": ShellStore.platforms(shell).size(),
+		"t": ShellStore.tiles(shell).size(),
 		"d": (shell.get("decorations", []) as Array).size(),
-		"k": _keep_count(shell, "player"),
+		"r": region_ok,
 		"w": "%.0f" % float((shell.get("spine", {}) as Dictionary).get("width_logic", 420.0)),
 	})
+	var gap := ShellStore.min_gap_meters(shell)
 	ThemeKit.set_chip(_gap_chip, T("shell.status.gap", {
-		"v": "%.2f" % ShellStore.min_gap_meters(shell)
-	}), ThemeKit.CYAN if ShellStore.min_gap_meters(shell) >= ShellStore.MIN_GAP_M else ShellTheme.RED)
-
-
-func _keep_count(shell: Dictionary, side: String) -> int:
-	var n := 0
-	for p in ShellStore.platforms(shell):
-		var d: Dictionary = p
-		if String(d.get("role", "")) == "keep" and String(d.get("side", "")) == side:
-			n += 1
-	return n
+		"v": "%.2f" % gap
+	}), ThemeKit.CYAN if gap >= ShellStore.MIN_GAP_M else ShellTheme.RED)
+	if _undo_btn != null:
+		_undo_btn.disabled = not bool(view.call("can_undo"))

@@ -8,7 +8,7 @@ extends Node3D
 ##     ├── 环境      WorldEnvironment   ← 战斗环境.tres（天空/雾/泛光/SSAO/调色）
 ##     ├── 主光      DirectionalLight3D ← 暖色主光，开阴影
 ##     ├── 补光      DirectionalLight3D ← 冷色补光，无阴影
-##     ├── 关卡      RtsLevel           ← 地形网格 / 寻路网格 / 树·金矿·岩石 / 开局双方部队
+##     ├── 关卡      RtsLevel           ← 地形网格 / 站立网格 / 树·金矿·岩石 / 开局双方部队
 ##     ├── 镜头      RtsCamera          ← 魔兽式 RTS 镜头（运行时建一个 Camera3D 子节点）
 ##     ├── 选择系统  SelectionSystem    ← 点选 / 拖框 / 选中圈
 ##     ├── 指令系统  CommandSystem      ← 右键上下文指令 / 快捷键
@@ -235,8 +235,8 @@ func _ready() -> void:
 			Game.layout = lr
 			lr.call("setup", level)
 			lr.call("boot")
-		# 4.925 短局小队编组：布局卡/地图摆的散兵按 squad_size 编成小队（人口按队算）。
-		Game.normalize_squads()
+		# 4.925 短局人口编批：布局卡/地图摆的散兵按 squad_size 切批（人口按批算）。
+		Game.normalize_pop_batches()
 	# QA：--qa-spawn=<id>[,<id>…] 在玩家基地旁直接生成（验收新单位/建筑能不能跑起来）
 	#      ★ 必须排在布局卡之后：布局卡会清掉"我方旧布阵"，QA 单位先生成会被一起清掉。
 	_qa_spawn_stuff()
@@ -519,8 +519,6 @@ func _mount_tests() -> void:
 		if a == "--anim-shots" or a.begins_with("--anim-shots="):
 			_mount_script("res://Tests/suites/动作截图.gd", "动作截图")
 			break
-	if "--map-editor-test" in args:
-		_mount_script("res://Tests/suites/地图编辑器自检.gd", "地图编辑器自检")
 	if not _qa_select_id.is_empty():
 		_qa_select.call_deferred(_qa_select_id)
 	if _qa_stars:

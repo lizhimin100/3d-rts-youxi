@@ -3,9 +3,9 @@ extends Node
 ##
 ## 验证四件事（任何一条失败都退出码非 0）：
 ##   1. 开局停在 PLANNING，世界 `paused`；
-##   2. 规划阶段右键移动 → 入计划（不立刻执行），并自动生成小队；
+##   2. 规划阶段右键移动 → 入计划（不立刻执行），成员按人口批次记账；
 ##   3. 开始执行 → 解冻、计划清空、单位真的走起来；
-##   4. 结束执行 → 重新冻结；成员死亡后小队仍存在（人数减少）；
+##   4. 结束执行 → 重新冻结；成员死亡后人口批次仍占着（整批打光才释放）；
 ##   5. **规划阶段界面**（2026-11-15 重构）：只在规划阶段出现、副官开关收起、
 ##      部署三键可点、人口"下单即占"、回合结束取消未完成训练（不退 CP）；
 ##   6. **部署输入状态机**：进入进攻模式 → 预览跟随 → 取消归零。
@@ -121,18 +121,18 @@ func _run() -> void:
 	var queued2: bool = bool(barracks.call("queue_train", &"footman"))
 	_ok(queued2, "能再次排队训练（人口口径）")
 	if queued2:
-		# 2026-11-15：一次下单 = 一支小队，占的人口是卡上的 pop_cost（不是人头）。
+		# 2026-11-15：一次下单 = 一批人，占的人口是卡上的 pop_cost（不是人头）。
 		_ok(pf.food_committed() == used0 + Cfg.unit(&"footman").pop_cost,
 				"下单立刻计入已用人口（%d → %d）" % [used0, pf.food_committed()])
 		barracks.call("cancel_train_at", 0)
 		_ok(pf.food_committed() == used0, "取消训练后已用人口回落（%d）" % pf.food_committed())
 
-	# --- 小队生产：一次训练 = 一小队（人数/人口来自卡，2026-11-15） ---
+	# --- 批次生产：一次训练 = 一批人（人数/人口来自卡，2026-11-15） ---
 	var fd: UnitDef = Cfg.unit(&"footman")
 	_ok(fd != null and int(fd.squad_size) == 5 and int(fd.pop_cost) == 8,
-			"步兵卡：5 人一队 / 占 8 人口")
+			"步兵卡：5 人一批 / 占 8 人口")
 	_ok(Cfg.unit(&"peasant").squad_size == 4 and Cfg.unit(&"archer").squad_size == 4,
-			"农民/弩兵卡：4 人一队")
+			"农民/弩兵卡：4 人一批")
 	if fd != null and barracks != null:
 		var before_units: int = pf.count_units(&"footman")
 		var before_pop: int = pf.food_used()
@@ -144,20 +144,22 @@ func _run() -> void:
 		_ok(after_units == before_units + int(fd.squad_size),
 				"训练一次真的出 %d 人（%d → %d）" % [int(fd.squad_size), before_units, after_units])
 		var grown: int = pf.food_used() - before_pop
-		_ok(grown == int(fd.pop_cost), "小队人口按队算（+%d，不是按人头）" % grown)
-		var squad_ok: bool = false
-		for sq in Game.squads.call("all"):
-			if sq != null and int(sq.call("alive_count")) >= int(fd.squad_size):
-				squad_ok = true
-		_ok(squad_ok, "新出的兵编成一支小队")
+		_ok(grown == int(fd.pop_cost), "批次人口按批算（+%d，不是按人头）" % grown)
+		# 2026-11-21：GDScript 小队对象已删 —— 训练一次只登记一条人口批次。
+		var batch_ok: bool = false
+		for rec in pf.batch_commits:
+			if (rec.get("members", []) as Array).size() >= int(fd.squad_size) \
+					and int(rec.get("pop", 0)) == int(fd.pop_cost):
+				batch_ok = true
+		_ok(batch_ok, "新出的兵登记为一条人口批次")
 	_ok(absf(float(rc.call("execution_total")) - 180.0) < 0.1,
 			"执行阶段时长 = 3 分钟（%.0f 秒）" % float(rc.call("execution_total")))
 	# 人口超限时，0 人口的建筑（农场/大本营）仍然能下 —— 否则会被永久卡死
-	var keep_commits: Array = pf.squad_commits.duplicate()
-	pf.squad_commits.append({"pop": 9999, "members": [pf.units[0]], "squad_id": 0})
+	var keep_commits: Array = pf.batch_commits.duplicate()
+	pf.batch_commits.append({"pop": 9999, "members": [pf.units[0]]})
 	_ok(bool(pf.has_food(0)), "人口超限：0 人口建筑仍可下单")
 	_ok(not bool(pf.has_food(1)), "人口超限：1 人口单位被拦下")
-	pf.squad_commits = keep_commits
+	pf.batch_commits = keep_commits
 
 	# --- 规划阶段界面：只在规划阶段出现 ---
 	var hud: Node = get_parent().get_node_or_null("界面")
@@ -234,12 +236,10 @@ func _run() -> void:
 	var before: Vector3 = foots[0].global_position
 	cmd.call("queue_move", base + Vector3(7.0, 0.0, 0.0))
 	_ok(int(cmd.call("planned_count")) == 1, "规划阶段移动已入计划")
-	_ok(Game.squads != null and int(Game.squads.call("count")) >= 1, "已生成小队")
-	var sq = Game.squads.call("find_by_member", foots[0])
-	_ok(sq != null, "单位能找回所属小队")
-	if sq != null:
-		_ok(int(sq.call("alive_count")) == 2, "小队成员数为 2")
-		_ok(int(sq.get("stance")) == RtsConst.Order.MOVE, "小队记录了移动意图")
+	_ok(pf.batch_commits.size() >= 1, "开局散兵已编成人口批次")
+	var rec0: Dictionary = (cmd.call("planned_records") as Array)[0]
+	_ok(int(rec0.get("kind", -1)) == RtsConst.Order.MOVE and int(rec0.get("units", 0)) == 2,
+			"计划记录 = 移动 + 两个成员")
 
 	# --- 部署（进攻/防守/占据）：三条计划都入队，且小队记下对应意图 ---
 	_ok(bool(cmd.call("queue_defend", base + Vector3(9.0, 0.0, 0.0), 10.0)), "防守部署入计划")
@@ -248,8 +248,8 @@ func _run() -> void:
 	var recs: Array = cmd.call("planned_records")
 	_ok(String(recs[1].get("text", "")).begins_with("防守"), "第 2 条是防守计划")
 	_ok(String(recs[2].get("text", "")) == "占据", "第 3 条是占据计划")
-	if sq != null:
-		_ok(int(sq.get("stance")) == RtsConst.Order.CAPTURE, "小队记录了占据意图")
+	_ok(int((recs[2] as Dictionary).get("kind", -1)) == RtsConst.Order.CAPTURE,
+			"第 3 条计划的意图 = 占据")
 	# 部署按钮：选中步兵后应该出现在规划操作面板里。
 	# 规划界面是 8Hz 刷新（0.12s）＋按签名重建，选完要等一拍才会换形态。
 	await get_tree().create_timer(0.3).timeout
@@ -416,13 +416,10 @@ func _run() -> void:
 				_ok(absf(float(revived.get("hp")) - init_hp) < 0.5,
 						"复活后血量 = initial_hp（%.0f）" % float(revived.get("hp")))
 				_ok(not bool(Game.slot_state(farm_slot).get("destroyed", false)), "复活后槽位恢复可用")
-	# 成员死亡，小队继续存在（不做士气）
+	# 成员死亡，人口批次仍占着（减员不退还 —— 整批打光才释放）
 	foots[1].take_damage(99999.0, 0, null)
 	await get_tree().create_timer(0.15).timeout
-	var sq2 = Game.squads.call("find_by_member", foots[0])
-	_ok(sq2 != null, "减员后小队仍存在")
-	if sq2 != null:
-		_ok(int(sq2.call("alive_count")) == 1, "减员后小队人数为 1")
+	_ok(int(pf.prune_batches()) == 0, "减员后人口批次仍占着（不退人口）")
 
 	_finish()
 

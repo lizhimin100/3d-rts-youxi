@@ -128,11 +128,12 @@ func add_cp(amount: int) -> void:
 	cp = clampf(cp + float(amount), 0.0, cp_cap)
 
 
-# --- 短局小队人口账本（2026-11-15）---
-## 每支已出生小队一条：{"pop": 8, "members": [RtsUnit...], "squad_id": 3}
-## 人口按**小队**算（步兵 5 人一队占 8，不是每人 1.6）：成员减员不退还，
-## 整队打光才释放。"留一个残兵也占着一队人口"是明确的战场代价。
-var squad_commits: Array = []
+# --- 短局人口批次账本（2026-11-15；2026-11-21 去掉小队对象，只留人口）---
+## 每一批（= 一次训练 / 开局一次编批）一条：{"pop": 8, "members": [RtsUnit...]}
+## 人口按**批**算（步兵 5 人一批占 8，不是每人 1.6）：成员减员不退还，
+## 整批打光才释放。"留一个残兵也占着一批人口"是明确的战场代价。
+## 注意：这不是小队实体 —— 真正的小队在 `Model/Battle/LaneBattle.cs`（LaneSquad）。
+var batch_commits: Array = []
 # --- 短局建造订单（规划阶段下单，执行阶段只认这些单）---
 ## 每条：{"id": StringName, "site_id": int}；site_id = 0 表示工地已取消、可重新选址。
 var build_orders: Array = []
@@ -147,24 +148,24 @@ static func game_node() -> Node:
 	return null
 
 
-## 是不是短局（CP/人口/小队口径只在短局生效；长局保持旧经济）
+## 是不是短局（CP/人口/批次口径只在短局生效；长局保持旧经济）
 func is_short() -> bool:
 	var g := game_node()
 	return g != null and bool(g.get("short_match"))
 
 
-## 登记一支刚出生/刚编组的小队（训练出队、开局编组都走这里）
-func commit_squad(members: Array, pop: int, squad_id: int = 0) -> void:
+## 登记一批刚出生/刚编批的单位（训练出队、开局编批都走这里）
+func commit_batch(members: Array, pop: int) -> void:
 	if members.is_empty() or pop <= 0:
 		return
-	squad_commits.append({"pop": int(pop), "members": members.duplicate(), "squad_id": squad_id})
+	batch_commits.append({"pop": int(pop), "members": members.duplicate()})
 
 
-## 小队人口剪枝：整队死光/失效才释放。返回释放的人口。
-func prune_squads() -> int:
+## 批次人口剪枝：整批死光/失效才释放。返回释放的人口。
+func prune_batches() -> int:
 	var kept: Array = []
 	var released: int = 0
-	for rec in squad_commits:
+	for rec in batch_commits:
 		var alive: bool = false
 		for m in rec.get("members", []):
 			if m != null and is_instance_valid(m) and m.has_method("is_alive") and bool(m.call("is_alive")):
@@ -174,32 +175,32 @@ func prune_squads() -> int:
 			kept.append(rec)
 		else:
 			released += int(rec.get("pop", 0))
-	squad_commits = kept
+	batch_commits = kept
 	return released
 
 
-## 这个单位是否已经被某支小队登记过（避免"小队人口 + 单兵 food_cost"重复计）
-func in_squad(u: Node) -> bool:
-	for rec in squad_commits:
+## 这个单位是否已经被某个批次登记过（避免"批次人口 + 单兵 food_cost"重复计）
+func in_batch(u: Node) -> bool:
+	for rec in batch_commits:
 		if (rec.get("members", []) as Array).has(u):
 			return true
 	return false
 
 
 ## 当前**已用人口**。
-## 短局 = 小队人口 + 不在小队里的单兵 food_cost + 存活建筑的 pop_cost；
+## 短局 = 批次人口 + 不在批次里的单兵 food_cost + 存活建筑的 pop_cost；
 ## 长局 = 所有存活单位的 food_cost（旧口径，一行没改）。
 ## UI 不要直接拿它当"已用"显示 —— 用 `food_committed()`（含在训）。
 func food_used() -> int:
 	var total: int = 0
 	if is_short():
-		prune_squads()
-		for rec in squad_commits:
+		prune_batches()
+		for rec in batch_commits:
 			total += int(rec.get("pop", 0))
 		for u in units:
 			if u == null or not is_instance_valid(u) or not u.is_alive():
 				continue
-			if in_squad(u):
+			if in_batch(u):
 				continue
 			var d: UnitDef = u.def
 			if d != null:

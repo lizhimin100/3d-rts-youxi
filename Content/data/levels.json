@@ -525,7 +525,7 @@
 			"intent_templates": {},
 			"enemy_buildings": [
 				{
-					"platform": 7,
+					"tile": 7,
 					"building": "watchtower",
 					"star": 2.0,
 					"yaw": 180.0,
@@ -533,7 +533,7 @@
 					"y": 0.388888888888889
 				},
 				{
-					"platform": 9,
+					"tile": 9,
 					"building": "barracks",
 					"star": 3.0,
 					"yaw": 180.0,
@@ -541,7 +541,7 @@
 					"y": 0.341269841269841
 				},
 				{
-					"platform": 10,
+					"tile": 10,
 					"building": "watchtower",
 					"star": 2.0,
 					"yaw": 180.0,
@@ -549,7 +549,7 @@
 					"y": 0.658730158730159
 				},
 				{
-					"platform": 11,
+					"tile": 11,
 					"building": "keep",
 					"star": 2.0,
 					"yaw": 180.0,
@@ -565,7 +565,7 @@
 			"player_board": {
 				"layout": "layout_even_four",
 				"kind": "even",
-				"active_platforms": [
+				"active_tiles": [
 					1.0,
 					2.0,
 					3.0,
@@ -573,22 +573,22 @@
 				],
 				"slots": [
 					{
-						"platform": 1.0,
+						"tile": 1.0,
 						"building": "keep",
 						"star": 1.0
 					},
 					{
-						"platform": 2.0,
+						"tile": 2.0,
 						"building": "farm",
 						"star": 1.0
 					},
 					{
-						"platform": 3.0,
+						"tile": 3.0,
 						"building": "farm",
 						"star": 1.0
 					},
 					{
-						"platform": 4.0,
+						"tile": 4.0,
 						"building": "barracks",
 						"star": 1.0
 					}
@@ -833,7 +833,7 @@
 			"intent_templates": {},
 			"enemy_buildings": [
 				{
-					"platform": 7,
+					"tile": 7,
 					"building": "watchtower",
 					"star": 2.0,
 					"yaw": 180.0,
@@ -841,7 +841,7 @@
 					"y": 0.388888888888889
 				},
 				{
-					"platform": 9,
+					"tile": 9,
 					"building": "barracks",
 					"star": 3.0,
 					"yaw": 180.0,
@@ -849,7 +849,7 @@
 					"y": 0.341269841269841
 				},
 				{
-					"platform": 10,
+					"tile": 10,
 					"building": "watchtower",
 					"star": 2.0,
 					"yaw": 180.0,
@@ -857,7 +857,7 @@
 					"y": 0.658730158730159
 				},
 				{
-					"platform": 11,
+					"tile": 11,
 					"building": "keep",
 					"star": 2.0,
 					"yaw": 180.0,
@@ -873,24 +873,24 @@
 			"player_board": {
 				"layout": "layout_disadvantage_three",
 				"kind": "disadvantage",
-				"active_platforms": [
+				"active_tiles": [
 					1.0,
 					2.0,
 					4.0
 				],
 				"slots": [
 					{
-						"platform": 1.0,
+						"tile": 1.0,
 						"building": "keep",
 						"star": 1.0
 					},
 					{
-						"platform": 2.0,
+						"tile": 2.0,
 						"building": "farm",
 						"star": 1.0
 					},
 					{
-						"platform": 4.0,
+						"tile": 4.0,
 						"building": "barracks",
 						"star": 1.0
 					}
@@ -1135,7 +1135,7 @@
 			"intent_templates": {},
 			"enemy_buildings": [
 				{
-					"platform": 7,
+					"tile": 7,
 					"building": "watchtower",
 					"star": 2.0,
 					"yaw": 180.0,
@@ -1143,7 +1143,7 @@
 					"y": 0.388888888888889
 				},
 				{
-					"platform": 9,
+					"tile": 9,
 					"building": "barracks",
 					"star": 2.0,
 					"yaw": 180.0,
@@ -1151,7 +1151,7 @@
 					"y": 0.341269841269841
 				},
 				{
-					"platform": 10,
+					"tile": 10,
 					"building": "watchtower",
 					"star": 3.0,
 					"yaw": 180.0,
@@ -1159,7 +1159,7 @@
 					"y": 0.658730158730159
 				},
 				{
-					"platform": 11,
+					"tile": 11,
 					"building": "keep",
 					"star": 2.0,
 					"yaw": 180.0,
@@ -1175,7 +1175,7 @@
 			"player_board": {
 				"layout": "layout_even_four",
 				"kind": "even",
-				"active_platforms": [
+				"active_tiles": [
 					1.0,
 					2.0,
 					3.0,
@@ -1183,22 +1183,22 @@
 				],
 				"slots": [
 					{
-						"platform": 1.0,
+						"tile": 1.0,
 						"building": "keep",
 						"star": 1.0
 					},
 					{
-						"platform": 2.0,
+						"tile": 2.0,
 						"building": "farm",
 						"star": 1.0
 					},
 					{
-						"platform": 3.0,
+						"tile": 3.0,
 						"building": "farm",
 						"star": 1.0
 					},
 					{
-						"platform": 4.0,
+						"tile": 4.0,
 						"building": "barracks",
 						"star": 1.0
 					}

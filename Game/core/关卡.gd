@@ -1,17 +1,17 @@
 class_name RtsLevel
 extends Node3D
-## **关卡**：把地图数据变成真正的场景——地形网格、寻路网格、树/岩石/金矿、开局双方基地与部队。
+## **关卡**：把地图数据变成真正的场景——地形网格、站立网格、树/岩石/金矿、开局双方基地与部队。
 ##
 ## 对外提供"世界查询"接口（其他模块都从 `Game.level` 拿）：
 ##   height_at(x,z)            地形高度
-##   grid_pathfinder()         寻路器
+##   stand_grid_of()         站立网格
 ##   find_path(a, b)           带地形高度的平滑路径
 ##   world_size                地图边长
 ##   base_center(faction)      己方基地中心
 ##   dropoff_points(faction)   资源交汇点（大本营）
 ##   resource_nodes()          全部可采集物
 ##   is_buildable(pos, fp)     能否在此建造
-##   mark_footprint(building)  把建筑占地写进寻路网格
+##   mark_footprint(building)  把建筑占地写进站立网格
 
 ## 地图边长（米）
 var world_size: float = 116.0
@@ -25,8 +25,8 @@ const BUILD_MAX_HEIGHT_RANGE: float = 0.8
 var _walk_info: Dictionary = {}
 ## 地形
 var terrain: RtsTerrain = null
-## 寻路器
-var pathfinder: NavGrid = null
+## 站立网格
+var stand_grid: RtsStandGrid = null
 ## 地图数据
 var map_data: MapGenerator.MapData = null
 ## 地图定义（只有走 MapDef 建关时才有；默认程序化地图为 null）
@@ -39,7 +39,7 @@ var _base_pos: Dictionary = {}
 var _anchor_cache: Dictionary = {}
 ## 建筑列表（占格用）
 var _buildings: Array = []
-## 建筑实例 id → 实际写入寻路网格的格子矩形（含 1 格净空）。
+## 建筑实例 id → 实际写入站立网格的格子矩形（含 1 格净空）。
 ## 为什么单独存：偶数/奇数足迹在 1m 网格上的"中心格"不是对称的，
 ## 旧实现用 world_to_cell(中心) + footprint+2 会在一边多挖/少挖一格，
 ## 单位贴墙寻路时就会在"能走/不能走"之间反复横跳。现在按世界包围盒算，
@@ -51,7 +51,7 @@ var _props_root: Node3D = null
 var _harvestables: Array = []
 
 ## ★ 道具占格的引用计数（"这格到底还有谁占着"）。
-## 为什么必须有：`NavGrid.mark_blocked(cell, false)` 只知道"这格现在可走"，
+## 为什么必须有：`RtsStandGrid.mark_blocked(cell, false)` 只知道"这格现在可走"，
 ## 不知道是**谁**挡的。砍树时如果无脑放开 2×2/圆里的所有格，会把邻树、岩石、
 ## 甚至水面/建筑的格子一起打开 —— 于是 A* 认为能穿树，单位真的走进树冠后停住。
 ## 现在：cell 索引 → 占着它的实体数量；只有计数归零、且不是地形/水/边界挡的，
@@ -64,7 +64,7 @@ var _pending_tree_cells: Array = []
 ## 与道具无关的阻挡（地形陡坡 / 水面 / 边界）：这些格**永远不许**被 release 打开
 var _base_blocked: PackedByteArray = PackedByteArray()
 ## 占格规则的唯一实现
-const 占格 := preload("res://Game/pathing/占格规则.gd")
+const 占格 := preload("res://Game/map/占格规则.gd")
 
 
 ## 建关（主场景调用；不要用 _ready 自动建，方便测试按需构建）
@@ -173,7 +173,7 @@ func _build_world(cfg: GameConfig) -> void:
 	_tune_surface_debris()
 
 	# --- 1.6 台地顶可建区清障 ---
-	# 地图生成器会在台地顶撒装饰岩石，并把它们写进寻路网格。结果就是
+	# 地图生成器会在台地顶撒装饰岩石，并把它们写进站立网格。结果就是
 	# "台地顶看着平，却因为一块 1m 的石头放不下 4×4 建筑"。
 	# 这里只清台地顶圆盘内的石头占格（金矿/树占格一律不动），
 	# 并把石头挪到崖脚当碎石——视觉不退步，可建区是真正的平地。
@@ -184,13 +184,13 @@ func _build_world(cfg: GameConfig) -> void:
 	# 单位就会挂在 60° 的岩壁上。这里用**建好的地形三角面**重算坡度，坡道留、崖壁砍。
 	_prepare_walkability()
 
-	# --- 3. 寻路网格 ---
-	pathfinder = NavGrid.new()
-	pathfinder.build(world_size, map_data.walkable)
+	# --- 3. 站立网格 ---
+	stand_grid = RtsStandGrid.new()
+	stand_grid.build(world_size, map_data.walkable)
 	# 建完立即统计"每格被哪个道具占着"：砍树释放要靠它做引用计数。
 	_rebuild_prop_owners()
 
-	# --- 3.5 崖脚碎石（纯装饰，追加在寻路网格建好之后，不影响可走性） ---
+	# --- 3.5 崖脚碎石（纯装饰，追加在站立网格建好之后，不影响可走性） ---
 	_append_cliff_scree()
 
 	# --- 4. 远景底板 ---
@@ -309,7 +309,7 @@ func _cell_holds_prop(wx: float, wz: float) -> bool:
 	return false
 
 
-## 崖脚碎石/落石：纯装饰，追加在寻路网格建好之后（不写 walkable，也不改高度）。
+## 崖脚碎石/落石：纯装饰，追加在站立网格建好之后（不写 walkable，也不改高度）。
 ##
 ## 判定：格子本身是 26°~64° 的坡，沿下坡方向 2.4m 处变缓（<20°）→ 那里就是崖脚。
 ## 用确定性哈希稀疏取样，避免糊成一条石头项链。
@@ -499,7 +499,7 @@ func _count_walkable(a: PackedByteArray) -> int:
 # 道具占格：注册 / 释放（树砍倒的唯一出口）
 # ===========================================================================
 
-## 建好寻路网格之后立刻统计"每格被哪个道具占着"，同时固化与道具无关的阻挡。
+## 建好站立网格之后立刻统计"每格被哪个道具占着"，同时固化与道具无关的阻挡。
 ##
 ## 数据源和 `地图生成._apply_prop_blocks` / `地图加载器.build_walkable_mask(cells)`
 ## 是**同一个** `占格规则`，所以这里统计出的格子必然等于掩码里被道具压掉的那些 ——
@@ -508,7 +508,7 @@ func _rebuild_prop_owners() -> void:
 	_prop_owner.clear()
 	_prop_cells_of.clear()
 	_pending_tree_cells.clear()
-	if map_data == null or pathfinder == null:
+	if map_data == null or stand_grid == null:
 		return
 	var w: int = maxi(8, int(round(world_size)))
 	for t in map_data.trees:
@@ -555,14 +555,14 @@ func register_prop_cells(n: Node, p_cells: PackedInt32Array) -> void:
 ## 以前 `mark_blocked(cell, false)` 无脑放 2×2，会把邻树/岩石/水面一起开出来。
 ## 返回是否真的释放过（没登记过返回 false，调用方可走兜底）。
 func release_prop(n: Node) -> bool:
-	if n == null or not is_instance_valid(n) or pathfinder == null:
+	if n == null or not is_instance_valid(n) or stand_grid == null:
 		return false
 	var key: int = n.get_instance_id()
 	if not _prop_cells_of.has(key):
 		return false
 	var cells: PackedInt32Array = _prop_cells_of[key]
 	_prop_cells_of.erase(key)
-	var w: int = pathfinder.grid_size().x
+	var w: int = stand_grid.grid_size().x
 	for i in cells:
 		var left: int = int(_prop_owner.get(i, 0)) - 1
 		if left > 0:
@@ -571,7 +571,7 @@ func release_prop(n: Node) -> bool:
 		_prop_owner.erase(i)
 		if i >= 0 and i < _base_blocked.size() and _base_blocked[i] != 0:
 			continue
-		pathfinder.mark_blocked(Vector2i(i % w, i / w), false)
+		stand_grid.mark_blocked(Vector2i(i % w, i / w), false)
 	return true
 
 
@@ -744,7 +744,7 @@ func terrain_stats() -> Dictionary:
 		d["triangle_count"] = terrain.triangle_count()
 		d["subdivided_cells"] = terrain.subdivided_cell_count()
 		d["steep_face_ratio"] = terrain.steep_face_ratio()
-	if pathfinder != null:
+	if stand_grid != null:
 		var w: int = int(round(world_size))
 		d["walkable_cells"] = _count_walkable(map_data.walkable)
 		d["walkable_ratio"] = float(d["walkable_cells"]) / float(maxi(1, w * w))
@@ -823,9 +823,9 @@ func snap_to_ground(pos: Vector3) -> Vector3:
 	return Vector3(pos.x, height_at(pos.x, pos.z), pos.z)
 
 
-## 取寻路器
-func grid_pathfinder() -> NavGrid:
-	return pathfinder
+## 取站立网格
+func stand_grid_of() -> RtsStandGrid:
+	return stand_grid
 
 
 ## 带地形高度的**直线路径**（签名不变，但不再做全图寻路）
@@ -839,8 +839,8 @@ func grid_pathfinder() -> NavGrid:
 func find_path(from: Vector3, to: Vector3, radius: float = -1.0) -> PackedVector3Array:
 	var start: Vector3 = snap_to_ground(from)
 	var goal: Vector3 = snap_to_ground(to)
-	if radius >= 0.0 and pathfinder != null:
-		goal = snap_to_ground(pathfinder.nearest_standable(goal, radius))
+	if radius >= 0.0 and stand_grid != null:
+		goal = snap_to_ground(stand_grid.nearest_standable(goal, radius))
 	var out := PackedVector3Array()
 	_append_ground_segment(out, start, goal, 0)
 	return out
@@ -866,7 +866,7 @@ func _append_ground_segment(out: PackedVector3Array, a: Vector3, b: Vector3, dep
 	var mid: Vector3 = a.lerp(b, 0.5)
 	mid.y = height_at(mid.x, mid.z)
 	# 中点必须仍然"走得过去"——不能为了贴地把路径插进墙/崖里
-	if pathfinder.line_of_sight(a, mid) and pathfinder.line_of_sight(mid, b):
+	if stand_grid.line_of_sight(a, mid) and stand_grid.line_of_sight(mid, b):
 		_append_ground_segment(out, a, mid, depth + 1)
 		_append_ground_segment(out, mid, b, depth + 1)
 	else:
@@ -875,16 +875,16 @@ func _append_ground_segment(out: PackedVector3Array, a: Vector3, b: Vector3, dep
 
 ## 某格是否可走
 func is_walkable_grid(cell: Vector2i) -> bool:
-	if pathfinder == null:
+	if stand_grid == null:
 		return false
-	return pathfinder.is_cell_walkable(cell)
+	return stand_grid.is_cell_walkable(cell)
 
 
 ## 最近可站立点
 func walkable_pos(p: Vector3) -> Vector3:
-	if pathfinder == null:
+	if stand_grid == null:
 		return p
-	return snap_to_ground(pathfinder.clamp_to_walkable(p))
+	return snap_to_ground(stand_grid.clamp_to_walkable(p))
 
 
 ## 阵营基地中心（世界坐标，已贴地）
@@ -992,14 +992,14 @@ func resource_nodes() -> Array:
 ## 为什么：新图有台地/沟壑，斜坡上盖 8×8 大本营会一半悬空一半埋地；
 ## 台地顶/低地平地的高度极差通常 <0.3m，照样能建。
 func is_buildable(pos: Vector3, footprint: Vector2i) -> bool:
-	if pathfinder == null:
+	if stand_grid == null:
 		return false
-	var center_cell: Vector2i = pathfinder.world_to_cell(pos)
+	var center_cell: Vector2i = stand_grid.world_to_cell(pos)
 	var half_x: int = footprint.x / 2
 	var half_z: int = footprint.y / 2
 	for dz in range(-half_z, half_z + footprint.y % 2):
 		for dx in range(-half_x, half_x + footprint.x % 2):
-			if not pathfinder.is_cell_walkable(Vector2i(center_cell.x + dx, center_cell.y + dz)):
+			if not stand_grid.is_cell_walkable(Vector2i(center_cell.x + dx, center_cell.y + dz)):
 				return false
 	if footprint.x > 0 and footprint.y > 0:
 		if footprint_height_range(pos, footprint) > BUILD_MAX_HEIGHT_RANGE:
@@ -1031,13 +1031,13 @@ func footprint_height_range(pos: Vector3, footprint: Vector2i) -> float:
 	return maxf(0.0, hi - lo)
 
 
-## 把建筑占地写进寻路网格（建成/放下时调用）
+## 把建筑占地写进站立网格（建成/放下时调用）
 ##
 ## ★ **必须幂等**（2026-11-07）：`建筑.setup()` 里标过一次，调用方
 ## （`order_build` 落工地 / `建筑改造.replace`）落成后又会再标一次。
 ## 改成引用计数以后，标两次 = 计数 2，`clear_footprint` 只减一次 →
 ## 拆掉建筑后原地永远留一个"看不见的禁建区"（升级自检 41 项里唯一红的那个）。
-## 建筑占格在寻路网格上**额外外扩几格**。
+## 建筑占格在站立网格上**额外外扩几格**。
 ##
 ## ★ 保持 1 格外扩（绕行走位要靠它：A/B 实测改 0 会让"沿外墙走 20m"卡住）。
 ##   "近战砍楼"的问题**不在这里解决**，而是给攻击者一条**贴墙例外**：
@@ -1045,7 +1045,7 @@ func footprint_height_range(pos: Vector3, footprint: Vector2i) -> float:
 ##   只有"正在砍这栋楼"的单位才允许走进这圈，而且绝不会走进楼里。
 const BUILDING_BLOCK_CLEARANCE: int = 1
 func mark_footprint(building: Node3D) -> void:
-	if building == null or pathfinder == null:
+	if building == null or stand_grid == null:
 		return
 	var def: UnitDef = building.def
 	if def == null or def.footprint == Vector2i.ZERO:
@@ -1063,7 +1063,7 @@ func mark_footprint(building: Node3D) -> void:
 
 ## 清除建筑占地（建筑被拆时调用）
 func clear_footprint(building: Node3D) -> void:
-	if building == null or pathfinder == null:
+	if building == null or stand_grid == null:
 		return
 	var def: UnitDef = building.def
 	if def == null:
@@ -1081,19 +1081,19 @@ func clear_footprint(building: Node3D) -> void:
 		_buildings.erase(building)
 
 
-## 格矩形 → 格索引数组（和 pathfinder / 掩码同一套索引）
+## 格矩形 → 格索引数组（和 stand_grid / 掩码同一套索引）
 func _rect_cells(rect: Rect2i) -> PackedInt32Array:
 	var out := PackedInt32Array()
-	if pathfinder == null or rect.size.x <= 0 or rect.size.y <= 0:
+	if stand_grid == null or rect.size.x <= 0 or rect.size.y <= 0:
 		return out
-	var w: int = pathfinder.grid_size().x
+	var w: int = stand_grid.grid_size().x
 	for z in range(rect.position.y, rect.position.y + rect.size.y):
 		for x in range(rect.position.x, rect.position.x + rect.size.x):
 			out.append(z * w + x)
 	return out
 
 
-## 建筑占地在 **1m 寻路网格** 上的格子矩形（含净空）。
+## 建筑占地在 **1m 站立网格** 上的格子矩形（含净空）。
 ## 世界→格：格子 i 覆盖 [i - half, i+1 - half)。
 ## 用包围盒的 min/max 取 floor/ceil，再向四周各扩 clearance 格；
 ## 这样 8×8 / 6×6 / 3×3 在偶数/奇数足迹下都是**对称**的。
@@ -1112,20 +1112,20 @@ func _footprint_cell_rect(building: Node3D, def: UnitDef, clearance: int) -> Rec
 	return Rect2i(x0, z0, maxi(1, x1 - x0), maxi(1, z1 - z0))
 
 
-## 把矩形逐格写进/清出寻路网格（带边界裁剪）
+## 把矩形逐格写进/清出站立网格（带边界裁剪）
 func _apply_footprint_rect(rect: Rect2i, blocked: bool) -> void:
-	if pathfinder == null or rect.size.x <= 0 or rect.size.y <= 0:
+	if stand_grid == null or rect.size.x <= 0 or rect.size.y <= 0:
 		return
 	for z in range(rect.position.y, rect.position.y + rect.size.y):
 		for x in range(rect.position.x, rect.position.x + rect.size.x):
-			pathfinder.mark_blocked(Vector2i(x, z), blocked)
+			stand_grid.mark_blocked(Vector2i(x, z), blocked)
 
 
 # ===========================================================================
 # 摆放道具
 # ===========================================================================
 
-## 生成树 / 金矿 / 岩石（在开局单位之前调用，好让寻路网格先固定下来）
+## 生成树 / 金矿 / 岩石（在开局单位之前调用，好让站立网格先固定下来）
 func spawn_props() -> void:
 	if map_data == null:
 		return
@@ -1176,7 +1176,7 @@ func spawn_props() -> void:
 
 
 ## 生成一个可采集物
-## p_cells：它在寻路网格上挡住的格子（来自 `占格规则`，和掩码同一份）。
+## p_cells：它在站立网格上挡住的格子（来自 `占格规则`，和掩码同一份）。
 ## 砍倒时 `可采集物._free_footprint` 会走 `release_prop` 按这份格子做引用计数释放。
 func _spawn_harvestable(id: StringName, pos: Vector3, proc: Dictionary = {},
 		p_cells: PackedInt32Array = PackedInt32Array()) -> Node3D:
@@ -1355,7 +1355,7 @@ func _add_banners(b: Node3D, faction: RtsFaction) -> void:
 ##   真要合批，得改成用实例色承担颜色（放弃顶点 AO），那是另一套取舍，先不做。
 ##
 ## 2026-10-31：外观参数（变体 / 三轴缩放 / 倾斜 / 下沉）**全部来自生成期**
-## （见 地图生成._place_rocks）。老Content/maps/老存档里没有这些字段时，这里按索引
+## （见 地图生成._place_rocks）。老地图/老存档里没有这些字段时，这里按索引
 ## 兜底推一个稳定值，保证"换个地图也不会突然全是同一块石头"。
 const PROC_ROCK := true
 

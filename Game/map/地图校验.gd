@@ -191,9 +191,9 @@ static func validate(m: MapDef) -> Dictionary:
 			if d == null:
 				warnings.append("未知单位/建筑类型 id：%s" % String(o.type_id))
 			elif int(o.category) == MapObject.Category.BUILDING:
-				# 建筑必须和寻路网格共用同一套 1m 格 + 90° 朝向（旧图会在这里被点出来）
+				# 建筑必须和站立网格共用同一套 1m 格 + 90° 朝向（旧图会在这里被点出来）
 				if not 建筑网格.is_snapped(o.position, d.footprint, m.half_size(),
-						NavGrid.CELL):
+						RtsStandGrid.CELL):
 					grid_off += 1
 				if not 建筑网格.yaw_is_snapped(o.rotation):
 					yaw_off += 1

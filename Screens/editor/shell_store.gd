@@ -1,10 +1,11 @@
 @tool
 extends RefCounted
-## 地图底壳（MapShell）的几何与契约：R1 换算、脊线分割环、石台锚点、地形高度场、校验。
+## 地图底壳（MapShell）的几何与契约：R1 换算、势力区域多边形、战术格子锚点、地形高度场、校验。
 ## 属于：Screens/editor（开发工具，不进发行版）
 ##
 ## 纪律：
 ##   · 这里是底壳几何的唯一实现：三维底壳编辑器、数据工作台、生成脚本都调它，不各写一份；
+##   · **区域多边形与格子锚点的判定/校验在 Model（C#）**，这里只做转发 + JSON ↔ Variant 转换；
 ##   · 只做纯函数，不读文件（读写统一走 dev_data.gd）；
 ##   · 源码零写死中文：显示名一律来自 Content/data/*.json 或 ui.csv。
 ##
@@ -14,28 +15,33 @@ extends RefCounted
 const R1 := 0.015
 const CELL := 1.5
 const WATER_DEFAULT := 0.2
-const BASE_H := 0.9
-const MIN_GAP_M := 1.5
+const TILE_SIZE_DEFAULT := 6.0
+const TILE_SIZE_KEEP := 10.0
+const MIN_GAP_M := 1.0
 const T_DENOM := 1000.0
 
-const DIVIDER_IDS := ["player_zone_end", "neutral_center", "push_line", "base_cross_line"]
-const DIVIDER_KEYS := {
-	"player_zone_end": "shell.divider.player_end",
-	"neutral_center": "shell.divider.neutral",
-	"push_line": "shell.divider.push",
-	"base_cross_line": "shell.divider.base_cross",
+## 三个势力区域（顺序 = 顶栏按钮顺序）。字符串契约与 Model/Map/RegionPolygon.cs 一致。
+const REGION_IDS := ["player", "neutral", "enemy"]
+const REGION_KEYS := {
+	"player": "shell.region.player",
+	"neutral": "shell.region.neutral",
+	"enemy": "shell.region.enemy",
 }
-const PLATFORM_SIDES := ["player", "enemy"]
-const PLATFORM_ROLES := ["keep", "build"]
-const DECOR_KINDS := ["tree", "rock", "fence", "flag", "stump", "crate"]
-const DECOR_TINT := {
-	"tree": Color("#4C6B3C"),
-	"rock": Color("#6E7480"),
-	"fence": Color("#8A6A42"),
-	"flag": Color("#C8A34D"),
-	"stump": Color("#7A5C36"),
-	"crate": Color("#8C6B3F"),
+const REGION_COLORS := {
+	"player": Color("#4EA1FF"),
+	"neutral": Color("#B8BCC6"),
+	"enemy": Color("#FF6E6E"),
 }
+const TILE_SIDES := ["player", "enemy", "neutral"]
+const TILE_ROLES := ["keep", "build"]
+const DECOR_KINDS := ["tree", "rock", "grass", "rubble", "goldmine", "water",
+	"fence", "flag", "stump", "crate", "barrel", "tent", "wall", "signpost", "bones"]
+
+## 装饰注册表（真实资产路径只写在 JSON 里，源码保持 ASCII）。
+const DECOR_TABLE := "res://Content/data/shell_decor.json"
+static var _decor_rows: Array = []
+static var _decor_loaded := false
+
 const PALETTE_FALLBACK := [
 	{"id": "grass", "color": "#5D6B3F"},
 	{"id": "dirt", "color": "#6B5A43"},
@@ -43,9 +49,26 @@ const PALETTE_FALLBACK := [
 	{"id": "sand", "color": "#8A7A56"},
 ]
 
+## Model 桥（懒建；非 .NET 编辑器下为 null，校验会明确报"内核不可用"）。
+static var _bridge: RefCounted = null
+static var _bridge_checked := false
+
+
+static func bridge() -> RefCounted:
+	if _bridge != null and is_instance_valid(_bridge):
+		return _bridge
+	if _bridge_checked:
+		return _bridge
+	_bridge_checked = true
+	var script: Script = load("res://Game/adapters/bridge.gd") as Script
+	if script == null:
+		return null
+	_bridge = script.call("get_bridge") as RefCounted
+	return _bridge
+
 
 # ===========================================================================
-# R1 与分割环
+# R1 与逻辑刻度
 # ===========================================================================
 static func logic_of(meters: float) -> float:
 	return roundf(meters / R1)
@@ -63,36 +86,6 @@ static func t_of_logic(logic: float, length_logic: float) -> int:
 
 static func logic_of_t(t: int, length_logic: float) -> float:
 	return roundf(float(clampi(t, 0, 999)) / T_DENOM * length_logic)
-
-
-static func divider(shell: Dictionary, id: String) -> Dictionary:
-	var spine: Dictionary = shell.get("spine", {})
-	var divs: Dictionary = spine.get("dividers", {})
-	return divs.get(id, {}) as Dictionary
-
-
-static func set_divider_t(shell: Dictionary, id: String, t: int) -> void:
-	var spine: Dictionary = shell.get("spine", {})
-	if not spine.has("dividers"):
-		spine["dividers"] = {}
-	var divs: Dictionary = spine.get("dividers", {})
-	if not divs.has(id):
-		divs[id] = {"display_name": ""}
-	var length_logic := float(spine.get("length_logic", 4000.0))
-	var row: Dictionary = divs[id]
-	row["t"] = clampi(t, 0, 999)
-	row["length_logic"] = logic_of_t(int(row["t"]), length_logic)
-	row["meters"] = meters_of(float(row["length_logic"]))
-
-
-static func sorted_dividers(shell: Dictionary) -> Array:
-	var out: Array = []
-	for id in DIVIDER_IDS:
-		var d := divider(shell, id)
-		if not d.is_empty():
-			out.append({"id": id, "t": int(d.get("t", 0)), "logic": float(d.get("length_logic", 0.0))})
-	out.sort_custom(func(a, b): return int(a["t"]) < int(b["t"]))
-	return out
 
 
 # ===========================================================================
@@ -241,7 +234,7 @@ static func palette_color(shell: Dictionary, index: int) -> Color:
 
 
 # ===========================================================================
-# 脊线
+# 脊线（行军通道，只做视觉与通道宽度；分区改由多边形负责）
 # ===========================================================================
 static func spine_points(shell: Dictionary) -> Array:
 	var spine: Dictionary = shell.get("spine", {})
@@ -316,41 +309,188 @@ static func direction_at_t(shell: Dictionary, t: int) -> Vector2:
 
 
 # ===========================================================================
-# 石台锚点
+# 势力区域（XZ 多边形）
 # ===========================================================================
-static func platforms(shell: Dictionary) -> Array:
-	return shell.get("platforms", []) as Array
+## JSON 里的顶点是 [x, z] 数组（Vector2 会被 JSON 序列化成字符串，不能用）。
+static func region_points(shell: Dictionary, kind: String) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	var regions: Dictionary = shell.get("regions", {})
+	var arr: Array = regions.get(kind, [])
+	for row in arr:
+		if row is Array and (row as Array).size() >= 2:
+			out.append(Vector2(float(row[0]), float(row[1])))
+		elif row is Vector2:
+			out.append(row)
+		elif row is Dictionary:
+			out.append(Vector2(float((row as Dictionary).get("x", 0.0)), float((row as Dictionary).get("z", 0.0))))
+	return out
 
 
-static func platform_by_index(shell: Dictionary, index: int) -> Dictionary:
-	for p in platforms(shell):
-		if int((p as Dictionary).get("index", -1)) == index:
-			return p as Dictionary
+static func set_region_points(shell: Dictionary, kind: String, points: PackedVector2Array) -> void:
+	var regions: Dictionary = shell.get("regions", {})
+	var arr: Array = []
+	for p in points:
+		arr.append([snappedf(p.x, 0.01), snappedf(p.y, 0.01)])
+	regions[kind] = arr
+	shell["regions"] = regions
+
+
+## 新建底壳的默认三块矩形（几何在 Model 里算，这里只做 JSON 装换）。
+static func default_regions(shell: Dictionary) -> Dictionary:
+	var sz := size_of(shell)
+	var b := bridge()
+	if b == null:
+		return {"player": [], "neutral": [], "enemy": []}
+	var raw: Dictionary = b.call("RegionDefaults", sz.x, sz.y)
+	var out: Dictionary = {}
+	for kind in REGION_IDS:
+		var pts: PackedVector2Array = raw.get(kind, PackedVector2Array())
+		var arr: Array = []
+		for p in pts:
+			arr.append([snappedf(p.x, 0.01), snappedf(p.y, 0.01)])
+		out[kind] = arr
+	return out
+
+
+## 确保 regions 三个 kind 都有合法多边形（缺的就补默认矩形）。
+static func ensure_regions(shell: Dictionary) -> bool:
+	var regions: Dictionary = shell.get("regions", {})
+	var changed := false
+	var defaults := {}
+	for kind in REGION_IDS:
+		var pts := region_points(shell, kind)
+		if pts.size() < 3:
+			if defaults.is_empty():
+				defaults = default_regions(shell)
+			regions[kind] = (defaults.get(kind, []) as Array).duplicate(true)
+			changed = true
+	if changed:
+		shell["regions"] = regions
+	return changed
+
+
+static func region_centroid(points: PackedVector2Array) -> Vector2:
+	if points.is_empty():
+		return Vector2.ZERO
+	var sum := Vector2.ZERO
+	for p in points:
+		sum += p
+	return sum / float(points.size())
+
+
+## 点是否在区域多边形内（**Model 的唯一实现**；桥不可用返回 false）。
+static func region_contains(points: PackedVector2Array, x: float, z: float) -> bool:
+	var b := bridge()
+	if b == null:
+		return false
+	var arr: Array = []
+	for p in points:
+		arr.append(p)
+	return bool(b.call("RegionContains", arr, x, z))
+
+
+static func region_validate(kind: String, points: PackedVector2Array) -> Array:
+	var b := bridge()
+	if b == null:
+		return ["model bridge unavailable"]
+	var arr: Array = []
+	for p in points:
+		arr.append(p)
+	return b.call("RegionValidate", kind, arr) as Array
+
+
+# ===========================================================================
+# 战术格子（TacticalTile）
+# ===========================================================================
+static func tiles(shell: Dictionary) -> Array:
+	return shell.get("tiles", []) as Array
+
+
+static func tile_by_index(shell: Dictionary, index: int) -> Dictionary:
+	for t in tiles(shell):
+		if int((t as Dictionary).get("index", -1)) == index:
+			return t as Dictionary
 	return {}
 
 
 static func next_index(shell: Dictionary) -> int:
 	var best := 0
-	for p in platforms(shell):
-		best = maxi(best, int((p as Dictionary).get("index", 0)))
+	for t in tiles(shell):
+		best = maxi(best, int((t as Dictionary).get("index", 0)))
 	return best + 1
 
 
-static func platform_top_y(platform: Dictionary) -> float:
-	return float(platform.get("terrain_y", 0.0)) + float(platform.get("base_h", BASE_H))
+## 格子的本地→世界锚点（建筑位 = 左上角，出兵位 = 正中心）。唯一实现在 Model。
+static func tile_anchors(tile: Dictionary) -> Dictionary:
+	var b := bridge()
+	if b == null:
+		return {}
+	return b.call("TileAnchors", tile) as Dictionary
+
+
+## 四个世界角点（视觉用；与 Model 的旋转口径一致：x' = x·cos + z·sin，z' = -x·sin + z·cos）。
+static func tile_corners(tile: Dictionary) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	var x := float(tile.get("x", 0.0))
+	var z := float(tile.get("z", 0.0))
+	var hw := float(tile.get("w", TILE_SIZE_DEFAULT)) * 0.5
+	var hd := float(tile.get("d", TILE_SIZE_DEFAULT)) * 0.5
+	var yaw := deg_to_rad(float(tile.get("yaw", 0.0)))
+	var c := cos(yaw)
+	var s := sin(yaw)
+	for local in [Vector2(-hw, -hd), Vector2(hw, -hd), Vector2(hw, hd), Vector2(-hw, hd)]:
+		out.append(Vector2(x + local.x * c + local.y * s, z - local.x * s + local.y * c))
+	return out
+
+
+static func tile_center_y(shell: Dictionary, tile: Dictionary) -> float:
+	return float(tile.get("terrain_y", height_at(shell, float(tile.get("x", 0.0)), float(tile.get("z", 0.0)))))
+
+
+## 点是否在这个格子里（编辑器拾取用；旋转按 yaw 反向还原到本地）。
+static func tile_contains(tile: Dictionary, x: float, z: float) -> bool:
+	var dx := x - float(tile.get("x", 0.0))
+	var dz := z - float(tile.get("z", 0.0))
+	var yaw := deg_to_rad(float(tile.get("yaw", 0.0)))
+	var c := cos(yaw)
+	var s := sin(yaw)
+	var lx := dx * c - dz * s
+	var lz := dx * s + dz * c
+	return absf(lx) <= float(tile.get("w", TILE_SIZE_DEFAULT)) * 0.5 \
+		and absf(lz) <= float(tile.get("d", TILE_SIZE_DEFAULT)) * 0.5
+
+
+## 两个格子的边到边间隙（米，负=重叠）。与 Model/TacticalTile.EdgeGap 同口径。
+static func tile_gap(a: Dictionary, b: Dictionary) -> float:
+	var ba := _tile_bounds(a)
+	var bb := _tile_bounds(b)
+	var dx := maxf(float(ba[0]) - float(bb[2]), float(bb[0]) - float(ba[2]))
+	var dz := maxf(float(ba[1]) - float(bb[3]), float(bb[1]) - float(ba[3]))
+	if dx < 0.0 and dz < 0.0:
+		return maxf(dx, dz)
+	return sqrt(maxf(dx, 0.0) * maxf(dx, 0.0) + maxf(dz, 0.0) * maxf(dz, 0.0))
+
+
+static func _tile_bounds(tile: Dictionary) -> Array:
+	var pts := tile_corners(tile)
+	var min_x := float(pts[0].x)
+	var max_x := min_x
+	var min_z := float(pts[0].y)
+	var max_z := min_z
+	for p in pts:
+		min_x = minf(min_x, p.x)
+		max_x = maxf(max_x, p.x)
+		min_z = minf(min_z, p.y)
+		max_z = maxf(max_z, p.y)
+	return [min_x, min_z, max_x, max_z]
 
 
 static func min_gap_meters(shell: Dictionary) -> float:
-	var list := platforms(shell)
+	var list := tiles(shell)
 	var best := 99999.0
 	for i in list.size():
-		var a: Dictionary = list[i]
 		for j in range(i + 1, list.size()):
-			var b: Dictionary = list[j]
-			var dx := float(a.get("x", 0.0)) - float(b.get("x", 0.0))
-			var dz := float(a.get("z", 0.0)) - float(b.get("z", 0.0))
-			var edge := sqrt(dx * dx + dz * dz) - float(a.get("radius", 0.0)) - float(b.get("radius", 0.0))
-			best = minf(best, edge)
+			best = minf(best, tile_gap(list[i] as Dictionary, list[j] as Dictionary))
 	return best
 
 
@@ -358,9 +498,9 @@ static func side_of(x: float) -> String:
 	return "player" if x < 0.0 else "enemy"
 
 
-## 局内规则：布局卡激活的石台才可建造，未激活的渲染成碎石遗迹。
+## 局内规则：布局卡激活的格子才可建造，未激活的渲染成碎石遗迹。
 static func is_active(layout: Dictionary, index: int) -> bool:
-	for v in (layout.get("active_platforms", []) as Array):
+	for v in (layout.get("active_tiles", []) as Array):
 		if int(v) == index:
 			return true
 	return false
@@ -368,13 +508,38 @@ static func is_active(layout: Dictionary, index: int) -> bool:
 
 static func slot_at(layout: Dictionary, index: int) -> Dictionary:
 	for row in (layout.get("slots", []) as Array):
-		if int((row as Dictionary).get("platform", -1)) == index:
+		if int((row as Dictionary).get("tile", -1)) == index:
 			return row as Dictionary
 	return {}
 
 
 # ===========================================================================
-# 校验
+# 装饰注册表（资产路径只写在 JSON；见 Content/docs/asset_manifest.md）
+# ===========================================================================
+static func decor_rows() -> Array:
+	if _decor_loaded:
+		return _decor_rows
+	_decor_loaded = true
+	_decor_rows = []
+	var f := FileAccess.open(DECOR_TABLE, FileAccess.READ)
+	if f == null:
+		return _decor_rows
+	var parsed: Variant = JSON.parse_string(f.get_as_text())
+	f.close()
+	if parsed is Dictionary:
+		_decor_rows = (parsed as Dictionary).get("kinds", []) as Array
+	return _decor_rows
+
+
+static func decor_row(kind: String) -> Dictionary:
+	for row in decor_rows():
+		if String((row as Dictionary).get("id", "")) == kind:
+			return row as Dictionary
+	return {}
+
+
+# ===========================================================================
+# 校验（结构 + Model 转发）
 # ===========================================================================
 static func validate_shell(shell: Dictionary) -> Array:
 	var bad: Array = []
@@ -418,73 +583,32 @@ static func validate_shell(shell: Dictionary) -> Array:
 	var width_logic := float(spine.get("width_logic", 0.0))
 	if width_logic < 100.0 or width_logic > 999.0:
 		bad.append(id + " width_logic=%.0f not 3-digit" % width_logic)
-	var last_t := -1
-	for did in DIVIDER_IDS:
-		var d := divider(shell, did)
-		if d.is_empty():
-			bad.append(id + " divider " + did + " missing")
-			continue
-		var t := int(d.get("t", -1))
-		if t < 100 or t > 999:
-			bad.append(id + " divider " + did + " t=%d not 3-digit" % t)
-			continue
-		if t <= last_t:
-			bad.append(id + " divider " + did + " t=%d out of order" % t)
-		last_t = t
-		var logic := float(d.get("length_logic", -1.0))
-		var meters := float(d.get("meters", -1.0))
-		if absf(logic - logic_of_t(t, length_logic)) > 0.5:
-			bad.append(id + " divider " + did + " logic=%.0f != t-derived %.0f" % [logic, logic_of_t(t, length_logic)])
-		if absf(meters - meters_of(logic)) > 0.0001:
-			bad.append(id + " divider " + did + " meters=%.3f != logic×R1" % meters)
 
-	var seen := {}
-	var keep_by_side := {"player": 0, "enemy": 0}
-	for p in platforms(shell):
-		var pd: Dictionary = p
-		var idx := int(pd.get("index", -1))
-		if idx < 1:
-			bad.append(id + " platform index=" + str(idx))
+	# 区域：结构 + Model 的 Point-in-Polygon 校验（顶点不足 3 个会在这里报出来）
+	for kind in REGION_IDS:
+		var pts := region_points(shell, kind)
+		if pts.size() < 3:
+			bad.append("%s region %s has %d vertices" % [id, kind, pts.size()])
 			continue
-		if seen.has(idx):
-			bad.append(id + " platform index dup " + str(idx))
-		seen[idx] = true
-		var side := String(pd.get("side", ""))
-		if not (side in PLATFORM_SIDES):
-			bad.append(id + " p%d side=%s" % [idx, side])
-		var role := String(pd.get("role", ""))
-		if not (role in PLATFORM_ROLES):
-			bad.append(id + " p%d role=%s" % [idx, role])
-		if role == "keep":
-			keep_by_side[side] = int(keep_by_side.get(side, 0)) + 1
-		var radius := float(pd.get("radius", 0.0))
-		if radius < 1.0 or radius > 6.0:
-			bad.append(id + " p%d radius=%.2f" % [idx, radius])
-		var bh := float(pd.get("base_h", 0.0))
-		if bh < 0.4:
-			bad.append(id + " p%d base_h=%.2f (floating)" % [idx, bh])
-		var px := float(pd.get("x", 0.0))
-		var pz := float(pd.get("z", 0.0))
-		if absf(px) > sz.x * 0.5 or absf(pz) > sz.y * 0.5:
-			bad.append(id + " p%d out of map" % idx)
-		if side_of(px) != side:
-			bad.append(id + " p%d x=%.1f contradicts side=%s" % [idx, px, side])
-		var ty := float(pd.get("terrain_y", 0.0))
-		if absf(ty - height_at(shell, px, pz)) > 0.3:
-			bad.append(id + " p%d terrain_y=%.2f != height %.2f" % [idx, ty, height_at(shell, px, pz)])
-	if keep_by_side["player"] != 1:
-		bad.append(id + " player keep anchors=%d (need 1)" % keep_by_side["player"])
-	if keep_by_side["enemy"] != 1:
-		bad.append(id + " enemy keep anchors=%d (need 1)" % keep_by_side["enemy"])
-	var gap := min_gap_meters(shell)
-	if gap < MIN_GAP_M:
-		bad.append(id + " min gap=%.2f m < %.1f" % [gap, MIN_GAP_M])
+		for msg in region_validate(kind, pts):
+			bad.append("%s region %s: %s" % [id, kind, String(msg)])
+
+	# 战术格子：唯一索引 / 每边最多一个主堡 / 格间留缝 / 不出图（全部在 Model 里判）
+	var b := bridge()
+	if b == null:
+		bad.append(id + " model bridge unavailable")
+	else:
+		var rows: Array = []
+		for t in tiles(shell):
+			rows.append(t)
+		for msg in (b.call("TileValidate", rows, sz.x, sz.y, MIN_GAP_M) as Array):
+			bad.append(id + " tile: " + String(msg))
 
 	for dcr in (shell.get("decorations", []) as Array):
 		var dd: Dictionary = dcr
 		var kind := String(dd.get("kind", ""))
 		if not (kind in DECOR_KINDS):
-			bad.append(id + " decor kind=" + kind + " not visual-only")
+			bad.append(id + " decor kind=" + kind + " not in registry")
 		var dx := float(dd.get("x", 0.0))
 		var dz := float(dd.get("z", 0.0))
 		if absf(dx) > sz.x * 0.5 or absf(dz) > sz.y * 0.5:

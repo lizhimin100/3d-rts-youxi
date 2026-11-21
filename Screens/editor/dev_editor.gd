@@ -10,7 +10,7 @@ extends Control
 ##   04 敌人遭遇卡（enemy_encounters.json）
 ##   05 战斗节点组装（levels.json：底壳 × 布局卡 × 遭遇卡）
 ##
-## 地图底壳（地形/装饰/脊线/石台）不在这里：见 addons/map_shell_editor（3D 底壳编辑器）。
+## 地图底壳（地形/装饰/脊线/战术格子）不在这里：见 addons/map_shell_editor（3D 底壳编辑器）。
 ##
 ## 盘子：顶栏（品牌 / R1 / 保存状态 / 校验）、页签条、页面容器、状态栏。
 ## 页面各自 preload，主壳只负责切页、脏标记与统一写回。

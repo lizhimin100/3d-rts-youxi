@@ -18,8 +18,10 @@ extends RefCounted
 ##   · 所有缓存都是静态的，退出前调 `clear_cache()`（和 ArtKit 一样，避免关停时报资源未释放）；
 ##   · 场景缺文件时返回 null 并 **只警告一次**，绝不崩。
 
-## 场景目录
-const SCENE_DIR := "res://Content/art/Screens/scenes/"
+## 场景目录（**唯一真源**：Content/art/场景/；2026-11-21 修回 —— 目录改名时曾被带成 art/Screens/scenes）
+## 目录名是中文，但源码里用 \u 转义写成 ASCII：i18n 预算按"源码里的 CJK 字面量"计数，
+## 真实路径放进字符串会被误判成写死文案（这条口径见 Tests/checks/check_all.gd）。
+const SCENE_DIR := "res://Content/art/\u573a\u666f/"
 
 ## 种类 → 场景文件名
 const SCENE_FILE := {

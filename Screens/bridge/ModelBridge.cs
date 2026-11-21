@@ -2,6 +2,7 @@ using Godot;
 using System;
 using System.Collections.Generic;
 using WarIsland.Model;
+using Vec2 = System.Numerics.Vector2;
 
 namespace WarIsland.Bridge
 {
@@ -635,6 +636,152 @@ namespace WarIsland.Bridge
             }
             outDict["samples"] = samples;
             return outDict;
+        }
+
+        // =================================================================
+        // 2026-11-21 地图底壳：势力区域多边形 / 战术格子
+        // =================================================================
+        /// <summary>新建底壳的默认三块矩形（player / neutral / enemy，沿长轴切三条）。</summary>
+        public Godot.Collections.Dictionary RegionDefaults(double sizeX, double sizeZ)
+        {
+            var set = RegionSet.Defaults(sizeX, sizeZ);
+            var outDict = new Godot.Collections.Dictionary();
+            foreach (RegionKind kind in new[] { RegionKind.Player, RegionKind.Neutral, RegionKind.Enemy })
+                outDict[RegionKinds.Name(kind)] = PointsToGodot(set.Of(kind).Points);
+            return outDict;
+        }
+
+        /// <summary>区域校验（顶点不足 3 个 → 返回非空数组，这就是反向验错的靶子）。</summary>
+        public Godot.Collections.Array RegionValidate(string kind, Godot.Collections.Array points)
+        {
+            var poly = new RegionPolygon(RegionKinds.Parse(kind), ToPoints(points));
+            return ToGodotArray(poly.Validate());
+        }
+
+        public bool RegionContains(Godot.Collections.Array points, double x, double z)
+        {
+            var poly = new RegionPolygon(RegionKind.Neutral, ToPoints(points));
+            return poly.Contains(x, z);
+        }
+
+        public double RegionArea(Godot.Collections.Array points)
+        {
+            var poly = new RegionPolygon(RegionKind.Neutral, ToPoints(points));
+            return poly.Area;
+        }
+
+        /// <summary>格子校验：唯一索引 / 每边最多一个主堡 / 格间留缝 / 不出图。</summary>
+        public Godot.Collections.Array TileValidate(Godot.Collections.Array tiles, double sizeX, double sizeZ, double minGap)
+        {
+            return ToGodotArray(TacticalTileSet.Validate(ToTiles(tiles), sizeX, sizeZ, minGap));
+        }
+
+        /// <summary>单个格子的两个标准锚点（世界坐标，左上角建筑位 / 正中心出兵位）。</summary>
+        public Godot.Collections.Dictionary TileAnchors(Godot.Collections.Dictionary tile)
+        {
+            var t = ToTile(tile);
+            var b = t.BuildingAnchorWorld();
+            var s = t.SquadSpawnAnchorWorld();
+            return new Godot.Collections.Dictionary
+            {
+                { "index", t.Index },
+                { "building_x", b.X },
+                { "building_z", b.Y },
+                { "spawn_x", s.X },
+                { "spawn_z", s.Y },
+                { "local_building_x", t.BuildingAnchorLocal.X },
+                { "local_building_z", t.BuildingAnchorLocal.Y },
+                { "corners", PointsToGodot(new List<Vec2>(t.Corners())) },
+            };
+        }
+
+        /// <summary>新建底壳的默认格子（两边主堡 + 建造位）。</summary>
+        public Godot.Collections.Array TileDefaults(double sizeX, double sizeZ)
+        {
+            var arr = new Godot.Collections.Array();
+            foreach (var t in TacticalTileSet.Defaults(sizeX, sizeZ)) arr.Add(TileToGodot(t));
+            return arr;
+        }
+
+        private static Godot.Collections.Array PointsToGodot(IEnumerable<Vec2> points)
+        {
+            var arr = new Godot.Collections.Array();
+            foreach (var p in points) arr.Add(new Vector2(p.X, p.Y));
+            return arr;
+        }
+
+        private static List<Vec2> ToPoints(Godot.Collections.Array arr)
+        {
+            var list = new List<Vec2>();
+            if (arr == null) return list;
+            foreach (Variant v in arr)
+            {
+                switch (v.VariantType)
+                {
+                    case Variant.Type.Vector2:
+                        list.Add(new Vec2(v.AsVector2().X, v.AsVector2().Y));
+                        break;
+                    case Variant.Type.Dictionary:
+                    {
+                        var d = v.AsGodotDictionary();
+                        double x = d.TryGetValue("x", out Variant vx) ? vx.AsDouble() : 0.0;
+                        double z = d.TryGetValue("z", out Variant vz) ? vz.AsDouble() : 0.0;
+                        list.Add(new Vec2((float)x, (float)z));
+                        break;
+                    }
+                }
+            }
+            return list;
+        }
+
+        private static TacticalTile ToTile(Godot.Collections.Dictionary d)
+        {
+            var t = new TacticalTile();
+            if (d == null) return t;
+            t.Index = Int(d, "index", 0);
+            t.Side = Str(d, "side", RegionKinds.Player);
+            t.Role = Str(d, "role", "build");
+            t.X = d.TryGetValue("x", out Variant vx) ? vx.AsDouble() : 0.0;
+            t.Z = d.TryGetValue("z", out Variant vz) ? vz.AsDouble() : 0.0;
+            t.Width = d.TryGetValue("w", out Variant vw) ? vw.AsDouble() : 6.0;
+            t.Depth = d.TryGetValue("d", out Variant vd) ? vd.AsDouble() : 6.0;
+            t.YawDeg = d.TryGetValue("yaw", out Variant vy) ? vy.AsDouble() : 0.0;
+            t.TerrainY = d.TryGetValue("terrain_y", out Variant vt) ? vt.AsDouble() : 0.0;
+            return t;
+        }
+
+        private static List<TacticalTile> ToTiles(Godot.Collections.Array arr)
+        {
+            var list = new List<TacticalTile>();
+            if (arr == null) return list;
+            foreach (Variant v in arr)
+            {
+                if (v.VariantType == Variant.Type.Dictionary)
+                    list.Add(ToTile(v.AsGodotDictionary()));
+            }
+            return list;
+        }
+
+        private static Godot.Collections.Dictionary TileToGodot(TacticalTile t)
+        {
+            var b = t.BuildingAnchorWorld();
+            var s = t.SquadSpawnAnchorWorld();
+            return new Godot.Collections.Dictionary
+            {
+                { "index", t.Index },
+                { "side", t.Side },
+                { "role", t.Role },
+                { "x", t.X },
+                { "z", t.Z },
+                { "w", t.Width },
+                { "d", t.Depth },
+                { "yaw", t.YawDeg },
+                { "terrain_y", t.TerrainY },
+                { "building_x", b.X },
+                { "building_z", b.Y },
+                { "spawn_x", s.X },
+                { "spawn_z", s.Y },
+            };
         }
 
         private static int CountEnabled(UnitCatalog units)

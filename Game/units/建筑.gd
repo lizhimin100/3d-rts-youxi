@@ -10,7 +10,7 @@ const 可用性文案 := preload("res://Game/config/可用性文案.gd")
 ##   · 铁匠铺研究（attack_up / armor_up，各 +15%，阵营级，未来单位也吃）
 ##   · 箭塔自动开火（复用 RtsUnit 的索敌+攻击循环，不另起一套）
 ##
-## 占地：放下时写进寻路网格，被摧毁时**必须清掉**，否则那块地永远走不进去。
+## 占地：放下时写进站立网格，被摧毁时**必须清掉**，否则那块地永远走不进去。
 
 ## 建造起始血量比例（10%）
 const CONSTRUCTION_START_HP: float = 0.10
@@ -507,11 +507,8 @@ func _spawn_trained(id: StringName) -> void:
 		if u.has_method("order_move"):
 			u.call("order_move", rally_destination())
 	if Game.short_match and not made.is_empty():
-		var sq = null
-		if Game.squads != null:
-			sq = Game.squads.call("create", faction, made)
-		var sid: int = int((sq as Object).get("id")) if sq != null else 0
-		faction.commit_squad(made, int(d.pop_cost) if d != null else int(made.size()), sid)
+		# 2026-11-21：不再建 GDScript 小队对象，只登记这一批的人口（假小队已删）。
+		faction.commit_batch(made, int(d.pop_cost) if d != null else int(made.size()))
 
 
 ## 出兵点：建筑正前方（-Z 侧）散开

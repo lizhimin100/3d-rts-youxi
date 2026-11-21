@@ -53,10 +53,10 @@ func _step_direct(pos: Vector3, dt: float) -> bool:
 		return false
 	var step: float = minf(maxf(_max_speed(), 1.0) * dt, d)
 	var nx: Vector3 = global_position + to / d * step
-	var pf := _pathfinder()
+	var pf := _stand_grid()
 	if pf != null and not pf.is_standable(nx, get_radius() * CLEAR_SAFETY):
 		# 砍楼例外：只要没真的走进楼里、且本来就贴着这栋楼，就允许贴近墙面。
-		# 「本来就贴着」这条把例外的影响面钉死在 3m 内：别的地方照旧严格走寻路。
+		# 「本来就贴着」这条把例外的影响面钉死在 3m 内：别的地方照旧严格走站立判据。
 		var b := _wall_approach as RtsBuilding
 		if b == null or not is_instance_valid(b):
 			return false
@@ -294,8 +294,8 @@ var _arrived_goal: bool = false
 var _settle_dist: float = 0.0
 var _crowd_t: float = 0.0
 var _crowd_best: float = INF
-## 寻路器缓存（RefCounted，关卡重建时 is_instance_valid 会失效，自动重取）
-var _pf: NavGrid = null
+## 站立网格缓存（RefCounted，关卡重建时 is_instance_valid 会失效，自动重取）
+var _pf: RtsStandGrid = null
 ## 调试计数（只累加，正式路径不打印；自检/日志读 debug_move_stats）
 var dbg_slide_frames: int = 0
 var dbg_blocked_frames: int = 0
@@ -2419,7 +2419,7 @@ func _go_to_impl(pos: Vector3, force: bool = false) -> void:
 ##   0.6 这一项让“从不同方向来的单位自然分散到建筑的不同侧”（多单位共点不抢同一格），
 ##   同时整个函数是纯函数（目标 + 本单位位置固定 → 结果固定），所以不会逐帧变化。
 func _standable_goal(want: Vector3) -> Vector3:
-	var pf := _pathfinder()
+	var pf := _stand_grid()
 	if pf == null:
 		return want
 	var perf: bool = RtsUnit.dbg_perf
@@ -2427,11 +2427,11 @@ func _standable_goal(want: Vector3) -> Vector3:
 	var r: float = get_radius() * CLEAR_SAFETY
 	# 落点必须留出 GOAL_MARGIN 的余量：站定后还要被同伴推、被分离挤，
 	# 净空刚好 0.5 的落点一推就掉进阻挡判据，然后和 wall_pushout 对拉。
-	if pf.is_standable(want, r + NavGrid.GOAL_MARGIN):
+	if pf.is_standable(want, r + RtsStandGrid.GOAL_MARGIN):
 		if perf:
 			RtsUnit.dbg_sgoal += Time.get_ticks_usec() - _t_sg
 		return _spread_goal(want, r) if _spread_allowed() else want
-	var near: Vector3 = pf.standable_near(want, global_position, r, NavGrid.GOAL_MARGIN)
+	var near: Vector3 = pf.standable_near(want, global_position, r, RtsStandGrid.GOAL_MARGIN)
 	if perf:
 		RtsUnit.dbg_sgoal += Time.get_ticks_usec() - _t_sg
 	return _spread_goal(near, r) if _spread_allowed() else near
@@ -2466,7 +2466,7 @@ func _spread_goal(center: Vector3, r: float) -> Vector3:
 		return center
 	if not _spot_taken(center, r):
 		return center
-	var pf := _pathfinder()
+	var pf := _stand_grid()
 	if pf == null:
 		return center
 	var ring: float = maxf(SLOT_PROBE, r * 2.0 + 0.25)
@@ -2477,7 +2477,7 @@ func _spread_goal(center: Vector3, r: float) -> Vector3:
 	for i in range(steps):
 		var a: float = base + TAU * float(i) / float(steps)
 		var cand: Vector3 = center + Vector3(cos(a), 0.0, sin(a)) * ring
-		if not pf.is_standable(cand, r + NavGrid.GOAL_MARGIN):
+		if not pf.is_standable(cand, r + RtsStandGrid.GOAL_MARGIN):
 			continue
 		if _spot_taken(cand, r):
 			continue
@@ -2488,7 +2488,7 @@ func _spread_goal(center: Vector3, r: float) -> Vector3:
 	return best
 
 
-## 这一格有没有**会动的友军/任何单位**站着（建筑由寻路网格管，不算）
+## 这一格有没有**会动的友军/任何单位**站着（建筑由站立网格管，不算）
 func _spot_taken(pos: Vector3, r: float) -> bool:
 	var hash: SpatialHash = _shared_hash()
 	if hash == null:
@@ -2533,7 +2533,7 @@ func _request_path() -> void:
 		return
 	# ★ 被同伴反复堵住时，目标点做一次**侧向让位**。
 	#
-	# 为什么需要：寻路网格是静态的（单位不是障碍），十个人走同一个门洞时，
+	# 为什么需要：站立网格是静态的（单位不是障碍），十个人走同一个门洞时，
 	# 每个人算出来的路完全一样 → 谁也不让谁 → 每 0.8s 重算一次同样的路。
 	# 让位不是"随机乱走"：垂直于目标方向平移 1.2~3.7m，且按卡住次数左右交替，
 	# 这样第一个人先拐、后面的人跟着拐，队伍自然散开成两列。
@@ -2769,10 +2769,10 @@ func _crowded() -> bool:
 # 碰撞几何（扫掠 / 贴墙滑动 / 逐帧推出）
 # ===========================================================================
 
-## 取寻路器（缓存；关卡重建时 RefCounted 失效会自动重取）
-func _pathfinder() -> NavGrid:
+## 取站立网格（缓存；关卡重建时 RefCounted 失效会自动重取）
+func _stand_grid() -> RtsStandGrid:
 	if _pf == null or not is_instance_valid(_pf):
-		_pf = RtsWorld.pathfinder()
+		_pf = RtsWorld.stand_grid()
 	return _pf
 
 
@@ -3844,14 +3844,14 @@ func _clear_radius() -> float:
 
 
 ## 这一帧"真正能走的方向"：前方向能站就走；不能就沿墙切线滑动（带方向记忆）。
-## 只做局部几何查询，不重算 A*；与寻路网格共用同一套 is_standable。
+## 只做局部几何查询，不重算 A*；与站立网格共用同一套 is_standable。
 ##
 ## ★ 2026-11-01 追加**同伴避让**（玩家口径"单位相互卡位"）：
-##   寻路网格里单位不是障碍，十个人走同一个门洞时算出来的路一模一样，谁也不让谁，
+##   站立网格里单位不是障碍，十个人走同一个门洞时算出来的路一模一样，谁也不让谁，
 ##   结果就是挤成一坨、外圈的人被顶住不动。现在"前方有停着/慢吞吞的同伴"也算受阻，
 ##   同样走切线滑动 —— 队伍会自然分成两列绕过去，而不是互相顶。
 func _steer(dir: Vector3, probe: float) -> Vector3:
-	var pf: NavGrid = _pathfinder()
+	var pf: RtsStandGrid = _stand_grid()
 	if pf == null:
 		return dir
 	var r: float = _clear_radius()
@@ -3890,7 +3890,7 @@ func _steer(dir: Vector3, probe: float) -> Vector3:
 ## 前方一个身位内有没有**同伴挡路**（软避让，只回答"要不要绕"，不负责推人）。
 ##
 ## 三点克制，避免"整队人互相横跳"：
-##   ① 只认**会动的同类**：建筑/金矿本来就是障碍，由寻路网格管；
+##   ① 只认**会动的同类**：建筑/金矿本来就是障碍，由站立网格管；
 ##   ② 只看**前方**（点在前进方向上的投影 > 0），身后的人不算；
 ##   ③ **同向同速的人不算挡路** —— 否则一列行军会左右乱扭。
 func _unit_ahead(dir: Vector3, probe: float) -> bool:
@@ -3931,7 +3931,7 @@ func _unit_ahead(dir: Vector3, probe: float) -> bool:
 func _update_wall_pushout(dt: float) -> void:
 	if def == null or not is_mobile():
 		return
-	var pf: NavGrid = _pathfinder()
+	var pf: RtsStandGrid = _stand_grid()
 	if pf == null:
 		return
 	var r: float = _clear_radius()
@@ -3955,7 +3955,7 @@ func _update_wall_pushout(dt: float) -> void:
 	_pushout_t += dt
 	_pushout_retarget -= dt
 	if not _pushout_has or _pushout_retarget <= 0.0:
-		_pushout_goal = pf.nearest_standable(global_position, r + NavGrid.GOAL_MARGIN)
+		_pushout_goal = pf.nearest_standable(global_position, r + RtsStandGrid.GOAL_MARGIN)
 		_pushout_has = true
 		_pushout_retarget = PUSHOUT_RETARGET
 	var d: Vector3 = _pushout_goal - global_position
@@ -3967,7 +3967,7 @@ func _update_wall_pushout(dt: float) -> void:
 		# 连续多帧无解：允许一次兜底（日志可查；正式路径应为 0）
 		dbg_snap_fallbacks += 1
 		global_position = RtsWorld.snap_y(pf.nearest_standable(global_position,
-			r + NavGrid.GOAL_MARGIN))
+			r + RtsStandGrid.GOAL_MARGIN))
 		_pushout_t = 0.0
 		_pushout_has = false
 		_need_repath = true

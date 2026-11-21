@@ -1,5 +1,5 @@
 extends SceneTree
-## 职责：把底壳的初始几何（高度场 / 地表槽位 / 石台吸附高度）与"三张卡 -> 关卡"的组装结果写回 Content/data。
+## 职责：把底壳的初始几何（高度场 / 地表槽位 / 战术格子吸附高度 / 三块区域）与"三张卡 -> 关卡"的组装结果写回 Content/data。
 ## 属于：Tools/gen
 ## 用法：godot --headless --path . --script Tools/gen/gen_map_shells.gd
 ## 时机：新增底壳、改底壳尺寸、或首次生成某个 [底壳 x 布局卡 x 遭遇卡] 组合时跑一次。
@@ -54,14 +54,14 @@ func _fill_shell(shell: Dictionary) -> void:
 	var surface: Dictionary = shell.get("surface", {})
 	surface["index"] = ShellStore.autopaint(shell)
 	shell["surface"] = surface
-	for p in (shell.get("platforms", []) as Array):
-		var pd: Dictionary = p
-		var px := float(pd.get("x", 0.0))
-		var pz := float(pd.get("z", 0.0))
-		pd["terrain_y"] = snappedf(ShellStore.height_at(shell, px, pz), 0.001)
-		pd["side"] = ShellStore.side_of(px)
-		if float(pd.get("base_h", 0.0)) < 0.4:
-			pd["base_h"] = ShellStore.BASE_H
+	# 新建底壳：三块势力区域缺了就补默认矩形（几何在 Model 里算）
+	ShellStore.ensure_regions(shell)
+	for p in (shell.get("tiles", []) as Array):
+		var td: Dictionary = p
+		var px := float(td.get("x", 0.0))
+		var pz := float(td.get("z", 0.0))
+		td["terrain_y"] = snappedf(ShellStore.height_at(shell, px, pz), 0.001)
+		td["side"] = ShellStore.side_of(px)
 	for dec in (shell.get("decorations", []) as Array):
 		var dd: Dictionary = dec
 		dd["y"] = snappedf(ShellStore.height_at(shell, float(dd.get("x", 0.0)), float(dd.get("z", 0.0))), 0.001)

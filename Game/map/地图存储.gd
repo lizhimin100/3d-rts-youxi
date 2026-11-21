@@ -11,7 +11,6 @@ const RECENT_CFG := "res://Content/maps/_最近地图.cfg"
 const RECENT_KEY := "recent"
 const RECENT_MAX := 8
 ## Test Map 用的临时地图（项目内「地图」文件夹，游戏通过 --map=res://... 读）
-const TEST_MAP_PATH := "res://Content/maps/_测试地图.tres"
 
 
 # ===========================================================================

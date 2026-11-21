@@ -11,13 +11,13 @@ extends RefCounted
 ##     盖满 9 格。这样 `mark_footprint` / `is_buildable` / A* 看到的是同一批格子，
 ##     谁也不会再"骑格"。
 ##
-## 和寻路共用同一套格：格子边长、格子原点全部读 `NavGrid`（不另设一套，
+## 和寻路共用同一套格：格子边长、格子原点全部读 `RtsStandGrid`（不另设一套，
 ## 也不改它的 CELL）。所以地图尺寸 / 格子大小变了，这里自动跟着变。
 ##
-## 静态类，不持有任何状态；没有关卡 / 寻路器时退化成"原地平面网格"，不会崩。
+## 静态类，不持有任何状态；没有关卡 / 站立网格时退化成"原地平面网格"，不会崩。
 
 ## 寻路格宽（唯一真相）：编辑器/游戏/地图生成都从这里取，别再写 1.0
-const CELL: float = NavGrid.CELL
+const CELL: float = RtsStandGrid.CELL
 
 ## 朝向吸附档位：90°。资产包（大本营 / 兵营 / 农场 / 铁匠铺 / 箭塔）全部是正交
 ## 设计的墙线，斜放会露出模型底面、墙面对不上，所以不做 45° / 任意角。
@@ -66,8 +66,8 @@ const PREVIEW_LIFT: float = 0.05
 ## 不幂等的话预览会左右抖。
 static func snap_point(pos: Vector3, footprint: Vector2i) -> Vector3:
 	var fp := Vector2i(maxi(footprint.x, 1), maxi(footprint.y, 1))
-	var cell: float = NavGrid.CELL
-	var half: float = _grid_half(RtsWorld.pathfinder())
+	var cell: float = RtsStandGrid.CELL
+	var half: float = _grid_half(RtsWorld.stand_grid())
 	var p := snap_point_in(pos, fp, half, cell)
 	return RtsWorld.ground(p)
 
@@ -101,11 +101,11 @@ static func _snap_axis(w: float, n: int, half: float, cell: float) -> float:
 
 
 ## 建筑网格的"半边长"（= 关卡 world_size / 2）。
-## 由寻路器反算而不是直接读关卡字段：格子原点只认寻路器，避免两份真相。
-static func _grid_half(pf: NavGrid) -> float:
+## 由站立网格反算而不是直接读关卡字段：格子原点只认站立网格，避免两份真相。
+static func _grid_half(pf: RtsStandGrid) -> float:
 	if pf == null:
 		return 0.0
-	return NavGrid.CELL * 0.5 - pf.cell_to_world(Vector2i.ZERO).x
+	return RtsStandGrid.CELL * 0.5 - pf.cell_to_world(Vector2i.ZERO).x
 
 
 # ===========================================================================
@@ -125,16 +125,16 @@ static func snap_yaw(yaw: float) -> float:
 # 3. 占格查询
 # ===========================================================================
 
-## 建筑落点占用的格子（顺序 z 优先，与寻路器 mark_blocked_rect 完全一致）。
-## 没有寻路器时返回空数组（调用方按"无边可判"处理）。
+## 建筑落点占用的格子（顺序 z 优先，与站立网格 mark_blocked_rect 完全一致）。
+## 没有站立网格时返回空数组（调用方按"无边可判"处理）。
 static func cells_of(center: Vector3, footprint: Vector2i) -> Array[Vector2i]:
-	var pf: NavGrid = RtsWorld.pathfinder()
+	var pf: RtsStandGrid = RtsWorld.stand_grid()
 	if pf == null:
 		return []
-	return cells_of_in(center, footprint, _grid_half(pf), NavGrid.CELL)
+	return cells_of_in(center, footprint, _grid_half(pf), RtsStandGrid.CELL)
 
 
-## **纯函数版占格查询**：格子坐标与寻路器完全同一套（z*格数+x）。
+## **纯函数版占格查询**：格子坐标与站立网格完全同一套（z*格数+x）。
 static func cells_of_in(center: Vector3, footprint: Vector2i, half: float, cell: float) -> Array[Vector2i]:
 	var out: Array[Vector2i] = []
 	var fp := Vector2i(maxi(footprint.x, 1), maxi(footprint.y, 1))
@@ -147,7 +147,7 @@ static func cells_of_in(center: Vector3, footprint: Vector2i, half: float, cell:
 	return out
 
 
-## 世界点 → 1m 寻路格（和 NavGrid.world_to_cell 同一公式）
+## 世界点 → 1m 寻路格（和 RtsStandGrid.world_to_cell 同一公式）
 static func cell_of_point(pos: Vector3, half: float, cell: float) -> Vector2i:
 	var c: float = maxf(cell, 0.01)
 	return Vector2i(floori((pos.x + half) / c), floori((pos.z + half) / c))
@@ -165,10 +165,10 @@ static func yaw_is_snapped(yaw: float) -> bool:
 
 
 ## 这个落点能不能建（**只读查询**，不扣钱、不落工地）。
-## 通行判定完全走寻路器的 `is_cell_walkable`，不在这里另立一套；
+## 通行判定完全走站立网格的 `is_cell_walkable`，不在这里另立一套；
 ## 关卡在的话再顺带问一次 `is_buildable`（它还管地形高度极差）。
 static func can_place(center: Vector3, footprint: Vector2i) -> bool:
-	var pf: NavGrid = RtsWorld.pathfinder()
+	var pf: RtsStandGrid = RtsWorld.stand_grid()
 	if pf == null:
 		# 与 RtsWorld.is_buildable 的降级口径一致：无关卡 = 平地，处处可建
 		return true
@@ -195,9 +195,9 @@ static func can_place(center: Vector3, footprint: Vector2i) -> bool:
 ## 返回的节点直接用**世界坐标**建面（`top_level = true`），调用方 add_child 即可，
 ## 不用关心父节点有没有位移；要跟着鼠标走就整体 `queue_free()` 后重建。
 static func make_grid_preview(center: Vector3, footprint: Vector2i, ok: bool) -> MeshInstance3D:
-	var pf: NavGrid = RtsWorld.pathfinder()
+	var pf: RtsStandGrid = RtsWorld.stand_grid()
 	var half: float = _grid_half(pf)
-	return make_grid_preview_custom(center, footprint, ok, half, NavGrid.CELL,
+	return make_grid_preview_custom(center, footprint, ok, half, RtsStandGrid.CELL,
 		func(p: Vector3) -> Vector3: return RtsWorld.ground(p))
 
 

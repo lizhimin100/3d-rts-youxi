@@ -62,6 +62,7 @@ func _run() -> void:
 	_check_level_data()
 	_check_dev_editor()
 	_check_map_shell()
+	_check_asset_manifest()
 	_check_r1_config()
 	_check_engine_pin()
 	_check_manifest()
@@ -965,7 +966,7 @@ func _check_dev_editor() -> void:
 	for r in rows:
 		if not bool((r as Dictionary).get("ok", false)):
 			fails.append("%s(%s)" % [String((r as Dictionary).get("key", "")), String((r as Dictionary).get("detail", ""))])
-	_ok("开发者编辑器数据自检 12 项（单位/属性/建筑/卡组/底壳/脊线/石台/布局/遭遇/组装/模型/文案）",
+	_ok("开发者编辑器数据自检 12 项（单位/属性/建筑/卡组/底壳/脊线/战术格子/布局/遭遇/组装/模型/文案）",
 		rows.size() == 12 and fails.is_empty(), "; ".join(fails))
 
 	# 2) 12 兵种：模型路径或占位符 + 13 项攻防穿透
@@ -1016,48 +1017,45 @@ func _check_dev_editor() -> void:
 		deck.size() == 12 and int((plan.get("deck", {}) as Dictionary).get("size", 0)) == 12 and count_sum == 12 and bad_deck.is_empty(),
 		"deck=%d size=%d count=%d 缺失=%s" % [deck.size(), int((plan.get("deck", {}) as Dictionary).get("size", 0)), count_sum, ", ".join(bad_deck)])
 
-	# 5) 底壳：12 座候选石台 / 左右各 1 主堡锚点 / 间隙 / 分割环三位数刻度
+	# 5) 底壳：12 个战术格子 / 左右各 1 主堡位 / 格间留缝 / 三块区域多边形
 	var shells_doc := JsonFile.read_dict(SHELLS_JSON, {})
 	var shell_arr: Array = shells_doc.get("shells", [])
 	var shell0: Dictionary = shell_arr[0] if not shell_arr.is_empty() else {}
-	var plats: Array = shell0.get("platforms", [])
+	var tile_rows: Array = shell0.get("tiles", [])
 	var keeps := {"player": 0, "enemy": 0}
 	var pbad: Array[String] = []
-	for p in plats:
-		var pd: Dictionary = p
-		if String(pd.get("role", "")) == "keep":
-			keeps[String(pd.get("side", "player"))] = int(keeps.get(String(pd.get("side", "player")), 0)) + 1
-		if float(pd.get("base_h", 0.0)) < 0.4:
-			pbad.append("p" + str(pd.get("index", 0)) + " 悬空")
+	for p in tile_rows:
+		var td: Dictionary = p
+		if String(td.get("role", "")) == "keep":
+			keeps[String(td.get("side", "player"))] = int(keeps.get(String(td.get("side", "player")), 0)) + 1
+		if float(td.get("w", 0.0)) < 2.0 or float(td.get("d", 0.0)) < 2.0:
+			pbad.append("T" + str(td.get("index", 0)) + " 尺寸过小")
 	var gap := float(d.call("min_gap_meters"))
-	_ok("底壳：12 座候选石台 + 左右各 1 主堡锚点 + 石柱底座 + 最小行军间隙 >= 1.5m",
-		plats.size() == 12 and int(keeps["player"]) == 1 and int(keeps["enemy"]) == 1 and pbad.is_empty() and gap >= 1.5,
-		"platforms=%d keeps=%s gap=%.2fm %s" % [plats.size(), str(keeps), gap, ", ".join(pbad)])
+	_ok("底壳：12 个战术格子 + 左右各 1 主堡位 + 格间自然间隙 >= 1.0m",
+		tile_rows.size() == 12 and int(keeps["player"]) == 1 and int(keeps["enemy"]) == 1
+		and pbad.is_empty() and gap >= SHELL_STORE.MIN_GAP_M,
+		"tiles=%d keeps=%s gap=%.2fm %s" % [tile_rows.size(), str(keeps), gap, ", ".join(pbad)])
 
 	var spine: Dictionary = shell0.get("spine", {})
-	var length_logic := float(spine.get("length_logic", 0.0))
-	var divs: Dictionary = spine.get("dividers", {})
-	var t_ok := true
-	var r1_ok := true
-	var last_t := -1
-	var t_text: Array[String] = []
-	for did in SHELL_STORE.DIVIDER_IDS:
-		var row: Dictionary = divs.get(did, {})
-		var t := int(row.get("t", -1))
-		if t < 100 or t > 999 or t <= last_t:
-			t_ok = false
-		last_t = t
-		var logic := float(row.get("length_logic", -1.0))
-		if absf(logic - SHELL_STORE.logic_of_t(t, length_logic)) > 0.5:
-			r1_ok = false
-		if absf(float(row.get("meters", -1.0)) - logic * SHELL_STORE.R1) > 0.0001:
-			r1_ok = false
-		t_text.append("%s:t=%d/%.0f" % [String(did), t, logic])
 	var width_logic := float(spine.get("width_logic", 0.0))
+	var regions: Dictionary = shell0.get("regions", {})
+	_ok("通道宽度三位数 + 赛道分割环已下线（分区改由三块多边形区域负责）",
+		width_logic >= 100.0 and width_logic <= 999.0 and not spine.has("dividers")
+		and regions.size() == 3,
+		"width=%.0f dividers=%s regions=%d" % [width_logic, str(spine.has("dividers")), regions.size()])
+
+	# 区域多边形：三个 kind 都 >= 3 顶点；中心点必须落在中立区（Point-in-Polygon 走 Model）
+	var region_bad: Array[String] = []
+	for kind in ["player", "neutral", "enemy"]:
+		var pts0 := SHELL_STORE.region_points(shell0, kind)
+		if pts0.size() < 3:
+			region_bad.append(kind + "<3")
+	if not SHELL_STORE.region_contains(SHELL_STORE.region_points(shell0, "neutral"), 0.0, 0.0):
+		region_bad.append("neutral@origin")
+	_ok("势力区域：三块多边形（>=3 顶点）+ 中心点判定落在中立区（Model 的 Point-in-Polygon）",
+		region_bad.is_empty(), ", ".join(region_bad))
+
 	var grid := SHELL_STORE.grid_of(shell0)
-	_ok("分割尺：4 个环都是三位数刻度 t、按 R1=0.015 换算逻辑长度、通道宽度三位数",
-		t_ok and r1_ok and width_logic >= 100.0 and width_logic <= 999.0,
-		"width=%.0f %s" % [width_logic, " ".join(t_text)])
 	var heights_arr: Array = (shell0.get("terrain", {}) as Dictionary).get("heights", [])
 	var palette_arr: Array = (shell0.get("surface", {}) as Dictionary).get("palette", [])
 	_ok("地形高度场与地表槽位齐全（%d 格，4 种材质）" % heights_arr.size(),
@@ -1074,9 +1072,9 @@ func _check_dev_editor() -> void:
 		if not (kind in ["even", "disadvantage", "advantage"]):
 			lay_bad.append("kind=" + kind)
 		var shell_of := d.call("shell_by_id", String(ld.get("shell", ""))) as Dictionary
-		for idx in (ld.get("active_platforms", []) as Array):
-			if SHELL_STORE.platform_by_index(shell_of, int(idx)).is_empty():
-				lay_bad.append("platform " + str(idx))
+		for idx in (ld.get("active_tiles", []) as Array):
+			if SHELL_STORE.tile_by_index(shell_of, int(idx)).is_empty():
+				lay_bad.append("tile " + str(idx))
 		var counts: Dictionary = d.call("layout_counts", ld)
 		if int(counts.get("base", 0)) != 1:
 			lay_bad.append(String(ld.get("id", "")) + " keep")
@@ -1084,7 +1082,7 @@ func _check_dev_editor() -> void:
 			even_default = true
 		if String(ld.get("inactive_render", "")) != "ruin":
 			lay_bad.append(String(ld.get("id", "")) + " ruin")
-	_ok("玩家布局卡：3 种态势 + 激活石台真实存在 + 每卡 1 主堡 + 平势默认 1 主堡 2 农场 1 兵营 + 未激活即遗迹",
+	_ok("玩家布局卡：3 种态势 + 激活格子真实存在 + 每卡 1 主堡 + 平势默认 1 主堡 2 农场 1 兵营 + 未激活即遗迹",
 		(layouts_doc.get("kinds", []) as Array).size() == 3 and even_default and lay_bad.is_empty(),
 		"; ".join(lay_bad.slice(0, 4)))
 
@@ -1103,14 +1101,14 @@ func _check_dev_editor() -> void:
 		if absf(sums.x - 100.0) > 0.001 or absf(sums.y - 100.0) > 0.001:
 			enc_bad.append(String(ed.get("id", "")) + " intents")
 		var shell_e := d.call("shell_by_id", String(ed.get("shell", ""))) as Dictionary
-		for row in (ed.get("platform_buildings", []) as Array):
+		for row in (ed.get("tile_buildings", []) as Array):
 			var bd2: Dictionary = row
-			var pd2 := SHELL_STORE.platform_by_index(shell_e, int(bd2.get("platform", -1)))
+			var pd2 := SHELL_STORE.tile_by_index(shell_e, int(bd2.get("tile", -1)))
 			if pd2.is_empty() or String(pd2.get("side", "")) != "enemy":
-				enc_bad.append(String(ed.get("id", "")) + " platform")
+				enc_bad.append(String(ed.get("id", "")) + " tile")
 			if (d.call("building_by_id", String(bd2.get("building", ""))) as Dictionary).is_empty():
 				enc_bad.append(String(ed.get("id", "")) + " building")
-	_ok("敌人遭遇卡：豺狼人/鱼人两阵营 + 敌方石台固定建筑 + 攻防意图池两列各 100",
+	_ok("敌人遭遇卡：豺狼人/鱼人两阵营 + 敌方格子固定建筑 + 攻防意图池两列各 100",
 		String(faction_names.get("bandit", "")) == "豺狼人" and String(faction_names.get("murloc", "")) == "鱼人"
 		and (enc_doc.get("encounters", []) as Array).size() >= 2 and enc_bad.is_empty(),
 		"; ".join(enc_bad.slice(0, 4)))
@@ -1133,9 +1131,9 @@ func _check_dev_editor() -> void:
 	for a_row in asm_list:
 		var lid0 := String((a_row as Dictionary).get("level", ""))
 		var lay0: Dictionary = ASSEMBLY_API.layout(String((a_row as Dictionary).get("player_layout", "")))
-		var active0 := int((lay0.get("active_platforms", []) as Array).size())
-		var build0: Array = ASSEMBLY_API.buildable_platforms(lid0)
-		var ruin0: Array = ASSEMBLY_API.ruin_platforms(lid0)
+		var active0 := int((lay0.get("active_tiles", []) as Array).size())
+		var build0: Array = ASSEMBLY_API.buildable_tiles(lid0)
+		var ruin0: Array = ASSEMBLY_API.ruin_tiles(lid0)
 		var player_build := 0
 		for b0 in build0:
 			if String((b0 as Dictionary).get("side", "")) == "player":
@@ -1146,7 +1144,7 @@ func _check_dev_editor() -> void:
 			if int((r0 as Dictionary).get("index", 0)) <= 0:
 				state_bad.append(lid0 + " ruin index")
 		state_info.append("%s 可建%d/遗迹%d" % [lid0.trim_prefix("level_asm_"), build0.size(), ruin0.size()])
-	_ok("局内石台状态：布局卡未激活 = 碎石遗迹（不可建造），激活 = 可建造",
+	_ok("局内格子状态：布局卡未激活 = 碎石遗迹（不可建造），激活 = 可建造",
 		asm_list.is_empty() == false and state_bad.is_empty(), ", ".join(state_info + state_bad.slice(0, 2)))
 
 	var mdl := _mdl()
@@ -1173,8 +1171,8 @@ func _check_dev_editor() -> void:
 		"editor.cards.deck", "editor.tab.layouts", "editor.tab.encounters",
 		"editor.tab.assembly", "editor.assembly.sim_run", "unit.alliance_footman",
 		"building.keep", "card.build_farm", "shell.tool.terrain", "shell.tool.decor",
-		"shell.tool.spine", "shell.tool.platform", "shell.platform.role_keep",
-		"shell.divider.player_end", "shell.decor.fence"]
+		"shell.tool.spine", "shell.tool.tile", "shell.tile.role_keep",
+		"shell.region.player", "shell.decor.fence"]
 	var lack_keys: Array[String] = []
 	for k in need_keys:
 		if i18n == null or not bool(i18n.call("has", k)):
@@ -1214,6 +1212,32 @@ func _check_dev_editor() -> void:
 		rel.contains("Screens/editor") and rel.contains("addons"))
 
 
+## 资产清单：Content/docs/asset_manifest.md 里登记的每条 res:// 路径都必须真实存在。
+## 这是"编辑器只准用已有资产"的第一道门禁（第二道在 _check_map_shell 的装饰注册表）。
+func _check_asset_manifest() -> void:
+	var src := _read("res://Content/docs/asset_manifest.md")
+	if src.is_empty():
+		_ok("资产清单 Content/docs/asset_manifest.md 存在", false, "缺文件")
+		return
+	var re := RegEx.new()
+	re.compile("res://[^\\s`|）)\\]]+")
+	var checked := 0
+	var bad: Array[String] = []
+	for m in re.search_all(src):
+		var path := m.get_string(0).strip_edges()
+		while path.ends_with(".") or path.ends_with(",") or path.ends_with(";"):
+			path = path.substr(0, path.length() - 1)
+		if path.ends_with("/") or path.ends_with("..."):
+			continue
+		checked += 1
+		if not FileAccess.file_exists(path):
+			bad.append(path)
+	_ok("资产清单里的路径都真实存在（%d 条）" % checked, checked >= 20 and bad.is_empty(), ", ".join(bad.slice(0, 4)))
+	_ok("资产清单覆盖树 / 水 / 地形材质 / 着色器 / UI 主题",
+		src.contains("树_场景.tscn") and src.contains("水材质.tres") and src.contains("地形材质.tres")
+		and src.contains("地形.gdshader") and src.contains("游戏主题.tres"))
+
+
 func _check_map_shell() -> void:
 	var files := [
 		"res://addons/map_shell_editor/plugin.cfg",
@@ -1223,12 +1247,17 @@ func _check_map_shell() -> void:
 		"res://Screens/editor/map_shell/shell_view.gd",
 		"res://Screens/editor/map_shell/shell_theme.gd",
 		"res://Screens/editor/map_shell/shell_text.gd",
+		"res://Screens/editor/map_shell/box_overlay.gd",
+		"res://Screens/editor/shell_store.gd",
+		"res://Content/data/shell_decor.json",
+		"res://Content/docs/asset_manifest.md",
 	]
 	var lack: Array[String] = []
 	for f in files:
 		if not FileAccess.file_exists(f):
 			lack.append(f.get_file())
-	_ok("3D 地图底壳编辑器（MapShellEditor）文件齐全：插件 + 场景 + 四工具脚本", lack.is_empty(), ", ".join(lack))
+	_ok("3D 地图底壳编辑器（MapShellEditor）文件齐全：插件 + 场景 + 主屏 + 视口 + 框选层 + 数据层 + 装饰注册表 + 资产清单",
+		lack.is_empty(), ", ".join(lack))
 
 	var old_editor := DirAccess.dir_exists_absolute(ProjectSettings.globalize_path("res://addons/map_editor"))
 	_ok("旧 3D 地图编辑器已移除（摆兵种 / 触发器 / A* 涂抹 / 经济面板整块下线）", not old_editor,
@@ -1236,17 +1265,19 @@ func _check_map_shell() -> void:
 
 	var editor_src := _read("res://Screens/editor/map_shell/map_shell_editor.gd")
 	var view_src := _read("res://Screens/editor/map_shell/shell_view.gd")
+	var store_src := _read("res://Screens/editor/shell_store.gd")
 	var tools_ok := true
 	var tools_hit: Array[String] = []
-	for t in ["terrain", "decor", "spine", "platform"]:
+	for t in ["terrain", "decor", "spine", "tile"]:
 		if editor_src.contains("shell.tool." + t) and editor_src.contains("shell_tool_"):
 			tools_hit.append(t)
 		else:
 			tools_ok = false
-	for fn_key in ["_apply_brush", "add_decor", "set_divider_t", "add_platform"]:
+	for fn_key in ["_apply_brush", "add_decor", "set_spine_width", "add_tile",
+			"_build_regions", "_finish_box_select", "_rebuild_selection_rings"]:
 		if not view_src.contains(fn_key):
 			tools_ok = false
-	_ok("底壳编辑器只保留 4 个纯视觉/空间划分工具（地形笔刷 / 装饰 / 脊线分割 / 石台锚点）",
+	_ok("底壳编辑器只保留 4 个纯视觉/空间划分工具（地形笔刷 / 装饰 / 脊线 / 战术格子）+ 区域绘制 + 框选",
 		tools_ok, ", ".join(tools_hit))
 
 	# 镜头口径继承：俯角 50° / 12~200m / 右键平移方向 / 中键旋转 / WASD / 边界夹取
@@ -1270,6 +1301,48 @@ func _check_map_shell() -> void:
 	_ok("底壳地形沿用游戏地形材质与原始贴图（草泥图集 / 草 / 泥 / 裂纹泥地，不自创配色）",
 		terrain_ok, "地形材质或贴图路径缺失")
 
+	# 装饰：只实例化登记过的现有资产；_make_decor_node 里不许现拼圆柱/球体。
+	var decor_fn := _slice_fn(view_src, "_make_decor_node")
+	var decor_rows: Array = JsonFile.read_dict("res://Content/data/shell_decor.json", {}).get("kinds", [])
+	var decor_bad: Array[String] = []
+	for row in decor_rows:
+		var rd: Dictionary = row
+		var rp := String(rd.get("path", ""))
+		if not FileAccess.file_exists(rp):
+			decor_bad.append(String(rd.get("id", "?")) + " → " + rp)
+	_ok("底壳装饰 = 现有资产（RtsDecorLib 场景 / 登记 GLB），不现拼占位网格；注册表每条路径都真实存在",
+		view_src.contains("DECOR_LIB_PATH") and view_src.contains("_decor_lib_script")
+		and view_src.contains("lib.call(\"instantiate\"")
+		and not decor_fn.contains("CylinderMesh") and not decor_fn.contains("SphereMesh")
+		and decor_rows.size() >= 12 and decor_bad.is_empty(),
+		"%d 种%s" % [decor_rows.size(), "" if decor_bad.is_empty() else " / " + ", ".join(decor_bad.slice(0, 3))])
+
+	# 选中高亮圈：必须复用局内那一个资产，且只在选中时挂出来。
+	var ring_ok := view_src.contains("SEL_RING_PATH") and view_src.contains("_sel_ring_scene") \
+		and view_src.contains("_rebuild_selection_rings") \
+		and view_src.contains("selection_root") \
+		and not view_src.contains("TorusMesh")
+	_ok("选中对象脚下显示 3D 高亮圈（复用 Content/art/特效/选中圈.tscn；未选中不常驻）",
+		ring_ok, "SEL_RING_PATH + selection_root + 无 TorusMesh")
+
+	# 区域绘制 + 框选 + 撤销
+	var interact_ok := editor_src.contains("shell_region_") and editor_src.contains("REGION_IDS") \
+		and editor_src.contains("shell_undo") \
+		and view_src.contains("func begin_region") and view_src.contains("func finish_region") \
+		and view_src.contains("func cancel_region") and view_src.contains("add_region_vertex") \
+		and view_src.contains("KEY_ENTER") and view_src.contains("KEY_ESCAPE") \
+		and view_src.contains("func undo") and view_src.contains("KEY_Z") \
+		and view_src.contains("func _finish_box_select")
+	_ok("区域绘制（三按钮 + 顶点模式 + 回车闭合 + 右键/Esc 取消）+ 框选 + Delete 删除 + Ctrl+Z 撤销",
+		interact_ok, "区域三按钮 + 顶点/闭合/取消 + 框选 + Ctrl+Z")
+
+	# 旧石台 / 赛道分割环：代码里不许再出现
+	var stale: Array[String] = []
+	for bad in ["platforms", "DIVIDER_IDS", "sorted_dividers", "divider_of"]:
+		if editor_src.contains(bad) or view_src.contains(bad) or store_src.contains(bad):
+			stale.append(bad)
+	_ok("旧「候选石台 / 赛道分割环」代码已清空（只剩 tiles + regions）", stale.is_empty(), ", ".join(stale))
+
 	var forbidden: Array[String] = []
 	for bad in ["spawn_unit", "add_unit", "trigger", "AStar", "Pathfinder", "economy", "resource_node"]:
 		if editor_src.contains(bad) or view_src.contains(bad):
@@ -1280,16 +1353,65 @@ func _check_map_shell() -> void:
 	_ok("底壳编辑器主题：深岩灰 #12161F + 保留旧地图编辑器嵌入色（石色 / 金色）",
 		shell_src.contains("#12161F") and shell_src.contains("LEGACY_GOLD") and shell_src.contains("STONE"))
 
-	var shells_doc := JsonFile.read_dict(SHELLS_JSON, {})
 	var allowed := ["id", "display_name", "biome", "size", "seed", "terrain", "surface",
-		"spine", "decorations", "platforms", "note"]
+		"spine", "regions", "tiles", "decorations", "note"]
 	var extra: Array[String] = []
-	for s in (shells_doc.get("shells", []) as Array):
+	for s in (shells_doc_again() as Array):
 		for k in (s as Dictionary).keys():
 			if not (String(k) in allowed):
 				extra.append(String(k))
-	_ok("底壳资产是纯净底壳：只有地形/地表/脊线/装饰/石台（无兵种/触发器/波次/经济字段）",
+	_ok("底壳资产是纯净底壳：只有地形/地表/脊线/三块区域/战术格子/装饰（无兵种/触发器/波次/经济字段）",
 		extra.is_empty(), ", ".join(extra))
+
+	# ── Model 反向验错：区域顶点不足 3 个必须被拒；3 个必须过 ──
+	var mdl := _mdl()
+	if mdl == null:
+		_ok("Model 桥可实例化（区域/格子校验的前置）", false, "bridge=null")
+		return
+	var pts2: Array = [Vector2(0.0, 0.0), Vector2(10.0, 0.0)]
+	var pts3: Array = [Vector2(0.0, 0.0), Vector2(10.0, 0.0), Vector2(10.0, 10.0)]
+	var err2: Array = mdl.call("RegionValidate", "player", pts2) as Array
+	var err3: Array = mdl.call("RegionValidate", "player", pts3) as Array
+	_ok("反向验错：区域多边形顶点 < 3 个必须被 Model 拒绝（2 点报错 / 3 点通过）",
+		not err2.is_empty() and err3.is_empty(),
+		"2点=%s / 3点=%s" % [str(err2), str(err3)])
+	_ok("Player-in-Polygon：三角形内 (1,1) 判内、外 (20,20) 判外",
+		bool(mdl.call("RegionContains", pts3, 1.0, 1.0)) and not bool(mdl.call("RegionContains", pts3, 20.0, 20.0)))
+
+	# ── 战术格子锚点：10×10 → 建筑位左上角 (-5,-5)，出兵位中心 (0,0) ──
+	var anc: Dictionary = mdl.call("TileAnchors", {
+		"index": 1, "x": 0.0, "z": 0.0, "w": 10.0, "d": 10.0, "yaw": 0.0,
+	}) as Dictionary
+	var anchor_ok := is_equal_approx(float(anc.get("building_x", 99.0)), -5.0) \
+		and is_equal_approx(float(anc.get("building_z", 99.0)), -5.0) \
+		and is_equal_approx(float(anc.get("spawn_x", 99.0)), 0.0) \
+		and is_equal_approx(float(anc.get("spawn_z", 99.0)), 0.0)
+	_ok("战术格子锚点：建筑位 = 左上角 (-5,-5)，出兵位 = 正中心 (0,0)", anchor_ok, str(anc))
+
+	# ── 反向验错：两个重叠格子必须被 Model 拒绝；默认一组必须过 ──
+	var bad_tiles: Array = [
+		{"index": 1, "side": "player", "role": "build", "x": 0.0, "z": 0.0, "w": 8.0, "d": 8.0, "yaw": 0.0, "terrain_y": 0.0},
+		{"index": 2, "side": "player", "role": "build", "x": 1.0, "z": 0.0, "w": 8.0, "d": 8.0, "yaw": 0.0, "terrain_y": 0.0},
+	]
+	var overlap_err: Array = mdl.call("TileValidate", bad_tiles, 120.0, 63.0, 1.0) as Array
+	var defaults: Array = mdl.call("TileDefaults", 120.0, 63.0) as Array
+	var default_err: Array = mdl.call("TileValidate", defaults, 120.0, 63.0, 1.0) as Array
+	_ok("反向验错：重叠 / 间距不足的战术格子必须被 Model 拒绝；默认一组格子必须合法",
+		not overlap_err.is_empty() and default_err.is_empty(),
+		"重叠=%d 条 / 默认=%s" % [overlap_err.size(), str(default_err)])
+
+
+## 取一段函数源码（从 `func name(` 到下一个 `func `），用于"这个函数里不许出现 X"这类断言。
+func _slice_fn(src: String, name: String) -> String:
+	var start := src.find("func " + name + "(")
+	if start < 0:
+		return ""
+	var end := src.find("\nfunc ", start + 6)
+	return src.substr(start, end - start) if end > start else src.substr(start)
+
+
+func shells_doc_again() -> Array:
+	return JsonFile.read_dict(SHELLS_JSON, {}).get("shells", [])
 
 
 func _check_r1_config() -> void:
@@ -1608,8 +1730,8 @@ func _check_legacy_removed() -> void:
 		if _read(f).contains("RtsFog"):
 			problems.append("%s 还引用已删除的 RtsFog" % f.replace("res://", ""))
 
-	# 3) 全图 A*：NavGrid 里不许再有寻路入口/堆
-	var nav := _read("res://Game/pathing/占格网格.gd")
+	# 3) 全图 A*：RtsStandGrid 里不许再有寻路入口/堆
+	var nav := _read("res://Game/map/站立网格.gd")
 	for bad in ["func find_path", "_heap_push", "MAX_EXPAND", "HEURISTIC_WEIGHT"]:
 		if nav.contains(bad):
 			problems.append("占格网格.gd 还含 %s" % bad)

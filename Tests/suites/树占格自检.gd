@@ -6,7 +6,7 @@ extends SceneTree
 ##
 ## 覆盖（对应 Lead 给的三条硬断言）：
 ##   1. 掩码一致：`MapLoader.build_walkable_mask(主场景地图, false)` 与真关卡的
-##      `pathfinder._walk` 逐格相同；差值只能来自 `_prepare_walkability` 的坡度过滤，
+##      `stand_grid._walk` 逐格相同；差值只能来自 `_prepare_walkability` 的坡度过滤，
 ##      且**不能有任何一格是"道具占格被坡度过滤以外的东西打开"**。
 ##      另附：编辑器口径（include_buildings=true）与游戏口径只差建筑占地。
 ##   2. 没有"可走但被树占"的格：随便抽 200 个可走格心，到任一棵树心的距离必须 > 树半径。
@@ -15,11 +15,11 @@ extends SceneTree
 ##
 ## ★ 为什么满篇 call()/get()：`--script` 模式下主循环被本脚本接管，
 ##   autoload 的全局标识符在本文件解析时还没注册（实测 Identifier not found: Game）。
-##   所以这里只 load() + 鸭子调用；跑的还是**真地图、真关卡、真寻路网格**。
+##   所以这里只 load() + 鸭子调用；跑的还是**真地图、真关卡、真站立网格**。
 
 const LEVEL_SCRIPT := "res://Game/core/关卡.gd"
 const LOADER_SCRIPT := "res://Game/map/地图加载器.gd"
-const RULES_SCRIPT := "res://Game/pathing/占格规则.gd"
+const RULES_SCRIPT := "res://Game/map/占格规则.gd"
 const MAP_PATH := "res://Content/maps/主场景地图.tres"
 
 ## MapObject.Category
@@ -101,10 +101,10 @@ func _boot() -> void:
 	_level.call("build_from_map_def", _def)
 	_level.call("spawn_props")
 	_game.set("level", _level)
-	_pf = _level.get("pathfinder")
+	_pf = _level.get("stand_grid")
 	if _pf == null:
 		_fail += 1
-		_lines.append("  ✗ 关卡没有寻路器")
+		_lines.append("  ✗ 关卡没有站立网格")
 		_finish()
 		return
 	_w = maxi(8, int(_def.get("size")))
@@ -129,7 +129,7 @@ func _test_mask_parity() -> void:
 	_ok("掩码尺寸 = 关卡网格尺寸", raw.size() == _walk0.size() and raw.size() == _w * _w,
 		"%d / %d / %d²" % [raw.size(), _walk0.size(), _w])
 	var same: bool = pf_walk == _walk0
-	_ok("寻路器网格 == 关卡最终 walkable（逐格相同）", same,
+	_ok("站立网格网格 == 关卡最终 walkable（逐格相同）", same,
 		"hash %d vs %d" % [hash(pf_walk), hash(_walk0)])
 
 	var raw_n: int = _count_nonzero(raw)

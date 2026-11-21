@@ -4,7 +4,7 @@ extends RefCounted
 ##
 ## 产出：
 ##   - 高度场（给 RtsTerrain 建网格）
-##   - 可走性数组（1 米一格，给 NavGrid）
+##   - 可走性数组（1 米一格，给 RtsStandGrid）
 ##   - 树 / 岩石 / 金矿的落点 + 地表草丛/碎石装饰点
 ##   - 台地 / 坡道 / 沟壑 / 关口 / 平地保护区 的元数据（给地形、镜头、自检用）
 ##
@@ -36,8 +36,8 @@ const EDGE_MARGIN: float = 16.0
 const EDGE_START: float = 82.0            ## 外圈山脊起点（切比雪夫距离）
 const POND_RADIUS: float = 7.0            ## 峡谷水潭半径
 
-## ★ 道具占格的**唯一口径**（和 地图加载器 / 关卡 共用，见 Game/pathing/占格规则.gd）
-const 占格 := preload("res://Game/pathing/占格规则.gd")
+## ★ 道具占格的**唯一口径**（和 地图加载器 / 关卡 共用，见 Game/map/占格规则.gd）
+const 占格 := preload("res://Game/map/占格规则.gd")
 
 
 ## 生成结果

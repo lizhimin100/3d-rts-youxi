@@ -300,7 +300,7 @@ func _refresh_preview() -> void:
 
 	var board: Dictionary = lv.get("player_board", {})
 	var parts: Array[String] = []
-	for idx in (board.get("active_platforms", []) as Array):
+	for idx in (board.get("active_tiles", []) as Array):
 		var slot := ShellStore.slot_at(board, int(idx))
 		parts.append("P%d %s" % [int(idx), String(data.call("building_display", String(slot.get("building", ""))))])
 	_summary_box.add_child(ThemeKit.caption(T("editor.assembly.slots") + ": " + ", ".join(parts), ThemeKit.TEXT_SUB))
@@ -308,7 +308,7 @@ func _refresh_preview() -> void:
 	var enemy_parts: Array[String] = []
 	for row in (lv.get("enemy_buildings", []) as Array):
 		var d: Dictionary = row
-		enemy_parts.append("E%d %s x%.0f" % [int(d.get("platform", 0)), String(data.call("building_display", String(d.get("building", "")))), float(d.get("star", 1.0))])
+		enemy_parts.append("E%d %s x%.0f" % [int(d.get("tile", 0)), String(data.call("building_display", String(d.get("building", "")))), float(d.get("star", 1.0))])
 	_summary_box.add_child(ThemeKit.caption(T("editor.assembly.enemy") + ": " + String(data.call("faction_display_of", String(lv.get("enemy_faction", "")))) + "  HP %.0f  |  " % float(lv.get("enemy_base_hp", 0.0)) + ", ".join(enemy_parts), ThemeKit.TEXT_SUB))
 
 	var atk: Array[String] = []

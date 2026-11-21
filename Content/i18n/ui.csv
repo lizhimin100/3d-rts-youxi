@@ -438,11 +438,10 @@ shell.state.failed,写回失败,Save failed,状态
 shell.state.reloaded,已重载,Reloaded,状态
 shell.hover.idle,把鼠标移到地形上：坐标 / 高度 / 距离,Move the mouse over the terrain: position and height,视口信息条
 shell.hover.value,x {x} m · z {z} m · 高 {y} m · |x| {raw} 数值,x {x} m · z {z} m · y {y} m · |x| {raw},视口信息条
-shell.view.controls,右键拖动平移 · 中键/Alt+左键旋转 · Shift+中键平移 · 滚轮缩放 · WASD 平移 · QE 旋转 · 1/2 缩放 · F 聚焦 · Ctrl+Shift+C 玩家区,RMB drag pans · MMB or Alt+LMB orbits · Shift+MMB pans · wheel zooms · WASD pans · QE rotates · 1/2 zoom · F focuses · Ctrl+Shift+C player side,视口操作提示（沿用旧地图编辑器）
+shell.view.controls,右键拖动平移 · 中键/Alt+左键旋转 · 滚轮缩放 · WASD 平移 · QE 旋转 · 1/2 缩放 · F 聚焦 · 左键点选/拖框多选 · 拖动移动 · Delete 删除 · Ctrl+Z 撤销 · Ctrl+Shift+C 玩家区,RMB drag pans · MMB or Alt+LMB orbits · wheel zooms · WASD pans · QE rotates · 1/2 zoom · F focuses · LMB click or drag-box select · drag moves · Delete removes · Ctrl+Z undoes · Ctrl+Shift+C player side,视口操作提示（沿用旧地图编辑器）
 shell.tool.terrain,地形/地表,Terrain,左侧工具
 shell.tool.decor,装饰品,Doodads,左侧工具
-shell.tool.spine,脊线/分割,Spine,左侧工具
-shell.tool.platform,石台锚点,Anchors,左侧工具
+shell.tool.spine,脊线,Spine,左侧工具
 shell.terrain.title,地形与地表,Terrain and surface,地形面板
 shell.terrain.eyebrow,01 · TERRAIN,01 · TERRAIN,地形面板眉
 shell.terrain.mode,笔刷,Brush,地形字段
@@ -472,40 +471,59 @@ shell.decor.selected,选中 #{n} · {k} · x {x} z {z} · 缩放 {s},Selected #{
 shell.decor.scale,缩放,Scale,装饰字段
 shell.decor.rotate,转 45°,Rotate 45,装饰按钮
 shell.decor.delete,删除,Delete,装饰按钮
-shell.decor.hint,纯视觉：不参与战斗碰撞，也不写进寻路/占位格。通道两侧和营地周围随你摆。,Visual only: no combat collision and no pathing grid.,装饰面板提示
+shell.decor.hint,纯视觉：不参与战斗碰撞，也不写进站立网格。全部实例化 asset_manifest 里登记的现有资产（树/岩石/草丛/道具），不现拼占位网格。,Visual only: no combat collision and no stand grid. Every doodad instantiates an existing asset listed in asset_manifest.,装饰面板提示
 shell.spine.title,弯曲行军脊线,Curved march spine,脊线面板
 shell.spine.eyebrow,03 · PATH3D,03 · PATH3D,脊线面板眉
-shell.spine.hint,拖动控制点改曲线；拖动分割环改区界；宽度按 R1 换算成三位数逻辑长度写盘。,Drag control points to bend the curve; drag a ring to move a boundary.,脊线面板提示
+shell.spine.hint,拖动控制点改曲线；宽度按 R1 换算成三位数逻辑长度写盘。分区不再用赛道圆环，改由顶部三个区域按钮画多边形。,"Drag control points to bend the curve; width is stored as a 3-digit logical length via R1. Zones are polygons now, not track rings.",脊线面板提示
 shell.spine.width,通道宽度,Channel width,脊线字段
 shell.spine.width_value,{v} 数值 · {m} m,{v} u · {m} m,脊线换算
-shell.spine.dividers,分割环,Divider rings,脊线字段
-shell.spine.divider_value,{v} 数值 · {m} m,{v} u · {m} m,分割环换算
 shell.spine.points,{n} 个曲线控制点,{n} control points,脊线字段
 shell.spine.add_point,加点,Add point,脊线按钮
 shell.spine.remove_point,删末点,Remove last,脊线按钮
 shell.spine.top_view,俯视,Top view,脊线按钮
-shell.divider.player_end,玩家区边界,Player zone edge,分割环
-shell.divider.neutral,中立据点中心,Neutral center,分割环
-shell.divider.push,前压部署线,Forward line,分割环
-shell.divider.base_cross,越线判定线,Base cross line,分割环
-shell.platform.title,独立石台锚点,Stone platform anchors,石台面板
-shell.platform.eyebrow,04 · ANCHORS,04 · ANCHORS,石台面板眉
-shell.platform.hint,点空地新增石台；拖动石台改位置（自动向下吸附地形，石柱底座防悬空）。主堡锚点与普通建造锚点分开标记。,Click empty ground to add a platform; drag to move it. Height snaps to the terrain and the pillar base keeps it grounded.,石台面板提示
-shell.platform.add,新增石台,Add anchor,石台按钮
-shell.platform.snap,吸附地形,Snap to terrain,石台按钮
-shell.platform.renumber,按 x 重编号,Renumber by x,石台按钮
-shell.platform.none,点一座石台看详情,Click an anchor for details,石台面板
-shell.platform.selected,P{i} · {side} · {role} · 地形 {y} m · 底座 {h} m · 半径 {r} m,P{i} · {side} · {role} · terrain {y} m · base {h} m · radius {r} m,石台面板
-shell.platform.radius,半径,Radius,石台字段
-shell.platform.base,底座高,Base height,石台字段
-shell.platform.delete,删除石台,Delete anchor,石台按钮
-shell.platform.side_player,玩家,Player,石台方位
-shell.platform.side_enemy,敌方,Enemy,石台方位
-shell.platform.role_keep,主堡,Keep,石台角色
-shell.platform.role_build,建造,Build,石台角色
-shell.status.counts,石台 {p} · 装饰 {d} · 主堡 {k} · 通道 {w},{p} anchors · {d} doodads · {k} keeps · width {w},状态栏
+shell.status.counts,{t} 个格子 · {d} 个装饰 · {r}/3 个区域 · 通道 {w},{t} tiles · {d} doodads · {r}/3 zones · channel {w},状态栏
 shell.status.gap,最小行军间隙 {v} m,Min march gap {v} m,状态栏
 shell.dock.title,地图底壳,Map shell,Dock 标题
 shell.dock.save,保存底壳,Save shell,Dock 按钮
-shell.dock.hint,4 个工具：地形/地表、装饰品、脊线分割、石台锚点。只写 map_shells.json。,Four tools: terrain; doodads; spine and anchors. Writes map_shells.json only.,Dock 提示
+shell.dock.hint,4 个工具：地形/地表、装饰品、脊线、战术格子。只写 map_shells.json。,Four tools: terrain; doodads; spine; tactical tiles. Writes map_shells.json only.,Dock 提示
 shell.none,没有底壳,No shell,底壳选择空态
+shell.undo,撤销,Undo,顶栏
+shell.region.player,定义玩家区,Define player zone,区域绘制
+shell.region.neutral,定义中立区,Define neutral zone,区域绘制
+shell.region.enemy,定义敌方区,Define enemy zone,区域绘制
+shell.region.progress,正在绘制 {kind}：{n} 个顶点（回车闭合 / 右键取消）,Drawing {kind}: {n} vertices (Enter closes / RMB cancels),视口信息条
+shell.region.drawing,正在绘制 {kind}：左键放顶点，回车闭合，右键取消,"Drawing {kind}: LMB adds vertices, Enter closes, RMB cancels",状态
+shell.region.invalid,区域无效：{msg},Invalid region: {msg},状态
+shell.region.done,区域已重定义,Zone redefined,状态
+shell.region.cancelled,已取消区域绘制,Zone drawing cancelled,状态
+shell.tile.title,战术地形格子,Tactical terrain tiles,格子面板
+shell.tile.eyebrow,04 · TILES,04 · TILES,格子面板眉
+shell.tile.hint,点空地放格子；按住左键拖出框选多选；拖动移动（贴合地形）；Delete 删除、Ctrl+Z 撤销。,"Click empty ground to place a tile; drag to box-select; drag to move (snaps to terrain); Delete removes, Ctrl+Z undoes.",格子面板提示
+shell.tile.add,新增格子,Add tile,格子按钮
+shell.tile.snap,吸附地形,Snap to terrain,格子按钮
+shell.tile.renumber,按 x 重编号,Renumber by x,格子按钮
+shell.tile.none,点一个格子看详情（可拖框多选）,Click a tile for details (drag to multi-select),格子面板
+shell.tile.selected,已选 {n} 个 · T{i} · {side} · {role} · {w}×{d} m · 地形 {y} m,{n} selected · T{i} · {side} · {role} · {w}×{d} m · terrain {y} m,格子面板
+shell.tile.width,宽,Width,格子字段
+shell.tile.depth,深,Depth,格子字段
+shell.tile.rotate,转 15°,Rotate 15,格子按钮
+shell.tile.delete,删除选中,Delete selected,格子按钮
+shell.tile.building,建筑位,Building anchor,视口标记
+shell.tile.spawn,出兵位,Squad spawn,视口标记
+shell.tile.side_player,玩家,Player,格子方位
+shell.tile.side_enemy,敌方,Enemy,格子方位
+shell.tile.side_neutral,中立,Neutral,格子方位
+shell.tile.role_keep,主堡位,Keep,格子角色
+shell.tile.role_build,建造位,Build,格子角色
+shell.decor.grass,草丛,Grass,装饰类型
+shell.decor.rubble,碎石,Rubble,装饰类型
+shell.decor.goldmine,金矿,Gold mine,装饰类型
+shell.decor.water,水面,Water,装饰类型
+shell.decor.barrel,木桶,Barrel,装饰类型
+shell.decor.tent,帐篷,Tent,装饰类型
+shell.decor.wall,断墙,Broken wall,装饰类型
+shell.decor.signpost,路标,Signpost,装饰类型
+shell.decor.bones,尸骨,Bones,装饰类型
+shell.decor.selected_n,已选 {n} 个 · {k} · x {x} z {z} · 缩放 {s},{n} selected · {k} · x {x} z {z} · scale {s},装饰面板
+shell.state.undo,已撤销一步,Undone,状态
+shell.tool.tile,战术格子,Tactical tiles,左侧工具

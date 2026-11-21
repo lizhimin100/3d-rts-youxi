@@ -1,7 +1,7 @@
 extends RefCounted
 ## **人群空间分区** —— 计数排序的平坦网格（不是 Dictionary，不是 Array of Array）。
 ##
-## 传统做法（`Game/pathing/空间哈希.gd`）是 `Dictionary[Vector2i] -> Array`：
+## 传统做法（`Game/core/空间索引.gd`）是 `Dictionary[Vector2i] -> Array`：
 ##   · 每次 insert 都要 boxed Variant + 数组扩容；
 ##   · 每次 query 都要分配一个新数组；
 ##   · 1000 单位 × 每帧 1 次重建 = 每秒 6 万次分配。

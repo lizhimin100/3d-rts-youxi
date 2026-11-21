@@ -16,7 +16,7 @@ extends SceneTree
 ## ★ 为什么满篇 call()/get() 而没有一行 `Game.xxx`：
 ##   `--script` 模式下主循环被本脚本接管，autoload 的**全局标识符**在本文件解析时还没注册
 ##   （实测报 `Identifier not found: Cfg`）。所以这里只能 load() + 鸭子调用 —— 这是运行环境的
-##   硬约束，不是偷懒。自检本身仍跑在**真关卡、真单位、真寻路网格**上。
+##   硬约束，不是偷懒。自检本身仍跑在**真关卡、真单位、真站立网格**上。
 
 const LEVEL_SCRIPT := "res://Game/core/关卡.gd"
 const CMD_SCRIPT := "res://Screens/input/指令系统.gd"
@@ -103,7 +103,7 @@ func _boot_world() -> void:
 	_game.set("phase", 1)  # RtsConst.Phase.RUNNING
 	_faction = _game.get("player_faction")
 	_faction.call("add_res", 8000, 8000)
-	_pf = _level.get("pathfinder")
+	_pf = _level.get("stand_grid")
 	_cmd = load(CMD_SCRIPT).new()
 
 	# 给一栋大本营：人口上限 + 资源交汇点 + "压建筑"用例的靶子

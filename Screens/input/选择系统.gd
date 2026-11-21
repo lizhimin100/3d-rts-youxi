@@ -338,18 +338,6 @@ func _click_select(screen_pos: Vector2, additive: bool) -> void:
 		_select_all_of_type(id)
 		return
 
-	# 短局：Squad 是核心战斗实体 —— 点一个成员 = 选中整队。
-	# 长局保持原来的"点谁选谁"，不影响既有手感/自检。
-	if not additive and Game.short_match and Game.squads != null \
-			and hit is RtsUnit and not (hit is RtsBuilding) \
-			and hit_faction == Game.player_faction:
-		var sq = Game.squads.call("find_by_member", hit)
-		if sq != null:
-			var mates: Array = sq.get("members") as Array
-			if mates != null and mates.size() > 1:
-				_set_selection(mates.duplicate())
-				return
-
 	if additive:
 		if selected.has(hit):
 			selected.erase(hit)

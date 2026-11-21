@@ -3,28 +3,49 @@ extends Node3D
 ## 3D 地图底壳编辑器 · 世界与编辑核心
 ## 属于：Screens/editor/map_shell（开发工具，不进发行版）
 ##
-## 只做四件事：地形/地表笔刷、纯视觉装饰摆放、弯曲行军脊线与分割环、候选独立石台锚点。
-## 明确不做：摆兵种、写触发器、涂 A* 寻路格、配经济（三分离后属于布局卡/遭遇卡/关卡）。
+## 四件事：
+##   1 地形与地表笔刷（起伏雕刻 / 地表材质涂抹 / 环境光 / 水面高度）
+##   2 纯视觉装饰（**只实例化 asset_manifest 里已登记的现有场景/GLB**，不现拼占位网格）
+##   3 弯曲行军脊线（通道宽度与走向；赛道圆环式分区已下线）
+##   4 战术地形格子（TacticalTile：建筑位 = 左上角、出兵位 = 正中心）
 ##
-## 数据：直接读写 shell_store 的 map_shells 结构；写盘由外层 map_shell_editor.gd 调 dev_data。
+## 另外两块编辑器交互：
+##   · 点选 / 拖框多选 / 脚下的 3D 选中高亮圈（复用 Content/art/特效/选中圈.tscn）
+##   · 势力区域多边形绘制（玩家 / 中立 / 敌方），判定与校验在 Model（C#）
+##
+## 数据：直接读写 shell_store 的结构；写盘由外层 map_shell_editor.gd 调 dev_data。
 
 signal brushed()
 signal picked(kind: String, index: int)
 signal changed()
+signal region_changed(kind: String)
+## 框选矩形变化（编辑器拿去画 2D 覆盖层；坐标是视口局部坐标）
+signal box_changed(from: Vector2, to: Vector2)
+signal box_cleared()
+## 区域绘制结算（errors 空 = 成功）
+signal region_finished(errors: Array)
+signal region_cancelled()
 
 const ShellStore := preload("res://Screens/editor/shell_store.gd")
+const ShellText := preload("res://Screens/editor/map_shell/shell_text.gd")
+## 树 / 岩石 / 草 / 碎石 / 金矿 / 水面：走装饰库的既有场景（场景里写着阴影与可见距离）
+## 选中圈：编辑器与局内**同一个**资产（不给编辑器单独做一套圈）
+##
+## 两条路径都含中文目录：用 \u 转义拼出来 + 运行时 load（preload 的字面量会被
+## "硬路径体检"当成人手写死的 res:// 路径，而源码里写中文又会撞 i18n 预算）。
+const DECOR_LIB_PATH := "res://Screens/world/art/" + "\u88c5\u9970\u5e93.gd"
+const SEL_RING_PATH := "res://Content/art/" + "\u7279\u6548/\u9009\u4e2d\u5708.tscn"
+var _decor_lib: Script = null
+var _sel_ring: PackedScene = null
 
 const TOOL_TERRAIN := "terrain"
 const TOOL_DECOR := "decor"
 const TOOL_SPINE := "spine"
-const TOOL_PLATFORM := "platform"
+const TOOL_TILE := "tile"
 
-const RING_COLORS := {
-	"player_zone_end": Color("#4EA1FF"),
-	"neutral_center": Color("#4ED8D8"),
-	"push_line": Color("#45D6A2"),
-	"base_cross_line": Color("#F0B95A"),
-}
+const REGION_FILL_ALPHA := 0.18
+const REGION_LINE_ALPHA := 0.95
+const REGION_Y_LIFT := 0.07
 
 # ── 和旧地图编辑器（addons/map_editor/视口.gd）同一套镜头口径 ──────────────
 ## 俯角 = 游戏内魔兽镜头 camera_pitch_deg（50°）；FOV 与 魔兽镜头.gd 一致（52）。
@@ -35,7 +56,7 @@ const CAM_DIST_MIN := 12.0
 const CAM_DIST_MAX := 200.0
 ## 默认距离：224m 图上大约看半张图；底壳更小，先保持同一手感再靠滚轮调。
 const CAM_DIST_DEFAULT := 90.0
-## Ctrl+Shift+C 跳到玩家区（主堡锚点）时的距离 = 游戏默认镜头距离。
+## Ctrl+Shift+C 跳到玩家区（主堡格子）时的距离 = 游戏默认镜头距离。
 const CAM_DIST_PLAY := 32.0
 ## 镜头能到地图边界外多少米（= Cfg.game.camera_bounds_margin）
 const CAM_BOUNDS_MARGIN := 4.0
@@ -51,7 +72,6 @@ const GRID_COLOR := Color(0.85, 0.92, 1.0, 0.16)
 const BORDER_COLOR := Color(1.0, 0.85, 0.35, 0.9)
 
 # ── 地形：**和游戏里同一份材质与贴图**（唯一真源 RtsTerrain / 地形.gdshader）──
-## 只用游戏已经验证过的那套：8m 草/泥硬边地块 + 草泥图集 + 裂纹泥地 + 岩石细节。
 ## 路径全部转发 RtsTerrain / ArtKit 的常量 —— 编辑器不写第二份资源路径。
 const TERRAIN_MAT := RtsTerrain.MATERIAL_PATH
 const WATER_MAT := RtsTerrain.WATER_MATERIAL_PATH
@@ -82,11 +102,33 @@ var brush_mode := "raise"
 var surface_layer := 1
 var decor_kind := "tree"
 
-# 选择
-var selected_platform := -1
-var selected_divider := ""
-var selected_decor := -1
+# 选择（多选：框选 / Shift 点选）
+var selected_tiles: Array[int] = []
+var selected_decor: Array[int] = []
 var selected_point := -1
+var hovered_tile := -1
+var hovered_decor := -1
+
+# 区域绘制（空字符串 = 不在绘制）
+var region_mode := ""
+var region_draft := PackedVector2Array()
+
+# 撤销栈（整份 shell 快照，最多 UNDO_MAX 步）
+const UNDO_MAX := 24
+var _undo: Array = []
+
+# 拖拽（撤销快照只在**真的移动过**时才入栈：单击选中不该占一步撤销）
+var _dragging := false
+var _drag_start := Vector3.ZERO
+var _drag_offsets: Array = []
+var _drag_snapshot: Dictionary = {}
+var _drag_moved := false
+
+# 框选
+var _pending_add := false
+var _box_active := false
+var _box_start := Vector2.ZERO
+var _box_end := Vector2.ZERO
 
 # 相机（语义与旧编辑器一致：cam_pitch 为负 = 向下看）
 var cam_target := Vector3.ZERO
@@ -107,22 +149,25 @@ var grid_mesh: MeshInstance3D = null
 var border_mesh: MeshInstance3D = null
 var decal_mesh: MeshInstance3D = null
 var ribbon_mesh: MeshInstance3D = null
-var rings_root: Node3D = null
-var platforms_root: Node3D = null
+var regions_root: Node3D = null
+var region_draft_root: Node3D = null
+var tiles_root: Node3D = null
+var tile_markers_root: Node3D = null
 var decor_root: Node3D = null
+var selection_root: Node3D = null
 
 var _terrain_mat: ShaderMaterial = null
 var _water_mat: Material = null
 var _void_plane: MeshInstance3D = null
 var _hmin := 0.0
 var _hmax := 0.0
+var _decor_scene_cache: Dictionary = {}
 
 var _painting := false
 var _paint_ground := Vector3.ZERO
 var _paint_height := 0.0
 var _paint_accum := 0.0
 var _grid_accum := 0.0
-var _last_mouse := Vector2.ZERO
 var _hover_ground := Vector3.ZERO
 var _hover_valid := false
 
@@ -165,7 +210,7 @@ func build_world() -> void:
 
 	camera = Camera3D.new()
 	camera.name = "Camera"
-	# ★ 透视 + 与游玩一致的 FOV/俯角（编辑器相机要和真玩起来一个视角）
+	# 透视 + 与游玩一致的 FOV/俯角（编辑器相机要和真玩起来一个视角）
 	camera.projection = Camera3D.PROJECTION_PERSPECTIVE
 	camera.keep_aspect = Camera3D.KEEP_HEIGHT
 	camera.fov = CAM_FOV
@@ -193,15 +238,24 @@ func build_world() -> void:
 	ribbon_mesh = MeshInstance3D.new()
 	ribbon_mesh.name = "Ribbon"
 	add_child(ribbon_mesh)
-	rings_root = Node3D.new()
-	rings_root.name = "Rings"
-	add_child(rings_root)
-	platforms_root = Node3D.new()
-	platforms_root.name = "Platforms"
-	add_child(platforms_root)
+	regions_root = Node3D.new()
+	regions_root.name = "Regions"
+	add_child(regions_root)
+	region_draft_root = Node3D.new()
+	region_draft_root.name = "RegionDraft"
+	add_child(region_draft_root)
+	tiles_root = Node3D.new()
+	tiles_root.name = "Tiles"
+	add_child(tiles_root)
+	tile_markers_root = Node3D.new()
+	tile_markers_root.name = "TileMarkers"
+	add_child(tile_markers_root)
 	decor_root = Node3D.new()
 	decor_root.name = "Decor"
 	add_child(decor_root)
+	selection_root = Node3D.new()
+	selection_root.name = "Selection"
+	add_child(selection_root)
 
 	# 地图外的「黑色底板」：镜头看向边界外时看到的是这块板，不是天球。
 	_void_plane = MeshInstance3D.new()
@@ -243,21 +297,21 @@ func _masked_environment() -> Environment:
 	return env
 
 
-func load_shell(p_shell: Dictionary) -> void:
+func load_shell(p_shell: Dictionary, keep_camera: bool = false) -> void:
 	shell = p_shell
 	if shell.is_empty():
 		return
+	# 新建 / 旧图迁移：三块区域缺了就补默认矩形（几何在 Model 里算）
+	ShellStore.ensure_regions(shell)
 	heights = ShellStore.heights_or_procedural(shell)
 	surface = ShellStore.surface_index(shell)
-	selected_platform = -1
-	selected_divider = ""
-	selected_decor = -1
-	selected_point = -1
+	_clear_selection()
 	preview_layout = {}
 	rebuild_all()
 	update_ambient()
-	# 与旧编辑器一致：一张图进来先把镜头复位到「游玩视角」，而不是沿用上一张图的机位。
-	reset_camera()
+	if not keep_camera:
+		# 与旧编辑器一致：一张图进来先把镜头复位到「游玩视角」，而不是沿用上一张图的机位。
+		reset_camera()
 
 
 func rebuild_all() -> void:
@@ -267,9 +321,10 @@ func rebuild_all() -> void:
 	_build_water()
 	_build_grid()
 	_build_ribbon()
-	_build_rings()
-	_build_platforms()
+	_build_regions()
+	_build_tiles()
 	_build_decor()
+	_rebuild_selection_rings()
 	_update_camera()
 
 
@@ -298,11 +353,11 @@ func _build_terrain() -> void:
 	normals.resize(cols * rows)
 	colors.resize(cols * rows)
 	uvs.resize(cols * rows)
-	# 营地压暗的落点只取一次（每顶点再去翻 platforms 字典会很贵）
+	# 格子压暗的落点只取一次（每顶点再去翻 tiles 字典会很贵）
 	var camps: Array[Vector2] = []
-	for p in ShellStore.platforms(shell):
-		var pd: Dictionary = p
-		camps.append(Vector2(float(pd.get("x", 0.0)), float(pd.get("z", 0.0))))
+	for t in ShellStore.tiles(shell):
+		var td: Dictionary = t
+		camps.append(Vector2(float(td.get("x", 0.0)), float(td.get("z", 0.0))))
 	for row in rows:
 		for col in cols:
 			var i := row * cols + col
@@ -593,7 +648,6 @@ func _water_material() -> Material:
 
 
 ## 编辑器辅助网格：和旧编辑器一样**贴着地形走**（4m 一格 + 地图边界框）。
-## 旧版把线画在 y=0.02 的平面上，地形一有起伏就埋进山体里，等于没有。
 func _build_grid() -> void:
 	if grid_mesh == null:
 		return
@@ -675,7 +729,7 @@ func _build_border() -> void:
 
 
 # ===========================================================================
-# 脊线 / 分割环
+# 脊线（通道本身；分区改由多边形区域负责）
 # ===========================================================================
 func _build_ribbon() -> void:
 	var width_m := float((shell.get("spine", {}) as Dictionary).get("width_logic", 420.0)) * ShellStore.R1
@@ -705,204 +759,508 @@ func _build_ribbon() -> void:
 	ribbon_mesh.material_override = mat
 
 
-func _build_rings() -> void:
-	for c in rings_root.get_children():
+# ===========================================================================
+# 势力区域（多边形）
+# ===========================================================================
+func _build_regions() -> void:
+	for c in regions_root.get_children():
 		c.queue_free()
-	var width_m := float((shell.get("spine", {}) as Dictionary).get("width_logic", 420.0)) * ShellStore.R1
-	for id in ShellStore.DIVIDER_IDS:
-		var d: Dictionary = ShellStore.divider(shell, id)
-		if d.is_empty():
+	for kind in ShellStore.REGION_IDS:
+		var pts := ShellStore.region_points(shell, kind)
+		if pts.size() < 3:
 			continue
-		var t := int(d.get("t", 0))
-		var p := ShellStore.point_at_t(shell, t)
-		var y := ShellStore.height_at(shell, p.x, p.y) + 0.6
+		var col: Color = ShellStore.REGION_COLORS.get(kind, Color.WHITE)
 		var holder := Node3D.new()
-		holder.name = "Ring_" + id
-		holder.position = Vector3(p.x, y, p.y)
-		var dir := ShellStore.direction_at_t(shell, t)
-		var yaw := atan2(dir.x, dir.y)
-		holder.rotation = Vector3(0.0, yaw, 0.0)
-		holder.set_meta("divider", id)
-		rings_root.add_child(holder)
-		var torus := TorusMesh.new()
-		torus.inner_radius = width_m * 0.5 + 0.45
-		torus.outer_radius = width_m * 0.5 + 0.62
-		torus.rings = 40
-		torus.ring_segments = 6
+		holder.name = "Region_" + kind
+		holder.set_meta("region_kind", kind)
+		regions_root.add_child(holder)
+		holder.add_child(_region_fill_mesh(pts, col))
+		holder.add_child(_region_outline_mesh(pts, col, 0.14))
+		var c := ShellStore.region_centroid(pts)
+		var label := Label3D.new()
+		label.name = "Label"
+		label.text = T(ShellStore.REGION_KEYS.get(kind, kind))
+		label.font_size = 64
+		label.pixel_size = 0.016
+		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		label.no_depth_test = true
+		label.outline_size = 12
+		label.modulate = Color(col.r, col.g, col.b, 0.98)
+		label.position = Vector3(c.x, _h(c.x, c.y) + 2.4, c.y)
+		holder.add_child(label)
+	_build_region_draft()
+
+
+func _region_fill_mesh(pts: PackedVector2Array, col: Color) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	mi.name = "Fill"
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var idx := Geometry2D.triangulate_polygon(pts)
+	if idx.is_empty():
+		return mi
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var c := Color(col.r, col.g, col.b, REGION_FILL_ALPHA)
+	for i in idx:
+		var p := pts[i]
+		var y := _h(p.x, p.y) + REGION_Y_LIFT
+		st.set_color(c)
+		st.set_normal(Vector3.UP)
+		st.add_vertex(Vector3(p.x, y, p.y))
+	mi.mesh = st.commit()
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.vertex_color_use_as_albedo = true
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.disable_receive_shadows = true
+	mi.material_override = mat
+	return mi
+
+
+## 贴地描边：逐段加密（2m 一段），跟着地形起伏走。
+func _region_outline_mesh(pts: PackedVector2Array, col: Color, lift: float) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	mi.name = "Outline"
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_LINES)
+	var c := Color(col.r, col.g, col.b, REGION_LINE_ALPHA)
+	var n := pts.size()
+	for i in n:
+		var a := pts[i]
+		var b := pts[(i + 1) % n]
+		var seg := maxi(1, int(ceil(a.distance_to(b) / 2.0)))
+		var prev := Vector3(a.x, _h(a.x, a.y) + lift, a.y)
+		for k in range(1, seg + 1):
+			var t := float(k) / float(seg)
+			var p := a.lerp(b, t)
+			var cur := Vector3(p.x, _h(p.x, p.y) + lift, p.y)
+			st.set_color(c)
+			st.add_vertex(prev)
+			st.set_color(c)
+			st.add_vertex(cur)
+			prev = cur
+	mi.mesh = st.commit()
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.vertex_color_use_as_albedo = true
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mi.material_override = mat
+	return mi
+
+
+func _build_region_draft() -> void:
+	if region_draft_root == null:
+		return
+	for c in region_draft_root.get_children():
+		c.queue_free()
+	if region_mode.is_empty() or region_draft.is_empty():
+		return
+	var col: Color = ShellStore.REGION_COLORS.get(region_mode, Color.WHITE)
+	var pts := region_draft
+	# 顶点标记：小球 + 首点高亮圈（点它就能闭合）
+	for i in pts.size():
+		var p := pts[i]
+		var ball := SphereMesh.new()
+		ball.radius = 0.32 if i > 0 else 0.55
+		ball.height = ball.radius * 2.0
 		var mi := MeshInstance3D.new()
-		mi.name = "Torus"
-		mi.mesh = torus
-		mi.rotation = Vector3(PI * 0.5, 0.0, 0.0)
+		mi.name = "V%d" % i
+		mi.mesh = ball
+		mi.position = Vector3(p.x, _h(p.x, p.y) + 0.45, p.y)
 		var mat := StandardMaterial3D.new()
-		var col: Color = RING_COLORS.get(id, Color("#F0B95A"))
 		mat.albedo_color = col
 		mat.emission_enabled = true
 		mat.emission = col
-		mat.emission_energy_multiplier = 0.7
+		mat.emission_energy_multiplier = 0.9
 		mi.material_override = mat
-		holder.add_child(mi)
-		var label := Label3D.new()
-		label.name = "Label"
-		label.text = "%s  t=%d" % [String(d.get("display_name", id)), t]
-		label.font_size = 40
-		label.pixel_size = 0.009
-		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		label.no_depth_test = false
-		label.outline_size = 8
-		label.modulate = Color(col.r, col.g, col.b, 0.95)
-		label.position = Vector3(0.0, 1.5, 0.0)
-		holder.add_child(label)
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		region_draft_root.add_child(mi)
+	if pts.size() < 2:
+		return
+	var closed := PackedVector2Array(pts)
+	if pts.size() >= 3:
+		region_draft_root.add_child(_region_fill_mesh(closed, col))
+	# 折线（未闭合也画出来，让人知道下一个点连到哪）
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_LINES)
+	var c := Color(col.r, col.g, col.b, 0.95)
+	for i in pts.size():
+		var a := pts[i]
+		var b := pts[mini(i + 1, pts.size() - 1)] if i + 1 < pts.size() else pts[0]
+		if i + 1 >= pts.size() and pts.size() < 3:
+			break
+		var seg := maxi(1, int(ceil(a.distance_to(b) / 2.0)))
+		var prev := Vector3(a.x, _h(a.x, a.y) + 0.18, a.y)
+		for k in range(1, seg + 1):
+			var t := float(k) / float(seg)
+			var p := a.lerp(b, t)
+			var cur := Vector3(p.x, _h(p.x, p.y) + 0.18, p.y)
+			st.set_color(c)
+			st.add_vertex(prev)
+			st.set_color(c)
+			st.add_vertex(cur)
+			prev = cur
+	var mi2 := MeshInstance3D.new()
+	mi2.name = "DraftOutline"
+	mi2.mesh = st.commit()
+	var mat2 := StandardMaterial3D.new()
+	mat2.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat2.vertex_color_use_as_albedo = true
+	mat2.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mi2.material_override = mat2
+	mi2.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	region_draft_root.add_child(mi2)
 
 
 # ===========================================================================
-# 石台锚点
+# 区域绘制状态机
 # ===========================================================================
-func _build_platforms() -> void:
-	for c in platforms_root.get_children():
+func begin_region(kind: String) -> void:
+	region_mode = kind
+	region_draft = PackedVector2Array()
+	_clear_selection()
+	_build_region_draft()
+
+
+func cancel_region() -> void:
+	if region_mode.is_empty() and region_draft.is_empty():
+		return
+	region_mode = ""
+	region_draft = PackedVector2Array()
+	_build_region_draft()
+
+
+## 返回 true = 这一下左键被区域绘制吃掉。
+func add_region_vertex(g: Vector3, screen_pos: Vector2) -> bool:
+	if region_mode.is_empty():
+		return false
+	if region_draft.size() >= 3:
+		var first := region_draft[0]
+		if _screen_of(Vector3(first.x, _h(first.x, first.y), first.y)).distance_to(screen_pos) <= 14.0:
+			finish_region()
+			return true
+	region_draft.append(Vector2(g.x, g.z))
+	_build_region_draft()
+	return true
+
+
+## 闭合当前区域。返回 errors（空 = 成功）。失败时保留草稿，让人继续加点/取消。
+func finish_region() -> Array:
+	if region_mode.is_empty():
+		return []
+	if region_draft.size() < 3:
+		return ["need 3 vertices"]
+	var errors := ShellStore.region_validate(region_mode, region_draft)
+	if not errors.is_empty():
+		return errors
+	push_undo()
+	ShellStore.set_region_points(shell, region_mode, region_draft)
+	region_changed.emit(region_mode)
+	region_mode = ""
+	region_draft = PackedVector2Array()
+	_build_regions()
+	changed.emit()
+	picked.emit("region", 0)
+	return []
+
+
+# ===========================================================================
+# 战术格子
+# ===========================================================================
+func _build_tiles() -> void:
+	for c in tiles_root.get_children():
 		c.queue_free()
-	for p in ShellStore.platforms(shell):
-		var pd: Dictionary = p
-		var idx := int(pd.get("index", 0))
+	for t in ShellStore.tiles(shell):
+		var td: Dictionary = t
+		var idx := int(td.get("index", 0))
 		var active := true
 		if not preview_layout.is_empty():
 			active = ShellStore.is_active(preview_layout, idx)
-		var node := _make_platform_node(pd, active)
-		node.name = "P%d" % idx
-		node.set_meta("platform_index", idx)
-		platforms_root.add_child(node)
-	if selected_platform >= 0:
-		_mark_platform(selected_platform)
+		var node := _make_tile_node(td, active)
+		node.name = "T%d" % idx
+		node.set_meta("tile_index", idx)
+		tiles_root.add_child(node)
+	_refresh_tile_markers()
 
 
-func _make_platform_node(pd: Dictionary, active: bool) -> Node3D:
-	var idx := int(pd.get("index", 0))
-	var role := String(pd.get("role", "build"))
-	var side := String(pd.get("side", "player"))
-	var radius := float(pd.get("radius", 2.0))
-	var base_h := float(pd.get("base_h", ShellStore.BASE_H))
-	var ty := float(pd.get("terrain_y", 0.0))
+func _make_tile_node(td: Dictionary, active: bool) -> Node3D:
+	var idx := int(td.get("index", 0))
+	var side := String(td.get("side", "player"))
+	var role := String(td.get("role", "build"))
+	var w := float(td.get("w", ShellStore.TILE_SIZE_DEFAULT))
+	var d := float(td.get("d", ShellStore.TILE_SIZE_DEFAULT))
+	var ty := float(td.get("terrain_y", 0.0))
 	var holder := Node3D.new()
-	holder.position = Vector3(float(pd.get("x", 0.0)), ty, float(pd.get("z", 0.0)))
-	holder.rotation = Vector3(0.0, deg_to_rad(float(pd.get("yaw", 0.0))), 0.0)
-	var accent := Color("#4EA1FF") if side == "player" else Color("#FF6E6E")
+	holder.position = Vector3(float(td.get("x", 0.0)), ty, float(td.get("z", 0.0)))
+	holder.rotation = Vector3(0.0, deg_to_rad(float(td.get("yaw", 0.0))), 0.0)
+	var accent: Color = ShellStore.REGION_COLORS.get(side, Color.WHITE)
 	if role == "keep":
 		accent = Color("#F0B95A")
 	if not active:
 		accent = Color("#6E7480")
-	var stone := StandardMaterial3D.new()
-	stone.albedo_color = Color("#3A4150") if active else Color("#2B3038")
-	stone.roughness = 0.9
-	var top_mat := StandardMaterial3D.new()
-	top_mat.albedo_color = accent.darkened(0.55) if active else Color("#343941")
-	top_mat.roughness = 0.8
-	if not active:
-		_build_ruin(holder, radius, stone)
-		return holder
-	var pillar := CylinderMesh.new()
-	pillar.top_radius = radius * 0.82
-	pillar.bottom_radius = radius * 0.9
-	pillar.height = maxf(base_h, 0.4)
-	pillar.radial_segments = 24
+	var is_sel := selected_tiles.has(idx)
+
+	# 底盘：一块贴着地形的薄石板（编辑器辅助几何，不是游戏美术资产）
+	var plate := BoxMesh.new()
+	plate.size = Vector3(w, 0.22, d)
 	var pmi := MeshInstance3D.new()
-	pmi.name = "Pillar"
-	pmi.mesh = pillar
-	pmi.position = Vector3(0.0, base_h * 0.5, 0.0)
-	pmi.material_override = stone
+	pmi.name = "Plate"
+	pmi.mesh = plate
+	pmi.position = Vector3(0.0, 0.14, 0.0)
+	var pmat := StandardMaterial3D.new()
+	pmat.albedo_color = Color("#3A4352") if active else Color("#252A33")
+	pmat.roughness = 0.85
+	if is_sel:
+		pmat.emission_enabled = true
+		pmat.emission = Color("#F0B95A")
+		pmat.emission_energy_multiplier = 0.25
+	pmi.material_override = pmat
+	pmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	holder.add_child(pmi)
-	var top := CylinderMesh.new()
-	top.top_radius = radius
-	top.bottom_radius = radius * 0.96
-	top.height = 0.3
-	top.radial_segments = 28
-	var tmi := MeshInstance3D.new()
-	tmi.name = "Top"
-	tmi.mesh = top
-	tmi.position = Vector3(0.0, base_h + 0.15, 0.0)
-	tmi.material_override = top_mat
-	holder.add_child(tmi)
-	if role == "keep":
-		var ring := TorusMesh.new()
-		ring.inner_radius = radius * 0.66
-		ring.outer_radius = radius * 0.74
-		ring.rings = 36
-		ring.ring_segments = 6
-		var rmi := MeshInstance3D.new()
-		rmi.name = "KeepRing"
-		rmi.mesh = ring
-		rmi.position = Vector3(0.0, base_h + 0.32, 0.0)
-		var rmat := StandardMaterial3D.new()
-		rmat.albedo_color = Color("#F0B95A")
-		rmat.emission_enabled = true
-		rmat.emission = Color("#F0B95A")
-		rmat.emission_energy_multiplier = 0.45
-		rmi.material_override = rmat
-		holder.add_child(rmi)
+
+	# 边框：四个角的世界折线（贴地，跟着地形）
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_LINES)
+	var hw := w * 0.5
+	var hd := d * 0.5
+	var corners: Array[Vector2] = [
+		Vector2(-hw, -hd), Vector2(hw, -hd), Vector2(hw, hd), Vector2(-hw, hd),
+	]
+	var line_col := Color(accent.r, accent.g, accent.b, 0.95 if is_sel else 0.55)
+	for i in 4:
+		var a: Vector2 = corners[i]
+		var b: Vector2 = corners[(i + 1) % 4]
+		var seg := maxi(1, int(ceil(a.distance_to(b) / 1.5)))
+		var prev := _tile_world(a, w, d, td) + Vector3(0.0, 0.2, 0.0)
+		for k in range(1, seg + 1):
+			var t := float(k) / float(seg)
+			var cur := _tile_world(a.lerp(b, t), w, d, td) + Vector3(0.0, 0.2, 0.0)
+			st.set_color(line_col)
+			st.add_vertex(prev)
+			st.set_color(line_col)
+			st.add_vertex(cur)
+			prev = cur
+	var omi := MeshInstance3D.new()
+	omi.name = "Outline"
+	omi.mesh = st.commit()
+	var omat := StandardMaterial3D.new()
+	omat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	omat.vertex_color_use_as_albedo = true
+	omat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	omi.material_override = omat
+	omi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	holder.add_child(omi)
+
+	# 索引牌（始终可见：一眼知道布局卡引用的是哪个号）
 	var label := Label3D.new()
 	label.name = "Label"
-	label.text = str(idx)
-	label.font_size = 64
-	label.pixel_size = 0.013
+	label.text = "T%d" % idx
+	label.font_size = 72
+	label.pixel_size = 0.015
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	label.no_depth_test = true
-	label.outline_size = 10
+	label.outline_size = 12
 	label.modulate = Color(1.0, 1.0, 1.0, 0.96) if active else Color(0.55, 0.6, 0.7, 0.9)
-	label.position = Vector3(0.0, base_h + 1.15, 0.0)
+	label.position = Vector3(0.0, 1.3, 0.0)
+	# 选中/悬停时由两个锚点标记接管画面，索引牌先让位（否则三行字叠在一起）
+	label.visible = not is_sel
 	holder.add_child(label)
+
+	if not active:
+		_build_tile_ruin(holder, w, d)
 	return holder
 
 
-func _build_ruin(holder: Node3D, radius: float, stone: StandardMaterial3D) -> void:
-	var pieces := 5
-	for i in pieces:
+## 未激活格子 = 碎石遗迹（和旧候选石台的 ruin 同语义：能看见、不能建造）。
+func _build_tile_ruin(holder: Node3D, w: float, d: float) -> void:
+	var stone := StandardMaterial3D.new()
+	stone.albedo_color = Color("#2B3038")
+	stone.roughness = 0.9
+	for i in 5:
 		var box := BoxMesh.new()
-		var s := radius * (0.28 + 0.08 * float(i % 3))
+		var s := minf(w, d) * (0.12 + 0.03 * float(i % 3))
 		box.size = Vector3(s * 1.6, s * 0.7, s * 1.2)
 		var mi := MeshInstance3D.new()
 		mi.mesh = box
-		var ang := float(i) / float(pieces) * TAU
-		mi.position = Vector3(cos(ang) * radius * 0.42, 0.12, sin(ang) * radius * 0.42)
+		var ang := float(i) / 5.0 * TAU
+		mi.position = Vector3(cos(ang) * w * 0.2, 0.14, sin(ang) * d * 0.2)
 		mi.rotation = Vector3(0.0, ang, 0.12 * float(i - 2))
 		mi.material_override = stone
 		holder.add_child(mi)
-	var label := Label3D.new()
-	label.name = "Label"
-	label.text = str(int(holder.get_meta("platform_index", 0)))
-	label.font_size = 40
-	label.pixel_size = 0.012
-	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	label.modulate = Color(0.55, 0.6, 0.7, 0.8)
-	label.position = Vector3(0.0, 1.0, 0.0)
-	holder.add_child(label)
 
 
-func _mark_platform(index: int) -> void:
-	var node := platforms_root.get_node_or_null("P%d" % index)
-	if node == null:
+## 边框顶点是**局部坐标**（挂在一个已经平移/旋转过的 holder 下）：
+## 只把"世界地形高度差"折算进来，绝不能再把 tile 的 x/z 加一遍 ——
+## 否则边框会以两倍偏移漂到地图外面（2026-11-21 截图自检抓到的就是这个）。
+func _tile_world(local_xz: Vector2, _w: float, _d: float, td: Dictionary) -> Vector3:
+	var yaw := deg_to_rad(float(td.get("yaw", 0.0)))
+	var c := cos(yaw)
+	var s := sin(yaw)
+	var wx := float(td.get("x", 0.0)) + local_xz.x * c + local_xz.y * s
+	var wz := float(td.get("z", 0.0)) - local_xz.x * s + local_xz.y * c
+	var dy := _h(wx, wz) - float(td.get("terrain_y", 0.0))
+	return Vector3(local_xz.x, dy + 0.28, local_xz.y)
+
+
+## 只给"选中 / 悬停"的格子画两个锚点标记：左上角建筑位 + 正中心出兵位。
+## 全图 12 个格子都挂标记会糊成一团，所以按需重建。
+func _refresh_tile_markers() -> void:
+	if tile_markers_root == null:
 		return
-	var marker := node.get_node_or_null("Marker")
-	if marker != null:
-		return
-	var m := TorusMesh.new()
-	var pd := ShellStore.platform_by_index(shell, index)
-	var r := float(pd.get("radius", 2.0)) + 0.5
-	m.inner_radius = r
-	m.outer_radius = r + 0.18
-	m.rings = 40
-	var mi := MeshInstance3D.new()
-	mi.name = "Marker"
-	mi.mesh = m
-	mi.rotation = Vector3(PI * 0.5, 0.0, 0.0)
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color("#FFFFFF")
-	mat.emission_enabled = true
-	mat.emission = Color("#FFFFFF")
-	mat.emission_energy_multiplier = 0.8
-	mi.material_override = mat
-	(node as Node3D).add_child(mi)
+	for c in tile_markers_root.get_children():
+		c.queue_free()
+	var want: Array[int] = []
+	for i in selected_tiles:
+		if not want.has(i):
+			want.append(i)
+	if hovered_tile >= 0 and not want.has(hovered_tile):
+		want.append(hovered_tile)
+	for idx in want:
+		var td := ShellStore.tile_by_index(shell, idx)
+		if td.is_empty():
+			continue
+		tile_markers_root.add_child(_make_tile_markers(td))
+
+
+func _make_tile_markers(td: Dictionary) -> Node3D:
+	var holder := Node3D.new()
+	holder.name = "M%d" % int(td.get("index", 0))
+	var anchors := ShellStore.tile_anchors(td)
+	if anchors.is_empty():
+		return holder
+	# 建筑位：左上角的金色方框 + 一根短立柱
+	var bx := float(anchors.get("building_x", td.get("x", 0.0)))
+	var bz := float(anchors.get("building_z", td.get("z", 0.0)))
+	var by := _h(bx, bz)
+	var gold := Color("#F0B95A")
+	var frame := BoxMesh.new()
+	frame.size = Vector3(1.6, 0.08, 1.6)
+	var fmi := MeshInstance3D.new()
+	fmi.name = "BuildingAnchor"
+	fmi.mesh = frame
+	fmi.position = Vector3(bx, by + 0.22, bz)
+	fmi.material_override = _flat_mat(gold, 0.75)
+	holder.add_child(fmi)
+	var pole := CylinderMesh.new()
+	pole.top_radius = 0.06
+	pole.bottom_radius = 0.06
+	pole.height = 1.2
+	var pmi := MeshInstance3D.new()
+	pmi.mesh = pole
+	pmi.position = Vector3(bx, by + 0.8, bz)
+	pmi.material_override = _flat_mat(gold, 0.9)
+	holder.add_child(pmi)
+	var blabel := Label3D.new()
+	blabel.text = T("shell.tile.building")
+	blabel.font_size = 40
+	blabel.pixel_size = 0.011
+	blabel.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	blabel.outline_size = 8
+	blabel.modulate = gold
+	blabel.position = Vector3(bx, by + 1.55, bz)
+	holder.add_child(blabel)
+
+	# 出兵位：正中心的青色圈（复用局内选中圈资产）
+	var sx := float(anchors.get("spawn_x", td.get("x", 0.0)))
+	var sz := float(anchors.get("spawn_z", td.get("z", 0.0)))
+	var sy := _h(sx, sz)
+	var ring_scn := _sel_ring_scene()
+	var ring := ring_scn.instantiate() as Node3D if ring_scn != null else null
+	if ring != null:
+		ring.name = "SquadSpawnAnchor"
+		ring.position = Vector3(sx, sy + 0.06, sz)
+		ring.scale = Vector3.ONE * 1.4
+		_tint_ring(ring, Color("#45D6A2"), 0.8)
+		holder.add_child(ring)
+	var slabel := Label3D.new()
+	slabel.text = T("shell.tile.spawn")
+	slabel.font_size = 40
+	slabel.pixel_size = 0.011
+	slabel.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	slabel.outline_size = 8
+	slabel.modulate = Color("#45D6A2")
+	slabel.position = Vector3(sx, sy + 1.1, sz)
+	holder.add_child(slabel)
+	return holder
+
+
+func _flat_mat(col: Color, alpha: float) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(col.r, col.g, col.b, alpha)
+	m.emission_enabled = true
+	m.emission = col
+	m.emission_energy_multiplier = 0.4
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA if alpha < 1.0 else BaseMaterial3D.TRANSPARENCY_DISABLED
+	m.disable_receive_shadows = true
+	return m
 
 
 # ===========================================================================
-# 纯视觉装饰
+# 选中高亮圈（唯一资产：Content/art/特效/选中圈.tscn）
+# ===========================================================================
+func _rebuild_selection_rings() -> void:
+	if selection_root == null:
+		return
+	for c in selection_root.get_children():
+		c.queue_free()
+	for idx in selected_tiles:
+		var td := ShellStore.tile_by_index(shell, idx)
+		if td.is_empty():
+			continue
+		var r := maxf(float(td.get("w", 6.0)), float(td.get("d", 6.0))) * 0.52
+		_add_ring(Vector3(float(td.get("x", 0.0)), float(td.get("terrain_y", 0.0)) + 0.05, float(td.get("z", 0.0))),
+			r, ShellStore.REGION_COLORS.get(String(td.get("side", "player")), Color.WHITE))
+	for idx in selected_decor:
+		var list: Array = shell.get("decorations", [])
+		if idx < 0 or idx >= list.size():
+			continue
+		var dd: Dictionary = list[idx]
+		var row := ShellStore.decor_row(String(dd.get("kind", "tree")))
+		var base := float(row.get("radius", 1.2)) * float(dd.get("scale", 1.0))
+		_add_ring(Vector3(float(dd.get("x", 0.0)), float(dd.get("y", 0.0)) + 0.05, float(dd.get("z", 0.0))),
+			maxf(base, 0.7), Color("#F0B95A"))
+
+
+func _add_ring(pos: Vector3, radius: float, col: Color) -> void:
+	var ring_scn := _sel_ring_scene()
+	if ring_scn == null:
+		return
+	var ring := ring_scn.instantiate() as Node3D
+	if ring == null:
+		return
+	ring.position = pos
+	ring.scale = Vector3.ONE * maxf(radius / 0.8, 0.35)
+	_tint_ring(ring, col, 0.95)
+	selection_root.add_child(ring)
+
+
+## 改选中圈材质：**必须 duplicate**（PackedScene 里的子资源是共享的，
+## 直接改会把所有圈一起染色 —— 这条和地形材质同一个理由）。
+func _tint_ring(ring: Node3D, col: Color, alpha: float) -> void:
+	var mi: MeshInstance3D = null
+	for c in ring.get_children():
+		if c is MeshInstance3D:
+			mi = c as MeshInstance3D
+			break
+	if mi == null:
+		return
+	var src: Material = null
+	if mi.mesh != null and mi.mesh.get_surface_count() > 0:
+		src = mi.mesh.surface_get_material(0)
+	if src == null:
+		src = mi.material_override
+	if src is ShaderMaterial:
+		var mat := (src as ShaderMaterial).duplicate(true) as ShaderMaterial
+		mat.set_shader_parameter("team_color", col)
+		mat.set_shader_parameter("opacity", alpha)
+		mi.material_override = mat
+
+
+# ===========================================================================
+# 纯视觉装饰（只实例化既有资产）
 # ===========================================================================
 func _build_decor() -> void:
 	for c in decor_root.get_children():
@@ -911,116 +1269,66 @@ func _build_decor() -> void:
 	for i in list.size():
 		var d: Dictionary = list[i]
 		var node := _make_decor_node(d)
+		if node == null:
+			continue
 		node.name = "D%d" % i
 		node.set_meta("decor_index", i)
-		node.position = Vector3(float(d.get("x", 0.0)), float(d.get("y", 0.0)), float(d.get("z", 0.0)))
+		var gy := _h(float(d.get("x", 0.0)), float(d.get("z", 0.0)))
+		d["y"] = snappedf(gy, 0.001)
+		node.position = Vector3(float(d.get("x", 0.0)), gy, float(d.get("z", 0.0)))
 		node.rotation = Vector3(0.0, deg_to_rad(float(d.get("yaw", 0.0))), 0.0)
 		node.scale = Vector3.ONE * float(d.get("scale", 1.0))
 		decor_root.add_child(node)
 
 
+## **不现拼占位网格**：自然类走 RtsDecorLib 的场景，道具类直接实例化登记的 GLB。
 func _make_decor_node(d: Dictionary) -> Node3D:
 	var kind := String(d.get("kind", "tree"))
-	var holder := Node3D.new()
-	var tint: Color = ShellStore.DECOR_TINT.get(kind, Color("#8A7A56"))
-	var body := StandardMaterial3D.new()
-	body.albedo_color = tint
-	body.roughness = 0.9
-	var dark := StandardMaterial3D.new()
-	dark.albedo_color = tint.darkened(0.35)
-	dark.roughness = 0.95
-	match kind:
-		"tree":
-			var trunk := CylinderMesh.new()
-			trunk.top_radius = 0.18
-			trunk.bottom_radius = 0.28
-			trunk.height = 2.4
-			trunk.radial_segments = 8
-			var tmi := MeshInstance3D.new()
-			tmi.mesh = trunk
-			tmi.position = Vector3(0.0, 1.2, 0.0)
-			tmi.material_override = dark
-			holder.add_child(tmi)
-			for i in 3:
-				var ball := SphereMesh.new()
-				ball.radius = 1.5 - float(i) * 0.3
-				ball.height = ball.radius * 1.6
-				var mi := MeshInstance3D.new()
-				mi.mesh = ball
-				mi.position = Vector3(0.0, 2.6 + float(i) * 0.7, 0.0)
-				mi.material_override = body
-				holder.add_child(mi)
-		"rock":
-			var ball2 := SphereMesh.new()
-			ball2.radius = 1.1
-			ball2.height = 1.2
-			var mi2 := MeshInstance3D.new()
-			mi2.mesh = ball2
-			mi2.position = Vector3(0.0, 0.4, 0.0)
-			mi2.rotation = Vector3(0.0, 0.4, 0.2)
-			mi2.material_override = body
-			holder.add_child(mi2)
-		"fence":
-			for i in 3:
-				var post := BoxMesh.new()
-				post.size = Vector3(0.16, 1.1, 0.16)
-				var pmi := MeshInstance3D.new()
-				pmi.mesh = post
-				pmi.position = Vector3(-1.0 + float(i), 0.55, 0.0)
-				pmi.material_override = dark
-				holder.add_child(pmi)
-			for j in 2:
-				var rail := BoxMesh.new()
-				rail.size = Vector3(2.2, 0.12, 0.1)
-				var rmi := MeshInstance3D.new()
-				rmi.mesh = rail
-				rmi.position = Vector3(0.0, 0.45 + float(j) * 0.42, 0.0)
-				rmi.material_override = body
-				holder.add_child(rmi)
-		"flag":
-			var pole := CylinderMesh.new()
-			pole.top_radius = 0.06
-			pole.bottom_radius = 0.08
-			pole.height = 3.0
-			var pmi2 := MeshInstance3D.new()
-			pmi2.mesh = pole
-			pmi2.position = Vector3(0.0, 1.5, 0.0)
-			pmi2.material_override = dark
-			holder.add_child(pmi2)
-			var cloth := QuadMesh.new()
-			cloth.size = Vector2(1.2, 0.7)
-			var cmi := MeshInstance3D.new()
-			cmi.mesh = cloth
-			cmi.position = Vector3(0.62, 2.6, 0.0)
-			cmi.material_override = body
-			holder.add_child(cmi)
-		"stump":
-			var st := CylinderMesh.new()
-			st.top_radius = 0.36
-			st.bottom_radius = 0.42
-			st.height = 0.6
-			var smi := MeshInstance3D.new()
-			smi.mesh = st
-			smi.position = Vector3(0.0, 0.3, 0.0)
-			smi.material_override = body
-			holder.add_child(smi)
-		"crate":
-			var box := BoxMesh.new()
-			box.size = Vector3(0.8, 0.8, 0.8)
-			var bmi := MeshInstance3D.new()
-			bmi.mesh = box
-			bmi.position = Vector3(0.0, 0.4, 0.0)
-			bmi.material_override = body
-			holder.add_child(bmi)
-		_:
-			var fallback := BoxMesh.new()
-			fallback.size = Vector3(0.6, 0.6, 0.6)
-			var fmi := MeshInstance3D.new()
-			fmi.mesh = fallback
-			fmi.position = Vector3(0.0, 0.3, 0.0)
-			fmi.material_override = body
-			holder.add_child(fmi)
-	return holder
+	var row := ShellStore.decor_row(kind)
+	if row.is_empty():
+		return null
+	var source := String(row.get("source", "scene"))
+	var path := String(row.get("path", ""))
+	if source == "scene":
+		var lib := _decor_lib_script()
+		if lib != null:
+			var n := lib.call("instantiate", StringName(kind)) as Node3D
+			if n != null:
+				return n
+	var ps: PackedScene = _decor_scene(path)
+	if ps == null:
+		return null
+	var inst := ps.instantiate()
+	var node := inst as Node3D
+	if node == null:
+		if inst != null:
+			inst.queue_free()
+		return null
+	return node
+
+
+func _decor_lib_script() -> Script:
+	if _decor_lib == null and ResourceLoader.exists(DECOR_LIB_PATH):
+		_decor_lib = load(DECOR_LIB_PATH) as Script
+	return _decor_lib
+
+
+func _sel_ring_scene() -> PackedScene:
+	if _sel_ring == null and ResourceLoader.exists(SEL_RING_PATH):
+		_sel_ring = load(SEL_RING_PATH) as PackedScene
+	return _sel_ring
+
+
+func _decor_scene(path: String) -> PackedScene:
+	if path.is_empty():
+		return null
+	if _decor_scene_cache.has(path):
+		return _decor_scene_cache[path] as PackedScene
+	var ps: PackedScene = null
+	if ResourceLoader.exists(path):
+		ps = load(path) as PackedScene
+	_decor_scene_cache[path] = ps
+	return ps
 
 
 # ===========================================================================
@@ -1063,14 +1371,14 @@ func reset_camera() -> void:
 	_update_camera()
 
 
-## Ctrl+Shift+C：一键跳到玩家区主堡锚点（= 旧编辑器 focus_player 的同一手感）。
+## Ctrl+Shift+C：一键跳到玩家区主堡格子（= 旧编辑器 focus_player 的同一手感）。
 func focus_player() -> void:
 	var target := Vector3.ZERO
 	var found := false
-	for p in ShellStore.platforms(shell):
-		var pd: Dictionary = p
-		if String(pd.get("side", "")) == "player" and String(pd.get("role", "")) == "keep":
-			target = Vector3(float(pd.get("x", 0.0)), float(pd.get("terrain_y", 0.0)), float(pd.get("z", 0.0)))
+	for t in ShellStore.tiles(shell):
+		var td: Dictionary = t
+		if String(td.get("side", "")) == "player" and String(td.get("role", "")) == "keep":
+			target = Vector3(float(td.get("x", 0.0)), float(td.get("terrain_y", 0.0)), float(td.get("z", 0.0)))
 			found = true
 			break
 	if not found:
@@ -1114,15 +1422,16 @@ func zoom_by(factor: float) -> void:
 func focus_selected() -> void:
 	var target := Vector3.ZERO
 	var found := false
-	if selected_platform >= 0:
-		var pd := ShellStore.platform_by_index(shell, selected_platform)
-		if not pd.is_empty():
-			target = Vector3(float(pd.get("x", 0.0)), float(pd.get("terrain_y", 0.0)), float(pd.get("z", 0.0)))
+	if not selected_tiles.is_empty():
+		var td := ShellStore.tile_by_index(shell, selected_tiles[0])
+		if not td.is_empty():
+			target = Vector3(float(td.get("x", 0.0)), float(td.get("terrain_y", 0.0)), float(td.get("z", 0.0)))
 			found = true
-	elif selected_decor >= 0:
+	elif not selected_decor.is_empty():
 		var list: Array = shell.get("decorations", [])
-		if selected_decor < list.size():
-			var dd: Dictionary = list[selected_decor]
+		var i := selected_decor[0]
+		if i >= 0 and i < list.size():
+			var dd: Dictionary = list[i]
 			target = Vector3(float(dd.get("x", 0.0)), float(dd.get("y", 0.0)), float(dd.get("z", 0.0)))
 			found = true
 	elif selected_point >= 0:
@@ -1204,7 +1513,6 @@ func is_orbiting() -> bool:
 func handle_input(event: InputEvent, pos: Vector2) -> bool:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
-		_last_mouse = pos
 		match mb.button_index:
 			MOUSE_BUTTON_WHEEL_UP:
 				if mb.pressed:
@@ -1252,7 +1560,7 @@ func handle_input(event: InputEvent, pos: Vector2) -> bool:
 						_left_orbit = false
 						_orbiting = false
 						return true
-					return _on_left_up()
+					return _on_left_up(pos)
 		return false
 	elif event is InputEventMouseMotion:
 		var mm := event as InputEventMouseMotion
@@ -1273,12 +1581,31 @@ func handle_input(event: InputEvent, pos: Vector2) -> bool:
 			_clamp_target()
 			_update_camera()
 			return true
-		_last_mouse = pos
 		var g := ground_at(pos)
 		_hover_ground = g
 		_hover_valid = true
 		if _painting and tool == TOOL_TERRAIN:
 			_paint_ground = g
+		# 框选：按住左键在空地上拖出矩形
+		if _pending_add and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+			if pos.distance_to(_box_start) > 4.0:
+				_box_active = true
+				_pending_add = false
+		if _box_active:
+			_box_end = pos
+			box_changed.emit(_box_start, _box_end)
+		# 悬停：给格子画锚点标记
+		if tool == TOOL_TILE and not _dragging and not _box_active:
+			var h := pick_tile(pos)
+			if h != hovered_tile:
+				hovered_tile = h
+				_refresh_tile_markers()
+		elif tool != TOOL_TILE and hovered_tile >= 0:
+			hovered_tile = -1
+			_refresh_tile_markers()
+		# 拖拽移动：选中物跟着鼠标走，贴合地形
+		if _dragging and not is_orbiting():
+			_drag_apply(g)
 		return false
 	elif event is InputEventKey:
 		return _handle_key(event as InputEventKey)
@@ -1288,6 +1615,9 @@ func handle_input(event: InputEvent, pos: Vector2) -> bool:
 func _handle_key(k: InputEventKey) -> bool:
 	if not k.pressed:
 		return false
+	# Ctrl+Z 撤销（必须先于 match）
+	if k.keycode == KEY_Z and k.ctrl_pressed:
+		return undo()
 	# Ctrl+Shift+C 一键跳到玩家区（必须先于 match：Ctrl+C 是复制）
 	if k.keycode == KEY_C and k.ctrl_pressed and k.shift_pressed:
 		focus_player()
@@ -1296,12 +1626,23 @@ func _handle_key(k: InputEventKey) -> bool:
 		KEY_F:
 			focus_selected()
 			return true
-		KEY_DELETE:
+		KEY_DELETE, KEY_BACKSPACE:
 			return _delete_selected()
-		KEY_ESCAPE, KEY_H:
-			# Esc / H = 收起当前选择（旧编辑器的「回到手型」在这里等价于取消选中）
+		KEY_ENTER, KEY_KP_ENTER, KEY_SPACE:
+			if not region_mode.is_empty():
+				var errs := finish_region()
+				region_finished.emit(errs)
+				return true
+			return false
+		KEY_ESCAPE:
+			if not region_mode.is_empty():
+				cancel_region()
+				region_cancelled.emit()
+				return true
 			_painting = false
-			clear_selection()
+			_clear_selection()
+			_refresh_tile_markers()
+			picked.emit("none", -1)
 			return true
 		KEY_1:
 			zoom_by(0.9)
@@ -1311,49 +1652,73 @@ func _handle_key(k: InputEventKey) -> bool:
 			return true
 		KEY_R:
 			# 选中装饰时旋转（45°，与面板按钮同口径；Shift+R 反向）
-			if tool == TOOL_DECOR and selected_decor >= 0:
-				var list: Array = shell.get("decorations", [])
-				if selected_decor < list.size():
-					var dd: Dictionary = list[selected_decor]
-					dd["yaw"] = float(dd.get("yaw", 0.0)) + (-45.0 if Input.is_key_pressed(KEY_SHIFT) else 45.0)
-					_build_decor()
-					changed.emit()
-					return true
+			if tool == TOOL_DECOR and not selected_decor.is_empty():
+				rotate_decor(selected_decor[0], -45.0 if Input.is_key_pressed(KEY_SHIFT) else 45.0)
+				return true
+			# 选中格子时按 R 也转 45°（格子朝向会影响锚点位置）
+			if tool == TOOL_TILE and not selected_tiles.is_empty():
+				rotate_tiles(-45.0 if Input.is_key_pressed(KEY_SHIFT) else 45.0)
+				return true
 	return false
 
 
 func _on_right_click() -> void:
-	# 右键空地 = 取消当前动作（旧编辑器的直觉），这里等价于停笔 + 清空选择
+	# 右键 = 取消当前动作（绘制中取消绘制，否则停笔 + 清空选择）
 	_painting = false
-	clear_selection()
+	if not region_mode.is_empty():
+		cancel_region()
+		region_cancelled.emit()
+		return
+	_clear_selection()
+	_refresh_tile_markers()
+	picked.emit("none", -1)
+
+
+func _clear_selection() -> void:
+	selected_tiles.clear()
+	selected_decor.clear()
+	selected_point = -1
+	hovered_tile = -1
+	hovered_decor = -1
 
 
 func clear_selection() -> void:
-	selected_platform = -1
-	selected_decor = -1
-	selected_divider = ""
-	selected_point = -1
-	if platforms_root != null:
-		for c in platforms_root.get_children():
-			var m := c.get_node_or_null("Marker")
-			if m != null:
-				m.queue_free()
+	_clear_selection()
+	_rebuild_selection_rings()
+	_refresh_tile_markers()
 	picked.emit("none", -1)
 
 
 func _delete_selected() -> bool:
-	if tool == TOOL_DECOR and selected_decor >= 0:
-		remove_decor(selected_decor)
-		return true
-	if tool == TOOL_PLATFORM and selected_platform >= 0:
-		remove_platform(selected_platform)
+	if not selected_tiles.is_empty() or not selected_decor.is_empty():
+		push_undo()
+		var tile_list: Array = shell.get("tiles", [])
+		var kill_tiles := selected_tiles.duplicate()
+		for i in range(tile_list.size() - 1, -1, -1):
+			if kill_tiles.has(int((tile_list[i] as Dictionary).get("index", -1))):
+				tile_list.remove_at(i)
+		var decor_list: Array = shell.get("decorations", [])
+		var kill_decor := selected_decor.duplicate()
+		kill_decor.sort()
+		kill_decor.reverse()
+		for i in kill_decor:
+			if i >= 0 and i < decor_list.size():
+				decor_list.remove_at(int(i))
+		_clear_selection()
+		_build_tiles()
+		_build_decor()
+		_rebuild_selection_rings()
+		changed.emit()
 		return true
 	return false
 
 
 func _on_left_down(pos: Vector2) -> bool:
 	var g := ground_at(pos)
+	if not region_mode.is_empty():
+		return add_region_vertex(g, pos)
 	if tool == TOOL_TERRAIN:
+		push_undo()
 		_painting = true
 		_paint_ground = g
 		_paint_height = ShellStore.height_at_shell(shell, heights, g.x, g.z)
@@ -1362,35 +1727,67 @@ func _on_left_down(pos: Vector2) -> bool:
 	if tool == TOOL_DECOR:
 		var hit := pick_decor(pos)
 		if hit >= 0:
-			selected_decor = hit
-			picked.emit("decor", hit)
+			if Input.is_key_pressed(KEY_SHIFT):
+				_toggle_decor(hit)
+			elif not selected_decor.has(hit):
+				_select_only_decor(hit)
+			_begin_drag(g)
 			return true
-		add_decor(g, decor_kind)
+		# 空地：先记成"可能是框选"，松手没移动才放装饰
+		_pending_add = true
+		_box_active = false
+		_box_start = pos
+		_box_end = pos
 		return true
-	if tool == TOOL_PLATFORM:
-		var phit := pick_platform(pos)
-		if phit >= 0:
-			selected_platform = phit
-			_mark_platform(phit)
-			picked.emit("platform", phit)
+	if tool == TOOL_TILE:
+		var thit := pick_tile(pos)
+		if thit >= 0:
+			if Input.is_key_pressed(KEY_SHIFT):
+				_toggle_tile(thit)
+			elif not selected_tiles.has(thit):
+				_select_only_tile(thit)
+			_begin_drag(g)
 			return true
-		add_platform(g)
+		_pending_add = true
+		_box_active = false
+		_box_start = pos
+		_box_end = pos
 		return true
 	if tool == TOOL_SPINE:
-		var dhit := pick_divider(pos)
-		if not dhit.is_empty():
-			selected_divider = String(dhit.get("id", ""))
-			picked.emit("divider", 0)
-			return true
 		var sh := pick_spine_point(pos)
 		if sh >= 0:
 			selected_point = sh
+			_begin_drag(g)
 			picked.emit("point", sh)
 			return true
 	return false
 
 
-func _on_left_up() -> bool:
+func _on_left_up(pos: Vector2) -> bool:
+	if _dragging:
+		_dragging = false
+		_drag_offsets.clear()
+		_drag_snapshot = {}
+		_drag_moved = false
+		_rebuild_selection_rings()
+		_refresh_tile_markers()
+		changed.emit()
+		return true
+	if _box_active:
+		_box_active = false
+		_pending_add = false
+		_finish_box_select(_box_start, pos)
+		box_changed.emit(_box_start, _box_start)
+		box_cleared.emit()
+		return true
+	if _pending_add:
+		_pending_add = false
+		var g := ground_at(pos)
+		if tool == TOOL_DECOR:
+			add_decor(g, decor_kind)
+		elif tool == TOOL_TILE:
+			add_tile(g)
+		return true
 	if _painting:
 		_painting = false
 		_grid_accum = 0.0
@@ -1398,6 +1795,97 @@ func _on_left_up() -> bool:
 		changed.emit()
 		return true
 	return false
+
+
+func _begin_drag(g: Vector3) -> void:
+	if selected_tiles.is_empty() and selected_decor.is_empty() and selected_point < 0:
+		return
+	_dragging = true
+	_drag_start = g
+	_drag_moved = false
+	_drag_snapshot = shell.duplicate(true)
+	_drag_offsets.clear()
+	for idx in selected_tiles:
+		var td := ShellStore.tile_by_index(shell, idx)
+		if td.is_empty():
+			continue
+		_drag_offsets.append({"kind": "tile", "index": idx,
+			"dx": float(td.get("x", 0.0)) - g.x, "dz": float(td.get("z", 0.0)) - g.z})
+	for i in selected_decor:
+		var list: Array = shell.get("decorations", [])
+		if i < 0 or i >= list.size():
+			continue
+		var dd: Dictionary = list[i]
+		_drag_offsets.append({"kind": "decor", "index": i,
+			"dx": float(dd.get("x", 0.0)) - g.x, "dz": float(dd.get("z", 0.0)) - g.z})
+
+
+func _drag_apply(g: Vector3) -> void:
+	if not _drag_snapshot.is_empty():
+		_undo.append(_drag_snapshot)
+		if _undo.size() > UNDO_MAX:
+			_undo.pop_front()
+		_drag_snapshot = {}
+		_drag_moved = true
+	for row in _drag_offsets:
+		var d: Dictionary = row
+		var nx := snappedf(g.x + float(d["dx"]), 0.05)
+		var nz := snappedf(g.z + float(d["dz"]), 0.05)
+		if String(d["kind"]) == "tile":
+			var td := ShellStore.tile_by_index(shell, int(d["index"]))
+			if td.is_empty():
+				continue
+			td["x"] = nx
+			td["z"] = nz
+			td["terrain_y"] = snappedf(_h(nx, nz), 0.001)
+		else:
+			var list: Array = shell.get("decorations", [])
+			var i := int(d["index"])
+			if i < 0 or i >= list.size():
+				continue
+			var dd: Dictionary = list[i]
+			dd["x"] = nx
+			dd["z"] = nz
+			dd["y"] = snappedf(_h(nx, nz), 0.001)
+	_build_tiles()
+	_build_decor()
+	_rebuild_selection_rings()
+	_refresh_tile_markers()
+
+
+func _finish_box_select(from: Vector2, to: Vector2) -> void:
+	var rect := Rect2(from, to - from).abs()
+	var t_hits: Array[int] = []
+	var d_hits: Array[int] = []
+	if tool == TOOL_TILE:
+		for t in ShellStore.tiles(shell):
+			var td: Dictionary = t
+			var p := _screen_of(Vector3(float(td.get("x", 0.0)), float(td.get("terrain_y", 0.0)), float(td.get("z", 0.0))))
+			if rect.has_point(p):
+				t_hits.append(int(td.get("index", 0)))
+		if not Input.is_key_pressed(KEY_SHIFT):
+			selected_tiles.clear()
+			selected_decor.clear()
+		for idx in t_hits:
+			if not selected_tiles.has(idx):
+				selected_tiles.append(idx)
+	elif tool == TOOL_DECOR:
+		var list: Array = shell.get("decorations", [])
+		for i in list.size():
+			var dd: Dictionary = list[i]
+			var p := _screen_of(Vector3(float(dd.get("x", 0.0)), float(dd.get("y", 0.0)) + 0.8, float(dd.get("z", 0.0))))
+			if rect.has_point(p):
+				d_hits.append(i)
+		if not Input.is_key_pressed(KEY_SHIFT):
+			selected_tiles.clear()
+			selected_decor.clear()
+		for i in d_hits:
+			if not selected_decor.has(i):
+				selected_decor.append(i)
+	_rebuild_selection_rings()
+	_refresh_tile_markers()
+	if not t_hits.is_empty() or not d_hits.is_empty():
+		picked.emit("tile" if tool == TOOL_TILE else "decor", t_hits.size() + d_hits.size())
 
 
 func _process(delta: float) -> void:
@@ -1422,7 +1910,7 @@ func _apply_brush(center: Vector3, _weight: float) -> void:
 	var cell := float(g["cell"])
 	var ox := float(g["origin_x"])
 	var oz := float(g["origin_z"])
-	# ★ 草丛/泥土写的是 **8m 地块格点**（旧编辑器 mat_brush_radius 的口径）：
+	# 草丛/泥土写的是 **8m 地块格点**（旧编辑器 mat_brush_radius 的口径）：
 	#   笔刷半径只有 6m、格点间距 8m —— 不外扩半格就会出现"点了半天一点反应都没有"。
 	#   判定语义 = "笔刷圈碰到的地块都算"。岩石/沙地是贴花，仍按原半径。
 	var reach := brush_radius
@@ -1475,6 +1963,10 @@ func _apply_brush(center: Vector3, _weight: float) -> void:
 		_build_terrain()
 		_build_water()
 		_build_ribbon()
+		_build_regions()
+		_build_tiles()
+		_build_decor()
+		_rebuild_selection_rings()
 		# 辅助网格贴着地形走：拖动中 5Hz 重建就够，松手再补一次精确的
 		_grid_accum += 0.04
 		if _grid_accum >= 0.2:
@@ -1492,13 +1984,46 @@ func heights_to_array() -> Array:
 
 
 # ===========================================================================
+# 撤销
+# ===========================================================================
+func push_undo() -> void:
+	if shell.is_empty():
+		return
+	_undo.append(shell.duplicate(true))
+	if _undo.size() > UNDO_MAX:
+		_undo.pop_front()
+
+
+func can_undo() -> bool:
+	return not _undo.is_empty()
+
+
+## 撤销一步：把快照**就地**写回 shell（保持引用不变，dev_data 里那份才认得）。
+func undo() -> bool:
+	if _undo.is_empty():
+		return false
+	var snap: Dictionary = _undo.pop_back()
+	shell.clear()
+	for k in snap.keys():
+		shell[k] = snap[k]
+	heights = ShellStore.heights_or_procedural(shell)
+	surface = ShellStore.surface_index(shell)
+	_clear_selection()
+	rebuild_all()
+	update_ambient()
+	changed.emit()
+	picked.emit("none", -1)
+	return true
+
+
+# ===========================================================================
 # 编辑：装饰
 # ===========================================================================
 func add_decor(g: Vector3, kind: String) -> void:
+	push_undo()
 	var list: Array = shell.get("decorations", [])
 	list.append({
 		"kind": kind,
-		"asset": kind,
 		"x": snappedf(g.x, 0.01),
 		"z": snappedf(g.z, 0.01),
 		"y": snappedf(ShellStore.height_at_shell(shell, heights, g.x, g.z), 0.001),
@@ -1506,10 +2031,11 @@ func add_decor(g: Vector3, kind: String) -> void:
 		"scale": 1.0,
 	})
 	shell["decorations"] = list
-	selected_decor = list.size() - 1
+	_select_only_decor(list.size() - 1)
 	_build_decor()
+	_rebuild_selection_rings()
 	changed.emit()
-	picked.emit("decor", selected_decor)
+	picked.emit("decor", list.size() - 1)
 
 
 func move_decor(index: int, g: Vector3) -> void:
@@ -1521,6 +2047,7 @@ func move_decor(index: int, g: Vector3) -> void:
 	d["z"] = snappedf(g.z, 0.01)
 	d["y"] = snappedf(ShellStore.height_at_shell(shell, heights, g.x, g.z), 0.001)
 	_build_decor()
+	_rebuild_selection_rings()
 	changed.emit()
 
 
@@ -1528,19 +2055,20 @@ func rotate_decor(index: int, deg: float) -> void:
 	var list: Array = shell.get("decorations", [])
 	if index < 0 or index >= list.size():
 		return
+	push_undo()
 	var d: Dictionary = list[index]
 	d["yaw"] = fmod(float(d.get("yaw", 0.0)) + deg + 360.0, 360.0)
 	_build_decor()
 	changed.emit()
 
 
-func scale_decor(index: int, mul: float) -> void:
+func set_decor_scale(index: int, value: float) -> void:
 	var list: Array = shell.get("decorations", [])
 	if index < 0 or index >= list.size():
 		return
-	var d: Dictionary = list[index]
-	d["scale"] = clampf(float(d.get("scale", 1.0)) * mul, 0.4, 3.0)
+	(list[index] as Dictionary)["scale"] = clampf(value, 0.4, 3.0)
 	_build_decor()
+	_rebuild_selection_rings()
 	changed.emit()
 
 
@@ -1548,102 +2076,137 @@ func remove_decor(index: int) -> void:
 	var list: Array = shell.get("decorations", [])
 	if index < 0 or index >= list.size():
 		return
+	push_undo()
 	list.remove_at(index)
-	selected_decor = -1
+	_clear_selection()
 	_build_decor()
+	_rebuild_selection_rings()
 	changed.emit()
 
 
 # ===========================================================================
-# 编辑：石台
+# 编辑：战术格子
 # ===========================================================================
-func add_platform(g: Vector3) -> void:
-	var list: Array = shell.get("platforms", [])
+func add_tile(g: Vector3) -> void:
+	push_undo()
+	var list: Array = shell.get("tiles", [])
 	var idx := ShellStore.next_index(shell)
-	var side := ShellStore.side_of(g.x)
-	var pd := {
+	list.append({
 		"index": idx,
-		"side": side,
+		"side": ShellStore.side_of(g.x),
 		"role": "build",
 		"x": snappedf(g.x, 0.05),
 		"z": snappedf(g.z, 0.05),
-		"radius": 2.0,
-		"base_h": ShellStore.BASE_H,
-		"terrain_y": snappedf(ShellStore.height_at_shell(shell, heights, g.x, g.z), 0.001),
+		"w": ShellStore.TILE_SIZE_DEFAULT,
+		"d": ShellStore.TILE_SIZE_DEFAULT,
 		"yaw": 0.0,
-	}
-	list.append(pd)
-	shell["platforms"] = list
-	selected_platform = idx
-	_build_platforms()
+		"terrain_y": snappedf(ShellStore.height_at_shell(shell, heights, g.x, g.z), 0.001),
+	})
+	shell["tiles"] = list
+	_select_only_tile(idx)
+	_build_tiles()
+	_rebuild_selection_rings()
 	changed.emit()
-	picked.emit("platform", idx)
+	picked.emit("tile", idx)
 
 
-func move_platform(index: int, g: Vector3) -> void:
-	var pd := ShellStore.platform_by_index(shell, index)
-	if pd.is_empty():
+func move_tile(index: int, g: Vector3) -> void:
+	var td := ShellStore.tile_by_index(shell, index)
+	if td.is_empty():
 		return
-	pd["x"] = snappedf(g.x, 0.05)
-	pd["z"] = snappedf(g.z, 0.05)
-	pd["side"] = ShellStore.side_of(float(pd["x"]))
-	pd["terrain_y"] = snappedf(ShellStore.height_at_shell(shell, heights, float(pd["x"]), float(pd["z"])), 0.001)
-	_build_platforms()
+	td["x"] = snappedf(g.x, 0.05)
+	td["z"] = snappedf(g.z, 0.05)
+	td["side"] = ShellStore.side_of(float(td["x"]))
+	td["terrain_y"] = snappedf(ShellStore.height_at_shell(shell, heights, float(td["x"]), float(td["z"])), 0.001)
+	_build_tiles()
+	_rebuild_selection_rings()
 	changed.emit()
 
 
-func snap_platforms() -> void:
-	for pd in (shell.get("platforms", []) as Array):
-		var d: Dictionary = pd
-		d["terrain_y"] = snappedf(ShellStore.height_at_shell(shell, heights, float(d.get("x", 0.0)), float(d.get("z", 0.0))), 0.001)
-	_build_platforms()
+func snap_tiles() -> void:
+	for t in ShellStore.tiles(shell):
+		var td: Dictionary = t
+		td["terrain_y"] = snappedf(ShellStore.height_at_shell(shell, heights, float(td.get("x", 0.0)), float(td.get("z", 0.0))), 0.001)
+	_build_tiles()
+	_rebuild_selection_rings()
 	changed.emit()
 
 
-func set_platform_role(index: int, role: String) -> void:
-	var pd := ShellStore.platform_by_index(shell, index)
-	if pd.is_empty():
+func set_tile_role(index: int, role: String) -> void:
+	var td := ShellStore.tile_by_index(shell, index)
+	if td.is_empty():
 		return
-	pd["role"] = role
-	_build_platforms()
+	push_undo()
+	td["role"] = role
+	_build_tiles()
+	_rebuild_selection_rings()
 	changed.emit()
 
 
-func set_platform_radius(index: int, radius: float) -> void:
-	var pd := ShellStore.platform_by_index(shell, index)
-	if pd.is_empty():
+func set_tile_size(index: int, w: float, d: float) -> void:
+	var td := ShellStore.tile_by_index(shell, index)
+	if td.is_empty():
 		return
-	pd["radius"] = clampf(radius, 1.0, 6.0)
-	_build_platforms()
+	td["w"] = clampf(w, 2.0, 24.0)
+	td["d"] = clampf(d, 2.0, 24.0)
+	_build_tiles()
+	_rebuild_selection_rings()
 	changed.emit()
 
 
-func set_platform_base(index: int, base_h: float) -> void:
-	var pd := ShellStore.platform_by_index(shell, index)
-	if pd.is_empty():
+func set_tiles_size(w: float, d: float) -> void:
+	if selected_tiles.is_empty():
 		return
-	pd["base_h"] = clampf(base_h, 0.4, 4.0)
-	_build_platforms()
+	for idx in selected_tiles:
+		var td := ShellStore.tile_by_index(shell, idx)
+		if td.is_empty():
+			continue
+		td["w"] = clampf(w, 2.0, 24.0)
+		td["d"] = clampf(d, 2.0, 24.0)
+	_build_tiles()
+	_rebuild_selection_rings()
 	changed.emit()
 
 
-func remove_platform(index: int) -> void:
-	var list: Array = shell.get("platforms", [])
+func rotate_tiles(deg: float) -> void:
+	if selected_tiles.is_empty():
+		return
+	push_undo()
+	for idx in selected_tiles:
+		var td := ShellStore.tile_by_index(shell, idx)
+		if td.is_empty():
+			continue
+		td["yaw"] = fmod(float(td.get("yaw", 0.0)) + deg + 360.0, 360.0)
+	_build_tiles()
+	_rebuild_selection_rings()
+	changed.emit()
+
+
+func remove_tile(index: int) -> void:
+	var list: Array = shell.get("tiles", [])
+	var removed := false
+	push_undo()
 	for i in range(list.size() - 1, -1, -1):
 		if int((list[i] as Dictionary).get("index", -1)) == index:
 			list.remove_at(i)
-	selected_platform = -1
-	_build_platforms()
-	changed.emit()
+			removed = true
+	if removed:
+		selected_tiles.erase(index)
+		_build_tiles()
+		_rebuild_selection_rings()
+		changed.emit()
 
 
-func renumber_platforms() -> void:
-	var list: Array = shell.get("platforms", [])
+func renumber_tiles() -> void:
+	var list: Array = shell.get("tiles", [])
+	push_undo()
 	list.sort_custom(func(a, b): return float(a.get("x", 0.0)) < float(b.get("x", 0.0)))
 	for i in list.size():
-		(list[i] as Dictionary)["index"] = i + 1
-	selected_platform = -1
-	_build_platforms()
+		var td: Dictionary = list[i]
+		td["index"] = i + 1
+	selected_tiles.clear()
+	_build_tiles()
+	_rebuild_selection_rings()
 	changed.emit()
 
 
@@ -1656,13 +2219,6 @@ func set_spine_width(width_logic: float) -> void:
 	spine["width_m"] = snappedf(float(spine["width_logic"]) * ShellStore.R1, 0.001)
 	shell["spine"] = spine
 	_build_ribbon()
-	_build_rings()
-	changed.emit()
-
-
-func set_divider_t(id: String, t: int) -> void:
-	ShellStore.set_divider_t(shell, id, t)
-	_build_rings()
 	changed.emit()
 
 
@@ -1674,7 +2230,6 @@ func move_spine_point(index: int, g: Vector3) -> void:
 	p["x"] = snappedf(g.x, 0.05)
 	p["z"] = snappedf(g.z, 0.05)
 	_build_ribbon()
-	_build_rings()
 	changed.emit()
 
 
@@ -1683,6 +2238,7 @@ func add_spine_point() -> void:
 	var pts: Array = spine.get("points", [])
 	if pts.size() < 2:
 		return
+	push_undo()
 	var a: Dictionary = pts[pts.size() - 2]
 	var b: Dictionary = pts[pts.size() - 1]
 	pts.insert(pts.size() - 1, {"x": (float(a.get("x", 0.0)) + float(b.get("x", 0.0))) * 0.5,
@@ -1690,7 +2246,6 @@ func add_spine_point() -> void:
 	spine["points"] = pts
 	shell["spine"] = spine
 	_build_ribbon()
-	_build_rings()
 	changed.emit()
 
 
@@ -1699,11 +2254,11 @@ func remove_spine_point() -> void:
 	var pts: Array = spine.get("points", [])
 	if pts.size() <= 2:
 		return
+	push_undo()
 	pts.remove_at(pts.size() - 1)
 	spine["points"] = pts
 	shell["spine"] = spine
 	_build_ribbon()
-	_build_rings()
 	changed.emit()
 
 
@@ -1724,57 +2279,52 @@ func ground_at(pos: Vector2) -> Vector3:
 	return p
 
 
-func pick_platform(pos: Vector2) -> int:
+func _screen_of(world: Vector3) -> Vector2:
+	if camera == null or camera.is_position_behind(world):
+		return Vector2(-100000.0, -100000.0)
+	return camera.unproject_position(world)
+
+
+## 点选格子：先看地面点落在哪个格子里（旋转按 yaw 还原），再按屏幕距离兜底。
+func pick_tile(pos: Vector2) -> int:
+	var g := ground_at(pos)
 	var best := -1
-	var best_d := 34.0
-	for p in ShellStore.platforms(shell):
-		var pd: Dictionary = p
-		var y := float(pd.get("terrain_y", 0.0)) + float(pd.get("base_h", 0.0))
-		var wp := Vector3(float(pd.get("x", 0.0)), y, float(pd.get("z", 0.0)))
-		if camera.is_position_behind(wp):
+	var best_inside := 1e20
+	for t in ShellStore.tiles(shell):
+		var td: Dictionary = t
+		if not ShellStore.tile_contains(td, g.x, g.z):
 			continue
-		var sp := camera.unproject_position(wp)
-		var d := sp.distance_to(pos)
+		var dd := Vector2(float(td.get("x", 0.0)) - g.x, float(td.get("z", 0.0)) - g.z).length()
+		if dd < best_inside:
+			best_inside = dd
+			best = int(td.get("index", -1))
+	if best >= 0:
+		return best
+	# 兜底：格子很小 / 被地形挡住时，按屏幕距离选最近的索引牌
+	var best_d := 26.0
+	for t in ShellStore.tiles(shell):
+		var td: Dictionary = t
+		var wp := Vector3(float(td.get("x", 0.0)), float(td.get("terrain_y", 0.0)) + 0.6, float(td.get("z", 0.0)))
+		var d := _screen_of(wp).distance_to(pos)
 		if d < best_d:
 			best_d = d
-			best = int(pd.get("index", -1))
+			best = int(td.get("index", -1))
 	return best
 
 
 func pick_decor(pos: Vector2) -> int:
 	var best := -1
-	var best_d := 26.0
+	var best_d := 30.0
 	var list: Array = shell.get("decorations", [])
 	for i in list.size():
 		var d: Dictionary = list[i]
-		var wp := Vector3(float(d.get("x", 0.0)), float(d.get("y", 0.0)) + 1.0, float(d.get("z", 0.0)))
-		if camera.is_position_behind(wp):
-			continue
-		var sp := camera.unproject_position(wp)
-		var dist := sp.distance_to(pos)
+		var row := ShellStore.decor_row(String(d.get("kind", "tree")))
+		var h := float(row.get("radius", 1.2)) * float(d.get("scale", 1.0)) * 0.6
+		var wp := Vector3(float(d.get("x", 0.0)), float(d.get("y", 0.0)) + h, float(d.get("z", 0.0)))
+		var dist := _screen_of(wp).distance_to(pos)
 		if dist < best_d:
 			best_d = dist
 			best = i
-	return best
-
-
-func pick_divider(pos: Vector2) -> Dictionary:
-	var best := {}
-	var best_d := 36.0
-	for id in ShellStore.DIVIDER_IDS:
-		var d: Dictionary = ShellStore.divider(shell, id)
-		if d.is_empty():
-			continue
-		var t := int(d.get("t", 0))
-		var p := ShellStore.point_at_t(shell, t)
-		var wp := Vector3(p.x, ShellStore.height_at(shell, p.x, p.y) + 0.6, p.y)
-		if camera.is_position_behind(wp):
-			continue
-		var sp := camera.unproject_position(wp)
-		var dist := sp.distance_to(pos)
-		if dist < best_d:
-			best_d = dist
-			best = {"id": id, "t": t}
 	return best
 
 
@@ -1785,38 +2335,78 @@ func pick_spine_point(pos: Vector2) -> int:
 	for i in pts.size():
 		var p: Dictionary = pts[i]
 		var wp := Vector3(float(p.get("x", 0.0)), ShellStore.height_at(shell, float(p.get("x", 0.0)), float(p.get("z", 0.0))) + 0.5, float(p.get("z", 0.0)))
-		if camera.is_position_behind(wp):
-			continue
-		var sp := camera.unproject_position(wp)
-		var dist := sp.distance_to(pos)
+		var dist := _screen_of(wp).distance_to(pos)
 		if dist < best_d:
 			best_d = dist
 			best = i
 	return best
 
 
-## 拖拽：选中石台/装饰/脊线控制点后，鼠标位移直接改数据。
+func _select_only_tile(index: int) -> void:
+	selected_tiles.clear()
+	selected_decor.clear()
+	selected_point = -1
+	selected_tiles.append(index)
+	_rebuild_selection_rings()
+	_refresh_tile_markers()
+	picked.emit("tile", index)
+
+
+func _select_only_decor(index: int) -> void:
+	selected_tiles.clear()
+	selected_decor.clear()
+	selected_point = -1
+	selected_decor.append(index)
+	_rebuild_selection_rings()
+	_refresh_tile_markers()
+	picked.emit("decor", index)
+
+
+func _toggle_tile(index: int) -> void:
+	if selected_tiles.has(index):
+		selected_tiles.erase(index)
+	else:
+		selected_tiles.append(index)
+	_rebuild_selection_rings()
+	_refresh_tile_markers()
+	picked.emit("tile", index)
+
+
+func _toggle_decor(index: int) -> void:
+	if selected_decor.has(index):
+		selected_decor.erase(index)
+	else:
+		selected_decor.append(index)
+	_rebuild_selection_rings()
+	picked.emit("decor", index)
+
+
+func select_tile(index: int) -> void:
+	_select_only_tile(index)
+
+
+func select_tiles(indices: Array) -> void:
+	selected_tiles.clear()
+	for i in indices:
+		selected_tiles.append(int(i))
+	_rebuild_selection_rings()
+	_refresh_tile_markers()
+
+
+func select_decor(index: int) -> void:
+	_select_only_decor(index)
+
+
+## 拖拽：选中格子/装饰/脊线控制点后，鼠标位移直接改数据（贴合地形）。
 func drag_to(g: Vector3) -> void:
-	if tool == TOOL_PLATFORM and selected_platform >= 0:
-		move_platform(selected_platform, g)
-	elif tool == TOOL_DECOR and selected_decor >= 0:
-		move_decor(selected_decor, g)
+	if tool == TOOL_TILE and not selected_tiles.is_empty():
+		for idx in selected_tiles:
+			move_tile(idx, g)
+	elif tool == TOOL_DECOR and not selected_decor.is_empty():
+		for idx in selected_decor:
+			move_decor(idx, g)
 	elif tool == TOOL_SPINE and selected_point >= 0:
 		move_spine_point(selected_point, g)
-
-
-func select_platform(index: int) -> void:
-	selected_platform = index
-	_build_platforms()
-
-
-func set_decor_scale(index: int, value: float) -> void:
-	var list: Array = shell.get("decorations", [])
-	if index < 0 or index >= list.size():
-		return
-	(list[index] as Dictionary)["scale"] = clampf(value, 0.4, 3.0)
-	_build_decor()
-	changed.emit()
 
 
 func hover_info() -> Dictionary:
@@ -1824,10 +2414,8 @@ func hover_info() -> Dictionary:
 
 
 func is_dragging() -> bool:
-	if tool == TOOL_PLATFORM and selected_platform >= 0:
-		return true
-	if tool == TOOL_DECOR and selected_decor >= 0:
-		return true
-	if tool == TOOL_SPINE and selected_point >= 0:
-		return true
-	return false
+	return _dragging
+
+
+func T(key: String, params: Dictionary = {}) -> String:
+	return ShellText.t(key, params)

@@ -163,7 +163,7 @@ func _clear_faction(slot: int) -> void:
 		u.queue_free()
 	f.units.clear()
 	f.buildings.clear()
-	f.squad_commits.clear()
+	f.batch_commits.clear()
 
 
 func _anchor_for(f: RtsFaction) -> Vector2:

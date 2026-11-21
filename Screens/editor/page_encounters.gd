@@ -3,9 +3,9 @@ extends Control
 ## 04 · 敌人遭遇卡（enemy_encounters.json）
 ## 属于：Screens/editor（开发工具，不进发行版）
 ##
-## 口径：阵营（豺狼人/鱼人）、敌方基地血量、敌方石台上的固定建筑外观、
+## 口径：阵营（豺狼人/鱼人）、敌方基地血量、敌方战术格子上的固定建筑外观、
 ##       按轮次权重的敌方攻防意图池表（attack / defend 各自归一化到 100）。
-## 点底壳俯视图里的敌方石台 = 选中；右侧可给该石台挂固定建筑。
+## 点底壳俯视图里的敌方战术格子 = 选中；右侧可给该战术格子挂固定建筑。
 
 const ThemeKit := preload("res://Screens/editor/dev_theme.gd")
 const LayoutCanvas := preload("res://Screens/editor/layout_canvas.gd")
@@ -15,7 +15,7 @@ var editor: Control = null
 var data: RefCounted = null
 
 var _current := ""
-var _selected_platform := -1
+var _selected_tile := -1
 var _list_box: VBoxContainer = null
 var _list_count: Label = null
 var _canvas: Control = null
@@ -151,7 +151,7 @@ func _rebuild_list() -> void:
 		v.add_child(ThemeKit.caption(T("editor.encounters.card_sub", {
 			"f": String(d.get("faction_display", fac)),
 			"hp": "%.0f" % float(d.get("base_hp", 0.0)),
-			"n": (d.get("platform_buildings", []) as Array).size(),
+			"n": (d.get("tile_buildings", []) as Array).size(),
 		}), ThemeKit.TEXT_DIM))
 		b.add_child(v)
 		_list_box.add_child(b)
@@ -179,7 +179,7 @@ func _build_center() -> Control:
 	_canvas.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_canvas.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_canvas.call("setup", editor, data)
-	_canvas.connect("platform_clicked", Callable(self, "_on_canvas_clicked"))
+	_canvas.connect("tile_clicked", Callable(self, "_on_canvas_clicked"))
 	v.add_child(_canvas)
 
 	var row := HBoxContainer.new()
@@ -285,7 +285,7 @@ func _refresh_all() -> void:
 	_faction_opt.select(bi)
 	if _canvas != null:
 		_canvas.call("set_context", String(enc.get("shell", "")), "encounter", "", String(enc.get("id", "")))
-		_canvas.call("select_platform", _selected_platform)
+		_canvas.call("select_tile", _selected_tile)
 		_canvas.call("refresh")
 	_rebuild_buildings(enc)
 	_rebuild_intents(enc)
@@ -295,10 +295,10 @@ func _refresh_all() -> void:
 func _rebuild_buildings(enc: Dictionary) -> void:
 	for c in _build_rows.get_children():
 		c.queue_free()
-	var rows: Array = enc.get("platform_buildings", [])
+	var rows: Array = enc.get("tile_buildings", [])
 	for row in rows:
 		var d: Dictionary = row
-		var idx := int(d.get("platform", 0))
+		var idx := int(d.get("tile", 0))
 		var h := HBoxContainer.new()
 		h.add_theme_constant_override("separation", 6)
 		var chip := ThemeKit.chip("E%d" % idx, ThemeKit.RED)
@@ -388,34 +388,34 @@ func _rebuild_intents(enc: Dictionary) -> void:
 # ===========================================================================
 func _on_pick(id: String) -> void:
 	_current = id
-	_selected_platform = -1
+	_selected_tile = -1
 	_refresh_all()
 
 
 func _on_canvas_clicked(index: int) -> void:
-	_selected_platform = index
+	_selected_tile = index
 	if _canvas != null:
-		_canvas.call("select_platform", index)
+		_canvas.call("select_tile", index)
 
 
 func _on_attach() -> void:
 	var enc := _enc()
-	if enc.is_empty() or _selected_platform < 0:
+	if enc.is_empty() or _selected_tile < 0:
 		return
 	var shell: Dictionary = data.call("shell_by_id", String(enc.get("shell", "")))
-	var p := ShellStore.platform_by_index(shell, _selected_platform)
+	var p := ShellStore.tile_by_index(shell, _selected_tile)
 	if p.is_empty() or String(p.get("side", "")) != "enemy":
 		return
-	data.call("add_encounter_building", enc, _selected_platform, "watchtower")
+	data.call("add_encounter_building", enc, _selected_tile, "watchtower")
 	editor.call("mark_dirty")
 	_refresh_all()
 
 
 func _on_detach() -> void:
 	var enc := _enc()
-	if enc.is_empty() or _selected_platform < 0:
+	if enc.is_empty() or _selected_tile < 0:
 		return
-	data.call("remove_encounter_building", enc, _selected_platform)
+	data.call("remove_encounter_building", enc, _selected_tile)
 	editor.call("mark_dirty")
 	_refresh_all()
 
@@ -447,8 +447,8 @@ func _commit_star(index: int, le: LineEdit) -> void:
 	if enc.is_empty():
 		return
 	var v := clampf(round(float(le.text) if le.text.is_valid_float() else 1.0), 1.0, 3.0)
-	for row in (enc.get("platform_buildings", []) as Array):
-		if int((row as Dictionary).get("platform", -1)) == index:
+	for row in (enc.get("tile_buildings", []) as Array):
+		if int((row as Dictionary).get("tile", -1)) == index:
 			(row as Dictionary)["star"] = v
 	le.text = "%.0f" % v
 	editor.call("mark_dirty")

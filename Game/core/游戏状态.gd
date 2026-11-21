@@ -54,9 +54,10 @@ var elapsed: float = 0.0
 var short_match: bool = false
 ## 回合控制器（短局由主场景挂载；长局为 null）
 var round_control: Node = null
-## **小队注册表**（全局唯一，RefCounted；见 Game/systems/小队注册表.gd）
-## 小队是命令的一等公民：命令记录只存 squad_id + unit_ids，执行时按小队成员解析。
-var squads = null
+## 2026-11-21：**GDScript 侧的小队注册表已删除**（当时的 小队.gd / 小队注册表.gd 只是
+## "成员引用 + 编队槽位"的记录，战斗推演根本没用它 —— 属于「假小队」）。
+## 现在唯一的小队实体在 `Model/Battle/LaneBattle.cs`（LaneSquad），由纯 C# 推演创建。
+## 人口账本仍在 `RtsFaction.batch_commits`（只记"这一批人占多少人口"，不持有队伍语义）。
 ## 生成序号（节点名用）。必须是确定性的：同 seed 复跑要得到同一串名字。
 var _spawn_seq: int = 0
 ## 难度下标
@@ -120,11 +121,6 @@ func _ready() -> void:
 	var test_like: bool = App != null and bool(App.get("test_mode"))
 	short_match = explicit_short or not test_like
 	print("[Game] mode=", "short" if short_match else "test-unpaused")
-	# 小队注册表：命令记录引用它，单位死亡时自动剔除成员。
-	var sq_script := load("res://Game/systems/小队注册表.gd")
-	if sq_script != null:
-		squads = sq_script.new()
-		squads.call("attach")
 
 func _process(delta: float) -> void:
 	if phase == RtsConst.Phase.RUNNING:
@@ -232,21 +228,21 @@ func setup_factions(slots_override: int = 0, teams: Array = [], colors: Array = 
 	_units.clear()
 	_buildings.clear()
 	_harvestables.clear()
-	if squads != null:
-		squads.call("reset")
 	phase = RtsConst.Phase.PLANNING
 	elapsed = 0.0
 
 
 # ===========================================================================
-# 短局：小队编组 / 布局卡槽位
+# 短局：人口批次 / 布局卡槽位
 # ===========================================================================
 
-## **短局开局编组**：把地图/布局卡摆的散兵按 `squad_size` 编成小队，并登记队伍人口。
-## 不编组的话 `food_used()` 会按人头算，和"训练出来的小队按队算"两套口径打架。
-## 幂等：已经在某支小队里的单位跳过。
-func normalize_squads() -> void:
-	if not short_match or squads == null:
+## **短局开局人口编批**：把地图/布局卡摆的散兵按 `squad_size` 切成批次，登记人口。
+## 不编批的话 `food_used()` 会按人头算，和"训练一次按一批人口算"两套口径打架。
+## 幂等：已经在某个批次里的单位跳过。
+## 2026-11-21：这里以前叫 normalize_squads，会给每个 chunk 建一个 GDScript 小队对象；
+## 那些对象没人参与推演，已整体删除。现在只记人口。
+func normalize_pop_batches() -> void:
+	if not short_match:
 		return
 	for f in factions:
 		if f == null or not is_instance_valid(f):
@@ -260,7 +256,7 @@ func normalize_squads() -> void:
 				continue
 			if ru.def.kind != RtsConst.Kind.UNIT:
 				continue
-			if f.in_squad(ru):
+			if f.in_batch(ru):
 				continue
 			var key := String(ru.def.id)
 			if not by_id.has(key):
@@ -277,9 +273,7 @@ func normalize_squads() -> void:
 				for k in range(size):
 					if i + k < arr.size():
 						chunk.append(arr[i + k])
-				var sq = squads.call("create", f, chunk)
-				var sid: int = int((sq as Object).get("id")) if sq != null else 0
-				f.commit_squad(chunk, pop, sid)
+				f.commit_batch(chunk, pop)
 				i += size
 
 
@@ -391,8 +385,6 @@ func reset() -> void:
 	layout = null
 	phase = RtsConst.Phase.PLANNING
 	elapsed = 0.0
-	if squads != null:
-		squads.call("reset")
 
 # ===========================================================================
 # 注册表

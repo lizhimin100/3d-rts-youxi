@@ -1,6 +1,6 @@
 {
 	"version": 1.0,
-	"note": "敌人遭遇卡：阵营（豺狼人/鱼人）、敌方基地血量、敌方石台上的固定建筑外观、按轮次权重的敌方攻防意图池，以及波次蓝图（角色 -> 兵种）。",
+	"note": "敌人遭遇卡：阵营（豺狼人/鱼人）、敌方基地血量、敌方战术格子上的固定建筑外观、按轮次权重的敌方攻防意图池，以及波次蓝图（角色 -> 兵种）。",
 	"factions": [
 		{
 			"id": "bandit",
@@ -21,27 +21,27 @@
 			"faction_display": "豺狼人",
 			"shell": "shell_ridge_01",
 			"base_hp": 3200.0,
-			"platform_buildings": [
+			"tile_buildings": [
 				{
-					"platform": 7.0,
+					"tile": 7.0,
 					"building": "watchtower",
 					"star": 2.0,
 					"yaw": 180.0
 				},
 				{
-					"platform": 9.0,
+					"tile": 9.0,
 					"building": "barracks",
 					"star": 3.0,
 					"yaw": 180.0
 				},
 				{
-					"platform": 10.0,
+					"tile": 10.0,
 					"building": "watchtower",
 					"star": 2.0,
 					"yaw": 180.0
 				},
 				{
-					"platform": 11.0,
+					"tile": 11.0,
 					"building": "keep",
 					"star": 2.0,
 					"yaw": 180.0
@@ -221,27 +221,27 @@
 			"faction_display": "鱼人",
 			"shell": "shell_ridge_01",
 			"base_hp": 2800.0,
-			"platform_buildings": [
+			"tile_buildings": [
 				{
-					"platform": 7.0,
+					"tile": 7.0,
 					"building": "watchtower",
 					"star": 2.0,
 					"yaw": 180.0
 				},
 				{
-					"platform": 9.0,
+					"tile": 9.0,
 					"building": "barracks",
 					"star": 2.0,
 					"yaw": 180.0
 				},
 				{
-					"platform": 10.0,
+					"tile": 10.0,
 					"building": "watchtower",
 					"star": 3.0,
 					"yaw": 180.0
 				},
 				{
-					"platform": 11.0,
+					"tile": 11.0,
 					"building": "keep",
 					"star": 2.0,
 					"yaw": 180.0

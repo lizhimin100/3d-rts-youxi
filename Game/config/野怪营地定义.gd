@@ -31,7 +31,7 @@ extends Resource
 @export var radius: float = 6.0
 ## 全灭后多久补满（秒；<= 0 表示永不补）
 @export var respawn: float = 90.0
-## 小地图图标 key（对应 Content/art/图标/小Content/maps/<key>.png；缺图时画降级标记）
+## 小地图图标 key（对应 Content/art/图标/小地图/<key>.png；缺图时画降级标记）
 @export var minimap_icon: String = "camp"
 
 # ---------------------------------------------------------------------------
