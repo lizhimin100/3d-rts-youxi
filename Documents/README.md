@@ -3,6 +3,7 @@
 > 目的：让接手的 agent **30 秒内知道该读哪一篇**。
 > 这页只做路由与状态标记，不写规则；规则在 AGENTS.md 与各篇里。
 >
+> **2026-11-20 转型提示**：`Views/` 已更名 `Screens/`；`Model/` 是纯 C# 内核（零 Godot）；旧 RTS 的 AI / 迷雾 / 全图寻路 / 长局已删除。
 > **2026-11-14 迁移提示**：目录已按七块砖重排（旧 `代码/场景/美术/音频/地图/工具/文档` 不存在）。
 > 旧文档里的路径表述可能过期；**路径以 `Documents/architecture.md` 的旧→新对照表为准**，
 > 数值真源已从 `.tres` 卡改为 `Content/data/*.json`（见 `Documents/data-pipeline.md`）。
@@ -20,14 +21,14 @@
 | 用调试接口 / 写自动化 | **`debug-bridge.md`** | `Engine/debug/`、`Tools/qa/bridge_probe.ps1` |
 | 加画面 / 截图验证 | `data-pipeline.md` §1（screens.json） | `Tests/checks/shot_runner.gd` |
 | 动 UI | `界面说明.md`（第一条：没点名的别动） | `UI风格.md`、`动画规范.md` |
-| 动战斗/射程 | `战斗射程口径.md` | `Model/core/damage.gd`（唯一公式） |
-| 动 AI | `架构地图.md` §3.1 | `反馈驱动战略_设计.md`、`AI目标层观测.md` |
+| 动战斗/射程 | **`combat_formula.md`** | `Model/Core/Damage.cs`（唯一公式）、`RtsUnits.cs`（R1） |
+| 动敌军波次 | `短局-运营规则.md` | `Game/core/回合控制.gd`（旧 AI 已删除） |
 | 动寻路/移动 | `寻路评估_星际2对照.md` | `架构地图.md` §3.4、`性能基线.md` |
 | 动大群/合批 | `人群层.md` | `Screens/world/crowd/README.md` |
-| 跑验收 | `../AGENTS.md`「验证命令」 | `索引/测试索引.md` |
+| 跑验收 | `../AGENTS.md`「验证命令」 | `索引/测试索引.md`、`交付报告_地基整编_20261120.md` |
 | 编辑器/地图 | `地图编辑器UI.md` | `编辑器资产同步.md` |
 | 加资产/模型 | `美术规范.md` | `data-pipeline.md` §5（资源 key） |
-| 改短局 CP/人口/小队/建造 | **`短局-运营规则.md`** | `Content/data/cards/*.json`、`Model/core/可用性.gd` |
+| 改短局 CP/人口/小队/建造 | **`短局-运营规则.md`** | `Content/data/cards/*.json`、`Model/Core/Availability.cs` |
 | 改短局固定布局/血量继承 | **`短局-布局卡.md`** | `Content/data/layouts/*.json`、`Game/core/layout_runtime.gd` |
 
 ---
@@ -37,7 +38,7 @@
 | 状态 | 含义 | 文档 |
 |---|---|---|
 | **铁律** | 与玩家约定/契约，违反就是 bug | `界面说明.md`、`作战条令.md`、`动画规范.md`、`战斗射程口径.md`、`../AGENTS.md` |
-| **现行** | 与当前代码一致 | `concept.md`、`architecture.md`、`data-pipeline.md`、`debug-bridge.md`、`开发交接.md`、`技能系统.md`、`编辑器资产同步.md`、`地图编辑器UI.md`、`UI风格.md`、`美术规范.md`、`野怪营地.md`、`寻路评估_星际2对照.md`、`人群层.md`、`短局-运营规则.md`、`短局-布局卡.md`、各模块 `Game/*/README.md` |
+| **现行** | 与当前代码一致 | `concept.md`、`combat_formula.md`、`architecture.md`、`data-pipeline.md`、`debug-bridge.md`、`开发交接.md`、`技能系统.md`、`编辑器资产同步.md`、`地图编辑器UI.md`、`UI风格.md`、`美术规范.md`、`野怪营地.md`、`寻路评估_星际2对照.md`、`人群层.md`、`短局-运营规则.md`、`短局-布局卡.md`、各模块 `Game/*/README.md` |
 | **现行·待修** | 有用，但口径有已知缺陷 | `性能基线.md`（headless、单一规模） |
 | **设计** | 讲"为什么这么设计" | `反馈驱动战略_设计.md`、`程序化树木评估.md` |
 | **历史快照** | 某一天实测，数字会过期 | `AI经济与等级排查报告.md`、`AI目标层观测.md`、`文件梳理与Agent协作方案.md`（其"目录冻结"已被 2026-11-14 重排取代） |
