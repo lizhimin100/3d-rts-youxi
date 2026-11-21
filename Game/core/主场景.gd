@@ -86,8 +86,6 @@ var _pending_map: MapDef = null
 var _dump_mapdef: String = ""
 ## --no-map：无视 bound_map / 默认地图文件，强制程序化竞技场图（QA 对照组）
 var _force_no_map: bool = false
-## --qa-reveal：关迷雾（验收用）
-var _qa_reveal: bool = false
 ## --qa-night：立刻入夜并放一波野怪（验收用）
 var _qa_night: bool = false
 ## --qa-hour=<0~24>：把时钟拨到指定小时、**不**放夜袭（拍黄昏/破晓用）
@@ -176,7 +174,6 @@ func _ready() -> void:
 			print("[MAPCHECK] 错误=", qa_r.get("errors", []))
 			print("[MAPCHECK] 提醒=", qa_r.get("warnings", []))
 			print("[MAPCHECK] 统计=", qa_r.get("stats", {}))
-		_setup_fog()
 		if not _dump_mapdef.is_empty():
 			_dump_map_def(_dump_mapdef)
 	else:
@@ -281,15 +278,7 @@ func _ready() -> void:
 	# ★ 迷雾的整层淡入淡出也挂在这里：规划阶段收掉（沙盘要看得见红蓝区），
 	#   进入执行时 0.55s 淡回来（不然雾会"唰"地一下把画面切黑）。
 	Game.phase_changed.connect(func(_o: int, n: int) -> void:
-		var planning: bool = n == RtsConst.Phase.PLANNING
-		_apply_phase_camera(planning)
-		var fog_node: Node = Game.get("fog_node")
-		if fog_node != null and is_instance_valid(fog_node) and fog_node.has_method("set_veil"):
-			fog_node.call("set_veil", planning))
-	if Game.short_match:
-		var fog0: Node = Game.get("fog_node")
-		if fog0 != null and is_instance_valid(fog0) and fog0.has_method("set_veil"):
-			fog0.call("set_veil", true, true)
+		_apply_phase_camera(n == RtsConst.Phase.PLANNING))
 	# 长局先起跑；短局先停在 PLANNING（测试钩子也在暂停前挂好）。
 	if not Game.short_match:
 		Game.set_phase(RtsConst.Phase.RUNNING)
@@ -1057,9 +1046,6 @@ func _parse_cmdline() -> void:
 			# 验收：把时钟拨到指定小时（**不**放夜袭）。黄昏/破晓的过渡就靠它拍，
 			# 例：--qa-hour=18.5（黄昏中段） / --qa-hour=23（深夜）
 			_qa_hour = float(arg.substr(10))
-		elif arg == "--qa-reveal":
-			# 验收：关掉战争迷雾（否则"野怪在哪"永远拍不到）
-			_qa_reveal = true
 		elif arg == "--no-map":
 			# 强制走程序化竞技场（验收"地图文件 = 原图"的对照组）
 			_force_no_map = true
@@ -1142,28 +1128,6 @@ func _tick_map_watch(delta: float) -> void:
 	if mt > 0 and mt != _bound_watch_mtime:
 		print("[主场景] 检测到地图文件改动（%s），热重载场景" % _bound_watch_path)
 		get_tree().reload_current_scene()
-
-
-## 战争迷雾：地形 visibility 网格 + 雾区暗化 + 雾中敌方单位隐藏 + 小地图遮罩。
-## 以玩家阵营（含其盟友）为观察方，按各单位 sight_range 点亮可见格。
-func _setup_fog() -> void:
-	if level == null or level.terrain == null or Game.player_faction == null:
-		return
-	if not ResourceLoader.exists("res://Game/systems/战争迷雾.gd"):
-		return
-	var fog_script := load("res://Game/systems/战争迷雾.gd") as Script
-	if fog_script == null:
-		return
-	var fog: Node = fog_script.new()
-	if fog == null:
-		return
-	level.add_child(fog)
-	fog.setup(level.terrain, Game.player_faction, level.world_size)
-	# 索敌/开火的可见性过滤读这里（见 游戏状态.is_visible_to）
-	Game.fog_node = fog
-	# QA：--qa-reveal 关迷雾（验收截图/野怪体检时看全图用，正常游玩不要开）
-	if _qa_reveal and fog.has_method("set_enabled"):
-		fog.call("set_enabled", false)
 
 
 ## 把 MapDef 里的初始资源写进**每一个**阵营（多队图：4 个槽位各吃自己那份）。

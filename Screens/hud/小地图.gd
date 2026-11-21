@@ -21,15 +21,6 @@ const PAD := 0.0
 const LEGEND_H := 24.0
 ## 圆盘遮罩色（= 面板底色）
 const MASK_COLOR := Color(0.035, 0.041, 0.052, 0.96)
-## 迷雾在小地图上的**最大不透明度**（2026-11-08，第三轮调整）。
-## 3D 战场里未探索是纯黑（alpha 1.0），但小地图不行：那会把地形底图整片吃掉，
-## 玩家看到的是"圆盘缺了一块"。
-## 上一版压到 0.62 —— 实测还是太黑：地形底图本身是深绿（0.15,0.29,0.11），
-## 乘 0.38 之后和纯黑没有区别，玩家第三次报「左边还是部分地区显示不全」。
-## 现在压到 0.30：未探索 = 明显压暗但**山脉/路口/矿脉轮廓仍读得出**，
-## 已探索 = 轻微压暗，当前视野 = 完全不受影响（那格 alpha 本来就是 0）。
-const FOG_MINIMAP_ALPHA := 0.30
-
 ## 圆形裁剪用的 canvas_item 着色器。
 ## 为什么不用"画四个角盖住"：底盘和遮罩同色，盖了等于没盖，仍旧是一块方板；
 ## 只有 discard 才是真的圆 —— 圆外透明，直接透出战场。
@@ -95,8 +86,6 @@ var _hover: bool = false
 ## 控件自身的 material 会把圆外的一切绘制 discard 掉，所以"圆环边框"必须画在子节点上，
 ## 否则无论加多粗都看不见（之前的边框就是这么消失的）。
 var _frame: RingFrame = null
-## 战争迷雾节点（运行时由 RtsFog 加入 "fog_system" 组；没有就退化成无迷雾）
-var _fog_node: Node = null
 ## 营地图标纹理缓存（key = camps() 里的 icon 名；null 也缓存，缺图时不做每帧重试）
 var _camp_icons: Dictionary = {}
 
@@ -342,22 +331,7 @@ func _draw() -> void:
 			var tp: Vector2 = _world_to_map(Vector3(t.x, 0.0, t.y))
 			draw_rect(Rect2(tp - Vector2(1.6, 1.6), Vector2(3.2, 3.2)), Color(0.10, 0.24, 0.11, 0.92), true)
 
-	# --- 战争迷雾遮罩（地形 + 资源都吃这层压黑/压暗，雾中敌人由下面的单位循环跳过）---
-	if _fog_node == null or not is_instance_valid(_fog_node):
-		_fog_node = get_tree().get_first_node_in_group("fog_system")
-	# ★ 迷雾**关掉时不能画这层贴图**：贴图里未探索格 alpha=1，照画就是"整张小地图全黑"。
-	#   `--no-fog` / 设置菜单关掉迷雾之后，小地图必须能看全图（这就是"关雾却全黑"的根因）。
-	#
-	# ★ 2026-11-08 玩家报「小地图圆形右侧区域不显示」：真凶是**未探索格 alpha=1（纯黑）**
-	#   把地形底图整片吃掉，圈里只剩自己基地那一小块亮斑 —— 看起来就像圆盘被切掉了半边。
-	#   小地图的正确语义是"战图"：地形永远看得见（山脉/路口/矿区轮廓），
-	#   迷雾只负责**压暗**。所以这里按 FOG_MINIMAP_ALPHA 封顶，不再用 1.0 的黑。
-	if _fog_on():
-		var ft: Variant = _fog_node.get("fog_texture")
-		if ft != null:
-			draw_texture_rect(ft, mr, false, Color(1.0, 1.0, 1.0, FOG_MINIMAP_ALPHA))
-
-	# --- 野怪营地（压在迷雾之上、单位点之下：先看"哪有营地"，再看"谁在那"）---
+	# --- 野怪营地（压在单位点之下：先看"哪有营地"，再看"谁在那"）---
 	_draw_creep_camps()
 	# --- 据点（地图中心）：常驻一个金色菱形；箱子在场时里面多一颗亮点 ---
 	_draw_strongpoint()
@@ -376,9 +350,6 @@ func _draw() -> void:
 			print("[MM] %s world=%s map=%s ws=%.0f mr=%s" % [String(n3.name),
 				str(n3.global_position), str(_world_to_map(n3.global_position)),
 				world_size, str(mr)])
-	# 迷雾节点可能比小地图晚建（RtsFog 在关卡 _ready 里挂），每帧补找一次
-	if _fog_node == null or not is_instance_valid(_fog_node):
-		_fog_node = get_tree().get_first_node_in_group("fog_system")
 	var dots: Array = []
 	for u in Game.all_units():
 		if u == null or not is_instance_valid(u):
@@ -389,15 +360,7 @@ func _draw() -> void:
 		if n is RtsUnit and not (n as RtsUnit).is_alive():
 			continue
 		var fac: RtsFaction = n.get("faction")
-		# 迷雾口径（和 3D 侧一致）：
-		#   自己 / 盟友永远画；敌方**单位**只在当前可见时画；
-		#   敌方**建筑**只要"探索过"就留一个点 —— 侦察过的房子不该凭空消失。
-		if _fog_on() and fac != null and pl != null and not pl.is_ally_of(fac):
-			if n is RtsBuilding:
-				if not _fog_explored(n.global_position):
-					continue
-			elif not _fog_visible(n.global_position):
-				continue
+		# 战争迷雾已移除：全图单位/建筑都画（2026-11-20）
 		# 点色 = 阵营**显示色**：你蓝 / 盟友青 / 敌人各自队色。
 		# 旧版只有"我方蓝 / 其它一律红"，于是整张图一片红、盟友和敌人一个样。
 		var col: Color = Color(0.80, 0.82, 0.78)
@@ -809,33 +772,6 @@ func _dot_rank(f: RtsFaction) -> int:
 	if pl.is_ally_of(f):
 		return 1
 	return 0
-
-
-## 迷雾是否**真的在生效**（节点存在 ≠ 开着：--no-fog / 设置菜单都能关）
-func _fog_on() -> bool:
-	if _fog_node == null or not is_instance_valid(_fog_node):
-		return false
-	if _fog_node.has_method("is_enabled"):
-		return bool(_fog_node.call("is_enabled"))
-	return true
-
-
-## 迷雾可见（没有迷雾节点 / 迷雾关掉时一律可见）
-func _fog_visible(p: Vector3) -> bool:
-	if not _fog_on():
-		return true
-	if _fog_node.has_method("is_world_visible_pos"):
-		return bool(_fog_node.call("is_world_visible_pos", p))
-	return true
-
-
-## 迷雾已探索（曾经看见过）
-func _fog_explored(p: Vector3) -> bool:
-	if not _fog_on():
-		return true
-	if _fog_node.has_method("is_world_explored_pos"):
-		return bool(_fog_node.call("is_world_explored_pos", p))
-	return true
 
 
 # ===========================================================================

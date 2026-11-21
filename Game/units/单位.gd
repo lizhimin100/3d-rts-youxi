@@ -715,8 +715,7 @@ func take_damage(amount: float, _type: int, from: Node3D) -> void:
 	#   玩家看到的就是"一被打就撤、撤两步又冲回去"。
 	if from != null and is_instance_valid(from) and not _retreat:
 		var tf: RtsFaction = from.get("faction") as RtsFaction
-		if tf != null and faction != null and faction.is_enemy_of(tf) \
-				and Game.is_node_visible_to(faction, from):
+		if tf != null and faction != null and faction.is_enemy_of(tf):
 			_acquire_grace = 0.0
 			# 距离口径与开火一致（边缘间隙），别再用中心距 ×1.5 的野路子
 			if _target_gap(from) <= _attack_reach(from):
@@ -743,9 +742,7 @@ func _has_visible_foe_in_sight() -> bool:
 		return false
 	var r: float = maxf(def.sight_range, def.acquire_range)
 	var cand: Node3D = Game.find_nearest_enemy(global_position, faction, r)
-	if cand == null:
-		return false
-	return Game.is_node_visible_to(faction, cand)
+	return cand != null
 
 
 ## 这个具体目标是不是"看得见 + 在视野里"（还击判据，和索敌同一个口径）
@@ -753,9 +750,7 @@ func _visible_within_sight(t: Node3D) -> bool:
 	if t == null or not is_instance_valid(t) or def == null or faction == null:
 		return false
 	var r: float = maxf(def.sight_range, def.acquire_range)
-	if r <= 0.0 or _flat_dist(t.global_position) > r:
-		return false
-	return Game.is_node_visible_to(faction, t)
+	return r > 0.0 and _flat_dist(t.global_position) <= r
 
 
 ## **被视野内的攻击者打了 → 压上去还手**。
@@ -3241,10 +3236,6 @@ func _acquire(dt: float, radius_scale: float = 1.0) -> void:
 	if radius <= 0.0:
 		return
 	var cand: Node3D = Game.find_nearest_enemy(global_position, faction, radius)
-	# ★ 看不见的敌人不许锁（迷雾口径，唯一出口 Game.is_node_visible_to）：
-	#   以前弩兵能隔着黑雾锁定 12m 外的野怪并一路射死，玩家完全看不到目标。
-	if cand != null and not Game.is_node_visible_to(faction, cand):
-		cand = null
 	# ★ 2026-11-14（玩家口径「视野内出现敌人要主动走过去打」）：
 	#   只有**立场本身不许追**的（驻守/观察/干活/农民/建筑）才要求"候选已经够得着"；
 	#   待机 / 攻击 / 行军一律锁定视野内最近的敌人，走不走过去由 `_update_attack` 判。
@@ -3277,13 +3268,6 @@ func _update_attack(dt: float) -> void:
 
 	if target == null or not is_instance_valid(target) or not target.is_alive():
 		target = null
-		return
-
-	# ★ 目标跑进黑雾/树林阴影里 → 立刻放掉锁定。看不见就打不了，
-	#   否则会出现"对着空气挥砍/放箭"（玩家 2026-11-06 反馈）。
-	if not Game.is_node_visible_to(faction, target):
-		target = null
-		_wall_approach = null
 		return
 
 	var reach: float = _attack_reach(target)
@@ -3420,9 +3404,6 @@ func _release_attack() -> void:
 	if target == null or not is_instance_valid(target) or not target.is_alive():
 		target = null
 		return
-	if not Game.is_node_visible_to(faction, target):
-		target = null
-		return
 	if _target_gap(target) > _attack_reach(target) + 0.5:
 		return
 
@@ -3444,8 +3425,6 @@ func _fire_projectile(damage_mult: float = 1.0) -> void:
 	if def == null or target == null or not is_instance_valid(target):
 		return
 	if not target.is_alive():
-		return
-	if not Game.is_node_visible_to(faction, target):
 		return
 	dbg_shots += 1
 	var snap: Dictionary = RtsCombat.make_snapshot(self, damage_mult)

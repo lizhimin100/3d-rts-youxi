@@ -295,7 +295,7 @@
 		},
 		{
 			"path": "Game/core/主场景.gd",
-			"size": 59845
+			"size": 58287
 		},
 		{
 			"path": "Game/core/主场景.gd.uid",
@@ -327,7 +327,7 @@
 		},
 		{
 			"path": "Game/core/游戏状态.gd",
-			"size": 38499
+			"size": 35121
 		},
 		{
 			"path": "Game/core/游戏状态.gd.uid",
@@ -494,14 +494,6 @@
 			"size": 20
 		},
 		{
-			"path": "Game/systems/战争迷雾.gd",
-			"size": 13839
-		},
-		{
-			"path": "Game/systems/战争迷雾.gd.uid",
-			"size": 20
-		},
-		{
 			"path": "Game/systems/战斗.gd",
 			"size": 22532
 		},
@@ -595,7 +587,7 @@
 		},
 		{
 			"path": "Game/units/单位.gd",
-			"size": 173764
+			"size": 172895
 		},
 		{
 			"path": "Game/units/单位.gd.uid",
@@ -699,7 +691,7 @@
 		},
 		{
 			"path": "Screens/hud/小地图.gd",
-			"size": 38752
+			"size": 35390
 		},
 		{
 			"path": "Screens/hud/小地图.gd.uid",
