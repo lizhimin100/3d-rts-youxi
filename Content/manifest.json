@@ -1371,7 +1371,7 @@
 		},
 		{
 			"path": "Screens/world/squad/小队战场.gd",
-			"size": 20527
+			"size": 20736
 		},
 		{
 			"path": "Screens/world/squad/小队战场.gd.uid",
@@ -2727,7 +2727,7 @@
 		},
 		{
 			"path": "Content/i18n/legacy_budget.json",
-			"size": 6867
+			"size": 6821
 		},
 		{
 			"path": "Content/i18n/ui.csv",

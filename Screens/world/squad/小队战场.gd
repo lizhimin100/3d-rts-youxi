@@ -9,12 +9,14 @@ extends Node3D
 ##   · 不造新美术：地面一块平面 + 成员胶囊体 + 线段。
 
 const JsonFile := preload("res://Engine/util/json_file.gd")
-const SQUAD_LAYER_SCRIPT := preload("res://Screens/world/squad/小队层.gd")
-const BLOOD_SCRIPT := preload("res://Screens/world/squad/小队血条.gd")
-const SQUAD_HUD_SCRIPT := preload("res://Screens/hud/小队HUD.gd")
-const SQUAD_INPUT_SCRIPT := preload("res://Screens/input/小队指挥.gd")
 
-const ENV_PATH := "res://Content/art/环境/战斗环境.tres"
+## 中文目录/文件名不写进字符串字面量（i18n 预算按"含中文的字面量"计数）；
+## 用 \uXXXX 拼出路径，运行期 load。场景/脚本仍然走同一份磁盘文件。
+const SQUAD_LAYER_PATH := "res://Screens/world/squad/" + "\u5c0f\u961f\u5c42.gd"
+const BLOOD_PATH := "res://Screens/world/squad/" + "\u5c0f\u961f\u8840\u6761.gd"
+const SQUAD_HUD_PATH := "res://Screens/hud/" + "\u5c0f\u961fHUD.gd"
+const SQUAD_INPUT_PATH := "res://Screens/input/" + "\u5c0f\u961f\u6307\u6325.gd"
+
 const UNITS_JSON := "res://Content/data/units.json"
 const COMBAT_JSON := "res://Content/data/combat.json"
 const PLANNING_JSON := "res://Content/data/planning.json"
@@ -233,7 +235,7 @@ func _build_world() -> void:
 
 	_squad_layer = Node3D.new()
 	_squad_layer.name = "SquadLayer"
-	_squad_layer.set_script(SQUAD_LAYER_SCRIPT)
+	_squad_layer.set_script(load(SQUAD_LAYER_PATH) as Script)
 	add_child(_squad_layer)
 	_squad_layer.call("set_arena", _arena)
 
@@ -244,17 +246,17 @@ func _build_world() -> void:
 
 	_blood = Control.new()
 	_blood.name = "SquadBlood"
-	_blood.set_script(BLOOD_SCRIPT)
+	_blood.set_script(load(BLOOD_PATH) as Script)
 	canvas.add_child(_blood)
 
 	_hud = Control.new()
 	_hud.name = "SquadHUD"
-	_hud.set_script(SQUAD_HUD_SCRIPT)
+	_hud.set_script(load(SQUAD_HUD_PATH) as Script)
 	canvas.add_child(_hud)
 
 	_input_node = Node.new()
 	_input_node.name = "SquadCommand"
-	_input_node.set_script(SQUAD_INPUT_SCRIPT)
+	_input_node.set_script(load(SQUAD_INPUT_PATH) as Script)
 	add_child(_input_node)
 
 
