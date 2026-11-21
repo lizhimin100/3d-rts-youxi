@@ -4,15 +4,16 @@ extends RefCounted
 ## 对外：run_all() -> {pass, fail, lines}
 ## 铁律：断言的是**规则结果**，不是把公式抄一遍；每条都要能反着验（改坏 → 失败）。
 
-const Rng := preload("res://Model/core/rng.gd")
-const Damage := preload("res://Model/core/damage.gd")
-const Economy := preload("res://Model/core/economy.gd")
-const Production := preload("res://Model/core/production.gd")
-const Progression := preload("res://Model/core/progression.gd")
-const SaveSchema := preload("res://Model/save/save_schema.gd")
-const Skirmish := preload("res://Model/battle/skirmish.gd")
-const LayoutCard := preload("res://Model/layout/layout_card.gd")
-const Avail := preload("res://Model/core/可用性.gd")
+const Rng := preload("res://Game/adapters/rng.gd")
+const Damage := preload("res://Game/adapters/damage.gd")
+const Economy := preload("res://Game/adapters/economy.gd")
+const Progression := preload("res://Game/adapters/progression.gd")
+const SaveSchema := preload("res://Game/adapters/save_schema.gd")
+const Skirmish := preload("res://Game/adapters/skirmish.gd")
+const LayoutCard := preload("res://Game/adapters/layout_card.gd")
+const Avail := preload("res://Game/adapters/可用性.gd")
+const RANGE_BASE := preload("res://Game/config/射程基准.gd")
+const STAR := preload("res://Game/systems/升星.gd")
 
 
 static func run_all() -> Dictionary:
@@ -155,16 +156,20 @@ static func run_all() -> Dictionary:
 	ok.call("人口边界：超 1 不行", not Economy.has_food(10, 2, 4, 15))
 	ok.call("采集收入 = 农民×携带/往返", is_equal_approx(Economy.income_per_second(5, 20, 10.0), 10.0))
 
-	# ---------- 生产 ----------
-	var q: Array = []
-	Production.enqueue(q, "footman", 1.0, 2)
-	var done1 := Production.tick(q, 0.5)
-	var done2 := Production.tick(q, 0.5)
-	ok.call("队列 1 秒：0.5s 未完成、再 0.5s 完成", done1.is_empty() and done2.size() == 1)
-	Production.enqueue(q, "a", 1.0, 1)
-	Production.enqueue(q, "b", 1.0, 1)
-	ok.call("同一 tick 可完成多件", Production.tick(q, 2.0).size() == 2)
-	ok.call("队列人口合计", Production.total_food([{"food": 2}, {"food": 3}]) == 5)
+	# ---------- CP（短局唯一资源） ----------
+	ok.call("CP 够能下单", Economy.can_spend_cp(24, 6))
+	ok.call("CP 不够不能下单", not Economy.can_spend_cp(3, 6))
+
+	# ---------- 距离铁律 R1 ----------
+	ok.call("R1：650 游戏数值 = 9.75 米", is_equal_approx(RANGE_BASE.米(650.0), 9.75), "%.3f" % RANGE_BASE.米(650.0))
+	ok.call("R1：9.75 米反算 = 650", absf(RANGE_BASE.值(9.75) - 650.0) < 0.001)
+
+	# ---------- 升星（数字真值在 C# 内核） ----------
+	ok.call("升星：金 50 木 0 → 100 经验/星", is_equal_approx(STAR.exp_per_star_costs(50, 0), 100.0))
+	ok.call("升星：100 经验 = 1 星", STAR.stars_of(100.0, 100.0) == 1)
+	ok.call("升星：三档同价、封顶 3 星", STAR.stars_of(900.0, 100.0) == 3)
+	ok.call("升星：三星累计 +80% 攻击 / +100% 耐久",
+		is_equal_approx(STAR.offense_mult(3), 1.80) and is_equal_approx(STAR.tough_mult(3), 2.00))
 
 	# ---------- 成长 ----------
 	ok.call("铁匠铺每级平铺 +1", is_equal_approx(Progression.flat_bonus(3, 1.0), 3.0))

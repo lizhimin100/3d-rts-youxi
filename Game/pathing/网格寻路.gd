@@ -726,7 +726,7 @@ func find_path(from: Vector3, to: Vector3, radius: float = -1.0) -> PackedVector
 	# 半径膨胀过角（2026-11-13）：拉直后的折线是"格心连线"，拐角是一个尖点，
 	# 单位走到那里要么贴墙减速、要么被判不可站立然后被墙推回来。
 	# 这里把每个拐点换成半径 r+0.12 的圆弧（二次贝塞尔采样 3 点），
-	# 与 `Views/world/crowd/人群导航.gd` 的 fillet 是同一套几何，但走本类的 is_walkable，
+	# 与 `Screens/world/crowd/人群导航.gd` 的 fillet 是同一套几何，但走本类的 is_walkable，
 	# 不依赖人群层的 256² 网格。
 	# 采样点任何一点穿墙就保留原拐点 —— **宁方勿卡**。
 	if FILLET_ON and smoothed.size() >= 3:

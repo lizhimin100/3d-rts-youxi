@@ -24,7 +24,7 @@ func _initialize() -> void:
 
 func _run() -> void:
 	print("========== 界面自检 ==========")
-	_panel_script = load("res://Views/hud/建筑面板.gd")
+	_panel_script = load("res://Screens/hud/建筑面板.gd")
 	var units_script: Script = load("res://Game/units/单位.gd")
 	var building_script: Script = load("res://Game/units/建筑.gd")
 	var faction_script: Script = load("res://Game/core/阵营.gd")
@@ -41,7 +41,7 @@ func _run() -> void:
 	player.call("setup", 0, true, "玩家", Color(0.30, 0.62, 1.00), 800, 600)
 
 	# ---- 1. 框选只收己方移动单位 ----
-	var sel_script: Script = load("res://Views/input/选择系统.gd")
+	var sel_script: Script = load("res://Screens/input/选择系统.gd")
 	if sel_script != null and sel_script.has_method("is_box_unit"):
 		var own = units_script.call("new")
 		own.def = defs[&"peasant"]
@@ -108,7 +108,7 @@ func _run() -> void:
 	panel.queue_free()
 
 	# ---- 3. 农民命令卡：第一级只有「建造」，建筑全部进展开页 ----
-	var card_script: Script = load("res://Views/hud/命令卡.gd")
+	var card_script: Script = load("res://Screens/hud/命令卡.gd")
 	if card_script != null:
 		var card: Control = card_script.call("new")
 		root.add_child(card)

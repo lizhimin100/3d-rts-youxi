@@ -19,7 +19,7 @@ extends Node
 ## 为什么槽位记 instance_id 而不是 Node 引用：建筑会被 free，持有引用会在
 ## 下一帧变成"freed object"（旧版踩过：每帧几十条 cast 错误）。
 
-const CARD := preload("res://Model/layout/layout_card.gd")
+const CARD := preload("res://Game/adapters/layout_card.gd")
 const JsonFile := preload("res://Engine/util/json_file.gd")
 ## 短局布局存档（跟 SaveSvc.root() 走：测试模式自动隔离到 res://.test_profile/）
 const STATE_FILE := "skirmish_layout.json"

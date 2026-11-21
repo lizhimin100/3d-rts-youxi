@@ -2,7 +2,7 @@ class_name RtsFaction
 extends RefCounted
 
 ## 经济规则（能不能付 / 扣多少 / 人口够不够）的唯一实现在 Model 层
-const Economy := preload("res://Model/core/economy.gd")
+const Economy := preload("res://Game/adapters/economy.gd")
 ## **阵营**：一个玩家（或 AI）的全部资产与资源。
 ## 玩家与 AI 都只有一个 RtsFaction，经济/军队全挂在这里。
 ## 由 Lead 提供，其他人只读/调用，不要改这个文件。

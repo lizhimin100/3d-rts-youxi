@@ -39,9 +39,9 @@ var _last_progress: float = 0.0
 ## 表现层脚本用 preload 而不是全局类名：新脚本第一次进工程时 .godot 的 class 缓存可能还没扫到，
 ## preload 在解析期就能解析到，不会因为缓存陈旧把整个文件拖成编译错误。
 const BUILD_SITE := preload("res://Game/units/工地表现.gd")
-const VFXKIT := preload("res://Views/world/art/建造表现.gd")
+const VFXKIT := preload("res://Screens/world/art/建造表现.gd")
 ## 表现层随机流（受击尘土/裂缝/倒塌方向）。玩法随机（集结点散布）仍走全局 randf。
-const Fx := preload("res://Views/world/art/表现随机.gd")
+const Fx := preload("res://Screens/world/art/表现随机.gd")
 ## 倒塌用时（秒）：先晃后倒，0.9~1.4 之间最像整栋楼
 const COLLAPSE_TIME: float = 1.35
 ## 废墟停留时间（秒）
@@ -49,7 +49,7 @@ const RUINS_LINGER: float = 5.0
 ## 受击尘土的最小间隔（秒）：集火时不至于每颗子弹都爆一次
 const HIT_FX_GAP: float = 0.32
 
-const PAD_SCRIPT := preload("res://Views/world/art/建筑基座.gd")
+const PAD_SCRIPT := preload("res://Screens/world/art/建筑基座.gd")
 
 ## 工地表现（未完工时存在；完工/被拆后由它自己释放）
 var _site_fx: Node3D = null

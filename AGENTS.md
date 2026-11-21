@@ -26,7 +26,7 @@ addons/     Godot 编辑器插件（地图编辑器）。不进发行版。
 ## 硬约定
 
 1. **唯一数值来源 = `Content/data/*.json`**。改数值只改 JSON，不改代码。单位/建筑/技能/营地卡由 `Game/config/card_store.gd` 读写；`.tres` 卡只留在 `Content/legacy/cards/` 作迁移留档，**运行时不再读**。
-2. **文案只走 `Content/i18n/ui.csv` + `I18n.t(key)`**。新界面（`Views/screens/`）零写死中文；旧界面按 `Content/i18n/legacy_budget.json` 冻结，只许降不许升。
+2. **文案只走 `Content/i18n/ui.csv` + `I18n.t(key)`**。新界面（`Screens/screens/`）零写死中文；旧界面按 `Content/i18n/legacy_budget.json` 冻结，只许降不许升。
 3. **逻辑和画面分家**：`Model/` 不出现 Node/SceneTree/FileAccess/OS/Engine/Input/Time，也不出现 `res://Model/` 以外的路径；游戏侧只把数据喂给 Model、把结果画出来。伤害与经济已委托 Model，**不许再写第二份公式**。
 4. **引擎层只进 `Engine/`**：游戏代码只调用，不复制；Steam/手机/主机差异只在 `Engine/platform/`，玩法里禁止平台判断。改 Engine 后必须重跑 `python Tools/gen/gen_engine_pin.py`（pin.json 是共享库的版本锁）。
 5. **测试默认值写在程序里，不靠记参数**：`App.test_mode` 在无头、`--check/--simulate/--shot/--qa*` 时自动开启 → 静音、不抢焦点、存档隔离到 `res://.test_profile/`。**测试永远不读写玩家真实存档**。
@@ -149,7 +149,7 @@ addons/     Godot 编辑器插件（地图编辑器）。不进发行版。
   （HUD/规划界面/地图层/镜头/光标/选择/指令/战区输入/部署输入/回合控制）；任何推进世界时间的东西不许进白名单。
 - **2026-11-15 规划阶段界面按玩家草图重排**（第二版推翻同日第一版：不再保留小地图/战区条/金币木头）：
   只剩六块 —— 头像+基地血量 / 顶部条（金币·卷轴×3·日月）/ 人口 / CP 菱形 / 底部面板 / 右下【规划结束】【取消】；
-  规划期整组收起执行阶段部件（`HUD._set_planning_chrome`）。~~同一版新增固定势力网格（`Views/world/规划沙盘.gd`
+  规划期整组收起执行阶段部件（`HUD._set_planning_chrome`）。~~同一版新增固定势力网格（`Screens/world/规划沙盘.gd`
   + `沙盘网格.gdshader`，蓝我/红敌 + 边界光墙 + 扫描流光）~~（**2026-11-15 晚作废**：见下条沙盘化第三版）、
   敌我同格式的明牌意图图标牌、阶段横幅 `阶段提示.gd`、执行期 `敌方意图条.gd`；细节见 `Documents/界面说明.md` §6。
 - **2026-11-15 规划阶段沙盘化（第三版，推翻固定红蓝方块）**：全图细网格；以实际建筑为圆心的
@@ -159,7 +159,7 @@ addons/     Godot 编辑器插件（地图编辑器）。不进发行版。
   已用 = `RtsFaction.food_committed()`（存活 + 在训）。下单即扣 CP、即占人口。
 - **2026-11-15 部署是二段式纯地图操作**：底部【进攻】【防守】【占据】→ 指针换图标 + 地图预览
   （虚线箭头 / 10m 防区 / 据点金圈）→ 左键落点写 `命令记录`（新增 `Order.DEFEND / CAPTURE`）。
-  实现：`Views/input/部署输入.gd`；HUD 按钮与地图层只读它的 `mode()/preview()`。
+  实现：`Screens/input/部署输入.gd`；HUD 按钮与地图层只读它的 `mode()/preview()`。
 - **2026-11-15 "未完成训练将取消"的结算点 = 回合结束**（不是规划结束）：训练读条只在解冻时走，
   规划阶段清队列等于永远造不出兵；`回合控制._cancel_unfinished_training()` 只清玩家阵营、不退 CP。
 - **2026-11-15 布局卡**：见 `Documents/短局-布局卡.md`。

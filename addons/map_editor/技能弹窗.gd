@@ -18,7 +18,7 @@ extends Window
 ##
 ## ⚠ 本文件不写 class_name（AGENTS.md §二），调用方用 preload 常量 + .call()。
 
-const Spec := preload("res://Views/hud/界面规格.gd")
+const Spec := preload("res://Screens/hud/界面规格.gd")
 const EDITOR_THEME := preload("res://addons/map_editor/编辑器主题.tres")
 const 皮肤 := preload("res://addons/map_editor/编辑器皮肤.gd")
 const CARD_SCRIPT := preload("res://Game/config/技能卡.gd")
@@ -796,7 +796,7 @@ func _preview() -> void:
 	if model_path == "":
 		_status.text = "预览失败：找不到可用模型"
 		return
-	var art: Script = load("res://Views/world/art/美术接口.gd")
+	var art: Script = load("res://Screens/world/art/美术接口.gd")
 	var model: Node3D = art.call("build_model", model_path, 1.0)
 	if model == null:
 		_status.text = "预览失败：%s 实例化不出来" % model_path
@@ -821,7 +821,7 @@ func _preview() -> void:
 	# 特效：vfx 层只认位置，这里用模型胸口高度
 	var fx: StringName = _card.get("vfx_on")
 	if fx != &"":
-		var vfx: Script = load("res://Views/world/art/特效生成.gd")
+		var vfx: Script = load("res://Screens/world/art/特效生成.gd")
 		vfx.call("weapon_glint", _preview_root.global_position + Vector3.UP * 1.1)
 	# 2.5 秒后清掉（预览不该留在地图上）
 	var tm := Timer.new()

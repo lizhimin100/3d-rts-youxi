@@ -31,23 +31,23 @@
   ],
   [
    "代码/操作",
-   "Views/input"
+   "Screens/input"
   ],
   [
    "代码/镜头",
-   "Views/camera"
+   "Screens/camera"
   ],
   [
    "代码/界面",
-   "Views/hud"
+   "Screens/hud"
   ],
   [
    "代码/美术",
-   "Views/world/art"
+   "Screens/world/art"
   ],
   [
    "代码/人群",
-   "Views/world/crowd"
+   "Screens/world/crowd"
   ],
   [
    "代码/音频",
@@ -63,7 +63,7 @@
   ],
   [
    "场景",
-   "Views/scenes"
+   "Screens/scenes"
   ],
   [
    "美术",

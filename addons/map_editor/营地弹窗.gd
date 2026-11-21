@@ -17,7 +17,7 @@ extends Window
 ## ⚠ 本文件不写 class_name（AGENTS.md §二：别碰全局类缓存），
 ##   调用方用 preload 常量 + .call() 拿它。
 
-const Spec := preload("res://Views/hud/界面规格.gd")
+const Spec := preload("res://Screens/hud/界面规格.gd")
 const CARD_STORE := preload("res://Game/config/card_store.gd")
 const EDITOR_THEME := preload("res://addons/map_editor/编辑器主题.tres")
 ## 皮肤（深铁石底 + 金线）：在 .tres 实例上就地改写，资源路径不变

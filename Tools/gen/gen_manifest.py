@@ -10,9 +10,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "Content" / "manifest.json"
-DIRS = ["Game", "Views", "Model", "Engine", "Tests", "Tools", "Content/data",
+DIRS = ["Game", "Screens", "Model", "Engine", "Tests", "Tools", "Content/data",
         "Content/i18n", "Content/keys", "addons"]
-SKIP_DIRS = {"__pycache__", ".godot", "qc", "jobs"}
+SKIP_DIRS = {"__pycache__", ".godot", "qc", "jobs", "bin", "obj"}
 SKIP_EXT = {".import", ".tmp", ".log"}
 
 

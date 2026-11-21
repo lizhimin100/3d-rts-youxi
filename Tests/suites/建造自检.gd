@@ -19,7 +19,7 @@ extends SceneTree
 ##   硬约束，不是偷懒。自检本身仍跑在**真关卡、真单位、真寻路网格**上。
 
 const LEVEL_SCRIPT := "res://Game/core/关卡.gd"
-const CMD_SCRIPT := "res://Views/input/指令系统.gd"
+const CMD_SCRIPT := "res://Screens/input/指令系统.gd"
 
 const BARRACKS := &"barracks"
 const PEASANT := &"peasant"

@@ -21,7 +21,7 @@ const VIEWPORT_SCRIPT := "res://addons/map_editor/视口.gd"
 ## 全套设计令牌（配色/字号/样式工厂）——编辑器只用 editor_ 那一档冷色
 ## 2026-11-14 七块砖重排后路径变了（旧 `res://代码/界面/界面规格.gd` 已不存在）。
 ## 这类"preload 指向已搬走的文件"会让整个插件 Parse Error 全屏红，别再写旧路径。
-const Spec := preload("res://Views/hud/界面规格.gd")
+const Spec := preload("res://Screens/hud/界面规格.gd")
 ## 工具栏/层栏的按钮定义（表驱动，加按钮只改这张表）
 const 按钮表 := preload("res://addons/map_editor/按钮表.gd")
 ## token 编译出来的正经 Theme 资源（生成命令见 Tools/生成编辑器主题.gd）

@@ -29,7 +29,7 @@ const UI_DING_THROTTLE := 0.16
 const UI_DING_DB := -11.0
 
 ## 表现层随机流（音高抖动）。**不许**用全局 randf（见 表现随机.gd 文件头）
-const Fx := preload("res://Views/world/art/表现随机.gd")
+const Fx := preload("res://Screens/world/art/表现随机.gd")
 
 const BUS_MUSIC := "Music"
 const BUS_SFX := "SFX"

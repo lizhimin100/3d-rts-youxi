@@ -1,7 +1,7 @@
 # AI 经济 / 产能 / 等级机制排查报告（只读排查，未改任何代码）
 
 - 日期：2026-11-08
-- 范围：Views/scenes/主场景.tscn 主场景地图（Content/maps/主场景地图.tres，4 槽位，队伍 [1,1,2,3]）
+- 范围：Screens/scenes/主场景.tscn 主场景地图（Content/maps/主场景地图.tres，4 槽位，队伍 [1,1,2,3]）
 - 方法：**静态读码 + 一局 10 分钟真实对局采集**（--ai-bench --seed=1 --minutes=10 --speed=8，headless、fixed-fps 60，墙钟 198.6s），外加逐周期决策日志 --dept-log（802 KB，AI 每 2 秒一行）。
 - 本报告**只出结论，不改代码**（第一部分要求）。
 

@@ -15,7 +15,7 @@ const SINK_TIME: float = 0.5
 ## 金矿枯竭后的明度系数
 const DEPLETED_DARKEN: float = 0.32
 ## 表现层随机流（倒向哪边）。玩法随机仍走全局 randf，见 表现随机.gd
-const Fx := preload("res://Views/world/art/表现随机.gd")
+const Fx := preload("res://Screens/world/art/表现随机.gd")
 ## 分流惩罚的基准值（米）：见 `crowd_cost()`
 const CROWD_COST: float = 18.0
 

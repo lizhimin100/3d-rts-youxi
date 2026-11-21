@@ -10,7 +10,7 @@ extends Window
 ##
 ## ⚠ 本文件不写 class_name（AGENTS.md §二）；主屏用 preload 常量 + .call() 打开。
 
-const Spec := preload("res://Views/hud/界面规格.gd")
+const Spec := preload("res://Screens/hud/界面规格.gd")
 const EDITOR_THEME := preload("res://addons/map_editor/编辑器主题.tres")
 ## 皮肤（深铁石底 + 金线）：在 .tres 实例上就地改写，资源路径不变
 const 皮肤 := preload("res://addons/map_editor/编辑器皮肤.gd")
@@ -45,7 +45,7 @@ const ROWS: Array = [
 	["属性", "改选中对象的归属 / 坐标 / 缩放", "「属性」页（选中对象后）", "停靠面板.gd -> _refresh_props"],
 	["主题", "改编辑器配色 / 字号", "改 界面规格.gd 后跑 Tools/生成编辑器主题.gd", "Tools/生成编辑器主题.gd"],
 	["工具栏", "加 / 改 / 重排顶部按钮或左侧层栏", "只改 按钮表.gd 的 GROUPS / LAYERS（图标走 Content/art/图标/）", "addons/map_editor/按钮表.gd"],
-	["工具栏", "按钮图标缺失 / 想换图标", "在 Content/art/图标/ 放同名 SVG（64×64，白色路径），跑 --import", "Views/hud/界面规格.gd -> icon_button"],
+	["工具栏", "按钮图标缺失 / 想换图标", "在 Content/art/图标/ 放同名 SVG（64×64，白色路径），跑 --import", "Screens/hud/界面规格.gd -> icon_button"],
 	["自检", "编辑器链路自检（24 项）", "godot --headless --editor --path . -- --map-editor-selftest", "主屏.gd -> _selftest"],
 	["自检", "地图数据自检（167 项）", "godot --headless --path . --quit-after 200 -- --map-editor-test", "Tests/suites/地图编辑器自检.gd"],
 ]

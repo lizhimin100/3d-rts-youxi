@@ -8,7 +8,7 @@ extends Node3D
 ##
 ## 注意：美术资产可能还没到位 —— ArtKit 会自动退化成占位盒，这里不需要判空。
 
-## 组合件外观注册表（见 Views/world/art/组合件.gd）。用 load() 取，不写 class_name：
+## 组合件外观注册表（见 Screens/world/art/组合件.gd）。用 load() 取，不写 class_name：
 ## ① 避免全局类缓存（.godot/global_script_class_cache.cfg）失效导致编译失败；
 ## ② 组合件（`combo:<key>`），key → 脚本的映射只在 组合件.gd 那一处维护。
 var _combo_registry: Script = null
@@ -32,7 +32,7 @@ const FLASH_PEAK_BUILDING: float = 0.0
 const HIT_NUDGE: float = 0.075
 const HIT_NUDGE_TIME: float = 0.12
 ## 表现层随机流（受击方向的兜底角度）。玩法随机仍走全局 randf，见 表现随机.gd
-const Fx := preload("res://Views/world/art/表现随机.gd")
+const Fx := preload("res://Screens/world/art/表现随机.gd")
 
 ## 模型根
 var _model: Node3D = null
@@ -152,7 +152,7 @@ func build(def: UnitDef, team_color: Color, proc: Dictionary = {}) -> void:
 	#   三档 LOD 直接由 树库 造好（每档一个 MeshInstance3D，靠 visibility_range 切）。
 	var 程序化树: bool = def.kind == RtsConst.Kind.HARVESTABLE and TreeLibrary.is_tree(def.id)
 	# 组合件（`combo:` 前缀，例如营火 = 柴堆 + 一盏会呼吸的暖光）：
-	# 不走单个 glb，由 `Views/world/art/<key>外观.gd` 现场拼，材质全是"自然_"那套。
+	# 不走单个 glb，由 `Screens/world/art/<key>外观.gd` 现场拼，材质全是"自然_"那套。
 	var 组合件: bool = String(def.model_path).begins_with("combo:")
 	if 组合件:
 		_model = _build_combo(def)
@@ -200,10 +200,10 @@ func build(def: UnitDef, team_color: Color, proc: Dictionary = {}) -> void:
 		_flash_peak = FLASH_PEAK_UNIT
 
 
-## **姿态层**（举盾这类"一直按着一个姿势"的技能）：见 Views/world/art/姿态层.gd。
+## **姿态层**（举盾这类"一直按着一个姿势"的技能）：见 Screens/world/art/姿态层.gd。
 ## 为什么不在 UnitVisual 里直接摆骨骼：动画每帧会把骨骼写回去，
 ## 必须挂在 Skeleton3D 的 `SkeletonModifier3D` 通道上（动画之后执行）才压得住。
-const PoseLayer := preload("res://Views/world/art/姿态层.gd")
+const PoseLayer := preload("res://Screens/world/art/姿态层.gd")
 
 
 func _make_pose_layer(root: Node3D) -> Node:
@@ -371,14 +371,14 @@ func _collect_meshes(n: Node) -> void:
 		_collect_meshes(c)
 
 
-## 造组合件外观：`combo:<key>` → 交给 `Views/world/art/组合件.gd`（key → 中文外观脚本的映射表）。
+## 造组合件外观：`combo:<key>` → 交给 `Screens/world/art/组合件.gd`（key → 中文外观脚本的映射表）。
 ## 找不到脚本就返回 null（上层退回占位盒，不报错、不白屏）。
 func _build_combo(def: UnitDef) -> Node3D:
 	var key: String = String(def.model_path).substr(6)
 	if key.is_empty():
 		return null
 	if _combo_registry == null:
-		_combo_registry = load("res://Views/world/art/组合件.gd")
+		_combo_registry = load("res://Screens/world/art/组合件.gd")
 	if _combo_registry == null:
 		return null
 	var n: Variant = _combo_registry.call("build", key, def)

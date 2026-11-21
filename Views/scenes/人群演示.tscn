@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3]
-
-[ext_resource type="Script" path="res://Views/world/crowd/人群演示.gd" id="1_crowd"]
-
-[node name="人群演示" type="Node3D"]
-script = ExtResource("1_crowd")

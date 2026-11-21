@@ -30,7 +30,7 @@ const BM := preload("res://Game/ai/战斗模型.gd")
 ## ★ 与 BM 同一套写法：只读常量与 static 函数，不 new 实例。
 ##   三者都不 include 引擎/场景依赖，所以 `--script` 的配置回归能直接 load 断言。
 const WS := preload("res://Game/ai/世界状态.gd")
-const GL := preload("res://Model/ai/目标层.gd")
+const GL := preload("res://Game/ai/目标层.gd")
 ## 玩家指令接收器：把 F5/F6/F7 战区指令注入成"最高权重诉求"（不覆盖决策树）
 const PLAYER_WISH := preload("res://Game/ai/玩家指令接收.gd")
 const PL := preload("res://Game/ai/计划层.gd")

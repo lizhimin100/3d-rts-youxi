@@ -668,7 +668,7 @@ func _case_2c6() -> void:
 	var UT = load("res://Game/config/单位表.gd")
 	var RANGE_BASE = load("res://Game/config/射程基准.gd")
 	var sa_src: String = FileAccess.get_file_as_string("res://Game/ai/简单AI.gd")
-	var cmd_src: String = FileAccess.get_file_as_string("res://Views/hud/命令卡.gd")
+	var cmd_src: String = FileAccess.get_file_as_string("res://Screens/hud/命令卡.gd")
 	var foot: UnitDef = _cfg.unit(&"footman")
 	var dps: float = float(_model.call("unit_dps", foot))
 
@@ -1927,7 +1927,7 @@ func _demand_gold(base: Dictionary, gold: int) -> Dictionary:
 # 现在判据只有一处（诉求生成），目标层只做名字翻译 —— 下面断言这个投影是"照抄"。
 # ===========================================================================
 func _case_demand_projection() -> void:
-	var gl = load("res://Model/ai/目标层.gd")
+	var gl = load("res://Game/ai/目标层.gd")
 	var base: Dictionary = {
 		"来源线": "运营线", "动作类型": "训练", "目标": "步兵",
 		"金币成本": 125, "木材成本": 0, "兵力占用": 0, "可被征用": false,
@@ -2001,7 +2001,7 @@ func _case_demand_projection() -> void:
 # ===========================================================================
 func _case_2c13() -> void:
 	var ws = load("res://Game/ai/世界状态.gd")
-	var gl = load("res://Model/ai/目标层.gd")
+	var gl = load("res://Game/ai/目标层.gd")
 	var pl = load("res://Game/ai/计划层.gd")
 
 	# ---------------- §2 世界状态：字段完整性 / 区域 id / 覆盖写 ----------------

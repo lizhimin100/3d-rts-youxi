@@ -125,7 +125,7 @@ const TILT_SMOOTH: float = 9.0
 const WALK_STRIDE_SPEED: float = 2.0
 ## 尸体下沉时长（秒）与深度（米）
 ## 表现层脚本（死亡尘土 / 节流）走 preload，理由同 建筑.gd
-const BUILD_FX := preload("res://Views/world/art/建造表现.gd")
+const BUILD_FX := preload("res://Screens/world/art/建造表现.gd")
 const SINK_TIME: float = 0.6
 const SINK_DEPTH: float = 1.3
 ## 寻路目标变化多少米才值得重算
@@ -3003,7 +3003,7 @@ func _sample_tilt(dt: float) -> void:
 		_slope_mult = clampf(1.0 - slope * 0.55, 1.0, 1.22)          # 下坡：略快
 
 
-## 攻击能打到的距离（= 攻击圈半径 = 卡上 range × 射程基准.R1）。
+## 攻击能打到的距离（= 攻击圈半径 = 卡上 range × 射程基准.r1()）。
 ##
 ## ★ **2026-11-08 定稿口径**（玩家，一次说清，别再改）：
 ##   · `实际米数 = 卡上数值 × R1`（R1 = 0.015，唯一出口 Game/config/射程基准.gd）；
@@ -3021,7 +3021,7 @@ func _attack_reach(t: Node3D) -> float:
 	return maxf(r, 0.05)
 
 
-## **攻击圈半径**（画在脚下那个圆 + 命中判定的半径）= 卡上 range × 射程基准.R1。
+## **攻击圈半径**（画在脚下那个圆 + 命中判定的半径）= 卡上 range × 射程基准.r1()。
 ## ★ 2026-11-08 最终口径（玩家）：
 ##   · 攻击圈固定 = 射程，**不随场上最大单位体型变**；
 ##   · 命中 = 两圈相交；圈只跟"我打多远"有关，跟"我多大"无关。
@@ -3827,7 +3827,7 @@ func _update_anim() -> void:
 			# ★ 2026-11-08 玩家口径：「举盾技能就该一直举着，不要循环播放举盾动作，
 			#   而且举盾状态下也要有移动/攻击动作。」
 			#   所以这里**不再**用 shield_hold 覆盖待机：基础动作永远是 idle，
-			#   举盾由 UnitVisual 的**姿态层**把左臂按住（见 Views/world/art/姿态层.gd），
+			#   举盾由 UnitVisual 的**姿态层**把左臂按住（见 Screens/world/art/姿态层.gd），
 			#   走路/挥砍照常播，盾一直举在身前。
 			#
 			# ★ 2026-11-13 玩家口径：「只要农民采集了木头或金矿，停下来也要保持

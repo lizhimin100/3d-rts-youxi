@@ -12,7 +12,7 @@ extends SceneTree
 ## 那样每次打开编辑器都要重新构造几十个 StyleBox，而且主题不是可见/可审的资源；
 ## 这里落成 .tres，改色/对稿都能直接在资源里看，符合"token 生成的是 Godot Theme"。
 
-const SPEC_PATH := "res://Views/hud/界面规格.gd"
+const SPEC_PATH := "res://Screens/hud/界面规格.gd"
 const OUT_PATH := "res://addons/map_editor/编辑器主题.tres"
 
 

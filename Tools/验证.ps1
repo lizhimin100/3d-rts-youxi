@@ -153,7 +153,7 @@ if ($Full) {
     Write-Host "[5.10] 装饰性能自检 ..." -ForegroundColor Cyan
     $dc = & $godot --headless --path . --script Tests/suites/装饰性能自检.gd 2>&1 | Out-String
     $dcLine = ($dc -split "`n" | Select-String -Pattern '^DECORTEST ').Line
-    # 这条同时守住"Content/art/Views/scenes/*.tscn 的节点覆盖是否还对得上 GLB"：
+    # 这条同时守住"Content/art/Screens/scenes/*.tscn 的节点覆盖是否还对得上 GLB"：
     # v3 把模型按材质合并后，场景里残留的 v2 节点名（树/Root/Body/树冠0）会让每次实例化
     # 刷 500+ 条 "Unicode parsing error" + "has vanished"，而且覆盖参数被静默丢弃。
     $dcBad = @($dc -split "`n" | Select-String -Pattern 'Unicode parsing error|has vanished|ERROR')

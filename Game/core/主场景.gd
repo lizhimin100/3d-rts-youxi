@@ -2,7 +2,7 @@ extends Node3D
 ## **主场景 / 总装**：整个游戏的入口。
 ##
 ## ★ 结构说明（给要改这个工程的人）：
-##   场景**节点树是实打实搭在 `Views/scenes/主场景.tscn` 里的**，不是代码里现攒的：
+##   场景**节点树是实打实搭在 `Screens/scenes/主场景.tscn` 里的**，不是代码里现攒的：
 ##
 ##     主场景 (Node3D)
 ##     ├── 环境      WorldEnvironment   ← 战斗环境.tres（天空/雾/泛光/SSAO/调色）
@@ -100,7 +100,7 @@ var _demo_tree: bool = false
 ## 一个实例化了本场景、把这个勾打上的壳场景 —— 双击就能跑。
 @export var demo_tree_mode: bool = false
 ## 绑定地图：在 Inspector 里指定一张 MapDef（.tres），主场景就会加载它而不是随机程序化地图。
-## 默认值由 Views/scenes/主场景.tscn 设置成 res://Content/maps/主场景地图.tres（生成工具 Tools/gen_bound_map.gd 产出）。
+## 默认值由 Screens/scenes/主场景.tscn 设置成 res://Content/maps/主场景地图.tres（生成工具 Tools/gen_bound_map.gd 产出）。
 ## 编辑器里改这张图并存盘，运行中的游戏会自动热重载（见 _tick_map_watch）。
 @export var bound_map: MapDef = null
 
@@ -258,15 +258,15 @@ func _ready() -> void:
 
 	# 4.95 移动指示（绿色虚线 + 目的地标记）：一层只订阅 Game.order_issued 的观察者，
 	#       和 选择系统 / 指令系统 挂在同一层；脚本缺失时静默跳过，不影响开局。
-	_mount_script("res://Views/input/移动指示.gd", "移动指示")
+	_mount_script("res://Screens/input/移动指示.gd", "移动指示")
 
 	# 4.94 战区指令输入（2026-11-13）：F5 进攻 / F6 防守 / F7 占据 / F8 生产。
 	#      只发"意图"不碰单位，实际下令走副官的调度器（控制权过滤照旧）。
-	_mount_script("res://Views/input/战区指令输入.gd", "战区指令输入")
+	_mount_script("res://Screens/input/战区指令输入.gd", "战区指令输入")
 
 	# 4.945 **部署输入**（2026-11-15 规划阶段）：进攻 / 防守 / 占据 的二段式纯地图操作。
 	#       只在短局 + 规划阶段生效；执行阶段自动收摊（见 部署输入._can_deploy）。
-	_mount_script("res://Views/input/部署输入.gd", "部署输入")
+	_mount_script("res://Screens/input/部署输入.gd", "部署输入")
 
 	# 4.93 **短局回合控制器**：规划阶段暂停 / 执行阶段实时 / 脚本波次。
 	#      长局不挂，原即时战略流程一行不改。
@@ -278,7 +278,7 @@ func _ready() -> void:
 	# 4.935 **规划沙盘**（2026-11-15）：规划阶段铺在地面上的"固定势力范围"红蓝网格
 	#       （着色器：边缘发光 / 扫描线 / 流光）。只挂短局；淡入淡出由 phases 驱动。
 	if Game.short_match and level != null:
-		var ps_script := load("res://Views/world/规划沙盘.gd") as Script
+		var ps_script := load("res://Screens/world/规划沙盘.gd") as Script
 		if ps_script != null:
 			var ps := ps_script.call("new") as Node3D
 			if ps != null:

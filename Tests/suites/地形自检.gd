@@ -98,7 +98,7 @@ func _load_scripts() -> void:
 	_level_script = load("res://Game/core/关卡.gd")
 	_map_script = load("res://Game/core/地图生成.gd")
 	_terrain_script = load("res://Game/core/地形.gd")
-	_cam_script = load("res://Views/camera/魔兽镜头.gd")
+	_cam_script = load("res://Screens/camera/魔兽镜头.gd")
 	_cfg_script = load("res://Game/config/游戏配置.gd")
 	_const_script = load("res://Game/core/常量.gd")
 

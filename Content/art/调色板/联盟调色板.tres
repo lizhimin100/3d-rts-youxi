@@ -1,6 +1,6 @@
 [gd_resource type="Resource" script_class="RtsPalette" load_steps=2 format=3]
 
-[ext_resource type="Script" path="res://Views/world/art/调色板.gd" id="1_palette"]
+[ext_resource type="Script" path="res://Screens/world/art/调色板.gd" id="1_palette"]
 
 [resource]
 script = ExtResource("1_palette")

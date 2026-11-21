@@ -10,7 +10,7 @@ extends OmniLight3D
 ##      不要 `get_node("../日夜")` —— 主场景改层级它就哑了；
 ##   3. 找不到日夜节点时**保持微亮**（0.35 基准），别让营火变成一根黑棍子。
 ##
-## 用法（唯一入口）：`Views/world/art/营火外观.gd` 造灯时 `set_script(营火光脚本)`。
+## 用法（唯一入口）：`Screens/world/art/营火外观.gd` 造灯时 `set_script(营火光脚本)`。
 
 ## 深夜时的满功率
 const NIGHT_ENERGY := 3.6
@@ -22,7 +22,7 @@ const FALLBACK_RATIO := 0.45
 const FLICKER := 0.12
 const FLICKER_HZ := 3.1
 ## 表现层随机流（相位错开）。玩法随机仍走全局 randf，见 表现随机.gd
-const Fx := preload("res://Views/world/art/表现随机.gd")
+const Fx := preload("res://Screens/world/art/表现随机.gd")
 ## 刷新节流（秒）：光照缓变，10Hz 足够，省下每帧的属性写
 const TICK := 0.1
 

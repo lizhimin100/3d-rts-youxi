@@ -114,7 +114,7 @@ static func find_by_role(role: StringName, function_weight: float = 1.0) -> Arra
 		var card: EntityCard = _cards[id]
 		if card is UnitCard and (card as UnitCard).roles.has(role):
 			hits.append(card)
-	# 中性画像（不依赖Views/scenes/Cfg）：selection_weight 的分母与画像只影响倍率，不影响排序方向
+	# 中性画像（不依赖Screens/scenes/Cfg）：selection_weight 的分母与画像只影响倍率，不影响排序方向
 	var neutral: Dictionary = {
 		"armor": 0.0, "armor_mix": {RtsConst.ArmorType.LIGHT: 1.0},
 		"dmg_mix": {RtsConst.DamageType.NORMAL: 1.0}, "hp": 1.0,

@@ -9,15 +9,15 @@ extends SceneTree
 
 const JsonFile := preload("res://Engine/util/json_file.gd")
 const CardStore := preload("res://Game/config/card_store.gd")
-const ModelDamage := preload("res://Model/core/damage.gd")
-const ModelEconomy := preload("res://Model/core/economy.gd")
-const SaveSchema := preload("res://Model/save/save_schema.gd")
+const ModelDamage := preload("res://Game/adapters/damage.gd")
+const ModelEconomy := preload("res://Game/adapters/economy.gd")
+const SaveSchema := preload("res://Game/adapters/save_schema.gd")
 const ModelTests := preload("res://Tests/model/model_tests.gd")
-const LAYOUT_CARD := preload("res://Model/layout/layout_card.gd")
+const LAYOUT_CARD := preload("res://Game/adapters/layout_card.gd")
 const CAMP := preload("res://Game/config/野怪营地表.gd")
 const SKILLS := preload("res://Game/config/技能表.gd")
 const SCREENS := "res://Content/data/screens.json"
-const TOP_DIRS := ["Engine", "Model", "Views", "Game", "Content", "Tests", "Tools", "Documents"]
+const TOP_DIRS := ["Engine", "Model", "Screens", "Game", "Content", "Tests", "Tools", "Documents"]
 const LEGACY_DIRS := ["代码", "场景", "美术", "音频", "地图", "工具", "文档"]
 
 var _pass := 0
@@ -44,6 +44,7 @@ func _run() -> void:
 	_check_i18n()
 	_check_assets()
 	_check_model_purity()
+	_check_distance_law()
 	_check_engine_pin()
 	_check_manifest()
 	_check_model_tests()
@@ -71,12 +72,12 @@ func _check_layout() -> void:
 			legacy.append(d)
 	_ok("旧目录已清空（代码/场景/美术/音频/地图/工具/文档）", legacy.is_empty(), "残留：" + ", ".join(legacy))
 	var text := _read("res://project.godot")
-	var autoloads := ["App=", "Keys=", "I18n=", "SaveSvc=", "AudioSvc=", "Platform=", "Cfg=", "Game=", "DbgBridge="]
+	var autoloads := ["Mdl=", "App=", "Keys=", "I18n=", "SaveSvc=", "AudioSvc=", "Platform=", "Cfg=", "Game=", "DbgBridge="]
 	var lack: Array[String] = []
 	for a in autoloads:
 		if not text.contains(a):
 			lack.append(a.trim_suffix("="))
-	_ok("引擎层自动加载已注册（9 个）", lack.is_empty(), "缺：" + ", ".join(lack))
+	_ok("自动加载已注册（%d 个，含 C# 桥 Mdl）" % autoloads.size(), lack.is_empty(), "缺：" + ", ".join(lack))
 
 
 # ===========================================================================
@@ -89,7 +90,7 @@ func _check_layout() -> void:
 # 搬文件的真正代价就是这种硬路径漏网：preload 指向不存在的文件**永远是 bug**，不是可选依赖。
 # 所以这里把三类硬路径一次性钉死：脚本 preload、.tres/.tscn 的 ext_resource、project.godot。
 # ===========================================================================
-const REF_SCAN_DIRS := ["Engine", "Model", "Views", "Game", "Content", "Tests", "Tools", "addons"]
+const REF_SCAN_DIRS := ["Engine", "Model", "Screens", "Game", "Content", "Tests", "Tools", "addons"]
 ## preload("res://…") / preload('res://…')
 const RE_PRELOAD := "preload\\(\\s*[\"'](res://[^\"']+)[\"']"
 ## .tres / .tscn 里的 ext_resource 行；写属性用的是 `key = "…"`（有空格），不会误伤
@@ -405,7 +406,7 @@ func _check_i18n() -> void:
 	var used := 0
 	var re := RegEx.new()
 	re.compile("I18n\\.t\\(\\s*\"([^\"]+)\"")
-	for f2 in _walk("res://Engine") + _walk("res://Views/screens"):
+	for f2 in _walk("res://Engine") + _walk("res://Screens/screens"):
 		if not f2.ends_with(".gd"):
 			continue
 		for m in re.search_all(_read(f2)):
@@ -416,14 +417,14 @@ func _check_i18n() -> void:
 	_ok("代码引用的 I18n key 都有定义（%d 处）" % used, missing.is_empty(), ", ".join(missing.slice(0, 5)))
 	# 新界面必须零硬编码；旧界面用预算冻结
 	var hard := 0
-	for f3 in _walk("res://Views/screens"):
+	for f3 in _walk("res://Screens/screens"):
 		if f3.ends_with(".gd"):
 			hard += _count_cjk_literals(_read(f3))
-	_ok("新界面（Views/screens）零写死中文", hard == 0, "实测 %d 处" % hard)
+	_ok("新界面（Screens/screens）零写死中文", hard == 0, "实测 %d 处" % hard)
 	var budget := JsonFile.read_dict("res://Content/i18n/legacy_budget.json", {})
 	var by_dir: Dictionary = budget.get("by_dir", {})
 	var over: Array[String] = []
-	for dir_name in ["Game", "Views", "addons"]:
+	for dir_name in ["Game", "Screens", "addons"]:
 		var base: Dictionary = by_dir.get(dir_name, {})
 		for f4 in _walk("res://" + dir_name):
 			if not f4.ends_with(".gd"):
@@ -478,32 +479,95 @@ func _check_assets() -> void:
 	_ok("内容资产全部已登记（%d 个 key）" % mapped.size(), uncovered.is_empty(), "未登记：" + ", ".join(uncovered.slice(0, 6)))
 
 # ===========================================================================
-# 5. 分层边界
+# 5. 分层边界（Model = 纯 C# 内核，零 Godot）
 # ===========================================================================
-const MODEL_FORBIDDEN := ["extends Node", "Node3D", "SceneTree", "ResourceLoader", "FileAccess",
-	"DirAccess", "OS.", "Engine.", "Input.", "Time.", "push_error", "print(", "get_tree("]
+## Model 的 C# 源码里不许出现的引擎符号（逐行扫，注释行不算）
+const MODEL_FORBIDDEN_CS := ["using Godot", "Godot.", "GodotObject", "GD.", "partial class",
+	"NodePath", "[Export]", "[GlobalClass]", "Variant"]
 
 func _check_model_purity() -> void:
 	var problems: Array[String] = []
+	var cs_count: int = 0
 	for f in _walk("res://Model"):
-		if not f.ends_with(".gd"):
+		if f.ends_with(".gd"):
+			problems.append("%s 是 GDScript（Model 只收 C#）" % f.replace("res://", ""))
 			continue
-		var text := _read(f)
+		if not f.ends_with(".cs"):
+			continue
+		cs_count += 1
 		var line_no := 0
-		for line in text.split("\n"):
+		for line in _read(f).split("\n"):
 			line_no += 1
 			var stripped := line.strip_edges()
-			if stripped.begins_with("#"):
+			if stripped.begins_with("//") or stripped.begins_with("*") or stripped.begins_with("/*"):
 				continue
-			for tok in MODEL_FORBIDDEN:
+			for tok in MODEL_FORBIDDEN_CS:
 				if line.contains(tok):
 					problems.append("%s:%d 出现 %s" % [f.replace("res://", ""), line_no, tok])
-			var idx := line.find("res://")
-			while idx >= 0:
-				if not line.substr(idx).begins_with("res://Model/"):
-					problems.append("%s:%d 引用 Model 之外的 res:// 路径" % [f.replace("res://", ""), line_no])
-				idx = line.find("res://", idx + 1)
-	_ok("Model 零引擎 API、只引用 Model 内部脚本", problems.is_empty(), "; ".join(problems.slice(0, 5)))
+			if line.contains("res://"):
+				problems.append("%s:%d 出现 res:// 路径" % [f.replace("res://", ""), line_no])
+	_ok("Model 零引擎 API（%d 个 C# 文件，无 GDScript）" % cs_count,
+		problems.is_empty() and cs_count > 0, "; ".join(problems.slice(0, 5)))
+
+	# 工程文件层面：内核必须是普通 net8.0 类库，不许引 Godot.NET.Sdk
+	var model_proj := _read("res://Model/WarIsland.Model.csproj")
+	var proj_bad: Array[String] = []
+	if not model_proj.contains("<Project Sdk=\"Microsoft.NET.Sdk\">"):
+		proj_bad.append("内核 csproj 不是普通 SDK")
+	if model_proj.contains("<Project Sdk=\"Godot"):
+		proj_bad.append("内核 csproj 引了 Godot SDK")
+	if model_proj.contains("<PackageReference"):
+		proj_bad.append("内核 csproj 有外部包引用")
+	var host_proj := _read("res://战争原岛.csproj")
+	if not host_proj.contains("WarIsland.Model.csproj"):
+		proj_bad.append("宿主没有 ProjectReference 到内核")
+	if not host_proj.contains("Compile Remove=\"Model/**/*.cs\""):
+		proj_bad.append("宿主没有排除 Model/**/*.cs（会编两遍）")
+	_ok("内核 csproj 纯 net8.0 / 宿主正确引用", proj_bad.is_empty(), "; ".join(proj_bad))
+
+	# 产物真的编出来了（run-game 会先 dotnet build）
+	var dll := "res://Model/bin/Debug/net8.0/WarIsland.Model.dll"
+	_ok("C# 内核已编译（WarIsland.Model.dll）", FileAccess.file_exists(dll), dll)
+
+	# 桥挂上了（自动加载 Mdl）：这是"GDScript 能真的调到内核"的唯一证据
+	var mdl := root.get_node_or_null("Mdl")
+	_ok("桥 Mdl 已挂上（C# → GDScript 通路）", mdl != null)
+	if mdl != null:
+		var r1: float = float(mdl.call("R1"))
+		_ok("内核 R1 = 0.015", is_equal_approx(r1, 0.015), "%.4f" % r1)
+
+
+## 距离铁律：R1 只有一份真值（C#），GDScript 只许通过 射程基准.r1() 转发。
+func _check_distance_law() -> void:
+	var base_script := load("res://Game/config/射程基准.gd")
+	var r1: float = float(base_script.call("r1"))
+	var meters: float = float(base_script.call("米", 650.0))
+	var units: float = float(base_script.call("值", 9.75))
+	_ok("R1 换算：650 → 9.75 米，反算回 650",
+		is_equal_approx(meters, 9.75) and absf(units - 650.0) < 0.001,
+		"米=%.3f 值=%.1f" % [meters, units])
+	# 规则层（Game/config、Game/units、Game/systems、Game/core）不许再出现 0.015；
+	# Screens/ 与音频里的 0.015 是美术/混音常数，与本铁律无关，不扫。
+	var hard: Array[String] = []
+	for d in ["Game/config", "Game/units", "Game/systems", "Game/core", "Game/ai"]:
+		for f in _walk("res://" + d):
+			if not f.ends_with(".gd"):
+				continue
+			var line_no := 0
+			for line in _read(f).split("\n"):
+				line_no += 1
+				if line.strip_edges().begins_with("#"):
+					continue
+				if line.contains("0.015"):
+					hard.append("%s:%d" % [f.replace("res://", ""), line_no])
+	_ok("R1 字面量只在内核（规则层零 0.015）", hard.is_empty(), "; ".join(hard.slice(0, 5)))
+	# 升星镜像常量必须等于内核
+	var star := load("res://Game/systems/升星.gd")
+	var mdl := root.get_node_or_null("Mdl")
+	if mdl != null:
+		var cap_ok: bool = int(star.get("STAR_CAP")) == int(mdl.call("StarCap"))
+		var exp_ok: bool = is_equal_approx(float(star.get("KILL_EXP")), float(mdl.call("StarKillExp")))
+		_ok("升星镜像常量 == C# 内核（上限 3 / 击杀 15 经验）", cap_ok and exp_ok)
 
 
 func _check_engine_pin() -> void:
@@ -534,7 +598,7 @@ func _check_manifest() -> void:
 	var listed := {}
 	for e in man.get("files", []):
 		listed[String(e.get("path", ""))] = true
-	var dirs := ["Game", "Views", "Model", "Engine", "Tests", "Tools", "Content/data",
+	var dirs := ["Game", "Screens", "Model", "Engine", "Tests", "Tools", "Content/data",
 		"Content/i18n", "Content/keys", "addons"]
 	var current := {}
 	for d in dirs:
@@ -623,8 +687,8 @@ func _check_availability() -> void:
 	b.free()
 
 	var src_ok := (_read("res://Game/units/建筑.gd").contains("可用性查询")
-		and _read("res://Views/hud/命令卡.gd").contains("可用性查询")
-		and _read("res://Views/input/指令系统.gd").contains("可用性查询"))
+		and _read("res://Screens/hud/命令卡.gd").contains("可用性查询")
+		and _read("res://Screens/input/指令系统.gd").contains("可用性查询"))
 	_ok("建筑/命令卡/指令系统走同一套可用性判断", src_ok)
 
 
@@ -728,7 +792,7 @@ func _check_screens() -> void:
 	var problems: Array[String] = []
 	for name in screens.keys():
 		var r: Dictionary = screens[name]
-		var scene := String(r.get("scene", "res://Views/scenes/主场景.tscn"))
+		var scene := String(r.get("scene", "res://Screens/scenes/主场景.tscn"))
 		if not ResourceLoader.exists(scene):
 			problems.append("%s 场景不存在：%s" % [name, scene])
 		if r.has("click") and not r.has("expect"):
@@ -757,7 +821,7 @@ func _walk(dir_path: String) -> Array:
 	dir.list_dir_begin()
 	var name := dir.get_next()
 	while name != "":
-		if name.begins_with("."):
+		if name.begins_with(".") or name in ["bin", "obj", "__pycache__"]:
 			name = dir.get_next()
 			continue
 		var child := dir_path + "/" + name

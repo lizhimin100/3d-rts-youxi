@@ -10,7 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "Content" / "i18n" / "legacy_budget.json"
-DIRS = ["Game", "Views", "addons", "Tests"]
+DIRS = ["Game", "Screens", "addons", "Tests"]
 CJK = re.compile(r'"[^"\n]*[\u4e00-\u9fff][^"\n]*"')
 COMMENT = re.compile(r"^\s*#")
 

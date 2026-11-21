@@ -300,7 +300,7 @@ GPU 只负责画抛物线：`from/to/t0/dur` 四个量进 `INSTANCE_CUSTOM`，�
 
 ### Phase 2 · 人群层演示（4–6 周）
 
-1. 新场景 `Views/scenes/万人演示.tscn` + 新模块 `Views/world/crowd/`（SoA 数组、无 Node3D）。
+1. 新场景 `Screens/scenes/万人演示.tscn` + 新模块 `Screens/world/crowd/`（SoA 数组、无 Node3D）。
 
 
 2. `MultiMesh` 3 层 LOD：<20m 全模型 / 20–60m 低模 / >60m impostor。
@@ -339,7 +339,7 @@ GPU 只负责画抛物线：`from/to/t0/dur` 四个量进 `INSTANCE_CUSTOM`，�
 
 ## 10. 2026-11-13 实测更新：VAT 做完了，转正条件可以量化了
 
-`Tools/烘焙VAT.gd` + `Views/world/crowd/人群VAT.gd/.gdshader` 已经落地：真模型（联盟步兵）的
+`Tools/烘焙VAT.gd` + `Screens/world/crowd/人群VAT.gd/.gdshader` 已经落地：真模型（联盟步兵）的
 idle / walk 烘成 RGBAH 纹理，MultiMesh 顶点着色器按帧采样 + 每实例黄金比相位错开。
 和本文 §5.7 当初的估计相比，有四个**实测修正**：
 

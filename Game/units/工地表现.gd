@@ -40,7 +40,7 @@ const BUILD_MODEL: Dictionary = {
 	&"workshop": "workshop_build.glb",
 }
 ## 表现层随机流（锤击方位 / 脚手架散落方向）。玩法随机仍走全局 randf，见 表现随机.gd
-const Fx := preload("res://Views/world/art/表现随机.gd")
+const Fx := preload("res://Screens/world/art/表现随机.gd")
 ## 建造显影 shader：把资产的 StandardMaterial3D 换成"世界高度裁剪"版本
 ## （资产自带的 reveal_height shader 不在仓库里，见 Content/art/着色器/建造显影.gdshader 的注释）
 const CLIP_SHADER := preload("res://Content/art/着色器/建造显影.gdshader")

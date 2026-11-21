@@ -46,7 +46,7 @@ func _run() -> void:
 		_fail("没有这个画面：%s（现有：%s）" % [_screen, ", ".join(recipes.keys())])
 		return
 	var recipe: Dictionary = recipes[_screen]
-	var scene_path := String(recipe.get("scene", "res://Views/scenes/主场景.tscn"))
+	var scene_path := String(recipe.get("scene", "res://Screens/scenes/主场景.tscn"))
 	var packed: PackedScene = load(scene_path)
 	if packed == null:
 		_fail("场景加载失败：" + scene_path)

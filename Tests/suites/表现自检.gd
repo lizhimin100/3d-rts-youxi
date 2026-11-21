@@ -23,9 +23,9 @@ extends SceneTree
 ##   在本文件解析时还没注册，只能 load() + 鸭子调用。跑的仍是真关卡、真单位、真寻路网格。
 
 const LEVEL_SCRIPT := "res://Game/core/关卡.gd"
-const CMD_SCRIPT := "res://Views/input/指令系统.gd"
-const BUILD_FX := "res://Views/world/art/建造表现.gd"
-const ARTKIT := "res://Views/world/art/美术接口.gd"
+const CMD_SCRIPT := "res://Screens/input/指令系统.gd"
+const BUILD_FX := "res://Screens/world/art/建造表现.gd"
+const ARTKIT := "res://Screens/world/art/美术接口.gd"
 
 const BARRACKS := &"barracks"
 const PEASANT := &"peasant"

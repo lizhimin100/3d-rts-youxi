@@ -2,7 +2,7 @@ class_name RtsCombat
 extends RefCounted
 
 ## 伤害公式的唯一实现在 Model 层；本文件只负责把 Cfg 组装成规则、把结果包成 DamageInfo
-const ModelDamage := preload("res://Model/core/damage.gd")
+const ModelDamage := preload("res://Game/adapters/damage.gd")
 ## **战斗数值中枢**：伤害公式、护甲减免、克制、暴击、命中反馈、群体伤害。
 ##
 ## 为什么单独一个文件：伤害公式**必须只有一份实现**。玩家步兵、AI 步兵、箭塔、火球

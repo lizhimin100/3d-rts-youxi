@@ -8,11 +8,11 @@ extends RefCounted
 ##     只要在 match 里加一行，技能卡不用动。
 ##
 ## 加一个特效：
-##   1. 在 `Views/world/art/特效生成.gd` 里写实现（或者复用已有的）；
+##   1. 在 `Screens/world/art/特效生成.gd` 里写实现（或者复用已有的）；
 ##   2. 在下面 `match` 里加一个 case；
 ##   3. 技能卡的 `vfx_on` 填这个 id。
 
-const VFX := preload("res://Views/world/art/特效生成.gd")
+const VFX := preload("res://Screens/world/art/特效生成.gd")
 ## 未注册 id 只警告一次（同一局里几百个单位切技能，不刷屏）
 static var _warned: Dictionary = {}
 

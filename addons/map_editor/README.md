@@ -74,7 +74,7 @@ Dock 第六页「历史」用编辑器自带的 **Tree** 实现，数据直接�
 
 ## 主题（token → Godot Theme 资源）
 
-编辑器皮肤来自 `Views/hud/界面规格.gd` 的设计令牌，一次性编译成：
+编辑器皮肤来自 `Screens/hud/界面规格.gd` 的设计令牌，一次性编译成：
 
 ```
 res://addons/map_editor/编辑器主题.tres

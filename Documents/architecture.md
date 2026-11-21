@@ -34,7 +34,7 @@
 3. `Game/config/配置入口.gd`（`Cfg`）读 `Content/data/game.json` → `GameConfig`；
    `UnitTable.build_units()` 读 `Content/data/cards/{units,buildings}` → 重建 `UnitDef`；
    可采集物/研究从 `harvestables.json` / `researches.json` 读。
-4. `Game/core/游戏状态.gd`（`Game`）就绪；主场景 `Views/scenes/主场景.tscn` 装配关卡、镜头、HUD、AI。
+4. `Game/core/游戏状态.gd`（`Game`）就绪；主场景 `Screens/scenes/主场景.tscn` 装配关卡、镜头、HUD、AI。
 5. 调试构建下 `DbgBridge` 在 127.0.0.1 起 HTTP 接口（无头默认不启动，显式 `--debug-bridge` 才开）。
 
 ## 数据流（内容 → 运行时）
@@ -61,7 +61,7 @@ Content/data/cards/units/*.json
   `--round-test` 短局自检。测试/QA（`App.test_mode`）默认长局，除非显式 `--short`。长局完全不挂回合控制器。
 - **阶段**：`Game.set_phase(PLANNING/RUNNING/VICTORY/DEFEAT)` 是唯一入口；规划/结束阶段 `SceneTree.paused = true`。
   HUD/镜头/选择/指令/移动指示/战区输入/光标/规划面板设 `PROCESS_MODE_ALWAYS`；`Game`/单位/AI/据点/日夜保持默认（被冻结）。
-- **命令**：`Views/input/指令系统.gd` 的 `planned` 存 `Game/commands/命令记录.gd`（kind / squad_id / unit_ids / slots / target_id）；
+- **命令**：`Screens/input/指令系统.gd` 的 `planned` 存 `Game/commands/命令记录.gd`（kind / squad_id / unit_ids / slots / target_id）；
   规划阶段入队，`execute_planned()` 在执行阶段统一发 `order_issued`。
 - **小队**：`Game/systems/小队.gd` + `小队注册表.gd`（RefCounted，`Game.squads`）。不进场景树、不做碰撞/迷雾，**不做士气**；
   命令记录以 `squad_id` 为一等公民，成员死亡由注册表自动剪枝。
@@ -76,12 +76,12 @@ Content/data/cards/units/*.json
 | `代码/核心` | `Game/core` + `Game/map`（地形/地图生成） |
 | `代码/系统` `代码/单位` `代码/ai` `代码/寻路` | `Game/systems` `Game/units` `Game/ai` `Game/pathing` |
 | `代码/配置`（含卡） | `Game/config`；卡数据 → `Content/data/cards`；旧卡 → `Content/legacy/cards` |
-| `代码/界面` | `Views/hud` |
-| `代码/操作` `代码/镜头` | `Views/input` `Views/camera` |
-| `代码/美术` `代码/人群` | `Views/world/art` `Views/world/crowd` |
+| `代码/界面` | `Screens/hud` |
+| `代码/操作` `代码/镜头` | `Screens/input` `Screens/camera` |
+| `代码/美术` `代码/人群` | `Screens/world/art` `Screens/world/crowd` |
 | `代码/测试` | `Tests/suites` |
 | `代码/音频` | `Game/audio`（通用音频能力在 `Engine/audio`） |
-| `场景/` `美术/` `音频/` `地图/` `文档/` `工具/` | `Views/scenes` `Content/art` `Content/audio` `Content/maps` `Documents` `Tools` |
+| `场景/` `美术/` `音频/` `地图/` `文档/` `工具/` | `Screens/scenes` `Content/art` `Content/audio` `Content/maps` `Documents` `Tools` |
 
 ## 迁移期欠账（明确写出来，别装作没有）
 

@@ -47,7 +47,7 @@ func _initialize() -> void:
 
 	# 临时：验证装饰场景能加载、visible 覆写生效
 	for sn in ["草丛", "碎石"]:
-		var path: String = "res://Content/art/Views/scenes/" + sn + "_场景.tscn"
+		var path: String = "res://Content/art/Screens/scenes/" + sn + "_场景.tscn"
 		var inst3: Node = _instantiate(path)
 		if inst3 == null:
 			print("SCENECHK " + sn + " 加载失败")

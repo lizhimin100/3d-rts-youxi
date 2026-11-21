@@ -119,7 +119,7 @@ Content/
 ## 4. 文案（i18n）
 
 - 文件：`Content/i18n/ui.csv`，表头固定 `key,zh,en,note`；每行 zh/en 都不能空。
-- 代码：`I18n.t("key", {"name": "…"})`；**新界面（`Views/screens/`）零写死中文**。
+- 代码：`I18n.t("key", {"name": "…"})`；**新界面（`Screens/screens/`）零写死中文**。
 - 缺 key：`I18n.t` 会 `push_error` 并返回 key 本身；`--check` 会扫 `I18n.t("…")` 的 key 是否存在。
 - 旧界面存量：`Content/i18n/legacy_budget.json` 按文件冻结（只许降）。
   迁移一个界面 = 把中文换成 key + 在 CSV 加行 + 重跑 `gen_i18n_budget.py` 降预算。

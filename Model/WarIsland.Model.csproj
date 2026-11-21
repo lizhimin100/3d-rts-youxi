@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    战争原岛 · 规则内核（Model 层）
+
+    铁律：这里不许引用 Godot（没有 Godot.NET.Sdk、没有 using Godot）。
+    只写纯逻辑：数值换算、伤害、经济、成长、可用性、确定性推演。
+    宿主管线（Godot / 以后的命令行 / 服务器）只做"喂数据 + 画结果"。
+
+    构建：dotnet build Model/WarIsland.Model.csproj
+    被根工程 战争原岛.csproj 以 ProjectReference 引用。
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>WarIsland.Model</AssemblyName>
+    <RootNamespace>WarIsland.Model</RootNamespace>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+</Project>

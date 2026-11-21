@@ -25,7 +25,7 @@ addons/map_editor/按钮表.gd     ← 唯一的按钮定义（数据）
         ↓
 addons/map_editor/主屏.gd       ← 只负责摆（`_build_quick_bar` / `_build_rail`）
         ↓
-Views/hud/界面规格.gd::icon_button()  ← 唯一的按钮皮肤与尺寸
+Screens/hud/界面规格.gd::icon_button()  ← 唯一的按钮皮肤与尺寸
         ↓
 Content/art/图标/<name>.svg            ← 图标资源（64×64，白色单色路径）
 ```

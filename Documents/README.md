@@ -23,7 +23,7 @@
 | 动战斗/射程 | `战斗射程口径.md` | `Model/core/damage.gd`（唯一公式） |
 | 动 AI | `架构地图.md` §3.1 | `反馈驱动战略_设计.md`、`AI目标层观测.md` |
 | 动寻路/移动 | `寻路评估_星际2对照.md` | `架构地图.md` §3.4、`性能基线.md` |
-| 动大群/合批 | `人群层.md` | `Views/world/crowd/README.md` |
+| 动大群/合批 | `人群层.md` | `Screens/world/crowd/README.md` |
 | 跑验收 | `../AGENTS.md`「验证命令」 | `索引/测试索引.md` |
 | 编辑器/地图 | `地图编辑器UI.md` | `编辑器资产同步.md` |
 | 加资产/模型 | `美术规范.md` | `data-pipeline.md` §5（资源 key） |
@@ -52,7 +52,7 @@
 
 ## 3. 代码索引（给 agent 的地图）
 
-**先看模块 README**：`Game/<模块>/README.md`（core/config/systems/units/ai/pathing + Views/hud,input,crowd + Tests/suites）。
+**先看模块 README**：`Game/<模块>/README.md`（core/config/systems/units/ai/pathing + Screens/hud,input,crowd + Tests/suites）。
 它写清：职责 / 不属于这里 / 唯一入口 / 禁改项 / 自检命令 / 已知坑。
 
 `索引/文件索引.md` 由 `python Tools/生成文件索引.py` 生成：

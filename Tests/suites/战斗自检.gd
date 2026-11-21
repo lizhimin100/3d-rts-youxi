@@ -647,7 +647,7 @@ func _用例H_最大射程() -> void:
 		表.append({"中心距": "%.2f" % d, "余量": "%.2f" % gap,
 			"攻击圈": "%.2f" % 攻击圈, "够": ok})
 	# 圈半径必须和**玩家真的看到的那个圈**同一个函数（选择系统的静态出口）
-	var sel_script: Script = load("res://Views/input/选择系统.gd")
+	var sel_script: Script = load("res://Screens/input/选择系统.gd")
 	var 圈半径: float = float(sel_script.call("range_ring_radius_of", 兵))
 	_记("H_攻击圈", {
 		"表": 表,

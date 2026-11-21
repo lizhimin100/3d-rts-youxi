@@ -529,7 +529,7 @@ func _end_stage_ab() -> void:
 ##   旧算法（关卡 walkable_pos → 最近可走格中心）会夹到重复点；
 ##   新算法（指令系统 _formation_points → 可站立点 + 最小间距 1.25m）必须两两错开。
 func _test_formation() -> void:
-	var cmd: Node = load("res://Views/input/指令系统.gd").new()
+	var cmd: Node = load("res://Screens/input/指令系统.gd").new()
 	var n: int = 8
 	var spacing := 1.9
 	var cols: int = int(ceil(sqrt(float(n))))

@@ -18,7 +18,7 @@ extends RefCounted
 ## 为什么单独一层而不是塞进 `_ops_demands`：诉求表是"这一周期要做什么"的全集，
 ## 玩家指令是**外部注入**、来源不同、权重不同，混在一起会让"谁提的"没法追溯。
 
-const GL := preload("res://Model/ai/目标层.gd")
+const GL := preload("res://Game/ai/目标层.gd")
 const WAR := preload("res://Game/ai/战区指令.gd")
 
 ## 玩家诉求的权重：三条线默认 1.0，玩家指令 3.0（排序必在前，但仍要过预算）。

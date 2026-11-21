@@ -6,7 +6,7 @@ extends RefCounted
 ##   · 判据只在 Model/core/可用性.gd；这里只负责取字段，不写"够不够"的公式；
 ##   · UI（命令卡）、输入（指令系统）、玩法（建筑）都走这里，禁止再各写一套。
 
-const A := preload("res://Model/core/可用性.gd")
+const A := preload("res://Game/adapters/可用性.gd")
 
 ## 训练队列上限（唯一来源 = Model）
 const QUEUE_MAX := A.TRAIN_QUEUE_MAX

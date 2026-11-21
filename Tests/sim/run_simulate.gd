@@ -4,7 +4,7 @@ extends SceneTree
 ## 数据：Content/data/sim.json（场景）+ units.json / game.json（数值，走真实 Cfg 装载）
 ## 输出：人读表格 + 一行机器可读 `SIM {json}`；有错退出码 1。
 
-const Skirmish := preload("res://Model/battle/skirmish.gd")
+const Skirmish := preload("res://Game/adapters/skirmish.gd")
 const JsonFile := preload("res://Engine/util/json_file.gd")
 
 const SIM_JSON := "res://Content/data/sim.json"
@@ -49,7 +49,7 @@ func _run() -> void:
 		config["sides"][0]["name"], config["sides"][1]["name"],
 		float(config["max_seconds"]), float(config["sample_seconds"]), games])
 	print("---------------------------------------------------------------")
-	print("%-4s %-6s %-8s %-8s %-26s %-26s" % ["局", "种子", "时长", "胜方", "玩家 击杀/损失/出兵/采金", "AI 击杀/损失/出兵/采金"])
+	print("%-4s %-6s %-8s %-8s %-26s %-26s" % ["局", "种子", "时长", "胜方", "玩家 击杀/损失/出兵/补给", "AI 击杀/损失/出兵/补给"])
 	var wins := {}
 	var total_seconds := 0.0
 	var results: Array = []

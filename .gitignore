@@ -56,3 +56,7 @@ dist/
 
 # 合成音效临时探针（子代理/调试用）
 .synth_tmp/
+
+# .NET 构建产物（dotnet build 生成）
+**/bin/
+**/obj/

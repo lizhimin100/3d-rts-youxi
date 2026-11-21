@@ -16,7 +16,7 @@ extends TabContainer
 var session = null
 var _syncing: bool = false
 ## 全套设计令牌（配色/字号/样式工厂）——这里只用 editor_ 那一档冷色
-const Spec := preload("res://Views/hud/界面规格.gd")
+const Spec := preload("res://Screens/hud/界面规格.gd")
 ## token 编译出来的正经 Theme 资源（主屏同源）
 const CARD_STORE := preload("res://Game/config/card_store.gd")
 const EDITOR_THEME := preload("res://addons/map_editor/编辑器主题.tres")

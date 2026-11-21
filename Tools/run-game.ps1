@@ -105,6 +105,24 @@ if (-not (Test-Path $cache)) {
 
 Write-Host "[run-game] Godot: $Godot"
 
+# --- C# 内核构建（Model/ 纯 C#，Godot 只是宿主）------------------------------
+# 每次入口前先编一次：`--check` 里有一条"C# 内核已编译"的断言，
+# 手工 dotnet build 忘记跑就会红；这里替你跑掉（增量构建通常 1~2 秒）。
+function Build-CSharp {
+    $proj = Join-Path $Root "战争原岛.csproj"
+    if (-not (Test-Path $proj)) { return }
+    if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
+        throw "找不到 dotnet（C# 内核需要 .NET 8 SDK）。装好后重试，或删掉 战争原岛.csproj 走纯 GDScript。"
+    }
+    & dotnet build $proj -v q --nologo | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[run-game] C# 构建失败（退出码 $LASTEXITCODE）" -ForegroundColor Red
+        exit $LASTEXITCODE
+    }
+}
+Build-CSharp
+
+
 switch ($mode) {
     "import" {
         & $Godot --headless --path $Root --import

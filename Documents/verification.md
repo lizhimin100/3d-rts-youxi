@@ -35,7 +35,7 @@ WARNING: [野怪营地表] 锚点「creep_den」重复默认配置（camp_den.js
   ✓ ui.csv 可装载（23 条 / 3 种语言）
   ✓ 文案两列齐全（zh+en）、无重复 key
   ✓ 代码引用的 I18n key 都有定义（8 处）
-  ✓ 新界面（Views/screens）零写死中文  实测 0 处
+  ✓ 新界面（Screens/screens）零写死中文  实测 0 处
   ✓ 旧界面写死文案不增长（预算冻结）
   ✓ 登记的 key 都指向真实文件
   ✓ 内容资产全部已登记（250 个 key）  未登记：
@@ -270,7 +270,7 @@ ERROR: res://addons/map_editor/主屏.gd:391 - Parse Error: Cannot infer the typ
 ERROR: res://addons/map_editor/插件.gd:26 - Invalid call. Nonexistent function 'new' in base 'GDScript'.
 ```
 
-**根因**：七块砖重排把 `代码/界面/界面规格.gd` → `Views/hud/界面规格.gd`、
+**根因**：七块砖重排把 `代码/界面/界面规格.gd` → `Screens/hud/界面规格.gd`、
 `代码/地图核心/地图缩放.gd` → `Game/map/地图缩放.gd`，但 `addons/` 里这两条 `preload` 没跟着改。
 插件是 EditorPlugin，一条 preload 挂掉 → 整个脚本 `valid=false` → `load(...).new()` 才报那句
 看不出因果的 `Nonexistent function 'new'`。
@@ -279,7 +279,7 @@ ERROR: res://addons/map_editor/插件.gd:26 - Invalid call. Nonexistent function
 
 **新增检查**（`Tests/checks/check_all.gd` → `_check_hard_paths`）：把所有 preload、
 `.tres/.tscn` 的 ext_resource、`project.godot` 的自动加载/插件清单逐条对磁盘（本轮 334 条），
-全绿才算过。**反向验证**：临时放一个 `preload("res://Views/hud/这个文件故意不存在.gd")`，
+全绿才算过。**反向验证**：临时放一个 `preload("res://Screens/hud/这个文件故意不存在.gd")`，
 检查立刻报红并指出 `文件:行 → 路径`，删掉后恢复 95/0。
 
 **顺手**：`dist/.gdignore`（`export_release.ps1` 里补写），消掉每次启动的

@@ -142,7 +142,7 @@ func _run() -> void:
 		% [int(row3.get("alive", -1)), int(row3.get("total", -1))])
 
 	# --- 6. 锚点被拆 → 小地图图标必须消失（2026-11-08 玩家口径）---
-	#   小地图不读营地存活数，只读 `anchor_alive`（见 Views/hud/小地图.gd `_draw_creep_camps`）。
+	#   小地图不读营地存活数，只读 `anchor_alive`（见 Screens/hud/小地图.gd `_draw_creep_camps`）。
 	#   这里验的就是那条契约：锚点死了，camps() 那一行必须把 anchor_alive 报成 false；
 	#   否则"失落阵营的窝被拆了，小地图上还挂着一个图标"。
 	var row4: Dictionary = _camp_row(pos)
