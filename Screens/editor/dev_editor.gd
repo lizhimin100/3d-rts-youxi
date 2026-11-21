@@ -1,3 +1,4 @@
+@tool
 extends Control
 ## 《战争原岛》开发者编辑器 · 主壳
 ## 属于：Screens/editor（开发工具，不进发行版）
@@ -15,6 +16,8 @@ const DataScript := preload("res://Screens/editor/dev_data.gd")
 const PageUnits := preload("res://Screens/editor/page_units.gd")
 const PageBuild := preload("res://Screens/editor/page_build.gd")
 const PageLevel := preload("res://Screens/editor/page_level.gd")
+const Backdrop := preload("res://Screens/editor/backdrop.gd")
+const Logo := preload("res://Screens/editor/logo.gd")
 
 var data: RefCounted = null
 
@@ -33,64 +36,12 @@ var _active := 0
 # ===========================================================================
 # 背景：深岩渐变 + 两团冷光 + 等高线（不是网格）
 # ===========================================================================
-class Backdrop extends Control:
-	var accent: Color = Color("#4EA1FF")
-
-	func _ready() -> void:
-		mouse_filter = Control.MOUSE_FILTER_IGNORE
-		resized.connect(queue_redraw)
-
-	func _draw() -> void:
-		var w := size.x
-		var h := size.y
-		var top := Color("#151B27")
-		var bot := Color("#0F131C")
-		var bands := 28
-		for i in bands:
-			var t := float(i) / float(bands - 1)
-			var c := top.lerp(bot, t)
-			draw_rect(Rect2(0.0, h * float(i) / float(bands), w, h / float(bands) + 1.0), c)
-		draw_circle(Vector2(w * 0.18, h * 0.02), w * 0.30, Color(accent.r, accent.g, accent.b, 0.055))
-		draw_circle(Vector2(w * 0.92, h * 0.12), w * 0.18, Color(0.18, 0.45, 0.55, 0.035))
-		# 等高线：只画在左右边缘，像岩层剖面，不形成"棋盘格"
-		for k in 7:
-			var y0 := h * (0.30 + 0.09 * float(k))
-			var pts := PackedVector2Array()
-			for i in 40:
-				var x := w * float(i) / 39.0
-				var y := y0 + sin(x * 0.006 + float(k) * 1.7) * (8.0 + float(k) * 2.5)
-				pts.append(Vector2(x, y))
-			draw_polyline(pts, Color(1, 1, 1, 0.018), 1.0, true)
-
-
-class Logo extends Control:
-	func _ready() -> void:
-		custom_minimum_size = Vector2(42.0, 42.0)
-		mouse_filter = Control.MOUSE_FILTER_IGNORE
-
-	func _draw() -> void:
-		var c := Vector2(size.x * 0.5, size.y * 0.5)
-		var pts := PackedVector2Array()
-		for i in 6:
-			var a := -PI * 0.5 + TAU * float(i) / 6.0
-			pts.append(c + Vector2(cos(a), sin(a)) * 19.0)
-		draw_colored_polygon(pts, Color("#1B2230"))
-		var rim := pts.duplicate()
-		rim.append(pts[0])
-		draw_polyline(rim, Color("#4EA1FF"), 2.0, true)
-		var inner := PackedVector2Array()
-		for i in 3:
-			var a := -PI * 0.5 + TAU * float(i) / 3.0
-			inner.append(c + Vector2(cos(a), sin(a)) * 10.0)
-		inner.append(inner[0])
-		draw_polyline(inner, Color("#45D6A2"), 1.6, true)
-		draw_circle(c, 3.2, Color("#F0B95A"))
-
-
 # ===========================================================================
 # 生命周期
 # ===========================================================================
 func _ready() -> void:
+	size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	size_flags_vertical = Control.SIZE_EXPAND_FILL
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	theme = ThemeKit.build_theme()
 	data = DataScript.new()
@@ -271,7 +222,19 @@ func _build_pages() -> Control:
 	host.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	host.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	host.clip_contents = false
-	margin.add_child(host)
+	if Engine.is_editor_hint():
+		# 编辑器里主屏被侧栏/底部面板压缩，按设计尺寸给页面一个画布，再整体滚动；
+		# 运行时（--shot / 游戏内）仍是满屏自适应，不出滚动条。
+		var scroll := ScrollContainer.new()
+		scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+		scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+		margin.add_child(scroll)
+		host.custom_minimum_size = Vector2(1600.0, 940.0)
+		scroll.add_child(host)
+	else:
+		margin.add_child(host)
 
 	var classes := [PageUnits, PageBuild, PageLevel]
 	for i in classes.size():
@@ -334,7 +297,14 @@ func T(key: String, params: Dictionary = {}) -> String:
 	var i18n := get_node_or_null("/root/I18n")
 	if i18n != null:
 		return String(i18n.call("t", key, params))
-	return key
+	var text := key
+	if data != null:
+		var zh := String(data.call("i18n_zh", key, ""))
+		if not zh.is_empty():
+			text = zh
+	for k in params.keys():
+		text = text.replace("{%s}" % String(k), str(params[k]))
+	return text
 
 
 func mark_dirty() -> void:

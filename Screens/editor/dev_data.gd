@@ -1,3 +1,4 @@
+@tool
 extends RefCounted
 ## 开发者编辑器的数据层：四张 JSON + ui.csv 的读写、查询、校验。
 ## 属于：Screens/editor（开发工具，不进发行版）

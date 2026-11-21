@@ -3,7 +3,7 @@
 	"files": [
 		{
 			"path": "Game/adapters/bridge.gd",
-			"size": 1116
+			"size": 1963
 		},
 		{
 			"path": "Game/adapters/bridge.gd.uid",
@@ -199,7 +199,7 @@
 		},
 		{
 			"path": "Game/config/射程基准.gd",
-			"size": 1913
+			"size": 2487
 		},
 		{
 			"path": "Game/config/射程基准.gd.uid",
@@ -678,16 +678,40 @@
 			"size": 20
 		},
 		{
+			"path": "Screens/editor/backdrop.gd",
+			"size": 1024
+		},
+		{
+			"path": "Screens/editor/backdrop.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Screens/editor/building_glyph.gd",
+			"size": 2146
+		},
+		{
+			"path": "Screens/editor/building_glyph.gd.uid",
+			"size": 20
+		},
+		{
 			"path": "Screens/editor/camp_canvas.gd",
-			"size": 21341
+			"size": 21347
 		},
 		{
 			"path": "Screens/editor/camp_canvas.gd.uid",
 			"size": 20
 		},
 		{
+			"path": "Screens/editor/compare_bars.gd",
+			"size": 1125
+		},
+		{
+			"path": "Screens/editor/compare_bars.gd.uid",
+			"size": 19
+		},
+		{
 			"path": "Screens/editor/dev_data.gd",
-			"size": 18834
+			"size": 18840
 		},
 		{
 			"path": "Screens/editor/dev_data.gd.uid",
@@ -695,7 +719,7 @@
 		},
 		{
 			"path": "Screens/editor/dev_editor.gd",
-			"size": 14926
+			"size": 14156
 		},
 		{
 			"path": "Screens/editor/dev_editor.gd.uid",
@@ -703,15 +727,23 @@
 		},
 		{
 			"path": "Screens/editor/dev_theme.gd",
-			"size": 15475
+			"size": 15477
 		},
 		{
 			"path": "Screens/editor/dev_theme.gd.uid",
 			"size": 20
 		},
 		{
+			"path": "Screens/editor/logo.gd",
+			"size": 820
+		},
+		{
+			"path": "Screens/editor/logo.gd.uid",
+			"size": 20
+		},
+		{
 			"path": "Screens/editor/page_build.gd",
-			"size": 43445
+			"size": 41390
 		},
 		{
 			"path": "Screens/editor/page_build.gd.uid",
@@ -719,7 +751,7 @@
 		},
 		{
 			"path": "Screens/editor/page_level.gd",
-			"size": 14962
+			"size": 14968
 		},
 		{
 			"path": "Screens/editor/page_level.gd.uid",
@@ -727,7 +759,7 @@
 		},
 		{
 			"path": "Screens/editor/page_units.gd",
-			"size": 37905
+			"size": 37848
 		},
 		{
 			"path": "Screens/editor/page_units.gd.uid",
@@ -958,6 +990,10 @@
 			"size": 20
 		},
 		{
+			"path": "Screens/scenes/dev_editor.tscn",
+			"size": 364
+		},
+		{
 			"path": "Screens/scenes/主场景.tscn",
 			"size": 2724
 		},
@@ -968,10 +1004,6 @@
 		{
 			"path": "Screens/scenes/四季演示.tscn",
 			"size": 280
-		},
-		{
-			"path": "Screens/scenes/开发者编辑器.tscn",
-			"size": 314
 		},
 		{
 			"path": "Screens/screens/README.md",
@@ -1599,7 +1631,7 @@
 		},
 		{
 			"path": "Tests/checks/check_all.gd",
-			"size": 71738
+			"size": 72784
 		},
 		{
 			"path": "Tests/checks/check_all.gd.uid",
@@ -1759,7 +1791,7 @@
 		},
 		{
 			"path": "Tests/suites/性能探针.gd",
-			"size": 4568
+			"size": 4541
 		},
 		{
 			"path": "Tests/suites/性能探针.gd.uid",
@@ -1903,7 +1935,7 @@
 		},
 		{
 			"path": "Tools/build/release_exclude.txt",
-			"size": 289
+			"size": 281
 		},
 		{
 			"path": "Tools/checks/negative_demo.py",
@@ -2491,7 +2523,7 @@
 		},
 		{
 			"path": "Content/data/screens.json",
-			"size": 5196
+			"size": 5172
 		},
 		{
 			"path": "Content/data/sim.json",
@@ -2507,19 +2539,19 @@
 		},
 		{
 			"path": "Content/i18n/ui.csv",
-			"size": 23108
+			"size": 23430
 		},
 		{
 			"path": "Content/i18n/ui.en.translation",
-			"size": 12916
+			"size": 13264
 		},
 		{
 			"path": "Content/i18n/ui.note.translation",
-			"size": 13729
+			"size": 13949
 		},
 		{
 			"path": "Content/i18n/ui.zh.translation",
-			"size": 14931
+			"size": 15323
 		},
 		{
 			"path": "Content/keys/assets.json",
@@ -2531,7 +2563,7 @@
 		},
 		{
 			"path": "addons/map_editor/README.md",
-			"size": 8077
+			"size": 8358
 		},
 		{
 			"path": "addons/map_editor/主屏.gd",
@@ -2639,6 +2671,18 @@
 		},
 		{
 			"path": "addons/map_editor/预览工厂.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "addons/war_island_editor/plugin.cfg",
+			"size": 280
+		},
+		{
+			"path": "addons/war_island_editor/plugin.gd",
+			"size": 5293
+		},
+		{
+			"path": "addons/war_island_editor/plugin.gd.uid",
 			"size": 20
 		}
 	]

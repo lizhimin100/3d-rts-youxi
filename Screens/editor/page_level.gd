@@ -1,3 +1,4 @@
+@tool
 extends Control
 ## 03 · 长横道关卡 / 类自走棋营地
 ## 属于：Screens/editor（开发工具，不进发行版）

@@ -25,15 +25,34 @@ extends RefCounted
 const BRIDGE := preload("res://Game/adapters/bridge.gd")
 
 
+static var _r1_fallback: float = -1.0
+
+
 static func _bridge() -> RefCounted:
 	return BRIDGE.get_bridge()
 
-## 基准系数（真值在 C# 内核；这里只转发）
+
+## 基准系数（真值在 C# 内核；这里只转发）。
+## 非 .NET 版 Godot 没有 C# 桥时，退回读 Content/data/combat.json 的 r1
+## —— 那是内容真源，--check 会断言它与内核相等；这里不再刷 push_error。
+static func _fallback_r1() -> float:
+	if _r1_fallback >= 0.0:
+		return _r1_fallback
+	_r1_fallback = 0.0
+	var f := FileAccess.open("res://Content/data/combat.json", FileAccess.READ)
+	if f != null:
+		var text := f.get_as_text()
+		f.close()
+		var v: Variant = JSON.parse_string(text)
+		if v is Dictionary:
+			_r1_fallback = float((v as Dictionary).get("r1", 0.0))
+	return _r1_fallback
+
+
 static func r1() -> float:
 	var m := _bridge()
 	if m == null:
-		push_error("[Model] bridge Mdl missing (C# kernel not built?)")
-		return 0.0
+		return _fallback_r1()
 	return float(m.call("R1"))
 
 

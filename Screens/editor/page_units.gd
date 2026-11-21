@@ -1,3 +1,4 @@
+@tool
 extends Control
 ## 01 · 单位与 DPS 靶场对账
 ## 属于：Screens/editor（开发工具，不进发行版）
@@ -7,6 +8,7 @@ extends Control
 ## 右：靶子模拟器 —— 直接调 C# CombatCalculator.CombatExpect，显示命中/护甲/承伤/克制/期望/DPS
 
 const ThemeKit := preload("res://Screens/editor/dev_theme.gd")
+const CompareBars := preload("res://Screens/editor/compare_bars.gd")
 
 const NUM_INT := ["squad_size", "attack_range", "hit", "dodge", "armor_pen_flat", "pop_cost"]
 
@@ -48,6 +50,7 @@ var _note_field: LineEdit = null
 
 var _target_option: OptionButton = null
 var _lock_badge: PanelContainer = null
+var _kernel_note: Label = null
 var _attacker_name: Label = null
 var _target_name: Label = null
 var _dps_final: Label = null
@@ -237,7 +240,8 @@ func _refresh_row_labels() -> void:
 			sq.add_theme_color_override("font_color", color)
 		if _row_dps.has(id):
 			var dps := _row_dps[id] as Label
-			dps.text = "DPS %.1f" % _card_dps(d)
+			var dv := _card_dps(d)
+			dps.text = "DPS —" if dv < 0.0 else "DPS %.1f" % dv
 
 
 func _refresh_all_row_dps() -> void:
@@ -510,6 +514,11 @@ func _build_right() -> Control:
 	head.add_child(_lock_badge)
 	v.add_child(head)
 
+	_kernel_note = ThemeKit.caption(T("editor.dps.kernel_hint"), ThemeKit.RED)
+	_kernel_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_kernel_note.visible = false
+	v.add_child(_kernel_note)
+
 	var vs := HBoxContainer.new()
 	vs.add_theme_constant_override("separation", 10)
 	var atk_box := VBoxContainer.new()
@@ -657,42 +666,6 @@ func _metric_tile(parent: Control, title_key: String, color: Color) -> Label:
 	return val
 
 
-class CompareBars extends Control:
-	var a_value := 0.0
-	var b_value := 0.0
-	var a_label := ""
-	var b_label := ""
-	var a_color := Color("#B18CFF")
-	var b_color := Color("#4EA1FF")
-
-	func set_data(av: float, bv: float, al: String, bl: String, ac: Color, bc: Color) -> void:
-		a_value = av
-		b_value = bv
-		a_label = al
-		b_label = bl
-		a_color = ac
-		b_color = bc
-		queue_redraw()
-
-	func _draw() -> void:
-		var f := get_theme_default_font()
-		var w := size.x
-		var maxv := maxf(maxf(a_value, b_value), 0.01)
-		var rows := [
-			[a_label, a_value, a_color, 34.0],
-			[b_label, b_value, b_color, 66.0],
-		]
-		for row in rows:
-			var label := String(row[0])
-			var val := float(row[1])
-			var c: Color = row[2]
-			var y := float(row[3])
-			if f != null:
-				draw_string(f, Vector2(0.0, y - 5.0), label, HORIZONTAL_ALIGNMENT_LEFT, -1.0, 12, Color("#96A3BA"))
-				draw_string(f, Vector2(w - 58.0, y - 5.0), "%.1f" % val, HORIZONTAL_ALIGNMENT_RIGHT, 58.0, 12, c)
-			draw_rect(Rect2(0.0, y, w, 7.0), Color("#111722"))
-			draw_rect(Rect2(0.0, y, maxf(w * val / maxv, 2.0), 7.0), Color(c.r, c.g, c.b, 0.82))
-
 
 # ===========================================================================
 # 选中 / 装载
@@ -805,6 +778,26 @@ func _refresh_dps() -> void:
 	_attacker_name.text = String(_unit.get("display_name", _unit_id))
 	_attacker_name.add_theme_color_override("font_color", ThemeKit.faction_color(fid))
 
+	if _bridge() == null:
+		if _kernel_note != null:
+			_kernel_note.visible = true
+		_dps_final.text = "—"
+		_dps_squad.text = "—"
+		for mk in _metric.keys():
+			_metric[mk].text = "—"
+		for sk in _steps.keys():
+			_steps[sk].text = "—"
+		ThemeKit.set_chip(_verdict_chip, T("editor.dps.kernel_missing"), ThemeKit.RED)
+		_target_info.text = ""
+		_formula_label.text = T("editor.dps.kernel_hint")
+		_bars.call("set_data", 0.0, 0.0,
+			String(_unit.get("display_name", _unit_id)), String(d.get("display_name", _target_id)),
+			ThemeKit.TEXT_DIM, ThemeKit.TEXT_DIM)
+		_sync_target_option()
+		return
+
+	if _kernel_note != null:
+		_kernel_note.visible = false
 	var a := _expect(_unit, d)
 	var b := _expect(d, _unit)
 	var dps := float(a.get("dps", 0.0))
@@ -869,6 +862,8 @@ func _card_dps(u: Dictionary) -> float:
 		"armor_type": String((data.call("armor_types") as Array)[2]),
 		"dodge": 0.0,
 	}
+	if _bridge() == null:
+		return -1.0
 	var r := _expect(u, dummy)
 	return float(r.get("dps", 0.0))
 

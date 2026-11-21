@@ -64,3 +64,6 @@ dist/
 # 开发者编辑器验收截图（run-game --shot 现场生成，需要留档时放 Documents/图/）
 /editor_preview.png
 /editor_preview.png.import
+
+/editor_plugin_preview.png
+/editor_plugin_preview.png.import

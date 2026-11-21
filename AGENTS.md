@@ -20,7 +20,7 @@ Content/    内容与资产：data/（JSON 唯一数值源）i18n/ keys/ art/ au
 Tests/      无窗口自检：checks/（--check 入口）sim/（--simulate）model/（规则用例）suites/（历史自检）。
 Tools/      稳定流程脚本：run-game.ps1（唯一入口）gen/ build/ qa/ migrate/。
 Documents/  设计真相与专题：concept.md / combat_formula.md / 战斗与规划.md / architecture.md / 专题与索引。
-addons/     Godot 编辑器插件（地图编辑器）。不进发行版。
+addons/     Godot 编辑器插件：war_island_editor=开发者编辑器（默认）；map_editor=旧地图编辑器（默认禁用）。不进发行版。
 ```
 
 ## 硬约定

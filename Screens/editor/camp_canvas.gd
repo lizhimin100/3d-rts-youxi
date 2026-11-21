@@ -1,3 +1,4 @@
+@tool
 extends Control
 ## 类自走棋营地摆放器（自定义绘制）
 ## 属于：Screens/editor（开发工具，不进发行版）

@@ -315,3 +315,5 @@ editor.build.form_hint,人口 / produce_tag / 模型 / 耐久,Pop / produce_tag 
 editor.dps.rules_title,对账口径,Reconciliation,靶场底部
 editor.dps.rules_chain,命中 → 暴击 → 穿透 → 承伤 → 克制 → 最终,Hit → Crit → Pen → Mitigation → Counter → Final,结算链路
 editor.dps.rules_const,护甲 0.06 · 负甲封顶 3× · 暴击 2×,Armor 0.06 · negative cap 3× · crit 2×,规格常数
+editor.dps.kernel_missing,DPS 需要 .NET 内核,DPS needs the .NET kernel,非 .NET 版 Godot
+editor.dps.kernel_hint,当前 Godot 不是 .NET 版，或 C# 内核未编译；数据编辑与写回仍可用。,This Godot build has no C# support or the kernel is not built. Data editing still works.,非 .NET 版 Godot 提示

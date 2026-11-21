@@ -1,3 +1,4 @@
+@tool
 extends RefCounted
 ## 《战争原岛》开发者编辑器 · 深色工具主题
 ## 属于：Screens/editor（开发工具，不进发行版）
@@ -382,12 +383,12 @@ static func build_theme() -> Theme:
 	th.set_constant("v_separation", "PopupMenu", 5)
 
 	# 滚动条
-	th.set_stylebox("scroll", "VScrollBar", box(Color(0, 0, 0, 0), Color(0, 0, 0, 0), 4, 0, 3.0, 0.0))
-	th.set_stylebox("grabber", "VScrollBar", box(Color("#2A3345"), Color(0, 0, 0, 0), 4, 0, 3.0, 0.0))
-	th.set_stylebox("grabber_highlight", "VScrollBar", box(Color("#3C4A63"), Color(0, 0, 0, 0), 4, 0, 3.0, 0.0))
-	th.set_stylebox("grabber_pressed", "VScrollBar", box(ACCENT_DIM, Color(0, 0, 0, 0), 4, 0, 3.0, 0.0))
-	th.set_stylebox("scroll", "HScrollBar", box(Color(0, 0, 0, 0), Color(0, 0, 0, 0), 4, 0, 0.0, 3.0))
-	th.set_stylebox("grabber", "HScrollBar", box(Color("#2A3345"), Color(0, 0, 0, 0), 4, 0, 0.0, 3.0))
+	th.set_stylebox("scroll", "VScrollBar", box(Color(0, 0, 0, 0), Color(0, 0, 0, 0), 4, 0, 5.0, 0.0))
+	th.set_stylebox("grabber", "VScrollBar", box(Color("#3C4A63"), Color(0, 0, 0, 0), 4, 0, 5.0, 0.0))
+	th.set_stylebox("grabber_highlight", "VScrollBar", box(Color("#4EA1FF"), Color(0, 0, 0, 0), 4, 0, 5.0, 0.0))
+	th.set_stylebox("grabber_pressed", "VScrollBar", box(ACCENT, Color(0, 0, 0, 0), 4, 0, 5.0, 0.0))
+	th.set_stylebox("scroll", "HScrollBar", box(Color(0, 0, 0, 0), Color(0, 0, 0, 0), 4, 0, 0.0, 5.0))
+	th.set_stylebox("grabber", "HScrollBar", box(Color("#3C4A63"), Color(0, 0, 0, 0), 4, 0, 0.0, 5.0))
 
 	# 进度条（意图池权重条）
 	th.set_stylebox("background", "ProgressBar", box(Color("#111722"), STROKE, 4, 0, 0.0, 0.0))

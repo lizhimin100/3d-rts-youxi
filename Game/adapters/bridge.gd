@@ -10,20 +10,39 @@ extends RefCounted
 const BRIDGE_PATH := "res://Screens/bridge/ModelBridge.cs"
 
 static var _inst: RefCounted = null
-static var _reported: bool = false
+static var _checked: bool = false
+static var _unavailable: bool = false
 
 
+## 取桥。非 .NET 版 Godot（例如 Steam 标准版）会安静地返回 null：
+##   · 编辑器仍然能改数据/写回（dev_data 只读 JSON，不依赖 C#）；
+##   · DPS 靶场会显示“需要 .NET 内核”，而不是刷一堆 No loader found。
 static func get_bridge() -> RefCounted:
 	if _inst != null and is_instance_valid(_inst):
 		return _inst
+	if not _checked:
+		_checked = true
+		if not ClassDB.class_exists("CSharpScript"):
+			_unavailable = true
+			print("[Model] C# kernel unavailable: this Godot build has no C# support. Data editing works; DPS needs a .NET build.")
+			return null
+		if not FileAccess.file_exists(BRIDGE_PATH):
+			_unavailable = true
+			print("[Model] bridge file missing: " + BRIDGE_PATH)
+			return null
+		if not ResourceLoader.exists(BRIDGE_PATH, "Script"):
+			_unavailable = true
+			print("[Model] bridge not loadable (C# assembly not built?): " + BRIDGE_PATH)
+			return null
+	if _unavailable:
+		return null
 	var s := load(BRIDGE_PATH) as Script
 	if s == null:
-		if not _reported:
-			_reported = true
-			push_error("[Model] bridge script not loadable: " + BRIDGE_PATH)
+		_unavailable = true
+		print("[Model] bridge script not loadable: " + BRIDGE_PATH)
 		return null
 	_inst = s.new() as RefCounted
-	if _inst == null and not _reported:
-		_reported = true
-		push_error("[Model] bridge instantiate failed (C# kernel not built?)")
+	if _inst == null:
+		_unavailable = true
+		print("[Model] bridge instantiate failed (C# kernel not built?)")
 	return _inst

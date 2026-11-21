@@ -929,12 +929,16 @@ func _check_dev_editor() -> void:
 	var problems: Array[String] = []
 	# 1) 脚本 / 数据层 / 场景
 	var scripts := ["dev_editor.gd", "dev_theme.gd", "dev_data.gd", "page_units.gd",
-		"page_build.gd", "page_level.gd", "camp_canvas.gd"]
+		"page_build.gd", "page_level.gd", "camp_canvas.gd", "backdrop.gd", "logo.gd",
+		"compare_bars.gd", "building_glyph.gd"]
 	for f in scripts:
 		if not FileAccess.file_exists("res://Screens/editor/" + f):
 			problems.append("缺 " + f)
-	if not FileAccess.file_exists("res://Screens/scenes/开发者编辑器.tscn"):
+	if not FileAccess.file_exists("res://Screens/scenes/dev_editor.tscn"):
 		problems.append("缺开发者编辑器场景")
+	for f in ["res://addons/war_island_editor/plugin.cfg", "res://addons/war_island_editor/plugin.gd"]:
+		if not FileAccess.file_exists(f):
+			problems.append("缺 " + f)
 	_ok("开发者编辑器框架齐全（主壳/主题/数据/三页/营地画布/场景）", problems.is_empty(), "; ".join(problems))
 
 	var data_script: Script = load("res://Screens/editor/dev_data.gd")
@@ -1086,7 +1090,9 @@ func _check_dev_editor() -> void:
 	_ok("ui.csv 含编辑器框架 key 与三条术语表", lack_keys.is_empty(), ", ".join(lack_keys))
 
 	var hard := 0
-	for f in _walk("res://Screens/editor"):
+	var hard_files: Array = _walk("res://Screens/editor")
+	hard_files.append("res://addons/war_island_editor/plugin.gd")
+	for f in hard_files:
 		if f.ends_with(".gd"):
 			hard += _count_cjk_literals(_read(f))
 	_ok("开发者编辑器源码零写死中文（连路径都用 ASCII）", hard == 0, "实测 %d 处" % hard)
@@ -1096,6 +1102,11 @@ func _check_dev_editor() -> void:
 	_ok("截图画面 editor 已登记（scene + click + expect）",
 		not ed.is_empty() and FileAccess.file_exists(String(ed.get("scene", ""))) and ed.has("click") and ed.has("expect"),
 		str(ed.keys()))
+
+	var proj := _read("res://project.godot")
+	_ok("Godot 主屏默认启用战争原岛开发者编辑器（旧地图编辑器已禁用）",
+		proj.contains("addons/war_island_editor/plugin.cfg") and not proj.contains("addons/map_editor/plugin.cfg"),
+		"enabled=" + str(proj.contains("addons/war_island_editor/plugin.cfg")) + " old=" + str(proj.contains("addons/map_editor/plugin.cfg")))
 
 	var rel := _read("res://Tools/build/release_exclude.txt")
 	_ok("发行排除清单含开发者编辑器（Screens/editor）", rel.contains("Screens/editor"))
@@ -1409,6 +1420,13 @@ func _check_legacy_removed() -> void:
 		var ft := _read(f)
 		if ft.contains("fog_system") or ft.contains("class_name RtsFog"):
 			problems.append("%s 还引用迷雾节点" % f.replace("res://", ""))
+
+	# 2b) 旧测试也不许再引用已删掉的迷雾类（2026-11-21 性能探针就是这样红的）
+	for f in _walk("res://Tests"):
+		if not f.ends_with(".gd") or f.ends_with("check_all.gd"):
+			continue
+		if _read(f).contains("RtsFog"):
+			problems.append("%s 还引用已删除的 RtsFog" % f.replace("res://", ""))
 
 	# 3) 全图 A*：NavGrid 里不许再有寻路入口/堆
 	var nav := _read("res://Game/pathing/占格网格.gd")

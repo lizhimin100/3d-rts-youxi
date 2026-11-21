@@ -49,7 +49,6 @@ func _process(delta: float) -> void:
 		"u.move": RtsUnit.dbg_move,
 		"u.sep": RtsUnit.dbg_sep,
 		"u.ground": RtsUnit.dbg_ground,
-		"fog": RtsFog.dbg_usec,
 		"hud": RtsHud.dbg_usec,
 		# u.order 的子项：把"这一大块到底谁在吃"拆开
 		"o.acq": RtsUnit.dbg_acquire,
