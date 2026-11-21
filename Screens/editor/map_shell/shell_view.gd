@@ -1227,6 +1227,12 @@ func finish_region() -> Array:
 func _build_tiles() -> void:
 	for c in tiles_root.get_children():
 		c.queue_free()
+	# ★ 每次重建都把 terrain_y 重新贴一次地形：扩容 / 改尺寸 / 刷地形之后，
+	#   格子原来记的高度已经过期，不重贴就会浮空或陷进土里（2026-11-21 实测）。
+	for t in ShellStore.tiles(shell):
+		var td0: Dictionary = t
+		td0["terrain_y"] = snappedf(ShellStore.height_at_shell(
+			shell, heights, float(td0.get("x", 0.0)), float(td0.get("z", 0.0))), 0.001)
 	for t in ShellStore.tiles(shell):
 		var td: Dictionary = t
 		var idx := int(td.get("index", 0))
