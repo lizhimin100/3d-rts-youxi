@@ -26,7 +26,7 @@ var _walk_info: Dictionary = {}
 ## 地形
 var terrain: RtsTerrain = null
 ## 寻路器
-var pathfinder: GridPathfinder = null
+var pathfinder: NavGrid = null
 ## 地图数据
 var map_data: MapGenerator.MapData = null
 ## 地图定义（只有走 MapDef 建关时才有；默认程序化地图为 null）
@@ -51,7 +51,7 @@ var _props_root: Node3D = null
 var _harvestables: Array = []
 
 ## ★ 道具占格的引用计数（"这格到底还有谁占着"）。
-## 为什么必须有：`GridPathfinder.mark_blocked(cell, false)` 只知道"这格现在可走"，
+## 为什么必须有：`NavGrid.mark_blocked(cell, false)` 只知道"这格现在可走"，
 ## 不知道是**谁**挡的。砍树时如果无脑放开 2×2/圆里的所有格，会把邻树、岩石、
 ## 甚至水面/建筑的格子一起打开 —— 于是 A* 认为能穿树，单位真的走进树冠后停住。
 ## 现在：cell 索引 → 占着它的实体数量；只有计数归零、且不是地形/水/边界挡的，
@@ -185,7 +185,7 @@ func _build_world(cfg: GameConfig) -> void:
 	_prepare_walkability()
 
 	# --- 3. 寻路网格 ---
-	pathfinder = GridPathfinder.new()
+	pathfinder = NavGrid.new()
 	pathfinder.build(world_size, map_data.walkable)
 	# 建完立即统计"每格被哪个道具占着"：砍树释放要靠它做引用计数。
 	_rebuild_prop_owners()
@@ -824,33 +824,25 @@ func snap_to_ground(pos: Vector3) -> Vector3:
 
 
 ## 取寻路器
-func grid_pathfinder() -> GridPathfinder:
+func grid_pathfinder() -> NavGrid:
 	return pathfinder
 
 
-## 带地形高度的路径（签名不变；内部做"贴地加密"）
+## 带地形高度的**直线路径**（签名不变，但不再做全图寻路）
 ##
-## radius < 0 = 用寻路器的默认身位（0.5m）。**大身位单位（如 0.58 的蒸汽重步兵）
-## 应该把自己的净空传进来**，否则 A* 可能规划出"1 格宽的缝"——它挤不进去，
-## 到了缝口就被 `_steer` 判死，表现为"卡住不动"。
+## 2026-11-20：重型自由全图 A* 已废弃（《战争原岛》走单通道 + 小队自动推进，
+## 不再需要"绕开整张地图"的规划）。这里只把起终点连成一条直线，
+## 再按 0.75m 采样补上贴地点 —— 避免坡顶/坡脚中段离地。
+## 真正的避障由单位自己的 `_steer`（贴墙滑动 + 分离 + 推出）负责。
 ##
-## 为什么还要加密：A* 只保证**途经格可走**，路径平滑后相邻两个路点可能隔十几米；
-## 一条直线段跨过圆润的坡顶/坡脚时，中段会离地 1~3m（单位脚下贴地，但转向轨迹会飘）。
-## 这里按 0.75m 采样，凡中段与线性插值高差 >0.35m 就插入一个贴地中点（最多递归 3 层），
-## 让路点真的贴着坡面走。坡道/台地边缘的"贴地"就是这么补出来的。
+## radius 参数保留（旧调用方都在传），现在只用于"落点吸附"，不参与路径形状。
 func find_path(from: Vector3, to: Vector3, radius: float = -1.0) -> PackedVector3Array:
-	if pathfinder == null:
-		return PackedVector3Array()
-	var raw: PackedVector3Array = pathfinder.find_path(from, to, radius)
-	if raw.is_empty():
-		return PackedVector3Array()
 	var start: Vector3 = snap_to_ground(from)
+	var goal: Vector3 = snap_to_ground(to)
+	if radius >= 0.0 and pathfinder != null:
+		goal = snap_to_ground(pathfinder.nearest_standable(goal, radius))
 	var out := PackedVector3Array()
-	var prev: Vector3 = start
-	for p in raw:
-		var pt: Vector3 = snap_to_ground(p)
-		_append_ground_segment(out, prev, pt, 0)
-		prev = pt
+	_append_ground_segment(out, start, goal, 0)
 	return out
 
 

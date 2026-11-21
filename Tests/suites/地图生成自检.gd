@@ -233,33 +233,48 @@ func _test_gorges(a: MapGenerator.MapData, cfg: GameConfig) -> void:
 # 连通性
 # ===========================================================================
 func _test_connectivity(a: MapGenerator.MapData, cfg: GameConfig) -> void:
-	var pf := GridPathfinder.new()
-	pf.build(a.size, a.walkable)
-	var base_a := Vector3(cfg.player_base_pos.x, 0.0, cfg.player_base_pos.y)
-	var base_b := Vector3(cfg.enemy_base_pos.x, 0.0, cfg.enemy_base_pos.y)
-	var mid := Vector3(0.0, 0.0, 0.0)
-	var p_ab: PackedVector3Array = pf.find_path(base_a, base_b)
-	_ok("双方基地之间可通", p_ab.size() > 0, "路点 %d" % p_ab.size())
-	var p_ac: PackedVector3Array = pf.find_path(base_a, mid)
-	_ok("基地 → 中央台地可通", p_ac.size() > 0, "路点 %d" % p_ac.size())
-	for i in range(a.mines.size()):
-		var m: Vector2 = a.mines[i]
-		var p: PackedVector3Array = pf.find_path(base_a, Vector3(m.x, 0.0, m.y))
-		_ok("基地 → 金矿 %d 可通" % (i + 1), p.size() > 0,
-			"(%.0f,%.0f) 路点 %d" % [m.x, m.y, p.size()])
-	# 树：能从基地寻到（抽样 12 棵，避免 150 次 A* 拖慢自检）
-	var sample: int = mini(12, a.trees.size())
-	var reach: int = 0
-	for i in range(sample):
-		var t: Vector2 = a.trees[i * maxi(1, a.trees.size() / sample)]
-		var p: PackedVector3Array = pf.find_path(base_a, Vector3(t.x, 0.0, t.y))
-		if p.size() > 0:
-			reach += 1
-	_ok("基地 → 树林可通（抽样 %d 棵）" % sample, reach == sample, "%d/%d" % [reach, sample])
-	# 出生点可走
-	_ok("玩家出生点可走", pf.is_walkable(base_a))
-	_ok("敌人出生点可走", pf.is_walkable(base_b))
-	# 可走面积合理（别整张图都不可走）
+	# 2026-11-20：全图 A* 已删除，连通性改用**可走性洪泛**（4 邻域，1m 格）。
+	# 它回答的是同一件事（"这块地和那块地是不是连成一片"），但只扫一遍 O(n²)。
+	var n: int = a.size
+	var walk: PackedByteArray = a.walkable
+	var base_a := Vector2i(int(cfg.player_base_pos.x + n * 0.5), int(cfg.player_base_pos.y + n * 0.5))
+	var base_b := Vector2i(int(cfg.enemy_base_pos.x + n * 0.5), int(cfg.enemy_base_pos.y + n * 0.5))
+	var seen: PackedByteArray = PackedByteArray()
+	seen.resize(n * n)
+	var q: PackedInt32Array = PackedInt32Array()
+	var start: int = base_a.y * n + base_a.x
+	if start >= 0 and start < n * n and walk[start] != 0:
+		seen[start] = 1
+		q.append(start)
+	var head: int = 0
+	while head < q.size():
+		var idx: int = q[head]
+		head += 1
+		var x: int = idx % n
+		var z: int = idx / n
+		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			var nx: int = x + d.x
+			var nz: int = z + d.y
+			if nx < 0 or nz < 0 or nx >= n or nz >= n:
+				continue
+			var ni: int = nz * n + nx
+			if seen[ni] != 0 or walk[ni] == 0:
+				continue
+			seen[ni] = 1
+			q.append(ni)
+	var reach_ok := func(v: Vector2i) -> bool:
+		var ix: int = v.y * n + v.x
+		return ix >= 0 and ix < n * n and seen[ix] != 0
+	_ok("双方基地之间可通（洪泛）", reach_ok.call(base_b), "可达 %d 格" % q.size())
+	_ok("基地 → 中央台地可通（洪泛）", reach_ok.call(Vector2i(n / 2, n / 2)))
+	var mines_ok: int = 0
+	for m in a.mines:
+		if reach_ok.call(Vector2i(int(m.x + n * 0.5), int(m.y + n * 0.5))):
+			mines_ok += 1
+	_ok("基地 → 全部金矿可通（洪泛）", mines_ok == a.mines.size(), "%d/%d" % [mines_ok, a.mines.size()])
+	_ok("玩家出生点可走", walk[start] != 0)
+	_ok("敌人出生点可走", base_b.x >= 0 and base_b.x < n and base_b.y >= 0 and base_b.y < n
+		and walk[base_b.y * n + base_b.x] != 0)
 	var pct: float = float(a.stats.get("walkable_pct", 0.0))
 	_ok("可走面积在 40%…92% 之间", pct > 40.0 and pct < 92.0, "%.1f%%" % pct)
 

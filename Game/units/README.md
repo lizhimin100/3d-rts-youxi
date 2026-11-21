@@ -26,7 +26,6 @@
 
 ```text
 godot --headless --path . --quit-after 200 -- --qa-terrain
-godot --headless --path . --script Tests/suites/寻路抖动自检.gd
 ```
 
 ## 已知坑

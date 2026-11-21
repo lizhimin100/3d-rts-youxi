@@ -6,12 +6,24 @@
 			"size": 1116
 		},
 		{
+			"path": "Game/adapters/bridge.gd.uid",
+			"size": 20
+		},
+		{
 			"path": "Game/adapters/damage.gd",
 			"size": 1871
 		},
 		{
+			"path": "Game/adapters/damage.gd.uid",
+			"size": 20
+		},
+		{
 			"path": "Game/adapters/economy.gd",
 			"size": 2059
+		},
+		{
+			"path": "Game/adapters/economy.gd.uid",
+			"size": 20
 		},
 		{
 			"path": "Game/adapters/layout_card.gd",
@@ -24,6 +36,10 @@
 		{
 			"path": "Game/adapters/progression.gd",
 			"size": 1436
+		},
+		{
+			"path": "Game/adapters/progression.gd.uid",
+			"size": 20
 		},
 		{
 			"path": "Game/adapters/rng.gd",
@@ -46,8 +62,16 @@
 			"size": 765
 		},
 		{
+			"path": "Game/adapters/skirmish.gd.uid",
+			"size": 19
+		},
+		{
 			"path": "Game/adapters/可用性.gd",
 			"size": 1673
+		},
+		{
+			"path": "Game/adapters/可用性.gd.uid",
+			"size": 20
 		},
 		{
 			"path": "Game/audio/音效管理.gd",
@@ -68,6 +92,10 @@
 		{
 			"path": "Game/commands/部署类型.gd",
 			"size": 656
+		},
+		{
+			"path": "Game/commands/部署类型.gd.uid",
+			"size": 20
 		},
 		{
 			"path": "Game/config/card_store.gd",
@@ -303,7 +331,7 @@
 		},
 		{
 			"path": "Game/core/关卡.gd",
-			"size": 66857
+			"size": 66468
 		},
 		{
 			"path": "Game/core/关卡.gd.uid",
@@ -327,7 +355,7 @@
 		},
 		{
 			"path": "Game/core/游戏状态.gd",
-			"size": 35121
+			"size": 35902
 		},
 		{
 			"path": "Game/core/游戏状态.gd.uid",
@@ -351,7 +379,7 @@
 		},
 		{
 			"path": "Game/map/地图加载器.gd",
-			"size": 47869
+			"size": 47848
 		},
 		{
 			"path": "Game/map/地图加载器.gd.uid",
@@ -367,7 +395,7 @@
 		},
 		{
 			"path": "Game/map/地图定义.gd",
-			"size": 27889
+			"size": 27882
 		},
 		{
 			"path": "Game/map/地图定义.gd.uid",
@@ -383,7 +411,7 @@
 		},
 		{
 			"path": "Game/map/地图校验.gd",
-			"size": 11818
+			"size": 11811
 		},
 		{
 			"path": "Game/map/地图校验.gd.uid",
@@ -391,7 +419,7 @@
 		},
 		{
 			"path": "Game/map/地图生成.gd",
-			"size": 80307
+			"size": 80300
 		},
 		{
 			"path": "Game/map/地图生成.gd.uid",
@@ -431,7 +459,15 @@
 		},
 		{
 			"path": "Game/pathing/README.md",
-			"size": 1180
+			"size": 1173
+		},
+		{
+			"path": "Game/pathing/占格网格.gd",
+			"size": 19718
+		},
+		{
+			"path": "Game/pathing/占格网格.gd.uid",
+			"size": 20
 		},
 		{
 			"path": "Game/pathing/占格规则.gd",
@@ -447,14 +483,6 @@
 		},
 		{
 			"path": "Game/pathing/空间哈希.gd.uid",
-			"size": 20
-		},
-		{
-			"path": "Game/pathing/网格寻路.gd",
-			"size": 34179
-		},
-		{
-			"path": "Game/pathing/网格寻路.gd.uid",
 			"size": 20
 		},
 		{
@@ -575,11 +603,11 @@
 		},
 		{
 			"path": "Game/units/README.md",
-			"size": 1834
+			"size": 1799
 		},
 		{
 			"path": "Game/units/关卡桥.gd",
-			"size": 13566
+			"size": 13614
 		},
 		{
 			"path": "Game/units/关卡桥.gd.uid",
@@ -587,7 +615,7 @@
 		},
 		{
 			"path": "Game/units/单位.gd",
-			"size": 172895
+			"size": 172832
 		},
 		{
 			"path": "Game/units/单位.gd.uid",
@@ -627,7 +655,7 @@
 		},
 		{
 			"path": "Game/units/建筑网格.gd",
-			"size": 13023
+			"size": 12946
 		},
 		{
 			"path": "Game/units/建筑网格.gd.uid",
@@ -636,6 +664,10 @@
 		{
 			"path": "Screens/bridge/ModelBridge.cs",
 			"size": 17778
+		},
+		{
+			"path": "Screens/bridge/ModelBridge.cs.uid",
+			"size": 20
 		},
 		{
 			"path": "Screens/camera/魔兽镜头.gd",
@@ -839,7 +871,7 @@
 		},
 		{
 			"path": "Screens/input/指令系统.gd",
-			"size": 60848
+			"size": 60841
 		},
 		{
 			"path": "Screens/input/指令系统.gd.uid",
@@ -847,7 +879,7 @@
 		},
 		{
 			"path": "Screens/input/移动指示.gd",
-			"size": 34115
+			"size": 34108
 		},
 		{
 			"path": "Screens/input/移动指示.gd.uid",
@@ -1174,28 +1206,56 @@
 			"size": 22896
 		},
 		{
+			"path": "Model/Battle/Skirmish.cs.uid",
+			"size": 20
+		},
+		{
 			"path": "Model/Core/Availability.cs",
 			"size": 10059
+		},
+		{
+			"path": "Model/Core/Availability.cs.uid",
+			"size": 20
 		},
 		{
 			"path": "Model/Core/Damage.cs",
 			"size": 4007
 		},
 		{
+			"path": "Model/Core/Damage.cs.uid",
+			"size": 20
+		},
+		{
 			"path": "Model/Core/Economy.cs",
 			"size": 2697
+		},
+		{
+			"path": "Model/Core/Economy.cs.uid",
+			"size": 20
 		},
 		{
 			"path": "Model/Core/Progression.cs",
 			"size": 3345
 		},
 		{
+			"path": "Model/Core/Progression.cs.uid",
+			"size": 20
+		},
+		{
 			"path": "Model/Core/Rng.cs",
 			"size": 1897
 		},
 		{
+			"path": "Model/Core/Rng.cs.uid",
+			"size": 19
+		},
+		{
 			"path": "Model/Core/RtsUnits.cs",
 			"size": 1200
+		},
+		{
+			"path": "Model/Core/RtsUnits.cs.uid",
+			"size": 19
 		},
 		{
 			"path": "Model/README.md",
@@ -1427,7 +1487,7 @@
 		},
 		{
 			"path": "Tests/suites/README.md",
-			"size": 1521
+			"size": 1453
 		},
 		{
 			"path": "Tests/suites/交互自检.gd",
@@ -1495,7 +1555,7 @@
 		},
 		{
 			"path": "Tests/suites/地图生成自检.gd",
-			"size": 19663
+			"size": 20603
 		},
 		{
 			"path": "Tests/suites/地图生成自检.gd.uid",
@@ -1523,22 +1583,6 @@
 		},
 		{
 			"path": "Tests/suites/地形自检.gd.uid",
-			"size": 20
-		},
-		{
-			"path": "Tests/suites/寻路抖动自检.gd",
-			"size": 44597
-		},
-		{
-			"path": "Tests/suites/寻路抖动自检.gd.uid",
-			"size": 20
-		},
-		{
-			"path": "Tests/suites/寻路自检.gd",
-			"size": 6681
-		},
-		{
-			"path": "Tests/suites/寻路自检.gd.uid",
 			"size": 20
 		},
 		{
@@ -2327,15 +2371,15 @@
 		},
 		{
 			"path": "Content/i18n/ui.en.translation",
-			"size": 2180
+			"size": 2248
 		},
 		{
 			"path": "Content/i18n/ui.note.translation",
-			"size": 1985
+			"size": 2105
 		},
 		{
 			"path": "Content/i18n/ui.zh.translation",
-			"size": 2611
+			"size": 2679
 		},
 		{
 			"path": "Content/keys/assets.json",

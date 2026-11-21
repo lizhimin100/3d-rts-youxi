@@ -11,7 +11,7 @@ extends Resource
 ##   3. **版本化**。CURRENT_VERSION 跟着字段演进递增，MapStore 负责老版本迁移，
 ##      老地图不会一打开就成了乱码。
 ##
-## 坐标约定（与 RtsTerrain / GridPathfinder 完全一致）：
+## 坐标约定（与 RtsTerrain / NavGrid 完全一致）：
 ##   地图以原点为中心，边长 size；高度场是 (height_resolution+1)² 个格点，
 ##   格点 (gx,gz) 的世界坐标 = (-size/2 + gx*cell, -size/2 + gz*cell)。
 

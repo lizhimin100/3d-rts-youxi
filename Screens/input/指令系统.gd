@@ -1496,7 +1496,7 @@ func _walkable(p: Vector3) -> Vector3:
 	var lv := Game.level as RtsLevel
 	if lv == null:
 		return p
-	var pf: GridPathfinder = lv.grid_pathfinder()
+	var pf: NavGrid = lv.grid_pathfinder()
 	if pf != null and pf.has_method("nearest_standable"):
 		return lv.snap_to_ground(pf.nearest_standable(p, 0.5))
 	return lv.walkable_pos(p)

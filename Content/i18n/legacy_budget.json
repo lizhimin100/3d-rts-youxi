@@ -67,7 +67,6 @@
 			"Game/map/玩家槽位.gd": 0,
 			"Game/pathing/占格规则.gd": 0,
 			"Game/pathing/空间哈希.gd": 0,
-			"Game/pathing/网格寻路.gd": 1,
 			"Game/systems/升星.gd": 4,
 			"Game/systems/小队.gd": 2,
 			"Game/systems/小队注册表.gd": 1,
@@ -90,7 +89,8 @@
 			"Game/units/工地表现.gd": 18,
 			"Game/units/建筑.gd": 23,
 			"Game/units/建筑网格.gd": 1,
-			"Game/ai/目标层.gd": 337
+			"Game/ai/目标层.gd": 337,
+			"Game/pathing/占格网格.gd": 1
 		},
 		"Screens": {
 			"Screens/camera/魔兽镜头.gd": 4,

@@ -4,7 +4,7 @@
 
 - **职责**：1m 栅格 A*（8 向、octile 1.25）+ 净空表 + 拉直 + 空间哈希。
 - **不属于这里**：单位怎么走（`单位/单位.gd` 的 `_steer`）、大群流场（`人群/人群流场.gd`）。
-- **唯一入口**：`GridPathfinder.find_path(from, to, radius)`；`RtsWorld.pathfinder()` 拿实例。
+- **唯一入口**：`NavGrid.find_path(from, to, radius)`；`RtsWorld.pathfinder()` 拿实例。
 - **禁改**：`PATH_ROOM_MIN=6` 以下的地形不要放宽（会让 1m 缝进得去出不来）。
 
 ## 关键数字

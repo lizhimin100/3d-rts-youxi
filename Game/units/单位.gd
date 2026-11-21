@@ -295,7 +295,7 @@ var _settle_dist: float = 0.0
 var _crowd_t: float = 0.0
 var _crowd_best: float = INF
 ## 寻路器缓存（RefCounted，关卡重建时 is_instance_valid 会失效，自动重取）
-var _pf: GridPathfinder = null
+var _pf: NavGrid = null
 ## 调试计数（只累加，正式路径不打印；自检/日志读 debug_move_stats）
 var dbg_slide_frames: int = 0
 var dbg_blocked_frames: int = 0
@@ -2427,11 +2427,11 @@ func _standable_goal(want: Vector3) -> Vector3:
 	var r: float = get_radius() * CLEAR_SAFETY
 	# 落点必须留出 GOAL_MARGIN 的余量：站定后还要被同伴推、被分离挤，
 	# 净空刚好 0.5 的落点一推就掉进阻挡判据，然后和 wall_pushout 对拉。
-	if pf.is_standable(want, r + GridPathfinder.GOAL_MARGIN):
+	if pf.is_standable(want, r + NavGrid.GOAL_MARGIN):
 		if perf:
 			RtsUnit.dbg_sgoal += Time.get_ticks_usec() - _t_sg
 		return _spread_goal(want, r) if _spread_allowed() else want
-	var near: Vector3 = pf.standable_near(want, global_position, r, GridPathfinder.GOAL_MARGIN)
+	var near: Vector3 = pf.standable_near(want, global_position, r, NavGrid.GOAL_MARGIN)
 	if perf:
 		RtsUnit.dbg_sgoal += Time.get_ticks_usec() - _t_sg
 	return _spread_goal(near, r) if _spread_allowed() else near
@@ -2477,7 +2477,7 @@ func _spread_goal(center: Vector3, r: float) -> Vector3:
 	for i in range(steps):
 		var a: float = base + TAU * float(i) / float(steps)
 		var cand: Vector3 = center + Vector3(cos(a), 0.0, sin(a)) * ring
-		if not pf.is_standable(cand, r + GridPathfinder.GOAL_MARGIN):
+		if not pf.is_standable(cand, r + NavGrid.GOAL_MARGIN):
 			continue
 		if _spot_taken(cand, r):
 			continue
@@ -2770,7 +2770,7 @@ func _crowded() -> bool:
 # ===========================================================================
 
 ## 取寻路器（缓存；关卡重建时 RefCounted 失效会自动重取）
-func _pathfinder() -> GridPathfinder:
+func _pathfinder() -> NavGrid:
 	if _pf == null or not is_instance_valid(_pf):
 		_pf = RtsWorld.pathfinder()
 	return _pf
@@ -3851,7 +3851,7 @@ func _clear_radius() -> float:
 ##   结果就是挤成一坨、外圈的人被顶住不动。现在"前方有停着/慢吞吞的同伴"也算受阻，
 ##   同样走切线滑动 —— 队伍会自然分成两列绕过去，而不是互相顶。
 func _steer(dir: Vector3, probe: float) -> Vector3:
-	var pf: GridPathfinder = _pathfinder()
+	var pf: NavGrid = _pathfinder()
 	if pf == null:
 		return dir
 	var r: float = _clear_radius()
@@ -3931,7 +3931,7 @@ func _unit_ahead(dir: Vector3, probe: float) -> bool:
 func _update_wall_pushout(dt: float) -> void:
 	if def == null or not is_mobile():
 		return
-	var pf: GridPathfinder = _pathfinder()
+	var pf: NavGrid = _pathfinder()
 	if pf == null:
 		return
 	var r: float = _clear_radius()
@@ -3955,7 +3955,7 @@ func _update_wall_pushout(dt: float) -> void:
 	_pushout_t += dt
 	_pushout_retarget -= dt
 	if not _pushout_has or _pushout_retarget <= 0.0:
-		_pushout_goal = pf.nearest_standable(global_position, r + GridPathfinder.GOAL_MARGIN)
+		_pushout_goal = pf.nearest_standable(global_position, r + NavGrid.GOAL_MARGIN)
 		_pushout_has = true
 		_pushout_retarget = PUSHOUT_RETARGET
 	var d: Vector3 = _pushout_goal - global_position
@@ -3967,7 +3967,7 @@ func _update_wall_pushout(dt: float) -> void:
 		# 连续多帧无解：允许一次兜底（日志可查；正式路径应为 0）
 		dbg_snap_fallbacks += 1
 		global_position = RtsWorld.snap_y(pf.nearest_standable(global_position,
-			r + GridPathfinder.GOAL_MARGIN))
+			r + NavGrid.GOAL_MARGIN))
 		_pushout_t = 0.0
 		_pushout_has = false
 		_need_repath = true

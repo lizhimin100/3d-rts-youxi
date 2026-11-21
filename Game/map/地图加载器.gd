@@ -209,7 +209,7 @@ static func world_cell(m: MapDef, p: Vector2) -> Vector2i:
 
 
 # ===========================================================================
-# MapDef → MapGenerator.MapData（喂给现成的 RtsLevel / GridPathfinder）
+# MapDef → MapGenerator.MapData（喂给现成的 RtsLevel / NavGrid）
 # ===========================================================================
 
 static func to_map_data(m: MapDef) -> MapGenerator.MapData:
@@ -383,7 +383,7 @@ static func spawn_map_objects(m: MapDef, level: RtsLevel) -> void:
 					# 保证游戏里的占地和寻路格、开发者眼里的"轴线"是同一套。
 					var fp: Vector2i = d.footprint
 					var anchor := 建筑网格.snap_point_in(Vector3(gx, 0.0, gz), fp,
-						level.world_size * 0.5, GridPathfinder.CELL)
+						level.world_size * 0.5, NavGrid.CELL)
 					gx = anchor.x
 					gz = anchor.z
 					yaw = 建筑网格.snap_yaw(o.rotation)
@@ -1046,7 +1046,7 @@ static func _place_building(m: MapDef, slot: PlayerSlot, id: StringName, p: Vect
 	var fp: Vector2i = d.footprint if d != null else Vector2i(2, 2)
 	var safe: Vector2 = _clamp_in(m, p, float(maxi(fp.x, fp.y)) * 0.5 + 2.0)
 	var anchor := 建筑网格.snap_point_in(Vector3(safe.x, 0.0, safe.y), fp,
-		m.half_size(), GridPathfinder.CELL)
+		m.half_size(), NavGrid.CELL)
 	m.objects.append(MapObject.make(id, MapObject.Category.BUILDING,
 		Vector3(anchor.x, m.height_at(anchor.x, anchor.z), anchor.z), yaw, 1.0, slot.id))
 

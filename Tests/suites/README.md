@@ -13,7 +13,6 @@
 ```text
 godot --headless --path . --script Tests/suites/界面自检.gd          # UI 8 项
 godot --headless --path . --script Tests/suites/建造自检.gd          # 建造 98 项
-godot --headless --path . --script Tests/suites/寻路抖动自检.gd      # 28/3（常红）
 godot --headless --fixed-fps 60 --path . -- --adjutant-test       # 副官 31/1
 godot --headless --fixed-fps 60 --path . -- --war-test            # 战区指令 10/0
 godot --headless --path . --quit-after 2000 -- --autotest         # 全流程

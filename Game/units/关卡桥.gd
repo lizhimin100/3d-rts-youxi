@@ -107,10 +107,10 @@ static func snap_y(pos: Vector3) -> Vector3:
 # ===========================================================================
 
 ## 取寻路器（没有返回 null）
-static func pathfinder() -> GridPathfinder:
+static func pathfinder() -> NavGrid:
 	var lv: Node3D = level()
 	if lv != null and lv.has_method("grid_pathfinder"):
-		return lv.call("grid_pathfinder") as GridPathfinder
+		return lv.call("grid_pathfinder") as NavGrid
 	return null
 
 
@@ -162,20 +162,12 @@ static func _find_path_impl(from: Vector3, to: Vector3, radius: float = -1.0) ->
 		if out is PackedVector3Array:
 			return out
 		return PackedVector3Array()
-	var pf: GridPathfinder = pathfinder()
-	if pf != null:
-		# 兜底：自己按地形补 y
-		var raw: PackedVector3Array = pf.find_path(from, to, radius)
-		var fixed := PackedVector3Array()
-		for p in raw:
-			fixed.append(snap_y(p))
-		return fixed
 	return PackedVector3Array()
 
 
 ## 某世界坐标是否可走（没有寻路器时认为处处可走，保证能测）
 static func is_walkable(pos: Vector3) -> bool:
-	var pf: GridPathfinder = pathfinder()
+	var pf: NavGrid = pathfinder()
 	if pf == null:
 		return true
 	return pf.is_walkable(pos)
@@ -188,7 +180,7 @@ static func walkable_pos(pos: Vector3) -> Vector3:
 		var out: Variant = lv.call("walkable_pos", pos)
 		if out is Vector3:
 			return out
-	var pf: GridPathfinder = pathfinder()
+	var pf: NavGrid = pathfinder()
 	if pf != null:
 		return snap_y(pf.clamp_to_walkable(pos))
 	return snap_y(pos)
@@ -253,7 +245,7 @@ static func is_buildable(pos: Vector3, footprint: Vector2i) -> bool:
 	var lv: Node3D = level()
 	if lv != null and lv.has_method("is_buildable"):
 		return bool(lv.call("is_buildable", pos, footprint))
-	var pf: GridPathfinder = pathfinder()
+	var pf: NavGrid = pathfinder()
 	if pf == null:
 		return true
 	var center: Vector2i = pf.world_to_cell(pos)
@@ -273,7 +265,7 @@ static func mark_footprint(building: Node3D) -> void:
 		lv.call("mark_footprint", building)
 		return
 	# 兜底：直接操作寻路器
-	var pf: GridPathfinder = pathfinder()
+	var pf: NavGrid = pathfinder()
 	if pf == null or building == null:
 		return
 	var d: UnitDef = building.def
@@ -288,7 +280,7 @@ static func clear_footprint(building: Node3D) -> void:
 	if lv != null and lv.has_method("clear_footprint"):
 		lv.call("clear_footprint", building)
 		return
-	var pf: GridPathfinder = pathfinder()
+	var pf: NavGrid = pathfinder()
 	if pf == null or building == null:
 		return
 	var d: UnitDef = building.def

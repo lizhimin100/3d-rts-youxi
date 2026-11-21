@@ -587,7 +587,7 @@ func _add_ring(pos: Vector3, group: int, order: int) -> void:
 
 ## 这个落点单位站得住吗（没有寻路器时认为可站，保证纯表现Screens/scenes/自检不误报红叉）
 func _dest_reachable(pos: Vector3) -> bool:
-	var pf: GridPathfinder = RtsWorld.pathfinder()
+	var pf: NavGrid = RtsWorld.pathfinder()
 	if pf == null:
 		return true
 	return pf.is_standable(pos, DEST_STAND_RADIUS)
