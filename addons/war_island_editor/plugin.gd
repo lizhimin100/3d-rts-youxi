@@ -142,7 +142,7 @@ func _selftest() -> void:
 	var problems: Array[String] = []
 	if _root == null:
 		problems.append("root")
-	for n in ["page_units", "page_build", "page_level"]:
+	for n in ["page_units", "page_build", "page_layouts", "page_encounters", "page_assembly"]:
 		if _root == null or _find(_root, n) == null:
 			problems.append(n)
 	get_editor_interface().set_main_screen_editor(_get_plugin_name())
@@ -151,7 +151,7 @@ func _selftest() -> void:
 	if _root != null:
 		print("[DevEditor] root=", _root.get_class(), " size=", _root.size, " ms=", _ms.size if _ms != null else Vector2.ZERO,
 			" pages=", _find(_root, "page_units") != null,
-			_find(_root, "page_build") != null, _find(_root, "page_level") != null)
+			_find(_root, "page_build") != null, _find(_root, "page_assembly") != null)
 	print("[DevEditor] selftest=", "PASS" if problems.is_empty() else "FAIL " + str(problems))
 	get_tree().quit(0 if problems.is_empty() else 1)
 

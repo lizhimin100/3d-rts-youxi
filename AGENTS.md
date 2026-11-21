@@ -20,7 +20,7 @@ Content/    内容与资产：data/（JSON 唯一数值源）i18n/ keys/ art/ au
 Tests/      无窗口自检：checks/（--check 入口）sim/（--simulate）model/（规则用例）suites/（历史自检）。
 Tools/      稳定流程脚本：run-game.ps1（唯一入口）gen/ build/ qa/ migrate/。
 Documents/  设计真相与专题：concept.md / combat_formula.md / 战斗与规划.md / architecture.md / 专题与索引。
-addons/     Godot 编辑器插件：war_island_editor=开发者编辑器（默认）；map_editor=旧地图编辑器（默认禁用）。不进发行版。
+addons/     Godot 编辑器插件：war_island_editor=数据工作台（默认）；map_shell_editor=3D 地图底壳编辑器（默认）。不进发行版。
 ```
 
 ## 硬约定
@@ -84,6 +84,7 @@ dotnet build 战争原岛.csproj                   # 只编译内核 + 宿主
 - **2026-11-21 新战斗内核**：6 步伤害唯一实现在 `Model/Combat/CombatCalculator.cs`（命中→暴击→穿透→承伤→6×6 克制→最终），表在 `Content/data/combat.json`；旧 `Model/Core/Damage.cs` 只服务旧 GDScript 战斗层，新代码不许调。
 - **2026-11-21 12 兵种进 `Content/data/units.json`**：三大阵营各 4；距离全用游戏数值；近战无投射物、远程有；默认命中/闪避/暴击 100/0/0；弩兵 `35%+3` 破甲；`bandit_lord` 暂 `enabled=false`；鱼人走占位网格。
 - **2026-11-21 规划与双 90 秒**：`planning.json` 管 CP/人口/卡牌/3 合 1；`levels.json` 管第 1 关两轮波次；建造牌 Exhaust、训练牌按 Tag 全场产兵、策略牌循环；轮末清场，定性复盘按 code 聚合。详见 `Documents/战斗与规划.md`。
+- **2026-11-21 地图底壳 × 玩家布局卡 × 敌人遭遇卡 三分离**：旧 3D 地图编辑器下线，换成 `addons/map_shell_editor`（只做地形/地表笔刷、纯视觉装饰、弯曲脊线 + 4 个分割环、候选石台锚点）。玩家激活哪几座石台与开局建筑写 `Content/data/player_layouts.json`；敌方阵营/基地血量/石台固定建筑/按轮次权重的攻防意图池写 `Content/data/enemy_encounters.json`；`levels.json` 只放 `assembly = {shell, player_layout, enemy_encounter}` 与组合生成的关卡。分割环按 R1=0.015 存三位数逻辑刻度 `t` + 整数逻辑长度；未激活石台局内状态为 `ruin`（唯一实现在 `Game/map/关卡装配.gd`）。详见 `Documents/地图底壳与关卡组装.md`。
 - **2026-11-14 按「七块砖」重排**：`Engine/Model/Screens/Game/Content/Tests/Tools/Documents` 八目录（七块砖 + 迁移期 Game/）。
 - **2026-11-14 数值真源 = JSON**：`Content/data/*.json`；旧 `.tres` 卡退役到 `Content/legacy/cards/`。
 - **2026-11-14 测试模式默认隔离**：静音、无焦点、存档 `res://.test_profile/`；测试不碰玩家真实存档。
@@ -109,6 +110,7 @@ dotnet build 战争原岛.csproj                   # 只编译内核 + 宿主
 | 长局（`--long`） | 作废 | **已删**（用户入口；自检台仍不暂停世界） |
 | 采集 | 作废 | **玩家侧入口已删**（点树=走位、命令卡/规划记录零 GATHER）；`单位.gd` 里的历史状态机待整块删除 |
 | 建造进度条 / 训练读条队列 | 作废 | **待替换**：建筑面板仍是旧 L 型队列；新 UI（手牌/CP）落地时整块删除 |
+| 旧地图编辑器（地图上摆兵种/触发器/A* 网格涂抹/经济） | 作废 | **已删**（`addons/map_editor` 整目录下线；改 `addons/map_shell_editor` + 三张卡） |
 
 > `--check` 的「旧系统已移除」只断言**已经删干净**的那几项；上表"待"的两行不许再加新入口，
 > 删的时候同步把断言加进去（修一处 = 加一条检查）。
@@ -120,6 +122,7 @@ dotnet build 战争原岛.csproj                   # 只编译内核 + 宿主
 - **升星在局内的作用**：三星封顶是否够、是否要"升星消耗手牌"待定。
 - **手机操作**：默认自动施法 + 面板化指令；低端机降级项（阴影/单位数）待实测。
 - **C# 内核继续下沉**：下一步把布局卡、存档 schema、波次编排搬进 `Model/`，GDScript 只留表现。
+- **底壳石台接入正式战斗场景**：局内状态契约（`platform_state` / `ruin_platforms` / `enemy_platforms`）已就绪，主场景的石台与遗迹渲染还需接线。
 
 ### 待决定
 

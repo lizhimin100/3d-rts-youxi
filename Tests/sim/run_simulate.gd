@@ -1,8 +1,9 @@
 extends SceneTree
 ## 职责：--simulate 的入口（只用 Model 跑第 1 关，不渲染、不建场景）
-## 用法：godot --headless --path . --script Tests/sim/run_simulate.gd -- --games=100 --seed=1
+## 用法：godot --headless --path . --script Tests/sim/run_simulate.gd -- --games=100 --seed=1 [--level=<id>] [--out=<path>]
 ## 数据：Content/data/{combat,units,planning,levels}.json（全部交给 C# 内核）
 ## 输出：人读表格 + 3 个定性复盘样本 + 一行机器可读 `SIM {json}`；有错退出码 1。
+## --out：把同一份 summary 写成 JSON 文件（编辑器「战斗节点组装」页靠它拿胜率，不用抓 stdout）。
 
 const JsonFile := preload("res://Engine/util/json_file.gd")
 
@@ -10,7 +11,9 @@ const COMBAT_JSON := "res://Content/data/combat.json"
 const UNITS_JSON := "res://Content/data/units.json"
 const PLANNING_JSON := "res://Content/data/planning.json"
 const LEVELS_JSON := "res://Content/data/levels.json"
-const LEVEL_ID := "level_1"
+
+var _level_id := "level_1"
+var _out_path := ""
 
 
 func _initialize() -> void:
@@ -18,7 +21,12 @@ func _initialize() -> void:
 
 
 func _run() -> void:
-	print("========== 第 1 关推演（联盟 vs 豺狼人 · 双 90 秒） ==========")
+	for a0 in OS.get_cmdline_user_args():
+		if a0.begins_with("--level="):
+			_level_id = a0.substr(8)
+		if a0.begins_with("--out="):
+			_out_path = a0.substr(6)
+	print("========== %s 推演（联盟 vs 敌方 · 双 90 秒） ==========" % _level_id)
 	var bridge_sc := load("res://Game/adapters/bridge.gd")
 	if bridge_sc == null:
 		_fail("桥脚本加载失败")
@@ -45,7 +53,7 @@ func _run() -> void:
 		_fail("Content/data 四张表读不全")
 		return
 
-	var res: Dictionary = mdl.call("LevelSimulate", units, combat, planning, levels, LEVEL_ID, games, seed_base)
+	var res: Dictionary = mdl.call("LevelSimulate", units, combat, planning, levels, _level_id, games, seed_base)
 	if not bool(res.get("ok", false)):
 		print("  ✗ 数据/推演错误：")
 		for e in res.get("errors", []):
@@ -54,7 +62,7 @@ func _run() -> void:
 		return
 
 	print("关卡：%s ｜ %d 局 ｜ 种子 %d..%d ｜ 每局两轮各 90s（轮末清场）" % [
-		String(res.get("level_name", LEVEL_ID)), int(res.get("games", 0)),
+		String(res.get("level_name", _level_id)), int(res.get("games", 0)),
 		seed_base, seed_base + games - 1])
 	print("说明：规划由脚本化规划器执行（可复现）；战斗是纯数学 + 确定性 RNG。")
 	print("---------------------------------------------------------------")
@@ -122,7 +130,7 @@ func _run() -> void:
 
 	var summary := {
 		"ok": true,
-		"level": String(res.get("level", LEVEL_ID)),
+		"level": String(res.get("level", _level_id)),
 		"level_name": String(res.get("level_name", "")),
 		"games": int(res.get("games", 0)),
 		"seed_base": seed_base,
@@ -141,7 +149,26 @@ func _run() -> void:
 		"samples": sample_brief,
 	}
 	print("SIM " + JSON.stringify(summary))
+	_write_out(summary)
 	quit(0)
+
+
+## 编辑器靠这个文件拿胜率：与 stdout 的 SIM 行同一份 summary。
+func _write_out(summary: Dictionary) -> void:
+	if _out_path.is_empty():
+		return
+	var abs_path := _out_path
+	if abs_path.begins_with("res://") or abs_path.begins_with("user://"):
+		abs_path = ProjectSettings.globalize_path(abs_path)
+	var dir := abs_path.get_base_dir()
+	if not dir.is_empty() and not DirAccess.dir_exists_absolute(dir):
+		DirAccess.make_dir_recursive_absolute(dir)
+	var f := FileAccess.open(abs_path, FileAccess.WRITE)
+	if f == null:
+		print("SIM WARN cannot write " + abs_path)
+		return
+	f.store_string(JSON.stringify(summary) + "\n")
+	f.close()
 
 
 func _outcome_en(s: String) -> String:
@@ -156,4 +183,5 @@ func _outcome_en(s: String) -> String:
 
 func _fail(msg: String) -> void:
 	print("SIM FAIL " + msg)
+	_write_out({"ok": false, "error": msg, "level": _level_id})
 	quit(1)

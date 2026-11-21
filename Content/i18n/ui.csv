@@ -269,7 +269,7 @@ editor.level.template_total,三段合计 {v} 数值,Segments total {v} units,横
 editor.level.intent_total,总权重 {v},Total weight {v},意图合计
 editor.level.camp_source,数据源 planning.json board.platforms / board.start,Source planning.json board,营地数据源
 editor.status.source,数据源,Source,状态栏
-editor.status.counts,{u} 兵种 · {b} 建筑 · {c} 卡牌 · {d} 初始卡 · {s} 段横道,{u} units · {b} buildings · {c} cards · {d} deck · {s} segments,状态栏计数
+editor.status.counts,{u} 兵种 · {b} 建筑 · {c} 卡牌 · {d} 初始卡 · {s} 底壳 · {l} 布局卡 · {e} 遭遇卡 · {a} 组装,{u} units · {b} buildings · {c} cards · {d} deck · {s} shells · {l} layouts · {e} encounters · {a} assemblies,状态栏计数
 editor.status.saved_at,上次写回 {t},Saved {t},状态栏
 editor.status.paths,Content/data/*.json · Content/i18n/ui.csv,Content/data/*.json · Content/i18n/ui.csv,状态栏路径
 editor.check.title,数据校验,Validation,校验弹窗
@@ -317,3 +317,194 @@ editor.dps.rules_chain,命中 → 暴击 → 穿透 → 承伤 → 克制 → �
 editor.dps.rules_const,护甲 0.06 · 负甲封顶 3× · 暴击 2×,Armor 0.06 · negative cap 3× · crit 2×,规格常数
 editor.dps.kernel_missing,DPS 需要 .NET 内核,DPS needs the .NET kernel,非 .NET 版 Godot
 editor.dps.kernel_hint,当前 Godot 不是 .NET 版，或 C# 内核未编译；数据编辑与写回仍可用。,This Godot build has no C# support or the kernel is not built. Data editing still works.,非 .NET 版 Godot 提示
+editor.app.reload,重载,Reload,顶栏：重新读盘
+editor.app.reloaded,已重载源目录,Reloaded from source,重载完成
+editor.app.reload_failed,重载失败,Reload failed,重载失败
+editor.tab.layouts,玩家态势布局卡,Player Layout Card,页签 3
+editor.tab.layouts_sub,平势/劣势/优势 · 激活石台 · 开局预设,Posture · active platforms · opening preset,页签 3 副标题
+editor.tab.encounters,敌人遭遇卡,Enemy Encounter Card,页签 4
+editor.tab.encounters_sub,阵营 · 基地血量 · 攻防意图池,Faction · base HP · intent pools,页签 4 副标题
+editor.tab.assembly,战斗节点组装,Combat Node Assembly,页签 5
+editor.tab.assembly_sub,底壳 × 布局 × 遭遇 → 关卡 + 50 局胜率,Shell × layout × encounter → level + 50-game win rate,页签 5 副标题
+editor.layouts.title,玩家态势布局卡,Player Layout Card,布局页标题
+editor.layouts.eyebrow,03 · PLAYER LAYOUT,03 · PLAYER LAYOUT,布局页眉
+editor.layouts.list,布局卡,Layouts,布局页左栏
+editor.layouts.list_count,{n} 张,{n},列表计数
+editor.layouts.add,新建,New,布局页按钮
+editor.layouts.duplicate,复制,Duplicate,布局页按钮
+editor.layouts.delete,删除,Delete,布局页按钮
+editor.layouts.card_sub,{kind} · 激活 {n} 座 · 间隙 {g}m,{kind} · {n} active · gap {g}m,布局卡副文
+editor.layouts.kind,态势,Posture,布局字段
+editor.layouts.preset,预摆开局,Opening preset,布局按钮
+editor.layouts.slots,激活槽位与开局建筑,Active slots and opening buildings,布局右栏
+editor.layouts.slots_hint,勾选 = 局内可建造；未勾选的石台渲染成碎石遗迹。,Checked = buildable; unchecked platforms render as rubble.,布局右栏提示
+editor.layouts.name,显示名,Display name,布局字段
+editor.layouts.note_hint,备注（写回 player_layouts.json）,Note (writes to player_layouts.json),布局备注占位
+editor.layouts.shell_value,底壳 {v},Shell {v},布局角标
+editor.layouts.preset_value,主堡 {k} · 农场 {f} · 兵营 {b},Keep {k} · farm {f} · barracks {b},布局预设角标
+editor.layouts.count_value,激活 {n} 座,{n} active,布局角标
+editor.layouts.gap_value,最小行军间隙 {v} m,Min march gap {v} m,布局角标
+editor.layouts.ruin,碎石遗迹,Rubble ruin,未激活石台
+editor.layouts.ruin_hint,未激活：局内渲染为不可建造的碎石遗迹,Inactive: rendered as unbuildable rubble,未激活说明
+editor.layouts.keep,主堡,Keep,石台角色
+editor.layouts.build,建造,Build,石台角色
+editor.layouts.map,底壳俯视图,Shell top view,布局中栏
+editor.layouts.player_side,玩家区,Player side,俯视图标注
+editor.layouts.enemy_side,敌方区,Enemy side,俯视图标注
+editor.layouts.new_name,新布局卡,New layout,新卡默认名
+editor.shell.missing,没有底壳数据,No shell data,缺底壳占位
+editor.encounters.title,敌人遭遇卡,Enemy Encounter Card,遭遇页标题
+editor.encounters.eyebrow,04 · ENEMY ENCOUNTER,04 · ENEMY ENCOUNTER,遭遇页眉
+editor.encounters.list,遭遇卡,Encounters,遭遇页左栏
+editor.encounters.add,新建,New,遭遇页按钮
+editor.encounters.card_sub,{f} · 基地 {hp} · 固定建筑 {n},{f} · base {hp} · {n} buildings,遭遇卡副文
+editor.encounters.faction,阵营,Faction,遭遇字段
+editor.encounters.base_hp,基地血量,Base HP,遭遇字段
+editor.encounters.map,敌方石台,Enemy platforms,遭遇中栏
+editor.encounters.select_hint,点敌方石台 → 挂固定建筑,Click an enemy platform to attach a building,遭遇中栏提示
+editor.encounters.add_platform,挂到选中石台,Attach to selected,遭遇按钮
+editor.encounters.remove_platform,移除选中,Remove selected,遭遇按钮
+editor.encounters.buildings,固定建筑外观,Fixed building looks,遭遇右栏
+editor.encounters.buildings_hint,只决定外观与星级，不写入玩家布局卡。,Sets looks and stars only; the player layout is untouched.,遭遇右栏提示
+editor.encounters.no_building,还没有固定建筑,No fixed buildings yet,遭遇空态
+editor.encounters.intents,攻防意图池,Attack / defend intent pool,遭遇右栏
+editor.encounters.intents_hint,左边进攻轮、右边防守轮；两列各自要加到 100。,Left is the attack round and right the defend round; each column sums to 100.,意图表提示
+editor.encounters.add_intent,加意图,Add intent,意图按钮
+editor.encounters.intent_custom,自定义意图,Custom intent,新意图默认名
+editor.encounters.attack,进攻轮,Attack,意图列名
+editor.encounters.defend,防守轮,Defend,意图列名
+editor.encounters.sum_value,权重 {a} / {d},Weight {a} / {d},意图合计角标
+editor.encounters.hp_value,基地 {v},Base {v},遭遇角标
+editor.encounters.waves,波次角色,Wave roles,遭遇页脚
+editor.encounters.role_light,轻甲,Light,波次角色
+editor.encounters.role_line,中坚,Line,波次角色
+editor.encounters.role_elite,精英,Elite,波次角色
+editor.encounters.new_name,新遭遇卡,New encounter,新卡默认名
+editor.encounters.intent_probe,斥候试探,Probe,新卡意图
+editor.encounters.intent_press,正面压上,Press,新卡意图
+editor.encounters.intent_flank,侧翼绕后,Flank,新卡意图
+editor.assembly.title,战斗节点组装,Combat Node Assembly,组装页标题
+editor.assembly.eyebrow,05 · LEVEL ASSEMBLY,05 · LEVEL ASSEMBLY,组装页眉
+editor.assembly.compose_hint,三个下拉框选完就是一张可玩关卡；生成会写回 levels.json。,Pick three cards to compose a playable level; writes levels.json.,组装页提示
+editor.assembly.shell,地图底壳,Map shell,组装字段
+editor.assembly.layout,玩家布局卡,Player layout,组装字段
+editor.assembly.encounter,敌人遭遇卡,Enemy encounter,组装字段
+editor.assembly.none,无可选项,No options,组装空态
+editor.assembly.generate,生成 / 刷新关卡,Build / refresh level,组装按钮
+editor.assembly.sim_run,跑 50 局 --simulate,Run 50 games,组装按钮
+editor.assembly.sim_idle,还没跑：点「跑 50 局」拿该组合胜率,Not run yet: click Run 50 games,组装提示
+editor.assembly.sim_ready,已选 {id}：点「跑 50 局」开始,Selected {id}: click Run 50 games,组装提示
+editor.assembly.sim_running,正在跑 {id} 的 {n} 局…,Running {n} games for {id}…,组装提示
+editor.assembly.sim_spawn_failed,起不了模拟进程,Cannot spawn the simulation process,组装失败
+editor.assembly.sim_timeout,等结果超时（看终端或 _qa 输出）,Timed out waiting for the result,组装失败
+editor.assembly.sim_failed,模拟失败：{e},Simulation failed: {e},组装失败
+editor.assembly.sim_done,胜 {w} / 负 {l} / 平 {d} · 胜率 {r}% · 平均 {t}s,W {w} / L {l} / D {d} · {r}% win · avg {t}s,组装结果
+editor.assembly.generated,已生成 {id},Generated {id},组装结果
+editor.assembly.generate_failed,生成失败（引用不闭环）,Build failed (broken references),组装失败
+editor.assembly.list,组合清单,Assemblies,组装右栏
+editor.assembly.list_hint,每条 = 底壳 + 布局卡 + 遭遇卡 + 已经生成/跑过的关卡。,Each row = shell + layout + encounter + the generated level.,组装右栏提示
+editor.assembly.foot,保存直接写回 Content/data/；胜率只做参考，不改数值。,Saves straight to Content/data/; win rate is reference only.,组装页脚
+editor.assembly.pick,载入,Load,组装按钮
+editor.assembly.rate_none,未跑,Not run,胜率角标
+editor.assembly.rate_value,{v} · {n} 局,{v} · {n} games,胜率角标
+editor.assembly.lane_length,长 {v} 数值 · {m} m,Len {v} u · {m} m,组装预览
+editor.assembly.lane_width,宽 {v} 数值 · {m} m,Wid {v} u · {m} m,组装预览
+editor.assembly.lane_zone,敌区 {v} 数值 · {m} m,Zone {v} u · {m} m,组装预览
+editor.assembly.slots,开局槽位,Opening slots,组装预览
+editor.assembly.enemy,敌方,Enemy,组装预览
+editor.assembly.rounds,波次：进攻 {a} 波 / 防守 {d} 波,Waves: {a} attack / {d} defend,组装预览
+editor.assembly.invalid,组合不完整,Incomplete combination,组装预览
+editor.assembly.invalid_hint,底壳/布局卡/遭遇卡的引用没闭环，先在各自页签修好。,Shell; layout or encounter references are broken.,组装预览
+editor.assembly.round_attack,进攻战,Attack round,组装关卡标签
+editor.assembly.round_defend,防守战,Defend round,组装关卡标签
+editor.check.shells,底壳地形/地表/分割环/石台齐全,Shell terrain; surface; dividers and platforms complete,校验
+editor.check.spine,分割环三位数刻度与 R1 换算一致,Divider t is 3-digit and matches R1,校验
+editor.check.layouts,每张布局卡激活石台都存在且有 1 主堡,Every layout has valid platforms and one keep,校验
+editor.check.encounters,阵营/基地血量/固定建筑/意图权重两列各 100,Faction; base HP; buildings; intent columns sum to 100,校验
+editor.check.assemblies,组合引用闭环且关卡已生成,Assembly references close and levels exist,校验
+editor.common.copy,副本,Copy,复制后缀
+shell.title,地图底壳编辑器,Map Shell Editor,底壳编辑器标题
+shell.subtitle,3D MAP SHELL EDITOR · 纯视觉与空间划分,3D MAP SHELL EDITOR · visuals and space only,底壳编辑器副标题
+shell.shell,底壳,Shell,顶栏
+shell.preview_layout,预览布局卡,Preview layout,顶栏
+shell.preview_none,不预览,No preview,顶栏
+shell.r1,R1 = 0.015,R1 = 0.015,距离铁律角标
+shell.reload,重载,Reload,顶栏
+shell.save,保存底壳,Save shell,顶栏
+shell.save_path,写回 Content/data/map_shells.json,Writes Content/data/map_shells.json,状态栏
+shell.state.saved,已写回源目录,Saved to source,状态
+shell.state.dirty,有未写回的改动,Unsaved changes,状态
+shell.state.failed,写回失败,Save failed,状态
+shell.state.reloaded,已重载,Reloaded,状态
+shell.hover.idle,把鼠标移到地形上：坐标 / 高度 / 距离,Move the mouse over the terrain: position and height,视口信息条
+shell.hover.value,x {x} m · z {z} m · 高 {y} m · |x| {raw} 数值,x {x} m · z {z} m · y {y} m · |x| {raw},视口信息条
+shell.tool.terrain,地形/地表,Terrain,左侧工具
+shell.tool.decor,装饰品,Doodads,左侧工具
+shell.tool.spine,脊线/分割,Spine,左侧工具
+shell.tool.platform,石台锚点,Anchors,左侧工具
+shell.terrain.title,地形与地表,Terrain and surface,地形面板
+shell.terrain.eyebrow,01 · TERRAIN,01 · TERRAIN,地形面板眉
+shell.terrain.mode,笔刷,Brush,地形字段
+shell.terrain.raise,抬升,Raise,笔刷
+shell.terrain.lower,降低,Lower,笔刷
+shell.terrain.smooth,平滑,Smooth,笔刷
+shell.terrain.flatten,压平,Flatten,笔刷
+shell.terrain.surface,涂抹地表,Paint surface,笔刷
+shell.terrain.radius,笔刷半径,Brush radius,地形字段
+shell.terrain.strength,强度,Strength,地形字段
+shell.terrain.layer,地表材质,Surface layer,地形字段
+shell.terrain.water,水面高度,Water level,地形字段
+shell.terrain.ambient,环境光,Ambient light,地形字段
+shell.terrain.fog,雾密度,Fog density,地形字段
+shell.terrain.hint,左键按住连续刷；地形与地表都直接写回 map_shells.json。水面是全局平面，环境光作用于整张底壳。,Hold the left button to keep brushing; terrain and surface write straight back to map_shells.json.,地形面板提示
+shell.decor.title,3D 装饰品,3D doodads,装饰面板
+shell.decor.eyebrow,02 · DOODADS,02 · DOODADS,装饰面板眉
+shell.decor.kind,装饰类型,Doodad kind,装饰字段
+shell.decor.tree,树,Tree,装饰类型
+shell.decor.rock,岩石,Rock,装饰类型
+shell.decor.fence,栅栏,Fence,装饰类型
+shell.decor.flag,旗帜,Flag,装饰类型
+shell.decor.stump,树桩,Stump,装饰类型
+shell.decor.crate,木箱,Crate,装饰类型
+shell.decor.none,点视口里的装饰选中，或在空地放一个,Click a doodad to select it or click empty ground to place one,装饰面板
+shell.decor.selected,选中 #{n} · {k} · x {x} z {z} · 缩放 {s},Selected #{n} · {k} · x {x} z {z} · scale {s},装饰面板
+shell.decor.scale,缩放,Scale,装饰字段
+shell.decor.rotate,转 45°,Rotate 45,装饰按钮
+shell.decor.delete,删除,Delete,装饰按钮
+shell.decor.hint,纯视觉：不参与战斗碰撞，也不写进寻路/占位格。通道两侧和营地周围随你摆。,Visual only: no combat collision and no pathing grid.,装饰面板提示
+shell.spine.title,弯曲行军脊线,Curved march spine,脊线面板
+shell.spine.eyebrow,03 · PATH3D,03 · PATH3D,脊线面板眉
+shell.spine.hint,拖动控制点改曲线；拖动分割环改区界；宽度按 R1 换算成三位数逻辑长度写盘。,Drag control points to bend the curve; drag a ring to move a boundary.,脊线面板提示
+shell.spine.width,通道宽度,Channel width,脊线字段
+shell.spine.width_value,{v} 数值 · {m} m,{v} u · {m} m,脊线换算
+shell.spine.dividers,分割环,Divider rings,脊线字段
+shell.spine.divider_value,{v} 数值 · {m} m,{v} u · {m} m,分割环换算
+shell.spine.points,{n} 个曲线控制点,{n} control points,脊线字段
+shell.spine.add_point,加点,Add point,脊线按钮
+shell.spine.remove_point,删末点,Remove last,脊线按钮
+shell.spine.top_view,俯视,Top view,脊线按钮
+shell.divider.player_end,玩家区边界,Player zone edge,分割环
+shell.divider.neutral,中立据点中心,Neutral center,分割环
+shell.divider.push,前压部署线,Forward line,分割环
+shell.divider.base_cross,越线判定线,Base cross line,分割环
+shell.platform.title,独立石台锚点,Stone platform anchors,石台面板
+shell.platform.eyebrow,04 · ANCHORS,04 · ANCHORS,石台面板眉
+shell.platform.hint,点空地新增石台；拖动石台改位置（自动向下吸附地形，石柱底座防悬空）。主堡锚点与普通建造锚点分开标记。,Click empty ground to add a platform; drag to move it. Height snaps to the terrain and the pillar base keeps it grounded.,石台面板提示
+shell.platform.add,新增石台,Add anchor,石台按钮
+shell.platform.snap,吸附地形,Snap to terrain,石台按钮
+shell.platform.renumber,按 x 重编号,Renumber by x,石台按钮
+shell.platform.none,点一座石台看详情,Click an anchor for details,石台面板
+shell.platform.selected,P{i} · {side} · {role} · 地形 {y} m · 底座 {h} m · 半径 {r} m,P{i} · {side} · {role} · terrain {y} m · base {h} m · radius {r} m,石台面板
+shell.platform.radius,半径,Radius,石台字段
+shell.platform.base,底座高,Base height,石台字段
+shell.platform.delete,删除石台,Delete anchor,石台按钮
+shell.platform.side_player,玩家,Player,石台方位
+shell.platform.side_enemy,敌方,Enemy,石台方位
+shell.platform.role_keep,主堡,Keep,石台角色
+shell.platform.role_build,建造,Build,石台角色
+shell.status.counts,石台 {p} · 装饰 {d} · 主堡 {k} · 通道 {w},{p} anchors · {d} doodads · {k} keeps · width {w},状态栏
+shell.status.gap,最小行军间隙 {v} m,Min march gap {v} m,状态栏
+shell.dock.title,地图底壳,Map shell,Dock 标题
+shell.dock.save,保存底壳,Save shell,Dock 按钮
+shell.dock.hint,4 个工具：地形/地表、装饰品、脊线分割、石台锚点。只写 map_shells.json。,Four tools: terrain; doodads; spine and anchors. Writes map_shells.json only.,Dock 提示
+shell.none,没有底壳,No shell,底壳选择空态

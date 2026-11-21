@@ -48,7 +48,7 @@ project/assembly_name="战争原岛"
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/war_island_editor/plugin.cfg")
+enabled=PackedStringArray("res://addons/war_island_editor/plugin.cfg", "res://addons/map_shell_editor/plugin.cfg")
 
 [physics]
 

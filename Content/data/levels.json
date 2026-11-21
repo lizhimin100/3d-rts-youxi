@@ -292,6 +292,953 @@
 				"enemy": "bandit",
 				"start_preset": "1 keep + 2 farm + 1 barracks"
 			}
+		},
+		{
+			"id": "level_asm_even_four__gnoll_press",
+			"display_name": "平势 · 四台稳开 · 豺狼人 · 灰牙压上",
+			"player_faction": "alliance",
+			"enemy_faction": "bandit",
+			"player_base_hp": 2600.0,
+			"enemy_base_hp": 3200.0,
+			"round_seconds": 90.0,
+			"lane": {
+				"length": 4000.0,
+				"width": 420.0,
+				"zone_depth": 600.0,
+				"zone_dps_per_squad": 9.0,
+				"spawn_offset": 250.0,
+				"base_stop": 120.0,
+				"template": "even",
+				"note": "composed from map shell; lengths are game units (x R1 = meters)",
+				"segments": [
+					{
+						"name_key": "editor.level.segment_1",
+						"length": 600.0,
+						"width": 420,
+						"role": "player"
+					},
+					{
+						"name_key": "editor.level.segment_2",
+						"length": 2000.0,
+						"width": 420,
+						"role": "neutral"
+					},
+					{
+						"name_key": "editor.level.segment_3",
+						"length": 1400.0,
+						"width": 420,
+						"role": "enemy"
+					}
+				]
+			},
+			"rounds": [
+				{
+					"kind": "attack",
+					"label": "进攻战",
+					"enemy_waves": [
+						{
+							"t": 0.0,
+							"squads": [
+								{
+									"unit": "bandit_scout",
+									"count": 2,
+									"star": 1
+								},
+								{
+									"unit": "bandit_marauder",
+									"count": 2,
+									"star": 1
+								}
+							]
+						},
+						{
+							"t": 24.0,
+							"squads": [
+								{
+									"unit": "bandit_marauder",
+									"count": 2,
+									"star": 1
+								},
+								{
+									"unit": "bandit_chief",
+									"count": 1,
+									"star": 1
+								}
+							]
+						},
+						{
+							"t": 48.0,
+							"squads": [
+								{
+									"unit": "bandit_scout",
+									"count": 2,
+									"star": 1
+								},
+								{
+									"unit": "bandit_marauder",
+									"count": 2,
+									"star": 1
+								},
+								{
+									"unit": "bandit_chief",
+									"count": 1,
+									"star": 1
+								}
+							]
+						},
+						{
+							"t": 70.0,
+							"squads": [
+								{
+									"unit": "bandit_marauder",
+									"count": 2,
+									"star": 1
+								},
+								{
+									"unit": "bandit_chief",
+									"count": 1,
+									"star": 1
+								}
+							]
+						}
+					]
+				},
+				{
+					"kind": "defend",
+					"label": "防守战",
+					"enemy_waves": [
+						{
+							"t": 0.0,
+							"squads": [
+								{
+									"unit": "bandit_scout",
+									"count": 2,
+									"star": 1
+								},
+								{
+									"unit": "bandit_marauder",
+									"count": 2,
+									"star": 1
+								}
+							]
+						},
+						{
+							"t": 20.0,
+							"squads": [
+								{
+									"unit": "bandit_marauder",
+									"count": 2,
+									"star": 1
+								},
+								{
+									"unit": "bandit_chief",
+									"count": 1,
+									"star": 1
+								}
+							]
+						},
+						{
+							"t": 40.0,
+							"squads": [
+								{
+									"unit": "bandit_scout",
+									"count": 2,
+									"star": 1
+								},
+								{
+									"unit": "bandit_marauder",
+									"count": 2,
+									"star": 1
+								}
+							]
+						},
+						{
+							"t": 60.0,
+							"squads": [
+								{
+									"unit": "bandit_marauder",
+									"count": 2,
+									"star": 1
+								},
+								{
+									"unit": "bandit_chief",
+									"count": 1,
+									"star": 1
+								}
+							]
+						},
+						{
+							"t": 76.0,
+							"squads": [
+								{
+									"unit": "bandit_scout",
+									"count": 2,
+									"star": 1
+								}
+							]
+						}
+					]
+				}
+			],
+			"intent_pool": [
+				{
+					"id": "probe",
+					"display_name": "斥候试探",
+					"weight": 28.0,
+					"weight_defend": 24.0,
+					"note": "小股轻甲压前，逼你交第一轮技能。",
+					"source_encounter": "enc_gnoll_press"
+				},
+				{
+					"id": "press",
+					"display_name": "正面压上",
+					"weight": 34.0,
+					"weight_defend": 30.0,
+					"note": "战士顶前，远程在射程外铺火力。",
+					"source_encounter": "enc_gnoll_press"
+				},
+				{
+					"id": "shaman",
+					"display_name": "萨满火力",
+					"weight": 22.0,
+					"weight_defend": 26.0,
+					"note": "魔法 650 打中甲 0.75，专治重甲阵。",
+					"source_encounter": "enc_gnoll_press"
+				},
+				{
+					"id": "flank",
+					"display_name": "侧翼绕后",
+					"weight": 10.0,
+					"weight_defend": 12.0,
+					"note": "从横道边缘切入远程小队。",
+					"source_encounter": "enc_gnoll_press"
+				},
+				{
+					"id": "allin",
+					"display_name": "全军突击",
+					"weight": 6.0,
+					"weight_defend": 8.0,
+					"note": "最后 20 秒的孤注一掷。",
+					"source_encounter": "enc_gnoll_press"
+				}
+			],
+			"intent_templates": {},
+			"enemy_buildings": [
+				{
+					"platform": 7,
+					"building": "watchtower",
+					"star": 2.0,
+					"yaw": 180.0,
+					"x": 0.720833333333333,
+					"y": 0.388888888888889
+				},
+				{
+					"platform": 9,
+					"building": "barracks",
+					"star": 3.0,
+					"yaw": 180.0,
+					"x": 0.795833333333333,
+					"y": 0.341269841269841
+				},
+				{
+					"platform": 10,
+					"building": "watchtower",
+					"star": 2.0,
+					"yaw": 180.0,
+					"x": 0.795833333333333,
+					"y": 0.658730158730159
+				},
+				{
+					"platform": 11,
+					"building": "keep",
+					"star": 2.0,
+					"yaw": 180.0,
+					"x": 0.816666666666667,
+					"y": 0.5
+				}
+			],
+			"camp": {
+				"player": "alliance",
+				"enemy": "bandit",
+				"start_preset": "1 keep + 2 farm + 1 barracks"
+			},
+			"player_board": {
+				"layout": "layout_even_four",
+				"kind": "even",
+				"active_platforms": [
+					1.0,
+					2.0,
+					3.0,
+					4.0
+				],
+				"slots": [
+					{
+						"platform": 1.0,
+						"building": "keep",
+						"star": 1.0
+					},
+					{
+						"platform": 2.0,
+						"building": "farm",
+						"star": 1.0
+					},
+					{
+						"platform": 3.0,
+						"building": "farm",
+						"star": 1.0
+					},
+					{
+						"platform": 4.0,
+						"building": "barracks",
+						"star": 1.0
+					}
+				]
+			},
+			"assembly": {
+				"shell": "shell_ridge_01",
+				"player_layout": "layout_even_four",
+				"enemy_encounter": "enc_gnoll_press",
+				"r1": 0.015
+			}
+		},
+		{
+			"id": "level_asm_disadvantage_three__gnoll_press",
+			"display_name": "劣势 · 三台死守 · 豺狼人 · 灰牙压上",
+			"player_faction": "alliance",
+			"enemy_faction": "bandit",
+			"player_base_hp": 2600.0,
+			"enemy_base_hp": 3200.0,
+			"round_seconds": 90.0,
+			"lane": {
+				"length": 4000.0,
+				"width": 420.0,
+				"zone_depth": 600.0,
+				"zone_dps_per_squad": 9.0,
+				"spawn_offset": 250.0,
+				"base_stop": 120.0,
+				"template": "disadvantage",
+				"note": "composed from map shell; lengths are game units (x R1 = meters)",
+				"segments": [
+					{
+						"name_key": "editor.level.segment_1",
+						"length": 600.0,
+						"width": 420,
+						"role": "player"
+					},
+					{
+						"name_key": "editor.level.segment_2",
+						"length": 2000.0,
+						"width": 420,
+						"role": "neutral"
+					},
+					{
+						"name_key": "editor.level.segment_3",
+						"length": 1400.0,
+						"width": 420,
+						"role": "enemy"
+					}
+				]
+			},
+			"rounds": [
+				{
+					"kind": "attack",
+					"label": "进攻战",
+					"enemy_waves": [
+						{
+							"t": 0.0,
+							"squads": [
+								{
+									"unit": "bandit_scout",
+									"count": 2,
+									"star": 1
+								},
+								{
+									"unit": "bandit_marauder",
+									"count": 2,
+									"star": 1
+								}
+							]
+						},
+						{
+							"t": 24.0,
+							"squads": [
+								{
+									"unit": "bandit_marauder",
+									"count": 2,
+									"star": 1
+								},
+								{
+									"unit": "bandit_chief",
+									"count": 1,
+									"star": 1
+								}
+							]
+						},
+						{
+							"t": 48.0,
+							"squads": [
+								{
+									"unit": "bandit_scout",
+									"count": 2,
+									"star": 1
+								},
+								{
+									"unit": "bandit_marauder",
+									"count": 2,
+									"star": 1
+								},
+								{
+									"unit": "bandit_chief",
+									"count": 1,
+									"star": 1
+								}
+							]
+						},
+						{
+							"t": 70.0,
+							"squads": [
+								{
+									"unit": "bandit_marauder",
+									"count": 2,
+									"star": 1
+								},
+								{
+									"unit": "bandit_chief",
+									"count": 1,
+									"star": 1
+								}
+							]
+						}
+					]
+				},
+				{
+					"kind": "defend",
+					"label": "防守战",
+					"enemy_waves": [
+						{
+							"t": 0.0,
+							"squads": [
+								{
+									"unit": "bandit_scout",
+									"count": 2,
+									"star": 1
+								},
+								{
+									"unit": "bandit_marauder",
+									"count": 2,
+									"star": 1
+								}
+							]
+						},
+						{
+							"t": 20.0,
+							"squads": [
+								{
+									"unit": "bandit_marauder",
+									"count": 2,
+									"star": 1
+								},
+								{
+									"unit": "bandit_chief",
+									"count": 1,
+									"star": 1
+								}
+							]
+						},
+						{
+							"t": 40.0,
+							"squads": [
+								{
+									"unit": "bandit_scout",
+									"count": 2,
+									"star": 1
+								},
+								{
+									"unit": "bandit_marauder",
+									"count": 2,
+									"star": 1
+								}
+							]
+						},
+						{
+							"t": 60.0,
+							"squads": [
+								{
+									"unit": "bandit_marauder",
+									"count": 2,
+									"star": 1
+								},
+								{
+									"unit": "bandit_chief",
+									"count": 1,
+									"star": 1
+								}
+							]
+						},
+						{
+							"t": 76.0,
+							"squads": [
+								{
+									"unit": "bandit_scout",
+									"count": 2,
+									"star": 1
+								}
+							]
+						}
+					]
+				}
+			],
+			"intent_pool": [
+				{
+					"id": "probe",
+					"display_name": "斥候试探",
+					"weight": 28.0,
+					"weight_defend": 24.0,
+					"note": "小股轻甲压前，逼你交第一轮技能。",
+					"source_encounter": "enc_gnoll_press"
+				},
+				{
+					"id": "press",
+					"display_name": "正面压上",
+					"weight": 34.0,
+					"weight_defend": 30.0,
+					"note": "战士顶前，远程在射程外铺火力。",
+					"source_encounter": "enc_gnoll_press"
+				},
+				{
+					"id": "shaman",
+					"display_name": "萨满火力",
+					"weight": 22.0,
+					"weight_defend": 26.0,
+					"note": "魔法 650 打中甲 0.75，专治重甲阵。",
+					"source_encounter": "enc_gnoll_press"
+				},
+				{
+					"id": "flank",
+					"display_name": "侧翼绕后",
+					"weight": 10.0,
+					"weight_defend": 12.0,
+					"note": "从横道边缘切入远程小队。",
+					"source_encounter": "enc_gnoll_press"
+				},
+				{
+					"id": "allin",
+					"display_name": "全军突击",
+					"weight": 6.0,
+					"weight_defend": 8.0,
+					"note": "最后 20 秒的孤注一掷。",
+					"source_encounter": "enc_gnoll_press"
+				}
+			],
+			"intent_templates": {},
+			"enemy_buildings": [
+				{
+					"platform": 7,
+					"building": "watchtower",
+					"star": 2.0,
+					"yaw": 180.0,
+					"x": 0.720833333333333,
+					"y": 0.388888888888889
+				},
+				{
+					"platform": 9,
+					"building": "barracks",
+					"star": 3.0,
+					"yaw": 180.0,
+					"x": 0.795833333333333,
+					"y": 0.341269841269841
+				},
+				{
+					"platform": 10,
+					"building": "watchtower",
+					"star": 2.0,
+					"yaw": 180.0,
+					"x": 0.795833333333333,
+					"y": 0.658730158730159
+				},
+				{
+					"platform": 11,
+					"building": "keep",
+					"star": 2.0,
+					"yaw": 180.0,
+					"x": 0.816666666666667,
+					"y": 0.5
+				}
+			],
+			"camp": {
+				"player": "alliance",
+				"enemy": "bandit",
+				"start_preset": "1 keep + 2 farm + 1 barracks"
+			},
+			"player_board": {
+				"layout": "layout_disadvantage_three",
+				"kind": "disadvantage",
+				"active_platforms": [
+					1.0,
+					2.0,
+					4.0
+				],
+				"slots": [
+					{
+						"platform": 1.0,
+						"building": "keep",
+						"star": 1.0
+					},
+					{
+						"platform": 2.0,
+						"building": "farm",
+						"star": 1.0
+					},
+					{
+						"platform": 4.0,
+						"building": "barracks",
+						"star": 1.0
+					}
+				]
+			},
+			"assembly": {
+				"shell": "shell_ridge_01",
+				"player_layout": "layout_disadvantage_three",
+				"enemy_encounter": "enc_gnoll_press",
+				"r1": 0.015
+			}
+		},
+		{
+			"id": "level_asm_even_four__murloc_tide",
+			"display_name": "平势 · 四台稳开 · 鱼人 · 潮汐抢滩",
+			"player_faction": "alliance",
+			"enemy_faction": "murloc",
+			"player_base_hp": 2600.0,
+			"enemy_base_hp": 2800.0,
+			"round_seconds": 90.0,
+			"lane": {
+				"length": 4000.0,
+				"width": 420.0,
+				"zone_depth": 600.0,
+				"zone_dps_per_squad": 9.0,
+				"spawn_offset": 250.0,
+				"base_stop": 120.0,
+				"template": "even",
+				"note": "composed from map shell; lengths are game units (x R1 = meters)",
+				"segments": [
+					{
+						"name_key": "editor.level.segment_1",
+						"length": 600.0,
+						"width": 420,
+						"role": "player"
+					},
+					{
+						"name_key": "editor.level.segment_2",
+						"length": 2000.0,
+						"width": 420,
+						"role": "neutral"
+					},
+					{
+						"name_key": "editor.level.segment_3",
+						"length": 1400.0,
+						"width": 420,
+						"role": "enemy"
+					}
+				]
+			},
+			"rounds": [
+				{
+					"kind": "attack",
+					"label": "进攻战",
+					"enemy_waves": [
+						{
+							"t": 0.0,
+							"squads": [
+								{
+									"unit": "murloc_slave",
+									"count": 2,
+									"star": 1
+								},
+								{
+									"unit": "murloc_raider",
+									"count": 2,
+									"star": 1
+								}
+							]
+						},
+						{
+							"t": 24.0,
+							"squads": [
+								{
+									"unit": "murloc_raider",
+									"count": 2,
+									"star": 1
+								},
+								{
+									"unit": "murloc_lord",
+									"count": 1,
+									"star": 1
+								}
+							]
+						},
+						{
+							"t": 48.0,
+							"squads": [
+								{
+									"unit": "murloc_slave",
+									"count": 2,
+									"star": 1
+								},
+								{
+									"unit": "murloc_raider",
+									"count": 2,
+									"star": 1
+								},
+								{
+									"unit": "murloc_lord",
+									"count": 1,
+									"star": 1
+								}
+							]
+						},
+						{
+							"t": 70.0,
+							"squads": [
+								{
+									"unit": "murloc_raider",
+									"count": 2,
+									"star": 1
+								},
+								{
+									"unit": "murloc_lord",
+									"count": 1,
+									"star": 1
+								}
+							]
+						}
+					]
+				},
+				{
+					"kind": "defend",
+					"label": "防守战",
+					"enemy_waves": [
+						{
+							"t": 0.0,
+							"squads": [
+								{
+									"unit": "murloc_slave",
+									"count": 2,
+									"star": 1
+								},
+								{
+									"unit": "murloc_raider",
+									"count": 2,
+									"star": 1
+								}
+							]
+						},
+						{
+							"t": 20.0,
+							"squads": [
+								{
+									"unit": "murloc_raider",
+									"count": 2,
+									"star": 1
+								},
+								{
+									"unit": "murloc_lord",
+									"count": 1,
+									"star": 1
+								}
+							]
+						},
+						{
+							"t": 40.0,
+							"squads": [
+								{
+									"unit": "murloc_slave",
+									"count": 2,
+									"star": 1
+								},
+								{
+									"unit": "murloc_raider",
+									"count": 2,
+									"star": 1
+								}
+							]
+						},
+						{
+							"t": 60.0,
+							"squads": [
+								{
+									"unit": "murloc_raider",
+									"count": 2,
+									"star": 1
+								},
+								{
+									"unit": "murloc_lord",
+									"count": 1,
+									"star": 1
+								}
+							]
+						},
+						{
+							"t": 76.0,
+							"squads": [
+								{
+									"unit": "murloc_slave",
+									"count": 2,
+									"star": 1
+								}
+							]
+						}
+					]
+				}
+			],
+			"intent_pool": [
+				{
+					"id": "tide",
+					"display_name": "潮水压线",
+					"weight": 30.0,
+					"weight_defend": 26.0,
+					"note": "奴隶海沿脊线平推，靠数量吃塔。",
+					"source_encounter": "enc_murloc_tide"
+				},
+				{
+					"id": "swarm",
+					"display_name": "分股包夹",
+					"weight": 32.0,
+					"weight_defend": 30.0,
+					"note": "两股同时压两侧石台。",
+					"source_encounter": "enc_murloc_tide"
+				},
+				{
+					"id": "harpoon",
+					"display_name": "鱼叉齐射",
+					"weight": 20.0,
+					"weight_defend": 24.0,
+					"note": "猎人远程集火，先点掉前压兵营。",
+					"source_encounter": "enc_murloc_tide"
+				},
+				{
+					"id": "flank",
+					"display_name": "浅滩绕后",
+					"weight": 12.0,
+					"weight_defend": 12.0,
+					"note": "从水线一侧摸进后排。",
+					"source_encounter": "enc_murloc_tide"
+				},
+				{
+					"id": "allin",
+					"display_name": "深渊领主",
+					"weight": 6.0,
+					"weight_defend": 8.0,
+					"note": "领主带队的一次性冲锋。",
+					"source_encounter": "enc_murloc_tide"
+				}
+			],
+			"intent_templates": {},
+			"enemy_buildings": [
+				{
+					"platform": 7,
+					"building": "watchtower",
+					"star": 2.0,
+					"yaw": 180.0,
+					"x": 0.720833333333333,
+					"y": 0.388888888888889
+				},
+				{
+					"platform": 9,
+					"building": "barracks",
+					"star": 2.0,
+					"yaw": 180.0,
+					"x": 0.795833333333333,
+					"y": 0.341269841269841
+				},
+				{
+					"platform": 10,
+					"building": "watchtower",
+					"star": 3.0,
+					"yaw": 180.0,
+					"x": 0.795833333333333,
+					"y": 0.658730158730159
+				},
+				{
+					"platform": 11,
+					"building": "keep",
+					"star": 2.0,
+					"yaw": 180.0,
+					"x": 0.816666666666667,
+					"y": 0.5
+				}
+			],
+			"camp": {
+				"player": "alliance",
+				"enemy": "murloc",
+				"start_preset": "1 keep + 2 farm + 1 barracks"
+			},
+			"player_board": {
+				"layout": "layout_even_four",
+				"kind": "even",
+				"active_platforms": [
+					1.0,
+					2.0,
+					3.0,
+					4.0
+				],
+				"slots": [
+					{
+						"platform": 1.0,
+						"building": "keep",
+						"star": 1.0
+					},
+					{
+						"platform": 2.0,
+						"building": "farm",
+						"star": 1.0
+					},
+					{
+						"platform": 3.0,
+						"building": "farm",
+						"star": 1.0
+					},
+					{
+						"platform": 4.0,
+						"building": "barracks",
+						"star": 1.0
+					}
+				]
+			},
+			"assembly": {
+				"shell": "shell_ridge_01",
+				"player_layout": "layout_even_four",
+				"enemy_encounter": "enc_murloc_tide",
+				"r1": 0.015
+			}
+		}
+	],
+	"assemblies": [
+		{
+			"id": "asm_even_four__gnoll_press",
+			"display_name": "平势 · 四台稳开 · 豺狼人 · 灰牙压上",
+			"shell": "shell_ridge_01",
+			"player_layout": "layout_even_four",
+			"enemy_encounter": "enc_gnoll_press",
+			"level": "level_asm_even_four__gnoll_press",
+			"generated": true
+		},
+		{
+			"id": "asm_disadvantage_three__gnoll_press",
+			"display_name": "劣势 · 三台死守 · 豺狼人 · 灰牙压上",
+			"shell": "shell_ridge_01",
+			"player_layout": "layout_disadvantage_three",
+			"enemy_encounter": "enc_gnoll_press",
+			"level": "level_asm_disadvantage_three__gnoll_press",
+			"generated": true
+		},
+		{
+			"id": "asm_even_four__murloc_tide",
+			"display_name": "平势 · 四台稳开 · 鱼人 · 潮汐抢滩",
+			"shell": "shell_ridge_01",
+			"player_layout": "layout_even_four",
+			"enemy_encounter": "enc_murloc_tide",
+			"level": "level_asm_even_four__murloc_tide",
+			"generated": true
 		}
 	]
 }

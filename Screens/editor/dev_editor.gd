@@ -3,10 +3,14 @@ extends Control
 ## 《战争原岛》开发者编辑器 · 主壳
 ## 属于：Screens/editor（开发工具，不进发行版）
 ##
-## 三个页签：
+## 五个页签（2026-11-21 三分离改造）：
 ##   01 单位与 DPS 靶场对账
 ##   02 建筑与卡牌
-##   03 长横道关卡 / 类自走棋营地
+##   03 玩家态势布局卡（player_layouts.json）
+##   04 敌人遭遇卡（enemy_encounters.json）
+##   05 战斗节点组装（levels.json：底壳 × 布局卡 × 遭遇卡）
+##
+## 地图底壳（地形/装饰/脊线/石台）不在这里：见 addons/map_shell_editor（3D 底壳编辑器）。
 ##
 ## 盘子：顶栏（品牌 / R1 / 保存状态 / 校验）、页签条、页面容器、状态栏。
 ## 页面各自 preload，主壳只负责切页、脏标记与统一写回。
@@ -15,7 +19,9 @@ const ThemeKit := preload("res://Screens/editor/dev_theme.gd")
 const DataScript := preload("res://Screens/editor/dev_data.gd")
 const PageUnits := preload("res://Screens/editor/page_units.gd")
 const PageBuild := preload("res://Screens/editor/page_build.gd")
-const PageLevel := preload("res://Screens/editor/page_level.gd")
+const PageLayouts := preload("res://Screens/editor/page_layouts.gd")
+const PageEncounters := preload("res://Screens/editor/page_encounters.gd")
+const PageAssembly := preload("res://Screens/editor/page_assembly.gd")
 const Backdrop := preload("res://Screens/editor/backdrop.gd")
 const Logo := preload("res://Screens/editor/logo.gd")
 
@@ -119,6 +125,11 @@ func _build_topbar() -> Control:
 	state_box.add_child(_save_label)
 	h.add_child(state_box)
 
+	var reload_btn := ThemeKit.small_button(T("editor.app.reload"), ThemeKit.TEXT_SUB)
+	reload_btn.custom_minimum_size = Vector2(84.0, 36.0)
+	reload_btn.pressed.connect(_on_reload)
+	h.add_child(reload_btn)
+
 	var check_btn := ThemeKit.small_button(T("editor.app.validate"), ThemeKit.CYAN)
 	check_btn.custom_minimum_size = Vector2(108.0, 36.0)
 	check_btn.pressed.connect(_on_validate)
@@ -157,21 +168,20 @@ func _build_tabs() -> Control:
 	var defs := [
 		["01", "editor.tab.units", "editor.tab.units_sub", ThemeKit.ACCENT],
 		["02", "editor.tab.build", "editor.tab.build_sub", ThemeKit.GOLD],
-		["03", "editor.tab.level", "editor.tab.level_sub", ThemeKit.GREEN],
+		["03", "editor.tab.layouts", "editor.tab.layouts_sub", ThemeKit.CYAN],
+		["04", "editor.tab.encounters", "editor.tab.encounters_sub", ThemeKit.RED],
+		["05", "editor.tab.assembly", "editor.tab.assembly_sub", ThemeKit.GREEN],
 	]
 	for i in defs.size():
 		var d: Array = defs[i]
 		var b := _make_tab(String(d[0]), T(String(d[1])), T(String(d[2])), d[3] as Color)
-		b.name = ["tab_units", "tab_build", "tab_level"][i]
+		b.name = ["tab_units", "tab_build", "tab_layouts", "tab_encounters", "tab_assembly"][i]
 		b.button_group = group
 		b.button_pressed = i == 0
 		b.pressed.connect(_show_page.bind(i))
 		h.add_child(b)
 		_tabs.append(b)
 	h.add_child(ThemeKit.spacer())
-	var hint := ThemeKit.caption(T("editor.common.save_hint"), ThemeKit.TEXT_DIM)
-	hint.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	h.add_child(hint)
 	return holder
 
 
@@ -179,7 +189,7 @@ func _make_tab(index_text: String, title: String, subtitle: String, accent: Colo
 	var b := Button.new()
 	b.toggle_mode = true
 	b.focus_mode = Control.FOCUS_NONE
-	b.custom_minimum_size = Vector2(330.0, 54.0)
+	b.custom_minimum_size = Vector2(276.0, 54.0)
 	b.add_theme_stylebox_override("normal", ThemeKit.box(Color(0, 0, 0, 0), Color(0, 0, 0, 0), 12, 0, 16.0, 7.0))
 	b.add_theme_stylebox_override("hover", ThemeKit.box(ThemeKit.CARD_DEEP, ThemeKit.STROKE, 12, 1, 16.0, 7.0))
 	var sel := ThemeKit.box(ThemeKit.CARD, Color(accent.r, accent.g, accent.b, 0.55), 12, 1, 16.0, 7.0)
@@ -236,10 +246,10 @@ func _build_pages() -> Control:
 	else:
 		margin.add_child(host)
 
-	var classes := [PageUnits, PageBuild, PageLevel]
+	var classes := [PageUnits, PageBuild, PageLayouts, PageEncounters, PageAssembly]
 	for i in classes.size():
 		var page: Control = classes[i].new()
-		page.name = ["page_units", "page_build", "page_level"][i]
+		page.name = ["page_units", "page_build", "page_layouts", "page_encounters", "page_assembly"][i]
 		page.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		page.call("setup", self, data)
 		page.visible = false
@@ -319,6 +329,22 @@ func _on_save_timeout() -> void:
 	_on_save_now()
 
 
+## 组装页/外部调用：立刻写回（跑 --simulate 前必须先落盘）。
+func save_now() -> void:
+	_on_save_now()
+
+
+func _on_reload() -> void:
+	if _save_timer != null:
+		_save_timer.stop()
+	if bool(data.call("load_all")):
+		_set_save_state(T("editor.app.reloaded"), ThemeKit.CYAN)
+		_refresh_pages()
+		_update_counts()
+	else:
+		_set_save_state(T("editor.app.reload_failed"), ThemeKit.RED)
+
+
 func _on_save_now() -> void:
 	if _save_timer != null:
 		_save_timer.stop()
@@ -352,7 +378,10 @@ func _update_counts() -> void:
 		"b": (data.call("buildings") as Array).size(),
 		"c": (data.call("cards") as Array).size(),
 		"d": (data.call("deck_start") as Array).size(),
-		"s": (data.call("segments") as Array).size(),
+		"s": (data.call("shell_list") as Array).size(),
+		"l": (data.call("layout_list") as Array).size(),
+		"e": (data.call("encounter_list") as Array).size(),
+		"a": (data.call("assemblies") as Array).size(),
 	})
 
 

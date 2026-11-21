@@ -12,7 +12,11 @@ const UNITS_PATH := "res://Content/data/units.json"
 const COMBAT_PATH := "res://Content/data/combat.json"
 const PLANNING_PATH := "res://Content/data/planning.json"
 const LEVELS_PATH := "res://Content/data/levels.json"
+const SHELLS_PATH := "res://Content/data/map_shells.json"
+const LAYOUTS_PATH := "res://Content/data/player_layouts.json"
+const ENCOUNTERS_PATH := "res://Content/data/enemy_encounters.json"
 const I18N_PATH := "res://Content/i18n/ui.csv"
+const ShellStore := preload("res://Screens/editor/shell_store.gd")
 
 const ATTR_KEYS := [
 	"hp", "attack_damage", "attack_cooldown", "attack_range", "attack_type",
@@ -24,6 +28,9 @@ var units: Dictionary = {}
 var combat: Dictionary = {}
 var planning: Dictionary = {}
 var levels: Dictionary = {}
+var shells: Dictionary = {}
+var layouts: Dictionary = {}
+var encounters: Dictionary = {}
 var csv_header: PackedStringArray = PackedStringArray(["key", "zh", "en", "note"])
 var csv_rows: Array = []
 
@@ -41,10 +48,18 @@ func load_all() -> bool:
 	combat = _read_json(COMBAT_PATH)
 	planning = _read_json(PLANNING_PATH)
 	levels = _read_json(LEVELS_PATH)
+	shells = _read_json(SHELLS_PATH)
+	layouts = _read_json(LAYOUTS_PATH)
+	encounters = _read_json(ENCOUNTERS_PATH)
 	_read_csv()
-	if units.is_empty() or combat.is_empty() or planning.is_empty() or levels.is_empty():
-		if load_error.is_empty():
-			load_error = "one or more JSON tables are empty"
+	for pair in [[units, UNITS_PATH], [combat, COMBAT_PATH], [planning, PLANNING_PATH],
+			[levels, LEVELS_PATH], [shells, SHELLS_PATH], [layouts, LAYOUTS_PATH],
+			[encounters, ENCOUNTERS_PATH]]:
+		if (pair[0] as Dictionary).is_empty():
+			load_error = "empty table " + String(pair[1])
+			return false
+	if ui_csv_missing("editor.app.title"):
+		load_error = "ui.csv missing editor keys"
 		return false
 	return true
 
@@ -68,13 +83,26 @@ func save_all() -> bool:
 	ok = _write_json(UNITS_PATH, units) and ok
 	ok = _write_json(PLANNING_PATH, planning) and ok
 	ok = _write_json(LEVELS_PATH, levels) and ok
+	ok = save_shells() and ok
+	ok = _write_json(LAYOUTS_PATH, layouts) and ok
+	ok = _write_json(ENCOUNTERS_PATH, encounters) and ok
 	ok = _write_csv() and ok
 	if ok:
 		last_save_unix = int(Time.get_unix_time_from_system())
-		last_save_paths = PackedStringArray([UNITS_PATH, PLANNING_PATH, LEVELS_PATH, I18N_PATH])
+		last_save_paths = PackedStringArray([UNITS_PATH, PLANNING_PATH, LEVELS_PATH,
+			SHELLS_PATH, LAYOUTS_PATH, ENCOUNTERS_PATH, I18N_PATH])
 		var i18n := _i18n()
 		if i18n != null:
 			i18n.call("load_csv")
+	return ok
+
+
+## 三维底壳编辑器只写底壳这张表（不动卡牌/关卡）。
+func save_shells() -> bool:
+	var ok := _write_json(SHELLS_PATH, shells)
+	if ok:
+		last_save_unix = int(Time.get_unix_time_from_system())
+		last_save_paths = PackedStringArray([SHELLS_PATH])
 	return ok
 
 
@@ -236,7 +264,10 @@ func board() -> Dictionary:
 
 
 func platforms() -> Array:
-	return board().get("platforms", []) as Array
+	var shell: Dictionary = shell_list()[0] as Dictionary if not shell_list().is_empty() else {}
+	if shell.is_empty():
+		return []
+	return ShellStore.platforms(shell)
 
 
 func start_buildings() -> Array:
@@ -310,6 +341,10 @@ func meters(raw: float) -> float:
 # ===========================================================================
 # 文案
 # ===========================================================================
+func ui_csv_missing(key: String) -> bool:
+	return i18n_zh(key, "").is_empty()
+
+
 func i18n_zh(key: String, fallback: String = "") -> String:
 	for row in csv_rows:
 		if String(row[0]) == key:
@@ -364,6 +399,323 @@ func _i18n() -> Node:
 	return null
 
 
+
+# ===========================================================================
+# 三分离：底壳 / 玩家布局卡 / 敌人遭遇卡 / 战斗节点组装
+# ===========================================================================
+func shell_list() -> Array:
+	return shells.get("shells", []) as Array
+
+
+func shell_by_id(id: String) -> Dictionary:
+	for s in shell_list():
+		if String((s as Dictionary).get("id", "")) == id:
+			return s as Dictionary
+	return {}
+
+
+func shell_ids() -> Array:
+	var out: Array = []
+	for s in shell_list():
+		out.append(String((s as Dictionary).get("id", "")))
+	return out
+
+
+func levels_list() -> Array:
+	return levels.get("levels", []) as Array
+
+
+func level_by_id(id: String) -> Dictionary:
+	for lv in levels_list():
+		if String((lv as Dictionary).get("id", "")) == id:
+			return lv as Dictionary
+	return {}
+
+
+func level_index(id: String) -> int:
+	var arr := levels_list()
+	for i in arr.size():
+		if String((arr[i] as Dictionary).get("id", "")) == id:
+			return i
+	return -1
+
+
+func generated_levels() -> Array:
+	var out: Array = []
+	for lv in levels_list():
+		if (lv as Dictionary).has("assembly"):
+			out.append(lv)
+	return out
+
+
+func layout_list() -> Array:
+	return layouts.get("layouts", []) as Array
+
+
+func layout_by_id(id: String) -> Dictionary:
+	for l in layout_list():
+		if String((l as Dictionary).get("id", "")) == id:
+			return l as Dictionary
+	return {}
+
+
+func layout_kinds() -> Array:
+	return layouts.get("kinds", []) as Array
+
+
+func kind_row(kind: String) -> Dictionary:
+	for k in layout_kinds():
+		if String((k as Dictionary).get("id", "")) == kind:
+			return k as Dictionary
+	return {}
+
+
+func kind_display(kind: String) -> String:
+	return String(kind_row(kind).get("display_name", kind))
+
+
+func layouts_of_shell(shell_id: String) -> Array:
+	var out: Array = []
+	for l in layout_list():
+		if String((l as Dictionary).get("shell", "")) == shell_id:
+			out.append(l)
+	return out
+
+
+func encounter_list() -> Array:
+	return encounters.get("encounters", []) as Array
+
+
+func encounter_by_id(id: String) -> Dictionary:
+	for e in encounter_list():
+		if String((e as Dictionary).get("id", "")) == id:
+			return e as Dictionary
+	return {}
+
+
+func encounter_factions() -> Array:
+	return encounters.get("factions", []) as Array
+
+
+func faction_display_of(id: String) -> String:
+	for f in encounter_factions():
+		if String((f as Dictionary).get("id", "")) == id:
+			return String((f as Dictionary).get("display_name", id))
+	return faction_display(id)
+
+
+func encounters_of_shell(shell_id: String) -> Array:
+	var out: Array = []
+	for e in encounter_list():
+		if String((e as Dictionary).get("shell", "")) == shell_id:
+			out.append(e)
+	return out
+
+
+func assemblies() -> Array:
+	return levels.get("assemblies", []) as Array
+
+
+func assembly_by_id(id: String) -> Dictionary:
+	for a in assemblies():
+		if String((a as Dictionary).get("id", "")) == id:
+			return a as Dictionary
+	return {}
+
+
+func assembly_id_of(layout_id: String, encounter_id: String) -> String:
+	return "asm_" + layout_id.trim_prefix("layout_") + "__" + encounter_id.trim_prefix("enc_")
+
+
+func combo_level_id(layout_id: String, encounter_id: String) -> String:
+	return "level_" + assembly_id_of(layout_id, encounter_id)
+
+
+func default_combos() -> Array:
+	return [
+		["shell_ridge_01", "layout_even_four", "enc_gnoll_press"],
+		["shell_ridge_01", "layout_disadvantage_three", "enc_gnoll_press"],
+		["shell_ridge_01", "layout_even_four", "enc_murloc_tide"],
+	]
+
+
+func active_platforms(layout: Dictionary) -> Array:
+	return layout.get("active_platforms", []) as Array
+
+
+func divider_of(shell: Dictionary, id: String) -> Dictionary:
+	return ShellStore.divider(shell, id)
+
+
+func point_at_t(shell: Dictionary, t: int) -> Vector2:
+	return ShellStore.point_at_t(shell, t)
+
+
+func logic_of_t(t: int, length_logic: float) -> float:
+	return ShellStore.logic_of_t(t, length_logic)
+
+
+## 三张卡 -> 一张完整可玩关卡（不落盘；落盘走 generate_assembly）。
+func compose_level(shell_id: String, layout_id: String, encounter_id: String) -> Dictionary:
+	var shell := shell_by_id(shell_id)
+	var layout := layout_by_id(layout_id)
+	var enc := encounter_by_id(encounter_id)
+	if shell.is_empty() or layout.is_empty() or enc.is_empty():
+		return {}
+	if String(layout.get("shell", "")) != shell_id or String(enc.get("shell", "")) != shell_id:
+		return {}
+	var spine: Dictionary = shell.get("spine", {})
+	var length_logic := float(spine.get("length_logic", 4000.0))
+	var width_logic := float(spine.get("width_logic", 420.0))
+	var zone_depth := float(divider_of(shell, "player_zone_end").get("length_logic", 600.0))
+	var push := float(divider_of(shell, "push_line").get("length_logic", 2600.0))
+	if push <= zone_depth or push >= length_logic:
+		return {}
+	var kind := String(layout.get("kind", "even"))
+	var seg_width := int(floor(width_logic))
+	var rounds := _rounds_of_encounter(enc)
+	if rounds.is_empty():
+		return {}
+	var lv := {
+		"id": combo_level_id(layout_id, encounter_id),
+		"display_name": String(layout.get("display_name", layout_id)) + " · " + String(enc.get("display_name", encounter_id)),
+		"player_faction": "alliance",
+		"enemy_faction": String(enc.get("faction", "bandit")),
+		"player_base_hp": 2600.0,
+		"enemy_base_hp": float(enc.get("base_hp", 3200.0)),
+		"round_seconds": 90.0,
+		"lane": {
+			"length": length_logic,
+			"width": width_logic,
+			"zone_depth": zone_depth,
+			"zone_dps_per_squad": 9.0,
+			"spawn_offset": 250.0,
+			"base_stop": 120.0,
+			"template": kind,
+			"note": "composed from map shell; lengths are game units (x R1 = meters)",
+			"segments": [
+				{"name_key": "editor.level.segment_1", "length": zone_depth, "width": seg_width, "role": "player"},
+				{"name_key": "editor.level.segment_2", "length": push - zone_depth, "width": seg_width, "role": "neutral"},
+				{"name_key": "editor.level.segment_3", "length": length_logic - push, "width": seg_width, "role": "enemy"},
+			],
+		},
+		"rounds": rounds,
+		"intent_pool": _intent_pool_of(enc),
+		"intent_templates": {},
+		"enemy_buildings": _enemy_buildings_of(shell, enc),
+		"camp": {
+			"player": "alliance",
+			"enemy": String(enc.get("faction", "bandit")),
+			"start_preset": "1 keep + 2 farm + 1 barracks",
+		},
+		"player_board": {
+			"layout": layout_id,
+			"kind": kind,
+			"active_platforms": active_platforms(layout),
+			"slots": layout.get("slots", []),
+		},
+		"assembly": {
+			"shell": shell_id,
+			"player_layout": layout_id,
+			"enemy_encounter": encounter_id,
+			"r1": ShellStore.R1,
+		},
+	}
+	return lv
+
+
+func _rounds_of_encounter(enc: Dictionary) -> Array:
+	var plan: Dictionary = enc.get("wave_plan", {})
+	var roles: Dictionary = enc.get("unit_roles", {})
+	var out: Array = []
+	for kind in ["attack", "defend"]:
+		var waves: Array = []
+		for w in (plan.get(kind, []) as Array):
+			var squads: Array = []
+			for s in ((w as Dictionary).get("squads", []) as Array):
+				var role := String((s as Dictionary).get("role", ""))
+				var uid := String(roles.get(role, ""))
+				var unit := unit_by_id(uid)
+				if uid.is_empty() or unit.is_empty() or not bool(unit.get("enabled", false)):
+					continue
+				squads.append({"unit": uid, "count": clampi(int((s as Dictionary).get("count", 1)), 1, 6), "star": 1})
+			if squads.is_empty():
+				continue
+			waves.append({"t": float((w as Dictionary).get("t", 0.0)), "squads": squads})
+		if waves.is_empty():
+			return []
+		var label_key := "editor.assembly.round_attack" if kind == "attack" else "editor.assembly.round_defend"
+		out.append({"kind": kind, "label": i18n_zh(label_key, kind), "enemy_waves": waves})
+	return out
+
+
+func _intent_pool_of(enc: Dictionary) -> Array:
+	var out: Array = []
+	for it in (enc.get("intent_pool", []) as Array):
+		var d: Dictionary = it
+		out.append({
+			"id": String(d.get("id", "")),
+			"display_name": String(d.get("display_name", "")),
+			"weight": float(d.get("weight_attack", 0.0)),
+			"weight_defend": float(d.get("weight_defend", 0.0)),
+			"note": String(d.get("note", "")),
+			"source_encounter": String(enc.get("id", "")),
+		})
+	return out
+
+
+func _enemy_buildings_of(shell: Dictionary, enc: Dictionary) -> Array:
+	var sz := ShellStore.size_of(shell)
+	var out: Array = []
+	for row in (enc.get("platform_buildings", []) as Array):
+		var d: Dictionary = row
+		var p := ShellStore.platform_by_index(shell, int(d.get("platform", -1)))
+		if p.is_empty():
+			continue
+		out.append({
+			"platform": int(d.get("platform", 0)),
+			"building": String(d.get("building", "")),
+			"star": float(d.get("star", 1)),
+			"yaw": float(d.get("yaw", 0.0)),
+			"x": clampf(0.5 + float(p.get("x", 0.0)) / maxf(sz.x, 0.001), 0.0, 1.0),
+			"y": clampf(0.5 + float(p.get("z", 0.0)) / maxf(sz.y, 0.001), 0.0, 1.0),
+		})
+	return out
+
+
+## 生成/刷新该组合的关卡与组装条目（写内存；写盘由 save_all 负责）。
+func generate_assembly(shell_id: String, layout_id: String, encounter_id: String) -> Dictionary:
+	var lv := compose_level(shell_id, layout_id, encounter_id)
+	if lv.is_empty():
+		return {}
+	var arr := levels_list()
+	var idx := level_index(String(lv["id"]))
+	if idx >= 0:
+		arr[idx] = lv
+	else:
+		arr.append(lv)
+	var asm := {
+		"id": assembly_id_of(layout_id, encounter_id),
+		"display_name": String(lv.get("display_name", "")),
+		"shell": shell_id,
+		"player_layout": layout_id,
+		"enemy_encounter": encounter_id,
+		"level": String(lv.get("id", "")),
+		"generated": true,
+	}
+	var list := assemblies()
+	var replaced := false
+	for i in list.size():
+		if String((list[i] as Dictionary).get("id", "")) == String(asm["id"]):
+			list[i] = asm
+			replaced = true
+			break
+	if not replaced:
+		list.append(asm)
+	if not levels.has("assemblies"):
+		levels["assemblies"] = list
+	return asm
+
 # ===========================================================================
 # 校验
 # ===========================================================================
@@ -373,10 +725,12 @@ func validate() -> Array:
 	out.append(_check("editor.check.attrs", _validate_attrs()))
 	out.append(_check("editor.check.buildings", _validate_buildings()))
 	out.append(_check("editor.check.deck", _validate_deck()))
-	out.append(_check("editor.check.lane", _validate_lane()))
-	out.append(_check("editor.check.intent", _validate_intent()))
+	out.append(_check("editor.check.shells", _validate_shells()))
+	out.append(_check("editor.check.spine", _validate_spine()))
 	out.append(_check("editor.check.platforms", _validate_platforms()))
-	out.append(_check("editor.check.start", _validate_start()))
+	out.append(_check("editor.check.layouts", _validate_layouts()))
+	out.append(_check("editor.check.encounters", _validate_encounters()))
+	out.append(_check("editor.check.assemblies", _validate_assemblies()))
 	out.append(_check("editor.check.models", _validate_models()))
 	out.append(_check("editor.check.i18n", _validate_i18n()))
 	return out
@@ -430,54 +784,167 @@ func _validate_deck() -> Array:
 	return [true, "12 cards"]
 
 
-func _validate_lane() -> Array:
-	var segs := segments()
-	if segs.size() != 3:
-		return [false, "segments=%d" % segs.size()]
-	var total := 0.0
-	for s in segs:
-		var length := float(s.get("length", 0.0))
-		var width := float(s.get("width", 0.0))
-		if length <= 0.0 or width <= 0.0:
-			return [false, "segment <= 0"]
-		total += length
-	if absf(total - float(lane().get("length", 0.0))) > 0.001:
-		return [false, "sum %.0f != %.0f" % [total, float(lane().get("length", 0.0))]]
-	return [true, "%.0f" % total]
+func _validate_shells() -> Array:
+	var list := shell_list()
+	if list.is_empty():
+		return [false, "shells=0"]
+	var bad: Array = []
+	for s in list:
+		bad.append_array(ShellStore.validate_shell(s as Dictionary))
+	return [bad.is_empty(), "; ".join(bad.slice(0, 3))]
 
 
-func _validate_intent() -> Array:
-	var sum := 0.0
-	for it in intents():
-		sum += maxf(float(it.get("weight", 0.0)), 0.0)
-	return [sum > 0.0, "weight=%.0f" % sum]
+func _validate_spine() -> Array:
+	var bad: Array = []
+	for s in shell_list():
+		var shell: Dictionary = s
+		var spine: Dictionary = shell.get("spine", {})
+		var length_logic := float(spine.get("length_logic", 0.0))
+		var width_logic := float(spine.get("width_logic", 0.0))
+		if width_logic < 100.0 or width_logic > 999.0:
+			bad.append(String(shell.get("id", "")) + " width_logic")
+		var last := -1
+		for did in ShellStore.DIVIDER_IDS:
+			var d := divider_of(shell, did)
+			var t := int(d.get("t", -1))
+			if t < 100 or t > 999 or t <= last:
+				bad.append(String(shell.get("id", "")) + " " + did + " t=" + str(t))
+				continue
+			last = t
+			var logic := float(d.get("length_logic", -1.0))
+			if absf(logic - logic_of_t(t, length_logic)) > 0.5:
+				bad.append(String(shell.get("id", "")) + " " + did + " logic")
+			if absf(float(d.get("meters", -1.0)) - logic * ShellStore.R1) > 0.0001:
+				bad.append(String(shell.get("id", "")) + " " + did + " meters")
+	return [bad.is_empty(), "; ".join(bad.slice(0, 3))]
 
 
 func _validate_platforms() -> Array:
-	var list := platforms()
-	if list.size() < 10:
-		return [false, "platforms=%d" % list.size()]
-	var gap := min_gap_meters()
-	if gap < 0.5:
-		return [false, "gap=%.2f m" % gap]
-	return [true, "gap=%.2f m" % gap]
+	var bad: Array = []
+	for s in shell_list():
+		var shell: Dictionary = s
+		var gap := ShellStore.min_gap_meters(shell)
+		if gap < ShellStore.MIN_GAP_M:
+			bad.append(String(shell.get("id", "")) + " gap=%.2f" % gap)
+		var keeps := {"player": 0, "enemy": 0}
+		for p in ShellStore.platforms(shell):
+			var d: Dictionary = p
+			if String(d.get("role", "")) == "keep":
+				var side := String(d.get("side", "player"))
+				keeps[side] = int(keeps.get(side, 0)) + 1
+		if int(keeps["player"]) != 1 or int(keeps["enemy"]) != 1:
+			bad.append(String(shell.get("id", "")) + " keep anchors")
+	return [bad.is_empty(), "; ".join(bad.slice(0, 3))]
 
 
-func _validate_start() -> Array:
-	var bases := 0
-	var farms := 0
-	var barracks := 0
-	for s in start_buildings():
-		var b := building_by_id(String(s.get("building", "")))
-		var tag := String(b.get("tag", ""))
-		if tag == "base":
-			bases += 1
-		elif tag == "farm":
-			farms += 1
-		elif tag == "barracks":
-			barracks += 1
-	return [bases == 1 and farms == 2 and barracks == 1,
-		"%d/%d/%d" % [bases, farms, barracks]]
+func _validate_layouts() -> Array:
+	var bad: Array = []
+	if layout_kinds().size() != 3:
+		bad.append("kinds=%d" % layout_kinds().size())
+	var kinds := {}
+	for l in layout_list():
+		var d: Dictionary = l
+		var shell := shell_by_id(String(d.get("shell", "")))
+		if shell.is_empty():
+			bad.append(String(d.get("id", "")) + " shell")
+			continue
+		var kind := String(d.get("kind", ""))
+		kinds[kind] = true
+		var act: Array = active_platforms(d)
+		if act.is_empty():
+			bad.append(String(d.get("id", "")) + " active empty")
+		var counts := {"base": 0, "farm": 0, "barracks": 0}
+		for idx in act:
+			if ShellStore.platform_by_index(shell, int(idx)).is_empty():
+				bad.append(String(d.get("id", "")) + " active " + str(idx))
+			var slot := ShellStore.slot_at(d, int(idx))
+			if slot.is_empty():
+				bad.append(String(d.get("id", "")) + " slot " + str(idx))
+				continue
+			var b := building_by_id(String(slot.get("building", "")))
+			if b.is_empty():
+				bad.append(String(d.get("id", "")) + " building " + str(idx))
+				continue
+			var tag := String(b.get("tag", ""))
+			if counts.has(tag):
+				counts[tag] = int(counts[tag]) + 1
+		if int(counts["base"]) != 1:
+			bad.append(String(d.get("id", "")) + " keep slots")
+		if kind == "even" and not (int(counts["farm"]) == 2 and int(counts["barracks"]) == 1):
+			bad.append(String(d.get("id", "")) + " default preset")
+		if String(d.get("inactive_render", "")) != "ruin":
+			bad.append(String(d.get("id", "")) + " inactive_render")
+	if kinds.size() != 3:
+		bad.append("kinds=" + str(kinds.keys()))
+	return [bad.is_empty(), "; ".join(bad.slice(0, 3))]
+
+
+func _validate_encounters() -> Array:
+	var bad: Array = []
+	for e in encounter_list():
+		var d: Dictionary = e
+		var fac := String(d.get("faction", ""))
+		var known := false
+		for f in encounter_factions():
+			if String((f as Dictionary).get("id", "")) == fac:
+				known = true
+		if not known:
+			bad.append(String(d.get("id", "")) + " faction")
+		if float(d.get("base_hp", 0.0)) <= 0.0:
+			bad.append(String(d.get("id", "")) + " base_hp")
+		var shell := shell_by_id(String(d.get("shell", "")))
+		var seen := {}
+		for row in (d.get("platform_buildings", []) as Array):
+			var bd: Dictionary = row
+			var idx := int(bd.get("platform", -1))
+			if seen.has(idx):
+				bad.append(String(d.get("id", "")) + " dup platform")
+			seen[idx] = true
+			var p := ShellStore.platform_by_index(shell, idx)
+			if p.is_empty() or String(p.get("side", "")) != "enemy":
+				bad.append(String(d.get("id", "")) + " platform " + str(idx))
+			if building_by_id(String(bd.get("building", ""))).is_empty():
+				bad.append(String(d.get("id", "")) + " building " + str(idx))
+		var roles: Dictionary = d.get("unit_roles", {})
+		for role in ["light", "line", "elite"]:
+			var u := unit_by_id(String(roles.get(role, "")))
+			if u.is_empty() or String(u.get("faction", "")) != fac or not bool(u.get("enabled", false)):
+				bad.append(String(d.get("id", "")) + " role " + role)
+		var sum_a := 0.0
+		var sum_d := 0.0
+		for it in (d.get("intent_pool", []) as Array):
+			sum_a += float((it as Dictionary).get("weight_attack", 0.0))
+			sum_d += float((it as Dictionary).get("weight_defend", 0.0))
+		if absf(sum_a - 100.0) > 0.001 or absf(sum_d - 100.0) > 0.001:
+			bad.append(String(d.get("id", "")) + " intents %.0f/%.0f" % [sum_a, sum_d])
+	return [bad.is_empty(), "; ".join(bad.slice(0, 3))]
+
+
+func _validate_assemblies() -> Array:
+	var list := assemblies()
+	if list.is_empty():
+		return [false, "assemblies=0"]
+	var bad: Array = []
+	for a in list:
+		var d: Dictionary = a
+		var shell_id := String(d.get("shell", ""))
+		var layout_id := String(d.get("player_layout", ""))
+		var enc_id := String(d.get("enemy_encounter", ""))
+		if shell_by_id(shell_id).is_empty() or layout_by_id(layout_id).is_empty() or encounter_by_id(enc_id).is_empty():
+			bad.append(String(d.get("id", "")) + " ref")
+		var lv := level_by_id(String(d.get("level", "")))
+		if lv.is_empty():
+			bad.append(String(d.get("id", "")) + " level")
+			continue
+		var asm: Dictionary = lv.get("assembly", {})
+		var same := (String(asm.get("shell", "")) == shell_id
+			and String(asm.get("player_layout", "")) == layout_id
+			and String(asm.get("enemy_encounter", "")) == enc_id)
+		if not same:
+			bad.append(String(d.get("id", "")) + " level mismatch")
+		if (lv.get("rounds", []) as Array).size() != 2:
+			bad.append(String(d.get("id", "")) + " rounds")
+	return [bad.is_empty(), "; ".join(bad.slice(0, 3))]
 
 
 func _validate_models() -> Array:
@@ -494,42 +961,24 @@ func _validate_models() -> Array:
 
 func _validate_i18n() -> Array:
 	var need := ["editor.app.title", "editor.tab.units", "editor.dps.final",
-		"editor.cards.deck", "editor.level.camp"]
+		"editor.cards.deck", "editor.tab.layouts", "editor.tab.encounters",
+		"editor.tab.assembly", "editor.assembly.sim_run"]
 	for key in need:
 		if i18n_zh(key, "").is_empty():
 			return [false, "missing " + key]
 	return [true, "%d keys" % csv_rows.size()]
 
 
-func min_gap_meters() -> float:
-	var list := platforms()
-	var camp := camp_meters()
-	var best := 999.0
-	for i in list.size():
-		var a: Dictionary = list[i]
-		for j in range(i + 1, list.size()):
-			var b: Dictionary = list[j]
-			var dx := (float(a.get("x", 0.0)) - float(b.get("x", 0.0))) * camp.x
-			var dy := (float(a.get("y", 0.0)) - float(b.get("y", 0.0))) * camp.y
-			var ra := float(a.get("radius", 0.04)) * camp.y
-			var rb := float(b.get("radius", 0.04)) * camp.y
-			best = minf(best, sqrt(dx * dx + dy * dy) - ra - rb)
-	return best
-
-
-func min_platform_gap_norm() -> float:
-	var list := platforms()
-	var best := 9.0
-	for i in list.size():
-		var a: Dictionary = list[i]
-		for j in range(i + 1, list.size()):
-			var b: Dictionary = list[j]
-			var dx := float(a.get("x", 0.0)) - float(b.get("x", 0.0))
-			var dy := float(a.get("y", 0.0)) - float(b.get("y", 0.0))
-			var ra := float(a.get("radius", 0.04))
-			var rb := float(b.get("radius", 0.04))
-			best = minf(best, sqrt(dx * dx + dy * dy) - ra - rb)
-	return best
+## 石台之间的最小边缘距离（米）——行军间隙的唯一口径。
+func min_gap_meters(shell_id: String = "") -> float:
+	var shell: Dictionary = {}
+	if not shell_id.is_empty():
+		shell = shell_by_id(shell_id)
+	elif not shell_list().is_empty():
+		shell = shell_list()[0] as Dictionary
+	if shell.is_empty():
+		return 0.0
+	return ShellStore.min_gap_meters(shell)
 
 
 # ===========================================================================
@@ -686,3 +1135,296 @@ func count_cards_by_kind(kind: String) -> int:
 		if String(c.get("kind", "")) == kind:
 			n += 1
 	return n
+
+# ===========================================================================
+# 三分离：结构性修改（布局卡 / 遭遇卡 / 组装页调用）
+# ===========================================================================
+func unique_id(prefix: String, existing: Array) -> String:
+	var n := 1
+	while true:
+		var cand := "%s_%d" % [prefix, n]
+		var hit := false
+		for v in existing:
+			if String(v) == cand:
+				hit = true
+				break
+		if not hit:
+			return cand
+		n += 1
+	return prefix + "_1"
+
+
+func new_layout() -> Dictionary:
+	var ids: Array = []
+	for l in layout_list():
+		ids.append(String((l as Dictionary).get("id", "")))
+	var id := unique_id("layout_new", ids)
+	var shell: Dictionary = shell_list()[0] as Dictionary if not shell_list().is_empty() else {}
+	var active: Array = []
+	var slots: Array = []
+	var n := 0
+	for p in ShellStore.platforms(shell):
+		var pd: Dictionary = p
+		if String(pd.get("side", "")) != "player":
+			continue
+		n += 1
+		active.append(int(pd.get("index", 0)))
+		var tag := "keep" if n == 1 else ("farm" if n <= 3 else "barracks")
+		slots.append({"platform": int(pd.get("index", 0)), "building": _building_for_tag(tag), "star": 1})
+		if n >= 4:
+			break
+	var layout := {
+		"id": id,
+		"display_name": i18n_zh("editor.layouts.new_name", id),
+		"kind": "even",
+		"shell": String(shell.get("id", "")),
+		"active_platforms": active,
+		"slots": slots,
+		"inactive_render": "ruin",
+		"note": "",
+	}
+	layout_list().append(layout)
+	return layout
+
+
+func _building_for_tag(tag: String) -> String:
+	for b in buildings():
+		if String((b as Dictionary).get("tag", "")) == tag:
+			return String((b as Dictionary).get("id", ""))
+	var picked := buildings()
+	return String((picked[0] as Dictionary).get("id", "farm")) if not picked.is_empty() else "farm"
+
+
+func duplicate_layout(id: String) -> Dictionary:
+	var src := layout_by_id(id)
+	if src.is_empty():
+		return {}
+	var ids: Array = []
+	for l in layout_list():
+		ids.append(String((l as Dictionary).get("id", "")))
+	var copy := src.duplicate(true)
+	copy["id"] = unique_id("layout_copy", ids)
+	copy["display_name"] = String(src.get("display_name", id)) + " " + i18n_zh("editor.common.copy", "copy")
+	layout_list().append(copy)
+	return copy
+
+
+func remove_layout(id: String) -> bool:
+	var arr := layout_list()
+	for i in range(arr.size() - 1, -1, -1):
+		if String((arr[i] as Dictionary).get("id", "")) == id:
+			arr.remove_at(i)
+			return true
+	return false
+
+
+func set_layout_kind(id: String, kind: String) -> bool:
+	var layout := layout_by_id(id)
+	if layout.is_empty() or kind_row(kind).is_empty():
+		return false
+	layout["kind"] = kind
+	return true
+
+
+func toggle_active_platform(layout_id: String, index: int) -> bool:
+	var layout := layout_by_id(layout_id)
+	if layout.is_empty():
+		return false
+	var act: Array = layout.get("active_platforms", [])
+	for i in act.size():
+		if int(act[i]) == index:
+			act.remove_at(i)
+			var slots: Array = layout.get("slots", [])
+			for j in range(slots.size() - 1, -1, -1):
+				if int((slots[j] as Dictionary).get("platform", -1)) == index:
+					slots.remove_at(j)
+			return true
+	act.append(index)
+	act.sort()
+	var slots2: Array = layout.get("slots", [])
+	slots2.append({"platform": index, "building": _default_building_for(layout), "star": 1})
+	return true
+
+
+func _default_building_for(layout: Dictionary) -> String:
+	var counts := {"base": 0, "farm": 0, "barracks": 0}
+	for row in (layout.get("slots", []) as Array):
+		var b := building_by_id(String((row as Dictionary).get("building", "")))
+		var tag := String(b.get("tag", ""))
+		if counts.has(tag):
+			counts[tag] = int(counts[tag]) + 1
+	if int(counts["base"]) == 0:
+		return _building_for_tag("base")
+	if int(counts["farm"]) < 2:
+		return _building_for_tag("farm")
+	return _building_for_tag("barracks")
+
+
+func set_slot_building(layout_id: String, index: int, building: String) -> bool:
+	var layout := layout_by_id(layout_id)
+	if layout.is_empty() or building_by_id(building).is_empty():
+		return false
+	var slot := ShellStore.slot_at(layout, index)
+	if slot.is_empty():
+		(layout.get("slots", []) as Array).append({"platform": index, "building": building, "star": 1})
+		return true
+	slot["building"] = building
+	return true
+
+
+func preset_layout(layout_id: String) -> bool:
+	var layout := layout_by_id(layout_id)
+	if layout.is_empty():
+		return false
+	var act: Array = layout.get("active_platforms", [])
+	act.sort()
+	var slots: Array = []
+	var plan := ["keep", "farm", "farm", "barracks"]
+	for i in act.size():
+		var tag := String(plan[i]) if i < plan.size() else "farm"
+		slots.append({"platform": int(act[i]), "building": _building_for_tag(tag), "star": 1})
+	layout["slots"] = slots
+	return true
+
+
+func layout_counts(layout: Dictionary) -> Dictionary:
+	var counts := {"base": 0, "farm": 0, "barracks": 0}
+	for row in (layout.get("slots", []) as Array):
+		var b := building_by_id(String((row as Dictionary).get("building", "")))
+		var tag := String(b.get("tag", ""))
+		if counts.has(tag):
+			counts[tag] = int(counts[tag]) + 1
+	return counts
+
+
+func new_encounter() -> Dictionary:
+	var ids: Array = []
+	for e in encounter_list():
+		ids.append(String((e as Dictionary).get("id", "")))
+	var id := unique_id("enc_new", ids)
+	var shell: Dictionary = shell_list()[0] as Dictionary if not shell_list().is_empty() else {}
+	var rows: Array = []
+	var n := 0
+	for p in ShellStore.platforms(shell):
+		var pd: Dictionary = p
+		if String(pd.get("side", "")) != "enemy":
+			continue
+		n += 1
+		rows.append({"platform": int(pd.get("index", 0)), "building": _building_for_tag("barracks"), "star": 1, "yaw": 180.0})
+		if n >= 3:
+			break
+	var enc := {
+		"id": id,
+		"display_name": i18n_zh("editor.encounters.new_name", id),
+		"faction": "bandit",
+		"faction_display": faction_display_of("bandit"),
+		"shell": String(shell.get("id", "")),
+		"base_hp": 3000.0,
+		"platform_buildings": rows,
+		"unit_roles": {"light": "bandit_scout", "line": "bandit_marauder", "elite": "bandit_chief"},
+		"intent_pool": [
+			{"id": "probe", "display_name": i18n_zh("editor.encounters.intent_probe", "probe"),
+				"weight_attack": 34.0, "weight_defend": 34.0, "note": ""},
+			{"id": "press", "display_name": i18n_zh("editor.encounters.intent_press", "press"),
+				"weight_attack": 33.0, "weight_defend": 33.0, "note": ""},
+			{"id": "flank", "display_name": i18n_zh("editor.encounters.intent_flank", "flank"),
+				"weight_attack": 33.0, "weight_defend": 33.0, "note": ""},
+		],
+		"wave_plan": {},
+		"note": "",
+	}
+	encounter_list().append(enc)
+	return enc
+
+
+func duplicate_encounter(id: String) -> Dictionary:
+	var src := encounter_by_id(id)
+	if src.is_empty():
+		return {}
+	var ids: Array = []
+	for e in encounter_list():
+		ids.append(String((e as Dictionary).get("id", "")))
+	var copy := src.duplicate(true)
+	copy["id"] = unique_id("enc_copy", ids)
+	copy["display_name"] = String(src.get("display_name", id)) + " " + i18n_zh("editor.common.copy", "copy")
+	encounter_list().append(copy)
+	return copy
+
+
+func remove_encounter(id: String) -> bool:
+	var arr := encounter_list()
+	for i in range(arr.size() - 1, -1, -1):
+		if String((arr[i] as Dictionary).get("id", "")) == id:
+			arr.remove_at(i)
+			return true
+	return false
+
+
+## 换阵营时把波次角色一起换成该阵营的兵种：遭遇卡是唯一入口，不手填单位 id。
+func set_encounter_faction(id: String, faction: String) -> bool:
+	var enc := encounter_by_id(id)
+	if enc.is_empty() or faction_display_of(faction).is_empty():
+		return false
+	enc["faction"] = faction
+	enc["faction_display"] = faction_display_of(faction)
+	var pool: Array = []
+	for u in unit_list():
+		var d: Dictionary = u
+		if String(d.get("faction", "")) == faction and bool(d.get("enabled", false)):
+			pool.append(d)
+	pool.sort_custom(func(a, b): return float(a.get("hp", 0.0)) < float(b.get("hp", 0.0)))
+	var roles: Dictionary = {}
+	if pool.size() >= 3:
+		roles["light"] = String(pool[0].get("id", ""))
+		roles["line"] = String(pool[1].get("id", ""))
+		roles["elite"] = String(pool[pool.size() - 1].get("id", ""))
+	enc["unit_roles"] = roles
+	return true
+
+
+func encounter_platform_indices(enc: Dictionary) -> Array:
+	var out: Array = []
+	for row in (enc.get("platform_buildings", []) as Array):
+		out.append(int((row as Dictionary).get("platform", -1)))
+	return out
+
+
+func add_encounter_building(enc: Dictionary, platform: int, building: String) -> bool:
+	if enc.is_empty():
+		return false
+	for row in (enc.get("platform_buildings", []) as Array):
+		if int((row as Dictionary).get("platform", -1)) == platform:
+			(row as Dictionary)["building"] = building
+			return true
+	(enc.get("platform_buildings", []) as Array).append({
+		"platform": platform, "building": building, "star": 1, "yaw": 180.0,
+	})
+	return true
+
+
+func remove_encounter_building(enc: Dictionary, platform: int) -> void:
+	var rows: Array = enc.get("platform_buildings", [])
+	for i in range(rows.size() - 1, -1, -1):
+		if int((rows[i] as Dictionary).get("platform", -1)) == platform:
+			rows.remove_at(i)
+
+
+func intent_sums(enc: Dictionary) -> Vector2:
+	var a := 0.0
+	var d := 0.0
+	for it in (enc.get("intent_pool", []) as Array):
+		a += float((it as Dictionary).get("weight_attack", 0.0))
+		d += float((it as Dictionary).get("weight_defend", 0.0))
+	return Vector2(a, d)
+
+
+func assembly_win_rate(asm: Dictionary) -> float:
+	return float(asm.get("last_win_rate", -1.0))
+
+
+func set_assembly_win_rate(asm_id: String, rate: float, games: int) -> void:
+	var asm := assembly_by_id(asm_id)
+	if asm.is_empty():
+		return
+	asm["last_win_rate"] = rate
+	asm["last_games"] = games

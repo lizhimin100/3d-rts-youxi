@@ -118,8 +118,16 @@
 			"expect": "部署_进攻",
 			"wait_after": 0.45
 		},
+		"shell": {
+			"description": "3D 地图底壳编辑器：点「石台锚点」工具 → 石台列表与新增按钮出现（四工具 + 俯视底壳）",
+			"scene": "res://Screens/editor/map_shell/map_shell_editor.tscn",
+			"delay": 1.6,
+			"click": "shell_tool_platform",
+			"expect": "shell_add_platform",
+			"wait_after": 0.3
+		},
 		"editor": {
-			"description": "开发者编辑器：点兵种行 → 靶场锁定并实时重算（单位/建筑卡牌/长横道营地三页签）",
+			"description": "数据工作台：点兵种行 → 靶场锁定并实时重算（单位/建筑卡牌/玩家布局卡/敌人遭遇卡/战斗节点组装 五页签）",
 			"scene": "res://Screens/scenes/dev_editor.tscn",
 			"delay": 1.2,
 			"click": "unit_row_bandit_chief",
@@ -134,12 +142,28 @@
 			"expect": "page_build",
 			"wait_after": 0.25
 		},
-		"editor_level": {
-			"description": "开发者编辑器 · 长横道/营地页（点页签，验证三段横道与独立石台摆放器）",
+		"editor_layouts": {
+			"description": "开发者编辑器 · 玩家态势布局卡页（点页签，验证底壳俯视图与激活槽位）",
 			"scene": "res://Screens/scenes/dev_editor.tscn",
 			"delay": 1.2,
-			"click": "tab_level",
-			"expect": "page_level",
+			"click": "tab_layouts",
+			"expect": "page_layouts",
+			"wait_after": 0.25
+		},
+		"editor_encounters": {
+			"description": "开发者编辑器 · 敌人遭遇卡页（点页签，验证阵营/基地血量/攻防意图池）",
+			"scene": "res://Screens/scenes/dev_editor.tscn",
+			"delay": 1.2,
+			"click": "tab_encounters",
+			"expect": "page_encounters",
+			"wait_after": 0.25
+		},
+		"editor_assembly": {
+			"description": "开发者编辑器 · 战斗节点组装页（点页签，验证三选一组合台与 50 局胜率入口）",
+			"scene": "res://Screens/scenes/dev_editor.tscn",
+			"delay": 1.2,
+			"click": "tab_assembly",
+			"expect": "page_assembly",
 			"wait_after": 0.25
 		}
 	}

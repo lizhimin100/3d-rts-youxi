@@ -21,6 +21,11 @@ const COMBAT_JSON := "res://Content/data/combat.json"
 const UNITS_JSON := "res://Content/data/units.json"
 const PLANNING_JSON := "res://Content/data/planning.json"
 const LEVELS_JSON := "res://Content/data/levels.json"
+const SHELLS_JSON := "res://Content/data/map_shells.json"
+const LAYOUTS_JSON := "res://Content/data/player_layouts.json"
+const ENCOUNTERS_JSON := "res://Content/data/enemy_encounters.json"
+const SHELL_STORE := preload("res://Screens/editor/shell_store.gd")
+const ASSEMBLY_API := preload("res://Game/map/关卡装配.gd")
 const LEVEL_ID := "level_1"
 const TOP_DIRS := ["Engine", "Model", "Screens", "Game", "Content", "Tests", "Tools", "Documents"]
 const LEGACY_DIRS := ["代码", "场景", "美术", "音频", "地图", "工具", "文档"]
@@ -56,6 +61,7 @@ func _run() -> void:
 	_check_planning_data()
 	_check_level_data()
 	_check_dev_editor()
+	_check_map_shell()
 	_check_r1_config()
 	_check_engine_pin()
 	_check_manifest()
@@ -882,9 +888,15 @@ func _check_level_data() -> void:
 	if c.is_empty():
 		return
 	_ok("关卡数据校验（两轮各 90 秒）", _arr(c.get("level_errors", [])).is_empty(), _err_text(c.get("level_errors", [])))
-	_ok("第 1 关存在（1 关）", int(c.get("level_count", 0)) == 1)
 	var levels := JsonFile.read_dict(LEVELS_JSON, {})
-	var lv: Dictionary = (levels.get("levels", []) as Array)[0] if not (levels.get("levels", []) as Array).is_empty() else {}
+	var all_levels: Array = levels.get("levels", [])
+	var level_ids: Array[String] = []
+	for lv0 in all_levels:
+		level_ids.append(String((lv0 as Dictionary).get("id", "")))
+	_ok("第 1 关存在（手工蓝图）+ 组装关卡都已生成",
+		level_ids.has("level_1") and all_levels.size() >= 4,
+		"levels=%s" % str(level_ids))
+	var lv: Dictionary = all_levels[0] if not all_levels.is_empty() else {}
 	var rounds: Array = lv.get("rounds", [])
 	var kinds: Array[String] = []
 	for r in rounds:
@@ -929,7 +941,8 @@ func _check_dev_editor() -> void:
 	var problems: Array[String] = []
 	# 1) 脚本 / 数据层 / 场景
 	var scripts := ["dev_editor.gd", "dev_theme.gd", "dev_data.gd", "page_units.gd",
-		"page_build.gd", "page_level.gd", "camp_canvas.gd", "backdrop.gd", "logo.gd",
+		"page_build.gd", "page_layouts.gd", "page_encounters.gd", "page_assembly.gd",
+		"layout_canvas.gd", "shell_store.gd", "backdrop.gd", "logo.gd",
 		"compare_bars.gd", "building_glyph.gd"]
 	for f in scripts:
 		if not FileAccess.file_exists("res://Screens/editor/" + f):
@@ -939,12 +952,12 @@ func _check_dev_editor() -> void:
 	for f in ["res://addons/war_island_editor/plugin.cfg", "res://addons/war_island_editor/plugin.gd"]:
 		if not FileAccess.file_exists(f):
 			problems.append("缺 " + f)
-	_ok("开发者编辑器框架齐全（主壳/主题/数据/三页/营地画布/场景）", problems.is_empty(), "; ".join(problems))
+	_ok("开发者编辑器框架齐全（主壳/主题/数据/五页/底壳画布/场景）", problems.is_empty(), "; ".join(problems))
 
 	var data_script: Script = load("res://Screens/editor/dev_data.gd")
 	var d: RefCounted = data_script.new()
 	var loaded := bool(d.call("load_all"))
-	_ok("开发者编辑器数据层可装载（units/combat/planning/levels + ui.csv）", loaded,
+	_ok("开发者编辑器数据层可装载（units/combat/planning/levels/shells/layouts/encounters + ui.csv）", loaded,
 		String(d.get("load_error")))
 
 	var rows: Array = d.call("validate")
@@ -952,8 +965,8 @@ func _check_dev_editor() -> void:
 	for r in rows:
 		if not bool((r as Dictionary).get("ok", false)):
 			fails.append("%s(%s)" % [String((r as Dictionary).get("key", "")), String((r as Dictionary).get("detail", ""))])
-	_ok("开发者编辑器数据自检 10 项（单位/属性/建筑/卡组/横道/意图/石台/开局/模型/文案）",
-		rows.size() == 10 and fails.is_empty(), "; ".join(fails))
+	_ok("开发者编辑器数据自检 12 项（单位/属性/建筑/卡组/底壳/脊线/石台/布局/遭遇/组装/模型/文案）",
+		rows.size() == 12 and fails.is_empty(), "; ".join(fails))
 
 	# 2) 12 兵种：模型路径或占位符 + 13 项攻防穿透
 	var units := JsonFile.read_dict(UNITS_JSON, {})
@@ -1003,86 +1016,165 @@ func _check_dev_editor() -> void:
 		deck.size() == 12 and int((plan.get("deck", {}) as Dictionary).get("size", 0)) == 12 and count_sum == 12 and bad_deck.is_empty(),
 		"deck=%d size=%d count=%d 缺失=%s" % [deck.size(), int((plan.get("deck", {}) as Dictionary).get("size", 0)), count_sum, ", ".join(bad_deck)])
 
-	# 5) 三段横道：合计 == lane.length，宽度三位数，模板三套
-	var levels := JsonFile.read_dict(LEVELS_JSON, {})
-	var lv: Dictionary = (levels.get("levels", []) as Array)[0] if not (levels.get("levels", []) as Array).is_empty() else {}
-	var lane: Dictionary = lv.get("lane", {})
-	var segs: Array = lane.get("segments", [])
-	var seg_sum := 0.0
-	var seg_bad: Array[String] = []
-	for sg in segs:
-		var sd: Dictionary = sg
-		var ln := float(sd.get("length", 0.0))
-		var wd := float(sd.get("width", 0.0))
-		seg_sum += ln
-		if wd < 100.0 or wd > 999.0:
-			seg_bad.append("width=%.0f" % wd)
-	var tpls: Dictionary = lane.get("templates", {})
-	var tpl_bad: Array[String] = []
-	for name in tpls.keys():
-		var lengths: Array = (tpls[name] as Dictionary).get("lengths", [])
-		var widths: Array = (tpls[name] as Dictionary).get("widths", [])
-		var s_sum := 0.0
-		for v in lengths:
-			s_sum += float(v)
-		if lengths.size() != 3 or widths.size() != 3 or absf(s_sum - float(lane.get("length", 0.0))) > 0.001:
-			tpl_bad.append(String(name))
-	_ok("三段横道首尾相接（合计 = lane.length）、宽度三位数、三套态势模板",
-		segs.size() == 3 and absf(seg_sum - float(lane.get("length", 0.0))) < 0.001 and seg_bad.is_empty()
-		and tpls.size() == 3 and tpl_bad.is_empty(),
-		"sum=%.0f / lane=%.0f / 模板=%s / %s" % [seg_sum, float(lane.get("length", 0.0)), str(tpls.keys()), ", ".join(seg_bad + tpl_bad)])
-
-	# 6) 意图池权重
-	var intents: Array = lv.get("intent_pool", [])
-	var i_sum := 0.0
-	for it in intents:
-		i_sum += float((it as Dictionary).get("weight", 0.0))
-	var itpl: Dictionary = lv.get("intent_templates", {})
-	var itpl_bad: Array[String] = []
-	for name in itpl.keys():
-		var arr: Array = itpl[name]
-		var s2 := 0.0
-		for v in arr:
-			s2 += float(v)
-		if arr.size() != intents.size() or absf(s2 - 100.0) > 0.001:
-			itpl_bad.append(String(name))
-	_ok("敌方意图池 5 条、总权重 100、三套模板逐条对齐",
-		intents.size() == 5 and absf(i_sum - 100.0) < 0.001 and itpl.size() == 3 and itpl_bad.is_empty(),
-		"items=%d sum=%.0f 模板坏=%s" % [intents.size(), i_sum, ", ".join(itpl_bad)])
-
-	# 7) 营地石台 + 开局 + 敌方固定建筑
-	var board: Dictionary = plan.get("board", {})
-	var plats: Array = board.get("platforms", [])
-	var starts: Array = board.get("start", [])
-	var plots := {}
+	# 5) 底壳：12 座候选石台 / 左右各 1 主堡锚点 / 间隙 / 分割环三位数刻度
+	var shells_doc := JsonFile.read_dict(SHELLS_JSON, {})
+	var shell_arr: Array = shells_doc.get("shells", [])
+	var shell0: Dictionary = shell_arr[0] if not shell_arr.is_empty() else {}
+	var plats: Array = shell0.get("platforms", [])
+	var keeps := {"player": 0, "enemy": 0}
+	var pbad: Array[String] = []
 	for p in plats:
-		plots[int((p as Dictionary).get("plot", -1))] = true
-	var counts := {"base": 0, "farm": 0, "barracks": 0}
-	for st in starts:
-		var bd2: Dictionary = d.call("building_by_id", String((st as Dictionary).get("building", "")))
-		var tag := String(bd2.get("tag", ""))
-		if counts.has(tag):
-			counts[tag] += 1
+		var pd: Dictionary = p
+		if String(pd.get("role", "")) == "keep":
+			keeps[String(pd.get("side", "player"))] = int(keeps.get(String(pd.get("side", "player")), 0)) + 1
+		if float(pd.get("base_h", 0.0)) < 0.4:
+			pbad.append("p" + str(pd.get("index", 0)) + " 悬空")
 	var gap := float(d.call("min_gap_meters"))
-	var enemies: Array = lv.get("enemy_buildings", [])
-	var enemy_bad: Array[String] = []
-	for e in enemies:
+	_ok("底壳：12 座候选石台 + 左右各 1 主堡锚点 + 石柱底座 + 最小行军间隙 >= 1.5m",
+		plats.size() == 12 and int(keeps["player"]) == 1 and int(keeps["enemy"]) == 1 and pbad.is_empty() and gap >= 1.5,
+		"platforms=%d keeps=%s gap=%.2fm %s" % [plats.size(), str(keeps), gap, ", ".join(pbad)])
+
+	var spine: Dictionary = shell0.get("spine", {})
+	var length_logic := float(spine.get("length_logic", 0.0))
+	var divs: Dictionary = spine.get("dividers", {})
+	var t_ok := true
+	var r1_ok := true
+	var last_t := -1
+	var t_text: Array[String] = []
+	for did in SHELL_STORE.DIVIDER_IDS:
+		var row: Dictionary = divs.get(did, {})
+		var t := int(row.get("t", -1))
+		if t < 100 or t > 999 or t <= last_t:
+			t_ok = false
+		last_t = t
+		var logic := float(row.get("length_logic", -1.0))
+		if absf(logic - SHELL_STORE.logic_of_t(t, length_logic)) > 0.5:
+			r1_ok = false
+		if absf(float(row.get("meters", -1.0)) - logic * SHELL_STORE.R1) > 0.0001:
+			r1_ok = false
+		t_text.append("%s:t=%d/%.0f" % [String(did), t, logic])
+	var width_logic := float(spine.get("width_logic", 0.0))
+	var grid := SHELL_STORE.grid_of(shell0)
+	_ok("分割尺：4 个环都是三位数刻度 t、按 R1=0.015 换算逻辑长度、通道宽度三位数",
+		t_ok and r1_ok and width_logic >= 100.0 and width_logic <= 999.0,
+		"width=%.0f %s" % [width_logic, " ".join(t_text)])
+	var heights_arr: Array = (shell0.get("terrain", {}) as Dictionary).get("heights", [])
+	var palette_arr: Array = (shell0.get("surface", {}) as Dictionary).get("palette", [])
+	_ok("地形高度场与地表槽位齐全（%d 格，4 种材质）" % heights_arr.size(),
+		heights_arr.size() == int(grid["cols"]) * int(grid["rows"]) and palette_arr.size() == 4,
+		"grid=%dx%d heights=%d" % [int(grid["cols"]), int(grid["rows"]), heights_arr.size()])
+
+	# 6) 玩家态势布局卡
+	var layouts_doc := JsonFile.read_dict(LAYOUTS_JSON, {})
+	var lay_bad: Array[String] = []
+	var even_default := false
+	for l in (layouts_doc.get("layouts", []) as Array):
+		var ld: Dictionary = l
+		var kind := String(ld.get("kind", ""))
+		if not (kind in ["even", "disadvantage", "advantage"]):
+			lay_bad.append("kind=" + kind)
+		var shell_of := d.call("shell_by_id", String(ld.get("shell", ""))) as Dictionary
+		for idx in (ld.get("active_platforms", []) as Array):
+			if SHELL_STORE.platform_by_index(shell_of, int(idx)).is_empty():
+				lay_bad.append("platform " + str(idx))
+		var counts: Dictionary = d.call("layout_counts", ld)
+		if int(counts.get("base", 0)) != 1:
+			lay_bad.append(String(ld.get("id", "")) + " keep")
+		if kind == "even" and int(counts.get("farm", 0)) == 2 and int(counts.get("barracks", 0)) == 1:
+			even_default = true
+		if String(ld.get("inactive_render", "")) != "ruin":
+			lay_bad.append(String(ld.get("id", "")) + " ruin")
+	_ok("玩家布局卡：3 种态势 + 激活石台真实存在 + 每卡 1 主堡 + 平势默认 1 主堡 2 农场 1 兵营 + 未激活即遗迹",
+		(layouts_doc.get("kinds", []) as Array).size() == 3 and even_default and lay_bad.is_empty(),
+		"; ".join(lay_bad.slice(0, 4)))
+
+	# 7) 敌人遭遇卡 + 组装闭环
+	var enc_doc := JsonFile.read_dict(ENCOUNTERS_JSON, {})
+	var faction_names := {}
+	for f in (enc_doc.get("factions", []) as Array):
+		faction_names[String((f as Dictionary).get("id", ""))] = String((f as Dictionary).get("display_name", ""))
+	var enc_bad: Array[String] = []
+	for e in (enc_doc.get("encounters", []) as Array):
 		var ed: Dictionary = e
-		var bd3: Dictionary = d.call("building_by_id", String(ed.get("building", "")))
-		var x := float(ed.get("x", -1.0))
-		var y := float(ed.get("y", -1.0))
-		if bd3.is_empty() or x < 0.65 or x > 1.0 or y < 0.0 or y > 1.0:
-			enemy_bad.append(String(ed.get("building", "")))
-	_ok("营地 10 座独立石台、开局 1 基地 + 2 农场 + 1 兵营、最小间隙 >= 0.5m",
-		plats.size() == 10 and plots.size() == 10 and counts["base"] == 1 and counts["farm"] == 2 and counts["barracks"] == 1 and gap >= 0.5,
-		"platforms=%d gap=%.2fm start=%s" % [plats.size(), gap, str(counts)])
-	_ok("敌方固定建筑 3 座且坐标/建筑 id 有效", enemies.size() == 3 and enemy_bad.is_empty(), ", ".join(enemy_bad))
+		var fac := String(ed.get("faction", ""))
+		if not faction_names.has(fac):
+			enc_bad.append(String(ed.get("id", "")) + " faction")
+		var sums: Vector2 = d.call("intent_sums", ed)
+		if absf(sums.x - 100.0) > 0.001 or absf(sums.y - 100.0) > 0.001:
+			enc_bad.append(String(ed.get("id", "")) + " intents")
+		var shell_e := d.call("shell_by_id", String(ed.get("shell", ""))) as Dictionary
+		for row in (ed.get("platform_buildings", []) as Array):
+			var bd2: Dictionary = row
+			var pd2 := SHELL_STORE.platform_by_index(shell_e, int(bd2.get("platform", -1)))
+			if pd2.is_empty() or String(pd2.get("side", "")) != "enemy":
+				enc_bad.append(String(ed.get("id", "")) + " platform")
+			if (d.call("building_by_id", String(bd2.get("building", ""))) as Dictionary).is_empty():
+				enc_bad.append(String(ed.get("id", "")) + " building")
+	_ok("敌人遭遇卡：豺狼人/鱼人两阵营 + 敌方石台固定建筑 + 攻防意图池两列各 100",
+		String(faction_names.get("bandit", "")) == "豺狼人" and String(faction_names.get("murloc", "")) == "鱼人"
+		and (enc_doc.get("encounters", []) as Array).size() >= 2 and enc_bad.is_empty(),
+		"; ".join(enc_bad.slice(0, 4)))
+
+	var levels := JsonFile.read_dict(LEVELS_JSON, {})
+	var asm_list: Array = levels.get("assemblies", [])
+	var asm_bad: Array[String] = []
+	for a in asm_list:
+		var ad: Dictionary = a
+		var lvx := d.call("level_by_id", String(ad.get("level", ""))) as Dictionary
+		if lvx.is_empty():
+			asm_bad.append(String(ad.get("id", "")) + " level")
+		elif (lvx.get("rounds", []) as Array).size() != 2:
+			asm_bad.append(String(ad.get("id", "")) + " rounds")
+	_ok("战斗节点组装：[底壳 × 布局卡 × 遭遇卡] 引用闭环且关卡已生成",
+		asm_list.size() >= 3 and asm_bad.is_empty(), "assemblies=%d %s" % [asm_list.size(), ", ".join(asm_bad)])
+
+	var state_bad: Array[String] = []
+	var state_info: Array[String] = []
+	for a_row in asm_list:
+		var lid0 := String((a_row as Dictionary).get("level", ""))
+		var lay0: Dictionary = ASSEMBLY_API.layout(String((a_row as Dictionary).get("player_layout", "")))
+		var active0 := int((lay0.get("active_platforms", []) as Array).size())
+		var build0: Array = ASSEMBLY_API.buildable_platforms(lid0)
+		var ruin0: Array = ASSEMBLY_API.ruin_platforms(lid0)
+		var player_build := 0
+		for b0 in build0:
+			if String((b0 as Dictionary).get("side", "")) == "player":
+				player_build += 1
+		if player_build != active0:
+			state_bad.append(lid0 + " buildable=%d != active=%d" % [player_build, active0])
+		for r0 in ruin0:
+			if int((r0 as Dictionary).get("index", 0)) <= 0:
+				state_bad.append(lid0 + " ruin index")
+		state_info.append("%s 可建%d/遗迹%d" % [lid0.trim_prefix("level_asm_"), build0.size(), ruin0.size()])
+	_ok("局内石台状态：布局卡未激活 = 碎石遗迹（不可建造），激活 = 可建造",
+		asm_list.is_empty() == false and state_bad.is_empty(), ", ".join(state_info + state_bad.slice(0, 2)))
+
+	var mdl := _mdl()
+	if mdl != null and not asm_list.is_empty():
+		var sim_ok := true
+		var sim_info: Array[String] = []
+		for i in mini(asm_list.size(), 3):
+			var lid := String((asm_list[i] as Dictionary).get("level", ""))
+			var games := 50 if i == 0 else 3
+			var res: Dictionary = mdl.call("LevelSimulate", JsonFile.read_dict(UNITS_JSON, {}),
+				JsonFile.read_dict(COMBAT_JSON, {}), plan, levels, lid, games, 7)
+			var rate := float(res.get("win_rate", -1.0))
+			if not bool(res.get("ok", false)) or rate < 0.0 or rate > 1.0:
+				sim_ok = false
+			sim_info.append("%s:%d局 %.0f%%" % [lid.trim_prefix("level_asm_"), int(res.get("games", 0)), rate * 100.0])
+		_ok("组装关卡可跑 --simulate（首个组合 50 局 + 其余各 3 局）", sim_ok, ", ".join(sim_info))
+		var sim_src := _read("res://Tests/sim/run_simulate.gd")
+		_ok("run_simulate 支持 --level= 与 --out=（组装页靠 --out 拿胜率）",
+			sim_src.contains("--level=") and sim_src.contains("--out="))
 
 	# 8) 文案 / 源码硬编码 / 截图登记 / 发行排除
 	var i18n := root.get_node_or_null("I18n")
 	var need_keys := ["editor.app.title", "editor.tab.units", "editor.dps.final",
-		"editor.cards.deck", "editor.level.camp", "unit.alliance_footman",
-		"building.keep", "card.build_farm"]
+		"editor.cards.deck", "editor.tab.layouts", "editor.tab.encounters",
+		"editor.tab.assembly", "editor.assembly.sim_run", "unit.alliance_footman",
+		"building.keep", "card.build_farm", "shell.tool.terrain", "shell.tool.decor",
+		"shell.tool.spine", "shell.tool.platform", "shell.platform.role_keep",
+		"shell.divider.player_end", "shell.decor.fence"]
 	var lack_keys: Array[String] = []
 	for k in need_keys:
 		if i18n == null or not bool(i18n.call("has", k)):
@@ -1092,24 +1184,91 @@ func _check_dev_editor() -> void:
 	var hard := 0
 	var hard_files: Array = _walk("res://Screens/editor")
 	hard_files.append("res://addons/war_island_editor/plugin.gd")
+	hard_files.append("res://addons/map_shell_editor/plugin.gd")
 	for f in hard_files:
 		if f.ends_with(".gd"):
 			hard += _count_cjk_literals(_read(f))
-	_ok("开发者编辑器源码零写死中文（连路径都用 ASCII）", hard == 0, "实测 %d 处" % hard)
+	_ok("编辑器源码零写死中文（连路径都用 ASCII）", hard == 0, "实测 %d 处" % hard)
 
 	var screens := JsonFile.read_dict(SCREENS, {})
-	var ed: Dictionary = (screens.get("screens", {}) as Dictionary).get("editor", {})
-	_ok("截图画面 editor 已登记（scene + click + expect）",
-		not ed.is_empty() and FileAccess.file_exists(String(ed.get("scene", ""))) and ed.has("click") and ed.has("expect"),
-		str(ed.keys()))
+	var screen_map: Dictionary = screens.get("screens", {})
+	var screen_bad: Array[String] = []
+	for name in ["editor", "editor_layouts", "editor_encounters", "editor_assembly", "shell"]:
+		var r: Dictionary = screen_map.get(name, {})
+		if r.is_empty() or not FileAccess.file_exists(String(r.get("scene", ""))) or not r.has("click") or not r.has("expect"):
+			screen_bad.append(name)
+	_ok("截图画面 editor / editor_layouts / editor_encounters / editor_assembly / shell 都登记了 click+expect",
+		screen_bad.is_empty(), ", ".join(screen_bad))
 
 	var proj := _read("res://project.godot")
-	_ok("Godot 主屏默认启用战争原岛开发者编辑器（旧地图编辑器已禁用）",
-		proj.contains("addons/war_island_editor/plugin.cfg") and not proj.contains("addons/map_editor/plugin.cfg"),
-		"enabled=" + str(proj.contains("addons/war_island_editor/plugin.cfg")) + " old=" + str(proj.contains("addons/map_editor/plugin.cfg")))
+	_ok("Godot 主屏启用开发者编辑器 + 3D 地图底壳编辑器（旧地图编辑器已移除）",
+		proj.contains("addons/war_island_editor/plugin.cfg")
+		and proj.contains("addons/map_shell_editor/plugin.cfg")
+		and not proj.contains("addons/map_editor/plugin.cfg"),
+		"dev=" + str(proj.contains("addons/war_island_editor/plugin.cfg"))
+		+ " shell=" + str(proj.contains("addons/map_shell_editor/plugin.cfg"))
+		+ " old=" + str(proj.contains("addons/map_editor/plugin.cfg")))
 
 	var rel := _read("res://Tools/build/release_exclude.txt")
-	_ok("发行排除清单含开发者编辑器（Screens/editor）", rel.contains("Screens/editor"))
+	_ok("发行排除清单含开发者编辑器（Screens/editor）与编辑器插件（addons）",
+		rel.contains("Screens/editor") and rel.contains("addons"))
+
+
+func _check_map_shell() -> void:
+	var files := [
+		"res://addons/map_shell_editor/plugin.cfg",
+		"res://addons/map_shell_editor/plugin.gd",
+		"res://Screens/editor/map_shell/map_shell_editor.tscn",
+		"res://Screens/editor/map_shell/map_shell_editor.gd",
+		"res://Screens/editor/map_shell/shell_view.gd",
+		"res://Screens/editor/map_shell/shell_theme.gd",
+		"res://Screens/editor/map_shell/shell_text.gd",
+	]
+	var lack: Array[String] = []
+	for f in files:
+		if not FileAccess.file_exists(f):
+			lack.append(f.get_file())
+	_ok("3D 地图底壳编辑器（MapShellEditor）文件齐全：插件 + 场景 + 四工具脚本", lack.is_empty(), ", ".join(lack))
+
+	var old_editor := DirAccess.dir_exists_absolute(ProjectSettings.globalize_path("res://addons/map_editor"))
+	_ok("旧 3D 地图编辑器已移除（摆兵种 / 触发器 / A* 涂抹 / 经济面板整块下线）", not old_editor,
+		"addons/map_editor 还在" if old_editor else "addons/map_editor 已删")
+
+	var editor_src := _read("res://Screens/editor/map_shell/map_shell_editor.gd")
+	var view_src := _read("res://Screens/editor/map_shell/shell_view.gd")
+	var tools_ok := true
+	var tools_hit: Array[String] = []
+	for t in ["terrain", "decor", "spine", "platform"]:
+		if editor_src.contains("shell.tool." + t) and editor_src.contains("shell_tool_"):
+			tools_hit.append(t)
+		else:
+			tools_ok = false
+	for fn_key in ["_apply_brush", "add_decor", "set_divider_t", "add_platform"]:
+		if not view_src.contains(fn_key):
+			tools_ok = false
+	_ok("底壳编辑器只保留 4 个纯视觉/空间划分工具（地形笔刷 / 装饰 / 脊线分割 / 石台锚点）",
+		tools_ok, ", ".join(tools_hit))
+
+	var forbidden: Array[String] = []
+	for bad in ["spawn_unit", "add_unit", "trigger", "AStar", "Pathfinder", "economy", "resource_node"]:
+		if editor_src.contains(bad) or view_src.contains(bad):
+			forbidden.append(bad)
+	_ok("底壳编辑器源码不含摆兵种 / 触发器 / A* 寻路 / 经济入口", forbidden.is_empty(), ", ".join(forbidden))
+
+	var shell_src := _read("res://Screens/editor/map_shell/shell_theme.gd")
+	_ok("底壳编辑器主题：深岩灰 #12161F + 保留旧地图编辑器嵌入色（石色 / 金色）",
+		shell_src.contains("#12161F") and shell_src.contains("LEGACY_GOLD") and shell_src.contains("STONE"))
+
+	var shells_doc := JsonFile.read_dict(SHELLS_JSON, {})
+	var allowed := ["id", "display_name", "biome", "size", "seed", "terrain", "surface",
+		"spine", "decorations", "platforms", "note"]
+	var extra: Array[String] = []
+	for s in (shells_doc.get("shells", []) as Array):
+		for k in (s as Dictionary).keys():
+			if not (String(k) in allowed):
+				extra.append(String(k))
+	_ok("底壳资产是纯净底壳：只有地形/地表/脊线/装饰/石台（无兵种/触发器/波次/经济字段）",
+		extra.is_empty(), ", ".join(extra))
 
 
 func _check_r1_config() -> void:

@@ -1,0 +1,418 @@
+{
+	"version": 1.0,
+	"note": "敌人遭遇卡：阵营（豺狼人/鱼人）、敌方基地血量、敌方石台上的固定建筑外观、按轮次权重的敌方攻防意图池，以及波次蓝图（角色 -> 兵种）。",
+	"factions": [
+		{
+			"id": "bandit",
+			"display_name": "豺狼人",
+			"placeholder_mesh": false
+		},
+		{
+			"id": "murloc",
+			"display_name": "鱼人",
+			"placeholder_mesh": true
+		}
+	],
+	"encounters": [
+		{
+			"id": "enc_gnoll_press",
+			"display_name": "豺狼人 · 灰牙压上",
+			"faction": "bandit",
+			"faction_display": "豺狼人",
+			"shell": "shell_ridge_01",
+			"base_hp": 3200.0,
+			"platform_buildings": [
+				{
+					"platform": 7.0,
+					"building": "watchtower",
+					"star": 2.0,
+					"yaw": 180.0
+				},
+				{
+					"platform": 9.0,
+					"building": "barracks",
+					"star": 3.0,
+					"yaw": 180.0
+				},
+				{
+					"platform": 10.0,
+					"building": "watchtower",
+					"star": 2.0,
+					"yaw": 180.0
+				},
+				{
+					"platform": 11.0,
+					"building": "keep",
+					"star": 2.0,
+					"yaw": 180.0
+				}
+			],
+			"unit_roles": {
+				"light": "bandit_scout",
+				"line": "bandit_marauder",
+				"elite": "bandit_chief"
+			},
+			"intent_pool": [
+				{
+					"id": "probe",
+					"display_name": "斥候试探",
+					"weight_attack": 28.0,
+					"weight_defend": 24.0,
+					"note": "小股轻甲压前，逼你交第一轮技能。"
+				},
+				{
+					"id": "press",
+					"display_name": "正面压上",
+					"weight_attack": 34.0,
+					"weight_defend": 30.0,
+					"note": "战士顶前，远程在射程外铺火力。"
+				},
+				{
+					"id": "shaman",
+					"display_name": "萨满火力",
+					"weight_attack": 22.0,
+					"weight_defend": 26.0,
+					"note": "魔法 650 打中甲 0.75，专治重甲阵。"
+				},
+				{
+					"id": "flank",
+					"display_name": "侧翼绕后",
+					"weight_attack": 10.0,
+					"weight_defend": 12.0,
+					"note": "从横道边缘切入远程小队。"
+				},
+				{
+					"id": "allin",
+					"display_name": "全军突击",
+					"weight_attack": 6.0,
+					"weight_defend": 8.0,
+					"note": "最后 20 秒的孤注一掷。"
+				}
+			],
+			"wave_plan": {
+				"attack": [
+					{
+						"t": 0.0,
+						"squads": [
+							{
+								"role": "light",
+								"count": 2.0
+							},
+							{
+								"role": "line",
+								"count": 2.0
+							}
+						]
+					},
+					{
+						"t": 24.0,
+						"squads": [
+							{
+								"role": "line",
+								"count": 2.0
+							},
+							{
+								"role": "elite",
+								"count": 1.0
+							}
+						]
+					},
+					{
+						"t": 48.0,
+						"squads": [
+							{
+								"role": "light",
+								"count": 2.0
+							},
+							{
+								"role": "line",
+								"count": 2.0
+							},
+							{
+								"role": "elite",
+								"count": 1.0
+							}
+						]
+					},
+					{
+						"t": 70.0,
+						"squads": [
+							{
+								"role": "line",
+								"count": 2.0
+							},
+							{
+								"role": "elite",
+								"count": 1.0
+							}
+						]
+					}
+				],
+				"defend": [
+					{
+						"t": 0.0,
+						"squads": [
+							{
+								"role": "light",
+								"count": 2.0
+							},
+							{
+								"role": "line",
+								"count": 2.0
+							}
+						]
+					},
+					{
+						"t": 20.0,
+						"squads": [
+							{
+								"role": "line",
+								"count": 2.0
+							},
+							{
+								"role": "elite",
+								"count": 1.0
+							}
+						]
+					},
+					{
+						"t": 40.0,
+						"squads": [
+							{
+								"role": "light",
+								"count": 2.0
+							},
+							{
+								"role": "line",
+								"count": 2.0
+							}
+						]
+					},
+					{
+						"t": 60.0,
+						"squads": [
+							{
+								"role": "line",
+								"count": 2.0
+							},
+							{
+								"role": "elite",
+								"count": 1.0
+							}
+						]
+					},
+					{
+						"t": 76.0,
+						"squads": [
+							{
+								"role": "light",
+								"count": 2.0
+							}
+						]
+					}
+				]
+			},
+			"note": "轻甲数量多、单兵弱；萨满提供魔法伤害。石台 7/9/10/11 是它的固定外观。"
+		},
+		{
+			"id": "enc_murloc_tide",
+			"display_name": "鱼人 · 潮汐抢滩",
+			"faction": "murloc",
+			"faction_display": "鱼人",
+			"shell": "shell_ridge_01",
+			"base_hp": 2800.0,
+			"platform_buildings": [
+				{
+					"platform": 7.0,
+					"building": "watchtower",
+					"star": 2.0,
+					"yaw": 180.0
+				},
+				{
+					"platform": 9.0,
+					"building": "barracks",
+					"star": 2.0,
+					"yaw": 180.0
+				},
+				{
+					"platform": 10.0,
+					"building": "watchtower",
+					"star": 3.0,
+					"yaw": 180.0
+				},
+				{
+					"platform": 11.0,
+					"building": "keep",
+					"star": 2.0,
+					"yaw": 180.0
+				}
+			],
+			"unit_roles": {
+				"light": "murloc_slave",
+				"line": "murloc_raider",
+				"elite": "murloc_lord"
+			},
+			"intent_pool": [
+				{
+					"id": "tide",
+					"display_name": "潮水压线",
+					"weight_attack": 30.0,
+					"weight_defend": 26.0,
+					"note": "奴隶海沿脊线平推，靠数量吃塔。"
+				},
+				{
+					"id": "swarm",
+					"display_name": "分股包夹",
+					"weight_attack": 32.0,
+					"weight_defend": 30.0,
+					"note": "两股同时压两侧石台。"
+				},
+				{
+					"id": "harpoon",
+					"display_name": "鱼叉齐射",
+					"weight_attack": 20.0,
+					"weight_defend": 24.0,
+					"note": "猎人远程集火，先点掉前压兵营。"
+				},
+				{
+					"id": "flank",
+					"display_name": "浅滩绕后",
+					"weight_attack": 12.0,
+					"weight_defend": 12.0,
+					"note": "从水线一侧摸进后排。"
+				},
+				{
+					"id": "allin",
+					"display_name": "深渊领主",
+					"weight_attack": 6.0,
+					"weight_defend": 8.0,
+					"note": "领主带队的一次性冲锋。"
+				}
+			],
+			"wave_plan": {
+				"attack": [
+					{
+						"t": 0.0,
+						"squads": [
+							{
+								"role": "light",
+								"count": 2.0
+							},
+							{
+								"role": "line",
+								"count": 2.0
+							}
+						]
+					},
+					{
+						"t": 24.0,
+						"squads": [
+							{
+								"role": "line",
+								"count": 2.0
+							},
+							{
+								"role": "elite",
+								"count": 1.0
+							}
+						]
+					},
+					{
+						"t": 48.0,
+						"squads": [
+							{
+								"role": "light",
+								"count": 2.0
+							},
+							{
+								"role": "line",
+								"count": 2.0
+							},
+							{
+								"role": "elite",
+								"count": 1.0
+							}
+						]
+					},
+					{
+						"t": 70.0,
+						"squads": [
+							{
+								"role": "line",
+								"count": 2.0
+							},
+							{
+								"role": "elite",
+								"count": 1.0
+							}
+						]
+					}
+				],
+				"defend": [
+					{
+						"t": 0.0,
+						"squads": [
+							{
+								"role": "light",
+								"count": 2.0
+							},
+							{
+								"role": "line",
+								"count": 2.0
+							}
+						]
+					},
+					{
+						"t": 20.0,
+						"squads": [
+							{
+								"role": "line",
+								"count": 2.0
+							},
+							{
+								"role": "elite",
+								"count": 1.0
+							}
+						]
+					},
+					{
+						"t": 40.0,
+						"squads": [
+							{
+								"role": "light",
+								"count": 2.0
+							},
+							{
+								"role": "line",
+								"count": 2.0
+							}
+						]
+					},
+					{
+						"t": 60.0,
+						"squads": [
+							{
+								"role": "line",
+								"count": 2.0
+							},
+							{
+								"role": "elite",
+								"count": 1.0
+							}
+						]
+					},
+					{
+						"t": 76.0,
+						"squads": [
+							{
+								"role": "light",
+								"count": 2.0
+							}
+						]
+					}
+				]
+			},
+			"note": "无甲奴隶海 + 轻甲掠夺者；领主血量高，适合验证前压部署线。"
+		}
+	]
+}

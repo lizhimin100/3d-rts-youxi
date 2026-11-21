@@ -1,0 +1,131 @@
+{
+	"version": 1.0,
+	"note": "玩家态势布局卡：选平势/劣势/优势 + 勾选激活哪些石台序号 + 在激活槽位指定开局预设建筑（默认 1 主堡 + 2 农场 + 1 兵营）。未激活石台局内渲染为不可建造的碎石遗迹。",
+	"kinds": [
+		{
+			"id": "even",
+			"display_name": "平势",
+			"note": "双方距离与资源对等，先考读图。"
+		},
+		{
+			"id": "disadvantage",
+			"display_name": "劣势",
+			"note": "激活石台更少、更靠后，逼你先守后推。"
+		},
+		{
+			"id": "advantage",
+			"display_name": "优势",
+			"note": "多一个前压槽位，适合多小队平推。"
+		}
+	],
+	"layouts": [
+		{
+			"id": "layout_even_four",
+			"display_name": "平势 · 四台稳开",
+			"kind": "even",
+			"shell": "shell_ridge_01",
+			"active_platforms": [
+				1.0,
+				2.0,
+				3.0,
+				4.0
+			],
+			"slots": [
+				{
+					"platform": 1.0,
+					"building": "keep",
+					"star": 1.0
+				},
+				{
+					"platform": 2.0,
+					"building": "farm",
+					"star": 1.0
+				},
+				{
+					"platform": 3.0,
+					"building": "farm",
+					"star": 1.0
+				},
+				{
+					"platform": 4.0,
+					"building": "barracks",
+					"star": 1.0
+				}
+			],
+			"inactive_render": "ruin",
+			"note": "默认开局：1 主堡 + 2 农场 + 1 兵营；5/6 号石台留作后续扩张与遗迹。"
+		},
+		{
+			"id": "layout_disadvantage_three",
+			"display_name": "劣势 · 三台死守",
+			"kind": "disadvantage",
+			"shell": "shell_ridge_01",
+			"active_platforms": [
+				1.0,
+				2.0,
+				4.0
+			],
+			"slots": [
+				{
+					"platform": 1.0,
+					"building": "keep",
+					"star": 1.0
+				},
+				{
+					"platform": 2.0,
+					"building": "farm",
+					"star": 1.0
+				},
+				{
+					"platform": 4.0,
+					"building": "barracks",
+					"star": 1.0
+				}
+			],
+			"inactive_render": "ruin",
+			"note": "只有 3 座可建造石台：缺一座农场，前压位必须用兵营顶住。"
+		},
+		{
+			"id": "layout_advantage_five",
+			"display_name": "优势 · 五台平推",
+			"kind": "advantage",
+			"shell": "shell_ridge_01",
+			"active_platforms": [
+				1.0,
+				2.0,
+				3.0,
+				4.0,
+				5.0
+			],
+			"slots": [
+				{
+					"platform": 1.0,
+					"building": "keep",
+					"star": 1.0
+				},
+				{
+					"platform": 2.0,
+					"building": "farm",
+					"star": 1.0
+				},
+				{
+					"platform": 3.0,
+					"building": "farm",
+					"star": 1.0
+				},
+				{
+					"platform": 4.0,
+					"building": "barracks",
+					"star": 1.0
+				},
+				{
+					"platform": 5.0,
+					"building": "farm",
+					"star": 1.0
+				}
+			],
+			"inactive_render": "ruin",
+			"note": "5 座可建造石台：多一座农场换人口，代价是前压位更容易被绕。"
+		}
+	]
+}

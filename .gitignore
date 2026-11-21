@@ -67,3 +67,6 @@ dist/
 
 /editor_plugin_preview.png
 /editor_plugin_preview.png.import
+
+# 交付截图（--shot editor editor_check.png 生成，不入库）
+editor_check.png

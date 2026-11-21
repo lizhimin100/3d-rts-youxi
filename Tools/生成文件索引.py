@@ -17,7 +17,7 @@ import re
 import io
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC_DIRS = ["Game", "Views", "Model", "Engine", "Tests", "addons"]
+SRC_DIRS = ["Game", "Screens", "Model", "Engine", "Tests", "addons"]
 OUT = os.path.join(ROOT, "Documents", "索引", "文件索引.md")
 
 
@@ -28,7 +28,7 @@ def rel(p):
 def module_of(rp):
     parts = rp.split("/")
     if parts[0] == "addons":
-        return "addons/map_editor"
+        return "addons/" + (parts[1] if len(parts) >= 2 else "(root)")
     if len(parts) >= 2:
         return "Game/" + parts[1] if not parts[1].endswith(".gd") else "Game/(根)"
     return "Game/(根)"

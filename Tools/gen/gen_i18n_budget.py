@@ -35,10 +35,7 @@ def main() -> int:
         if not base.exists():
             continue
         for p in sorted(base.rglob("*.gd")):
-            if "addons" in p.parts and "map_editor" in p.parts:
-                key = "addons"
-            else:
-                key = d
+            key = d
             c = count(p)
             if c:
                 budget.setdefault(key, {})
