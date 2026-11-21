@@ -1251,7 +1251,7 @@
 		},
 		{
 			"path": "Model/Core/RtsUnits.cs",
-			"size": 1200
+			"size": 1228
 		},
 		{
 			"path": "Model/Core/RtsUnits.cs.uid",
@@ -1642,14 +1642,6 @@
 			"size": 20
 		},
 		{
-			"path": "Tests/suites/木材自检.gd",
-			"size": 6965
-		},
-		{
-			"path": "Tests/suites/木材自检.gd.uid",
-			"size": 20
-		},
-		{
 			"path": "Tests/suites/树占格自检.gd",
 			"size": 12849
 		},
@@ -1698,14 +1690,6 @@
 			"size": 20
 		},
 		{
-			"path": "Tests/suites/自动试玩.gd",
-			"size": 12231
-		},
-		{
-			"path": "Tests/suites/自动试玩.gd.uid",
-			"size": 20
-		},
-		{
 			"path": "Tests/suites/表现自检.gd",
 			"size": 22035
 		},
@@ -1736,14 +1720,6 @@
 		{
 			"path": "Tests/suites/边缘滚动自检.gd.uid",
 			"size": 20
-		},
-		{
-			"path": "Tests/suites/采集自检.gd",
-			"size": 10042
-		},
-		{
-			"path": "Tests/suites/采集自检.gd.uid",
-			"size": 19
 		},
 		{
 			"path": "Tests/suites/野怪营地自检.gd",
