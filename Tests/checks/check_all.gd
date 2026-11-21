@@ -55,6 +55,7 @@ func _run() -> void:
 	_check_units_data()
 	_check_planning_data()
 	_check_level_data()
+	_check_dev_editor()
 	_check_r1_config()
 	_check_engine_pin()
 	_check_manifest()
@@ -418,12 +419,17 @@ func _check_i18n() -> void:
 	var used := 0
 	var re := RegEx.new()
 	re.compile("I18n\\.t\\(\\s*\"([^\"]+)\"")
-	for f2 in _walk("res://Engine") + _walk("res://Screens/screens"):
+	var re_t := RegEx.new()
+	re_t.compile("T\\(\\s*\"([^\"]+)\"")
+	for f2 in _walk("res://Engine") + _walk("res://Screens/screens") + _walk("res://Screens/editor"):
 		if not f2.ends_with(".gd"):
 			continue
-		for m in re.search_all(_read(f2)):
-			used += 1
+		var re_use := re_t if f2.begins_with("res://Screens/editor") else re
+		for m in re_use.search_all(_read(f2)):
 			var key := m.get_string(1)
+			if key.ends_with("_"):
+				continue
+			used += 1
 			if not bool(i18n.call("has", key)):
 				missing.append("%s → %s" % [f2.get_file(), key])
 	_ok("代码引用的 I18n key 都有定义（%d 处）" % used, missing.is_empty(), ", ".join(missing.slice(0, 5)))
@@ -919,6 +925,182 @@ func _check_level_data() -> void:
 			JSON.stringify(a) == JSON.stringify(b))
 
 
+func _check_dev_editor() -> void:
+	var problems: Array[String] = []
+	# 1) 脚本 / 数据层 / 场景
+	var scripts := ["dev_editor.gd", "dev_theme.gd", "dev_data.gd", "page_units.gd",
+		"page_build.gd", "page_level.gd", "camp_canvas.gd"]
+	for f in scripts:
+		if not FileAccess.file_exists("res://Screens/editor/" + f):
+			problems.append("缺 " + f)
+	if not FileAccess.file_exists("res://Screens/scenes/开发者编辑器.tscn"):
+		problems.append("缺开发者编辑器场景")
+	_ok("开发者编辑器框架齐全（主壳/主题/数据/三页/营地画布/场景）", problems.is_empty(), "; ".join(problems))
+
+	var data_script: Script = load("res://Screens/editor/dev_data.gd")
+	var d: RefCounted = data_script.new()
+	var loaded := bool(d.call("load_all"))
+	_ok("开发者编辑器数据层可装载（units/combat/planning/levels + ui.csv）", loaded,
+		String(d.get("load_error")))
+
+	var rows: Array = d.call("validate")
+	var fails: Array[String] = []
+	for r in rows:
+		if not bool((r as Dictionary).get("ok", false)):
+			fails.append("%s(%s)" % [String((r as Dictionary).get("key", "")), String((r as Dictionary).get("detail", ""))])
+	_ok("开发者编辑器数据自检 10 项（单位/属性/建筑/卡组/横道/意图/石台/开局/模型/文案）",
+		rows.size() == 10 and fails.is_empty(), "; ".join(fails))
+
+	# 2) 12 兵种：模型路径或占位符 + 13 项攻防穿透
+	var units := JsonFile.read_dict(UNITS_JSON, {})
+	var uarr: Array = units.get("units", [])
+	var bad_u: Array[String] = []
+	for u in uarr:
+		var ud: Dictionary = u
+		var pp := String(ud.get("model_path", ""))
+		if not bool(ud.get("use_placeholder_mesh", false)):
+			if pp.is_empty() or not FileAccess.file_exists(pp):
+				bad_u.append(String(ud.get("id", "")) + " model")
+		for k in ["hp", "attack_damage", "attack_cooldown", "attack_range", "attack_type",
+			"armor", "armor_type", "hit", "dodge", "crit",
+			"armor_pen_flat", "armor_pen_pct", "move_speed"]:
+			if not ud.has(k):
+				bad_u.append(String(ud.get("id", "")) + " 缺 " + k)
+	_ok("12 兵种都有模型绑定/占位符 + 13 项攻防穿透", uarr.size() == 12 and bad_u.is_empty(), "; ".join(bad_u.slice(0, 6)))
+
+	# 3) 建筑：人口 / produce_tag / 三星产出 / 模型
+	var plan := JsonFile.read_dict(PLANNING_JSON, {})
+	var barr: Array = plan.get("buildings", [])
+	var bad_b: Array[String] = []
+	for b in barr:
+		var bd: Dictionary = b
+		if String(bd.get("produce_tag", "")).is_empty():
+			bad_b.append(String(bd.get("id", "")) + " produce_tag")
+		var stars: Array = bd.get("star_output", [])
+		if stars.size() != 3:
+			bad_b.append(String(bd.get("id", "")) + " star_output")
+		var mp := String(bd.get("model_path", ""))
+		if mp.is_empty() or not FileAccess.file_exists(mp):
+			bad_b.append(String(bd.get("id", "")) + " model")
+	_ok("建筑都有 pop / produce_tag / 1~3 星产出 / 3D 模型", barr.size() == 4 and bad_b.is_empty(), "; ".join(bad_b))
+
+	# 4) 12 张初始卡组 + 卡牌存在 + 张数和为 12
+	var deck: Array = (plan.get("deck", {}) as Dictionary).get("start", [])
+	var card_ids := {}
+	var count_sum := 0
+	for c in plan.get("cards", []):
+		card_ids[String((c as Dictionary).get("id", ""))] = true
+		count_sum += int((c as Dictionary).get("count", 1))
+	var bad_deck: Array[String] = []
+	for id in deck:
+		if not card_ids.has(String(id)):
+			bad_deck.append(String(id))
+	_ok("初始卡组正好 12 张且每张卡都存在（卡面张数和 = 12）",
+		deck.size() == 12 and int((plan.get("deck", {}) as Dictionary).get("size", 0)) == 12 and count_sum == 12 and bad_deck.is_empty(),
+		"deck=%d size=%d count=%d 缺失=%s" % [deck.size(), int((plan.get("deck", {}) as Dictionary).get("size", 0)), count_sum, ", ".join(bad_deck)])
+
+	# 5) 三段横道：合计 == lane.length，宽度三位数，模板三套
+	var levels := JsonFile.read_dict(LEVELS_JSON, {})
+	var lv: Dictionary = (levels.get("levels", []) as Array)[0] if not (levels.get("levels", []) as Array).is_empty() else {}
+	var lane: Dictionary = lv.get("lane", {})
+	var segs: Array = lane.get("segments", [])
+	var seg_sum := 0.0
+	var seg_bad: Array[String] = []
+	for sg in segs:
+		var sd: Dictionary = sg
+		var ln := float(sd.get("length", 0.0))
+		var wd := float(sd.get("width", 0.0))
+		seg_sum += ln
+		if wd < 100.0 or wd > 999.0:
+			seg_bad.append("width=%.0f" % wd)
+	var tpls: Dictionary = lane.get("templates", {})
+	var tpl_bad: Array[String] = []
+	for name in tpls.keys():
+		var lengths: Array = (tpls[name] as Dictionary).get("lengths", [])
+		var widths: Array = (tpls[name] as Dictionary).get("widths", [])
+		var s_sum := 0.0
+		for v in lengths:
+			s_sum += float(v)
+		if lengths.size() != 3 or widths.size() != 3 or absf(s_sum - float(lane.get("length", 0.0))) > 0.001:
+			tpl_bad.append(String(name))
+	_ok("三段横道首尾相接（合计 = lane.length）、宽度三位数、三套态势模板",
+		segs.size() == 3 and absf(seg_sum - float(lane.get("length", 0.0))) < 0.001 and seg_bad.is_empty()
+		and tpls.size() == 3 and tpl_bad.is_empty(),
+		"sum=%.0f / lane=%.0f / 模板=%s / %s" % [seg_sum, float(lane.get("length", 0.0)), str(tpls.keys()), ", ".join(seg_bad + tpl_bad)])
+
+	# 6) 意图池权重
+	var intents: Array = lv.get("intent_pool", [])
+	var i_sum := 0.0
+	for it in intents:
+		i_sum += float((it as Dictionary).get("weight", 0.0))
+	var itpl: Dictionary = lv.get("intent_templates", {})
+	var itpl_bad: Array[String] = []
+	for name in itpl.keys():
+		var arr: Array = itpl[name]
+		var s2 := 0.0
+		for v in arr:
+			s2 += float(v)
+		if arr.size() != intents.size() or absf(s2 - 100.0) > 0.001:
+			itpl_bad.append(String(name))
+	_ok("敌方意图池 5 条、总权重 100、三套模板逐条对齐",
+		intents.size() == 5 and absf(i_sum - 100.0) < 0.001 and itpl.size() == 3 and itpl_bad.is_empty(),
+		"items=%d sum=%.0f 模板坏=%s" % [intents.size(), i_sum, ", ".join(itpl_bad)])
+
+	# 7) 营地石台 + 开局 + 敌方固定建筑
+	var board: Dictionary = plan.get("board", {})
+	var plats: Array = board.get("platforms", [])
+	var starts: Array = board.get("start", [])
+	var plots := {}
+	for p in plats:
+		plots[int((p as Dictionary).get("plot", -1))] = true
+	var counts := {"base": 0, "farm": 0, "barracks": 0}
+	for st in starts:
+		var bd2: Dictionary = d.call("building_by_id", String((st as Dictionary).get("building", "")))
+		var tag := String(bd2.get("tag", ""))
+		if counts.has(tag):
+			counts[tag] += 1
+	var gap := float(d.call("min_gap_meters"))
+	var enemies: Array = lv.get("enemy_buildings", [])
+	var enemy_bad: Array[String] = []
+	for e in enemies:
+		var ed: Dictionary = e
+		var bd3: Dictionary = d.call("building_by_id", String(ed.get("building", "")))
+		var x := float(ed.get("x", -1.0))
+		var y := float(ed.get("y", -1.0))
+		if bd3.is_empty() or x < 0.65 or x > 1.0 or y < 0.0 or y > 1.0:
+			enemy_bad.append(String(ed.get("building", "")))
+	_ok("营地 10 座独立石台、开局 1 基地 + 2 农场 + 1 兵营、最小间隙 >= 0.5m",
+		plats.size() == 10 and plots.size() == 10 and counts["base"] == 1 and counts["farm"] == 2 and counts["barracks"] == 1 and gap >= 0.5,
+		"platforms=%d gap=%.2fm start=%s" % [plats.size(), gap, str(counts)])
+	_ok("敌方固定建筑 3 座且坐标/建筑 id 有效", enemies.size() == 3 and enemy_bad.is_empty(), ", ".join(enemy_bad))
+
+	# 8) 文案 / 源码硬编码 / 截图登记 / 发行排除
+	var i18n := root.get_node_or_null("I18n")
+	var need_keys := ["editor.app.title", "editor.tab.units", "editor.dps.final",
+		"editor.cards.deck", "editor.level.camp", "unit.alliance_footman",
+		"building.keep", "card.build_farm"]
+	var lack_keys: Array[String] = []
+	for k in need_keys:
+		if i18n == null or not bool(i18n.call("has", k)):
+			lack_keys.append(k)
+	_ok("ui.csv 含编辑器框架 key 与三条术语表", lack_keys.is_empty(), ", ".join(lack_keys))
+
+	var hard := 0
+	for f in _walk("res://Screens/editor"):
+		if f.ends_with(".gd"):
+			hard += _count_cjk_literals(_read(f))
+	_ok("开发者编辑器源码零写死中文（连路径都用 ASCII）", hard == 0, "实测 %d 处" % hard)
+
+	var screens := JsonFile.read_dict(SCREENS, {})
+	var ed: Dictionary = (screens.get("screens", {}) as Dictionary).get("editor", {})
+	_ok("截图画面 editor 已登记（scene + click + expect）",
+		not ed.is_empty() and FileAccess.file_exists(String(ed.get("scene", ""))) and ed.has("click") and ed.has("expect"),
+		str(ed.keys()))
+
+	var rel := _read("res://Tools/build/release_exclude.txt")
+	_ok("发行排除清单含开发者编辑器（Screens/editor）", rel.contains("Screens/editor"))
+
+
 func _check_r1_config() -> void:
 	var c := _content()
 	if c.is_empty():
@@ -1159,7 +1341,7 @@ func _check_save() -> void:
 # ===========================================================================
 func _check_release_gate() -> void:
 	var text := _read("res://Tools/build/release_exclude.txt")
-	var need := ["Engine/debug", "Tests", "Tools", "addons", "Content/legacy"]
+	var need := ["Engine/debug", "Tests", "Tools", "addons", "Content/legacy", "Screens/editor"]
 	var lack: Array[String] = []
 	for n in need:
 		if not text.contains(n):

@@ -29,18 +29,119 @@
 		"note": "拖同名建筑 3 合 1：每吃掉一座同名建筑 +1 合并数，星级 = 1 + 合并数，满 3 星（不要求同星，累计 3 座即可）。"
 	},
 	"star": {
-		"attack_mult": [1, 1.35, 1.8],
-		"hp_mult": [1, 1.4, 2],
-		"pop_mult": [1, 1.4, 2]
+		"attack_mult": [
+			1,
+			1.35,
+			1.8
+		],
+		"hp_mult": [
+			1,
+			1.4,
+			2
+		],
+		"pop_mult": [
+			1,
+			1.4,
+			2
+		]
 	},
 	"board": {
 		"plots": 10,
 		"start": [
-			{"building": "keep", "plot": 0},
-			{"building": "farm", "plot": 1},
-			{"building": "farm", "plot": 2},
-			{"building": "barracks", "plot": 3}
-		]
+			{
+				"building": "keep",
+				"plot": 0
+			},
+			{
+				"building": "farm",
+				"plot": 1
+			},
+			{
+				"building": "farm",
+				"plot": 2
+			},
+			{
+				"building": "barracks",
+				"plot": 3
+			}
+		],
+		"platforms": [
+			{
+				"plot": 0,
+				"x": 0.34,
+				"y": 0.5,
+				"radius": 0.078,
+				"kind": "keep"
+			},
+			{
+				"plot": 1,
+				"x": 0.17,
+				"y": 0.26,
+				"radius": 0.052,
+				"kind": "farm"
+			},
+			{
+				"plot": 2,
+				"x": 0.17,
+				"y": 0.74,
+				"radius": 0.052,
+				"kind": "farm"
+			},
+			{
+				"plot": 3,
+				"x": 0.48,
+				"y": 0.26,
+				"radius": 0.058,
+				"kind": "barracks"
+			},
+			{
+				"plot": 4,
+				"x": 0.09,
+				"y": 0.5,
+				"radius": 0.045,
+				"kind": ""
+			},
+			{
+				"plot": 5,
+				"x": 0.3,
+				"y": 0.15,
+				"radius": 0.042,
+				"kind": ""
+			},
+			{
+				"plot": 6,
+				"x": 0.3,
+				"y": 0.85,
+				"radius": 0.042,
+				"kind": ""
+			},
+			{
+				"plot": 7,
+				"x": 0.49,
+				"y": 0.74,
+				"radius": 0.045,
+				"kind": ""
+			},
+			{
+				"plot": 8,
+				"x": 0.61,
+				"y": 0.5,
+				"radius": 0.045,
+				"kind": ""
+			},
+			{
+				"plot": 9,
+				"x": 0.59,
+				"y": 0.88,
+				"radius": 0.042,
+				"kind": ""
+			}
+		],
+		"camp_m": [
+			28,
+			16
+		],
+		"note": "类自走棋独立石台：plots 是逻辑槽位，platforms 是可视化坐标（0..1）；石台之间留出行军间隙，不做连线格。"
 	},
 	"buildings": [
 		{
@@ -53,7 +154,28 @@
 			"pop": 0,
 			"buildable": false,
 			"trains": [],
-			"base_drain_reduction": 0
+			"base_drain_reduction": 0,
+			"produce_tag": "base",
+			"model_path": "res://Content/art/模型/大本营.glb",
+			"model_scale": 0.5,
+			"use_placeholder_mesh": false,
+			"star_output": [
+				{
+					"pop": 0,
+					"train_slots": 0,
+					"drain_reduction": 0
+				},
+				{
+					"pop": 0,
+					"train_slots": 0,
+					"drain_reduction": 0
+				},
+				{
+					"pop": 0,
+					"train_slots": 0,
+					"drain_reduction": 0
+				}
+			]
 		},
 		{
 			"id": "farm",
@@ -65,7 +187,28 @@
 			"pop": 10,
 			"buildable": true,
 			"trains": [],
-			"base_drain_reduction": 0
+			"base_drain_reduction": 0,
+			"produce_tag": "farm",
+			"model_path": "res://Content/art/模型/农场.glb",
+			"model_scale": 0.5,
+			"use_placeholder_mesh": false,
+			"star_output": [
+				{
+					"pop": 10,
+					"train_slots": 0,
+					"drain_reduction": 0
+				},
+				{
+					"pop": 14,
+					"train_slots": 0,
+					"drain_reduction": 0
+				},
+				{
+					"pop": 20,
+					"train_slots": 0,
+					"drain_reduction": 0
+				}
+			]
 		},
 		{
 			"id": "barracks",
@@ -81,7 +224,28 @@
 				"alliance_archer",
 				"alliance_crossbowman"
 			],
-			"base_drain_reduction": 0
+			"base_drain_reduction": 0,
+			"produce_tag": "barracks",
+			"model_path": "res://Content/art/模型/兵营.glb",
+			"model_scale": 0.5,
+			"use_placeholder_mesh": false,
+			"star_output": [
+				{
+					"pop": 0,
+					"train_slots": 1,
+					"drain_reduction": 0
+				},
+				{
+					"pop": 0,
+					"train_slots": 1,
+					"drain_reduction": 0
+				},
+				{
+					"pop": 0,
+					"train_slots": 2,
+					"drain_reduction": 0
+				}
+			]
 		},
 		{
 			"id": "watchtower",
@@ -94,7 +258,28 @@
 			"buildable": true,
 			"trains": [],
 			"base_drain_reduction": 0.15,
-			"note": "每座哨塔让敌方小队对基地的抽血 -15%，最多叠到 -45%。"
+			"note": "每座哨塔让敌方小队对基地的抽血 -15%，最多叠到 -45%。",
+			"produce_tag": "tower",
+			"model_path": "res://Content/art/模型/哨塔.glb",
+			"model_scale": 0.5,
+			"use_placeholder_mesh": false,
+			"star_output": [
+				{
+					"pop": 0,
+					"train_slots": 0,
+					"drain_reduction": 0.15
+				},
+				{
+					"pop": 0,
+					"train_slots": 0,
+					"drain_reduction": 0.22
+				},
+				{
+					"pop": 0,
+					"train_slots": 0,
+					"drain_reduction": 0.3
+				}
+			]
 		}
 	],
 	"strategies": {
@@ -147,7 +332,7 @@
 			"tag": "barracks",
 			"cost_cp": 2,
 			"exhaust": false,
-			"count": 3
+			"count": 1
 		},
 		{
 			"id": "train_pikeman",
@@ -157,7 +342,7 @@
 			"tag": "barracks",
 			"cost_cp": 2,
 			"exhaust": false,
-			"count": 2
+			"count": 1
 		},
 		{
 			"id": "train_archer",
@@ -167,7 +352,7 @@
 			"tag": "barracks",
 			"cost_cp": 3,
 			"exhaust": false,
-			"count": 2
+			"count": 1
 		},
 		{
 			"id": "train_crossbow",
@@ -206,5 +391,23 @@
 			"exhaust": false,
 			"count": 1
 		}
-	]
+	],
+	"deck": {
+		"size": 12,
+		"start": [
+			"build_farm",
+			"build_farm",
+			"build_barracks",
+			"build_barracks",
+			"build_tower",
+			"train_footman",
+			"train_pikeman",
+			"train_archer",
+			"train_crossbow",
+			"strategy_forced_march",
+			"strategy_bulwark",
+			"strategy_focus"
+		],
+		"note": "开局 12 张：5 建造 + 4 训练 + 3 策略；训练/策略循环，建造牌 Exhaust。"
+	}
 }

@@ -41,3 +41,277 @@ plan.card_cost_compact,CP {cp} · {pop}人,CP {cp} · {pop} pop,规划卡成本�
 deploy.attack,进攻,Attack,规划阶段部署类型
 deploy.defend,防守,Defend,规划阶段部署类型
 deploy.capture,占据,Capture,规划阶段部署类型
+unit.alliance_footman,联盟步兵,Alliance Footman,兵种显示名（开发者编辑器写回）
+unit.alliance_pikeman,长枪兵,Pikeman,兵种显示名（开发者编辑器写回）
+unit.alliance_archer,弓箭手,Archer,兵种显示名（开发者编辑器写回）
+unit.alliance_crossbowman,弩兵,Crossbowman,兵种显示名（开发者编辑器写回）
+unit.bandit_scout,豺狼人斥候,Gnoll Scout,兵种显示名（开发者编辑器写回）
+unit.bandit_marauder,豺狼人战士,Gnoll Marauder,兵种显示名（开发者编辑器写回）
+unit.bandit_chief,豺狼人萨满,Gnoll Shaman,兵种显示名（开发者编辑器写回）
+unit.bandit_lord,豺狼人领主,Gnoll Lord,兵种显示名（开发者编辑器写回）
+unit.murloc_slave,鱼人奴隶,Murloc Slave,兵种显示名（开发者编辑器写回）
+unit.murloc_raider,鱼人掠夺者,Murloc Raider,兵种显示名（开发者编辑器写回）
+unit.murloc_hunter,鱼人猎人,Murloc Hunter,兵种显示名（开发者编辑器写回）
+unit.murloc_lord,鱼人领主,Murloc Lord,兵种显示名（开发者编辑器写回）
+building.keep,基地,Keep,建筑显示名（开发者编辑器写回）
+building.farm,农场,Farm,建筑显示名（开发者编辑器写回）
+building.barracks,兵营,Barracks,建筑显示名（开发者编辑器写回）
+building.watchtower,哨塔,Watchtower,建筑显示名（开发者编辑器写回）
+card.build_farm,农场,Farm,卡牌显示名（开发者编辑器写回）
+card.build_barracks,兵营,Barracks,卡牌显示名（开发者编辑器写回）
+card.build_tower,哨塔,Watchtower,卡牌显示名（开发者编辑器写回）
+card.train_footman,征召步兵,Muster Footman,卡牌显示名（开发者编辑器写回）
+card.train_pikeman,征召长枪,Muster Pikeman,卡牌显示名（开发者编辑器写回）
+card.train_archer,征召弓手,Muster Archer,卡牌显示名（开发者编辑器写回）
+card.train_crossbow,征召弩兵,Muster Crossbow,卡牌显示名（开发者编辑器写回）
+card.strategy_forced_march,急行军,Forced March,卡牌显示名（开发者编辑器写回）
+card.strategy_bulwark,坚壁,Bulwark,卡牌显示名（开发者编辑器写回）
+card.strategy_focus,致命瞄准,Deadly Aim,卡牌显示名（开发者编辑器写回）
+editor.app.title,战争原岛,War Island,开发者编辑器标题
+editor.app.subtitle,开发者编辑器 · 内容与数值,DEVELOPER EDITOR · CONTENT & NUMBERS,开发者编辑器副标题
+editor.app.r1,R1 = 0.015 米 / 游戏数值,R1 = 0.015 m per unit,距离铁律角标
+editor.app.saved,已写回源目录,Written to source,自动保存状态
+editor.app.saving,写回中…,Writing…,自动保存状态
+editor.app.dirty,有未写回的改动,Unsaved changes,自动保存状态
+editor.app.save_all,保存全部,Save all,全局保存按钮
+editor.app.validate,校验数据,Validate,全局校验按钮
+editor.app.valid,校验通过 · {d} 项,Validation passed · {d},校验通过
+editor.app.invalid,发现 {d} 处问题,{d} issues found,校验失败
+editor.tab.units,单位与 DPS 靶场,Units & DPS Range,页签 1
+editor.tab.units_sub,12 兵种 · 13 项攻防穿透,12 units · 13 combat stats,页签 1 副标题
+editor.tab.build,建筑与卡牌,Buildings & Cards,页签 2
+editor.tab.build_sub,人口 · 星级产出 · 初始卡组,Population · star output · deck,页签 2 副标题
+editor.tab.level,长横道关卡 / 营地,Lane Level & Camp,页签 3
+editor.tab.level_sub,三段横道 · 意图池 · 石台摆放,3 segments · intents · stone platforms,页签 3 副标题
+editor.common.unit,兵种,Unit,通用
+editor.common.units,兵种,Units,通用
+editor.common.building,建筑,Building,通用
+editor.common.buildings,建筑,Buildings,通用
+editor.common.card,卡牌,Card,通用
+editor.common.cards,卡牌,Cards,通用
+editor.common.deck,初始卡组,Starting deck,通用
+editor.common.level,关卡,Level,通用
+editor.common.add,新增,Add,通用
+editor.common.delete,删除,Delete,通用
+editor.common.duplicate,复制,Duplicate,通用
+editor.common.empty,空,Empty,通用
+editor.common.none,—,—,通用
+editor.common.count,{n} 个,{n},通用
+editor.common.meters,{v} 米,{v} m,通用
+editor.common.raw_value,{v} 数值,{v} u,通用
+editor.common.save_hint,改动会在 0.7 秒后自动写回源目录,Changes are written back after 0.7s,通用
+editor.common.model,3D 模型,3D model,通用
+editor.common.model_ok,模型已绑定,Model bound,通用
+editor.common.model_missing,模型文件不存在,Model file missing,通用
+editor.common.placeholder,占位网格,Placeholder mesh,通用
+editor.common.enabled,启用,Enabled,通用
+editor.common.disabled,禁用,Disabled,通用
+editor.common.note,备注,Note,通用
+editor.common.tip,提示,Tip,通用
+editor.units.list,兵种列表,Unit roster,单位页左栏
+editor.units.list_count,{n} 个兵种,{n} units,单位页左栏计数
+editor.units.search,搜索 id / 名称 / 阵营,Search id / name / faction,单位搜索
+editor.units.no_result,没有匹配的兵种,No matching unit,单位搜索空态
+editor.units.faction,阵营,Faction,单位所属阵营
+editor.units.squad,小队人数,Squad size,单位字段
+editor.units.squad_hint,一队几个模型；影响总血量与齐射量,Models per squad,单位字段提示
+editor.units.triad,三维数,Core triad,单位页中部
+editor.units.attack,攻击,Attack,三维
+editor.units.armor,护甲,Armor,三维
+editor.units.speed,移速,Move,三维
+editor.units.range,射程,Range,单位页中部
+editor.units.range_formula,{raw} × R1 = {m} 米,{raw} × R1 = {m} m,射程实时换算
+editor.units.range_hint,近战 < 300 / 远程 ≥ 300；改动立刻进 CombatCalculator,Melee < 300 / ranged ≥ 300,射程提示
+editor.units.attrs,13 项攻防穿透属性,13 combat & penetration stats,单位属性卡
+editor.units.attrs_hint,全部写入 units.json；右侧靶场实时重算,All values write to units.json,单位属性提示
+editor.units.hp,生命,HP,属性
+editor.units.damage,攻击伤害,Damage,属性
+editor.units.cooldown,攻击间隔,Cooldown,属性
+editor.units.attack_type,攻击类型,Attack type,属性
+editor.units.armor_type,护甲类型,Armor type,属性
+editor.units.hit,命中,Hit,属性
+editor.units.dodge,闪避,Dodge,属性
+editor.units.crit,暴击率,Crit,属性
+editor.units.pen_flat,固定穿透,Flat pen,属性
+editor.units.pen_pct,百分比穿透,Pct pen,属性
+editor.units.move_speed,移速（米/秒）,Move (m/s),属性
+editor.units.model,模型绑定,Model binding,单位模型卡
+editor.units.model_path,3D 模型路径,3D model path,单位模型字段
+editor.units.projectile,投射物,Projectile,单位模型字段
+editor.units.projectile_speed,投射物速度,Projectile speed,单位模型字段
+editor.units.pop,人口占用,Pop cost,单位模型字段
+editor.units.body,体积半径,Body radius,单位模型字段
+editor.units.dps,卡面 DPS,Sheet DPS,单位列表右侧
+editor.units.placeholder_on,占位符已开,Placeholder on,单位模型状态
+editor.units.placeholder_off,使用正式模型,Real model,单位模型状态
+editor.units.select_hint,点左侧兵种行 → 中栏编辑 → 右侧靶场实时对账,Pick a unit to edit,单位页提示
+editor.dps.title,靶子模拟器,Target simulator,靶场标题
+editor.dps.subtitle,直接调用 CombatCalculator · 与飞书多维表格同口径,Calls CombatCalculator directly,靶场副标题
+editor.dps.attacker,攻方,Attacker,靶场
+editor.dps.target,防守靶子,Defender,靶场
+editor.dps.hit_chance,实际命中率,Hit chance,靶场指标
+editor.dps.eff_armor,有效护甲,Effective armor,靶场指标
+editor.dps.taken,承伤比例,Damage taken,靶场指标
+editor.dps.counter,克制系数,Counter,靶场指标
+editor.dps.expect_hit,单次期望伤害,Expected hit,靶场指标
+editor.dps.final,最终 DPS,Final DPS,靶场指标
+editor.dps.formula,最终 DPS = 单次期望 ÷ 攻击间隔,Final DPS = expected hit ÷ cooldown,靶场公式
+editor.dps.armor_after_pen,护甲 {base} × (1-{pen}%) − {flat},Armor {base} × (1-{pen}%) − {flat},有效护甲拆解
+editor.dps.squad_dps,小队 DPS,Squad DPS,靶场副指标
+editor.dps.squad_formula,{dps} × {n} 人,{dps} × {n} models,小队 DPS 拆解
+editor.dps.compare,攻方 / 靶子 互打,Attacker vs defender,靶场对比条
+editor.dps.advantage,克制优势,Counter advantage,靶场结论
+editor.dps.neutral,均势对拼,Even trade,靶场结论
+editor.dps.penalty,被克制,Countered,靶场结论
+editor.dps.locked,靶场已锁定,Range locked,靶场锁定角标
+editor.dps.lock_hint,点左侧兵种行，靶场实时重算,Click a unit row to re-run,靶场提示
+editor.dps.target_armor,靶子护甲,Defender armor,靶场目标信息
+editor.dps.target_hp,靶子生命,Defender HP,靶场目标信息
+editor.dps.swap,互换攻守,Swap roles,靶场按钮
+editor.dps.source,数据源 units.json / combat.json,Source units.json / combat.json,靶场数据源
+editor.dps.raw_name,靶场,Range,无障碍/占位
+editor.build.list,建筑列表,Buildings,建筑页左栏
+editor.build.list_count,{n} 座建筑,{n} buildings,建筑页左栏计数
+editor.build.pop,人口,Population,建筑字段
+editor.build.produce_tag,produce_tag,produce_tag,建筑字段
+editor.build.produce_hint,训练牌按这个 Tag 找建筑产兵,Training cards match this tag,produce_tag 提示
+editor.build.star,1~3 星产出,1–3 star output,建筑字段
+editor.build.star_n,★{n},★{n},星级行
+editor.build.star_pop,人口,Pop,星级产出列
+editor.build.star_train,训练位,Slots,星级产出列
+editor.build.star_drain,减伤,DR,星级产出列
+editor.build.star_note,星级改变人口 / 训练位 / 基地减伤，模型不变,Stars change pop / slots / DR,星级产出提示
+editor.build.hp,耐久,HP,建筑字段
+editor.build.armor,护甲,Armor,建筑字段
+editor.build.armor_type,护甲类型,Armor type,建筑字段
+editor.build.drain,基地减伤,Base damage reduction,建筑字段
+editor.build.buildable,可建造,Buildable,建筑字段
+editor.build.trains,训练单位,Trains,建筑字段
+editor.build.title,建筑配置,Building config,建筑表单标题
+editor.build.pick_hint,点左侧建筑 → 改人口 / Tag / 星级产出 / 模型,Pick a building,建筑页提示
+editor.build.model_hint,模型路径直接写回 planning.json,Model path writes to planning.json,建筑模型提示
+editor.build.hero_meta,{tag} · 耐久 {hp} · {armor},{tag} · HP {hp} · {armor},建筑头卡元信息
+editor.cards.title,卡牌库,Card pool,卡牌区标题
+editor.cards.pool,卡池,Pool,卡牌区
+editor.cards.deck,12 张初始卡组,12-card starting deck,卡组区
+editor.cards.deck_count,{n} / 12 张,{n} / 12 cards,卡组计数
+editor.cards.deck_full,初始卡组已满 12 张,Deck is full,卡组提示
+editor.cards.deck_empty,点「加入卡组」从卡池补一张,Add a card from the pool,卡组空态
+editor.cards.deck_remove,移出卡组,Remove from deck,卡组操作
+editor.cards.add_deck,加入卡组,Add to deck,卡组操作
+editor.cards.kind,类型,Kind,卡牌字段
+editor.cards.kind_build,建造,Build,卡牌类型
+editor.cards.kind_train,训练,Train,卡牌类型
+editor.cards.kind_strategy,策略,Strategy,卡牌类型
+editor.cards.cost,CP 费用,CP cost,卡牌字段
+editor.cards.count,张数,Copies,卡牌字段
+editor.cards.exhaust,打出即消耗,Exhaust,卡牌字段
+editor.cards.target,绑定,Target,卡牌字段
+editor.cards.id,卡牌 id,Card id,卡牌字段
+editor.cards.name,显示名,Display name,卡牌字段
+editor.cards.new_name,新卡牌,New card,卡牌默认名
+editor.cards.copy_suffix,副本,copy,复制卡后缀
+editor.cards.select_hint,点一行卡牌 → 下方表单改动 → 自动写回,Pick a card,卡牌页提示
+editor.cards.title_hint,建造 / 训练 / 策略三类，增删改都写回 planning.json,"Add, edit and delete cards",卡牌页提示
+editor.cards.target_building,建筑,Building,绑定目标
+editor.cards.target_unit,单位,Unit,绑定目标
+editor.cards.target_effect,策略效果,Strategy effect,绑定目标
+editor.cards.no_target,未绑定,Unbound,绑定目标
+editor.cards.deck_help,点卡池行选中，再点「加入卡组」；点卡组里的 × 移除。,Select a card then add to deck.,卡组提示
+editor.level.title,长横道关卡,Long lane level,关卡页标题
+editor.level.segments,三段横道,Three lane segments,关卡页
+editor.level.segment_1,I 接敌段,I Contact,横道段
+editor.level.segment_2,II 中段,II Middle,横道段
+editor.level.segment_3,III 攻坚段,III Breach,横道段
+editor.level.length,长度,Length,横道字段
+editor.level.width,宽度,Width,横道字段
+editor.level.meters,{v} 数值 · {m} 米,{v} u · {m} m,横道换算
+editor.level.template,关卡态势,Level posture,横道模板
+editor.level.template_even,平势,Even,态势模板
+editor.level.template_bad,劣势,Disadvantage,态势模板
+editor.level.template_good,优势,Advantage,态势模板
+editor.level.template_hint,切换模板会重排三段长度与宽度，总长 4000 保持不变,Templates retune segments; total stays 4000,态势模板提示
+editor.level.total,总长 {v} 数值 = {m} 米,Total {v} u = {m} m,横道总长
+editor.level.intent,敌方意图池,Enemy intent pool,意图池
+editor.level.intent_hint,权重实时归一化；模板切换套用不同权重,Weights normalize live,意图池提示
+editor.level.weight,权重,Weight,意图字段
+editor.level.share,占比,Share,意图字段
+editor.level.intent_note,意图只影响敌方波次权重，不直接改单位数值,Intents steer waves only,意图提示
+editor.level.zone_depth,敌区纵深,Enemy zone,关卡字段
+editor.level.round,90 秒,90 s,关卡字段
+editor.level.enemy_base,敌方基地,Enemy base,关卡字段
+editor.level.enemy_buildings,敌方固定建筑,Enemy fixed buildings,营地页
+editor.level.camp,类自走棋营地,Auto-battler camp,营地页
+editor.level.camp_hint,RTS 错落营地 + 独立石台底座；石台之间留出宽敞行军间隙,Scattered RTS camp on independent stone platforms,营地页提示
+editor.level.player,玩家营地 · 联盟,Player camp · Alliance,营地画布
+editor.level.enemy,敌方前哨 · 豺狼人,Enemy outpost · Gnoll,营地画布
+editor.level.preplace,预摆开局 1 基地 + 2 农场 + 1 兵营,Pre-place 1 keep + 2 farms + 1 barracks,营地按钮
+editor.level.gap,最小行军间隙,Min march gap,营地指标
+editor.level.gap_value,{v} 米,{v} m,营地指标值
+editor.level.selected,选中槽位,Selected plot,营地详情
+editor.level.move_hint,拖动建筑到空石台；石台高亮表示可落位,Drag a building onto an empty platform,营地提示
+editor.level.plot,槽位 {n},Plot {n},营地槽位
+editor.level.star,★{n},★{n},营地星级
+editor.level.enemy_toggle,显示敌方固定建筑,Show enemy buildings,营地开关
+editor.level.old_removed,已移除自由障碍涂抹与五子棋连线格,No freeform obstacle painting or grid,营地角标
+editor.level.stone,独立石台,Stone platform,营地图例
+editor.level.march,行军间隙,March gap,营地图例
+editor.level.legend,图例,Legend,营地图例
+editor.level.occupied,已占用,Occupied,营地槽位
+editor.level.free,可落位,Free,营地槽位
+editor.level.drag_hint,按住建筑拖动，松手落到最近空石台,Drag and drop onto a free platform,营地交互
+editor.level.enemy_add,加一座敌方建筑,Add enemy building,营地按钮
+editor.level.enemy_remove,移除选中敌方建筑,Remove selected enemy building,营地按钮
+editor.level.selected_enemy,选中敌方建筑,Selected enemy building,营地详情
+editor.level.none_selected,点一座石台查看槽位,Click a platform,营地详情
+editor.level.r1_note,长度/宽度都是游戏数值；右侧实时显示 × R1 的米数,Length and width are game units; meters update live,横道提示
+editor.level.template_total,三段合计 {v} 数值,Segments total {v} units,横道合计
+editor.level.intent_total,总权重 {v},Total weight {v},意图合计
+editor.level.camp_source,数据源 planning.json board.platforms / board.start,Source planning.json board,营地数据源
+editor.status.source,数据源,Source,状态栏
+editor.status.counts,{u} 兵种 · {b} 建筑 · {c} 卡牌 · {d} 初始卡 · {s} 段横道,{u} units · {b} buildings · {c} cards · {d} deck · {s} segments,状态栏计数
+editor.status.saved_at,上次写回 {t},Saved {t},状态栏
+editor.status.paths,Content/data/*.json · Content/i18n/ui.csv,Content/data/*.json · Content/i18n/ui.csv,状态栏路径
+editor.check.title,数据校验,Validation,校验弹窗
+editor.check.units,12 兵种、模型路径与占位符齐全,12 units with models,校验
+editor.check.attrs,13 项攻防穿透属性齐全,13 combat stats,校验
+editor.check.buildings,建筑人口 / produce_tag / 星级产出齐全,Buildings complete,校验
+editor.check.deck,初始卡组正好 12 张且卡牌都存在,Deck has 12 valid cards,校验
+editor.check.lane,三段横道首尾相接、总长一致,Lane segments add up,校验
+editor.check.intent,意图池权重和大于 0,Intent weights positive,校验
+editor.check.platforms,石台无重叠、行军间隙达标,Platforms spaced,校验
+editor.check.start,开局 1 基地 + 2 农场 + 1 兵营,Start preset complete,校验
+editor.check.models,模型路径指向真实文件,Model files exist,校验
+editor.check.i18n,ui.csv 键齐全,i18n keys present,校验
+editor.check.close,关闭,Close,校验弹窗
+editor.units.placeholder,占位网格,Placeholder mesh,单位模型开关
+editor.units.per_attack,每 {v}s 出手,Every {v}s,单位攻速副文
+editor.units.mps,米 / 秒,m/s,单位移速副文
+editor.dps.breakdown,6 步结算拆解,6-step breakdown,靶场结算拆解
+editor.dps.breakdown_hint,与 combat_formula.md 逐步对齐,Matches combat_formula.md step by step,靶场结算提示
+editor.dps.step_hit,① 命中,① Hit,结算步骤
+editor.dps.step_crit,② 暴击,② Crit,结算步骤
+editor.dps.step_pen,③ 穿透,③ Pen,结算步骤
+editor.dps.step_armor,④ 承伤,④ Mitigation,结算步骤
+editor.dps.step_counter,⑤ 克制,⑤ Counter,结算步骤
+editor.dps.step_final,⑥ 最终,⑥ Final,结算步骤
+editor.dps.crit_factor,×{v},×{v},暴击期望倍率
+editor.dps.counter_pair,{atk} → {armor},{atk} → {armor},克制关系
+editor.dps.mitigation,减伤 {v}%,-{v}% taken,承伤副文
+editor.build.buildable_on,可建造,Buildable,建筑可建造状态
+editor.build.buildable_off,不可建造,Not buildable,建筑可建造状态
+editor.build.start_title,开局预摆,Opening preset,建筑页
+editor.build.start_hint,1 基地 + 2 农场 + 1 兵营,1 keep + 2 farms + 1 barracks,建筑页
+editor.build.start_item,{name} · 槽位 {n},{name} · plot {n},开局条目
+editor.build.trains_list,训练：{v},Trains: {v},建筑训练单位
+editor.build.trains_none,无训练单位,No trainable units,建筑训练单位
+editor.cards.edit,卡牌编辑,Card editor,卡牌详情标题
+editor.build.summary,建筑速览,Building summary,建筑页
+editor.build.sum_pop,产出人口 +{v},Pop output +{v},建筑速览
+editor.build.sum_buildable,可建造 {v} / {n},Buildable {v} / {n},建筑速览
+editor.build.sum_models,模型 {v} / {n},Models {v} / {n},建筑速览
+editor.build.sum_start,开局 {n} 座,Opening {n},建筑速览
+editor.build.form_hint,人口 / produce_tag / 模型 / 耐久,Pop / produce_tag / model / HP,建筑配置卡
+editor.dps.rules_title,对账口径,Reconciliation,靶场底部
+editor.dps.rules_chain,命中 → 暴击 → 穿透 → 承伤 → 克制 → 最终,Hit → Crit → Pen → Mitigation → Counter → Final,结算链路
+editor.dps.rules_const,护甲 0.06 · 负甲封顶 3× · 暴击 2×,Armor 0.06 · negative cap 3× · crit 2×,规格常数

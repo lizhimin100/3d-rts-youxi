@@ -6,3 +6,5 @@ Tools
 addons
 Content/legacy
 Documents
+Screens/editor
+Screens/scenes/开发者编辑器.tscn

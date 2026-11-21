@@ -1,6 +1,6 @@
 {
 	"version": 1,
-	"note": "三大阵营 12 兵种。距离一律是**游戏数值**（R1 = 0.015 米/单位），近战无投射物、远程生成投射物；命中/闪避/暴击默认 100/0/0，随机词条留给后续升星与策略牌。passive_trait 最多 1 个、自动触发，当前全部留空。",
+	"note": "三大阵营 12 兵种。距离一律是**游戏数值**（R1 = 0.015 米/单位），近战无投射物、远程生成投射物；命中/闪避/暴击默认 100/0/0，随机词条留给后续升星与策略牌。passive_trait 最多 1 个、自动触发，当前全部留空。 2026-11-21 起每个兵种带 model_path / model_scale：开发者编辑器直接改这两项；鱼人模型未就绪时用占位网格。",
 	"factions": {
 		"alliance": {
 			"display_name": "联盟",
@@ -43,6 +43,8 @@
 			"projectile_speed": 0,
 			"pop_cost": 5,
 			"passive_trait": null,
+			"model_path": "res://Content/art/模型/步兵.glb",
+			"model_scale": 1,
 			"use_placeholder_mesh": false,
 			"note": "顶前的一线；95 射程 = 1.425 米，和长枪 155 正好差两个身位（0.9 米）。"
 		},
@@ -70,6 +72,8 @@
 			"projectile_speed": 0,
 			"pop_cost": 4,
 			"passive_trait": null,
+			"model_path": "res://Content/art/模型/方块人/方块人_步兵.glb",
+			"model_scale": 1,
 			"use_placeholder_mesh": false,
 			"note": "155 - 95 = 60 游戏数值 = 0.9 米 = 两倍 0.45 身位：刚好站在步兵身后隔排刺击。"
 		},
@@ -97,6 +101,8 @@
 			"projectile_speed": 26,
 			"pop_cost": 4,
 			"passive_trait": null,
+			"model_path": "res://Content/art/模型/弓箭手.glb",
+			"model_scale": 1,
 			"use_placeholder_mesh": false,
 			"note": "650 射程 = 9.75 米；穿刺克制轻甲/无甲，怕重甲与坚固甲。"
 		},
@@ -124,6 +130,8 @@
 			"projectile_speed": 32,
 			"pop_cost": 4,
 			"passive_trait": null,
+			"model_path": "res://Content/art/模型/方块人/方块人_弩兵.glb",
+			"model_scale": 1,
 			"use_placeholder_mesh": false,
 			"note": "破甲特色：有效护甲 = 基础护甲 × (1-35%) - 3，专治重甲/坚固甲。"
 		},
@@ -151,6 +159,8 @@
 			"projectile_speed": 0,
 			"pop_cost": 6,
 			"passive_trait": null,
+			"model_path": "res://Content/art/模型/野怪/豺狼人斥候.glb",
+			"model_scale": 1,
 			"use_placeholder_mesh": false,
 			"note": "6 人一队的廉价前排，单兵弱但总血量和出手数不低。"
 		},
@@ -178,6 +188,8 @@
 			"projectile_speed": 0,
 			"pop_cost": 4,
 			"passive_trait": null,
+			"model_path": "res://Content/art/模型/野怪/豺狼人战士.glb",
+			"model_scale": 1,
 			"use_placeholder_mesh": false,
 			"note": "105 射程略长于联盟步兵，但中甲面前吃亏。"
 		},
@@ -205,6 +217,8 @@
 			"projectile_speed": 24,
 			"pop_cost": 4,
 			"passive_trait": null,
+			"model_path": "res://Content/art/模型/野怪/豺狼人萨满.glb",
+			"model_scale": 1,
 			"use_placeholder_mesh": false,
 			"note": "魔法 650：打重甲 1.25，打中甲只有 0.75；用来逼玩家换阵。"
 		},
@@ -232,6 +246,8 @@
 			"projectile_speed": 0,
 			"pop_cost": 2,
 			"passive_trait": null,
+			"model_path": "res://Content/art/模型/野怪/豺狼人战士.glb",
+			"model_scale": 1,
 			"use_placeholder_mesh": false,
 			"note": "配置保留、暂不刷出（enabled=false）：等第 2 关再上。"
 		},
@@ -259,6 +275,8 @@
 			"projectile_speed": 0,
 			"pop_cost": 8,
 			"passive_trait": null,
+			"model_path": "",
+			"model_scale": 1,
 			"use_placeholder_mesh": true,
 			"note": "8 人一队的无甲海；65 射程最短，必须贴脸。"
 		},
@@ -286,6 +304,8 @@
 			"projectile_speed": 0,
 			"pop_cost": 4,
 			"passive_trait": null,
+			"model_path": "",
+			"model_scale": 1,
 			"use_placeholder_mesh": true,
 			"note": "轻甲近战，标准 95 射程。"
 		},
@@ -313,6 +333,8 @@
 			"projectile_speed": 24,
 			"pop_cost": 4,
 			"passive_trait": null,
+			"model_path": "",
+			"model_scale": 1,
 			"use_placeholder_mesh": true,
 			"note": "550 射程：比联盟弓手近 100，容易被弩兵先手。"
 		},
@@ -340,6 +362,8 @@
 			"projectile_speed": 0,
 			"pop_cost": 2,
 			"passive_trait": null,
+			"model_path": "",
+			"model_scale": 1,
 			"use_placeholder_mesh": true,
 			"note": "2 人一队的重甲肉盾，用穿刺/魔法处理。"
 		}

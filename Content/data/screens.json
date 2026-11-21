@@ -117,6 +117,30 @@
 			"token_click": "footman",
 			"expect": "部署_进攻",
 			"wait_after": 0.45
+		},
+		"editor": {
+			"description": "开发者编辑器：点兵种行 → 靶场锁定并实时重算（单位/建筑卡牌/长横道营地三页签）",
+			"scene": "res://Screens/scenes/开发者编辑器.tscn",
+			"delay": 1.2,
+			"click": "unit_row_bandit_chief",
+			"expect": "dps_lock_badge",
+			"wait_after": 0.35
+		},
+		"editor_build": {
+			"description": "开发者编辑器 · 建筑与卡牌页（点页签，验证建筑表单与 12 张初始卡组）",
+			"scene": "res://Screens/scenes/开发者编辑器.tscn",
+			"delay": 1.2,
+			"click": "tab_build",
+			"expect": "page_build",
+			"wait_after": 0.25
+		},
+		"editor_level": {
+			"description": "开发者编辑器 · 长横道/营地页（点页签，验证三段横道与独立石台摆放器）",
+			"scene": "res://Screens/scenes/开发者编辑器.tscn",
+			"delay": 1.2,
+			"click": "tab_level",
+			"expect": "page_level",
+			"wait_after": 0.25
 		}
 	}
 }

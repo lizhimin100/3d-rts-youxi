@@ -678,6 +678,62 @@
 			"size": 20
 		},
 		{
+			"path": "Screens/editor/camp_canvas.gd",
+			"size": 21341
+		},
+		{
+			"path": "Screens/editor/camp_canvas.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Screens/editor/dev_data.gd",
+			"size": 18834
+		},
+		{
+			"path": "Screens/editor/dev_data.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Screens/editor/dev_editor.gd",
+			"size": 14926
+		},
+		{
+			"path": "Screens/editor/dev_editor.gd.uid",
+			"size": 19
+		},
+		{
+			"path": "Screens/editor/dev_theme.gd",
+			"size": 15475
+		},
+		{
+			"path": "Screens/editor/dev_theme.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Screens/editor/page_build.gd",
+			"size": 43445
+		},
+		{
+			"path": "Screens/editor/page_build.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Screens/editor/page_level.gd",
+			"size": 14962
+		},
+		{
+			"path": "Screens/editor/page_level.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Screens/editor/page_units.gd",
+			"size": 37905
+		},
+		{
+			"path": "Screens/editor/page_units.gd.uid",
+			"size": 19
+		},
+		{
 			"path": "Screens/hud/HUD.gd",
 			"size": 113186
 		},
@@ -912,6 +968,10 @@
 		{
 			"path": "Screens/scenes/四季演示.tscn",
 			"size": 280
+		},
+		{
+			"path": "Screens/scenes/开发者编辑器.tscn",
+			"size": 314
 		},
 		{
 			"path": "Screens/screens/README.md",
@@ -1206,16 +1266,32 @@
 			"size": 39822
 		},
 		{
+			"path": "Model/Battle/LaneBattle.cs.uid",
+			"size": 20
+		},
+		{
 			"path": "Model/Battle/LevelDef.cs",
 			"size": 10577
+		},
+		{
+			"path": "Model/Battle/LevelDef.cs.uid",
+			"size": 19
 		},
 		{
 			"path": "Model/Battle/LevelRunner.cs",
 			"size": 13315
 		},
 		{
+			"path": "Model/Battle/LevelRunner.cs.uid",
+			"size": 20
+		},
+		{
 			"path": "Model/Battle/LevelSimulator.cs",
 			"size": 7754
+		},
+		{
+			"path": "Model/Battle/LevelSimulator.cs.uid",
+			"size": 20
 		},
 		{
 			"path": "Model/Battle/Skirmish.cs",
@@ -1230,12 +1306,24 @@
 			"size": 10381
 		},
 		{
+			"path": "Model/Combat/CombatCalculator.cs.uid",
+			"size": 20
+		},
+		{
 			"path": "Model/Combat/CombatRules.cs",
 			"size": 7790
 		},
 		{
+			"path": "Model/Combat/CombatRules.cs.uid",
+			"size": 20
+		},
+		{
 			"path": "Model/Combat/CombatTypes.cs",
 			"size": 2670
+		},
+		{
+			"path": "Model/Combat/CombatTypes.cs.uid",
+			"size": 20
 		},
 		{
 			"path": "Model/Core/Availability.cs",
@@ -1290,20 +1378,40 @@
 			"size": 4235
 		},
 		{
+			"path": "Model/Data/JVal.cs.uid",
+			"size": 19
+		},
+		{
 			"path": "Model/Data/UnitCatalog.cs",
 			"size": 15087
+		},
+		{
+			"path": "Model/Data/UnitCatalog.cs.uid",
+			"size": 20
 		},
 		{
 			"path": "Model/Planning/PlanningConfig.cs",
 			"size": 19210
 		},
 		{
+			"path": "Model/Planning/PlanningConfig.cs.uid",
+			"size": 19
+		},
+		{
 			"path": "Model/Planning/PlanningMatch.cs",
 			"size": 15097
 		},
 		{
+			"path": "Model/Planning/PlanningMatch.cs.uid",
+			"size": 20
+		},
+		{
 			"path": "Model/Planning/ScriptedPlanner.cs",
 			"size": 6702
+		},
+		{
+			"path": "Model/Planning/ScriptedPlanner.cs.uid",
+			"size": 19
 		},
 		{
 			"path": "Model/README.md",
@@ -1491,7 +1599,7 @@
 		},
 		{
 			"path": "Tests/checks/check_all.gd",
-			"size": 62817
+			"size": 71738
 		},
 		{
 			"path": "Tests/checks/check_all.gd.uid",
@@ -1795,7 +1903,7 @@
 		},
 		{
 			"path": "Tools/build/release_exclude.txt",
-			"size": 235
+			"size": 289
 		},
 		{
 			"path": "Tools/checks/negative_demo.py",
@@ -2367,7 +2475,7 @@
 		},
 		{
 			"path": "Content/data/levels.json",
-			"size": 2381
+			"size": 5563
 		},
 		{
 			"path": "Content/data/long_costs.json",
@@ -2375,7 +2483,7 @@
 		},
 		{
 			"path": "Content/data/planning.json",
-			"size": 4281
+			"size": 7512
 		},
 		{
 			"path": "Content/data/researches.json",
@@ -2383,7 +2491,7 @@
 		},
 		{
 			"path": "Content/data/screens.json",
-			"size": 4278
+			"size": 5196
 		},
 		{
 			"path": "Content/data/sim.json",
@@ -2391,7 +2499,7 @@
 		},
 		{
 			"path": "Content/data/units.json",
-			"size": 8601
+			"size": 9631
 		},
 		{
 			"path": "Content/i18n/legacy_budget.json",
@@ -2399,19 +2507,19 @@
 		},
 		{
 			"path": "Content/i18n/ui.csv",
-			"size": 3423
+			"size": 23108
 		},
 		{
 			"path": "Content/i18n/ui.en.translation",
-			"size": 2248
+			"size": 12916
 		},
 		{
 			"path": "Content/i18n/ui.note.translation",
-			"size": 2105
+			"size": 13729
 		},
 		{
 			"path": "Content/i18n/ui.zh.translation",
-			"size": 2679
+			"size": 14931
 		},
 		{
 			"path": "Content/keys/assets.json",
