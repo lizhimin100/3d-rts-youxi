@@ -25,8 +25,7 @@ function Show-Usage {
     @"
 用法：
   Tools/run-game.ps1                         正常启动（短局：规划/执行 + CP）
-  Tools/run-game.ps1 --long                  旧即时战略（长局金币/木材）
-  Tools/run-game.ps1 --short                 显式短局（可叠加 --map=...）
+  Tools/run-game.ps1 --short                 显式短局（截图/QA 用；正常启动已是短局）
   Tools/run-game.ps1 --check                 无窗口体检（数据/文案/资源/分层/存档隔离/文档）
   Tools/run-game.ps1 --simulate [--games=N]  只用 Model 跑推演并输出数值报告
   Tools/run-game.ps1 --shot <画面> <输出.png> 离屏截图（hud 画面会真点一次「建造」）
@@ -75,7 +74,6 @@ for ($i = 0; $i -lt $Rest.Count; $i++) {
         "--import"   { $mode = "import"; continue }
         "--round-test" { $mode = "round"; continue }
         "--short"    { $userMode = "--short"; continue }
-        "--long"     { $userMode = "--long"; continue }
         # 常见游戏参数：不能当引擎参数传，否则 Game 侧的 OS.get_cmdline_user_args() 收不到。
         "--map=*"     { $gameArgs += $a; continue }
         "--no-map"    { $gameArgs += $a; continue }

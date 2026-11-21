@@ -83,7 +83,7 @@
 		},
 		{
 			"path": "Game/commands/命令记录.gd",
-			"size": 3762
+			"size": 3786
 		},
 		{
 			"path": "Game/commands/命令记录.gd.uid",
@@ -323,7 +323,7 @@
 		},
 		{
 			"path": "Game/core/主场景.gd",
-			"size": 58287
+			"size": 58223
 		},
 		{
 			"path": "Game/core/主场景.gd.uid",
@@ -355,7 +355,7 @@
 		},
 		{
 			"path": "Game/core/游戏状态.gd",
-			"size": 35902
+			"size": 35748
 		},
 		{
 			"path": "Game/core/游戏状态.gd.uid",
@@ -615,7 +615,7 @@
 		},
 		{
 			"path": "Game/units/单位.gd",
-			"size": 172832
+			"size": 168847
 		},
 		{
 			"path": "Game/units/单位.gd.uid",
@@ -679,7 +679,7 @@
 		},
 		{
 			"path": "Screens/hud/HUD.gd",
-			"size": 113198
+			"size": 113186
 		},
 		{
 			"path": "Screens/hud/HUD.gd.uid",
@@ -691,7 +691,7 @@
 		},
 		{
 			"path": "Screens/hud/光标术.gd",
-			"size": 27648
+			"size": 28329
 		},
 		{
 			"path": "Screens/hud/光标术.gd.uid",
@@ -803,7 +803,7 @@
 		},
 		{
 			"path": "Screens/hud/规划地图层.gd",
-			"size": 38390
+			"size": 38309
 		},
 		{
 			"path": "Screens/hud/规划地图层.gd.uid",
@@ -811,7 +811,7 @@
 		},
 		{
 			"path": "Screens/hud/规划阶段界面.gd",
-			"size": 53432
+			"size": 53393
 		},
 		{
 			"path": "Screens/hud/规划阶段界面.gd.uid",
@@ -827,7 +827,7 @@
 		},
 		{
 			"path": "Screens/hud/词条.gd",
-			"size": 20475
+			"size": 21035
 		},
 		{
 			"path": "Screens/hud/词条.gd.uid",
@@ -871,7 +871,7 @@
 		},
 		{
 			"path": "Screens/input/指令系统.gd",
-			"size": 60841
+			"size": 61506
 		},
 		{
 			"path": "Screens/input/指令系统.gd.uid",
@@ -887,7 +887,7 @@
 		},
 		{
 			"path": "Screens/input/选择系统.gd",
-			"size": 34667
+			"size": 35576
 		},
 		{
 			"path": "Screens/input/选择系统.gd.uid",
@@ -1443,7 +1443,7 @@
 		},
 		{
 			"path": "Tests/checks/check_all.gd",
-			"size": 40588
+			"size": 43008
 		},
 		{
 			"path": "Tests/checks/check_all.gd.uid",
@@ -1504,14 +1504,6 @@
 		{
 			"path": "Tests/suites/体积标定.gd.uid",
 			"size": 20
-		},
-		{
-			"path": "Tests/suites/农民测试.gd",
-			"size": 8190
-		},
-		{
-			"path": "Tests/suites/农民测试.gd.uid",
-			"size": 19
 		},
 		{
 			"path": "Tests/suites/动作截图.gd",
@@ -1611,7 +1603,7 @@
 		},
 		{
 			"path": "Tests/suites/性能探针.gd",
-			"size": 4668
+			"size": 4568
 		},
 		{
 			"path": "Tests/suites/性能探针.gd.uid",
@@ -1827,7 +1819,7 @@
 		},
 		{
 			"path": "Tools/run-game.ps1",
-			"size": 7589
+			"size": 7640
 		},
 		{
 			"path": "Tools/修举盾姿势.py",

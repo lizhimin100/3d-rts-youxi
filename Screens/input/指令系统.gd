@@ -3,7 +3,7 @@ extends Node
 ## **指令系统（HAWKEYE）**
 ##
 ## 职责（对齐 Documents/作战条令.md §7）：
-##   - 右键上下文：点敌人 = 攻击；点资源 = 采集（农民）；点自己建筑 = 送资源/设集结点；
+##   - 右键上下文：点敌人 = 攻击；点自然物 = 走过去；点自己建筑 = 设集结点；
 ##     点空地 = 移动（带**编队偏移**，不让一队人挤在一个点上）
 ##   - 快捷键：攻击移动 / 停止 / 保持 / 建造 / 技能 1-3
 ##   - "等待落点"状态机：攻击移动、建造、施法都需要下一次左键给目标点，
@@ -296,16 +296,6 @@ func pop_last_plan() -> String:
 	return String(rec.call("text"))
 
 
-## 计划：采集
-func queue_gather(node: Node3D) -> void:
-	var workers := _selected_workers()
-	if workers.is_empty() or node == null:
-		return
-	var d := _def_of(node)
-	_add_plan(RtsConst.Order.GATHER, workers, node.global_position, node, &"",
-			"采集 %s" % (d.display_name if d != null else "资源"))
-
-
 ## 计划：修理
 func queue_repair(b: Node3D) -> void:
 	var workers := _selected_workers()
@@ -387,11 +377,6 @@ func _execute_record(rec) -> void:
 			for u5 in units:
 				if u5.has_method("order_hold"):
 					u5.order_hold()
-		RtsConst.Order.GATHER:
-			if target != null and is_instance_valid(target):
-				for u6 in units:
-					if u6.has_method("order_gather"):
-						u6.order_gather(target)
 		RtsConst.Order.REPAIR:
 			if target != null and is_instance_valid(target):
 				for u7 in units:
@@ -904,21 +889,10 @@ func _context_order(screen_pos: Vector2) -> void:
 	var ground := _ground_at(screen_pos)
 	var pl := Game.player_faction
 
-	# --- 1. 点到可采集物 ---
+	# --- 1. 点到自然物（树/矿脉）：只当 scenery，走过去 ---
+	# 2026-11-20：采集玩法已删除（长局退役、短局禁采集），点树不再是"采集"。
 	if target is RtsHarvestable:
-		var node := target as RtsHarvestable
-		var workers := _selected_workers()
-		if not workers.is_empty():
-			if Game.is_planning():
-				queue_gather(node)
-				return
-			for w in workers:
-				_order_gather(w, node)
-			Game.order_issued.emit(workers, RtsConst.Order.GATHER, node.global_position, node)
-			_toast("采集%s" % (node.def.display_name if node.def != null else "资源"), _accent())
-			return
-		# 非农民：走过去（顺手，不报错）
-		_issue_move(units, _walkable(node.global_position))
+		_issue_move(units, _walkable((target as Node3D).global_position))
 		return
 
 	# --- 2. 点到敌方单位/建筑 → 攻击 ---
@@ -1637,14 +1611,6 @@ func _def_of(n: Node) -> UnitDef:
 	if n == null:
 		return null
 	return n.get("def") as UnitDef
-
-
-## 采集：优先 unit 自己的接口
-func _order_gather(w: Node, node: Node3D) -> void:
-	if w == null or not is_instance_valid(w):
-		return
-	if w.has_method("order_gather"):
-		w.order_gather(node)
 
 
 ## 顶部提示（走全局信号，界面负责显示）

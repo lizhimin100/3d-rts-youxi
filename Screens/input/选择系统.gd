@@ -473,8 +473,6 @@ func _pick(ray_o: Vector3, ray_d: Vector3) -> Node3D:
 		var bias: float = 0.0
 		if n is RtsBuilding:
 			bias = 3.0
-		elif n is RtsHarvestable:
-			bias = 3.5
 		var key: float = hit.x + bias
 		if key < best_t:
 			best_t = key
@@ -912,8 +910,6 @@ func _select_radius(n: Node) -> float:
 		var bd: UnitDef = n.get("def") as UnitDef
 		if bd != null and bd.footprint != Vector2i.ZERO:
 			return clampf(float(maxi(bd.footprint.x, bd.footprint.y)) * 0.5, 1.0, 3.2)
-	if n is RtsHarvestable:
-		return 1.6
 	var d := _def_of(n)
 	if d != null and d.selection_radius > 0.0:
 		return d.selection_radius

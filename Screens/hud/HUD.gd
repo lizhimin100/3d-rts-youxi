@@ -968,7 +968,7 @@ func _resource_tip(title: String) -> Dictionary:
 		"金币":
 			var g: int = pl.gold if pl != null else 0
 			return {"icon": "coin", "icon_color": Spec.gold(), "title": "金币 %d" % g,
-				"tag": "主资源", "body": "训练、建造、研究都要花金币。\n由农民在金矿上采集，送回大本营或伐木场结算。",
+				"tag": "局外库存", "body": "金币是局外长线账本（升星 / 改造）。\n局内只花 CP，不采集、不产金。",
 				"foot": ""}
 		"木材":
 			var w: int = pl.wood if pl != null else 0

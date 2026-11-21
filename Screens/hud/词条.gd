@@ -65,7 +65,7 @@ static func kind_name(d: UnitDef) -> String:
 	if d.is_building():
 		return "建筑"
 	if d.gather_rate > 0.0:
-		return "采集"
+		return "工程"
 	if d.attack_damage <= 0.0:
 		return "辅助"
 	if d.attack_range > 3.0:
@@ -323,7 +323,7 @@ static func stat(d: UnitDef, key: String, u: Node3D = null) -> Dictionary:
 				return {"icon": "sword", "icon_color": Color(0.7, 0.7, 0.68),
 						"title": "没有攻击能力",
 						"tag": "攻击",
-						"body": "不会主动攻击，只能移动 / 采集 / 建造。",
+						"body": "不会主动攻击，只能移动 / 建造。",
 						"foot": ""}
 			# 一行一个信息点：中文会在任意两字之间折行，句子写太长就会出现
 			# "单次 19 / 点。"这种只剩两个字的孤行。

@@ -261,8 +261,6 @@ func _draw_planned(cam: Camera3D) -> void:
 				_mark(cam, p, "attack", COL_ATTACK)
 			RtsConst.Order.MOVE:
 				_mark(cam, p, "move", COL_MOVE)
-			RtsConst.Order.GATHER:
-				_mark(cam, p, "gather", Color(0.98, 0.86, 0.42))
 			RtsConst.Order.BUILD:
 				_mark(cam, p, "build", Color(0.82, 0.94, 0.72))
 			RtsConst.Order.HOLD:

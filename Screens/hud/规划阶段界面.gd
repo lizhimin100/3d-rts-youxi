@@ -1042,7 +1042,7 @@ func _gold_tip() -> Dictionary:
 		"icon": "coin", "icon_color": Spec.gold(),
 		"title": "金币 %d" % g,
 		"tag": "局外资源",
-		"body": "金币是[color=#ffd27a]长局[/color]的主资源（采集、建造、研究都花它）。\n短局只花 CP —— 这里的数字是局外库存，不参与短局支付。",
+		"body": "金币是[color=#ffd27a]局外库存[/color]（升星 / 改造用）。\n局内只花 CP —— 这里的数字不参与局内支付。",
 		"foot": "短局请只看 CP 与人口",
 	}
 

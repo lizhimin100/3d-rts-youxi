@@ -55,6 +55,7 @@ func _run() -> void:
 	_check_release_gate()
 	_check_screens()
 	_check_docs()
+	_check_legacy_removed()
 	_finish()
 
 # ===========================================================================
@@ -812,6 +813,62 @@ func _check_docs() -> void:
 	var concept := _read("res://Documents/concept.md")
 	var has3 := concept.contains("已确认") and concept.contains("建议") and concept.contains("待决定")
 	_ok("Documents/concept.md 三栏", has3)
+	var formula := _read("res://Documents/combat_formula.md")
+	_ok("Documents/combat_formula.md 存在且写了 R1", formula.contains("R1") and formula.contains("0.015"))
+
+
+## 2026-11-20 转型：旧 RTS 系统必须**真的不在**了。
+## 这一条是"反向验错"的靶子：把任何一处旧引用加回来，它立刻变红。
+func _check_legacy_removed() -> void:
+	var problems: Array[String] = []
+
+	# 1) 旧 AI 决策链：目录与引用都不许在
+	if DirAccess.dir_exists_absolute(ProjectSettings.globalize_path("res://Game/ai")):
+		problems.append("Game/ai/ 目录还在")
+	for d in ["Game", "Screens", "Tests", "addons"]:
+		for f in _walk("res://" + d):
+			if not (f.ends_with(".gd") or f.ends_with(".tscn")):
+				continue
+			if f.ends_with("Tests/checks/check_all.gd"):
+				continue
+			var text := _read(f)
+			for bad in ["res://Game/ai/", "SimpleAI", "class_name Adjutant"]:
+				if text.contains(bad):
+					problems.append("%s 含 %s" % [f.replace("res://", ""), bad])
+					break
+
+	# 2) 战争迷雾
+	if FileAccess.file_exists("res://Game/systems/战争迷雾.gd"):
+		problems.append("战争迷雾.gd 还在")
+	for f in _walk("res://Game") + _walk("res://Screens"):
+		if not f.ends_with(".gd"):
+			continue
+		var ft := _read(f)
+		if ft.contains("fog_system") or ft.contains("class_name RtsFog"):
+			problems.append("%s 还引用迷雾节点" % f.replace("res://", ""))
+
+	# 3) 全图 A*：NavGrid 里不许再有寻路入口/堆
+	var nav := _read("res://Game/pathing/占格网格.gd")
+	for bad in ["func find_path", "_heap_push", "MAX_EXPAND", "HEURISTIC_WEIGHT"]:
+		if nav.contains(bad):
+			problems.append("占格网格.gd 还含 %s" % bad)
+
+	# 4) 用户入口不再有长局
+	var runner := _read("res://Tools/run-game.ps1")
+	if runner.contains('"--long"'):
+		problems.append("run-game.ps1 还认 --long")
+
+	# 5) 采集：玩家侧零入口（点树/命令卡/规划记录都不许再发 GATHER）
+	for f in _walk("res://Screens"):
+		if not f.ends_with(".gd"):
+			continue
+		var text := _read(f)
+		for bad in ["queue_gather", "Order.GATHER", "_order_gather("]:
+			if text.contains(bad):
+				problems.append("%s 还含采集入口 %s" % [f.replace("res://", ""), bad])
+				break
+	_ok("旧系统已移除（AI / 副官 / 迷雾 / 全图A* / 长局 / 采集入口）",
+		problems.is_empty(), "; ".join(problems.slice(0, 6)))
 
 
 # ===========================================================================

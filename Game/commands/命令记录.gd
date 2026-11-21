@@ -98,14 +98,10 @@ func text() -> String:
 			return "停止"
 		RtsConst.Order.HOLD:
 			return "驻守"
-		RtsConst.Order.GATHER:
-			return "采集"
 		RtsConst.Order.BUILD:
 			return "建造"
 		RtsConst.Order.CAST:
 			return "技能"
-		RtsConst.Order.RETURN_RES:
-			return "送回资源"
 		RtsConst.Order.REPAIR:
 			return "修理"
 		RtsConst.Order.DEFEND:

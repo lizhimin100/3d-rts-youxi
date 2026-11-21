@@ -286,8 +286,6 @@ func _shape_for(target: Node3D) -> int:
 	if target == null or not is_instance_valid(target):
 		return Shape.ARROW
 	var def: UnitDef = target.get("def") as UnitDef
-	if target is RtsHarvestable:
-		return Shape.PICK if _has_worker else Shape.ARROW
 	var fac: RtsFaction = target.get("faction") as RtsFaction
 	var mine: bool = fac != null and fac == Game.player_faction
 	# 敌我判据走 Game.is_ally_of_player（同队 = 盟友），不是"和我同一个阵营"
