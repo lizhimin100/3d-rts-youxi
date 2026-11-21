@@ -125,6 +125,7 @@ var _drag_snapshot: Dictionary = {}
 var _drag_moved := false
 
 # 框选
+var _left_down := false
 var _pending_add := false
 var _box_active := false
 var _box_start := Vector2.ZERO
@@ -1547,6 +1548,7 @@ func handle_input(event: InputEvent, pos: Vector2) -> bool:
 						_on_right_click()
 				return true
 			MOUSE_BUTTON_LEFT:
+				_left_down = mb.pressed
 				if mb.pressed:
 					if Input.is_key_pressed(KEY_ALT):
 						# Alt+左键 = 转视角（笔记本没中键也能转）
@@ -1587,7 +1589,7 @@ func handle_input(event: InputEvent, pos: Vector2) -> bool:
 		if _painting and tool == TOOL_TERRAIN:
 			_paint_ground = g
 		# 框选：按住左键在空地上拖出矩形
-		if _pending_add and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		if _pending_add and _left_down:
 			if pos.distance_to(_box_start) > 4.0:
 				_box_active = true
 				_pending_add = false

@@ -16,6 +16,7 @@ const CFG := "res://addons/map_shell_editor/plugin.cfg"
 const ThemeKit := preload("res://Screens/editor/dev_theme.gd")
 const ShellTheme := preload("res://Screens/editor/map_shell/shell_theme.gd")
 const ShellText := preload("res://Screens/editor/map_shell/shell_text.gd")
+const ShellStore := preload("res://Screens/editor/shell_store.gd")
 
 const TOOLS := ["terrain", "decor", "spine", "tile"]
 
@@ -297,6 +298,71 @@ func _selftest() -> void:
 		var sel_root = view.get("selection_root")
 		if sel_root == null or sel_root.get_child_count() == 0:
 			problems.append("selection-ring")
+		# 框选：在视口里从左上方拖到右下方，必须选中 >= 2 个格子（合成鼠标事件，真走 handle_input）
+		view.call("reset_camera")
+		view.call("clear_selection")
+		var box_a := Vector2(30.0, 30.0)
+		var box_b := Vector2(880.0, 620.0)
+		var bd := InputEventMouseButton.new()
+		bd.button_index = MOUSE_BUTTON_LEFT
+		bd.pressed = true
+		bd.position = box_a
+		view.call("handle_input", bd, box_a)
+		var bm := InputEventMouseMotion.new()
+		bm.position = box_b
+		bm.relative = box_b - box_a
+		view.call("handle_input", bm, box_b)
+		var bu := InputEventMouseButton.new()
+		bu.button_index = MOUSE_BUTTON_LEFT
+		bu.pressed = false
+		bu.position = box_b
+		view.call("handle_input", bu, box_b)
+		var box_sel: Array = view.get("selected_tiles")
+		if box_sel.size() < 2:
+			problems.append("box-select=%d" % box_sel.size())
+		# 拖动：选中 1 号格子，从它的屏幕位置往右下拖 40px，数据必须变且贴合地形
+		view.call("select_tile", 1)
+		var sh1: Dictionary = view.get("shell")
+		var td1 := ShellStore.tile_by_index(sh1, 1)
+		var drag_px: Vector2 = view.call("_screen_of", Vector3(float(td1.get("x", 0.0)), float(td1.get("terrain_y", 0.0)) + 0.3, float(td1.get("z", 0.0))))
+		var drag_from := Vector2(float(td1.get("x", 0.0)), float(td1.get("z", 0.0)))
+		var dd := InputEventMouseButton.new()
+		dd.button_index = MOUSE_BUTTON_LEFT
+		dd.pressed = true
+		dd.position = drag_px
+		view.call("handle_input", dd, drag_px)
+		var dm := InputEventMouseMotion.new()
+		dm.position = drag_px + Vector2(40.0, 30.0)
+		dm.relative = Vector2(40.0, 30.0)
+		view.call("handle_input", dm, dm.position)
+		var du := InputEventMouseButton.new()
+		du.button_index = MOUSE_BUTTON_LEFT
+		du.pressed = false
+		du.position = dm.position
+		view.call("handle_input", du, dm.position)
+		var td1b := ShellStore.tile_by_index(view.get("shell"), 1)
+		var drag_to := Vector2(float(td1b.get("x", 0.0)), float(td1b.get("z", 0.0)))
+		if drag_to.distance_to(drag_from) < 0.1:
+			problems.append("tile-drag")
+		elif absf(float(td1b.get("terrain_y", 0.0)) - float(view.call("_h", drag_to.x, drag_to.y))) > 0.02:
+			problems.append("tile-drag-snap")
+
+		# Delete + Ctrl+Z：删一个格子，撤销要能原样回来
+		var before_n: int = (view.get("shell").get("tiles", []) as Array).size()
+		var del := InputEventKey.new()
+		del.keycode = KEY_DELETE
+		del.pressed = true
+		view.call("handle_input", del, Vector2.ZERO)
+		var after_n: int = (view.get("shell").get("tiles", []) as Array).size()
+		var undo := InputEventKey.new()
+		undo.keycode = KEY_Z
+		undo.ctrl_pressed = true
+		undo.pressed = true
+		view.call("handle_input", undo, Vector2.ZERO)
+		var undo_n: int = (view.get("shell").get("tiles", []) as Array).size()
+		if after_n != before_n - 1 or undo_n != before_n:
+			problems.append("delete-undo %d/%d/%d" % [before_n, after_n, undo_n])
+
 		# 区域绘制状态机：进 → 两个顶点 → 取消（不够 3 个不能闭合）
 		view.call("begin_region", "neutral")
 		view.call("add_region_vertex", Vector3.ZERO, Vector2(100, 100))
