@@ -1,0 +1,209 @@
+{
+	"version": 1,
+	"note": "规划阶段唯一数值源：CP / 人口 / 手牌 / 建筑 / 卡牌 / 升星。建造牌打出即 Exhaust（本局不再回到牌堆）；训练牌与策略牌循环。建筑 3 合 1 升满 3 星（同名同星，累计 3 座）。",
+	"cp": {
+		"start": 16,
+		"per_planning": 16,
+		"cap": 24
+	},
+	"pop": {
+		"base": 12,
+		"note": "基地自带 12；每座农场再提供 10 × 星级倍率。人口只限制训练，不限制建造。"
+	},
+	"hand": {
+		"draw": 6,
+		"max": 8,
+		"opening": [
+			"build_barracks",
+			"build_farm",
+			"train_footman",
+			"train_pikeman",
+			"train_archer",
+			"strategy_focus"
+		]
+	},
+	"merge": {
+		"required": 3,
+		"max_star": 3,
+		"note": "拖同名建筑 3 合 1：每吃掉一座同名建筑 +1 合并数，星级 = 1 + 合并数，满 3 星。"
+	},
+	"star": {
+		"attack_mult": [1, 1.35, 1.8],
+		"hp_mult": [1, 1.4, 2],
+		"pop_mult": [1, 1.4, 2]
+	},
+	"board": {
+		"plots": 10,
+		"start": [
+			{"building": "keep", "plot": 0},
+			{"building": "farm", "plot": 1},
+			{"building": "farm", "plot": 2},
+			{"building": "barracks", "plot": 3}
+		]
+	},
+	"buildings": [
+		{
+			"id": "keep",
+			"display_name": "基地",
+			"tag": "base",
+			"armor": 8,
+			"armor_type": "坚固甲",
+			"hp": 4000,
+			"pop": 0,
+			"buildable": false,
+			"trains": [],
+			"base_drain_reduction": 0
+		},
+		{
+			"id": "farm",
+			"display_name": "农场",
+			"tag": "farm",
+			"armor": 4,
+			"armor_type": "坚固甲",
+			"hp": 450,
+			"pop": 10,
+			"buildable": true,
+			"trains": [],
+			"base_drain_reduction": 0
+		},
+		{
+			"id": "barracks",
+			"display_name": "兵营",
+			"tag": "barracks",
+			"armor": 6,
+			"armor_type": "坚固甲",
+			"hp": 900,
+			"buildable": true,
+			"trains": [
+				"alliance_footman",
+				"alliance_pikeman",
+				"alliance_archer",
+				"alliance_crossbowman"
+			],
+			"base_drain_reduction": 0
+		},
+		{
+			"id": "watchtower",
+			"display_name": "哨塔",
+			"tag": "tower",
+			"armor": 8,
+			"armor_type": "坚固甲",
+			"hp": 650,
+			"pop": 0,
+			"buildable": true,
+			"trains": [],
+			"base_drain_reduction": 0.15,
+			"note": "每座哨塔让敌方小队对基地的抽血 -15%，最多叠到 -45%。"
+		}
+	],
+	"strategies": {
+		"forced_march": {
+			"display_name": "急行军",
+			"move_mult": 1.25
+		},
+		"bulwark": {
+			"display_name": "坚壁",
+			"armor_mult": 1.3
+		},
+		"focus": {
+			"display_name": "致命瞄准",
+			"crit_add": 0.2
+		}
+	},
+	"cards": [
+		{
+			"id": "build_farm",
+			"display_name": "农场",
+			"kind": "build",
+			"building": "farm",
+			"cost_cp": 4,
+			"exhaust": true,
+			"count": 2
+		},
+		{
+			"id": "build_barracks",
+			"display_name": "兵营",
+			"kind": "build",
+			"building": "barracks",
+			"cost_cp": 6,
+			"exhaust": true,
+			"count": 2
+		},
+		{
+			"id": "build_tower",
+			"display_name": "哨塔",
+			"kind": "build",
+			"building": "watchtower",
+			"cost_cp": 5,
+			"exhaust": true,
+			"count": 1
+		},
+		{
+			"id": "train_footman",
+			"display_name": "征召步兵",
+			"kind": "train",
+			"unit": "alliance_footman",
+			"tag": "barracks",
+			"cost_cp": 2,
+			"exhaust": false,
+			"count": 3
+		},
+		{
+			"id": "train_pikeman",
+			"display_name": "征召长枪",
+			"kind": "train",
+			"unit": "alliance_pikeman",
+			"tag": "barracks",
+			"cost_cp": 2,
+			"exhaust": false,
+			"count": 2
+		},
+		{
+			"id": "train_archer",
+			"display_name": "征召弓手",
+			"kind": "train",
+			"unit": "alliance_archer",
+			"tag": "barracks",
+			"cost_cp": 3,
+			"exhaust": false,
+			"count": 2
+		},
+		{
+			"id": "train_crossbow",
+			"display_name": "征召弩兵",
+			"kind": "train",
+			"unit": "alliance_crossbowman",
+			"tag": "barracks",
+			"cost_cp": 3,
+			"exhaust": false,
+			"count": 1
+		},
+		{
+			"id": "strategy_forced_march",
+			"display_name": "急行军",
+			"kind": "strategy",
+			"effect": "forced_march",
+			"cost_cp": 2,
+			"exhaust": false,
+			"count": 1
+		},
+		{
+			"id": "strategy_bulwark",
+			"display_name": "坚壁",
+			"kind": "strategy",
+			"effect": "bulwark",
+			"cost_cp": 2,
+			"exhaust": false,
+			"count": 1
+		},
+		{
+			"id": "strategy_focus",
+			"display_name": "致命瞄准",
+			"kind": "strategy",
+			"effect": "focus",
+			"cost_cp": 2,
+			"exhaust": false,
+			"count": 1
+		}
+	]
+}

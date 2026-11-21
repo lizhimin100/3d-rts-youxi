@@ -19,7 +19,7 @@ Game/       引擎耦合的玩法装配（core/systems/units/map/config/adapters
 Content/    内容与资产：data/（JSON 唯一数值源）i18n/ keys/ art/ audio/ maps/ legacy/（旧 .tres 留档）。
 Tests/      无窗口自检：checks/（--check 入口）sim/（--simulate）model/（规则用例）suites/（历史自检）。
 Tools/      稳定流程脚本：run-game.ps1（唯一入口）gen/ build/ qa/ migrate/。
-Documents/  设计真相与专题：concept.md / combat_formula.md / architecture.md / 专题与索引。
+Documents/  设计真相与专题：concept.md / combat_formula.md / 战斗与规划.md / architecture.md / 专题与索引。
 addons/     Godot 编辑器插件（地图编辑器）。不进发行版。
 ```
 
@@ -57,7 +57,7 @@ addons/     Godot 编辑器插件（地图编辑器）。不进发行版。
 
 ```powershell
 ./Tools/run-game.ps1 --check                  # 无窗口体检（会先 dotnet build 内核）
-./Tools/run-game.ps1 --simulate --games=5     # 只用 C# Model 跑推演，末行 SIM {json}
+./Tools/run-game.ps1 --simulate --games=100   # 第 1 关 100 局（联盟 vs 豺狼人），末行 SIM {json}
 ./Tools/run-game.ps1 --round-test             # 半回合自检：规划/执行/CP/小队/部署
 ./Tools/run-game.ps1 --shot main _qa/main.png # 离屏截图（交互画面会真点一次并验状态）
 ./Tools/run-game.ps1 --import                 # 新增 class_name / 场景 / 资源后跑一次
@@ -81,6 +81,9 @@ dotnet build 战争原岛.csproj                   # 只编译内核 + 宿主
 - **2026-11-20 短局是唯一模式**：删除 `--long` 旧即时战略入口；金币/木材只作局外长线账本，不再有局内采集。
 - **2026-11-20 调试接口只监听 127.0.0.1**；发行构建不启动，`Engine/debug` 整目录排除。
 - **2026-11-20 `run-game` 是唯一入口**：先 `dotnet build`，再 `--check/--simulate/--shot`。
+- **2026-11-21 新战斗内核**：6 步伤害唯一实现在 `Model/Combat/CombatCalculator.cs`（命中→暴击→穿透→承伤→6×6 克制→最终），表在 `Content/data/combat.json`；旧 `Model/Core/Damage.cs` 只服务旧 GDScript 战斗层，新代码不许调。
+- **2026-11-21 12 兵种进 `Content/data/units.json`**：三大阵营各 4；距离全用游戏数值；近战无投射物、远程有；默认命中/闪避/暴击 100/0/0；弩兵 `35%+3` 破甲；`bandit_lord` 暂 `enabled=false`；鱼人走占位网格。
+- **2026-11-21 规划与双 90 秒**：`planning.json` 管 CP/人口/卡牌/3 合 1；`levels.json` 管第 1 关两轮波次；建造牌 Exhaust、训练牌按 Tag 全场产兵、策略牌循环；轮末清场，定性复盘按 code 聚合。详见 `Documents/战斗与规划.md`。
 - **2026-11-14 按「七块砖」重排**：`Engine/Model/Screens/Game/Content/Tests/Tools/Documents` 八目录（七块砖 + 迁移期 Game/）。
 - **2026-11-14 数值真源 = JSON**：`Content/data/*.json`；旧 `.tres` 卡退役到 `Content/legacy/cards/`。
 - **2026-11-14 测试模式默认隔离**：静音、无焦点、存档 `res://.test_profile/`；测试不碰玩家真实存档。

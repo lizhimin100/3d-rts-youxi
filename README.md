@@ -78,7 +78,7 @@ addons/     地图编辑器（不进发行版）
 
 ```powershell
 ./Tools/run-game.ps1 --check                  # 体检：数据/文案/资源/分层/距离铁律/存档隔离/发行门禁/文档
-./Tools/run-game.ps1 --simulate --games=5     # 只用 C# Model 跑推演，输出数值报告
+./Tools/run-game.ps1 --simulate --games=100   # 第 1 关 100 局（联盟 vs 豺狼人），输出数值报告
 ./Tools/run-game.ps1 --shot main _qa/main.png # 离屏截图（交互画面会真点一次并验状态）
 ./Tools/run-game.ps1 --round-test             # 半回合自检
 ```

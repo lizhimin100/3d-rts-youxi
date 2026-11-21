@@ -663,7 +663,7 @@
 		},
 		{
 			"path": "Screens/bridge/ModelBridge.cs",
-			"size": 17778
+			"size": 38368
 		},
 		{
 			"path": "Screens/bridge/ModelBridge.cs.uid",
@@ -1202,12 +1202,40 @@
 			"size": 20
 		},
 		{
+			"path": "Model/Battle/LaneBattle.cs",
+			"size": 39313
+		},
+		{
+			"path": "Model/Battle/LevelDef.cs",
+			"size": 10577
+		},
+		{
+			"path": "Model/Battle/LevelRunner.cs",
+			"size": 13193
+		},
+		{
+			"path": "Model/Battle/LevelSimulator.cs",
+			"size": 7498
+		},
+		{
 			"path": "Model/Battle/Skirmish.cs",
 			"size": 22896
 		},
 		{
 			"path": "Model/Battle/Skirmish.cs.uid",
 			"size": 20
+		},
+		{
+			"path": "Model/Combat/CombatCalculator.cs",
+			"size": 10322
+		},
+		{
+			"path": "Model/Combat/CombatRules.cs",
+			"size": 7790
+		},
+		{
+			"path": "Model/Combat/CombatTypes.cs",
+			"size": 2670
 		},
 		{
 			"path": "Model/Core/Availability.cs",
@@ -1251,11 +1279,31 @@
 		},
 		{
 			"path": "Model/Core/RtsUnits.cs",
-			"size": 1228
+			"size": 1200
 		},
 		{
 			"path": "Model/Core/RtsUnits.cs.uid",
 			"size": 19
+		},
+		{
+			"path": "Model/Data/JVal.cs",
+			"size": 4235
+		},
+		{
+			"path": "Model/Data/UnitCatalog.cs",
+			"size": 14864
+		},
+		{
+			"path": "Model/Planning/PlanningConfig.cs",
+			"size": 18073
+		},
+		{
+			"path": "Model/Planning/PlanningMatch.cs",
+			"size": 15080
+		},
+		{
+			"path": "Model/Planning/ScriptedPlanner.cs",
+			"size": 6702
 		},
 		{
 			"path": "Model/README.md",
@@ -1443,7 +1491,7 @@
 		},
 		{
 			"path": "Tests/checks/check_all.gd",
-			"size": 43008
+			"size": 60396
 		},
 		{
 			"path": "Tests/checks/check_all.gd.uid",
@@ -1479,7 +1527,7 @@
 		},
 		{
 			"path": "Tests/sim/run_simulate.gd",
-			"size": 5997
+			"size": 6700
 		},
 		{
 			"path": "Tests/sim/run_simulate.gd.uid",
@@ -2302,6 +2350,10 @@
 			"size": 1304
 		},
 		{
+			"path": "Content/data/combat.json",
+			"size": 783
+		},
+		{
 			"path": "Content/data/game.json",
 			"size": 7290
 		},
@@ -2314,8 +2366,16 @@
 			"size": 2774
 		},
 		{
+			"path": "Content/data/levels.json",
+			"size": 2381
+		},
+		{
 			"path": "Content/data/long_costs.json",
 			"size": 1129
+		},
+		{
+			"path": "Content/data/planning.json",
+			"size": 4209
 		},
 		{
 			"path": "Content/data/researches.json",
@@ -2328,6 +2388,10 @@
 		{
 			"path": "Content/data/sim.json",
 			"size": 802
+		},
+		{
+			"path": "Content/data/units.json",
+			"size": 8601
 		},
 		{
 			"path": "Content/i18n/legacy_budget.json",

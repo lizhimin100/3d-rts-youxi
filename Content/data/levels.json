@@ -1,0 +1,101 @@
+{
+	"version": 1,
+	"note": "关卡表：第 1 关 = 联盟 vs 豺狼人。一场两轮，各 90 秒：第 1 轮进攻（敌方按波次守家），第 2 轮防守（敌方按波次压家）。基地血量跨轮保留，轮末清空全部部队。",
+	"levels": [
+		{
+			"id": "level_1",
+			"display_name": "第一关 · 灰牙前哨",
+			"player_faction": "alliance",
+			"enemy_faction": "bandit",
+			"player_base_hp": 2600,
+			"enemy_base_hp": 3200,
+			"round_seconds": 90,
+			"lane": {
+				"length": 4000,
+				"width": 420,
+				"zone_depth": 600,
+				"zone_dps_per_squad": 9,
+				"spawn_offset": 250,
+				"base_stop": 120,
+				"note": "全部是游戏数值（×0.015 米）：4000 = 60 米长，420 = 6.3 米宽，600 = 9 米敌区。"
+			},
+			"rounds": [
+				{
+					"kind": "attack",
+					"label": "进攻战 · 拆掉灰牙前哨",
+					"enemy_waves": [
+						{
+							"t": 0,
+							"squads": [
+								{"unit": "bandit_scout", "count": 2},
+								{"unit": "bandit_marauder", "count": 2}
+							]
+						},
+						{
+							"t": 24,
+							"squads": [
+								{"unit": "bandit_marauder", "count": 2},
+								{"unit": "bandit_chief", "count": 1}
+							]
+						},
+						{
+							"t": 48,
+							"squads": [
+								{"unit": "bandit_scout", "count": 2},
+								{"unit": "bandit_marauder", "count": 2},
+								{"unit": "bandit_chief", "count": 1}
+							]
+						},
+						{
+							"t": 70,
+							"squads": [
+								{"unit": "bandit_marauder", "count": 2},
+								{"unit": "bandit_chief", "count": 1}
+							]
+						}
+					]
+				},
+				{
+					"kind": "defend",
+					"label": "防守战 · 守住渡口",
+					"enemy_waves": [
+						{
+							"t": 0,
+							"squads": [
+								{"unit": "bandit_scout", "count": 2},
+								{"unit": "bandit_marauder", "count": 2}
+							]
+						},
+						{
+							"t": 20,
+							"squads": [
+								{"unit": "bandit_marauder", "count": 2},
+								{"unit": "bandit_chief", "count": 1}
+							]
+						},
+						{
+							"t": 40,
+							"squads": [
+								{"unit": "bandit_scout", "count": 2},
+								{"unit": "bandit_marauder", "count": 2}
+							]
+						},
+						{
+							"t": 60,
+							"squads": [
+								{"unit": "bandit_marauder", "count": 2},
+								{"unit": "bandit_chief", "count": 1}
+							]
+						},
+						{
+							"t": 76,
+							"squads": [
+								{"unit": "bandit_scout", "count": 2}
+							]
+						}
+					]
+				}
+			]
+		}
+	]
+}

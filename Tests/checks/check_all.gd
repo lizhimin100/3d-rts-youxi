@@ -17,6 +17,11 @@ const LAYOUT_CARD := preload("res://Game/adapters/layout_card.gd")
 const CAMP := preload("res://Game/config/野怪营地表.gd")
 const SKILLS := preload("res://Game/config/技能表.gd")
 const SCREENS := "res://Content/data/screens.json"
+const COMBAT_JSON := "res://Content/data/combat.json"
+const UNITS_JSON := "res://Content/data/units.json"
+const PLANNING_JSON := "res://Content/data/planning.json"
+const LEVELS_JSON := "res://Content/data/levels.json"
+const LEVEL_ID := "level_1"
 const TOP_DIRS := ["Engine", "Model", "Screens", "Game", "Content", "Tests", "Tools", "Documents"]
 const LEGACY_DIRS := ["代码", "场景", "美术", "音频", "地图", "工具", "文档"]
 
@@ -24,6 +29,7 @@ var _pass := 0
 var _fail := 0
 var _names: Array[String] = []
 var _cfg: Node = null
+var _content_cache: Dictionary = {}
 
 
 func _initialize() -> void:
@@ -45,6 +51,11 @@ func _run() -> void:
 	_check_assets()
 	_check_model_purity()
 	_check_distance_law()
+	_check_combat_formula()
+	_check_units_data()
+	_check_planning_data()
+	_check_level_data()
+	_check_r1_config()
 	_check_engine_pin()
 	_check_manifest()
 	_check_model_tests()
@@ -573,6 +584,335 @@ func _check_distance_law() -> void:
 		var cap_ok: bool = int(star.get("STAR_CAP")) == int(mdl.call("StarCap"))
 		var exp_ok: bool = is_equal_approx(float(star.get("KILL_EXP")), float(mdl.call("StarKillExp")))
 		_ok("升星镜像常量 == C# 内核（上限 3 / 击杀 15 经验）", cap_ok and exp_ok)
+
+
+# ===========================================================================
+# 6b. 2026-11-21 新内核：6 步公式 / 12 兵种 / 规划 / 双 90 秒
+# ===========================================================================
+func _mdl() -> RefCounted:
+	var bridge_sc := load("res://Game/adapters/bridge.gd")
+	if bridge_sc == null:
+		return null
+	return bridge_sc.call("get_bridge") as RefCounted
+
+
+## 四张数据表只验一次，后面几条检查共用（避免重复 parse）。
+func _content() -> Dictionary:
+	if not _content_cache.is_empty():
+		return _content_cache
+	var mdl := _mdl()
+	if mdl == null:
+		return {}
+	_content_cache = mdl.call("ContentValidate",
+		JsonFile.read_dict(UNITS_JSON, {}),
+		JsonFile.read_dict(COMBAT_JSON, {}),
+		JsonFile.read_dict(PLANNING_JSON, {}),
+		JsonFile.read_dict(LEVELS_JSON, {}))
+	return _content_cache
+
+
+func _err_text(v: Variant) -> String:
+	var parts: Array[String] = []
+	if v is Array:
+		var arr: Array = v
+		for i in mini(arr.size(), 5):
+			parts.append(String(arr[i]))
+	return " ; ".join(parts)
+
+
+func _arr(v: Variant) -> Array:
+	return v if v is Array else []
+
+
+func _check_combat_formula() -> void:
+	var mdl := _mdl()
+	if mdl == null:
+		_ok("新内核桥就绪（CombatCalculator）", false)
+		return
+	var c := _content()
+	if c.is_empty():
+		_ok("战斗数据可装载", false)
+		return
+	_ok("战斗数据校验（6×6 克制表 / 6+6 枚举）", _arr(c.get("combat_errors", [])).is_empty(), _err_text(c.get("combat_errors", [])))
+	_ok("攻击枚举 6 种、护甲枚举 6 种",
+		_arr(c.get("attack_types", [])).size() == 6 and _arr(c.get("armor_types", [])).size() == 6,
+		"%d / %d" % [_arr(c.get("attack_types", [])).size(), _arr(c.get("armor_types", [])).size()])
+	_ok("克制表恰好 6×6 = 36 项", _arr(c.get("counter_table", [])).size() == 36,
+		"%d 项" % _arr(c.get("counter_table", [])).size())
+
+	var combat := JsonFile.read_dict(COMBAT_JSON, {})
+	var atk := {"damage": 100.0, "cooldown": 2.0, "attack_type": 0, "hit": 100.0,
+		"crit": 0.0, "crit_multiplier": 0.0, "pen_flat": 0.0, "pen_pct": 0.0, "attack_mult": 1.0}
+	var dfn := {"armor": 0.0, "armor_type": 0, "dodge": 0.0, "armor_mult": 1.0, "taken_mult": 1.0}
+
+	var b0: Dictionary = mdl.call("CombatComputeProbe", atk, dfn, combat, 0.5, 0.5)
+	_ok("第 6 步：100 基础 / 无甲 = 100", absf(float(b0["damage"]) - 100.0) < 0.000001, "%.4f" % float(b0["damage"]))
+
+	dfn["armor"] = 10.0
+	dfn["armor_type"] = 2
+	var b1: Dictionary = mdl.call("CombatComputeProbe", atk, dfn, combat, 0.5, 0.5)
+	_ok("第 4 步：10 护甲 = 1/(1+10×0.06) → 100 变 62.5", absf(float(b1["damage"]) - 62.5) < 0.000001, "%.4f" % float(b1["damage"]))
+
+	dfn["armor"] = -10.0
+	var b2: Dictionary = mdl.call("CombatComputeProbe", atk, dfn, combat, 0.5, 0.5)
+	_ok("负甲：-10 → 1.6 倍伤害（100 → 160）", absf(float(b2["damage"]) - 160.0) < 0.000001, "%.4f" % float(b2["damage"]))
+
+	dfn["armor"] = -100.0
+	var b3: Dictionary = mdl.call("CombatComputeProbe", atk, dfn, combat, 0.5, 0.5)
+	_ok("负甲上限：-100 仍按 3 倍（100 → 300）", absf(float(b3["damage"]) - 300.0) < 0.000001, "%.4f" % float(b3["damage"]))
+
+	dfn["armor"] = 10.0
+	dfn["armor_type"] = 3
+	atk["attack_type"] = 1
+	atk["pen_flat"] = 3.0
+	atk["pen_pct"] = 0.35
+	var b4: Dictionary = mdl.call("CombatComputeProbe", atk, dfn, combat, 0.5, 0.5)
+	_ok("第 3 步：有效护甲 10×(1-35%)-3 = 3.5", absf(float(b4["effective_armor"]) - 3.5) < 0.000001, "%.4f" % float(b4["effective_armor"]))
+	_ok("第 5 步：穿刺 vs 重甲 = 0.6", absf(float(b4["counter"]) - 0.6) < 0.000001, "%.3f" % float(b4["counter"]))
+
+	atk["attack_type"] = 0
+	atk["pen_flat"] = 0.0
+	atk["pen_pct"] = 0.0
+	atk["crit"] = 0.25
+	dfn["armor"] = 0.0
+	dfn["armor_type"] = 0
+	var b5: Dictionary = mdl.call("CombatComputeProbe", atk, dfn, combat, 0.5, 0.1)
+	var b6: Dictionary = mdl.call("CombatComputeProbe", atk, dfn, combat, 0.5, 0.9)
+	_ok("第 2 步：暴击掷 0.1 < 25% → 2 倍（200）", bool(b5["crit"]) and absf(float(b5["damage"]) - 200.0) < 0.000001, "%.4f" % float(b5["damage"]))
+	_ok("暴击掷 0.9 → 不暴击（100）", not bool(b6["crit"]) and absf(float(b6["damage"]) - 100.0) < 0.000001, "%.4f" % float(b6["damage"]))
+
+	# 命中率 + 期望 DPS（必须乘命中率，且负甲封 3 倍）
+	atk["hit"] = 50.0
+	atk["crit"] = 0.25
+	dfn["armor"] = -100.0
+	var e: Dictionary = mdl.call("CombatExpect", atk, dfn, combat)
+	_ok("期望伤害 = 100×50%×1.25×3 = 187.5（乘命中率 + 负甲封顶）",
+		absf(float(e["damage"]) - 187.5) < 0.000001, "%.4f" % float(e["damage"]))
+	_ok("期望 DPS = 187.5 / 2 秒 = 93.75", absf(float(e["dps"]) - 93.75) < 0.000001, "%.4f" % float(e["dps"]))
+	_ok("命中率 60 - 闪避 20 = 40%", absf(float(mdl.call("CombatHitChance", 60.0, 20.0)) - 0.4) < 0.000001)
+	_ok("护甲承伤 -100 封 3 倍", absf(float(mdl.call("CombatArmorTaken", -100.0, combat)) - 3.0) < 0.000001)
+	_ok("固定/百分比穿透先乘后减", absf(float(mdl.call("CombatEffectiveArmor", 10.0, 0.35, 3.0)) - 3.5) < 0.000001)
+
+	var lane_src := FileAccess.get_file_as_string("res://Model/Battle/LaneBattle.cs")
+	var level_src := FileAccess.get_file_as_string("res://Model/Battle/LevelRunner.cs")
+	_ok("新战斗层只走 CombatCalculator（不调旧 Damage.Compute）",
+		lane_src.contains("CombatCalculator.Compute") and not lane_src.contains("Damage.Compute") and not level_src.contains("Damage.Compute"))
+
+
+func _check_units_data() -> void:
+	var mdl := _mdl()
+	if mdl == null:
+		return
+	var c := _content()
+	if c.is_empty():
+		return
+	_ok("单位数据校验（12 兵种）", _arr(c.get("unit_errors", [])).is_empty(), _err_text(c.get("unit_errors", [])))
+	_ok("单位 12 个 / 阵营 3 个（启用 11）",
+		int(c.get("unit_count", 0)) == 12 and int(c.get("faction_count", 0)) == 3 and int(c.get("enabled_unit_count", 0)) == 11,
+		"%d 单位 / %d 阵营 / %d 启用" % [int(c.get("unit_count", 0)), int(c.get("faction_count", 0)), int(c.get("enabled_unit_count", 0))])
+
+	var faction_rows: Array = _arr(c.get("faction_rows", []))
+	var faction_ok := faction_rows.size() == 3
+	var faction_detail: Array[String] = []
+	for f in faction_rows:
+		faction_detail.append("%s=%d" % [String(f.get("id", "?")), int(f.get("unit_count", 0))])
+		if int(f.get("unit_count", 0)) != 4:
+			faction_ok = false
+	_ok("三阵营各 4 兵种", faction_ok, " ".join(faction_detail))
+
+	var rows: Array = _arr(c.get("unit_rows", []))
+	var by_id := {}
+	for r in rows:
+		by_id[String(r["id"])] = r
+
+	var expected := {
+		"alliance_footman": {"squad": 5, "range": 95.0, "atk": "普通", "armor": "中甲", "proj": false, "enabled": true},
+		"alliance_pikeman": {"squad": 4, "range": 155.0, "atk": "普通", "armor": "中甲", "proj": false, "enabled": true},
+		"alliance_archer": {"squad": 4, "range": 650.0, "atk": "穿刺", "armor": "轻甲", "proj": true, "enabled": true},
+		"alliance_crossbowman": {"squad": 4, "range": 850.0, "atk": "穿刺", "armor": "轻甲", "proj": true, "enabled": true},
+		"bandit_scout": {"squad": 6, "range": 85.0, "atk": "普通", "armor": "轻甲", "proj": false, "enabled": true},
+		"bandit_marauder": {"squad": 4, "range": 105.0, "atk": "普通", "armor": "轻甲", "proj": false, "enabled": true},
+		"bandit_chief": {"squad": 4, "range": 650.0, "atk": "魔法", "armor": "轻甲", "proj": true, "enabled": true},
+		"bandit_lord": {"squad": 2, "range": 105.0, "atk": "普通", "armor": "重甲", "proj": false, "enabled": false},
+		"murloc_slave": {"squad": 8, "range": 65.0, "atk": "普通", "armor": "无甲", "proj": false, "enabled": true},
+		"murloc_raider": {"squad": 4, "range": 95.0, "atk": "普通", "armor": "轻甲", "proj": false, "enabled": true},
+		"murloc_hunter": {"squad": 4, "range": 550.0, "atk": "穿刺", "armor": "轻甲", "proj": true, "enabled": true},
+		"murloc_lord": {"squad": 2, "range": 95.0, "atk": "普通", "armor": "重甲", "proj": false, "enabled": true},
+	}
+	var bad: Array[String] = []
+	for id in expected.keys():
+		if not by_id.has(id):
+			bad.append(id + " 缺失")
+			continue
+		var r: Dictionary = by_id[id]
+		var e: Dictionary = expected[id]
+		if int(r["squad_size"]) != int(e["squad"]):
+			bad.append("%s squad %d≠%d" % [id, int(r["squad_size"]), int(e["squad"])])
+		if absf(float(r["range"]) - float(e["range"])) > 0.001:
+			bad.append("%s range %.0f≠%.0f" % [id, float(r["range"]), float(e["range"])])
+		if String(r["attack_type"]) != String(e["atk"]):
+			bad.append("%s 攻击 %s≠%s" % [id, r["attack_type"], e["atk"]])
+		if String(r["armor_type"]) != String(e["armor"]):
+			bad.append("%s 护甲 %s≠%s" % [id, r["armor_type"], e["armor"]])
+		if bool(r["projectile"]) != bool(e["proj"]):
+			bad.append("%s 投射物 %s≠%s" % [id, r["projectile"], e["proj"]])
+		if bool(r["enabled"]) != bool(e["enabled"]):
+			bad.append("%s enabled %s≠%s" % [id, r["enabled"], e["enabled"]])
+	_ok("12 兵种的队形/射程/攻防类型/投射物/enabled 全部对表", bad.is_empty(), " ; ".join(bad.slice(0, 6)))
+
+	var hit_bad: Array[String] = []
+	for r in rows:
+		if not is_equal_approx(float(r["hit"]), 100.0) or not is_equal_approx(float(r["dodge"]), 0.0) or not is_equal_approx(float(r["crit"]), 0.0):
+			hit_bad.append(String(r["id"]))
+	_ok("所有单位默认 命中=100 / 闪避=0 / 暴击=0", hit_bad.is_empty(), ", ".join(hit_bad))
+
+	var proj_bad: Array[String] = []
+	for r in rows:
+		var ranged := float(r["range"]) >= 300.0
+		if bool(r["projectile"]) != ranged:
+			proj_bad.append(String(r["id"]))
+	_ok("近战无投射物、远程生成投射物（按 300 分界）", proj_bad.is_empty(), ", ".join(proj_bad))
+
+	var xbow: Dictionary = by_id.get("alliance_crossbowman", {})
+	_ok("弩兵自带破甲（35% + 3）",
+		absf(float(xbow.get("pen_pct", 0.0)) - 0.35) < 0.000001 and absf(float(xbow.get("pen_flat", 0.0)) - 3.0) < 0.000001,
+		"%.2f / %.1f" % [float(xbow.get("pen_pct", 0.0)), float(xbow.get("pen_flat", 0.0))])
+
+	var murloc_bad: Array[String] = []
+	for r in rows:
+		if String(r["faction"]) == "murloc" and not bool(r["placeholder"]):
+			murloc_bad.append(String(r["id"]))
+	_ok("鱼人三兵种全部 use_placeholder_mesh=true", murloc_bad.is_empty(), ", ".join(murloc_bad))
+	_ok("豺狼人领主配置保留但 enabled=false", by_id.has("bandit_lord") and not bool(by_id["bandit_lord"]["enabled"]))
+
+
+func _check_planning_data() -> void:
+	var mdl := _mdl()
+	if mdl == null:
+		return
+	var c := _content()
+	if c.is_empty():
+		return
+	_ok("规划数据校验（CP/人口/建筑/卡牌）", _arr(c.get("planning_errors", [])).is_empty(), _err_text(c.get("planning_errors", [])))
+	_ok("建筑 4 种 / 卡牌 10 种 / 开局 4 座",
+		int(c.get("building_count", 0)) == 4 and int(c.get("card_count", 0)) == 10 and int(c.get("start_building_count", 0)) == 4,
+		"%d 建筑 / %d 卡 / %d 开局" % [int(c.get("building_count", 0)), int(c.get("card_count", 0)), int(c.get("start_building_count", 0))])
+	_ok("训练牌 Tag 闭环（每张都找到会训练该兵种的建筑）",
+		int(c.get("train_card_count", 0)) > 0 and int(c.get("train_tag_closure", 0)) == int(c.get("train_card_count", 0)),
+		"%d/%d" % [int(c.get("train_tag_closure", 0)), int(c.get("train_card_count", 0))])
+
+	var planning := JsonFile.read_dict(PLANNING_JSON, {})
+	var build_n := 0
+	var train_n := 0
+	var strat_n := 0
+	var exhaust_bad: Array[String] = []
+	for card in planning.get("cards", []):
+		var kind := String(card.get("kind", ""))
+		var want := kind == "build"
+		if kind == "build":
+			build_n += 1
+		elif kind == "train":
+			train_n += 1
+		elif kind == "strategy":
+			strat_n += 1
+		if bool(card.get("exhaust", false)) != want:
+			exhaust_bad.append(String(card.get("id", "?")))
+	_ok("建造牌 3 / 训练牌 4 / 策略牌 3", build_n == 3 and train_n == 4 and strat_n == 3,
+		"%d/%d/%d" % [build_n, train_n, strat_n])
+	_ok("建造牌 Exhaust、训练/策略牌循环", exhaust_bad.is_empty(), ", ".join(exhaust_bad))
+
+	var st: Dictionary = mdl.call("PlanningSelfTest",
+		planning, JsonFile.read_dict(UNITS_JSON, {}), JsonFile.read_dict(COMBAT_JSON, {}))
+	_ok("开局预设 1 基地 + 2 农场 + 1 兵营（共 4 座、有 base）",
+		int(st.get("start_buildings", 0)) == 4 and bool(st.get("has_base", false)),
+		"%d 座" % int(st.get("start_buildings", 0)))
+	_ok("开局人口上限 32（基地 12 + 2 农场 ×10）", int(st.get("pop_cap", 0)) == 32, str(st.get("pop_cap", 0)))
+	_ok("建造牌扣 CP、落空地建 1 星",
+		bool(st.get("build_ok", false)) and int(st.get("buildings_after_build", 0)) == int(st.get("start_buildings", 0)) + 1 and int(st.get("cp_after_build", 0)) < int(st.get("cp_start", 0)),
+		"CP %d→%d，建筑 %d 座" % [int(st.get("cp_start", 0)), int(st.get("cp_after_build", 0)), int(st.get("buildings_after_build", 0))])
+	_ok("拖同名建筑 3 合 1 升满 3 星",
+		bool(st.get("merge_1", false)) and bool(st.get("merge_2", false)) and int(st.get("merged_star", 0)) == 3,
+		"%d 星 / 剩 %d 座兵营" % [int(st.get("merged_star", 0)), int(st.get("barracks_count", 0))])
+	_ok("训练牌按 Tag 让全场同类建筑各产 1 队",
+		int(st.get("train_produced", -1)) == int(st.get("train_expected", -2)) and int(st.get("train_expected", 0)) >= 2,
+		"产 %d 队 / 应 %d 队" % [int(st.get("train_produced", -1)), int(st.get("train_expected", -2))])
+	_ok("3 星兵营产出 3 星兵（星级传递）", int(st.get("star3_squads", 0)) >= 1, "%d 队" % int(st.get("star3_squads", 0)))
+	_ok("训练占人口（人口 > 0 且不超上限）",
+		int(st.get("pop_used", 0)) > 0 and int(st.get("pop_used", 0)) <= int(st.get("pop_cap_after", 0)),
+		"%d/%d" % [int(st.get("pop_used", 0)), int(st.get("pop_cap_after", 0))])
+
+
+func _check_level_data() -> void:
+	var c := _content()
+	if c.is_empty():
+		return
+	_ok("关卡数据校验（两轮各 90 秒）", _arr(c.get("level_errors", [])).is_empty(), _err_text(c.get("level_errors", [])))
+	_ok("第 1 关存在（1 关）", int(c.get("level_count", 0)) == 1)
+	var levels := JsonFile.read_dict(LEVELS_JSON, {})
+	var lv: Dictionary = (levels.get("levels", []) as Array)[0] if not (levels.get("levels", []) as Array).is_empty() else {}
+	var rounds: Array = lv.get("rounds", [])
+	var kinds: Array[String] = []
+	for r in rounds:
+		kinds.append(String(r.get("kind", "")))
+	var wave_ok := true
+	for r in rounds:
+		if (r.get("enemy_waves", []) as Array).is_empty():
+			wave_ok = false
+	_ok("第 1 关 = 进攻 90s + 防守 90s，且两轮都有波次",
+		kinds == ["attack", "defend"] and is_equal_approx(float(lv.get("round_seconds", 0.0)), 90.0) and wave_ok,
+		"%s / %.0fs" % [str(kinds), float(lv.get("round_seconds", 0.0))])
+	var lane: Dictionary = lv.get("lane", {})
+	_ok("横道几何完整（长/宽/敌区/抽血）",
+		float(lane.get("length", 0.0)) > float(lane.get("zone_depth", 0.0)) * 2.0 and float(lane.get("width", 0.0)) > 0.0 and float(lane.get("zone_dps_per_squad", 0.0)) > 0.0,
+		"长 %.0f / 宽 %.0f / 敌区 %.0f / %.0f 血每秒" % [float(lane.get("length", 0.0)), float(lane.get("width", 0.0)), float(lane.get("zone_depth", 0.0)), float(lane.get("zone_dps_per_squad", 0.0))])
+	var text := FileAccess.get_file_as_string(LEVELS_JSON)
+	_ok("波次不刷 enabled=false 的单位", not text.contains("bandit_lord"))
+
+	var mdl := _mdl()
+	if mdl != null:
+		var u := JsonFile.read_dict(UNITS_JSON, {})
+		var cb := JsonFile.read_dict(COMBAT_JSON, {})
+		var pl := JsonFile.read_dict(PLANNING_JSON, {})
+		var lv2 := JsonFile.read_dict(LEVELS_JSON, {})
+		var a: Dictionary = mdl.call("LevelSimulate", u, cb, pl, lv2, LEVEL_ID, 2, 42)
+		var b: Dictionary = mdl.call("LevelSimulate", u, cb, pl, lv2, LEVEL_ID, 2, 42)
+		_ok("推演确定性：同 seed 两跑逐字节一致",
+			JSON.stringify(a.get("rows", [])) == JSON.stringify(b.get("rows", [])))
+
+
+func _check_r1_config() -> void:
+	var c := _content()
+	if c.is_empty():
+		return
+	_ok("R1 配置完整（combat.json 声明 0.015，与内核一致）",
+		is_equal_approx(float(c.get("r1", 0.0)), 0.015),
+		"%.4f" % float(c.get("r1", 0.0)))
+	_ok("战斗规格常数（护甲 0.06 / 负甲 3 倍 / 暴击 2 倍）",
+		is_equal_approx(float(c.get("armor_scale", 0.0)), 0.06)
+		and is_equal_approx(float(c.get("negative_armor_cap", 0.0)), 3.0)
+		and is_equal_approx(float(c.get("crit_multiplier", 0.0)), 2.0))
+
+	var rows: Array = _arr(c.get("unit_rows", []))
+	var bad: Array[String] = []
+	for r in rows:
+		var rg := float(r["range"])
+		if rg < 10.0 or rg > 2000.0 or absf(rg - roundf(rg)) > 0.000001:
+			bad.append("%s=%.1f" % [r["id"], rg])
+	_ok("12 兵种射程都是整数游戏数值（10..2000）", bad.is_empty(), ", ".join(bad))
+
+	var by_id := {}
+	for r in rows:
+		by_id[String(r["id"])] = r
+	var foot: Dictionary = by_id.get("alliance_footman", {})
+	var pike: Dictionary = by_id.get("alliance_pikeman", {})
+	var geometry := 0.0
+	if not foot.is_empty() and not pike.is_empty():
+		geometry = (float(pike["range"]) - float(foot["range"])) - (float(foot["body_radius"]) + float(pike["body_radius"])) / 0.015
+	_ok("隔排几何：155 - 95 = (0.45+0.45)/0.015 = 60（长枪刚好在步兵身后）",
+		not foot.is_empty() and not pike.is_empty() and absf(geometry) < 0.000001,
+		"差 %.6f 游戏数值" % geometry)
+	_ok("射程 650 → 9.75 米（走 射程基准，不写第二份 0.015）",
+		is_equal_approx(float(load("res://Game/config/射程基准.gd").call("米", 650.0)), 9.75))
 
 
 func _check_engine_pin() -> void:
