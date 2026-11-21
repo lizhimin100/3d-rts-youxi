@@ -546,7 +546,7 @@ squad.speed,战斗倍速 {x}x,Battle speed {x}x,指令回执
 squad.receipt.hold,驻守 {n} 队,Hold {n} squads,指令回执
 squad.receipt.stop,停止 {n} 队,Stop {n} squads,指令回执
 squad.receipt.attack_move,攻击移动 {n} 队,Attack-move {n} squads,指令回执
-squad.tips,左键框选 · 右键移动 · 右键敌人集火 · H 驻守 · S 停止 · A 攻击移动 · 空格全选 · 方向键平移 · 滚轮缩放 · 开局 3 队为演示小队（不计 CP/人口）,Drag to box-select · Right-click to move · Right-click enemy to focus · H hold · S stop · A attack-move · Space select all · Arrows pan · Wheel zoom · 3 demo squads ignore CP/pop,小队战场操作提示
+squad.tips,左键框选 · 右键敌方小队集火 · 空格全选 · 1/2 倍速 · 方向键平移 · 滚轮缩放 · 移动与驻守由自动战斗负责 · 开局 3 队为演示小队（不计 CP/人口）,Drag to box-select · Right-click enemy squad to focus · Space select all · 1/2 speed · Arrows pan · Wheel zoom · movement is automatic · 3 demo squads ignore CP/pop,小队战场操作提示
 squad.reason.not_in_hand,不在手牌,Not in hand,训练牌不可用原因
 squad.reason.no_cp,CP 不够,Not enough CP,训练牌不可用原因
 squad.reason.no_building,没有对应建筑,No building,训练牌不可用原因
