@@ -560,10 +560,6 @@ func point_at_t(shell: Dictionary, t: int) -> Vector2:
 	return ShellStore.point_at_t(shell, t)
 
 
-func logic_of_t(t: int, length_logic: float) -> float:
-	return ShellStore.logic_of_t(t, length_logic)
-
-
 ## 三张卡 -> 一张完整可玩关卡（不落盘；落盘走 generate_assembly）。
 func compose_level(shell_id: String, layout_id: String, encounter_id: String) -> Dictionary:
 	var shell := shell_by_id(shell_id)

@@ -78,16 +78,6 @@ static func meters_of(logic: float) -> float:
 	return logic * R1
 
 
-static func t_of_logic(logic: float, length_logic: float) -> int:
-	if length_logic <= 0.0:
-		return 0
-	return clampi(int(floor(logic / length_logic * T_DENOM)), 0, 999)
-
-
-static func logic_of_t(t: int, length_logic: float) -> float:
-	return roundf(float(clampi(t, 0, 999)) / T_DENOM * length_logic)
-
-
 # ===========================================================================
 # 地形高度场
 # ===========================================================================
