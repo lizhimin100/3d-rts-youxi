@@ -15,6 +15,12 @@ namespace WarIsland.Model
     /// <summary>一个兵种（卡面数值，不是场上实例）。</summary>
     public sealed class UnitDef
     {
+        /// <summary>前排近战的上界（≤120）：站位/隔排统计都读这一处。</summary>
+        public const double FrontMeleeMaxRange = 120.0;
+
+        /// <summary>近战/远程分界（&lt;300 近战，≥300 远程）。</summary>
+        public const double MeleeMaxRange = 300.0;
+
         public string Id = "";
         public string DisplayName = "";
         public string Faction = "";
@@ -52,7 +58,7 @@ namespace WarIsland.Model
         public bool UsePlaceholderMesh;
         public string Note = "";
 
-        public bool IsMelee => AttackRange < 300.0;
+        public bool IsMelee => AttackRange < MeleeMaxRange;
 
         public string Role => IsMelee ? "melee" : "ranged";
     }
@@ -192,9 +198,6 @@ namespace WarIsland.Model
                 // 主动技能已取消；最多预留 1 个自动触发的 passive_trait，当前一律留空
                 if (!string.IsNullOrEmpty(u.PassiveTrait))
                     errors.Add($"{tag}：passive_trait={u.PassiveTrait} 尚未实现（当前必须为 null）");
-
-                if (!u.Enabled && u.SquadSize <= 0)
-                    errors.Add($"{tag}：enabled=false 也要保留合法 squad_size");
             }
             return errors;
         }
@@ -317,7 +320,7 @@ namespace WarIsland.Model
                     AttackCooldown = JVal.Double(ud, "attack_cooldown", 1.0),
                     AttackRange = JVal.Double(ud, "attack_range", 0.0),
                     Armor = JVal.Double(ud, "armor", 0.0),
-                    Hit = JVal.Double(ud, "hit", CombatRules.SpecHitBase),
+                    Hit = JVal.Double(ud, "hit", rules != null ? rules.HitBase : CombatRules.SpecHitBase),
                     Dodge = JVal.Double(ud, "dodge", 0.0),
                     Crit = JVal.Double(ud, "crit", 0.0),
                     ArmorPenFlat = JVal.Double(ud, "armor_pen_flat", 0.0),
@@ -345,7 +348,7 @@ namespace WarIsland.Model
                 cat._all.Add(u);
             }
 
-            // 让规则对象的表只用于结算；这里不复制表，避免第二份真值。
+            // 规则对象只用来提供 hit_base 这类全局默认值；克制表仍是 CombatRules 唯一一份。
             _ = rules;
             return cat;
         }

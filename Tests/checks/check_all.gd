@@ -640,6 +640,23 @@ func _check_combat_formula() -> void:
 	_ok("克制表恰好 6×6 = 36 项", _arr(c.get("counter_table", [])).size() == 36,
 		"%d 项" % _arr(c.get("counter_table", [])).size())
 
+	# 36 格逐格对规格（行 = 普通/穿刺/魔法/攻城/混乱/神力；列 = 无甲/轻甲/中甲/重甲/坚固甲/神圣甲）
+	var expected_table := [
+		1.0, 1.0, 1.0, 1.1, 0.7, 0.8,
+		1.5, 1.75, 0.75, 0.6, 0.35, 0.5,
+		1.25, 1.0, 0.75, 1.25, 0.5, 1.25,
+		1.0, 0.9, 0.5, 1.0, 1.6, 0.5,
+		1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+		1.2, 1.2, 1.2, 1.2, 1.2, 1.0,
+	]
+	var table: Array = _arr(c.get("counter_table", []))
+	var table_bad: Array[String] = []
+	for i in mini(table.size(), expected_table.size()):
+		if absf(float(table[i]) - float(expected_table[i])) > 0.000001:
+			table_bad.append("[%d]%.2f≠%.2f" % [i, float(table[i]), float(expected_table[i])])
+	_ok("克制表 36 格逐格对规格（改错一格会红）",
+		table.size() == 36 and table_bad.is_empty(), ", ".join(table_bad.slice(0, 6)))
+
 	var combat := JsonFile.read_dict(COMBAT_JSON, {})
 	var atk := {"damage": 100.0, "cooldown": 2.0, "attack_type": 0, "hit": 100.0,
 		"crit": 0.0, "crit_multiplier": 0.0, "pen_flat": 0.0, "pen_pct": 0.0, "attack_mult": 1.0}
@@ -697,6 +714,17 @@ func _check_combat_formula() -> void:
 	var level_src := FileAccess.get_file_as_string("res://Model/Battle/LevelRunner.cs")
 	_ok("新战斗层只走 CombatCalculator（不调旧 Damage.Compute）",
 		lane_src.contains("CombatCalculator.Compute") and not lane_src.contains("Damage.Compute") and not level_src.contains("Damage.Compute"))
+
+	var old_calls: Array[String] = []
+	for f in _walk("res://Game"):
+		if not f.ends_with(".gd") or f.ends_with("Game/adapters/damage.gd"):
+			continue
+		for line in _read(f).split("\n"):
+			if line.strip_edges().begins_with("#"):
+				continue
+			if line.contains("ModelDamage.compute"):
+				old_calls.append(f.replace("res://", ""))
+	_ok("旧伤害入口只在旧战斗层（新增调用会红）", old_calls == ["Game/systems/战斗.gd"], str(old_calls))
 
 
 func _check_units_data() -> void:
@@ -828,8 +856,9 @@ func _check_planning_data() -> void:
 		"%d 座" % int(st.get("start_buildings", 0)))
 	_ok("开局人口上限 32（基地 12 + 2 农场 ×10）", int(st.get("pop_cap", 0)) == 32, str(st.get("pop_cap", 0)))
 	_ok("建造牌扣 CP、落空地建 1 星",
-		bool(st.get("build_ok", false)) and int(st.get("buildings_after_build", 0)) == int(st.get("start_buildings", 0)) + 1 and int(st.get("cp_after_build", 0)) < int(st.get("cp_start", 0)),
-		"CP %d→%d，建筑 %d 座" % [int(st.get("cp_start", 0)), int(st.get("cp_after_build", 0)), int(st.get("buildings_after_build", 0))])
+		bool(st.get("build_ok", false)) and int(st.get("buildings_after_build", 0)) == int(st.get("start_buildings", 0)) + 1
+		and int(st.get("cp_after_build", 0)) < int(st.get("cp_start", 0)) and int(st.get("new_building_star", 0)) == 1,
+		"CP %d→%d，建筑 %d 座，新建筑 %d 星" % [int(st.get("cp_start", 0)), int(st.get("cp_after_build", 0)), int(st.get("buildings_after_build", 0)), int(st.get("new_building_star", 0))])
 	_ok("拖同名建筑 3 合 1 升满 3 星",
 		bool(st.get("merge_1", false)) and bool(st.get("merge_2", false)) and int(st.get("merged_star", 0)) == 3,
 		"%d 星 / 剩 %d 座兵营" % [int(st.get("merged_star", 0)), int(st.get("barracks_count", 0))])
@@ -865,8 +894,18 @@ func _check_level_data() -> void:
 	_ok("横道几何完整（长/宽/敌区/抽血）",
 		float(lane.get("length", 0.0)) > float(lane.get("zone_depth", 0.0)) * 2.0 and float(lane.get("width", 0.0)) > 0.0 and float(lane.get("zone_dps_per_squad", 0.0)) > 0.0,
 		"长 %.0f / 宽 %.0f / 敌区 %.0f / %.0f 血每秒" % [float(lane.get("length", 0.0)), float(lane.get("width", 0.0)), float(lane.get("zone_depth", 0.0)), float(lane.get("zone_dps_per_squad", 0.0))])
-	var text := FileAccess.get_file_as_string(LEVELS_JSON)
-	_ok("波次不刷 enabled=false 的单位", not text.contains("bandit_lord"))
+	var disabled := {}
+	for r in _arr(c.get("unit_rows", [])):
+		if not bool(r["enabled"]):
+			disabled[String(r["id"])] = true
+	var wave_bad: Array[String] = []
+	for rd in rounds:
+		for wave in rd.get("enemy_waves", []):
+			for sq in wave.get("squads", []):
+				var uid := String(sq.get("unit", ""))
+				if disabled.has(uid):
+					wave_bad.append(uid)
+	_ok("波次不刷 enabled=false 的单位", wave_bad.is_empty(), ", ".join(wave_bad))
 
 	var mdl := _mdl()
 	if mdl != null:
@@ -876,17 +915,19 @@ func _check_level_data() -> void:
 		var lv2 := JsonFile.read_dict(LEVELS_JSON, {})
 		var a: Dictionary = mdl.call("LevelSimulate", u, cb, pl, lv2, LEVEL_ID, 2, 42)
 		var b: Dictionary = mdl.call("LevelSimulate", u, cb, pl, lv2, LEVEL_ID, 2, 42)
-		_ok("推演确定性：同 seed 两跑逐字节一致",
-			JSON.stringify(a.get("rows", [])) == JSON.stringify(b.get("rows", [])))
+		_ok("推演确定性：同 seed 两跑逐字节一致（含 samples/复盘）",
+			JSON.stringify(a) == JSON.stringify(b))
 
 
 func _check_r1_config() -> void:
 	var c := _content()
 	if c.is_empty():
 		return
-	_ok("R1 配置完整（combat.json 声明 0.015，与内核一致）",
-		is_equal_approx(float(c.get("r1", 0.0)), 0.015),
-		"%.4f" % float(c.get("r1", 0.0)))
+	var mdl := _mdl()
+	var kernel_r1: float = float(mdl.call("R1")) if mdl != null else -1.0
+	_ok("R1 配置完整（combat.json 声明 == 内核 R1 = 0.015）",
+		is_equal_approx(float(c.get("r1", 0.0)), kernel_r1) and is_equal_approx(kernel_r1, 0.015),
+		"json=%.4f / 内核=%.4f" % [float(c.get("r1", 0.0)), kernel_r1])
 	_ok("战斗规格常数（护甲 0.06 / 负甲 3 倍 / 暴击 2 倍）",
 		is_equal_approx(float(c.get("armor_scale", 0.0)), 0.06)
 		and is_equal_approx(float(c.get("negative_armor_cap", 0.0)), 3.0)

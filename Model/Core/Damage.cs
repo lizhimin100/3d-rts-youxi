@@ -35,7 +35,11 @@ namespace WarIsland.Model
     }
 
     /// <summary>
-    /// 伤害公式 —— **全游戏唯一实现**。
+    /// **旧原型伤害公式（迁移期保留，待删）**。
+    ///
+    /// 新主线（`LaneBattle` / `LevelRunner` / `--simulate`）只走
+    /// `Model/Combat/CombatCalculator.cs` 的 6 步公式；本文件只服务
+    /// `Game/systems/战斗.gd` 这套旧 GDScript 战斗层，**新代码不许再调用**。
     ///
     ///   伤害 = (基础 ± spread 随机) × 克制 × (1 - 护甲减免) × 暴击 × 攻击倍率
     ///   护甲减免 = min(max(护甲,0) × 每点系数, 上限)

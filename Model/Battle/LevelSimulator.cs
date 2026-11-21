@@ -86,6 +86,8 @@ namespace WarIsland.Model
             summary.LevelName = level.DisplayName;
 
             int pikeGames = 0;
+            double gapWeighted = 0.0;
+            int gapSamples = 0;
             var winSamples = new List<LevelResult>();
             for (int i = 0; i < summary.Games; i++)
             {
@@ -115,7 +117,11 @@ namespace WarIsland.Model
                 {
                     pikeGames += 1;
                     summary.AvgPikeBehindRate += r.PikeBehindRate;
-                    summary.AvgPikeGapCm += r.AvgPikeGapMeters * 100.0;
+                }
+                if (r.PikeGapSamples > 0)
+                {
+                    gapWeighted += r.AvgPikeGapMeters * r.PikeGapSamples;
+                    gapSamples += r.PikeGapSamples;
                 }
 
                 foreach (var code in r.ReviewCodes)
@@ -169,7 +175,10 @@ namespace WarIsland.Model
             if (pikeGames > 0)
             {
                 summary.AvgPikeBehindRate = Math.Round(summary.AvgPikeBehindRate / pikeGames * 1000.0) / 1000.0;
-                summary.AvgPikeGapCm = Math.Round(summary.AvgPikeGapCm / pikeGames * 10.0) / 10.0;
+            }
+            if (gapSamples > 0)
+            {
+                summary.AvgPikeGapCm = Math.Round(gapWeighted / gapSamples * 1000.0) / 10.0;
             }
 
             if (summary.Samples.Count < 3)

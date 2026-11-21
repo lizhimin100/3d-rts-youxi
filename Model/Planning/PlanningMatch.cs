@@ -411,7 +411,7 @@ namespace WarIsland.Model
                 var def = DefOf(b);
                 if (def != null) drain += def.BaseDrainReduction;
             }
-            snap.DrainReduction = Math.Min(drain, 0.45);
+            snap.DrainReduction = Math.Min(drain, Cfg.MaxDrainReduction);
             var groups = new Dictionary<string, int>(StringComparer.Ordinal);
             foreach (var s in Army)
             {

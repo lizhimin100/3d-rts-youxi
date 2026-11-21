@@ -35,6 +35,7 @@ namespace WarIsland.Model
         public int PikeBehindAttacks;
         public int PikeFormationSamples;
         public int PikeFormationBehind;
+        public int PikeGapSamples;
         public double PikeBehindRate;
         public double AvgPikeGapMeters;
 
@@ -100,8 +101,9 @@ namespace WarIsland.Model
                 result.PikeBehindAttacks += rr.PikeBehindAttacks;
                 result.PikeFormationSamples += rr.PikeFormationSamples;
                 result.PikeFormationBehind += rr.PikeFormationBehind;
-                if (rr.PikeAttacks > 0)
-                    result.AvgPikeGapMeters += rr.AvgPikeGapMeters * rr.PikeAttacks;
+                result.PikeGapSamples += rr.PikeGapSamples;
+                if (rr.PikeGapSamples > 0)
+                    result.AvgPikeGapMeters += rr.AvgPikeGapMeters * rr.PikeGapSamples;
             }
 
             result.PlayerBaseHp = Math.Max(playerHp, 0.0);
@@ -127,8 +129,8 @@ namespace WarIsland.Model
                 seconds += rr.Seconds;
             }
             result.Seconds = Math.Round(seconds * 10.0) / 10.0;
-            if (result.PikeAttacks > 0)
-                result.AvgPikeGapMeters = Math.Round(result.AvgPikeGapMeters / result.PikeAttacks * 1000.0) / 1000.0;
+            if (result.PikeGapSamples > 0)
+                result.AvgPikeGapMeters = Math.Round(result.AvgPikeGapMeters / result.PikeGapSamples * 1000.0) / 1000.0;
             else
                 result.AvgPikeGapMeters = 0.0;
             result.PikeBehindRate = result.PikeFormationSamples > 0
@@ -260,8 +262,8 @@ namespace WarIsland.Model
 
             if (r.Reviews.Count == 0)
             {
-                r.ReviewCodes.Add("close_loss");
-                r.Reviews.Add($"差一点：敌方基地剩 {r.EnemyBaseHp:0}/{r.EnemyBaseHpStart:0}，我方基地剩 {r.PlayerBaseHp:0}/{r.PlayerBaseHpStart:0}。");
+                r.ReviewCodes.Add("unexplained_loss");
+                r.Reviews.Add($"没有单一短板：敌方基地剩 {r.EnemyBaseHp:0}/{r.EnemyBaseHpStart:0}，我方基地剩 {r.PlayerBaseHp:0}/{r.PlayerBaseHpStart:0}。");
             }
         }
 

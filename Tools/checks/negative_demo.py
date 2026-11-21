@@ -43,6 +43,20 @@ def set_card(path: str, key: str, value) -> None:
     mutate_json(path, lambda d: d["props"].__setitem__(key, value))
 
 
+def find_unit(data: dict, uid: str) -> dict:
+    for u in data.get("units", []):
+        if u.get("id") == uid:
+            return u
+    raise KeyError(uid)
+
+
+def find_card(data: dict, cid: str) -> dict:
+    for c in data.get("cards", []):
+        if c.get("id") == cid:
+            return c
+    raise KeyError(cid)
+
+
 def loose_csv(path: Path) -> None:
     text = path.read_text(encoding="utf-8")
     rows = list(csv.reader(io.StringIO(text)))
@@ -93,12 +107,12 @@ def main() -> int:
         loose_csv(ROOT / "Content/i18n/ui.csv")
         return lambda: restore("Content/i18n/ui.csv", bak)
 
-    # 4. Model 破坏纯度
+    # 4. Model 破坏纯度（2026-11-21：Model 已是纯 C#，用 using Godot 触发）
     def m4():
-        bak = backup("Model/core/rng.gd")
-        p = ROOT / "Model/core/rng.gd"
-        p.write_text(p.read_text(encoding="utf-8") + "\nvar _neg_probe = FileAccess\n", encoding="utf-8")
-        return lambda: restore("Model/core/rng.gd", bak)
+        bak = backup("Model/Core/Rng.cs")
+        p = ROOT / "Model/Core/Rng.cs"
+        p.write_text(p.read_text(encoding="utf-8") + "\nusing Godot;\n", encoding="utf-8")
+        return lambda: restore("Model/Core/Rng.cs", bak)
 
     # 5. 引擎层被就地修改
     def m5():
@@ -113,13 +127,64 @@ def main() -> int:
         p.write_text("extends RefCounted\n", encoding="utf-8")
         return lambda: p.unlink(missing_ok=True)
 
+    # 7. R1 被改（新内核）
+    def m7():
+        bak = backup("Content/data/combat.json")
+        mutate_json("Content/data/combat.json", lambda d: d.__setitem__("r1", 0.02))
+        return lambda: restore("Content/data/combat.json", bak)
+
+    # 8. 长枪射程被改（隔排几何）
+    def m8():
+        bak = backup("Content/data/units.json")
+        mutate_json("Content/data/units.json",
+                    lambda d: find_unit(d, "alliance_pikeman").__setitem__("attack_range", 150))
+        return lambda: restore("Content/data/units.json", bak)
+
+    # 9. 训练牌 Tag 断链
+    def m9():
+        bak = backup("Content/data/planning.json")
+        mutate_json("Content/data/planning.json",
+                    lambda d: find_card(d, "train_footman").__setitem__("tag", "archery"))
+        return lambda: restore("Content/data/planning.json", bak)
+
+    # 10. 开局少一座农场
+    def m10():
+        bak = backup("Content/data/planning.json")
+
+        def drop_farm(d):
+            start = d["board"]["start"]
+            for i, s in enumerate(start):
+                if s.get("building") == "farm":
+                    start.pop(i)
+                    return
+            raise KeyError("farm")
+
+        mutate_json("Content/data/planning.json", drop_farm)
+        return lambda: restore("Content/data/planning.json", bak)
+
+    # 11. 波次刷出禁用单位
+    def m11():
+        bak = backup("Content/data/levels.json")
+
+        def add_lord(d):
+            wave = d["levels"][0]["rounds"][0]["enemy_waves"][0]
+            wave["squads"].append({"unit": "bandit_lord", "count": 1})
+
+        mutate_json("Content/data/levels.json", add_lord)
+        return lambda: restore("Content/data/levels.json", bak)
+
     cases = [
         ("卡数值非法（max_hp=-1）", m1),
         ("数据引用断链（trains 指向不存在的兵）", m2),
         ("文案缺 zh 列", m3),
-        ("Model 出现 FileAccess", m4),
+        ("Model 出现 using Godot", m4),
         ("Engine 被就地修改", m5),
         ("新增源文件未登记", m6),
+        ("combat.r1 被改成 0.02", m7),
+        ("长枪射程 155→150", m8),
+        ("训练牌 tag 断链", m9),
+        ("开局少一座农场", m10),
+        ("波次刷 enabled=false 的领主", m11),
     ]
     print("========== 反向验证（故意改坏 → 必须报错 → 改回 → 通过） ==========")
     bad = 0

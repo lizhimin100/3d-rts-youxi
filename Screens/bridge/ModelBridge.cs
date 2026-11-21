@@ -463,9 +463,12 @@ namespace WarIsland.Bridge
                     break;
                 }
             }
-            bool buildOk = !string.IsNullOrEmpty(buildCard) && m.PlayBuild(buildCard);
+            int buildPlot = m.FirstFreePlot();
+            bool buildOk = !string.IsNullOrEmpty(buildCard) && m.PlayBuild(buildCard, buildPlot);
             int cpAfterBuild = m.Cp;
             int buildingsAfterBuild = m.Buildings.Count;
+            var newBuilding = buildOk ? m.BuildingAt(buildPlot) : null;
+            int newBuildingStar = newBuilding != null ? newBuilding.Star : 0;
 
             // 2) 手摆 3 座同名兵营，两两合并 → 3 星
             var plots = new List<int>();
@@ -514,6 +517,7 @@ namespace WarIsland.Bridge
                 { "build_ok", buildOk },
                 { "cp_after_build", cpAfterBuild },
                 { "buildings_after_build", buildingsAfterBuild },
+                { "new_building_star", newBuildingStar },
                 { "merge_1", merge1 },
                 { "merge_2", merge2 },
                 { "merged_star", mergedStar },

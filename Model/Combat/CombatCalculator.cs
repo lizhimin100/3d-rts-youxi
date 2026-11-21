@@ -105,6 +105,7 @@ namespace WarIsland.Model
         /// </summary>
         public static double ArmorDamageTaken(double effectiveArmor, CombatRules rules)
         {
+            if (double.IsNaN(effectiveArmor)) return 1.0;
             double scale = rules != null && rules.ArmorScale > 0.0 ? rules.ArmorScale : CombatRules.SpecArmorScale;
             if (effectiveArmor >= 0.0)
                 return 1.0 / (1.0 + effectiveArmor * scale);

@@ -663,7 +663,7 @@
 		},
 		{
 			"path": "Screens/bridge/ModelBridge.cs",
-			"size": 38368
+			"size": 38638
 		},
 		{
 			"path": "Screens/bridge/ModelBridge.cs.uid",
@@ -1203,7 +1203,7 @@
 		},
 		{
 			"path": "Model/Battle/LaneBattle.cs",
-			"size": 39313
+			"size": 39822
 		},
 		{
 			"path": "Model/Battle/LevelDef.cs",
@@ -1211,11 +1211,11 @@
 		},
 		{
 			"path": "Model/Battle/LevelRunner.cs",
-			"size": 13193
+			"size": 13315
 		},
 		{
 			"path": "Model/Battle/LevelSimulator.cs",
-			"size": 7498
+			"size": 7754
 		},
 		{
 			"path": "Model/Battle/Skirmish.cs",
@@ -1227,7 +1227,7 @@
 		},
 		{
 			"path": "Model/Combat/CombatCalculator.cs",
-			"size": 10322
+			"size": 10381
 		},
 		{
 			"path": "Model/Combat/CombatRules.cs",
@@ -1247,7 +1247,7 @@
 		},
 		{
 			"path": "Model/Core/Damage.cs",
-			"size": 4007
+			"size": 4274
 		},
 		{
 			"path": "Model/Core/Damage.cs.uid",
@@ -1291,15 +1291,15 @@
 		},
 		{
 			"path": "Model/Data/UnitCatalog.cs",
-			"size": 14864
+			"size": 15087
 		},
 		{
 			"path": "Model/Planning/PlanningConfig.cs",
-			"size": 18073
+			"size": 19210
 		},
 		{
 			"path": "Model/Planning/PlanningMatch.cs",
-			"size": 15080
+			"size": 15097
 		},
 		{
 			"path": "Model/Planning/ScriptedPlanner.cs",
@@ -1491,7 +1491,7 @@
 		},
 		{
 			"path": "Tests/checks/check_all.gd",
-			"size": 60396
+			"size": 62817
 		},
 		{
 			"path": "Tests/checks/check_all.gd.uid",
@@ -1799,7 +1799,7 @@
 		},
 		{
 			"path": "Tools/checks/negative_demo.py",
-			"size": 5331
+			"size": 7639
 		},
 		{
 			"path": "Tools/dsh更新/执行更新.ps1",
@@ -2375,7 +2375,7 @@
 		},
 		{
 			"path": "Content/data/planning.json",
-			"size": 4209
+			"size": 4281
 		},
 		{
 			"path": "Content/data/researches.json",

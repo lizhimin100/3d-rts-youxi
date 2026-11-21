@@ -43,8 +43,8 @@ namespace WarIsland.Model
         public int Kills;
         public double DamageDealt;
 
-        public bool IsFrontMelee => !Projectile && Range <= 120.0;
-        public bool IsPike => !Projectile && Range > 120.0 && Range < 300.0;
+        public bool IsFrontMelee => !Projectile && Range <= UnitDef.FrontMeleeMaxRange;
+        public bool IsPike => !Projectile && Range > UnitDef.FrontMeleeMaxRange && Range < UnitDef.MeleeMaxRange;
     }
 
     internal sealed class LaneSquad
@@ -116,6 +116,7 @@ namespace WarIsland.Model
         public int PikeBehindAttacks;
         public int PikeFormationSamples;
         public int PikeFormationBehind;
+        public int PikeGapSamples;
         public double AvgPikeGapMeters;
 
         public int PlayerShots;
@@ -137,7 +138,7 @@ namespace WarIsland.Model
     ///     两个 0.45 米身位 = 0.9 米，所以长枪刚好能站在步兵身后隔排刺击；
     ///   · 轻量圆形排斥是**位置约束**（不施加力），保证队形稳定；
     ///   · 全歼敌方后幸存小队继续越线；停在敌区且身边无敌人时按小队数抽基地血；
-    ///   · 轮末由调用方清场（本类只负责一轮）。
+    ///   · 轮末由调用方清场（本类只负责一轮；Run 只能跑一次，下一轮必须 new）。
     /// </summary>
     public sealed class LaneBattle
     {
@@ -168,6 +169,7 @@ namespace WarIsland.Model
         private double _playerDrainReduction;
         private double _enemyDrainReduction;
         private double _t;
+        private bool _started;
 
         private readonly RoundResult _result = new RoundResult();
         private double _pikeGapSum;
@@ -233,8 +235,8 @@ namespace WarIsland.Model
 
         private static string RoleOf(UnitDef def)
         {
-            if (def.AttackRange <= 120.0) return "front";
-            if (def.AttackRange < 300.0) return "pike";
+            if (def.AttackRange <= UnitDef.FrontMeleeMaxRange) return "front";
+            if (def.AttackRange < UnitDef.MeleeMaxRange) return "pike";
             return "ranged";
         }
 
@@ -351,14 +353,19 @@ namespace WarIsland.Model
             double playerDrainReduction = 0.0, double enemyDrainReduction = 0.0,
             string kind = "", string label = "")
         {
+            if (_started)
+                throw new InvalidOperationException("LaneBattle 一轮只能跑一次；轮末清场请每轮 new 一个实例。");
+            _started = true;
+
             _result.Kind = kind;
             _result.Label = label;
             _playerBaseHp = Math.Max(playerBaseHp, 0.0);
             _enemyBaseHp = Math.Max(enemyBaseHp, 0.0);
             _result.PlayerBaseHpStart = _playerBaseHp;
             _result.EnemyBaseHpStart = _enemyBaseHp;
-            _playerDrainReduction = Clamp(playerDrainReduction, 0.0, 0.9);
-            _enemyDrainReduction = Clamp(enemyDrainReduction, 0.0, 0.9);
+            double maxReduction = _planning != null ? _planning.MaxDrainReduction : 0.45;
+            _playerDrainReduction = Clamp(playerDrainReduction, 0.0, maxReduction);
+            _enemyDrainReduction = Clamp(enemyDrainReduction, 0.0, maxReduction);
             _t = 0.0;
 
             SpawnDueWaves(0.0);
@@ -377,6 +384,7 @@ namespace WarIsland.Model
             _result.EnemyBaseHp = Math.Max(_enemyBaseHp, 0.0);
             _result.PlayerBaseDestroyed = _playerBaseHp <= 0.0;
             _result.EnemyBaseDestroyed = _enemyBaseHp <= 0.0;
+            _result.PikeGapSamples = _pikeGapSamples;
             _result.AvgPikeGapMeters = _pikeGapSamples > 0
                 ? Round3(_pikeGapSum / _pikeGapSamples * RtsUnits.R1)
                 : 0.0;
@@ -429,12 +437,12 @@ namespace WarIsland.Model
                 if (m.Cd > 0.0) m.Cd = Math.Max(m.Cd - dt, 0.0);
                 if (m.Retarget > 0.0) m.Retarget -= dt;
 
-                if (m.Target < 0 || !IsValidTarget(m.Target, m.Side))
+                if (m.Target >= 0 && !IsValidTarget(m.Target, m.Side))
                 {
-                    m.Target = FindNearestEnemy(m);
-                    m.Retarget = 0.2 + _rng.NextFloat() * 0.12;
+                    m.Target = -1;
+                    m.Retarget = 0.0;
                 }
-                else if (m.Retarget <= 0.0)
+                if (m.Retarget <= 0.0)
                 {
                     m.Target = FindNearestEnemy(m);
                     m.Retarget = 0.2 + _rng.NextFloat() * 0.12;

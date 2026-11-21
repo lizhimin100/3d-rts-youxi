@@ -73,6 +73,9 @@ namespace WarIsland.Model
         public int MaxHand = 8;
         public List<string> OpeningHand = new List<string>();
 
+        /// <summary>哨塔等防御建筑对基地抽血的总减免上限（0..0.9）。</summary>
+        public double MaxDrainReduction = 0.45;
+
         public int MergeRequired = 3;
         public int MaxStar = 3;
 
@@ -132,6 +135,8 @@ namespace WarIsland.Model
             var pop = JVal.Dict(d, "pop");
             if (pop != null) cfg.BasePop = JVal.Int(pop, "base", cfg.BasePop);
             else notes.Add("缺少 pop");
+
+            cfg.MaxDrainReduction = JVal.Double(d, "max_drain_reduction", cfg.MaxDrainReduction);
 
             var hand = JVal.Dict(d, "hand");
             if (hand != null)
@@ -209,6 +214,8 @@ namespace WarIsland.Model
                     b.ArmorType = CombatTypes.TryParseArmor(armorName, out int ar) ? ar : -1;
                     var trains = JVal.StringArray(bd, "trains");
                     if (trains != null) b.Trains.AddRange(trains);
+                    if (cfg.Buildings.ContainsKey(b.Id))
+                        notes.Add($"建筑 id 重复：{b.Id}（后一条会覆盖前一条）");
                     cfg.Buildings[b.Id] = b;
                 }
             }
@@ -263,6 +270,8 @@ namespace WarIsland.Model
                         c.Kind = (CardKind)(-1);
                         notes.Add($"卡 {c.Id}：kind={kind} 非法（build/train/strategy）");
                     }
+                    if (cfg.Cards.ContainsKey(c.Id))
+                        notes.Add($"卡 id 重复：{c.Id}（后一条会覆盖前一条）");
                     cfg.Cards[c.Id] = c;
                 }
             }
@@ -281,6 +290,8 @@ namespace WarIsland.Model
                 errors.Add($"cp start/per 不能超过 cap（{CpStart}/{CpPerPlanning} > {CpCap}）");
             if (BasePop < 0)
                 errors.Add($"pop.base={BasePop} 为负");
+            if (MaxDrainReduction < 0.0 || MaxDrainReduction > 0.9)
+                errors.Add($"max_drain_reduction={MaxDrainReduction} 越界（0..0.9）");
             if (Draw < 1 || MaxHand < Draw)
                 errors.Add($"hand 配置非法（draw={Draw} max={MaxHand}）");
             if (MergeRequired != 3)
