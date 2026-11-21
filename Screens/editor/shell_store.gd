@@ -200,26 +200,21 @@ static func height_at_shell(shell: Dictionary, p_heights: PackedFloat32Array, x:
 	return lerpf(a, b, tz)
 
 
-## 初始地表：走廊铺泥土、高地铺岩石、水线附近铺沙，其余草地。
+## 初始地表：走廊铺泥土，其余草地。
+## **默认只铺两种真实地块材质**（草/泥）—— 岩石、沙地在地块体系里没有对应材质（是贴花），
+## 新图一上来就按高度铺满，整片会变成"灰色/米色塑料布"。它们留给手动笔刷。
 static func autopaint(shell: Dictionary) -> Array:
 	var g := grid_of(shell)
 	var cols := int(g["cols"])
 	var rows := int(g["rows"])
-	var heights := heights_or_procedural(shell)
-	var water := float((shell.get("terrain", {}) as Dictionary).get("water_level", WATER_DEFAULT))
 	var out: Array = []
 	out.resize(cols * rows)
 	for row in rows:
 		for col in cols:
 			var w := world_of_cell(shell, col, row)
-			var h := heights[row * cols + col]
 			var idx := 0
 			if absf(w.y) <= 5.0:
 				idx = 1
-			elif h > water + 2.2:
-				idx = 2
-			elif h < water + 0.25:
-				idx = 3
 			out[row * cols + col] = idx
 	return out
 

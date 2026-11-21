@@ -52,7 +52,7 @@ func _enter_tree() -> void:
 	var args := OS.get_cmdline_user_args()
 	for a in args:
 		if a.begins_with("--map-shell-shot="):
-			_shot_to.call_deferred(a.substr(18))
+			_shot_to.call_deferred(a.substr("--map-shell-shot=".length()))
 			return
 	if "--map-shell-selftest" in args:
 		_selftest.call_deferred()
@@ -210,14 +210,83 @@ func _selftest() -> void:
 		for n in (probes[tool_id] as Array):
 			if _find(_root, String(n)) == null:
 				problems.append(String(tool_id) + ":" + String(n))
+	# ── 镜头口径 + 地形材质：直接喂事件给真实的 handle_input，不是看源码猜 ──
+	var view = null
+	if _root != null:
+		view = _find(_root, "ShellView")
+	if view == null:
+		problems.append("ShellView")
+	else:
+		view.call("reset_camera")
+		if not is_equal_approx(float(view.get("cam_pitch")), -50.0):
+			problems.append("cam-pitch")
+		if not is_equal_approx(float(view.get("cam_dist")), 90.0):
+			problems.append("cam-dist")
+		# 地形必须挂游戏里那一份 地形.gdshader（不是自绘顶点色）
+		var mesh = view.get("terrain_mesh")
+		var mat = mesh.material_override if mesh != null else null
+		if not (mat is ShaderMaterial):
+			problems.append("terrain-material")
+		elif (mat as ShaderMaterial).shader == null \
+				or (mat as ShaderMaterial).get_shader_parameter("mat_map") == null \
+				or (mat as ShaderMaterial).get_shader_parameter("tile_m") == null:
+			# mat_map / tile_m 是 地形.gdshader 独有的 uniform：有它们就是游戏那份材质
+			problems.append("terrain-shader")
+		elif (mat as ShaderMaterial).get_shader_parameter("atlas_rgba") == null:
+			problems.append("terrain-atlas")
+		# 右键拖动 = 平移（方向与旧编辑器一致）
+		var t0: Vector3 = view.get("cam_target")
+		var rmb := InputEventMouseButton.new()
+		rmb.button_index = MOUSE_BUTTON_RIGHT
+		rmb.pressed = true
+		rmb.position = Vector2(240, 180)
+		view.call("handle_input", rmb, rmb.position)
+		var pan := InputEventMouseMotion.new()
+		pan.relative = Vector2(48.0, 30.0)
+		pan.position = Vector2(288, 210)
+		view.call("handle_input", pan, pan.position)
+		var rmb_up := InputEventMouseButton.new()
+		rmb_up.button_index = MOUSE_BUTTON_RIGHT
+		rmb_up.pressed = false
+		rmb_up.position = pan.position
+		view.call("handle_input", rmb_up, rmb_up.position)
+		var t_after: Vector3 = view.get("cam_target")
+		if t_after.distance_to(t0) < 0.01:
+			problems.append("rmb-pan")
+		# 滚轮 = 乘性缩放（旧编辑器 ×0.88）
+		var d0 := float(view.get("cam_dist"))
+		var wheel := InputEventMouseButton.new()
+		wheel.button_index = MOUSE_BUTTON_WHEEL_UP
+		wheel.pressed = true
+		view.call("handle_input", wheel, Vector2(240, 180))
+		if not is_equal_approx(float(view.get("cam_dist")), clampf(d0 * 0.88, 12.0, 200.0)):
+			problems.append("wheel-zoom")
+		# 中键拖动 = 旋转
+		var yaw0 := float(view.get("cam_yaw"))
+		var mmb := InputEventMouseButton.new()
+		mmb.button_index = MOUSE_BUTTON_MIDDLE
+		mmb.pressed = true
+		view.call("handle_input", mmb, Vector2(240, 180))
+		var orbit := InputEventMouseMotion.new()
+		orbit.relative = Vector2(40.0, 0.0)
+		view.call("handle_input", orbit, Vector2(280, 180))
+		mmb = InputEventMouseButton.new()
+		mmb.button_index = MOUSE_BUTTON_MIDDLE
+		mmb.pressed = false
+		view.call("handle_input", mmb, Vector2(280, 180))
+		if absf(float(view.get("cam_yaw")) - yaw0) < 0.5:
+			problems.append("mmb-orbit")
+		view.call("reset_camera")
 	print("[MapShell] selftest=", "PASS" if problems.is_empty() else "FAIL " + str(problems))
 	get_tree().quit(0 if problems.is_empty() else 1)
 
 
 func _shot_to(path: String) -> void:
 	await get_tree().process_frame
-	get_editor_interface().set_main_screen_editor(_get_plugin_name())
-	for _i in range(40):
+	# 编辑器主屏列表在插件 _enter_tree 时还没建好，单次 set_main_screen_editor 会静默失败。
+	# 走和 _open_tab 同一条「切两次 + 留帧」的路，切过去了再截。
+	await _open_tab()
+	for _i in range(20):
 		await get_tree().process_frame
 	_sync_size()
 	var vp: Viewport = get_viewport()

@@ -206,8 +206,16 @@ func _build_viewport() -> Control:
 	var info := PanelContainer.new()
 	info.custom_minimum_size = Vector2(0.0, 30.0)
 	info.add_theme_stylebox_override("panel", ThemeKit.box(ShellTheme.BG_DEEP, ShellTheme.STROKE, 0, 0, 12.0, 4.0))
+	var info_row := HBoxContainer.new()
+	info_row.add_theme_constant_override("separation", 10)
+	info.add_child(info_row)
 	_hover_label = ThemeKit.caption(T("shell.hover.idle"), ShellTheme.TEXT_DIM)
-	info.add_child(_hover_label)
+	info_row.add_child(_hover_label)
+	info_row.add_child(ThemeKit.spacer())
+	# 操作提示：这套键位是从旧地图编辑器继承下来的，别让人靠猜
+	var controls := ThemeKit.caption(T("shell.view.controls"), ShellTheme.TEXT_DIM)
+	controls.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	info_row.add_child(controls)
 	wrap.add_child(info)
 	_svc.gui_input.connect(_on_view_input)
 	_svc.resized.connect(_sync_viewport)
@@ -337,6 +345,9 @@ func _on_layout_preview(index: int) -> void:
 func _on_view_input(event: InputEvent) -> void:
 	if view == null:
 		return
+	# 点进视口就拿键盘焦点：WASD / QE / 1-2 / F 这一套和旧编辑器一致
+	if event is InputEventMouseButton and (event as InputEventMouseButton).pressed:
+		_svc.grab_focus()
 	var pos := Vector2.ZERO
 	if event is InputEventMouse:
 		pos = (event as InputEventMouse).position
@@ -344,7 +355,8 @@ func _on_view_input(event: InputEvent) -> void:
 	if handled:
 		_svc.accept_event()
 	if event is InputEventMouseMotion and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
-		if bool(view.call("is_dragging")):
+		# Alt+左键是转视角，不能顺手把选中的石台/装饰拖走
+		if bool(view.call("is_dragging")) and not bool(view.call("is_orbiting")):
 			view.call("drag_to", view.call("ground_at", pos))
 			_svc.accept_event()
 
@@ -352,6 +364,8 @@ func _on_view_input(event: InputEvent) -> void:
 func _process(_delta: float) -> void:
 	if view == null or _hover_label == null:
 		return
+	# 视口有没有键盘焦点：等价于旧编辑器的 has_focus()
+	view.set("keys_focus", _svc != null and _svc.has_focus())
 	var info: Dictionary = view.call("hover_info")
 	if bool(info.get("valid", false)):
 		_hover_label.text = T("shell.hover.value", {
@@ -503,8 +517,8 @@ func _build_terrain_panel() -> void:
 	var water := float((view.get("shell").get("terrain", {}) as Dictionary).get("water_level", 0.2))
 	_water_slider = _slider(v, T("shell.terrain.water"), -3.0, 6.0, water, _on_water)
 	var amb: Dictionary = (view.get("shell").get("terrain", {}) as Dictionary).get("ambient", {})
-	_ambient_slider = _slider(v, T("shell.terrain.ambient"), 0.2, 2.0, float(amb.get("energy", 0.9)), _on_ambient)
-	_fog_slider = _slider(v, T("shell.terrain.fog"), 0.0, 0.05, float(amb.get("fog_density", 0.012)), _on_fog)
+	_ambient_slider = _slider(v, T("shell.terrain.ambient"), 0.2, 2.0, float(amb.get("energy", 0.55)), _on_ambient)
+	_fog_slider = _slider(v, T("shell.terrain.fog"), 0.0, 0.05, float(amb.get("fog_density", 0.0032)), _on_fog)
 
 	var hint := ThemeKit.caption(T("shell.terrain.hint"), ShellTheme.TEXT_DIM)
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -719,7 +733,8 @@ func _build_spine_panel() -> void:
 	ph.add_child(rem)
 	v.add_child(ph)
 	var focus := ThemeKit.small_button(T("shell.spine.top_view"), ThemeKit.CYAN)
-	focus.pressed.connect(func(): view.call("set_camera", -90.0, -62.0, 78.0, Vector3.ZERO))
+	# 和旧编辑器的「俯视」同一个角度（俯角 88° / yaw 0），不是随手一个新机位
+	focus.pressed.connect(func(): view.call("set_view_top"))
 	v.add_child(focus)
 	_refresh_spine_fields()
 

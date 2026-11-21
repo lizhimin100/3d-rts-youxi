@@ -1249,6 +1249,27 @@ func _check_map_shell() -> void:
 	_ok("底壳编辑器只保留 4 个纯视觉/空间划分工具（地形笔刷 / 装饰 / 脊线分割 / 石台锚点）",
 		tools_ok, ", ".join(tools_hit))
 
+	# 镜头口径继承：俯角 50° / 12~200m / 右键平移方向 / 中键旋转 / WASD / 边界夹取
+	var camera_ok := view_src.contains("CAM_PITCH_DEG := 50.0") \
+		and view_src.contains("CAM_DIST_MIN := 12.0") \
+		and view_src.contains("CAM_DIST_MAX := 200.0") \
+		and view_src.contains("0.0016 * cam_dist") \
+		and view_src.contains("_clamp_target") \
+		and view_src.contains("rad_to_deg(0.006)") \
+		and view_src.contains("KEY_W") and view_src.contains("KEY_Q")
+	_ok("底壳编辑器继承旧地图编辑器镜头口径（俯角 50 / 12-200m / 右键平移 / 中键旋转 / WASD·QE）",
+		camera_ok, "shell_view.gd 镜头常量或键位缺失")
+
+	# 地形材质：必须是游戏里那一份 地形材质.tres + 草泥图集 + 草/泥/裂纹泥地底材。
+	# 路径收敛在 RtsTerrain 常量里（编辑器不写第二份资源路径）。
+	var terrain_ok := view_src.contains("RtsTerrain.MATERIAL_PATH") \
+		and view_src.contains("RtsTerrain.ATLAS_PATH") \
+		and view_src.contains("RtsTerrain.TEX_GRASS_PATH") and view_src.contains("RtsTerrain.TEX_DIRT_PATH") \
+		and view_src.contains("RtsTerrain.TEX_CRACKED_PATH") and view_src.contains("_build_surface_decals") \
+		and _read("res://Game/map/地形.gd").contains("atlas_草泥_rgba.png")
+	_ok("底壳地形沿用游戏地形材质与原始贴图（草泥图集 / 草 / 泥 / 裂纹泥地，不自创配色）",
+		terrain_ok, "地形材质或贴图路径缺失")
+
 	var forbidden: Array[String] = []
 	for bad in ["spawn_unit", "add_unit", "trigger", "AStar", "Pathfinder", "economy", "resource_node"]:
 		if editor_src.contains(bad) or view_src.contains(bad):

@@ -855,7 +855,7 @@ func cell_subdiv_segments(cell: Vector2i) -> Vector2i:
 
 ## 生成地形材质
 func _make_material() -> Material:
-	var path := "res://Content/art/材质/地形材质.tres"
+	var path := MATERIAL_PATH
 	if ResourceLoader.exists(path):
 		var m := load(path) as Material
 		if m != null:
@@ -885,6 +885,10 @@ const TEX_DIRT_PATH := "res://Content/art/贴图/地形/泥土.png"
 const TEX_CRACKED_PATH := "res://Content/art/贴图/地形/裂纹泥地.png"
 ## 崖壁细节（灰度，当噪声用；颜色由 rock_tint 给）
 const ROCK_DETAIL_PATH := "res://Content/art/贴图/rock_albedo.png"
+## 地形材质 / 水面材质 / 波纹法线：编辑器与游戏共用同一条资源路径
+const MATERIAL_PATH := "res://Content/art/材质/地形材质.tres"
+const WATER_MATERIAL_PATH := "res://Content/art/材质/水材质.tres"
+const RIPPLE_NORMAL_PATH := "res://Content/art/贴图/water_normal.png"
 ## 一格多少米。**必须与底材平铺距离一致**，否则交界和踩踏节奏对不上。
 const TILE_M: float = 8.0
 
@@ -1261,7 +1265,7 @@ func build_water(center: Vector2, radius: float, level_y: float) -> void:
 	water.mesh = disc
 	water.position = Vector3(center.x, level_y, center.y)
 	var mat: Material = null
-	var path := "res://Content/art/材质/水材质.tres"
+	var path := WATER_MATERIAL_PATH
 	if ResourceLoader.exists(path):
 		mat = load(path)
 	if mat == null:
@@ -1274,7 +1278,7 @@ func build_water(center: Vector2, radius: float, level_y: float) -> void:
 	# v3.3：把波纹法线喂进水面着色器（俯视角下水面不再像一块静止蓝玻璃）
 	var sm := mat as ShaderMaterial
 	if sm != null:
-		var rp := "res://Content/art/贴图/water_normal.png"
+		var rp := RIPPLE_NORMAL_PATH
 		if ResourceLoader.exists(rp):
 			sm.set_shader_parameter("ripple_normal", load(rp))
 	water.material_override = mat

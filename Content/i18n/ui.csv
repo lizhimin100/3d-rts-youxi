@@ -438,6 +438,7 @@ shell.state.failed,写回失败,Save failed,状态
 shell.state.reloaded,已重载,Reloaded,状态
 shell.hover.idle,把鼠标移到地形上：坐标 / 高度 / 距离,Move the mouse over the terrain: position and height,视口信息条
 shell.hover.value,x {x} m · z {z} m · 高 {y} m · |x| {raw} 数值,x {x} m · z {z} m · y {y} m · |x| {raw},视口信息条
+shell.view.controls,右键拖动平移 · 中键/Alt+左键旋转 · Shift+中键平移 · 滚轮缩放 · WASD 平移 · QE 旋转 · 1/2 缩放 · F 聚焦 · Ctrl+Shift+C 玩家区,RMB drag pans · MMB or Alt+LMB orbits · Shift+MMB pans · wheel zooms · WASD pans · QE rotates · 1/2 zoom · F focuses · Ctrl+Shift+C player side,视口操作提示（沿用旧地图编辑器）
 shell.tool.terrain,地形/地表,Terrain,左侧工具
 shell.tool.decor,装饰品,Doodads,左侧工具
 shell.tool.spine,脊线/分割,Spine,左侧工具
