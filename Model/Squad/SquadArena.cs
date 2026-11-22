@@ -68,6 +68,75 @@ namespace WarIsland.Model
         public int EnemyBaseTile;
         public int PlayerBarracksTile;
         public int EnemyBarracksTile;
+        /// <summary>中立据点格（side=neutral、role=build 的第一格）；0 = 这张底壳没有据点。</summary>
+        public int NeutralOutpostTile;
+
+        /// <summary>中立区靠我方一侧的世界 X（= 玩家区边界，米）。</summary>
+        public double NeutralStartWorldX => OriginX + PlayerZoneEnd * RtsUnits.R1;
+
+        /// <summary>中立区靠敌方一侧的世界 X（米）。</summary>
+        public double NeutralEndWorldX => OriginX + EnemyZoneStart * RtsUnits.R1;
+
+        /// <summary>
+        /// 已占领据点时进攻小队的出发点（世界米，lane Z=0）：中立区靠敌侧，再退 6 米。
+        /// 这条口径的唯一实现，UI/自检都读它，不许各写一份。
+        /// </summary>
+        public Vec2 OutpostStageWorld()
+        {
+            double x = NeutralEndWorldX - 6.0;
+            return new Vec2((float)x, 0f);
+        }
+
+        /// <summary>
+        /// 没买据点时的进攻出发点：**玩家区前缘**（边界内侧 8 米）。
+        /// 为什么不是"从建造格出发"：单场只有 60 秒，从棋盘后排走到敌方基地要 30 秒以上，
+        /// 等于把一整场耗在行军上；"前缘集结"是小队玩法的预设偏好，不是玩家微操。
+        /// </summary>
+        public Vec2 PlayerFrontStageWorld()
+        {
+            double x = NeutralStartWorldX - 8.0;
+            return new Vec2((float)x, 0f);
+        }
+
+        /// <summary>本场进攻小队的出发点：买了据点走据点，否则走玩家区前缘。</summary>
+        public Vec2 AttackStageWorld(bool outpostCaptured)
+        {
+            return outpostCaptured ? OutpostStageWorld() : PlayerFrontStageWorld();
+        }
+
+        /// <summary>
+        /// 打建造牌时把建筑落到指定战术格子（Screens 只报"玩家点了哪一格"）。
+        /// 同一格已有建筑 → 拒绝；格子不存在 → 拒绝。
+        /// </summary>
+        public bool AddPlayerBuilding(int tileIndex, string defId, int star = 1)
+        {
+            TacticalTile t = Tile(tileIndex);
+            if (t == null || t.Side != RegionKinds.Player) return false;
+            if (string.IsNullOrEmpty(defId)) return false;
+            for (int i = 0; i < PlayerBuildings.Count; i++)
+            {
+                if (PlayerBuildings[i].Tile == tileIndex) return false;
+            }
+            PlayerBuildings.Add(new ArenaBuilding
+            {
+                Tile = tileIndex,
+                Side = RegionKinds.Player,
+                DefId = defId,
+                Star = Math.Max(star, 1),
+            });
+            if (defId == "barracks" && PlayerBarracksTile == 0) PlayerBarracksTile = tileIndex;
+            return true;
+        }
+
+        /// <summary>某一格上是否已经有玩家建筑。</summary>
+        public bool PlayerTileOccupied(int tileIndex)
+        {
+            for (int i = 0; i < PlayerBuildings.Count; i++)
+            {
+                if (PlayerBuildings[i].Tile == tileIndex) return true;
+            }
+            return false;
+        }
 
         public Vec2 WorldToLane(double worldX, double worldZ)
         {
@@ -304,6 +373,7 @@ namespace WarIsland.Model
 
             arena.PlayerBaseTile = FindRoleTile(arena, RegionKinds.Player, "keep");
             arena.EnemyBaseTile = FindRoleTile(arena, RegionKinds.Enemy, "keep");
+            arena.NeutralOutpostTile = FindSideTile(arena, RegionKinds.Neutral);
             arena.PlayerBarracksTile = arena.FirstTileOfBuilding(RegionKinds.Player, "barracks");
             if (arena.PlayerBarracksTile == 0) arena.PlayerBarracksTile = arena.PlayerBaseTile;
             arena.EnemyBarracksTile = arena.FirstTileOfBuilding(RegionKinds.Enemy, "barracks");
@@ -344,6 +414,16 @@ namespace WarIsland.Model
                 TacticalTile t = arena.Tiles[i];
                 if (t.Side == side && t.Role == role) return t.Index;
             }
+            for (int i = 0; i < arena.Tiles.Count; i++)
+            {
+                if (arena.Tiles[i].Side == side) return arena.Tiles[i].Index;
+            }
+            return 0;
+        }
+
+        /// <summary>某一侧的第一个格子（中立据点用；找不到 = 0）。</summary>
+        private static int FindSideTile(SquadArena arena, string side)
+        {
             for (int i = 0; i < arena.Tiles.Count; i++)
             {
                 if (arena.Tiles[i].Side == side) return arena.Tiles[i].Index;

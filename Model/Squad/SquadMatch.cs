@@ -77,7 +77,8 @@ namespace WarIsland.Model
             CombatRules combat,
             PlanningConfig planning,
             SquadArena arena,
-            int seed)
+            int seed,
+            IDictionary<string, object> tuning = null)
         {
             var result = new SquadMatchResult
             {
@@ -97,17 +98,20 @@ namespace WarIsland.Model
                 LevelRound round = arena.Rounds[ri];
                 bool defending = round.Kind == "defend";
 
+                // 攻防时空流转：本轮只出"这一场"的队伍（attack 轮出进攻牌，defend 轮出防守牌）。
+                string roundRole = defending ? SquadRoles.Defend : SquadRoles.Attack;
                 var session = new SquadSession(
                     units, combat, planning, arena,
-                    seed + 7919 * (ri + 1), false, playerHp, enemyHp);
+                    seed + 7919 * (ri + 1), false, playerHp, enemyHp, tuning);
                 session.BeginPlanning();
-                ScriptedPlanner.Plan(session.Match, defending);
+                ScriptedPlanner.Plan(session.Match, defending, roundRole);
                 PlanningSnapshot snap = session.Match.Snapshot();
                 if (round.Kind == "attack") result.AttackPlan = snap;
                 else if (round.Kind == "defend") result.DefendPlan = snap;
 
                 session.Battle.SetDrainReduction(snap != null ? snap.DrainReduction : 0.0, 0.0);
                 session.EndPlanning(true);
+                session.Battle.SetActiveRole(roundRole);
                 session.BeginExecution(ri);
 
                 // **预设偏好**（不是玩家微操）：两轮都要拆敌方基地（胜利条件就是拆家）。

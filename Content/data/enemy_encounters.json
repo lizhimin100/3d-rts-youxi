@@ -23,26 +23,26 @@
 			"base_hp": 3200.0,
 			"tile_buildings": [
 				{
-					"tile": 7.0,
-					"building": "watchtower",
+					"tile": 21.0,
+					"building": "keep",
 					"star": 2.0,
 					"yaw": 180.0
 				},
 				{
-					"tile": 9.0,
+					"tile": 25.0,
 					"building": "barracks",
 					"star": 3.0,
 					"yaw": 180.0
 				},
 				{
-					"tile": 10.0,
+					"tile": 23.0,
 					"building": "watchtower",
 					"star": 2.0,
 					"yaw": 180.0
 				},
 				{
-					"tile": 11.0,
-					"building": "keep",
+					"tile": 27.0,
+					"building": "watchtower",
 					"star": 2.0,
 					"yaw": 180.0
 				}
@@ -223,26 +223,26 @@
 			"base_hp": 2800.0,
 			"tile_buildings": [
 				{
-					"tile": 7.0,
-					"building": "watchtower",
+					"tile": 21.0,
+					"building": "keep",
 					"star": 2.0,
 					"yaw": 180.0
 				},
 				{
-					"tile": 9.0,
+					"tile": 25.0,
 					"building": "barracks",
-					"star": 2.0,
-					"yaw": 180.0
-				},
-				{
-					"tile": 10.0,
-					"building": "watchtower",
 					"star": 3.0,
 					"yaw": 180.0
 				},
 				{
-					"tile": 11.0,
-					"building": "keep",
+					"tile": 23.0,
+					"building": "watchtower",
+					"star": 2.0,
+					"yaw": 180.0
+				},
+				{
+					"tile": 27.0,
+					"building": "watchtower",
 					"star": 2.0,
 					"yaw": 180.0
 				}

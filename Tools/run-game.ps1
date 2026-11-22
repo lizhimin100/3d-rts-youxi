@@ -28,7 +28,6 @@ function Show-Usage {
   Tools/run-game.ps1 --short                 显式短局（截图/QA 用；正常启动已是短局）
   Tools/run-game.ps1 --check                 无窗口体检（数据/文案/资源/分层/存档隔离/文档）
   Tools/run-game.ps1 --simulate [--games=N]  真小队 100 局：胜率 / DPS / 寻路 / 阵型
-  Tools/run-game.ps1 --simulate --lane       旧横道口径（历史基线对照）
   Tools/run-game.ps1 --squad                 试玩真小队（框选 / 移动 / 集火 / 驻守）
   Tools/run-game.ps1 --shot <画面> <输出.png> 离屏截图（hud 画面会真点一次「建造」）
   Tools/run-game.ps1 --shot theme out.png --shot-res=1920x1080  指定分辨率截图（默认 1600x900）
@@ -78,7 +77,10 @@ for ($i = 0; $i -lt $Rest.Count; $i++) {
         if ($shotRes -notmatch '^\d{3,4}x\d{3,4}$') { throw "--shot-res 格式应为 宽x高，例如 1600x720" }
         continue
     }
-    switch ($a) {
+    # -Wildcard 必须显式开：PowerShell 的 switch 默认只做 -eq，
+    # 带 `*` 的模式（--map= / --speed= / --phase-seconds=）会静默掉进 default，
+    # 被当成引擎参数塞到 `--` 前面，游戏侧 OS.get_cmdline_user_args() 就永远收不到。
+    switch -Wildcard ($a) {
         "--help"     { Show-Usage; exit 0 }
         "--check"    { $mode = "check"; continue }
         "--simulate" { $mode = "simulate"; continue }
@@ -94,6 +96,8 @@ for ($i = 0; $i -lt $Rest.Count; $i++) {
         "--select-id=*" { $gameArgs += $a; continue }
         "--kill-log"  { $gameArgs += $a; continue }
         "--legacy-move" { $gameArgs += $a; continue }
+        # 截图/自检用：把单场时长压短（正式局恒为 60 秒，只有测试才传）。
+        "--phase-seconds=*" { $gameArgs += $a; continue }
         "--shot" {
             if ($i + 2 -ge $Rest.Count) { throw "--shot 需要两个参数：<画面> <输出.png>" }
             $mode = "shot"
@@ -149,7 +153,7 @@ switch ($mode) {
         exit $LASTEXITCODE
     }
     "squad" {
-        & $Godot --path $Root "res://Screens/scenes/小队战场.tscn" @pass
+        & $Godot --path $Root "res://Screens/scenes/战役.tscn" @pass
         exit $LASTEXITCODE
     }
     "simulate" {
@@ -166,7 +170,7 @@ switch ($mode) {
         # 规划阶段只在短局存在，所以 planning* 画面必须显式带 --short。
         $shotMode = @()
         if ($shotName -like "planning*") { $shotMode = @("--short") }
-        & $Godot --path $Root --resolution $shotRes --audio-driver Dummy "res://Tests/checks/shot_runner.tscn" -- @shotMode "--screen=$shotName" "--shot-out=$abs" "--shot-size=$shotRes" "--offscreen"
+        & $Godot --path $Root --resolution $shotRes --audio-driver Dummy "res://Tests/checks/shot_runner.tscn" -- @shotMode @gameArgs "--screen=$shotName" "--shot-out=$abs" "--shot-size=$shotRes" "--offscreen"
         $code = $LASTEXITCODE
         if ($code -eq 0 -and (Test-Path $abs)) {
             Write-Host "[run-game] 截图：$abs"

@@ -13,7 +13,7 @@ config_version=5
 config/name="战争原岛"
 config/description="类魔兽争霸3 的 3D 即时战略（GDScript 全手写，美术由 Blender 程序化生成）"
 config/version="2.0.0"
-run/main_scene="res://Screens/scenes/主场景.tscn"
+run/main_scene="res://Screens/scenes/战役.tscn"
 config/features=PackedStringArray("4.7", "C#", "Forward Plus")
 config/icon="res://icon.svg"
 
@@ -25,8 +25,6 @@ I18n="*res://Engine/i18n/i18n_service.gd"
 SaveSvc="*res://Engine/save/save_service.gd"
 AudioSvc="*res://Engine/audio/audio_service.gd"
 Platform="*res://Engine/platform/platform_service.gd"
-Cfg="*res://Game/config/配置入口.gd"
-Game="*res://Game/core/游戏状态.gd"
 DbgBridge="*res://Engine/debug/debug_bridge.gd"
 
 [debug]

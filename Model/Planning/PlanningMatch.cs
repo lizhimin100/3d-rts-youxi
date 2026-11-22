@@ -21,6 +21,8 @@ namespace WarIsland.Model
         public string UnitId = "";
         public int Star = 1;
         public string SourceBuilding = "";
+        /// <summary>attack / defend / ""（不限时空）。</summary>
+        public string Role = SquadRoles.Any;
         public int PopCost;
     }
 
@@ -374,6 +376,7 @@ namespace WarIsland.Model
                     UnitId = unit.Id,
                     Star = b.Star,
                     SourceBuilding = b.DefId,
+                    Role = card.Role ?? SquadRoles.Any,
                     PopCost = unit.PopCost,
                 };
                 if (addToArmy) Army.Add(squad);
@@ -390,6 +393,18 @@ namespace WarIsland.Model
             if (!Cfg.Cards.TryGetValue(cardId, out CardDef card) || card.Kind != CardKind.Strategy) return false;
             if (!HasCard(cardId) || Cp < card.CostCp) return false;
             return Cfg.Strategies.ContainsKey(card.Effect);
+        }
+
+        /// <summary>
+        /// 直接扣 CP（据点占领这类"不来自卡牌"的规划动作）。
+        /// CP 只有一个钱包，所有花费都必须经过这里，不许别处直接改 Cp。
+        /// </summary>
+        public bool SpendCp(int amount)
+        {
+            if (amount < 0) return false;
+            if (Cp < amount) return false;
+            Cp -= amount;
+            return true;
         }
 
         public bool PlayStrategy(string cardId)

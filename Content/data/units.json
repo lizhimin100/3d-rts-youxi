@@ -14,7 +14,7 @@
 		},
 		"murloc": {
 			"display_name": "鱼人",
-			"use_placeholder_mesh": true,
+			"use_placeholder_mesh": false,
 			"note": "鱼人：无甲奴隶海 + 轻甲掠夺者 + 远程猎人；模型未就绪，统一走占位网格。"
 		}
 	},
@@ -293,10 +293,11 @@
 			"projectile_speed": 0.0,
 			"pop_cost": 8.0,
 			"passive_trait": null,
-			"model_path": "",
-			"model_scale": 1.0,
-			"use_placeholder_mesh": true,
-			"note": "8 人一队的无甲海；65 射程最短，必须贴脸。"
+			"model_path": "res://Content/art/模型/方块人/方块人_农民.glb",
+			"model_scale": 0.92,
+			"use_placeholder_mesh": false,
+			"note": "8 人一队的无甲海；65 射程最短，必须贴脸。",
+			"model_note": "仓库没有鱼人模型：复用最接近的既有资产 + 阵营色区分（2026-11-22）"
 		},
 		{
 			"id": "murloc_raider",
@@ -324,10 +325,11 @@
 			"projectile_speed": 0.0,
 			"pop_cost": 4.0,
 			"passive_trait": null,
-			"model_path": "",
+			"model_path": "res://Content/art/模型/野怪/豺狼人斥候.glb",
 			"model_scale": 1.0,
-			"use_placeholder_mesh": true,
-			"note": "轻甲近战，标准 95 射程。"
+			"use_placeholder_mesh": false,
+			"note": "轻甲近战，标准 95 射程。",
+			"model_note": "仓库没有鱼人模型：复用最接近的既有资产 + 阵营色区分（2026-11-22）"
 		},
 		{
 			"id": "murloc_hunter",
@@ -355,10 +357,11 @@
 			"projectile_speed": 24.0,
 			"pop_cost": 4.0,
 			"passive_trait": null,
-			"model_path": "",
-			"model_scale": 1.0,
-			"use_placeholder_mesh": true,
-			"note": "550 射程：比联盟弓手近 100，容易被弩兵先手。"
+			"model_path": "res://Content/art/模型/方块人/方块人_弩兵.glb",
+			"model_scale": 0.95,
+			"use_placeholder_mesh": false,
+			"note": "550 射程：比联盟弓手近 100，容易被弩兵先手。",
+			"model_note": "仓库没有鱼人模型：复用最接近的既有资产 + 阵营色区分（2026-11-22）"
 		},
 		{
 			"id": "murloc_lord",
@@ -386,10 +389,11 @@
 			"projectile_speed": 0.0,
 			"pop_cost": 2.0,
 			"passive_trait": null,
-			"model_path": "",
-			"model_scale": 1.0,
-			"use_placeholder_mesh": true,
-			"note": "2 人一队的重甲肉盾，用穿刺/魔法处理。"
+			"model_path": "res://Content/art/模型/精模/魔金傀儡.glb",
+			"model_scale": 0.5,
+			"use_placeholder_mesh": false,
+			"note": "2 人一队的重甲肉盾，用穿刺/魔法处理。",
+			"model_note": "仓库没有鱼人模型：复用最接近的既有资产 + 阵营色区分（2026-11-22）"
 		}
 	]
 }

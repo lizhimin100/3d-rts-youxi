@@ -164,15 +164,17 @@ static func mesh(season: String, tier: int, variant: int, height: float) -> Arra
 ## 打开 LOD 时：三档 MeshInstance3D 叠在同一位置，靠 visibility_range 切档。
 ## proc 里可含：season（品种）、seed（变体种子）、yaw（朝向）、
 ##              scale（整体缩放 0.84~1.18）、tilt（两轴倾斜，弧度）、sink（压进地里几米）。
-static func build_visual(def: UnitDef, proc: Dictionary) -> Node3D:
+## 注意：`def` 只被读 `id` / `height` 两个字段，所以不收具体类型 ——
+## 旧单兵系统的 `UnitDef` 已随 2026-11-22 下线，这里不能把类型绑回旧内核。
+static func build_visual(def: Variant, proc: Dictionary) -> Node3D:
 	var root := Node3D.new()
-	var id: String = String(def.id) if def != null else "tree"
+	var id: String = String(def.get("id")) if def != null else "tree"
 	var seed_val: int = int(proc.get("seed", 0))
 	var season: String = String(proc.get("season", ""))
 	if season.is_empty():
 		season = season_of(id, seed_val)
 	var variant: int = variant_of(seed_val)
-	var height: float = def.height if def != null else 5.5
+	var height: float = float(def.get("height")) if def != null else 5.5
 	root.name = ROOT_PREFIX + "程序化树"
 
 	# 每棵树的"体型"：缩放 / 倾斜 / 下沉。三者都只动**这个视觉根**，

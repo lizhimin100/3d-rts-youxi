@@ -574,3 +574,49 @@ shell.map.tile_scale,格子倍率,Tile scale,底板
 shell.map.canvas,画布 {w} × {d} m（含四周冗余）,Canvas {w} × {d} m (with margin),底板
 shell.tile.snap_grid,对齐网格,Snap to grid,格子面板
 shell.state.invalid,参数无效：{msg},Invalid: {msg},状态
+
+battle.base.player,我方基地 {hp}/{max},Our base {hp}/{max},战役 HUD 顶栏
+battle.base.enemy,敌方基地 {hp}/{max},Enemy base {hp}/{max},战役 HUD 顶栏
+battle.phase.planning,规划阶段,Planning,战役 HUD 阶段
+battle.phase.attack,进攻战,Attack,战役 HUD 阶段
+battle.phase.defend,防守战,Defend,战役 HUD 阶段
+battle.phase.result,本轮结算,Round over,战役 HUD 阶段
+battle.phase.attack_tip,进攻战开始：只激活待命进攻的小队,Attack begins: only attack squads deploy,战役 HUD 提示
+battle.phase.defend_tip,进攻战结束，防守战开始：激活待命防守的小队,Defend begins: defense squads deploy,战役 HUD 提示
+battle.cp,CP {cp},CP {cp},战役 HUD 顶栏
+battle.pop,人口 {used}/{cap},Pop {used}/{cap},战役 HUD 顶栏
+battle.selected,已选 {n} 队,{n} squads selected,战役 HUD 顶栏
+battle.card_cost,{name} · {cost},{name} · {cost},战役 HUD 卡牌
+battle.spawned,已出战 {n} 队（落在出兵格中心）,Deployed {n} squads,战役 HUD 回执
+battle.start,开始进攻,Start attack,战役 HUD 按钮
+battle.restart,重开一局,Restart,战役 HUD 按钮
+battle.speed_button,倍速 {x}x,Speed {x}x,战役 HUD 按钮
+battle.speed,战斗倍速 {x}x,Battle speed {x}x,战役 HUD 回执
+battle.outpost.button,占领据点,Take outpost,战役 HUD 按钮
+battle.outpost.done,已买下中立据点：进攻小队从靠敌侧前压,Outpost taken: attack squads stage forward,战役 HUD 回执
+battle.outpost.fail,买不下据点（CP 不够 / 本图没有据点）,Cannot take outpost,战役 HUD 回执
+battle.build.pick_tile,选一个空格子放建筑（左上角是建筑位）,Pick a free tile,战役 HUD 提示
+battle.build.done,{name} 已落到 {tile} 号格子,{name} placed on tile {tile},战役 HUD 回执
+battle.build.failed,这一格放不下（已被占用 / 不是建造格）,Cannot build here,战役 HUD 回执
+battle.strategy.done,策略牌已生效（只影响本轮）,Strategy applied,战役 HUD 回执
+battle.only_planning,只有规划阶段能打牌,Planning only,战役 HUD 提示
+battle.order.none,先框选一支我方小队,Select a squad first,战役 HUD 提示
+battle.order.focus_only,只能集火敌方小队（推进由自动战斗负责）,Only focus fire on enemy squads,战役 HUD 提示
+battle.order.only_in_battle,规划阶段不用下令，开战后才能集火,Orders only in battle,战役 HUD 提示
+battle.receipt.attack,集火 {n} 队,Focus fire {n} squads,战役 HUD 回执
+battle.reason.not_in_hand,不在手牌,Not in hand,战役 HUD 卡牌原因
+battle.reason.no_cp,CP 不够,Not enough CP,战役 HUD 卡牌原因
+battle.reason.no_building,没有对应建筑,No building,战役 HUD 卡牌原因
+battle.reason.no_pop,人口不够,Not enough pop,战役 HUD 卡牌原因
+battle.reason.ok,可训练,Ready,战役 HUD 卡牌原因
+battle.intent.planning,本轮敌情 · {name}　进攻战 {attack} 队 / 防守战 {defend} 队,Intel · {name},战役 HUD 意图栏
+battle.intent.attack,进攻战 · {name} 有 {waves} 队守军压上,Attack · {name}: {waves} squads,战役 HUD 意图栏
+battle.intent.defend,防守战 · {name} 派 {waves} 队来攻,Defend · {name}: {waves} squads incoming,战役 HUD 意图栏
+battle.intent.done,本轮结束 · {name},Round over · {name},战役 HUD 意图栏
+battle.result.title,本轮结算,Round result,战役 HUD 结算
+battle.result.win,胜利 · 敌方基地已破,Victory · enemy base destroyed,战役 HUD 结算
+battle.result.lose,战败 · 我方基地被破,Defeat · our base destroyed,战役 HUD 结算
+battle.result.draw,同归于尽,Mutual destruction,战役 HUD 结算
+battle.result.timeout,平局 · 60 秒未全歼（不减血）,Draw · not wiped in 60s,战役 HUD 结算
+battle.no_handle,战役会话创建失败,Battle session failed,战役 HUD 错误
+battle.tips,规划：打建造牌→点格子落位；打攻/防训练牌→建筑格中心立刻出队 · 开战后：框选我方小队，右键敌方小队集火,Planning: pick a card then a tile · Battle: box-select and right-click to focus,战役 HUD 提示

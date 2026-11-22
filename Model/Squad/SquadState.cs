@@ -14,6 +14,47 @@ namespace WarIsland.Model
         Stop = 5,
     }
 
+    /// <summary>
+    /// 小队编制角色 —— 决定这支队在**哪一个时空**里活着。
+    ///
+    /// 口径（2026-11-22 攻防时空流转）：
+    ///   · 规划期打"进攻训练牌"产出的队伍只参加**进攻战**；"防守训练牌"产出的只参加**防守战**；
+    ///   · <see cref="Any"/> = 不受时空限制（旧横道口径 / 据点免费防守队 / 自检用）；
+    ///   · 角色是**规则**，不是表现：哪支队被推进、哪支队被隐藏，一律由 Model 判定，
+    ///     Screens 只读 <see cref="SquadView.Active"/>，不许自己算"现在该不该显示"。
+    /// </summary>
+    public static class SquadRoles
+    {
+        /// <summary>不限时空（两场都在）。</summary>
+        public const string Any = "";
+        /// <summary>进攻小队：只参加进攻战。</summary>
+        public const string Attack = "attack";
+        /// <summary>防守小队：只参加防守战。</summary>
+        public const string Defend = "defend";
+
+        public static bool IsValid(string role)
+        {
+            return role == Any || role == Attack || role == Defend;
+        }
+
+        /// <summary>角色是否在当前时空里激活；phase 为空 = 不限时空的场次。</summary>
+        public static bool ActiveIn(string role, string phase)
+        {
+            if (string.IsNullOrEmpty(role) || string.IsNullOrEmpty(phase)) return true;
+            return role == phase;
+        }
+
+        public static string DisplayName(string role)
+        {
+            switch (role)
+            {
+                case Attack: return "待命进攻";
+                case Defend: return "待命防守";
+                default: return "待命";
+            }
+        }
+    }
+
     public static class SquadOrders
     {
         public const string None = "none";
@@ -90,6 +131,10 @@ namespace WarIsland.Model
         public double DamageDealt;
         public int SpawnTile;
         public string SourceBuilding = "";
+        /// <summary>attack / defend / ""（不限时空）。</summary>
+        public string Role = SquadRoles.Any;
+        /// <summary>当前时空里是否激活（false = 已生成但被冻结，Screens 不画）。</summary>
+        public bool Active = true;
         public SquadMemberView[] Members = Array.Empty<SquadMemberView>();
     }
 

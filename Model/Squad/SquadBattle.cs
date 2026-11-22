@@ -68,6 +68,10 @@ namespace WarIsland.Model
 
         public int SpawnTile;
         public string SourceBuilding = "";
+        /// <summary>attack / defend / ""（不限时空）。</summary>
+        public string Role = SquadRoles.Any;
+        /// <summary>轮末清场：被抹掉的小队不再参与任何结算，也不再出现在快照里。</summary>
+        public bool Purged;
         /// <summary>本 tick 是否"想动"（卡住检测只看它，交战中原地对砍不算卡住）。</summary>
         public bool WantsMove;
 
@@ -203,6 +207,13 @@ namespace WarIsland.Model
             }
         }
 
+        /// <summary>
+        /// 当前时空角色（attack / defend / "" = 不限）。
+        /// 只有 <see cref="SquadRoles.ActiveIn"/> 为真的队伍会被推进、被索敌、被抽血；
+        /// 其余队伍"存在但冻结"，Screens 通过 <see cref="SquadView.Active"/> 决定是否画出来。
+        /// </summary>
+        public string ActiveRole { get; private set; } = SquadRoles.Any;
+
         public double PlayerBaseHp => Math.Max(_playerBaseHp, 0.0);
         public double EnemyBaseHp => Math.Max(_enemyBaseHp, 0.0);
         public double PlayerBaseHpMax => _playerBaseHpMax;
@@ -237,7 +248,7 @@ namespace WarIsland.Model
             for (int i = 0; i < _squads.Count; i++)
             {
                 BattleSquad s = _squads[i];
-                if (!s.Alive) continue;
+                if (!s.Alive || !IsActive(s)) continue;
                 var mods = s.Side == 0 ? _playerMods : _enemyMods;
                 s.MoveMult = mods.MoveMult > 0.0 ? mods.MoveMult : 1.0;
                 s.ArmorMult = mods.ArmorMult > 0.0 ? mods.ArmorMult : 1.0;
@@ -261,8 +272,19 @@ namespace WarIsland.Model
         // =================================================================
         public int AddSquad(int side, string unitId, int star, double worldX, double worldZ, string sourceBuilding = "", int spawnTile = 0)
         {
+            return AddSquadRole(side, unitId, star, worldX, worldZ, sourceBuilding, spawnTile, SquadRoles.Any);
+        }
+
+        /// <summary>
+        /// 带时空角色地生成一支小队（<paramref name="role"/> = attack / defend / ""）。
+        /// 角色决定它在哪一场里被推进；<see cref="SquadRoles.Any"/> 两场都在。
+        /// </summary>
+        public int AddSquadRole(int side, string unitId, int star, double worldX, double worldZ,
+            string sourceBuilding, int spawnTile, string role)
+        {
             UnitDef def = _units.Get(unitId);
             if (def == null || !def.Enabled) return -1;
+            if (!SquadRoles.IsValid(role)) role = SquadRoles.Any;
 
             var lane = _arena.WorldToLane(worldX, worldZ);
             double radius = Math.Max(def.SquadRadius, 60.0);
@@ -281,6 +303,7 @@ namespace WarIsland.Model
                 MaxRange = Math.Max(def.AttackRange, 10.0),
                 SpawnTile = spawnTile,
                 SourceBuilding = sourceBuilding ?? "",
+                Role = role,
             };
 
             double starHp = _planning != null ? _planning.StarHpMult(squad.Star) : 1.0;
@@ -335,6 +358,13 @@ namespace WarIsland.Model
         /// </summary>
         public int AddSquadAtTile(int side, string unitId, int star, int tileIndex, string sourceBuilding = "", int ring = 0)
         {
+            return AddSquadAtTileRole(side, unitId, star, tileIndex, sourceBuilding, ring, SquadRoles.Any);
+        }
+
+        /// <summary>在格子正中心生成整队，并指定时空角色（攻 / 防）。</summary>
+        public int AddSquadAtTileRole(int side, string unitId, int star, int tileIndex,
+            string sourceBuilding, int ring, string role)
+        {
             Vec2 world = _arena.TileSpawnWorld(tileIndex);
             if (ring > 0)
             {
@@ -343,13 +373,110 @@ namespace WarIsland.Model
                 double lateral = ((ring % 2) * 2 - 1) * 1.0 * ((ring + 1) / 2);
                 world = new Vec2((float)(world.X + dir * back), (float)(world.Y + lateral));
             }
-            return AddSquad(side, unitId, star, world.X, world.Y, sourceBuilding, tileIndex);
+            return AddSquadRole(side, unitId, star, world.X, world.Y, sourceBuilding, tileIndex, role);
+        }
+
+        /// <summary>切换当前时空：attack / defend / ""（切换后立刻生效，冻结的队伍停止一切结算）。</summary>
+        public void SetActiveRole(string role)
+        {
+            if (!SquadRoles.IsValid(role)) role = SquadRoles.Any;
+            ActiveRole = role;
+        }
+
+        private bool IsActive(BattleSquad s)
+        {
+            return s != null && !s.Purged && SquadRoles.ActiveIn(s.Role, ActiveRole);
+        }
+
+        /// <summary>
+        /// 轮末清场：把某一方（或某一方 + 某角色）的队伍整批抹掉。
+        /// 与"打死"不同 —— 不计阵亡数、不进复盘统计，等价于"这个时空结束了"。
+        /// </summary>
+        public int PurgeSide(int side, string role = null)
+        {
+            int n = 0;
+            for (int i = 0; i < _squads.Count; i++)
+            {
+                BattleSquad s = _squads[i];
+                if (!s.WasAlive || s.Purged) continue;
+                if (s.Side != side) continue;
+                if (!string.IsNullOrEmpty(role) && s.Role != role) continue;
+                s.Purged = true;
+                s.WasAlive = false;
+                s.AliveCount = 0;
+                s.TargetSquad = -1;
+                s.Order = SquadOrder.Stop;
+                s.Path.Clear();
+                for (int m = 0; m < s.Members.Count; m++) s.Members[m].Alive = false;
+                n += 1;
+            }
+            if (n > 0)
+            {
+                for (int i = 0; i < _shots.Count; i++)
+                {
+                    if (_shots[i].Side == side) _shots[i].Alive = false;
+                }
+            }
+            return n;
+        }
+
+        /// <summary>
+        /// 前压/后撤：把某一方某角色的队伍整体挪到指定世界点附近（据点已占领时的进攻出发点）。
+        /// 只改质心，不改槽位算法；返回搬动的队数。
+        /// </summary>
+        public int StageSide(int side, string role, double worldX, double worldZ)
+        {
+            int n = 0;
+            for (int i = 0; i < _squads.Count; i++)
+            {
+                BattleSquad s = _squads[i];
+                if (!s.Alive || s.Purged || s.Side != side) continue;
+                if (!string.IsNullOrEmpty(role) && s.Role != role) continue;
+                double ox = worldX + (n % 3 - 1) * (s.Radius * RtsUnits.R1 * 1.4);
+                double oz = worldZ + (n / 3) * (s.Radius * RtsUnits.R1 * 1.6);
+                var lane = _arena.WorldToLane(ox, oz);
+                lane = _route.ClampPoint(lane, s.Radius);
+                s.X = lane.X;
+                s.Z = lane.Y;
+                s.OrderX = s.X;
+                s.OrderZ = s.Z;
+                s.Path.Clear();
+                s.PathIndex = 0;
+                s.TargetSquad = -1;
+                s.StuckX = s.X;
+                s.StuckZ = s.Z;
+                s.StuckTimer = 0.0;
+                for (int m = 0; m < s.Members.Count; m++)
+                {
+                    var mem = s.Members[m];
+                    Vec2 p = SlotPoint(s, mem);
+                    mem.X = p.X;
+                    mem.Z = p.Y;
+                }
+                n += 1;
+            }
+            return n;
         }
 
         public void ScheduleWave(Wave wave, int side, int tileIndex)
         {
+            ScheduleWaveAt(wave, side, tileIndex, 0.0);
+        }
+
+        /// <summary>
+        /// 排一波敌人；<paramref name="offsetSeconds"/> 是"这个时空从第几秒开始"。
+        /// 防守战排在 60s 之后时，波次时间不必改数据，只需要给一个 60 的偏移。
+        /// </summary>
+        public void ScheduleWaveAt(Wave wave, int side, int tileIndex, double offsetSeconds)
+        {
             if (wave == null) return;
-            _waves.Add(new SquadWaveEntry { T = wave.T, Side = side, Tile = tileIndex, Wave = wave });
+            _waves.Add(new SquadWaveEntry
+            {
+                T = wave.T + Math.Max(offsetSeconds, 0.0),
+                Side = side,
+                Tile = tileIndex,
+                Wave = wave,
+            });
             _waves.Sort((a, b) =>
             {
                 int c = a.T.CompareTo(b.T);
@@ -483,7 +610,7 @@ namespace WarIsland.Model
             var ids = new List<int>();
             for (int i = 0; i < _squads.Count; i++)
             {
-                if (_squads[i].Side == side && _squads[i].Alive) ids.Add(_squads[i].Id);
+                if (_squads[i].Side == side && _squads[i].Alive && IsActive(_squads[i])) ids.Add(_squads[i].Id);
             }
             return OrderMany(ids, order, worldX, worldZ, -1);
         }
@@ -493,7 +620,7 @@ namespace WarIsland.Model
             var ids = new List<int>();
             for (int i = 0; i < _squads.Count; i++)
             {
-                if (_squads[i].Side == side && _squads[i].Alive) ids.Add(_squads[i].Id);
+                if (_squads[i].Side == side && _squads[i].Alive && IsActive(_squads[i])) ids.Add(_squads[i].Id);
             }
             return ids;
         }
@@ -506,9 +633,26 @@ namespace WarIsland.Model
             for (int i = 0; i < _squads.Count; i++)
             {
                 BattleSquad s = _squads[i];
-                if (s.Side != side || !s.Alive) continue;
+                if (s.Side != side || !s.Alive || !IsActive(s)) continue;
                 bool ranged = s.Def.AttackRange >= UnitDef.MeleeMaxRange;
                 if (ranged == wantRanged) ids.Add(s.Id);
+            }
+            return ids;
+        }
+
+        /// <summary>
+        /// 按**时空角色**取一方的队伍 id（进攻战只拿 attack 队）。
+        /// 预设偏好（Model 内部的自动推进）与自检都走这一条。
+        /// </summary>
+        public List<int> SquadIdsOfSideAndRole(int side, string role)
+        {
+            var ids = new List<int>();
+            for (int i = 0; i < _squads.Count; i++)
+            {
+                BattleSquad s = _squads[i];
+                if (s.Side != side || !s.Alive || s.Purged) continue;
+                if (!string.IsNullOrEmpty(role) && s.Role != role) continue;
+                ids.Add(s.Id);
             }
             return ids;
         }
@@ -641,7 +785,7 @@ namespace WarIsland.Model
             for (int i = 0; i < _squads.Count; i++)
             {
                 BattleSquad s = _squads[i];
-                if (!s.Alive) continue;
+                if (!s.Alive || !IsActive(s)) continue;
                 s.Age += dt;
 
                 if (s.TargetSquad >= 0)
@@ -729,7 +873,7 @@ namespace WarIsland.Model
             for (int i = 0; i < _squads.Count; i++)
             {
                 BattleSquad s = _squads[i];
-                if (!s.Alive) continue;
+                if (!s.Alive || !IsActive(s)) continue;
                 if (s.Order == SquadOrder.Hold || s.Order == SquadOrder.Stop || !s.WantsMove)
                 {
                     s.StuckTimer = 0.0;
@@ -790,7 +934,7 @@ namespace WarIsland.Model
             for (int i = 0; canPin && i < _squads.Count; i++)
             {
                 BattleSquad o = _squads[i];
-                if (!o.Alive || o.Side == s.Side) continue;
+                if (!o.Alive || !IsActive(o) || o.Side == s.Side) continue;
                 double ex = s.X - o.X;
                 double ez = s.Z - o.Z;
                 double ed = Math.Sqrt(ex * ex + ez * ez);
@@ -916,11 +1060,11 @@ namespace WarIsland.Model
                 for (int i = 0; i < _squads.Count; i++)
                 {
                     BattleSquad a = _squads[i];
-                    if (!a.Alive) continue;
+                    if (!a.Alive || !IsActive(a)) continue;
                     for (int j = i + 1; j < _squads.Count; j++)
                     {
                         BattleSquad b = _squads[j];
-                        if (!b.Alive) continue;
+                        if (!b.Alive || !IsActive(b)) continue;
                         double dx = a.X - b.X;
                         double dz = a.Z - b.Z;
                         double min = (a.ContactRadius + b.ContactRadius) * SeparationFactor;
@@ -946,7 +1090,7 @@ namespace WarIsland.Model
                 for (int i = 0; i < _squads.Count; i++)
                 {
                     BattleSquad s = _squads[i];
-                    if (!s.Alive) continue;
+                    if (!s.Alive || !IsActive(s)) continue;
                     // 分离是"挤"，不是"弹射"：每 tick 最多挪 0.9 个身位/秒的速度
                     double maxPush = Math.Max(s.Speed * Dt * 0.9, 6.0);
                     double len = Math.Sqrt(pushX[i] * pushX[i] + pushZ[i] * pushZ[i]);
@@ -969,7 +1113,7 @@ namespace WarIsland.Model
             for (int i = 0; i < _squads.Count; i++)
             {
                 BattleSquad s = _squads[i];
-                if (!s.Alive) continue;
+                if (!s.Alive || !IsActive(s)) continue;
                 double leash = s.Radius * 1.45;
                 for (int m = 0; m < s.Members.Count; m++)
                 {
@@ -1013,7 +1157,7 @@ namespace WarIsland.Model
             for (int i = 0; i < _squads.Count; i++)
             {
                 BattleSquad s = _squads[i];
-                if (!s.Alive) continue;
+                if (!s.Alive || !IsActive(s)) continue;
                 for (int m = 0; m < s.Members.Count; m++)
                 {
                     SquadMember mem = s.Members[m];
@@ -1111,7 +1255,7 @@ namespace WarIsland.Model
             for (int q = 0; q < _squads.Count; q++)
             {
                 BattleSquad t = _squads[q];
-                if (!t.Alive || t.Side == s.Side) continue;
+                if (!t.Alive || !IsActive(t) || t.Side == s.Side) continue;
                 for (int i = 0; i < t.Members.Count; i++)
                 {
                     SquadMember tm = t.Members[i];
@@ -1250,7 +1394,7 @@ namespace WarIsland.Model
             for (int i = 0; i < _squads.Count; i++)
             {
                 BattleSquad s = _squads[i];
-                if (!s.Alive) continue;
+                if (!s.Alive || !IsActive(s)) continue;
                 bool inZone = s.Side == 0
                     ? s.X >= _arena.EnemyZoneStart
                     : s.X <= _arena.PlayerZoneEnd;
@@ -1291,7 +1435,7 @@ namespace WarIsland.Model
             for (int i = 0; i < _squads.Count; i++)
             {
                 BattleSquad o = _squads[i];
-                if (!o.Alive || o.Side == s.Side) continue;
+                if (!o.Alive || !IsActive(o) || o.Side == s.Side) continue;
                 for (int m = 0; m < o.Members.Count; m++)
                 {
                     SquadMember mem = o.Members[m];
@@ -1309,7 +1453,7 @@ namespace WarIsland.Model
             for (int i = 0; i < _squads.Count; i++)
             {
                 BattleSquad s = _squads[i];
-                if (!s.Alive) continue;
+                if (!s.Alive || !IsActive(s)) continue;
                 s.SquadSeconds += dt;
                 s.MemberSeconds += s.AliveCount * dt;
                 var stat = StatOf(s.Side, s.Def.Id);
@@ -1398,7 +1542,7 @@ namespace WarIsland.Model
             for (int i = 0; i < _squads.Count; i++)
             {
                 BattleSquad s = _squads[i];
-                if (!s.WasAlive) continue;
+                if (!s.WasAlive || s.Purged) continue;
                 Vec2 w = _arena.LaneToWorld(s.X, s.Z);
                 var sv = new SquadView
                 {
@@ -1422,6 +1566,8 @@ namespace WarIsland.Model
                     DamageDealt = s.DamageDealt,
                     SpawnTile = s.SpawnTile,
                     SourceBuilding = s.SourceBuilding,
+                    Role = s.Role,
+                    Active = IsActive(s),
                 };
                 if (includeMembers)
                 {
@@ -1471,7 +1617,7 @@ namespace WarIsland.Model
             for (int i = 0; i < _squads.Count; i++)
             {
                 BattleSquad o = _squads[i];
-                if (!o.Alive || o.Side == s.Side) continue;
+                if (!o.Alive || !IsActive(o) || o.Side == s.Side) continue;
                 double dx = o.X - s.X;
                 double dz = o.Z - s.Z;
                 if (dx * dx + dz * dz <= r2) return true;
@@ -1486,7 +1632,7 @@ namespace WarIsland.Model
             for (int i = 0; i < _squads.Count; i++)
             {
                 BattleSquad o = _squads[i];
-                if (!o.Alive || o.Side == s.Side) continue;
+                if (!o.Alive || !IsActive(o) || o.Side == s.Side) continue;
                 double dx = o.X - s.X;
                 double dz = o.Z - s.Z;
                 double d2 = dx * dx + dz * dz;

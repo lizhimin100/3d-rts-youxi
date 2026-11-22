@@ -1,5 +1,14 @@
 {
-	"version": 1.0,
-	"note": "真小队模式专属旋钮（2026-11-21）。小队是战斗实体：一支 4~6 人的队在敌区抽血按『队』算，所以比横道单模型口径更高。zone_dps_per_squad 覆盖 levels.json 的 lane 值；不填则沿用关卡。单轮时长由关卡 round_seconds = 60 决定；60 秒未全歼 = 平局且不加伤。2026-11-21：90→60 秒后原 18 打不动 3200 血的基地（20 局全平），按 60 秒重新标定到 40。",
-	"zone_dps_per_squad": 48.0
+	"version": 2.0,
+	"note": "真小队模式专属旋钮。zone_dps_per_squad：一支小队停在敌区里每秒给敌方基地造成的伤害（覆盖 levels.json 的 lane 值）。outpost：中立据点，规划期花 CP 买下，进攻小队下一场从「中立区靠敌侧」前压出发。free_defend：防守战开场白送的一支据点防守小队（不占 CP / 人口）。单轮时长由关卡 round_seconds = 60 决定；60 秒未全歼 = 平局且不加伤。",
+	"zone_dps_per_squad": 48.0,
+	"outpost": {
+		"enabled": true,
+		"cp_cost": 5
+	},
+	"free_defend": {
+		"enabled": true,
+		"unit": "alliance_pikeman",
+		"star": 1
+	}
 }

@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://Screens/world/battle/战役战场.gd" id="1_battle"]
+
+[node name="战役" type="Node3D"]
+script = ExtResource("1_battle")

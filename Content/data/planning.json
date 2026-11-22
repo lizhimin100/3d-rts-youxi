@@ -1,10 +1,11 @@
 {
 	"version": 1.0,
-	"note": "规划阶段唯一数值源：CP / 人口 / 手牌 / 建筑 / 卡牌 / 升星。建造牌打出即 Exhaust（本局不再回到牌堆）；训练牌与策略牌循环。建筑 3 合 1 升满 3 星（同名同星，累计 3 座）。",
+	"note": "规划阶段唯一数值源：CP / 人口 / 手牌 / 建筑 / 卡牌 / 升星。建造牌打出即 Exhaust（本局不再回到牌堆）；训练牌带 role=attack/defend —— 只有对应时空的那一场会激活它产出的队伍；策略牌循环。建筑 3 合 1 升满 3 星（同名同星，累计 3 座）。",
 	"cp": {
-		"start": 16.0,
-		"per_planning": 16.0,
-		"cap": 24.0
+		"start": 20.0,
+		"per_planning": 20.0,
+		"cap": 30.0,
+		"note": "一次规划同时供两场用：进攻小队与防守小队都从这一个钱包里出。"
 	},
 	"pop": {
 		"base": 12.0,
@@ -12,16 +13,17 @@
 	},
 	"max_drain_reduction": 0.45,
 	"hand": {
-		"draw": 6.0,
-		"max": 8.0,
+		"draw": 7.0,
+		"max": 10.0,
 		"opening": [
 			"build_barracks",
 			"build_farm",
-			"train_footman",
-			"train_pikeman",
-			"train_archer",
-			"strategy_focus"
-		]
+			"train_footman_atk",
+			"train_pikeman_def",
+			"train_archer_atk",
+			"train_archer_def"
+		],
+		"note": "起手 6 张：2 张建造 + 4 张一攻一防的训练牌，保证第一次规划两场都能出人。"
 	},
 	"merge": {
 		"required": 3.0,
@@ -304,7 +306,8 @@
 			"building": "farm",
 			"cost_cp": 4.0,
 			"exhaust": true,
-			"count": 2.0
+			"count": 2.0,
+			"role": ""
 		},
 		{
 			"id": "build_barracks",
@@ -313,7 +316,8 @@
 			"building": "barracks",
 			"cost_cp": 6.0,
 			"exhaust": true,
-			"count": 2.0
+			"count": 2.0,
+			"role": ""
 		},
 		{
 			"id": "build_tower",
@@ -322,47 +326,8 @@
 			"building": "watchtower",
 			"cost_cp": 5.0,
 			"exhaust": true,
-			"count": 1.0
-		},
-		{
-			"id": "train_footman",
-			"display_name": "征召步兵",
-			"kind": "train",
-			"unit": "alliance_footman",
-			"tag": "barracks",
-			"cost_cp": 2.0,
-			"exhaust": false,
-			"count": 1.0
-		},
-		{
-			"id": "train_pikeman",
-			"display_name": "征召长枪",
-			"kind": "train",
-			"unit": "alliance_pikeman",
-			"tag": "barracks",
-			"cost_cp": 2.0,
-			"exhaust": false,
-			"count": 1.0
-		},
-		{
-			"id": "train_archer",
-			"display_name": "征召弓手",
-			"kind": "train",
-			"unit": "alliance_archer",
-			"tag": "barracks",
-			"cost_cp": 3.0,
-			"exhaust": false,
-			"count": 1.0
-		},
-		{
-			"id": "train_crossbow",
-			"display_name": "征召弩兵",
-			"kind": "train",
-			"unit": "alliance_crossbowman",
-			"tag": "barracks",
-			"cost_cp": 3.0,
-			"exhaust": false,
-			"count": 1.0
+			"count": 1.0,
+			"role": ""
 		},
 		{
 			"id": "strategy_forced_march",
@@ -390,24 +355,116 @@
 			"cost_cp": 2.0,
 			"exhaust": false,
 			"count": 1.0
+		},
+		{
+			"id": "train_footman_atk",
+			"display_name": "进攻·征召步兵",
+			"kind": "train",
+			"unit": "alliance_footman",
+			"tag": "barracks",
+			"role": "attack",
+			"cost_cp": 2.0,
+			"exhaust": false,
+			"count": 1.0
+		},
+		{
+			"id": "train_footman_def",
+			"display_name": "防守·征召步兵",
+			"kind": "train",
+			"unit": "alliance_footman",
+			"tag": "barracks",
+			"role": "defend",
+			"cost_cp": 2.0,
+			"exhaust": false,
+			"count": 1.0
+		},
+		{
+			"id": "train_pikeman_atk",
+			"display_name": "进攻·征召长枪",
+			"kind": "train",
+			"unit": "alliance_pikeman",
+			"tag": "barracks",
+			"role": "attack",
+			"cost_cp": 2.0,
+			"exhaust": false,
+			"count": 1.0
+		},
+		{
+			"id": "train_pikeman_def",
+			"display_name": "防守·征召长枪",
+			"kind": "train",
+			"unit": "alliance_pikeman",
+			"tag": "barracks",
+			"role": "defend",
+			"cost_cp": 2.0,
+			"exhaust": false,
+			"count": 1.0
+		},
+		{
+			"id": "train_archer_atk",
+			"display_name": "进攻·征召弓手",
+			"kind": "train",
+			"unit": "alliance_archer",
+			"tag": "barracks",
+			"role": "attack",
+			"cost_cp": 3.0,
+			"exhaust": false,
+			"count": 1.0
+		},
+		{
+			"id": "train_archer_def",
+			"display_name": "防守·征召弓手",
+			"kind": "train",
+			"unit": "alliance_archer",
+			"tag": "barracks",
+			"role": "defend",
+			"cost_cp": 3.0,
+			"exhaust": false,
+			"count": 1.0
+		},
+		{
+			"id": "train_crossbow_atk",
+			"display_name": "进攻·征召弩兵",
+			"kind": "train",
+			"unit": "alliance_crossbowman",
+			"tag": "barracks",
+			"role": "attack",
+			"cost_cp": 3.0,
+			"exhaust": false,
+			"count": 1.0
+		},
+		{
+			"id": "train_crossbow_def",
+			"display_name": "防守·征召弩兵",
+			"kind": "train",
+			"unit": "alliance_crossbowman",
+			"tag": "barracks",
+			"role": "defend",
+			"cost_cp": 3.0,
+			"exhaust": false,
+			"count": 1.0
 		}
 	],
 	"deck": {
-		"size": 12.0,
+		"size": 16,
 		"start": [
 			"build_farm",
 			"build_farm",
 			"build_barracks",
 			"build_barracks",
 			"build_tower",
-			"train_footman",
-			"train_pikeman",
-			"train_archer",
-			"train_crossbow",
+			"train_footman_atk",
+			"train_footman_def",
+			"train_pikeman_atk",
+			"train_pikeman_def",
+			"train_archer_atk",
+			"train_archer_def",
+			"train_crossbow_atk",
+			"train_crossbow_def",
 			"strategy_forced_march",
 			"strategy_bulwark",
 			"strategy_focus"
 		],
-		"note": "开局 12 张：5 建造 + 4 训练 + 3 策略；训练/策略循环，建造牌 Exhaust。"
+		"note": "16 张：5 建造（Exhaust）+ 8 训练（4 兵种 × 攻/防，循环）+ 3 策略（循环）。"
 	}
 }

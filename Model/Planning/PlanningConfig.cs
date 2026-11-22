@@ -33,6 +33,8 @@ namespace WarIsland.Model
         public string Unit = "";
         public string Tag = "";
         public string Effect = "";
+        /// <summary>训练牌的时空角色：attack / defend / ""（不限）。建造/策略牌忽略。</summary>
+        public string Role = "";
         public int CostCp;
         public bool Exhaust;
         public int Count = 1;
@@ -258,6 +260,7 @@ namespace WarIsland.Model
                         Unit = JVal.Str(cd, "unit", ""),
                         Tag = JVal.Str(cd, "tag", ""),
                         Effect = JVal.Str(cd, "effect", ""),
+                        Role = JVal.Str(cd, "role", ""),
                         CostCp = JVal.Int(cd, "cost_cp", 0),
                         Exhaust = JVal.Bool(cd, "exhaust", false),
                         Count = JVal.Int(cd, "count", 1),
@@ -414,6 +417,8 @@ namespace WarIsland.Model
                         }
                         if (c.Exhaust)
                             errors.Add($"训练牌 {c.Id} 必须循环（exhaust=false）");
+                        if (!SquadRoles.IsValid(c.Role))
+                            errors.Add($"训练牌 {c.Id} 的 role={c.Role} 非法（attack/defend/空）");
                         break;
 
                     case CardKind.Strategy:

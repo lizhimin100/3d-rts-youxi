@@ -26,8 +26,8 @@
 			"size": 20
 		},
 		"boot/app.gd": {
-			"sha256": "d8a9f16918d4f28e574a9ef696b16cd4fdb06884ea5322fd03d0e5b63205b66c",
-			"size": 4963
+			"sha256": "03dfd8f94eafb67f80c0b6401cc9a2eedd79af223145ad93673a8196a5c00773",
+			"size": 4166
 		},
 		"boot/app.gd.uid": {
 			"sha256": "dca15b27e7ce92b4f4e317b8cd6ef4ae792bf4964ffc1da7c120fc3ca705a5dc",

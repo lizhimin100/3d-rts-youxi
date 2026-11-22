@@ -1,123 +1,6 @@
 {
 	"$note": "run-game --shot 的画面表；新增画面只改这里。click 必须配 expect（点了要验状态，不能只截图）",
 	"screens": {
-		"main": {
-			"description": "主场景全景（非交互）",
-			"scene": "res://Screens/scenes/主场景.tscn",
-			"delay": 8
-		},
-		"planning": {
-			"description": "规划阶段全景（新界面：指挥官卡/CP/局外资源/人口+日夜/底部操作面板/规划结束）",
-			"scene": "res://Screens/scenes/主场景.tscn",
-			"delay": 8,
-			"select_unit": "peasant"
-		},
-		"planning_empty": {
-			"description": "规划阶段：什么都不选（操作面板收起，只剩头像/顶部条/人口/CP/规划结束）",
-			"scene": "res://Screens/scenes/主场景.tscn",
-			"delay": 8
-		},
-		"planning_deploy": {
-			"description": "规划阶段选中步兵 → 点「部署_进攻」→ 在地图上点一下 → 验证真的入计划（二段式交互）",
-			"scene": "res://Screens/scenes/主场景.tscn",
-			"delay": 8,
-			"select_unit": "footman",
-			"click": "部署_进攻",
-			"expect": "规划结束",
-			"map_click": [
-				0.62,
-				0.42
-			],
-			"expect_planned": 1
-		},
-		"planning_preview": {
-			"description": "规划阶段选中步兵 → 点「部署_防守」→ 鼠标移到地图上 → 截防守区色块预览",
-			"scene": "res://Screens/scenes/主场景.tscn",
-			"delay": 8,
-			"select_unit": "footman",
-			"click": "部署_防守",
-			"expect": "规划结束",
-			"hover_map": [
-				0.63,
-				0.4
-			]
-		},
-		"planning_cp": {
-			"description": "规划阶段空选中 → 点左中 CP 菱形 → 自动选中大本营并展开训练菜单",
-			"scene": "res://Screens/scenes/主场景.tscn",
-			"delay": 8,
-			"click": "CP点",
-			"expect": "训练_联盟农民"
-		},
-		"planning_switch": {
-			"description": "规划结束的一瞬间：阶段横幅（蚂蚁线 + 横带）正在播，验证换阶段有提示",
-			"scene": "res://Screens/scenes/主场景.tscn",
-			"delay": 8,
-			"click": "规划结束",
-			"expect": "资源条",
-			"wait_after": 0.22
-		},
-		"planning_end": {
-			"description": "规划阶段点「规划结束」→ 过场（镜头拉近 / 网格淡出）走完 → 进入执行阶段（顶部资源条恢复）",
-			"scene": "res://Screens/scenes/主场景.tscn",
-			"delay": 8,
-			"click": "规划结束",
-			"expect": "资源条",
-			"wait_after": 2.2
-		},
-		"hud": {
-			"description": "长局/执行底栏：选中农民 → 用真实输入点开「建造」→ 验证建造页出现（旧界面回归）",
-			"scene": "res://Screens/scenes/主场景.tscn",
-			"delay": 8,
-			"select_unit": "peasant",
-			"click": "指令_建造",
-			"expect": "指令_农场"
-		},
-		"planning_build": {
-			"description": "规划阶段选中农民 → 点「建造_农场」→ 落点提示出现（规划界面点得动）",
-			"scene": "res://Screens/scenes/主场景.tscn",
-			"delay": 8,
-			"select_unit": "peasant",
-			"click": "建造_农场",
-			"expect": "落点提示"
-		},
-		"planning_construction": {
-			"description": "规划阶段选中农民 → 点「建造_农场」→ 在地图上落点 → 生成工地（半透明虚线兵牌）",
-			"scene": "res://Screens/scenes/主场景.tscn",
-			"delay": 8,
-			"select_unit": "peasant",
-			"click": "建造_农场",
-			"expect": "落点提示",
-			"map_click": [
-				0.629,
-				0.58
-			],
-			"wait_after": 1.2
-		},
-		"planning_tip": {
-			"description": "规划阶段把鼠标悬停在「规划结束」上 → 气泡层弹出警告（规划阶段 paused 也要能弹）",
-			"scene": "res://Screens/scenes/主场景.tscn",
-			"delay": 8,
-			"hover_control": "规划结束",
-			"hover_wait": 1.2,
-			"expect": "气泡"
-		},
-		"planning_token": {
-			"description": "规划阶段点大本营兵牌 → 选中建筑 → 底部训练面板（任务1：点兵牌有反应）",
-			"scene": "res://Screens/scenes/主场景.tscn",
-			"delay": 8,
-			"token_click": "townhall",
-			"expect": "训练_联盟农民",
-			"wait_after": 0.45
-		},
-		"planning_unit": {
-			"description": "规划阶段点步兵兵牌 → 选中部队 → 底部部署面板（任务1：点兵牌有反应）",
-			"scene": "res://Screens/scenes/主场景.tscn",
-			"delay": 8,
-			"token_click": "footman",
-			"expect": "部署_进攻",
-			"wait_after": 0.45
-		},
 		"shell": {
 			"description": "3D 地图底壳编辑器：点「战术格子」工具 → 格子列表与新增按钮出现（含三块区域按钮与撤销）",
 			"scene": "res://Screens/editor/map_shell/map_shell_editor.tscn",
@@ -166,74 +49,6 @@
 			"expect": "page_assembly",
 			"wait_after": 0.25
 		},
-		"squad": {
-			"description": "真小队战场：训练牌在格子中心出整队 + 全选后右键点地板**不再移动**（只给集火提示，真输入）",
-			"scene": "res://Screens/scenes/小队战场.tscn",
-			"delay": 3.0,
-			"click": "TrainCard_train_footman",
-			"expect": "SpawnTip",
-			"squad_select_all": true,
-			"map_right_click": [
-				0.12,
-				0.85
-			],
-			"expect_scene_state": [
-				"status_text",
-				"只能集火"
-			],
-			"wait_after": 0.5
-		},
-		"squad_box": {
-			"description": "小队：真实左键拖框 → 整队选中（不是单兵）",
-			"scene": "res://Screens/scenes/小队战场.tscn",
-			"delay": 3.0,
-			"squad_spawn_enemy": true,
-			"map_drag": [
-				0.03,
-				0.2,
-				0.55,
-				0.82
-			],
-			"expect_scene_state": [
-				"selected_count",
-				"3"
-			]
-		},
-		"squad_focus": {
-			"description": "小队：全选 → 右键敌方小队 → 集火（整队）",
-			"scene": "res://Screens/scenes/小队战场.tscn",
-			"delay": 3.0,
-			"squad_spawn_enemy": true,
-			"squad_select_all": true,
-			"map_right_click_enemy": true,
-			"expect_scene_state": [
-				"last_order",
-				"集火"
-			]
-		},
-		"squad_exec": {
-			"description": "小队：点「开始执行」→ 敌方波次沿脊线压上，打 22 秒看交火与聚合血条",
-			"scene": "res://Screens/scenes/小队战场.tscn",
-			"delay": 3.0,
-			"squad_select_all": true,
-			"click": "StartButton",
-			"expect_scene_state": [
-				"phase_name",
-				"executing"
-			],
-			"wait_after": 22.0
-		},
-		"squad_speed": {
-			"description": "小队：按 2 切 2x 倍速（Model SquadBattle.TimeScale，只改推进速率）",
-			"scene": "res://Screens/scenes/小队战场.tscn",
-			"delay": 3.0,
-			"squad_select_all": true,
-			"press_key": "2",
-			"expect_scene_state": [
-				"_time_scale",
-				"2"
-			]
-		},
 		"shell_edge": {
 			"description": "底壳：低机位看地块侧壁与倒角（证明地块有立体厚度、不是纸片）",
 			"scene": "res://Screens/editor/map_shell/map_shell_editor.tscn",
@@ -257,13 +72,6 @@
 				"x": -37.0,
 				"z": 0.0
 			}
-		},
-		"theme_backdrop": {
-			"description": "主题陈列室背景：执行阶段收起 HUD → 干净 3D 实景（存 Content/ui/assets/showcase_backdrop.png）",
-			"scene": "res://Screens/scenes/主场景.tscn",
-			"delay": 8,
-			"hide_ui": true,
-			"wait_after": 0.3
 		},
 		"theme": {
 			"description": "UI 主题陈列室（温润木石风）：常驻 HUD / 选中浮窗 / 按钮四态与语义变体 / 两种进度条；真点重置、集火、防守、切换各验状态",
@@ -311,6 +119,202 @@
 			"delay": 0.8,
 			"hover_control": "BtnHover",
 			"hover_wait": 1.2
+		},
+		"battle_plan": {
+			"scene": "res://Screens/scenes/战役.tscn",
+			"delay": 7.0,
+			"$note": "规划期：镜头锁在玩家区，3 列 × 6 行棋盘必须清晰居中，顶部意图栏 + 底部手牌留白。"
+		},
+		"battle_build": {
+			"scene": "res://Screens/scenes/战役.tscn",
+			"delay": 7.0,
+			"clicks": [
+				{
+					"click": "BuildCard_build_barracks",
+					"expect_state": [
+						"armed_card",
+						"build_barracks"
+					]
+				}
+			],
+			"map_click": [
+				0.52,
+				0.49
+			],
+			"expect_scene_state": [
+				"built_count",
+				"5"
+			],
+			"wait_after": 1.2,
+			"$note": "真点建造牌 → 真点地图格子 → 建筑数 4→5。"
+		},
+		"battle_train": {
+			"scene": "res://Screens/scenes/战役.tscn",
+			"delay": 7.0,
+			"clicks": [
+				{
+					"click": "TrainCard_train_footman_atk",
+					"expect_state": [
+						"attack_squads",
+						"1"
+					]
+				}
+			],
+			"wait_after": 1.2,
+			"$note": "真点进攻训练牌 → 建筑格中心立刻出整队（脚下红徽记）。"
+		},
+		"battle_attack": {
+			"scene": "res://Screens/scenes/战役.tscn",
+			"delay": 7.0,
+			"clicks": [
+				{
+					"click": "TrainCard_train_footman_atk",
+					"expect_state": [
+						"attack_squads",
+						"1"
+					]
+				},
+				{
+					"click": "TrainCard_train_archer_atk",
+					"expect_state": [
+						"attack_squads",
+						"2"
+					]
+				},
+				{
+					"click": "TrainCard_train_pikeman_def",
+					"expect_state": [
+						"defend_squads",
+						"1"
+					]
+				},
+				{
+					"click": "StartButton",
+					"expect_state": [
+						"phase_name",
+						"attack"
+					],
+					"wait": 18.0
+				}
+			],
+			"expect_scene_state": [
+				"phase_name",
+				"attack"
+			],
+			"wait_after": 2.0,
+			"$note": "进攻战：镜头切到「中立区 + 敌方区」，只激活进攻小队。"
+		},
+		"battle_defend": {
+			"scene": "res://Screens/scenes/战役.tscn",
+			"delay": 7.0,
+			"clicks": [
+				{
+					"click": "TrainCard_train_footman_atk",
+					"expect_state": [
+						"attack_squads",
+						"1"
+					]
+				},
+				{
+					"click": "TrainCard_train_pikeman_def",
+					"expect_state": [
+						"defend_squads",
+						"1"
+					]
+				},
+				{
+					"click": "StartButton",
+					"expect_state": [
+						"phase_name",
+						"attack"
+					],
+					"wait": 21.0
+				},
+				{
+					"click": "SpeedButton",
+					"expect_state": [
+						"time_scale",
+						"2"
+					]
+				}
+			],
+			"expect_scene_state": [
+				"phase_name",
+				"defend"
+			],
+			"wait_after": 6.0,
+			"$note": "防守战：进攻战打完自动切「中立区 + 玩家区」，激活防守小队 + 据点免费防守队。必须用 --phase-seconds=20 拍（进攻 20s → 防守开场 1s → 2x 跑 12s，仍在本轮内）。"
+		},
+		"battle_focus": {
+			"scene": "res://Screens/scenes/战役.tscn",
+			"delay": 7.0,
+			"clicks": [
+				{
+					"click": "TrainCard_train_footman_atk",
+					"expect_state": [
+						"attack_squads",
+						"1"
+					]
+				},
+				{
+					"click": "StartButton",
+					"expect_state": [
+						"phase_name",
+						"attack"
+					],
+					"wait": 5.0
+				}
+			],
+			"squad_select_all": true,
+			"squad_spawn_enemy": true,
+			"map_right_click_enemy": true,
+			"expect_scene_state": [
+				"last_order",
+				"集火"
+			],
+			"wait_after": 1.0,
+			"$note": "开战后全选我方小队 → 右键敌方小队 → 只下发集火。"
+		},
+		"battle_models": {
+			"scene": "res://Screens/scenes/战役.tscn",
+			"delay": 8.0,
+			"clicks": [
+				{
+					"click": "TrainCard_train_footman_atk",
+					"expect_state": [
+						"attack_squads",
+						"1"
+					]
+				},
+				{
+					"click": "TrainCard_train_archer_atk",
+					"expect_state": [
+						"attack_squads",
+						"2"
+					]
+				},
+				{
+					"click": "StartButton",
+					"expect_state": [
+						"phase_name",
+						"attack"
+					],
+					"wait": 2.0
+				}
+			],
+			"expect_scene_state": [
+				"real_models",
+				"1"
+			],
+			"wait_after": 0.6,
+			"$note": "验收「不是纯色占位」：开战后我方小队前压到玩家区前缘的开阔地，近距拍真实 GLB 实例（步兵 5 + 弓手 4 = 9）。",
+			"shot_camera": {
+				"focus": [
+					-40.0,
+					0.0
+				],
+				"dist": 22
+			}
 		}
 	}
 }

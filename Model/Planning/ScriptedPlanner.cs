@@ -21,10 +21,20 @@ namespace WarIsland.Model
 
         public static void Plan(PlanningMatch m, bool defending)
         {
+            Plan(m, defending, defending ? SquadRoles.Defend : SquadRoles.Attack);
+        }
+
+        /// <summary>
+        /// 带时空角色的规划：本轮只需要"这一场"的兵。
+        /// 角色不符的训练牌会被打 0 分（仍然可打，只是排在最后），
+        /// 这样 CP 会优先落在本轮的队伍上，不会一半钱买了另一场。
+        /// </summary>
+        public static void Plan(PlanningMatch m, bool defending, string role)
+        {
             var blocked = new HashSet<string>(StringComparer.Ordinal);
             for (int guard = 0; guard < 48; guard++)
             {
-                var list = BuildCandidates(m, defending, blocked);
+                var list = BuildCandidates(m, defending, role, blocked);
                 if (list.Count == 0) return;
                 list.Sort((a, b) =>
                 {
@@ -47,7 +57,7 @@ namespace WarIsland.Model
             }
         }
 
-        private static List<Candidate> BuildCandidates(PlanningMatch m, bool defending, HashSet<string> blocked)
+        private static List<Candidate> BuildCandidates(PlanningMatch m, bool defending, string role, HashSet<string> blocked)
         {
             var list = new List<Candidate>();
             var cfg = m.Cfg;
@@ -114,6 +124,10 @@ namespace WarIsland.Model
                     case CardKind.Train:
                     {
                         if (!m.CanPlayTrain(id)) break;
+                        // 时空角色硬过滤：单场推演里"另一场"的兵是纯负担（既占人口又不参战）。
+                        // 演练双场时（SquadSession 一次规划供两场）不传 role，这里就不生效。
+                        if (!string.IsNullOrEmpty(role) && !string.IsNullOrEmpty(card.Role) && card.Role != role)
+                            break;
                         var unit = m.Units.Get(card.Unit);
                         if (unit == null) break;
                         int owned = 0;

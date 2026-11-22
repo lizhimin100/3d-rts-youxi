@@ -1,9 +1,0 @@
-[gd_resource type="Resource" format=3 uid="uid://brhskh8m6qq8s"]
-
-[ext_resource type="Script" uid="uid://c7l1ljjfq8ojh" path="res://Game/config/野怪营地定义.gd" id="1"]
-
-[resource]
-script = ExtResource("1")
-id = &"camp_den"
-first_spawn_min = 2.0
-spawn_interval_min = 2.0

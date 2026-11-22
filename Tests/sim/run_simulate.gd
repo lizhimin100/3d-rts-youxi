@@ -4,10 +4,9 @@ extends SceneTree
 ## 默认：**真小队攻防**（100 局）——
 ##   规划（ScriptedPlanner）→ 训练牌按建筑格子中心出整队 → 质心沿脊线 A* 推进 →
 ##   成员弹性槽位 → 6 步伤害结算 → 双 90 秒 → 胜率 / DPS / 寻路 / 阵型报告。
-## 兼容：`--lane` 走旧的横道模型（LevelSimulate），只用于对照历史基线。
 ##
 ## 用法：godot --headless --path . --script Tests/sim/run_simulate.gd -- \
-##          [--games=100] [--seed=1] [--level=<id>] [--out=<path>] [--lane]
+##          [--games=100] [--seed=1] [--level=<id>] [--out=<path>]
 ## 数据：Content/data/{units,combat,planning,levels,map_shells,player_layouts,enemy_encounters,squad}.json
 ## 输出：人读表格 + 3 个定性复盘样本 + 一行机器可读 `SIM {json}`；有错退出码 1。
 
@@ -27,7 +26,6 @@ const DEFAULT_SQUAD_LEVEL := "level_asm_even_four__gnoll_press"
 
 var _level_id := ""
 var _out_path := ""
-var _use_lane := false
 
 
 func _initialize() -> void:
@@ -40,8 +38,6 @@ func _run() -> void:
 			_level_id = a0.substr(8)
 		if a0.begins_with("--out="):
 			_out_path = a0.substr(6)
-		if a0 == "--lane":
-			_use_lane = true
 
 	var games := 100
 	var seed_base := 1
@@ -67,10 +63,6 @@ func _run() -> void:
 	var levels := JsonFile.read_dict(LEVELS_JSON, {})
 	if units.is_empty() or combat.is_empty() or planning.is_empty() or levels.is_empty():
 		_fail("Content/data 四张表读不全")
-		return
-
-	if _use_lane:
-		_run_lane(mdl, units, combat, planning, levels, games, seed_base)
 		return
 
 	if _level_id.is_empty():
@@ -220,57 +212,6 @@ func _squad_summary(res: Dictionary, games: int, seed_base: int) -> Dictionary:
 		"review_counts": res.get("review_counts", {}),
 		"samples": samples_brief,
 	}
-
-
-# ===========================================================================
-# 旧横道口径（--lane）
-# ===========================================================================
-func _run_lane(mdl: RefCounted, units: Dictionary, combat: Dictionary, planning: Dictionary,
-		levels: Dictionary, games: int, seed_base: int) -> void:
-	if _level_id.is_empty():
-		_level_id = "level_1"
-	print("========== %s 推演（横道旧口径 · 双 90 秒） ==========" % _level_id)
-	var res: Dictionary = mdl.call("LevelSimulate", units, combat, planning, levels, _level_id, games, seed_base)
-	if not bool(res.get("ok", false)):
-		for e in res.get("errors", []):
-			print("    - " + str(e))
-		_fail("场景配置不合法")
-		return
-	print("关卡：%s ｜ %d 局 ｜ 种子 %d..%d" % [
-		String(res.get("level_name", _level_id)), int(res.get("games", 0)), seed_base, seed_base + games - 1])
-	print("%-4s %-6s %-5s %-13s %-10s %-9s %-9s %-7s %-5s %-5s %s" % [
-		"idx", "seed", "res", "player_hp", "enemy_hp", "squads", "loss/kill", "base", "zone", "cp", "reason"])
-	for row in res.get("rows", []):
-		var r: Dictionary = row
-		print("%-4d %-6d %-5s %-13s %-10s %-9s %-9s %-7d %-5d %-4d %s" % [
-			int(r.get("index", 0)), int(r.get("seed", 0)), _outcome_en(String(r.get("outcome", ""))),
-			"%d (%d%%)" % [int(r.get("player_hp", 0)), int(r.get("player_hp_pct", 0))],
-			str(int(r.get("enemy_hp", 0))),
-			"%d/%d" % [int(r.get("player_squads", 0)), int(r.get("enemy_squads", 0))],
-			"%d/%d" % [int(r.get("player_losses", 0)), int(r.get("enemy_losses", 0))],
-			int(r.get("base_damage", 0)), int(r.get("zone_max", 0)), int(r.get("cp_left", 0)),
-			String(r.get("top_reason", "")),
-		])
-	print("汇总：胜 %d ｜ 负 %d ｜ 平 %d ｜ 胜率 %.1f%% ｜ 平均 %.1fs" % [
-		int(res.get("wins", 0)), int(res.get("losses", 0)), int(res.get("draws", 0)),
-		float(res.get("win_rate", 0.0)) * 100.0, float(res.get("avg_seconds", 0.0))])
-	var summary := {
-		"ok": true,
-		"mode": "lane",
-		"level": String(res.get("level", _level_id)),
-		"level_name": String(res.get("level_name", "")),
-		"games": int(res.get("games", 0)),
-		"seed_base": seed_base,
-		"wins": int(res.get("wins", 0)),
-		"losses": int(res.get("losses", 0)),
-		"draws": int(res.get("draws", 0)),
-		"win_rate": float(res.get("win_rate", 0.0)),
-		"avg_seconds": float(res.get("avg_seconds", 0.0)),
-		"review_counts": res.get("review_counts", {}),
-	}
-	print("SIM " + JSON.stringify(summary))
-	_write_out(summary)
-	quit(0)
 
 
 ## 编辑器靠这个文件拿胜率：与 stdout 的 SIM 行同一份 summary。

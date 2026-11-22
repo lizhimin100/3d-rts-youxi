@@ -41,6 +41,8 @@ func _draw() -> void:
 	var vp := get_viewport_rect().size
 	for s in _view.get("squads", []):
 		var sq: Dictionary = s
+		if not bool(sq.get("active", true)):
+			continue
 		var hp := float(sq.get("hp", 0.0))
 		var max_hp := float(sq.get("max_hp", 1.0))
 		if hp <= 0.0 or max_hp <= 0.0:

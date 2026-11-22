@@ -80,19 +80,19 @@ const BLOCK_BEVEL_SEG := 2
 ## 立体感由地块本体的侧壁负责，格子只是"草坪砖"。
 const TILE_H := 0.10
 
-# ── 地形：**和游戏里同一份材质与贴图**（唯一真源 RtsTerrain / 地形.gdshader）──
-## 路径全部转发 RtsTerrain / ArtKit 的常量 —— 编辑器不写第二份资源路径。
-const TERRAIN_MAT := RtsTerrain.MATERIAL_PATH
+# ── 地形：**和游戏里同一份材质与贴图**（唯一真源 RtsTerrainAssets / 地形.gdshader）──
+## 路径全部转发 RtsTerrainAssets / ArtKit 的常量 —— 编辑器不写第二份资源路径。
+const TERRAIN_MAT := RtsTerrainAssets.MATERIAL_PATH
 const BATTLE_ENV := ArtKit.PATH_ENV
-const ATLAS_PATH := RtsTerrain.ATLAS_PATH
-const ATLAS_N_PATH := RtsTerrain.ATLAS_N_PATH
-const TEX_GRASS_PATH := RtsTerrain.TEX_GRASS_PATH
-const TEX_DIRT_PATH := RtsTerrain.TEX_DIRT_PATH
-const TEX_CRACKED_PATH := RtsTerrain.TEX_CRACKED_PATH
-const ROCK_DETAIL_PATH := RtsTerrain.ROCK_DETAIL_PATH
-## 一格多少米（**必须与底材平铺距离一致**；真值在 RtsTerrain.TILE_M）
-const TILE_M := RtsTerrain.TILE_M
-## 底壳没有生态字段，按温带取色（与 MapDef.biome_tint 的默认档一致）。
+const ATLAS_PATH := RtsTerrainAssets.ATLAS_PATH
+const ATLAS_N_PATH := RtsTerrainAssets.ATLAS_N_PATH
+const TEX_GRASS_PATH := RtsTerrainAssets.TEX_GRASS_PATH
+const TEX_DIRT_PATH := RtsTerrainAssets.TEX_DIRT_PATH
+const TEX_CRACKED_PATH := RtsTerrainAssets.TEX_CRACKED_PATH
+const ROCK_DETAIL_PATH := RtsTerrainAssets.ROCK_DETAIL_PATH
+## 一格多少米（**必须与底材平铺距离一致**；真值在 RtsTerrainAssets.TILE_M）
+const TILE_M := RtsTerrainAssets.TILE_M
+## 底壳没有生态字段，按温带取色（与 RtsTerrainAssets.biome_tint 的默认档一致）。
 const SHELL_BIOME := "temperate"
 
 # ── 可换皮的棋盘材质（**独立 .tres**，制作人换主题只改 Content/data/shell_board.json）──
@@ -424,7 +424,7 @@ func _build_terrain() -> void:
 			var dz := (hu - hd) / (cell * 2.0)
 			normals[i] = Vector3(-dx, 1.0, -dz).normalized()
 			# 顶点色只做「乘法染色 + 干度」，配色交给地形材质的草/泥贴图。
-			# 口径与 RtsTerrain._tint_at 一致：编辑器看到的就是局内看到的那块地。
+			# 口径：编辑器看到的就是局内看到的那块地的顶点色明暗。
 			colors[i] = _tint_at(verts[i], normals[i], camps)
 			uvs[i] = Vector2(float(col) / float(maxi(cols - 1, 1)), float(row) / float(maxi(rows - 1, 1)))
 	var indices := PackedInt32Array()
@@ -436,7 +436,7 @@ func _build_terrain() -> void:
 			var b := a + 1
 			var c := a + cols
 			var d := c + 1
-			# 绕序按 Godot 顺时针正面：a→b→c / b→d→c（和 RtsTerrain._tri 的判定同一套）
+			# 绕序按 Godot 顺时针正面：a→b→c / b→d→c
 			indices[k] = a
 			indices[k + 1] = b
 			indices[k + 2] = c
@@ -632,7 +632,7 @@ func _terrain_material() -> Material:
 			base = load(TERRAIN_MAT) as Material
 		if base is ShaderMaterial:
 			# **必须 duplicate**：地形要按底壳写 mat_map / map_half，
-			# 直接改共享资源会把参数带到游戏里那一份（和 RtsTerrain 同一个理由）。
+			# 直接改共享资源会把参数带到游戏里那一份（同一个理由：材质是共享的）。
 			_terrain_mat = (base as ShaderMaterial).duplicate(true) as ShaderMaterial
 			_bind_terrain_textures()
 	if _terrain_mat != null:
@@ -648,7 +648,7 @@ func _terrain_material() -> Material:
 	return std
 
 
-## 贴图/图集/岩石细节：路径与 RtsTerrain._apply_material_landmarks 完全一致。
+## 贴图/图集/岩石细节：路径全部来自 RtsTerrainAssets。
 func _bind_terrain_textures() -> void:
 	if _terrain_mat == null:
 		return
@@ -656,7 +656,7 @@ func _bind_terrain_textures() -> void:
 	_terrain_mat.set_shader_parameter("tile_m", TILE_M)
 	_terrain_mat.set_shader_parameter("map_half", sz.x * 0.5)
 	_terrain_mat.set_shader_parameter("mat_cells", _mat_lattice_n())
-	var bt: Array = MapDef.biome_tint(String(shell.get("biome", SHELL_BIOME)))
+	var bt: Array = RtsTerrainAssets.biome_tint(String(shell.get("biome", SHELL_BIOME)))
 	_terrain_mat.set_shader_parameter("biome_color", bt[0])
 	_terrain_mat.set_shader_parameter("biome_mix", bt[1])
 	var slots := {
@@ -722,7 +722,7 @@ func _surface_index_at(wx: float, wz: float) -> int:
 	return _surface_at(row * cols + col)
 
 
-## 顶点色 = RtsTerrain._tint_at 的同一套口径：
+## 顶点色口径：
 ## rgb = 1.0 附近的乘法染色（大尺度冷暖 ±3.5% / 营地压暗 / 陡面偏灰），a = 干度。
 func _tint_at(pos: Vector3, normal: Vector3, camps: Array[Vector2]) -> Color:
 	var rng_h := maxf(_hmax - _hmin, 0.001)

@@ -81,7 +81,8 @@ namespace WarIsland.Model
             PlanningConfig planning,
             SquadArena arena,
             int games,
-            int seedBase)
+            int seedBase,
+            IDictionary<string, object> tuning = null)
         {
             var summary = new SquadSimSummary
             {
@@ -111,7 +112,7 @@ namespace WarIsland.Model
                 SquadMatchResult r;
                 try
                 {
-                    r = SquadMatch.Run(units, combat, planning, arena, seed);
+                    r = SquadMatch.Run(units, combat, planning, arena, seed, tuning);
                 }
                 catch (Exception e)
                 {

@@ -29,259 +29,10 @@ namespace WarIsland.Bridge
         public double ToUnits(double meters) => RtsUnits.ToUnits(meters);
 
         // =================================================================
-        // 伤害
+        // 数据 / 公式探针（--check 用；调用真实内核，不在检查里重推公式）
         // =================================================================
-        public Godot.Collections.Dictionary DamageCompute(
-            double baseDamage, double spread, int attackType,
-            double targetArmor, int targetArmorType,
-            Godot.Collections.Dictionary rules,
-            double rollSpread, double rollCrit, double attackMult)
-        {
-            var r = Damage.Compute(baseDamage, spread, attackType, targetArmor, targetArmorType,
-                ParseRules(rules), rollSpread, rollCrit, attackMult);
-            return new Godot.Collections.Dictionary
-            {
-                { "ok", r.Ok },
-                { "damage", r.Damage },
-                { "mitigation", r.Mitigation },
-                { "multiplier", r.Multiplier },
-                { "is_crit", r.IsCrit },
-            };
-        }
-
-        public double DamageArmorMitigation(double armor, double reduction, double cap) =>
-            Damage.ArmorMitigation(armor, reduction, cap);
-
-        public double DamageCounterMultiplier(Godot.Collections.Array table, int attackType, int armorType, int stride) =>
-            Damage.CounterMultiplier(ToDoubleArray(table), attackType, armorType, stride);
-
-        // =================================================================
-        // 经济 / 人口 / CP
-        // =================================================================
-        public bool EconomyCanAfford(int gold, int wood, int costGold, int costWood) =>
-            Economy.CanAfford(gold, wood, costGold, costWood);
-
-        /// <summary>扣费并写回 state（Dictionary 是引用类型，改了就生效）；不够时一分不扣。</summary>
-        public bool EconomyPay(Godot.Collections.Dictionary state, int costGold, int costWood)
-        {
-            int gold = state.TryGetValue("gold", out Variant g) ? g.AsInt32() : 0;
-            int wood = state.TryGetValue("wood", out Variant w) ? w.AsInt32() : 0;
-            bool ok = Economy.Pay(ref gold, ref wood, costGold, costWood);
-            if (ok)
-            {
-                state["gold"] = gold;
-                state["wood"] = wood;
-            }
-            return ok;
-        }
-
-        public Godot.Collections.Dictionary EconomyAdd(Godot.Collections.Dictionary state, int gold, int wood)
-        {
-            int g = state.TryGetValue("gold", out Variant vg) ? vg.AsInt32() : 0;
-            int w = state.TryGetValue("wood", out Variant vw) ? vw.AsInt32() : 0;
-            Economy.Add(ref g, ref w, gold, wood);
-            state["gold"] = g;
-            state["wood"] = w;
-            return state;
-        }
-
-        public bool EconomyHasFood(int used, int reserved, int amount, int cap) =>
-            Economy.HasFood(used, reserved, amount, cap);
-
-        public bool EconomyCanSpendCp(int cp, int costCp) => Economy.CanSpendCp(cp, costCp);
-
-        public double EconomyIncomePerSecond(int workers, int carry, double tripSeconds) =>
-            Economy.IncomePerSecond(workers, carry, tripSeconds);
-
-        public int EconomyWorkersForIncome(double incomePerSec, int carry, double tripSeconds) =>
-            Economy.WorkersForIncome(incomePerSec, carry, tripSeconds);
-
-        // =================================================================
-        // 可用性（原因码 + 参数）
-        // =================================================================
-        public Godot.Collections.Dictionary AvailabilityTrain(Godot.Collections.Dictionary ctx)
-        {
-            var c = new TrainCheck
-            {
-                PhaseOk = Bool(ctx, "phase_ok", true),
-                Constructed = Bool(ctx, "constructed", true),
-                Trains = ToStringArray(ctx, "trains"),
-                Id = Str(ctx, "id", ""),
-                Upgrading = Bool(ctx, "upgrading", false),
-                RequireTier = Int(ctx, "require_tier", 0),
-                CurrentTier = Int(ctx, "current_tier", 1),
-                QueueMax = Int(ctx, "queue_max", Availability.TrainQueueMax),
-                QueueSize = Int(ctx, "queue_size", 0),
-                FoodCost = Int(ctx, "food_cost", 0),
-                FoodFree = Int(ctx, "food_free", 0),
-                Short = Bool(ctx, "short", false),
-                Cp = Int(ctx, "cp", 0),
-                CpCost = Int(ctx, "cp_cost", 0),
-                Gold = Int(ctx, "gold", 0),
-                GoldCost = Int(ctx, "gold_cost", 0),
-                Wood = Int(ctx, "wood", 0),
-                WoodCost = Int(ctx, "wood_cost", 0),
-            };
-            return AvailToDict(Availability.CheckTrain(c));
-        }
-
-        public Godot.Collections.Dictionary AvailabilityTrainPermission(
-            Godot.Collections.Array trains, string id, int requiredTier, int currentTier)
-        {
-            var arr = new string[trains.Count];
-            for (int i = 0; i < trains.Count; i++) arr[i] = trains[i].ToString();
-            return AvailToDict(Availability.CheckTrainPermission(arr, id, requiredTier, currentTier));
-        }
-
-        public Godot.Collections.Dictionary AvailabilityResearch(Godot.Collections.Dictionary ctx)
-        {
-            var c = new ResearchCheck
-            {
-                Constructed = Bool(ctx, "constructed", true),
-                Researchable = Bool(ctx, "researchable", false),
-                Upgrading = Bool(ctx, "upgrading", false),
-                Busy = Bool(ctx, "busy", false),
-                Level = Int(ctx, "level", 0),
-                MaxLevel = Int(ctx, "max_level", 1),
-                Gold = Int(ctx, "gold", 0),
-                GoldCost = Int(ctx, "gold_cost", 0),
-                Wood = Int(ctx, "wood", 0),
-                WoodCost = Int(ctx, "wood_cost", 0),
-            };
-            return AvailToDict(Availability.CheckResearch(c));
-        }
-
-        public Godot.Collections.Dictionary AvailabilityRefit(Godot.Collections.Dictionary ctx)
-        {
-            var c = new RefitCheck
-            {
-                Constructed = Bool(ctx, "constructed", true),
-                Busy = Bool(ctx, "busy", false),
-                Gold = Int(ctx, "gold", 0),
-                GoldCost = Int(ctx, "gold_cost", 0),
-                Wood = Int(ctx, "wood", 0),
-                WoodCost = Int(ctx, "wood_cost", 0),
-            };
-            return AvailToDict(Availability.CheckRefit(c));
-        }
-
-        public Godot.Collections.Dictionary AvailabilityBuild(Godot.Collections.Dictionary ctx)
-        {
-            var c = new BuildCheck
-            {
-                HasWorker = Bool(ctx, "has_worker", true),
-                PhaseOk = Bool(ctx, "phase_ok", true),
-                RequireTier = Int(ctx, "require_tier", 0),
-                CurrentTier = Int(ctx, "current_tier", 1),
-                Short = Bool(ctx, "short", false),
-                PopCost = Int(ctx, "pop_cost", 0),
-                FoodFree = Int(ctx, "food_free", 0),
-                Cp = Int(ctx, "cp", 0),
-                CpCost = Int(ctx, "cp_cost", 0),
-                Gold = Int(ctx, "gold", 0),
-                GoldCost = Int(ctx, "gold_cost", 0),
-                Wood = Int(ctx, "wood", 0),
-                WoodCost = Int(ctx, "wood_cost", 0),
-            };
-            return AvailToDict(Availability.CheckBuild(c));
-        }
-
-        // =================================================================
-        // 成长（主城等级 / 铁匠铺 / 升星）
-        // =================================================================
-        public double ProgressionFlatBonus(int level, double perLevel) =>
-            Progression.FlatBonus(level, perLevel);
-
-        public bool ProgressionCanUpgrade(int level, int maxLevel, int gold, int wood, int costGold, int costWood) =>
-            Progression.CanUpgrade(level, maxLevel, gold, wood, costGold, costWood);
-
-        public int ProgressionApplyLevel(int level, int maxLevel) => Progression.ApplyLevel(level, maxLevel);
-
-        public bool ProgressionTierAllows(int requireTier, int currentTier) =>
-            Progression.TierAllows(requireTier, currentTier);
-
-        public int StarCap() => Progression.StarCap;
-
-        public double StarKillExp() => Progression.KillExp;
-
-        public double StarExpPerStar(int goldCost, int woodCost) => Progression.ExpPerStar(goldCost, woodCost);
-
-        public int StarStarsOf(double expValue, double need) => Progression.StarsOf(expValue, need);
-
-        public string StarName(int star) => Progression.StarName(star);
-
-        public double StarOffenseMult(int star) => Progression.OffenseMult(star);
-
-        public double StarToughMult(int star) => Progression.ToughMult(star);
-
-        // =================================================================
-        // 推演（--simulate）
-        // =================================================================
-        /// <summary>只做校验，返回错误字符串数组（空数组 = 合法）。</summary>
-        public Godot.Collections.Array SimValidate(Godot.Collections.Dictionary config)
-        {
-            var errors = Skirmish.Validate(ToPlainDict(config));
-            var arr = new Godot.Collections.Array();
-            foreach (var e in errors) arr.Add(e);
-            return arr;
-        }
-
-        public Godot.Collections.Dictionary Simulate(Godot.Collections.Dictionary config)
-        {
-            var result = Skirmish.Run(ToPlainDict(config));
-            var outDict = new Godot.Collections.Dictionary
-            {
-                { "ok", result.Ok },
-                { "seed", result.Seed },
-                { "seconds", result.Seconds },
-                { "winner", result.Winner },
-            };
-            if (!result.Ok)
-            {
-                var errs = new Godot.Collections.Array();
-                foreach (var e in result.Errors) errs.Add(e);
-                outDict["errors"] = errs;
-                return outDict;
-            }
-            var sides = new Godot.Collections.Array();
-            foreach (var s in result.Sides)
-            {
-                sides.Add(new Godot.Collections.Dictionary
-                {
-                    { "name", s.Name },
-                    { "alive", s.Alive },
-                    { "alive_by_type", ToGodotDict(s.AliveByType) },
-                    { "hp_left", s.HpLeft },
-                    { "kills", s.Kills },
-                    { "losses", s.Losses },
-                    { "units_built", s.UnitsBuilt },
-                    { "built_by_type", ToGodotDict(s.BuiltByType) },
-                    { "gold_mined", s.GoldMined },
-                    { "gold_left", s.GoldLeft },
-                    { "damage_dealt", s.DamageDealt },
-                });
-            }
-            outDict["sides"] = sides;
-            var timeline = new Godot.Collections.Array();
-            foreach (var t in result.Timeline)
-            {
-                timeline.Add(new Godot.Collections.Dictionary
-                {
-                    { "t", t.T },
-                    { "units", new Godot.Collections.Array { t.Units[0], t.Units[1] } },
-                    { "gold", new Godot.Collections.Array { t.Gold[0], t.Gold[1] } },
-                    { "hp", new Godot.Collections.Array { t.Hp[0], t.Hp[1] } },
-                });
-            }
-            outDict["timeline"] = timeline;
-            return outDict;
-        }
-
-        // =================================================================
-        // 2026-11-21 新内核：6 步公式 / units.json / 规划 / 双 60 秒
-        // =================================================================
-        /// <summary>一次把四张数据表全验一遍（--check 的唯一入口）。</summary>
-        public Godot.Collections.Dictionary ContentValidate(
+        /// <summary>四张数据表的校验（units / combat / planning / levels）。</summary>
+        public Godot.Collections.Dictionary DataValidate(
             Godot.Collections.Dictionary unitsDict,
             Godot.Collections.Dictionary combatDict,
             Godot.Collections.Dictionary planningDict,
@@ -289,353 +40,89 @@ namespace WarIsland.Bridge
         {
             var notes = new List<string>();
             var rules = CombatRules.FromDict(ToPlainDict(combatDict));
-            var combatErrors = rules.Validate();
-
-            notes.Clear();
             var units = UnitCatalog.FromDict(ToPlainDict(unitsDict), rules, notes);
-            var unitErrors = units.Validate();
-            unitErrors.InsertRange(0, notes);
-
-            notes.Clear();
             var planning = PlanningConfig.FromDict(ToPlainDict(planningDict), units, notes);
-            var planningErrors = planning.Validate(units);
-            planningErrors.InsertRange(0, notes);
-
-            notes.Clear();
             var levels = LevelSet.FromDict(ToPlainDict(levelsDict), units, notes);
-            var levelErrors = levels.Validate(units);
-            levelErrors.InsertRange(0, notes);
-
-            var outDict = new Godot.Collections.Dictionary
-            {
-                { "r1", rules.R1 },
-                { "armor_scale", rules.ArmorScale },
-                { "negative_armor_cap", rules.NegativeArmorCap },
-                { "crit_multiplier", rules.CritMultiplier },
-                { "attack_types", ToGodotArray(rules.AttackNames) },
-                { "armor_types", ToGodotArray(rules.ArmorNames) },
-                { "counter_table", ToGodotArray(rules.CounterTable) },
-                { "combat_errors", ToGodotArray(combatErrors) },
-                { "unit_errors", ToGodotArray(unitErrors) },
-                { "planning_errors", ToGodotArray(planningErrors) },
-                { "level_errors", ToGodotArray(levelErrors) },
-                { "unit_count", units.All.Count },
-                { "enabled_unit_count", CountEnabled(units) },
-                { "faction_count", units.Factions.Count },
-                { "building_count", planning.Buildings.Count },
-                { "card_count", planning.Cards.Count },
-                { "level_count", levels.Levels.Count },
-                { "start_building_count", planning.StartBuildings.Count },
-                { "train_tag_closure", CountTrainTagClosure(planning, units) },
-                { "train_card_count", CountCards(planning, CardKind.Train) },
-            };
-
-            var unitRows = new Godot.Collections.Array();
-            foreach (var u in units.All)
-            {
-                unitRows.Add(new Godot.Collections.Dictionary
-                {
-                    { "id", u.Id },
-                    { "faction", u.Faction },
-                    { "squad_size", u.SquadSize },
-                    { "hp", u.Hp },
-                    { "attack_damage", u.AttackDamage },
-                    { "attack_cooldown", u.AttackCooldown },
-                    { "range", u.AttackRange },
-                    { "attack_type", CombatTypes.AttackName(u.AttackType) },
-                    { "armor", u.Armor },
-                    { "armor_type", CombatTypes.ArmorName(u.ArmorType) },
-                    { "hit", u.Hit },
-                    { "dodge", u.Dodge },
-                    { "crit", u.Crit },
-                    { "pen_flat", u.ArmorPenFlat },
-                    { "pen_pct", u.ArmorPenPct },
-                    { "body_radius", u.BodyRadius },
-                    { "move_speed", u.MoveSpeed },
-                    { "projectile", u.Projectile },
-                    { "pop_cost", u.PopCost },
-                    { "enabled", u.Enabled },
-                    { "placeholder", u.UsePlaceholderMesh },
-                });
-            }
-            outDict["unit_rows"] = unitRows;
-
-            var factionRows = new Godot.Collections.Array();
-            foreach (var kv in units.Factions)
-            {
-                factionRows.Add(new Godot.Collections.Dictionary
-                {
-                    { "id", kv.Key },
-                    { "display_name", kv.Value.DisplayName },
-                    { "placeholder", kv.Value.UsePlaceholderMesh },
-                    { "unit_count", units.OfFaction(kv.Key, true).Count },
-                });
-            }
-            outDict["faction_rows"] = factionRows;
-            return outDict;
-        }
-
-        /// <summary>一次结算（6 步），roll 由 GDScript 传，方便做确定性对照。</summary>
-        public Godot.Collections.Dictionary CombatComputeProbe(
-            Godot.Collections.Dictionary attacker,
-            Godot.Collections.Dictionary defender,
-            Godot.Collections.Dictionary rulesDict,
-            double rollHit,
-            double rollCrit)
-        {
-            var rules = CombatRules.FromDict(ToPlainDict(rulesDict));
-            var a = ParseAttacker(attacker);
-            var d = ParseDefender(defender);
-            var br = CombatCalculator.Compute(a, d, rules, rollHit, rollCrit);
+            var errors = new List<string>();
+            errors.AddRange(notes);
+            errors.AddRange(rules.Validate());
+            errors.AddRange(units.Validate());
+            errors.AddRange(planning.Validate(units));
+            errors.AddRange(levels.Validate(units));
+            var ids = new Godot.Collections.Array();
+            foreach (LevelDef lv in levels.Levels) ids.Add(lv.Id);
             return new Godot.Collections.Dictionary
             {
-                { "hit", br.Hit },
-                { "hit_chance", br.HitChance },
-                { "crit", br.Crit },
-                { "effective_armor", br.EffectiveArmor },
-                { "armor_taken", br.ArmorTaken },
-                { "counter", br.Counter },
-                { "damage", br.Damage },
+                { "ok", errors.Count == 0 },
+                { "errors", ToGodotArray(errors) },
+                { "levels", ids },
+                { "units", units.All.Count },
+                { "cards", planning.Cards.Count },
+                { "round_seconds", LevelDef.RoundSecondsSpec },
             };
         }
 
-        /// <summary>纯数学期望（乘命中率、负甲 3 倍封顶）。</summary>
+        /// <summary>
+        /// 靶子模拟器（数据工作台「单位」页用）：给一组攻/防参数，返回期望伤害 / DPS / 各步中间量。
+        /// 中间量全部由 <see cref="CombatCalculator"/> 提供，桥不重算公式。
+        /// </summary>
         public Godot.Collections.Dictionary CombatExpect(
             Godot.Collections.Dictionary attacker,
             Godot.Collections.Dictionary defender,
             Godot.Collections.Dictionary rulesDict)
         {
             var rules = CombatRules.FromDict(ToPlainDict(rulesDict));
-            var a = ParseAttacker(attacker);
-            var d = ParseDefender(defender);
-            double damage = CombatCalculator.ExpectedDamage(a, d, rules);
-            double dps = CombatCalculator.ExpectedDps(a, d, rules);
+            CombatAttacker a = ParseAttacker(attacker);
+            CombatDefender d = ParseDefender(defender);
+            double effArmor = CombatCalculator.EffectiveArmor(
+                d.Armor * (d.ArmorMult > 0.0 ? d.ArmorMult : 1.0), a.ArmorPenPct, a.ArmorPenFlat);
             return new Godot.Collections.Dictionary
             {
-                { "damage", damage },
-                { "dps", dps },
+                { "damage", CombatCalculator.ExpectedDamage(a, d, rules) },
+                { "dps", CombatCalculator.ExpectedDps(a, d, rules) },
                 { "hit_chance", CombatCalculator.HitChance(a.Hit, d.Dodge) },
-                { "effective_armor", CombatCalculator.EffectiveArmor(d.Armor * (d.ArmorMult > 0 ? d.ArmorMult : 1.0), a.ArmorPenPct, a.ArmorPenFlat) },
-                { "armor_taken", CombatCalculator.ArmorDamageTaken(CombatCalculator.EffectiveArmor(d.Armor * (d.ArmorMult > 0 ? d.ArmorMult : 1.0), a.ArmorPenPct, a.ArmorPenFlat), rules) },
+                { "effective_armor", effArmor },
+                { "armor_taken", CombatCalculator.ArmorDamageTaken(effArmor, rules) },
                 { "counter", CombatCalculator.CounterMultiplier(rules, a.AttackType, d.ArmorType) },
             };
         }
 
-        public double CombatArmorTaken(double armor, Godot.Collections.Dictionary rulesDict) =>
-            CombatCalculator.ArmorDamageTaken(armor, CombatRules.FromDict(ToPlainDict(rulesDict)));
 
-        public double CombatHitChance(double hit, double dodge) => CombatCalculator.HitChance(hit, dodge);
-
-        public double CombatEffectiveArmor(double armor, double penPct, double penFlat) =>
-            CombatCalculator.EffectiveArmor(armor, penPct, penFlat);
-
-        public double CombatCounter(int attackType, int armorType, Godot.Collections.Dictionary rulesDict) =>
-            CombatCalculator.CounterMultiplier(CombatRules.FromDict(ToPlainDict(rulesDict)), attackType, armorType);
-
-        /// <summary>规划规则自测：建造 / 3 合 1 / 训练 Tag / 星级传递 / 人口。</summary>
-        public Godot.Collections.Dictionary PlanningSelfTest(
-            Godot.Collections.Dictionary planningDict,
-            Godot.Collections.Dictionary unitsDict,
-            Godot.Collections.Dictionary combatDict)
+        /// <summary>
+        /// 六步伤害的唯一实现探针（命中 → 暴击 → 穿透 → 承伤 → 克制 → 取整）。
+        /// 检查只喂输入、读输出，绝不在这里重算一遍。
+        /// </summary>
+        public Godot.Collections.Dictionary CombatProbe(
+            double damage, int attackType, double armor, int armorType,
+            Godot.Collections.Dictionary rulesDict, double rollHit, double rollCrit,
+            double dodge = 0.0)
         {
-            var rules = CombatRules.FromDict(ToPlainDict(combatDict));
-            var units = UnitCatalog.FromDict(ToPlainDict(unitsDict), rules, new List<string>());
-            var planning = PlanningConfig.FromDict(ToPlainDict(planningDict), units, new List<string>());
-            var m = new PlanningMatch(planning, units, 7);
-            m.BeginPlanning();
-
-            int startBuildings = m.Buildings.Count;
-            bool hasBase = false;
-            foreach (var b in m.Buildings)
+            var rules = CombatRules.FromDict(ToPlainDict(rulesDict));
+            var atk = new CombatAttacker
             {
-                var def = m.DefOf(b);
-                if (def != null && def.Tag == "base") hasBase = true;
-            }
-            int popCap0 = m.PopCap();
-            int cp0 = m.Cp;
-
-            // 1) 打一张建造牌
-            string buildCard = "";
-            foreach (var id in m.Hand)
+                Damage = damage,
+                Cooldown = 1.0,
+                AttackType = attackType,
+                Hit = 100.0,
+                CritChance = 0.0,
+                CritMultiplier = 0.0,
+            };
+            var def = new CombatDefender
             {
-                if (planning.Cards.TryGetValue(id, out CardDef c) && c.Kind == CardKind.Build)
-                {
-                    buildCard = id;
-                    break;
-                }
-            }
-            int buildPlot = m.FirstFreePlot();
-            bool buildOk = !string.IsNullOrEmpty(buildCard) && m.PlayBuild(buildCard, buildPlot);
-            int cpAfterBuild = m.Cp;
-            int buildingsAfterBuild = m.Buildings.Count;
-            var newBuilding = buildOk ? m.BuildingAt(buildPlot) : null;
-            int newBuildingStar = newBuilding != null ? newBuilding.Star : 0;
-
-            // 2) 手摆 3 座同名兵营，两两合并 → 3 星
-            var plots = new List<int>();
-            for (int i = 0; i < 3; i++)
-            {
-                int p = m.FirstFreePlot();
-                if (p < 0) break;
-                m.Buildings.Add(new PlanBuilding { Plot = p, DefId = "barracks", MergedBuildings = 1 });
-                plots.Add(p);
-            }
-            bool merge1 = plots.Count >= 2 && m.Merge(plots[0], plots[1]);
-            bool merge2 = plots.Count >= 3 && m.Merge(plots[0], plots[2]);
-            int mergedStar = 0;
-            int barracksCount = 0;
-            foreach (var b in m.Buildings)
-            {
-                if (b.DefId != "barracks") continue;
-                barracksCount += 1;
-                if (b.Plot == plots[0]) mergedStar = b.Star;
-            }
-
-            // 3) 打一张训练牌：全场同类建筑各产 1 队，3 星兵营产 3 星兵
-            string trainCard = "";
-            foreach (var id in m.Hand)
-            {
-                if (planning.Cards.TryGetValue(id, out CardDef c) && c.Kind == CardKind.Train)
-                {
-                    trainCard = id;
-                    break;
-                }
-            }
-            int trainProduced = string.IsNullOrEmpty(trainCard) ? -1 : m.PlayTrain(trainCard);
-            int star3 = 0;
-            foreach (var sq in m.Army)
-            {
-                if (sq.Star == 3) star3 += 1;
-            }
-
+                Armor = armor,
+                ArmorType = armorType,
+                Dodge = dodge,
+                ArmorMult = 1.0,
+                DamageTakenMult = 1.0,
+            };
+            DamageBreakdown r = CombatCalculator.Compute(atk, def, rules, rollHit, rollCrit);
             return new Godot.Collections.Dictionary
             {
-                { "start_buildings", startBuildings },
-                { "has_base", hasBase },
-                { "pop_cap", popCap0 },
-                { "cp_start", cp0 },
-                { "build_card", buildCard },
-                { "build_ok", buildOk },
-                { "cp_after_build", cpAfterBuild },
-                { "buildings_after_build", buildingsAfterBuild },
-                { "new_building_star", newBuildingStar },
-                { "merge_1", merge1 },
-                { "merge_2", merge2 },
-                { "merged_star", mergedStar },
-                { "barracks_count", barracksCount },
-                { "train_card", trainCard },
-                { "train_produced", trainProduced },
-                { "train_expected", barracksCount },
-                { "army_squads", m.Army.Count },
-                { "star3_squads", star3 },
-                { "pop_used", m.PopUsed() },
-                { "pop_cap_after", m.PopCap() },
-                { "cp_left", m.Cp },
+                { "ok", true },
+                { "hit", r.Hit },
+                { "crit", r.Crit },
+                { "damage", r.Damage },
             };
-        }
-
-        /// <summary>第 1 关 100 局（默认）推演；返回汇总 + 每局行 + 3 个复盘样本。</summary>
-        public Godot.Collections.Dictionary LevelSimulate(
-            Godot.Collections.Dictionary unitsDict,
-            Godot.Collections.Dictionary combatDict,
-            Godot.Collections.Dictionary planningDict,
-            Godot.Collections.Dictionary levelsDict,
-            string levelId,
-            int games,
-            int seedBase)
-        {
-            var rules = CombatRules.FromDict(ToPlainDict(combatDict));
-            var units = UnitCatalog.FromDict(ToPlainDict(unitsDict), rules, new List<string>());
-            var planning = PlanningConfig.FromDict(ToPlainDict(planningDict), units, new List<string>());
-            var levels = LevelSet.FromDict(ToPlainDict(levelsDict), units, new List<string>());
-
-            var errors = new List<string>();
-            errors.AddRange(rules.Validate());
-            errors.AddRange(units.Validate());
-            errors.AddRange(planning.Validate(units));
-            errors.AddRange(levels.Validate(units));
-            if (errors.Count > 0)
-            {
-                return new Godot.Collections.Dictionary
-                {
-                    { "ok", false },
-                    { "errors", ToGodotArray(errors) },
-                };
-            }
-
-            var sim = LevelSimulator.Run(units, rules, planning, levels, levelId, games, seedBase);
-            var outDict = new Godot.Collections.Dictionary
-            {
-                { "ok", sim.Ok },
-                { "level", sim.LevelId },
-                { "level_name", sim.LevelName },
-                { "games", sim.Games },
-                { "seed_base", sim.SeedBase },
-                { "wins", sim.Wins },
-                { "losses", sim.Losses },
-                { "draws", sim.Draws },
-                { "win_rate", sim.WinRate },
-                { "avg_player_hp", sim.AvgPlayerHp },
-                { "avg_enemy_hp", sim.AvgEnemyHp },
-                { "avg_player_hp_pct", sim.AvgPlayerHpPct },
-                { "avg_seconds", sim.AvgSeconds },
-                { "avg_player_squads", sim.AvgPlayerSquads },
-                { "avg_enemy_squads", sim.AvgEnemySquads },
-                { "avg_pike_behind_rate", sim.AvgPikeBehindRate },
-                { "avg_pike_gap_cm", sim.AvgPikeGapCm },
-                { "review_counts", ToGodotDict(sim.ReviewCounts) },
-                { "errors", ToGodotArray(sim.Errors) },
-            };
-
-            var rows = new Godot.Collections.Array();
-            foreach (var r in sim.Rows)
-            {
-                rows.Add(new Godot.Collections.Dictionary
-                {
-                    { "index", r.Index },
-                    { "seed", r.Seed },
-                    { "outcome", r.Outcome },
-                    { "outcome_text", r.OutcomeText },
-                    { "player_hp", r.PlayerHp },
-                    { "enemy_hp", r.EnemyHp },
-                    { "player_hp_pct", r.PlayerHpPct },
-                    { "player_squads", r.PlayerSquads },
-                    { "enemy_squads", r.EnemySquads },
-                    { "player_losses", r.PlayerLosses },
-                    { "enemy_losses", r.EnemyLosses },
-                    { "base_damage", r.BaseDamage },
-                    { "zone_max", r.ZoneMax },
-                    { "pike_behind", r.PikeBehind },
-                    { "pike_attacks", r.PikeAttacks },
-                    { "pike_formation_rate", r.PikeFormationRate },
-                    { "cp_left", r.CpLeft },
-                    { "pop_blocked", r.PopBlocked },
-                    { "top_reason", r.TopReason },
-                });
-            }
-            outDict["rows"] = rows;
-
-            var samples = new Godot.Collections.Array();
-            foreach (var s in sim.Samples)
-            {
-                var sample = new Godot.Collections.Dictionary
-                {
-                    { "seed", s.Seed },
-                    { "outcome", s.Outcome },
-                    { "outcome_text", s.OutcomeText },
-                    { "player_hp", Math.Round(s.PlayerBaseHp) },
-                    { "enemy_hp", Math.Round(s.EnemyBaseHp) },
-                    { "attack_squads", s.AttackPlan != null ? s.AttackPlan.ArmySquads : 0 },
-                    { "defend_squads", s.DefendPlan != null ? s.DefendPlan.ArmySquads : 0 },
-                    { "attack_actions", ToGodotArray(s.AttackPlan != null ? s.AttackPlan.Actions : new List<string>()) },
-                    { "defend_actions", ToGodotArray(s.DefendPlan != null ? s.DefendPlan.Actions : new List<string>()) },
-                    { "reviews", ToGodotArray(s.Reviews) },
-                    { "review_codes", ToGodotArray(s.ReviewCodes) },
-                };
-                samples.Add(sample);
-            }
-            outDict["samples"] = samples;
-            return outDict;
         }
 
         // =================================================================
@@ -671,6 +158,7 @@ namespace WarIsland.Bridge
             errors.AddRange(units.Validate());
             errors.AddRange(planning.Validate(units));
             errors.AddRange(arena.Validate(units));
+            errors.AddRange(SquadTuning.FromDict(ToPlainDict(tuningDict)).Validate(units));
             if (errors.Count > 0)
             {
                 return new Godot.Collections.Dictionary
@@ -681,7 +169,8 @@ namespace WarIsland.Bridge
                 };
             }
 
-            var session = new SquadSession(units, rules, planning, arena, seed, instantTrain);
+            var session = new SquadSession(units, rules, planning, arena, seed, instantTrain,
+                -1.0, -1.0, ToPlainDict(tuningDict));
             int handle = _nextSquadHandle++;
             _squadSessions[handle] = session;
             return new Godot.Collections.Dictionary
@@ -723,13 +212,71 @@ namespace WarIsland.Bridge
             return d;
         }
 
-        public Godot.Collections.Dictionary SquadSessionBuild(int handle, string cardId)
+        /// <summary>打建造牌并落到指定战术格子（tile=0 = 自动挑第一块空格）。</summary>
+        public Godot.Collections.Dictionary SquadSessionBuild(int handle, string cardId, int tile)
         {
             var session = Session(handle);
             if (session == null) return Err("会话已失效");
-            bool ok = session.PlayBuildCard(cardId);
+            bool ok = session.PlayBuildCardAt(cardId, tile);
             var d = OkState(session);
             d["built"] = ok;
+            d["tile"] = tile;
+            return d;
+        }
+
+        /// <summary>规划期还能放建筑的玩家格子（HUD 高亮/自检口径）。</summary>
+        public Godot.Collections.Array SquadSessionFreeTiles(int handle)
+        {
+            var arr = new Godot.Collections.Array();
+            var session = Session(handle);
+            if (session == null) return arr;
+            foreach (int t in session.FreePlayerTiles()) arr.Add(t);
+            return arr;
+        }
+
+        /// <summary>买下中立据点（规划期动作；只花 CP，不动人口）。</summary>
+        public Godot.Collections.Dictionary SquadSessionCaptureOutpost(int handle)
+        {
+            var session = Session(handle);
+            if (session == null) return Err("会话已失效");
+            bool ok = session.CaptureOutpost();
+            var d = OkState(session);
+            d["captured"] = ok;
+            return d;
+        }
+
+        public Godot.Collections.Dictionary SquadSessionAttack(int handle)
+        {
+            var session = Session(handle);
+            if (session == null) return Err("会话已失效");
+            session.BeginAttack();
+            return OkState(session);
+        }
+
+        public Godot.Collections.Dictionary SquadSessionDefend(int handle)
+        {
+            var session = Session(handle);
+            if (session == null) return Err("会话已失效");
+            session.BeginDefend();
+            return OkState(session);
+        }
+
+        public Godot.Collections.Dictionary SquadSessionEndRound(int handle)
+        {
+            var session = Session(handle);
+            if (session == null) return Err("会话已失效");
+            session.EndRound();
+            return OkState(session);
+        }
+
+        /// <summary>打一张策略牌（只影响本轮）。</summary>
+        public Godot.Collections.Dictionary SquadSessionStrategy(int handle, string cardId)
+        {
+            var session = Session(handle);
+            if (session == null) return Err("会话已失效");
+            bool ok = session.Match.PlayStrategy(cardId);
+            var d = OkState(session);
+            d["played"] = ok;
             return d;
         }
 
@@ -778,6 +325,7 @@ namespace WarIsland.Bridge
                     { "unit_id", c.UnitId },
                     { "unit_name", c.UnitName },
                     { "tag", c.Tag },
+                    { "role", c.Role },
                     { "cost_cp", c.CostCp },
                     { "squad_size", c.SquadSize },
                     { "formation", c.Formation },
@@ -792,6 +340,12 @@ namespace WarIsland.Bridge
             {
                 { "ok", true },
                 { "phase", st.Phase },
+                { "round_kind", st.RoundKind },
+                { "attack_squads", st.AttackSquads },
+                { "defend_squads", st.DefendSquads },
+                { "outpost_captured", st.OutpostCaptured },
+                { "outpost_available", st.OutpostAvailable },
+                { "outpost_cp_cost", st.OutpostCpCost },
                 { "planning_index", st.PlanningIndex },
                 { "cp", st.Cp },
                 { "cp_start", st.CpStart },
@@ -866,6 +420,8 @@ namespace WarIsland.Bridge
                     { "damage_dealt", s.DamageDealt },
                     { "spawn_tile", s.SpawnTile },
                     { "source_building", s.SourceBuilding },
+                    { "role", s.Role },
+                    { "active", s.Active },
                     { "members", members },
                 });
             }
@@ -1085,6 +641,7 @@ namespace WarIsland.Bridge
             var enemyBase = arena.LaneToWorld(arena.EnemyBaseX, 0.0);
             var pZone = arena.LaneToWorld(arena.PlayerZoneEnd, 0.0);
             var eZone = arena.LaneToWorld(arena.EnemyZoneStart, 0.0);
+            var outpostStage = arena.OutpostStageWorld();
             var min = arena.LaneToWorld(arena.MinX, arena.MinY);
             var max = arena.LaneToWorld(arena.MaxX, arena.MaxY);
             return new Godot.Collections.Dictionary
@@ -1094,6 +651,7 @@ namespace WarIsland.Bridge
                 { "player_faction", arena.PlayerFaction },
                 { "enemy_faction", arena.EnemyFaction },
                 { "round_seconds", arena.RoundSeconds },
+                { "rounds", RoundsDict(arena) },
                 { "min_x", min.X },
                 { "min_z", min.Y },
                 { "max_x", max.X },
@@ -1104,12 +662,41 @@ namespace WarIsland.Bridge
                 { "enemy_base_z", enemyBase.Y },
                 { "player_zone_x", pZone.X },
                 { "enemy_zone_x", eZone.X },
+                { "neutral_start_x", arena.NeutralStartWorldX },
+                { "neutral_end_x", arena.NeutralEndWorldX },
+                { "outpost_tile", arena.NeutralOutpostTile },
+                { "outpost_x", outpostStage.X },
+                { "outpost_z", outpostStage.Y },
+                { "player_base_tile", arena.PlayerBaseTile },
+                { "enemy_base_tile", arena.EnemyBaseTile },
                 { "ridge", ridge },
                 { "tiles", tiles },
                 { "player_buildings", playerBuildings },
                 { "enemy_buildings", enemyBuildings },
                 { "zone_dps_per_squad", arena.ZoneDpsPerSquad },
             };
+        }
+
+        private static Godot.Collections.Array RoundsDict(SquadArena arena)
+        {
+            var arr = new Godot.Collections.Array();
+            foreach (LevelRound r in arena.Rounds)
+            {
+                var waves = new Godot.Collections.Array();
+                foreach (Wave w in r.Waves)
+                {
+                    int count = 0;
+                    foreach (WaveSquad sq in w.Squads) count += Math.Max(sq.Count, 1);
+                    waves.Add(new Godot.Collections.Dictionary { { "t", w.T }, { "count", count } });
+                }
+                arr.Add(new Godot.Collections.Dictionary
+                {
+                    { "kind", r.Kind },
+                    { "label", r.Label },
+                    { "waves", waves },
+                });
+            }
+            return arr;
         }
 
         /// <summary>只校验小队战场（--check 的入口）。</summary>
@@ -1140,6 +727,9 @@ namespace WarIsland.Bridge
                 { "player_buildings", arena.PlayerBuildings.Count },
                 { "enemy_buildings", arena.EnemyBuildings.Count },
                 { "zone_dps_per_squad", arena.ZoneDpsPerSquad },
+                { "outpost_tile", arena.NeutralOutpostTile },
+                { "size_x", arena.SizeX },
+                { "size_z", arena.SizeZ },
             };
         }
 
@@ -1263,7 +853,7 @@ namespace WarIsland.Bridge
                 };
             }
 
-            var sim = SquadSimulator.Run(units, rules, planning, arena, games, seedBase);
+            var sim = SquadSimulator.Run(units, rules, planning, arena, games, seedBase, ToPlainDict(tuningDict));
             var outDict = new Godot.Collections.Dictionary
             {
                 { "ok", sim.Ok },
@@ -1700,30 +1290,6 @@ namespace WarIsland.Bridge
             return outArr;
         }
 
-        // =================================================================
-        // Variant → 纯 .NET
-        // =================================================================
-        private static DamageRules ParseRules(Godot.Collections.Dictionary d)
-        {
-            var rules = new DamageRules();
-            if (d == null) return rules;
-            if (d.TryGetValue("damage_table", out Variant table) && table.VariantType == Variant.Type.Array)
-                rules.DamageTable = ToDoubleArray(table.AsGodotArray());
-            rules.Stride = d.TryGetValue("stride", out Variant st) ? st.AsInt32() : 5;
-            rules.ArmorReduction = d.TryGetValue("armor_reduction", out Variant ar) ? ar.AsDouble() : 0.0;
-            rules.ArmorReductionCap = d.TryGetValue("armor_reduction_cap", out Variant ac) ? ac.AsDouble() : 0.0;
-            rules.CritChance = d.TryGetValue("crit_chance", out Variant cc) ? cc.AsDouble() : 0.0;
-            rules.CritMultiplier = d.TryGetValue("crit_multiplier", out Variant cm) ? cm.AsDouble() : 1.0;
-            return rules;
-        }
-
-        private static double[] ToDoubleArray(Godot.Collections.Array arr)
-        {
-            var outArr = new double[arr.Count];
-            for (int i = 0; i < arr.Count; i++) outArr[i] = arr[i].AsDouble();
-            return outArr;
-        }
-
         /// <summary>递归拆成纯 .NET 类型：Dictionary→Dictionary&lt;string,object&gt;、Array→List&lt;object&gt;。</summary>
         private static Dictionary<string, object> ToPlainDict(Godot.Collections.Dictionary d)
         {
@@ -1791,27 +1357,5 @@ namespace WarIsland.Bridge
             return d != null && d.TryGetValue(key, out Variant v) ? v.ToString() : fallback;
         }
 
-        private static string[] ToStringArray(Godot.Collections.Dictionary d, string key)
-        {
-            if (d == null || !d.TryGetValue(key, out Variant v) || v.VariantType != Variant.Type.Array)
-                return Array.Empty<string>();
-            var arr = v.AsGodotArray();
-            var outArr = new string[arr.Count];
-            for (int i = 0; i < arr.Count; i++) outArr[i] = arr[i].ToString();
-            return outArr;
-        }
-
-        private static Godot.Collections.Dictionary AvailToDict(AvailResult r)
-        {
-            var d = new Godot.Collections.Dictionary
-            {
-                { "ok", r.Ok },
-                { "reason", r.Reason },
-            };
-            var p = new Godot.Collections.Dictionary();
-            foreach (var kv in r.Params) p[kv.Key] = kv.Value;
-            d["params"] = p;
-            return d;
-        }
     }
 }
