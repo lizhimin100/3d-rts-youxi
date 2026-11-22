@@ -53,7 +53,12 @@ namespace WarIsland.Model
         public double PlayerBaseHp;
         public double EnemyBaseHp;
         public double RoundSeconds = LevelDef.RoundSecondsSpec;
-        public double ZoneDpsPerSquad = 9.0;
+        /// <summary>
+        /// 一名**单兵**停在敌区里每秒给敌方基地造成的伤害（2026-11-22 由"每队"改为"每人"）。
+        /// 口径：单兵制下基地只有 60~80 血，所以这个值必须是 0.1~0.5 量级；
+        /// 写 9 或 48（编制时代的数）会让 8 个人在 1 秒内把基地抽干。
+        /// </summary>
+        public double ZoneDpsPerUnit = 0.24;
         /// <summary>底壳声明的脊线逻辑长度（游戏数值），用来校验脊线点没有丢段。</summary>
         public double SpineLengthLogic;
 
@@ -288,10 +293,12 @@ namespace WarIsland.Model
             arena.EnemyBaseHp = encHp > 0.0 ? encHp : JVal.Double(level, "enemy_base_hp", 2000.0);
             arena.RoundSeconds = JVal.Double(level, "round_seconds", LevelDef.RoundSecondsSpec);
             var lane = JVal.Dict(level, "lane");
-            arena.ZoneDpsPerSquad = JVal.Double(lane, "zone_dps_per_squad", 9.0);
-            // 小队模式专属覆盖（Content/data/squad.json）：不填就沿用关卡横道口径。
-            double tuneDps = JVal.Double(tuning, "zone_dps_per_squad", 0.0);
-            if (tuneDps > 0.0) arena.ZoneDpsPerSquad = tuneDps;
+            arena.ZoneDpsPerUnit = JVal.Double(lane, "zone_dps_per_unit",
+                JVal.Double(lane, "zone_dps_per_squad", 0.24));
+            // 单兵模式专属覆盖（Content/data/squad.json）：不填就沿用关卡口径。
+            double tuneDps = JVal.Double(tuning, "zone_dps_per_unit",
+                JVal.Double(tuning, "zone_dps_per_squad", 0.0));
+            if (tuneDps > 0.0) arena.ZoneDpsPerUnit = tuneDps;
 
             var rounds = JVal.List(level, "rounds");
             if (rounds != null)
@@ -498,8 +505,10 @@ namespace WarIsland.Model
             if (EnemyBaseHp <= 0.0) errors.Add($"arena：enemy_base_hp={EnemyBaseHp} 必须 > 0");
             if (RoundSeconds <= 0.0 || RoundSeconds > 120.0)
                 errors.Add($"arena：round_seconds={RoundSeconds} 非法");
-            if (ZoneDpsPerSquad <= 0.0)
-                errors.Add($"arena：zone_dps_per_squad={ZoneDpsPerSquad} 必须 > 0");
+            if (ZoneDpsPerUnit <= 0.0)
+                errors.Add($"arena：zone_dps_per_unit={ZoneDpsPerUnit} 必须 > 0");
+            if (ZoneDpsPerUnit > 2.0)
+                errors.Add($"arena：zone_dps_per_unit={ZoneDpsPerUnit} 过大（单兵制下 60~80 血的基地会被瞬间抽干，应在 0.1~0.5）");
 
             var seenTiles = new HashSet<int>();
             foreach (TacticalTile t in Tiles) seenTiles.Add(t.Index);
@@ -557,8 +566,8 @@ namespace WarIsland.Model
                         if (!def.Enabled) errors.Add($"arena：波次引用已禁用单位 {sq.Unit}");
                         if (!string.IsNullOrEmpty(EnemyFaction) && def.Faction != EnemyFaction)
                             errors.Add($"arena：波次单位 {sq.Unit} 不属于敌方阵营 {EnemyFaction}");
-                        if (sq.Count < 1 || sq.Count > 6)
-                            errors.Add($"arena：波次 {sq.Unit} count={sq.Count} 越界（1..6）");
+                        if (sq.Count < 1 || sq.Count > 24)
+                            errors.Add($"arena：波次 {sq.Unit} count={sq.Count} 越界（1..24 名单兵）");
                         if (sq.Star < 1 || sq.Star > 3)
                             errors.Add($"arena：波次 {sq.Unit} star={sq.Star} 越界（1..3）");
                     }

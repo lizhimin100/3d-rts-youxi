@@ -24,6 +24,9 @@ namespace WarIsland.Model
         public double DpsPerMember;
         public double Seconds;
         public int ZoneMax;
+        public int EnemyZoneMax;
+        public double PlayerZoneSeconds;
+        public double EnemyZoneSeconds;
         public int StuckEvents;
         public double SlotError;
         public int CpLeft;
@@ -61,6 +64,9 @@ namespace WarIsland.Model
         public double AvgSlotError;
         public int TotalPlayerKills;
         public int TotalEnemyKills;
+        public int AvgEnemyMaxZone;
+        public double AvgPlayerZoneSeconds;
+        public double AvgEnemyZoneSeconds;
         public readonly Dictionary<string, int> ReviewCounts = new Dictionary<string, int>(StringComparer.Ordinal);
         public readonly Dictionary<string, SquadUnitStat> PlayerByUnit = new Dictionary<string, SquadUnitStat>(StringComparer.Ordinal);
         public readonly Dictionary<string, SquadUnitStat> EnemyByUnit = new Dictionary<string, SquadUnitStat>(StringComparer.Ordinal);
@@ -136,6 +142,9 @@ namespace WarIsland.Model
                 summary.AvgPlayerDamage += r.PlayerDamage;
                 summary.AvgStuckEvents += r.StuckEvents;
                 summary.AvgSlotError += r.AvgSlotErrorMeters;
+                summary.AvgEnemyMaxZone += r.EnemyMaxZone;
+                summary.AvgPlayerZoneSeconds += r.PlayerZoneSeconds;
+                summary.AvgEnemyZoneSeconds += r.EnemyZoneSeconds;
                 summary.TotalPlayerKills += r.PlayerKills;
                 summary.TotalEnemyKills += r.EnemyKills;
                 totalSeconds += r.Seconds;
@@ -179,6 +188,9 @@ namespace WarIsland.Model
                     DpsPerMember = Math.Round(DpsOf(r.PlayerByUnit), 2),
                     Seconds = r.Seconds,
                     ZoneMax = r.PlayerMaxZone,
+                    EnemyZoneMax = r.EnemyMaxZone,
+                    PlayerZoneSeconds = Math.Round(r.PlayerZoneSeconds, 1),
+                    EnemyZoneSeconds = Math.Round(r.EnemyZoneSeconds, 1),
                     StuckEvents = r.StuckEvents,
                     SlotError = Math.Round(r.AvgSlotErrorMeters, 2),
                     CpLeft = (r.AttackPlan?.CpLeft ?? 0) + (r.DefendPlan?.CpLeft ?? 0),
@@ -205,6 +217,9 @@ namespace WarIsland.Model
             summary.AvgEnemyModelsLost = Math.Round(summary.AvgEnemyModelsLost / nGames * 10.0) / 10.0;
             summary.AvgPlayerDamage = Math.Round(summary.AvgPlayerDamage / nGames * 10.0) / 10.0;
             summary.AvgStuckEvents = Math.Round(summary.AvgStuckEvents / nGames * 10.0) / 10.0;
+            summary.AvgEnemyMaxZone = (int)Math.Round((double)summary.AvgEnemyMaxZone / nGames);
+            summary.AvgPlayerZoneSeconds = Math.Round(summary.AvgPlayerZoneSeconds / nGames * 10.0) / 10.0;
+            summary.AvgEnemyZoneSeconds = Math.Round(summary.AvgEnemyZoneSeconds / nGames * 10.0) / 10.0;
             summary.AvgSlotError = Math.Round(summary.AvgSlotError / nGames * 1000.0) / 1000.0;
             summary.AvgPlayerDps = totalSeconds > 1e-6 ? Math.Round(summary.AvgPlayerDamage * nGames / totalSeconds * 10.0) / 10.0 : 0.0;
             summary.AvgPlayerDpsPerMember = totalMemberSeconds > 1e-6

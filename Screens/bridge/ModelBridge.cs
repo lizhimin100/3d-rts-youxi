@@ -327,9 +327,7 @@ namespace WarIsland.Bridge
                     { "tag", c.Tag },
                     { "role", c.Role },
                     { "cost_cp", c.CostCp },
-                    { "squad_size", c.SquadSize },
-                    { "formation", c.Formation },
-                    { "squad_radius", c.SquadRadius },
+                    { "units", c.Units },
                     { "buildings", c.Buildings },
                     { "in_hand", c.InHand },
                     { "available", c.Available },
@@ -349,10 +347,16 @@ namespace WarIsland.Bridge
                 { "planning_index", st.PlanningIndex },
                 { "cp", st.Cp },
                 { "cp_start", st.CpStart },
+                { "cp_cap", st.CpCap },
                 { "pop_used", st.PopUsed },
                 { "pop_cap", st.PopCap },
                 { "pop_blocked", st.PopBlocked },
                 { "army_squads", st.ArmySquads },
+                { "army_models", st.ArmyModels },
+                { "train_count_mult", st.TrainCountMult },
+                { "draw_pile", st.DrawPile },
+                { "discard_pile", st.DiscardPile },
+                { "hand_count", st.HandCount },
                 { "hand", ToGodotArray(st.Hand) },
                 { "train_cards", cards },
                 { "log", ToGodotArray(st.Log) },
@@ -422,6 +426,10 @@ namespace WarIsland.Bridge
                     { "source_building", s.SourceBuilding },
                     { "role", s.Role },
                     { "active", s.Active },
+                    { "engaged", s.Engaged },
+                    { "age", s.Age },
+                    { "body_radius", s.BodyRadius },
+                    { "attack_cooldown", s.AttackCooldown },
                     { "members", members },
                 });
             }
@@ -673,7 +681,7 @@ namespace WarIsland.Bridge
                 { "tiles", tiles },
                 { "player_buildings", playerBuildings },
                 { "enemy_buildings", enemyBuildings },
-                { "zone_dps_per_squad", arena.ZoneDpsPerSquad },
+                { "zone_dps_per_unit", arena.ZoneDpsPerUnit },
             };
         }
 
@@ -726,15 +734,18 @@ namespace WarIsland.Bridge
                 { "tiles", arena.Tiles.Count },
                 { "player_buildings", arena.PlayerBuildings.Count },
                 { "enemy_buildings", arena.EnemyBuildings.Count },
-                { "zone_dps_per_squad", arena.ZoneDpsPerSquad },
+                { "zone_dps_per_unit", arena.ZoneDpsPerUnit },
                 { "outpost_tile", arena.NeutralOutpostTile },
                 { "size_x", arena.SizeX },
                 { "size_z", arena.SizeZ },
             };
         }
 
-        /// <summary>逐兵种阵型探针：槽位数 / 槽位最远半径 / 是否贴合小队半径。</summary>
-        public Godot.Collections.Dictionary SquadFormationProbe(
+        /// <summary>
+        /// 逐兵种**单兵身位**探针（原「阵型探针」）。
+        /// 小队编制已取消，所以这里不再报槽位，只报身位/导航半径与落点环是否避开左上角建筑位。
+        /// </summary>
+        public Godot.Collections.Dictionary UnitBodyProbe(
             Godot.Collections.Dictionary unitsDict,
             Godot.Collections.Dictionary combatDict)
         {
@@ -744,26 +755,26 @@ namespace WarIsland.Bridge
             var errors = new List<string>();
             foreach (UnitDef u in units.All)
             {
-                errors.AddRange(SquadFormations.Validate(u));
-                var slots = SquadFormations.Slots(u);
-                double max = SquadFormations.MaxSlotRadius(u);
-                bool fits = u.SquadRadius > 0.0 && max <= u.SquadRadius * SquadFormations.FitRatio + 1e-6;
-                if (!fits) errors.Add($"{u.Id}：槽位 {max:0.#} 超出半径 {u.SquadRadius:0} 的 92%");
-                if (slots.Count != Math.Max(u.SquadSize, 1))
-                    errors.Add($"{u.Id}：槽位 {slots.Count} ≠ squad_size {u.SquadSize}");
-                var pts = new Godot.Collections.Array();
-                foreach (System.Numerics.Vector2 p in slots)
-                    pts.Add(new Godot.Collections.Dictionary { { "x", p.X }, { "z", p.Y } });
+                errors.AddRange(UnitBody.Validate(u));
+                double body = UnitBody.BodyMeters(u);
+                double nav = u.NavRadius;
+                if (nav <= 0.0) errors.Add($"{u.Id}：导航半径必须 > 0");
+                // 落点环：9 人时不许有人落在左上象限（建筑位）
+                var ring = UnitBody.SpawnRing(9);
+                int inBuilding = 0;
+                foreach (System.Numerics.Vector2 p in ring)
+                {
+                    if (p.X < -0.30f && p.Y < -0.30f) inBuilding += 1;
+                }
+                if (inBuilding > 0) errors.Add($"{u.Id}：落点环有 {inBuilding} 个点落在左上建筑位");
                 rows.Add(new Godot.Collections.Dictionary
                 {
                     { "id", u.Id },
-                    { "formation", u.Formation },
-                    { "squad_size", u.SquadSize },
-                    { "squad_radius", u.SquadRadius },
-                    { "slot_count", slots.Count },
-                    { "max_slot_radius", max },
-                    { "fits", fits },
-                    { "slots", pts },
+                    { "body_radius_m", body },
+                    { "nav_radius_units", nav },
+                    { "single_unit", true },
+                    { "ring_points", ring.Count },
+                    { "ring_in_building", inBuilding },
                 });
             }
             return new Godot.Collections.Dictionary
@@ -883,6 +894,9 @@ namespace WarIsland.Bridge
                 { "avg_path_ratio", sim.AvgPathStraightRatio },
                 { "avg_stuck_events", sim.AvgStuckEvents },
                 { "avg_slot_error", sim.AvgSlotError },
+                { "avg_enemy_max_zone", sim.AvgEnemyMaxZone },
+                { "avg_player_zone_seconds", sim.AvgPlayerZoneSeconds },
+                { "avg_enemy_zone_seconds", sim.AvgEnemyZoneSeconds },
                 { "total_player_kills", sim.TotalPlayerKills },
                 { "total_enemy_kills", sim.TotalEnemyKills },
                 { "review_counts", ToGodotDict(sim.ReviewCounts) },
@@ -913,6 +927,9 @@ namespace WarIsland.Bridge
                     { "dps_member", r.DpsPerMember },
                     { "seconds", r.Seconds },
                     { "zone_max", r.ZoneMax },
+                    { "enemy_zone_max", r.EnemyZoneMax },
+                    { "player_zone_seconds", r.PlayerZoneSeconds },
+                    { "enemy_zone_seconds", r.EnemyZoneSeconds },
                     { "stuck_events", r.StuckEvents },
                     { "slot_error", r.SlotError },
                     { "cp_left", r.CpLeft },

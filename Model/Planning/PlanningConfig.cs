@@ -37,7 +37,13 @@ namespace WarIsland.Model
         public string Role = "";
         public int CostCp;
         public bool Exhaust;
+        /// <summary>卡组里的副本数（一张卡 = 几张牌）。</summary>
         public int Count = 1;
+        /// <summary>
+        /// 训练牌一次产出**几名独立单兵**（2026-11-22 单兵制）。
+        /// 场上每座匹配 Tag 的建筑各产这么一批；「加快训练」在本回合把这里乘 1.5 再向上取整。
+        /// </summary>
+        public int Units = 1;
     }
 
     public sealed class StrategyDef
@@ -47,6 +53,11 @@ namespace WarIsland.Model
         public double MoveMult = 1.0;
         public double ArmorMult = 1.0;
         public double CritAdd;
+        /// <summary>
+        /// 本回合征召牌产出数量的倍率（「加快训练」= 1.5）。
+        /// 只乘在训练牌上，不影响 CP/人口，也不跨回合。
+        /// </summary>
+        public double TrainCountMult = 1.0;
     }
 
     public sealed class StartBuilding
@@ -236,6 +247,7 @@ namespace WarIsland.Model
                         MoveMult = JVal.Double(sd, "move_mult", 1.0),
                         ArmorMult = JVal.Double(sd, "armor_mult", 1.0),
                         CritAdd = JVal.Double(sd, "crit_add", 0.0),
+                        TrainCountMult = JVal.Double(sd, "train_count_mult", 1.0),
                     };
                 }
             }
@@ -264,6 +276,7 @@ namespace WarIsland.Model
                         CostCp = JVal.Int(cd, "cost_cp", 0),
                         Exhaust = JVal.Bool(cd, "exhaust", false),
                         Count = JVal.Int(cd, "count", 1),
+                        Units = JVal.Int(cd, "units", 1),
                     };
                     if (kind == "build") c.Kind = CardKind.Build;
                     else if (kind == "train") c.Kind = CardKind.Train;
@@ -297,6 +310,13 @@ namespace WarIsland.Model
                 errors.Add($"max_drain_reduction={MaxDrainReduction} 越界（0..0.9）");
             if (Draw < 1 || MaxHand < Draw)
                 errors.Add($"hand 配置非法（draw={Draw} max={MaxHand}）");
+            // 单兵制：不靠农场也不许卡死 —— 基地自带人口必须够造第一座兵营。
+            foreach (var kv in Buildings)
+            {
+                if (kv.Value.Tag != "barracks") continue;
+                if (BasePop < Math.Max(kv.Value.Pop, 1))
+                    errors.Add($"pop.base={BasePop} 不够造一座兵营（barracks.pop={kv.Value.Pop}）—— 无农场牌时会卡死");
+            }
             if (MergeRequired != 3)
                 errors.Add($"merge.required={MergeRequired}，规格是 3 合 1");
             if (MaxStar != 3)
@@ -419,6 +439,9 @@ namespace WarIsland.Model
                             errors.Add($"训练牌 {c.Id} 必须循环（exhaust=false）");
                         if (!SquadRoles.IsValid(c.Role))
                             errors.Add($"训练牌 {c.Id} 的 role={c.Role} 非法（attack/defend/空）");
+                        // 单兵制：一次产几名必须写明（0 会让这张牌变成"花 CP 什么也不出"）
+                        if (c.Units < 1 || c.Units > 12)
+                            errors.Add($"训练牌 {c.Id} 的 units={c.Units} 越界（1..12 名单兵）");
                         break;
 
                     case CardKind.Strategy:
@@ -429,6 +452,12 @@ namespace WarIsland.Model
                             errors.Add($"策略牌 {c.Id} 必须循环（exhaust=false）");
                         break;
                 }
+            }
+
+            foreach (var kv in Strategies)
+            {
+                if (kv.Value.TrainCountMult < 1.0 || kv.Value.TrainCountMult > 3.0)
+                    errors.Add($"策略 {kv.Key} 的 train_count_mult={kv.Value.TrainCountMult} 越界（1.0..3.0）");
             }
 
             if (buildCards == 0) errors.Add("没有建造牌");

@@ -15,7 +15,7 @@ namespace WarIsland.Model
         public int Star => MergedBuildings < 1 ? 1 : MergedBuildings;
     }
 
-    /// <summary>规划阶段产出的一队兵（还没落到横道）。</summary>
+    /// <summary>规划阶段产出的一批兵（还没落到横道）。一批 = 一座建筑产出的 N 名单兵。</summary>
     public sealed class PlannedSquad
     {
         public string UnitId = "";
@@ -24,6 +24,8 @@ namespace WarIsland.Model
         /// <summary>attack / defend / ""（不限时空）。</summary>
         public string Role = SquadRoles.Any;
         public int PopCost;
+        /// <summary>这一批出几名独立单兵（单兵制：卡面 units × 本回合加快训练倍率，向上取整）。</summary>
+        public int Units = 1;
     }
 
     /// <summary>本轮生效的策略加成。</summary>
@@ -32,6 +34,9 @@ namespace WarIsland.Model
         public double MoveMult = 1.0;
         public double ArmorMult = 1.0;
         public double CritAdd;
+        /// <summary>本回合征召牌产出数量倍率（「加快训练」= 1.5；只在本回合内有效）。</summary>
+        public double TrainCountMult = 1.0;
+        /// <summary>打过的策略牌名字（给 HUD 显示"本回合生效中"）。</summary>
         public readonly List<string> Active = new List<string>();
 
         public void Reset()
@@ -39,6 +44,7 @@ namespace WarIsland.Model
             MoveMult = 1.0;
             ArmorMult = 1.0;
             CritAdd = 0.0;
+            TrainCountMult = 1.0;
             Active.Clear();
         }
 
@@ -48,7 +54,16 @@ namespace WarIsland.Model
             if (s.MoveMult > 0.0) MoveMult *= s.MoveMult;
             if (s.ArmorMult > 0.0) ArmorMult *= s.ArmorMult;
             CritAdd += s.CritAdd;
+            if (s.TrainCountMult > 0.0) TrainCountMult *= s.TrainCountMult;
             Active.Add(s.DisplayName);
+        }
+
+        /// <summary>这张训练牌本回合实际产几名（向上取整，1.5 倍：6→9 / 5→8）。</summary>
+        public int UnitsOf(CardDef card)
+        {
+            if (card == null) return 0;
+            double raw = Math.Max(card.Units, 1) * (TrainCountMult > 0.0 ? TrainCountMult : 1.0);
+            return Math.Max(1, (int)Math.Ceiling(raw - 1e-9));
         }
     }
 
@@ -66,6 +81,8 @@ namespace WarIsland.Model
         public int Towers;
         public int ArmySquads;
         public int ArmyModels;
+        /// <summary>单兵制：训练牌一共打出了几批（每座建筑一批）。</summary>
+        public int ArmyCards;
         public double DrainReduction;
         public readonly List<string> Army = new List<string>();
         public readonly List<string> Actions = new List<string>();
@@ -334,22 +351,31 @@ namespace WarIsland.Model
             if (!HasCard(cardId) || Cp < card.CostCp) return false;
             var unit = Units.Get(card.Unit);
             if (unit == null || !unit.Enabled) return false;
+            // 人口按"这张牌一共几名"算（单兵制：units × 本回合加快训练倍率）
+            int need = unit.PopCost * Math.Max(Mods.UnitsOf(card), 1);
             int free = PopFree();
             foreach (var b in Buildings)
             {
                 var def = DefOf(b);
                 if (def == null || def.Tag != card.Tag) continue;
-                if (free >= unit.PopCost) return true;
+                if (free >= need) return true;
             }
             return false;
         }
 
-        /// <summary>训练牌：全场同类建筑各产 1 队（人口不够的建筑跳过并计数）。</summary>
+        /// <summary>
+        /// 训练牌：一张牌一共产 **units 名独立单兵**（本回合加快训练会放大这个数），
+        /// 由场上匹配 Tag 的建筑**分摊**（两座兵营 = 3 + 3，不是各出 6）。
+        ///
+        /// 为什么分摊而不是"每座各产一队"：卡面上写 6 就是 6 —— 否则场上多一座兵营，
+        /// 同一张牌的产出会翻倍，卡面数字立刻变成谎话，配平也没法做。
+        /// 人口按"每名 × pop_cost"计（当前征召牌 pop_cost=0 = 只吃 CP）。
+        /// </summary>
         public int PlayTrain(string cardId) => PlayTrainOut(cardId, null, true);
 
         /// <summary>
-        /// 训练牌的可观测版本：<paramref name="produced"/> 会收到"哪座建筑产了哪一队"，
-        /// 供 SquadSession 把每队落到对应格子的出兵锚点。
+        /// 训练牌的可观测版本：<paramref name="produced"/> 会收到"哪座建筑产了几名"，
+        /// 供 SquadSession 把每个单兵落到对应格子的落点环上。
         /// <paramref name="addToArmy"/> = false 时，队伍已经即时落地，只记人口（<see cref="ExtraPop"/>）。
         /// </summary>
         public int PlayTrainOut(string cardId, List<PlannedSquad> produced, bool addToArmy)
@@ -357,32 +383,51 @@ namespace WarIsland.Model
             if (!CanPlayTrain(cardId)) return 0;
             var card = Cfg.Cards[cardId];
             var unit = Units.Get(card.Unit);
+            int batch = Math.Max(Mods.UnitsOf(card), 1);
             Cp -= card.CostCp;
             Hand.Remove(cardId);
             Discard.Add(cardId);
 
-            int n = 0;
+            // 1) 先收集所有匹配 Tag 的建筑（按 plot 稳定排序，分摊结果可复现）
+            var targets = new List<PlanBuilding>();
             foreach (var b in Buildings)
             {
                 var def = DefOf(b);
                 if (def == null || def.Tag != card.Tag) continue;
-                if (PopUsed() + unit.PopCost > PopCap())
-                {
-                    PopBlocked += 1;
-                    continue;
-                }
+                targets.Add(b);
+            }
+            targets.Sort((a, b) => a.Plot.CompareTo(b.Plot));
+            if (targets.Count == 0) return 0;
+
+            // 2) 人口不够就整张牌打不出（不半途产出，避免"点一下只出一半"）
+            int popTotal = unit.PopCost * batch;
+            if (PopUsed() + popTotal > PopCap())
+            {
+                PopBlocked += 1;
+                return 0;
+            }
+
+            // 3) 分摊：前面的建筑各多分 1 名，余数落在第一批
+            int n = 0;
+            int share = batch / targets.Count;
+            int extra = batch % targets.Count;
+            for (int i = 0; i < targets.Count; i++)
+            {
+                int men = share + (i < extra ? 1 : 0);
+                if (men <= 0) continue;
                 var squad = new PlannedSquad
                 {
                     UnitId = unit.Id,
-                    Star = b.Star,
-                    SourceBuilding = b.DefId,
+                    Star = targets[i].Star,
+                    SourceBuilding = targets[i].DefId,
                     Role = card.Role ?? SquadRoles.Any,
-                    PopCost = unit.PopCost,
+                    PopCost = unit.PopCost * men,
+                    Units = men,
                 };
                 if (addToArmy) Army.Add(squad);
-                else ExtraPop += unit.PopCost;
+                else ExtraPop += squad.PopCost;
                 produced?.Add(squad);
-                n += 1;
+                n += men;
             }
             Actions.Add($"train:{unit.Id}x{n}");
             return n;
@@ -447,10 +492,14 @@ namespace WarIsland.Model
             var groups = new Dictionary<string, int>(StringComparer.Ordinal);
             foreach (var s in Army)
             {
-                snap.ArmyModels += Units.Get(s.UnitId)?.SquadSize ?? 0;
+                // 2026-11-22 单兵制：一批有多少名就记多少名（ArmyModels 与 ArmySquads 都是"人"）。
+                int men = Math.Max(s.Units, 1);
+                snap.ArmyModels += men;
+                snap.ArmySquads += men;
+                snap.ArmyCards += 1;
                 string key = $"{s.UnitId}★{s.Star}";
                 groups.TryGetValue(key, out int n);
-                groups[key] = n + 1;
+                groups[key] = n + men;
             }
             foreach (var kv in groups) snap.Army.Add($"{kv.Key}×{kv.Value}");
             snap.Actions.AddRange(Actions);

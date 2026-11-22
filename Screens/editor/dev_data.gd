@@ -599,7 +599,7 @@ func compose_level(shell_id: String, layout_id: String, encounter_id: String) ->
 			"length": length_logic,
 			"width": width_logic,
 			"zone_depth": zone_depth,
-			"zone_dps_per_squad": 9.0,
+			"zone_dps_per_unit": 0.24,
 			"spawn_offset": 250.0,
 			"base_stop": 120.0,
 			"template": kind,

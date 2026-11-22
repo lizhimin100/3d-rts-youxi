@@ -26,17 +26,8 @@ namespace WarIsland.Model
         public string Faction = "";
         public bool Enabled = true;
 
-        /// <summary>一队几个模型。</summary>
-        public int SquadSize = 1;
-
-        /// <summary>阵型模板：square（方阵）/ scatter（散阵）/ wedge（楔形）。</summary>
-        public string Formation = SquadFormations.Square;
-
-        /// <summary>
-        /// 小队半径（**游戏数值**，三位数标准值）。这是导航半径：
-        /// 质心避障、抵达判定、阵型槽位预算都读这一处；表现层 × R1 得米。
-        /// </summary>
-        public double SquadRadius = 120.0;
+        // 2026-11-22：squad_size / formation / squad_radius 三个编制字段**已删除**。
+        // 一个卡面 = 一名单兵；产出数量由**卡牌**的 units 决定（同一兵种可以被不同卡复用）。
 
         public double Hp;
         public double AttackDamage;
@@ -70,6 +61,9 @@ namespace WarIsland.Model
         public bool IsMelee => AttackRange < MeleeMaxRange;
 
         public string Role => IsMelee ? "melee" : "ranged";
+
+        /// <summary>导航半径（游戏数值）—— 单兵只有身位，没有小队半径。</summary>
+        public double NavRadius => UnitBody.NavRadius(this);
     }
 
     /// <summary>
@@ -153,9 +147,6 @@ namespace WarIsland.Model
                     errors.Add($"{tag}：阵营 {faction.DisplayName} 要求占位网格（use_placeholder_mesh=true）");
                 }
 
-                if (u.SquadSize < 1 || u.SquadSize > 12)
-                    errors.Add($"{tag}：squad_size={u.SquadSize} 越界（1..12）");
-
                 if (u.Hp <= 0.0)
                     errors.Add($"{tag}：hp={u.Hp} 必须 > 0");
                 if (u.AttackDamage < 0.0)
@@ -193,8 +184,8 @@ namespace WarIsland.Model
                 if (u.BodyRadius <= 0.0 || u.BodyRadius > 2.0)
                     errors.Add($"{tag}：body_radius={u.BodyRadius} 越界（0..2 米）");
 
-                // 小队编制闭环：阵型模板 + 三位数小队半径 + 槽位数 = squad_size + 槽位贴合半径
-                errors.AddRange(SquadFormations.Validate(u));
+                // 单兵身位闭环（小队编制已取消：没有任何槽位/阵型校验了）
+                errors.AddRange(UnitBody.Validate(u));
 
                 // 近战无投射物、远程必须生成投射物
                 if (u.IsMelee && u.Projectile)
@@ -204,8 +195,8 @@ namespace WarIsland.Model
                 if (u.Projectile && u.ProjectileSpeed <= 0.0)
                     errors.Add($"{tag}：远程投射物速度必须 > 0");
 
-                if (u.PopCost < 1 || u.PopCost > 12)
-                    errors.Add($"{tag}：pop_cost={u.PopCost} 越界（1..12）");
+                if (u.PopCost < 0 || u.PopCost > 12)
+                    errors.Add($"{tag}：pop_cost={u.PopCost} 越界（0..12；0 = 征召牌只吃 CP 不吃人口）");
 
                 // 主动技能已取消；最多预留 1 个自动触发的 passive_trait，当前一律留空
                 if (!string.IsNullOrEmpty(u.PassiveTrait))
@@ -326,9 +317,6 @@ namespace WarIsland.Model
                     DisplayName = JVal.Str(ud, "display_name", ""),
                     Faction = JVal.Str(ud, "faction", ""),
                     Enabled = JVal.Bool(ud, "enabled", true),
-                    SquadSize = JVal.Int(ud, "squad_size", 1),
-                    Formation = JVal.Str(ud, "formation", SquadFormations.Square),
-                    SquadRadius = JVal.Double(ud, "squad_radius", 0.0),
                     Hp = JVal.Double(ud, "hp", 0.0),
                     AttackDamage = JVal.Double(ud, "attack_damage", 0.0),
                     AttackCooldown = JVal.Double(ud, "attack_cooldown", 1.0),
@@ -343,7 +331,7 @@ namespace WarIsland.Model
                     BodyRadius = JVal.Double(ud, "body_radius", 0.45),
                     Projectile = JVal.Bool(ud, "projectile", false),
                     ProjectileSpeed = JVal.Double(ud, "projectile_speed", 0.0),
-                    PopCost = JVal.Int(ud, "pop_cost", JVal.Int(ud, "squad_size", 1)),
+                    PopCost = JVal.Int(ud, "pop_cost", 0),
                     PassiveTrait = JVal.Str(ud, "passive_trait", ""),
                     Note = JVal.Str(ud, "note", ""),
                 };

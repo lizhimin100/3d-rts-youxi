@@ -11,9 +11,10 @@ extends Node3D
 const JsonFile := preload("res://Engine/util/json_file.gd")
 
 ## 中文目录/文件名不写进字符串字面量（i18n 预算按"含中文的字面量"计数）。
-const SQUAD_LAYER_PATH := "res://Screens/world/squad/" + "\u5c0f\u961f\u5c42.gd"
-const BLOOD_PATH := "res://Screens/world/squad/" + "\u5c0f\u961f\u8840\u6761.gd"
-const HUD_PATH := "res://Screens/hud/" + "\u6218\u5f79HUD.gd"
+const UNIT_LAYER_PATH := "res://Screens/world/units/" + "\u5355\u5175\u5c42.gd"
+const BLOOD_PATH := "res://Screens/world/units/" + "\u5355\u4f4d\u8840\u6761.gd"
+## HUD 是**可编辑场景**（.tscn）：制作人直接开它调布局，脚本只绑引用/写文本/播动画。
+const HUD_SCENE := "res://Screens/hud/" + "\u6218\u5f79HUD.tscn"
 const CAMERA_PATH := "res://Screens/world/battle/" + "\u6218\u5f79\u955c\u5934.gd"
 const BOARD_PATH := "res://Screens/world/battle/" + "\u6218\u5f79\u68cb\u76d8.gd"
 const BUILDINGS_PATH := "res://Screens/world/battle/" + "\u6218\u5f79\u5efa\u7b51\u5c42.gd"
@@ -54,6 +55,8 @@ var model_instances := 0
 var real_models := 0
 var phase_left := 0.0
 var attack_squads := 0
+## 场上还活着的单位数（双方、当前时空）—— 截图/自检可以拿它断言"画面里真的有人"。
+var live_units := 0
 var defend_squads := 0
 var player_hp := 0.0
 var enemy_hp := 0.0
@@ -270,10 +273,10 @@ func _build_world() -> void:
 	_buildings.call("configure", _building_defs, PLAYER_COLOR, ENEMY_COLOR, _tile_spec)
 	_buildings.call("set_arena", _arena)
 
-	# 小队（真实 GLB）
+	# 单兵层（真实 GLB + 错峰空降 + 行走/攻击动画）
 	_squad_layer = Node3D.new()
-	_squad_layer.name = "SquadLayer"
-	_squad_layer.set_script(load(SQUAD_LAYER_PATH) as Script)
+	_squad_layer.name = "UnitLayer"
+	_squad_layer.set_script(load(UNIT_LAYER_PATH) as Script)
 	add_child(_squad_layer)
 	_squad_layer.call("configure", _unit_defs)
 	_squad_layer.call("set_ground", ground)
@@ -292,12 +295,15 @@ func _build_world() -> void:
 	canvas.layer = 1
 	add_child(canvas)
 	_blood = Control.new()
-	_blood.name = "SquadBlood"
+	_blood.name = "UnitBlood"
 	_blood.set_script(load(BLOOD_PATH) as Script)
 	canvas.add_child(_blood)
-	_hud = Control.new()
+	var hud_packed := load(HUD_SCENE) as PackedScene
+	if hud_packed == null:
+		_fatal("HUD scene missing: " + HUD_SCENE)
+		return
+	_hud = hud_packed.instantiate() as Control
 	_hud.name = "BattleHUD"
-	_hud.set_script(load(HUD_PATH) as Script)
 	canvas.add_child(_hud)
 
 
@@ -493,6 +499,10 @@ func _refresh(force: bool) -> void:
 	player_hp = float(_view.get("player_hp", 0.0))
 	enemy_hp = float(_view.get("enemy_hp", 0.0))
 	attack_squads = int(_state.get("attack_squads", 0))
+	live_units = 0
+	for _sq in _view.get("squads", []):
+		if bool((_sq as Dictionary).get("active", true)):
+			live_units += 1
 	defend_squads = int(_state.get("defend_squads", 0))
 	outpost_captured = bool(_state.get("outpost_captured", false))
 	built_count = (_arena.get("player_buildings", []) as Array).size()
@@ -502,7 +512,7 @@ func _refresh(force: bool) -> void:
 		model_instances = int(_squad_layer.call("model_instance_count"))
 		real_models = 1 if model_instances > 0 else 0
 	if _blood != null and is_instance_valid(_blood):
-		_blood.call("set_view", _view, _camera.get("camera"))
+		_blood.call("set_view", _view, _camera.get("camera"), _selected)
 	if _hud != null and is_instance_valid(_hud):
 		if force or _hud_tick >= 0.1:
 			_hud.call("refresh", _state, _view, phase_name, phase_left, _selected.size(), _extra_hud())
@@ -564,9 +574,39 @@ func _wave_count(kind: String) -> int:
 	return 0
 
 
+## 选中单位的信息（**只读**，HUD 用它显示"这是谁"，不提供任何操作）。
+func _selected_info() -> Dictionary:
+	if _selected.is_empty():
+		return {}
+	var sid := int(_selected[0])
+	for s in _view.get("squads", []):
+		var sq: Dictionary = s
+		if int(sq.get("id", 0)) != sid:
+			continue
+		var def: Dictionary = _unit_defs.get(String(sq.get("unit_id", "")), {})
+		return {
+			"name": String(def.get("display_name", sq.get("display_name", ""))),
+			"side": int(sq.get("side", 0)),
+			"hp": float(sq.get("hp", 0.0)),
+			"max_hp": float(sq.get("max_hp", 1.0)),
+			"damage": float(def.get("attack_damage", 0.0)),
+			"cooldown": float(def.get("attack_cooldown", 1.0)),
+			"armor": float(def.get("armor", 0.0)),
+			"engaged": bool(sq.get("engaged", false)),
+			"star": int(sq.get("star", 1)),
+		}
+	return {}
+
+
 func _extra_hud() -> Dictionary:
 	return {
+		"selected_info": _selected_info(),
 		"cards": _card_meta,
+		"units": _unit_defs,
+		"buildings": _building_defs,
+		"strategies": _planning.get("strategies", {}),
+		"gold": 0,
+		"train_count_mult": float(_state.get("train_count_mult", 1.0)),
 		"intent": _intent_text(),
 		"last_order": last_order,
 		"armed_card": armed_card,
@@ -644,11 +684,11 @@ func _finish_left(pos: Vector2) -> void:
 	pick_at_screen(pos)
 
 
+## 右键：**什么都不做**。2026-11-22 玩家口径「选中己方或敌人单位都不可操作，只显示信息」，
+## 所以这里没有集火、没有移动、没有停火 —— 唯一保留的是"点一下看它是谁"。
 func _right_click(pos: Vector2) -> void:
-	if phase_name != "attack" and phase_name != "defend":
-		status_text = I18n.t("battle.order.only_in_battle")
-		return
-	context_order_screen(pos, ground_at_screen(pos))
+	pick_at_screen(pos)
+	status_text = I18n.t("battle.order.info_only")
 
 
 func ground_at_screen(pos: Vector2) -> Vector3:
@@ -715,34 +755,14 @@ func clear_selection() -> void:
 	_selected.clear()
 
 
-## 右键：只认"点在某支敌方小队身上" = 集火（微操收敛后的唯一指令）。
-func context_order_screen(_pos: Vector2, world: Vector3) -> void:
-	if _selected.is_empty():
-		status_text = I18n.t("battle.order.none")
-		return
-	var enemy := int(_mdl.call("SquadPickWorld", _handle, world.x, world.z, 1, 0.8))
-	if enemy > 0:
-		order_selected("attack", world, enemy)
-		return
-	status_text = I18n.t("battle.order.focus_only")
+## 兼容旧调用：现在一律拒绝（Model 侧 `IsPlayerMicroOrder` 恒 false）。
+func context_order_screen(_pos: Vector2, _world: Vector3) -> void:
+	status_text = I18n.t("battle.order.info_only")
 
 
-func order_selected(order: String, world: Vector3 = Vector3.ZERO, target: int = -1) -> void:
-	if _selected.is_empty():
-		status_text = I18n.t("battle.order.none")
-		return
-	if not bool(_mdl.call("SquadPlayerOrderAllowed", order)):
-		status_text = I18n.t("battle.order.focus_only")
-		return
-	var ids := _selected.duplicate()
-	var n := int(_mdl.call("SquadOrder", _handle, ids, order, world.x, world.z, target))
-	if n <= 0:
-		return
-	last_order = I18n.t("battle.receipt." + order, {"n": n})
-	status_text = last_order
-	_view = _mdl.call("SquadView", _handle)
-	_order_point = world
-	_has_order = true
+## 兼容旧调用：玩家指令通道已下线，永远返回 0 条回执。
+func order_selected(_order: String, _world: Vector3 = Vector3.ZERO, _target: int = -1) -> void:
+	status_text = I18n.t("battle.order.info_only")
 
 
 ## 截图/自检用：**屏幕上最靠中间**的那支敌方小队的屏幕坐标。
@@ -797,7 +817,13 @@ func apply_shot_camera(spec: Dictionary) -> void:
 		_camera.call("set_pitch_deg", float(spec["pitch"]))
 	var fx := float(_arena.get("player_zone_x", -32.0))
 	var fz := 0.0
-	if spec.has("focus_tile"):
+	if spec.has("focus_battle"):
+		# 跟着"真正在打的那一坨"取景：取所有激活单位（双方）的质心。
+		# 写死坐标在 60 秒自动战斗里必然飘掉 —— 接敌点每局都不一样。
+		var c := _battle_centroid()
+		fx = c.x
+		fz = c.z
+	elif spec.has("focus_tile"):
 		var row := _tile_of(int(spec["focus_tile"]))
 		fx = float(row.get("x", fx))
 		fz = float(row.get("z", fz))
@@ -810,6 +836,30 @@ func apply_shot_camera(spec: Dictionary) -> void:
 		_camera.call("set_distance", float(spec["dist"]))
 	_camera.call("set_focus_world", fx, fz)
 	_camera.call("snap")
+
+
+## 交战质心（截图取景用）：优先取"正在打的那一坨"，没有交战的单位才退回全体质心。
+## 不这么做的话，进攻战里镜头会被后面还在行军的波次拉到大空地上（画面上只剩草）。
+func _battle_centroid() -> Vector3:
+	var hot := Vector3.ZERO
+	var hot_n := 0
+	var all := Vector3.ZERO
+	var all_n := 0
+	for s in _view.get("squads", []):
+		var sq: Dictionary = s
+		if not bool(sq.get("active", true)):
+			continue
+		var p := Vector3(float(sq.get("x", 0.0)), 0.0, float(sq.get("z", 0.0)))
+		all += p
+		all_n += 1
+		if bool(sq.get("engaged", false)):
+			hot += p
+			hot_n += 1
+	if hot_n > 0:
+		return hot / float(hot_n)
+	if all_n > 0:
+		return all / float(all_n)
+	return Vector3(float(_arena.get("player_zone_x", -32.0)), 0.0, 0.0)
 
 
 func _tile_of(index: int) -> Dictionary:

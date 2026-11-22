@@ -14,16 +14,15 @@ namespace WarIsland.Model
         /// <summary>attack / defend / ""（不限时空）。</summary>
         public string Role = SquadRoles.Any;
         public int CostCp;
-        public int SquadSize;
-        public string Formation = "";
-        public double SquadRadius;
+        /// <summary>这张牌现在打出去会产几名单兵（已含本回合「加快训练」倍率）。</summary>
+        public int Units;
         public int Buildings;
         public bool InHand;
         public bool Available;
         public string Reason = "ok";
     }
 
-    /// <summary>规划/执行阶段的小队会话快照。</summary>
+    /// <summary>规划/执行阶段的会话快照。</summary>
     public sealed class SquadSessionState
     {
         public string Phase = "planning";
@@ -32,6 +31,8 @@ namespace WarIsland.Model
         public int PlanningIndex;
         public int Cp;
         public int CpStart;
+        /// <summary>CP 上限（HUD 的能量球显示 当前/上限）。</summary>
+        public int CpCap;
         public int PopUsed;
         public int PopCap;
         public int PopBlocked;
@@ -42,6 +43,12 @@ namespace WarIsland.Model
         public bool OutpostCaptured;
         public bool OutpostAvailable;
         public int OutpostCpCost;
+        /// <summary>本回合征召牌产出倍率（1.0 = 没打「加快训练」）。</summary>
+        public double TrainCountMult = 1.0;
+        /// <summary>手牌堆/弃牌堆（HUD 的抽牌堆与弃牌堆数字直接读这两个）。</summary>
+        public int DrawPile;
+        public int DiscardPile;
+        public int HandCount;
         public readonly List<string> Hand = new List<string>();
         public readonly List<SquadTrainEntry> TrainCards = new List<SquadTrainEntry>();
         public readonly List<string> Log = new List<string>();
@@ -206,7 +213,10 @@ namespace WarIsland.Model
             _log.Add($"planning:{Match.PlanningIndex}");
         }
 
-        /// <summary>打一张训练牌。即时模式：产出的每一队立刻落到对应建筑的格子中心。</summary>
+        /// <summary>
+        /// 打一张训练牌。即时模式：产出的每个单兵立刻落到对应建筑的格子落点环上
+        /// （格子中心附近的紧凑小阵列，避开左上角建筑占地）。
+        /// </summary>
         public int PlayTrainCard(string cardId)
         {
             if (_executing) return 0;
@@ -216,8 +226,9 @@ namespace WarIsland.Model
             {
                 for (int i = 0; i < produced.Count; i++)
                 {
-                    if (produced[i].Role == SquadRoles.Attack) _attackSquads += 1;
-                    else if (produced[i].Role == SquadRoles.Defend) _defendSquads += 1;
+                    int men = Math.Max(produced[i].Units, 1);
+                    if (produced[i].Role == SquadRoles.Attack) _attackSquads += men;
+                    else if (produced[i].Role == SquadRoles.Defend) _defendSquads += men;
                 }
             }
             if (InstantTrain && n > 0)
@@ -373,15 +384,15 @@ namespace WarIsland.Model
             else BeginDefend();
         }
 
-        /// <summary>据点/主堡免费防守小队：防守战开场白送一支（不占 CP / 人口）。</summary>
+        /// <summary>据点/主堡免费防守兵：防守战开场白送几名（不占 CP / 人口）。</summary>
         private void SpawnFreeDefenders()
         {
             if (!Tuning.FreeDefendEnabled) return;
             int tile = Arena.PlayerBaseTile;
             if (tile <= 0) return;
-            int id = Battle.AddSquadAtTileRole(0, Tuning.FreeDefendUnit, Tuning.FreeDefendStar,
-                tile, "keep", 0, SquadRoles.Defend);
-            if (id > 0) _log.Add($"free_defend:{Tuning.FreeDefendUnit}@tile{tile}");
+            int n = Battle.AddUnitsAtTile(0, Tuning.FreeDefendUnit, Tuning.FreeDefendStar,
+                tile, "keep", Math.Max(Tuning.FreeDefendCount, 1), 0, SquadRoles.Defend);
+            if (n > 0) _log.Add($"free_defend:{Tuning.FreeDefendUnit}x{n}@tile{tile}");
         }
 
         private void ScheduleRound(string kind, double offset)
@@ -433,8 +444,9 @@ namespace WarIsland.Model
                 }
             }
             if (tile <= 0) tile = Arena.PlayerBarracksTile;
-            int id = Battle.AddSquadAtTileRole(0, sq.UnitId, sq.Star, tile, sq.SourceBuilding, ordinal, sq.Role);
-            _log.Add($"spawn:{sq.UnitId}★{sq.Star}@{tile}#{id}#{sq.Role}");
+            int n = Battle.AddUnitsAtTile(0, sq.UnitId, sq.Star, tile, sq.SourceBuilding,
+                Math.Max(sq.Units, 1), ordinal, sq.Role);
+            _log.Add($"spawn:{sq.UnitId}★{sq.Star}x{n}@{tile}#{sq.Role}");
         }
 
         // =================================================================
@@ -442,6 +454,8 @@ namespace WarIsland.Model
         // =================================================================
         public SquadSessionState State()
         {
+            int armyUnits = 0;
+            for (int i = 0; i < Match.Army.Count; i++) armyUnits += Math.Max(Match.Army[i].Units, 1);
             var state = new SquadSessionState
             {
                 Phase = _executing ? "executing" : "planning",
@@ -449,15 +463,21 @@ namespace WarIsland.Model
                 PlanningIndex = Match.PlanningIndex,
                 Cp = Match.Cp,
                 CpStart = Match.CpAtStart,
+                CpCap = Match.Cfg.CpCap,
                 PopUsed = Match.PopUsed(),
                 PopCap = Match.PopCap(),
                 PopBlocked = Match.PopBlocked,
-                ArmySquads = Match.Army.Count,
+                ArmySquads = armyUnits,
+                ArmyModels = armyUnits,
                 AttackSquads = _attackSquads,
                 DefendSquads = _defendSquads,
                 OutpostCaptured = OutpostCaptured,
                 OutpostAvailable = OutpostAvailable,
                 OutpostCpCost = OutpostCpCost,
+                TrainCountMult = Match.Mods.TrainCountMult,
+                DrawPile = Match.DrawPile.Count,
+                DiscardPile = Match.Discard.Count,
+                HandCount = Match.Hand.Count,
             };
             for (int i = 0; i < Match.Hand.Count; i++) state.Hand.Add(Match.Hand[i]);
 
@@ -485,9 +505,7 @@ namespace WarIsland.Model
                     Tag = card.Tag,
                     Role = card.Role,
                     CostCp = card.CostCp,
-                    SquadSize = def != null ? def.SquadSize : 0,
-                    Formation = def != null ? def.Formation : "",
-                    SquadRadius = def != null ? def.SquadRadius : 0.0,
+                    Units = Match.Mods.UnitsOf(card),
                     Buildings = buildings,
                     InHand = inHand,
                     Available = available,

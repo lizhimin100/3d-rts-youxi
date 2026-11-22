@@ -370,17 +370,9 @@ func _run() -> void:
 
 	# --- 可选：读取场景属性做状态断言（例如 last_order 必须包含某个词） ---
 	if recipe.has("expect_scene_state"):
-		var pair: Array = recipe["expect_scene_state"]
-		if pair.size() < 2:
-			_fail("expect_scene_state needs [property, substring]")
+		# 走同一个 _assert_state：子串 / ">=N" 数值下限两套语义只有一份实现
+		if not _assert_state(recipe["expect_scene_state"] as Array):
 			return
-		var prop := String(pair[0])
-		var needle := String(pair[1])
-		var got := str(_scene.get(prop))
-		if not got.contains(needle):
-			_fail("scene.%s = '%s' (want '%s')" % [prop, got, needle])
-			return
-		print("[shot] state ok: %s = %s" % [prop, got])
 
 	# --- 可选：点规划阶段的兵牌（真实输入事件；2026-11-15 玩家要求"点兵牌有反应"） ---
 	if recipe.has("token_click"):
@@ -511,8 +503,18 @@ func _assert_state(pair: Array) -> bool:
 		_fail("expect_state needs [property, substring]")
 		return false
 	var got := str(_scene.get(String(pair[0])))
-	if not got.contains(String(pair[1])):
-		_fail("scene.%s = '%s' (want '%s')" % [pair[0], got, pair[1]])
+	var want := String(pair[1])
+	# 数值断言写成 ">=N" 时按数值比（"25 里含不含 1"这种子串断言是假绿灯，
+	# 但"画面里至少要有 1 个人"这种意图又必须能表达出来）。
+	if want.begins_with(">="):
+		var lim := float(want.substr(2))
+		if not got.is_valid_float() or float(got) < lim:
+			_fail("scene.%s = '%s' (want %s)" % [pair[0], got, want])
+			return false
+		print("[shot] state ok: %s = %s (%s)" % [pair[0], got, want])
+		return true
+	if not got.contains(want):
+		_fail("scene.%s = '%s' (want '%s')" % [pair[0], got, want])
 		return false
 	print("[shot] state ok: %s = %s" % [pair[0], got])
 	return true
@@ -544,11 +546,33 @@ func _select_unit(unit_id: String) -> bool:
 	return true
 
 
+## 按名字找控件。先精确匹配，再退回"前缀匹配"：
+## 手牌里同一张卡有多份副本时，引擎会给第二份起名 `TrainCard_x2`（add_child(force_readable_name)），
+## 配方里写 `TrainCard_x` 应该点到"还留在手里的那份"，而不是直接报"找不到"。
 func _find(root: Node, target: String) -> Node:
+	var exact := _find_exact(root, target)
+	if exact != null:
+		return exact
+	return _find_prefix(root, target)
+
+
+func _find_exact(root: Node, target: String) -> Node:
 	if root.name == target:
 		return root
 	for c in root.get_children():
-		var hit := _find(c, target)
+		var hit := _find_exact(c, target)
+		if hit != null:
+			return hit
+	return null
+
+
+func _find_prefix(root: Node, target: String) -> Node:
+	if String(root.name).begins_with(target):
+		if root is CanvasItem and not (root as CanvasItem).is_visible_in_tree():
+			return null
+		return root
+	for c in root.get_children():
+		var hit := _find_prefix(c, target)
 		if hit != null:
 			return hit
 	return null

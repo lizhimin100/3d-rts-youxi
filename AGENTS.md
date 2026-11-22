@@ -5,15 +5,15 @@
 
 ## 一句话
 
-**单通道 3D 长横道 + 规划阶段打牌/建造/升星三合一 + 60 秒攻防双场小队自动推进与局部微操**（Godot 4.7 宿主 + 纯 C# 规则内核）。玩家是**战场指挥官**而不是操作员：**规划阶段**（无限时、世界完全暂停）用手牌部署、建造与升星，按【规划结束】后进入 **60 秒执行阶段**——攻防两场同时推进，小队自动接战，玩家只做局部微操（**只有集火**）。目标平台 **Steam + 低中端手机**。
+**单通道 3D 长横道 + 规划阶段打牌/建造/升星三合一 + 60 秒攻防双场单兵自动推进（无微操）**（Godot 4.7 宿主 + 纯 C# 规则内核）。玩家是**战场指挥官**而不是操作员：**规划阶段**（无限时、世界完全暂停）用手牌部署、建造与升星，按【规划结束】后进入 **60 秒执行阶段**——攻防两场同时推进、单兵自动接战，玩家**只观察不下令**（选中单位只显示信息）。目标平台 **Steam + 低中端手机**。
 
-> 设计原则：**指挥官不做操作员 · 规划决策 / 执行观察 · 单通道战场 · 小队是战斗实体 · 打牌=建造=升星 · 短局只认 CP+人口 · 规则只写一份（C#）· 引擎只做表现与适配。**
+> 设计原则：**指挥官不做操作员 · 规划决策 / 执行观察 · 单通道战场 · 单兵是战斗实体 · 打牌=建造=升星 · 短局只认 CP+人口 · 规则只写一份（C#）· 引擎只做表现与适配。**
 
 ## 目录地图（七块砖）
 
 ```
 Engine/     自研引擎层：启动/存档/多语言/音频/对话/平台/调试接口。共享库，游戏只调用。
-Model/      **纯 C# 规则内核**（net8.0 类库，零 Godot）：R1 换算、伤害、经济、成长、可用性、确定性推演；`Squad/` 是真小队（编制/脊线寻路/队级战斗）。
+Model/      **纯 C# 规则内核**（net8.0 类库，零 Godot）：R1 换算、伤害、经济、成长、可用性、确定性推演；`Squad/` 是**单兵**战斗内核（名字是历史包袱：一个实体 = 一名单兵，脊线寻路 + 攻击态锁定）。
 Screens/    3D 表现与输入：bridge/（C# 桥）hud/ input/ camera/ world/（美术/人群/沙盘）scenes/。
 Game/       引擎耦合的玩法装配（core/systems/units/map/config/adapters）。**迁移期资产，新代码不进这里。**
 Content/    内容与资产：data/（JSON 唯一数值源）i18n/ keys/ art/ audio/ maps/ legacy/（旧 .tres 留档）。
@@ -57,10 +57,10 @@ addons/     Godot 编辑器插件：war_island_editor=数据工作台（默认�
 
 ```powershell
 ./Tools/run-game.ps1 --check                  # 无窗口体检（会先 dotnet build 内核）
-./Tools/run-game.ps1 --simulate --games=100   # 真小队 100 局：胜率 / DPS / 寻路 / 阵型，末行 SIM {json}
+./Tools/run-game.ps1 --simulate --games=100   # 单兵 100 局：胜率 / DPS / 寻路 / 占区，末行 SIM {json}
 ./Tools/run-game.ps1 --simulate --lane        # 旧横道口径（只做历史基线对照）
-./Tools/run-game.ps1 --squad                  # 试玩真小队：框选 / 右键移动 / 右键集火 / H 驻守
-./Tools/run-game.ps1 --round-test             # 半回合自检：规划/执行/CP/小队/部署
+./Tools/run-game.ps1 --squad                  # 试玩：打牌 → 空降 → 开战（选中只读信息，无指令）
+./Tools/run-game.ps1 --round-test             # 半回合自检：规划/执行/CP/单兵/部署
 ./Tools/run-game.ps1 --shot squad _qa/squad.png # 真点训练牌 + 真右键移动（另有 squad_box/focus/hold/exec）
 ./Tools/run-game.ps1 --import                 # 新增 class_name / 场景 / 资源后跑一次
 dotnet build 战争原岛.csproj                   # 只编译内核 + 宿主
@@ -75,6 +75,8 @@ dotnet build 战争原岛.csproj                   # 只编译内核 + 宿主
 > 新增记录写日期；提案先放"建议"，试玩过再升"已确认"。
 
 ### 已确认
+
+- **2026-11-22 单兵制（推翻「真小队」）**：`units.json` 删掉 `squad_size/formation/squad_radius`，`SquadFormation.cs` 物理删除；一张征召牌产 N 名**独立单兵**（进攻 6 / 防守 5，卡面 `units`；「加快训练」本回合 ×1.5 → 9 / 8）。**攻击态（射程内有活目标）位置冻结**，敌我友军碰撞跳过它（根治接敌被推走）；玩家指令白名单**清空**。基地 72 血、占区 `zone_dps_per_unit=0.45`。表现层 `Screens/world/units/`。详见 `Documents/单兵制.md`。
 
 - **2026-11-20 正式转型《战争原岛》**：单通道 3D 长横道；规划阶段打牌/建造/升星三合一；执行阶段攻防双场、小队自动推进 + 局部微操。
 - **2026-11-20 距离铁律 `R1 = 0.015`**：`Model/` 只认游戏数值，`Screens/` 才乘 R1 换米；真值只在 `Model/Core/RtsUnits.cs`。

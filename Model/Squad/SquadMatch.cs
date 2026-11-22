@@ -50,6 +50,8 @@ namespace WarIsland.Model
         public int EnemySquadsLost;
         public int PlayerMaxZone;
         public int EnemyMaxZone;
+        public double PlayerZoneSeconds;
+        public double EnemyZoneSeconds;
         public int StuckEvents;
         public int Repaths;
         public double AvgSlotErrorMeters;
@@ -114,11 +116,11 @@ namespace WarIsland.Model
                 session.Battle.SetActiveRole(roundRole);
                 session.BeginExecution(ri);
 
-                // **预设偏好**（不是玩家微操）：两轮都要拆敌方基地（胜利条件就是拆家）。
-                // 全线从 +Z 侧翼切入敌方基地抽血：Move 强行军不恋战，直线绕过脊线上的波次。
-                // 玩家在战斗里只能改"打谁"（集火），推不推进由这条偏好决定。
-                var flank = arena.LaneToWorld(arena.EnemyBaseX, 16.0);
-                session.Battle.OrderSide(0, SquadOrders.Move, flank.X, flank.Y);
+                // **预设偏好**由 SquadSession.BeginAttack / BeginDefend 内部的 PushForward 下达：
+                //   进攻战 → 压向敌方基地（胜利条件就是拆家）；
+                //   防守战 → 前出到玩家区前缘迎战（**不能也去拆家**，否则老家没人守，
+                //            敌方波次直接把基地抽干 —— 这是 2026-11-22 实测到的一个配平陷阱）。
+                // 推演与试玩共用同一份偏好，这里不再另写一条"侧翼绕行"的规则。
 
                 SquadBattleStats stats = session.Battle.Run(arena.RoundSeconds);
                 var rr = new SquadRoundResult
@@ -174,6 +176,8 @@ namespace WarIsland.Model
             r.EnemySquadsLost += s.EnemySquadsLost;
             r.PlayerMaxZone = Math.Max(r.PlayerMaxZone, s.PlayerMaxZone);
             r.EnemyMaxZone = Math.Max(r.EnemyMaxZone, s.EnemyMaxZone);
+            r.PlayerZoneSeconds += s.PlayerZoneSeconds;
+            r.EnemyZoneSeconds += s.EnemyZoneSeconds;
             r.StuckEvents += s.StuckEvents;
             r.Repaths += s.Repaths;
             r.AvgSlotErrorMeters += s.AvgSlotErrorMeters;
@@ -241,7 +245,7 @@ namespace WarIsland.Model
             {
                 r.ReviewCodes.Add("win");
                 r.Reviews.Add($"胜利：敌方基地 {r.EnemyBaseHpStart:0} → 0；我方基地剩 {Percent(r.PlayerBaseHp, r.PlayerBaseHpStart)}。");
-                r.Reviews.Add($"小队：出兵 {r.PlayerSquadsProduced} 队 / 阵亡 {r.PlayerSquadsLost} 队，人均 DPS {Dps(r.PlayerByUnit):0.0}。");
+                r.Reviews.Add($"单兵：出兵 {r.PlayerSquadsProduced} 名 / 阵亡 {r.PlayerSquadsLost} 名，人均 DPS {Dps(r.PlayerByUnit):0.0}。");
                 if (r.StuckEvents > 0)
                     r.Reviews.Add($"寻路：卡住脱困 {r.StuckEvents} 次，重规划 {r.Repaths} 次（脊线 + 局部避障）。");
                 return;
@@ -252,23 +256,23 @@ namespace WarIsland.Model
             int totalBlocked = (r.AttackPlan?.PopBlocked ?? 0) + (r.DefendPlan?.PopBlocked ?? 0);
 
             if (totalSquads == 0)
-                reasons.Add((100, "no_army", "两轮规划一队兵都没出：CP 没落到训练牌上。"));
+                reasons.Add((100, "no_army", "两轮规划一个人都没出：CP 没落到征召牌上。"));
             if (r.EnemyBaseHp > 0.0 && r.EnemyBaseHp < r.EnemyBaseHpStart * 0.1)
                 reasons.Add((96, "close_loss", $"差一点：敌方基地只剩 {r.EnemyBaseHp:0}/{r.EnemyBaseHpStart:0}。"));
             if (r.PlayerBaseHp <= 0.0)
-                reasons.Add((98, "base_breach", $"基地被破：敌方最多 {r.EnemyMaxZone} 队同时停在我方区域抽血。"));
+                reasons.Add((98, "base_breach", $"基地被破：敌方最多 {r.EnemyMaxZone} 名同时停在我方区域抽血。"));
             if (r.PlayerSquadsLost >= 3 && r.EnemySquadsLost == 0)
-                reasons.Add((92, "squad_wiped", $"整队被吃：我方阵亡 {r.PlayerSquadsLost} 队，敌方一队未灭。"));
+                reasons.Add((92, "squad_wiped", $"被打穿：我方阵亡 {r.PlayerSquadsLost} 名，敌方一人未灭。"));
             if (r.PlayerDamage <= 0.0 && totalSquads > 0)
                 reasons.Add((94, "no_dps", "一个人都没打中：射程/阵型/克制可能完全没接上。"));
             if (r.StuckEvents >= 6)
-                reasons.Add((84, "path_stuck", $"寻路卡住 {r.StuckEvents} 次（重规划 {r.Repaths} 次），队形被挤在狭道里。"));
+                reasons.Add((84, "path_stuck", $"寻路卡住 {r.StuckEvents} 次（重规划 {r.Repaths} 次），单兵在狭道里互相挡路。"));
             if (r.AvgSlotErrorMeters > 0.9)
-                reasons.Add((80, "slot_loose", $"槽位松散：平均偏离 {r.AvgSlotErrorMeters:0.00} 米（理想 < 0.6）。"));
+                reasons.Add((80, "slot_loose", $"站位松散：平均偏离 {r.AvgSlotErrorMeters:0.00} 米（理想 < 0.6）。"));
             if (r.EnemyModelsLost > 0 && r.PlayerModelsLost > r.EnemyModelsLost * 1.3)
                 reasons.Add((86, "exchange", $"交换比失衡：我方阵亡 {r.PlayerModelsLost} 人，敌方 {r.EnemyModelsLost} 人。"));
             if (totalBlocked > 0)
-                reasons.Add((72, "pop_blocked", $"人口卡死：共 {totalBlocked} 队训练被人口挡住。"));
+                reasons.Add((72, "pop_blocked", $"人口卡死：共 {totalBlocked} 次训练被人口挡住。"));
             if (r.PlayerMaxZone == 0 && r.Rounds.Count > 0 && r.Rounds[0].Kind == "attack")
                 reasons.Add((78, "no_zone", "进攻战一次也没摸到敌方基地。"));
 

@@ -123,7 +123,7 @@
 		"battle_plan": {
 			"scene": "res://Screens/scenes/战役.tscn",
 			"delay": 7.0,
-			"$note": "规划期：镜头锁在玩家区，3 列 × 6 行棋盘必须清晰居中，顶部意图栏 + 底部手牌留白。"
+			"$note": "规划期完整新 UI：顶部（玩家名/血量/金币/卷轴槽 · 回合与阶段 · 路线图按钮）、底部左 CP 能量球 + 人口 + 抽牌堆、底部右 开战/据点/倍速 + 弃牌堆、中间手牌区。"
 		},
 		"battle_build": {
 			"scene": "res://Screens/scenes/战役.tscn",
@@ -153,40 +153,36 @@
 			"delay": 7.0,
 			"clicks": [
 				{
-					"click": "TrainCard_train_footman_atk",
+					"click": "TrainCard_train_attack",
 					"expect_state": [
 						"attack_squads",
-						"1"
-					]
+						"6"
+					],
+					"wait": 0.8
 				}
 			],
-			"wait_after": 1.2,
-			"$note": "真点进攻训练牌 → 建筑格中心立刻出整队（脚下红徽记）。"
+			"wait_after": 0.5,
+			"$note": "真点「征召进攻」→ 兵营格中心空降 6 名独立进攻单兵（脚下红环）。"
 		},
 		"battle_attack": {
 			"scene": "res://Screens/scenes/战役.tscn",
 			"delay": 7.0,
 			"clicks": [
 				{
-					"click": "TrainCard_train_footman_atk",
+					"click": "TrainCard_train_attack",
 					"expect_state": [
 						"attack_squads",
-						"1"
-					]
+						"6"
+					],
+					"wait": 0.6
 				},
 				{
-					"click": "TrainCard_train_crossbow_atk",
+					"click": "TrainCard_train_attack",
 					"expect_state": [
 						"attack_squads",
-						"2"
-					]
-				},
-				{
-					"click": "TrainCard_train_crossbow_def",
-					"expect_state": [
-						"defend_squads",
-						"1"
-					]
+						"12"
+					],
+					"wait": 0.6
 				},
 				{
 					"click": "StartButton",
@@ -194,33 +190,32 @@
 						"phase_name",
 						"attack"
 					],
-					"wait": 18.0
+					"wait": 9.0
 				}
 			],
 			"expect_scene_state": [
-				"phase_name",
-				"attack"
+				"live_units",
+				">=1"
 			],
 			"wait_after": 2.0,
-			"$note": "进攻战：镜头切到「中立区 + 敌方区」，只激活进攻小队。"
+			"$note": "进攻战 9 秒：12 名步兵压上接敌。断言 live_units —— 画面里必须真的有人（不是空草地）。",
+			"shot_camera": {
+				"focus_battle": true,
+				"dist": 24.0,
+				"pitch": 36.0
+			}
 		},
 		"battle_defend": {
 			"scene": "res://Screens/scenes/战役.tscn",
 			"delay": 7.0,
 			"clicks": [
 				{
-					"click": "TrainCard_train_footman_atk",
-					"expect_state": [
-						"attack_squads",
-						"1"
-					]
-				},
-				{
-					"click": "TrainCard_train_crossbow_def",
+					"click": "TrainCard_train_defend",
 					"expect_state": [
 						"defend_squads",
-						"1"
-					]
+						"5"
+					],
+					"wait": 0.6
 				},
 				{
 					"click": "StartButton",
@@ -243,7 +238,7 @@
 				"defend"
 			],
 			"wait_after": 6.0,
-			"$note": "防守战：进攻战打完自动切「中立区 + 玩家区」，激活防守小队 + 据点免费防守队。必须用 --phase-seconds=20 拍（进攻 20s → 防守开场 1s → 2x 跑 12s，仍在本轮内）。"
+			"$note": "防守战：进攻战打完自动切「中立区+玩家区」，激活防守单位 + 据点免费防守兵。必须用 --phase-seconds=20 拍。"
 		},
 		"battle_focus": {
 			"scene": "res://Screens/scenes/战役.tscn",
@@ -280,18 +275,20 @@
 			"delay": 8.0,
 			"clicks": [
 				{
-					"click": "TrainCard_train_footman_atk",
+					"click": "TrainCard_train_attack",
 					"expect_state": [
 						"attack_squads",
-						"1"
-					]
+						"6"
+					],
+					"wait": 0.6
 				},
 				{
-					"click": "TrainCard_train_crossbow_atk",
+					"click": "TrainCard_train_defend",
 					"expect_state": [
-						"attack_squads",
-						"2"
-					]
+						"defend_squads",
+						"5"
+					],
+					"wait": 0.6
 				},
 				{
 					"click": "StartButton",
@@ -307,7 +304,7 @@
 				"1"
 			],
 			"wait_after": 0.6,
-			"$note": "验收「不是纯色占位」：开战后我方小队前压到玩家区前缘的开阔地，近距拍真实 GLB 实例（步兵 5 + 弩兵 4 = 9）。",
+			"$note": "验收「不是纯色占位」：近距拍真实 GLB 单兵（步兵 6 名 / 弩兵 5 名）。",
 			"shot_camera": {
 				"focus": [
 					-40.0,
@@ -328,18 +325,12 @@
 					]
 				},
 				{
-					"click": "TrainCard_train_footman_atk",
+					"click": "TrainCard_train_attack",
 					"expect_state": [
 						"attack_squads",
-						"1"
-					]
-				},
-				{
-					"click": "TrainCard_train_crossbow_atk",
-					"expect_state": [
-						"attack_squads",
-						"2"
-					]
+						"6"
+					],
+					"wait": 0.6
 				}
 			],
 			"map_click": [
@@ -355,7 +346,7 @@
 				"dist": 20.0
 			},
 			"wait_after": 1.2,
-			"$note": "空间规格验收：建筑占单格 38~44% 且底座在格子左上象限、正面朝镜头 +Z；出兵位在格中心（有蓝环）；棋盘是半透明双色微差、透得出草地纹理。断言读 visual_probe —— 量的是摆上去之后的世界尺寸，不是读配置。"
+			"$note": "空间规格验收：建筑占单格 38~44% 且底座在左上象限、正面朝镜头 +Z；出兵位在格中心；棋盘是细虚线框 + 12% 淡填充。"
 		},
 		"battle_ground": {
 			"scene": "res://Screens/scenes/战役.tscn",
@@ -412,11 +403,12 @@
 			"delay": 7.0,
 			"clicks": [
 				{
-					"click": "TrainCard_train_footman_atk",
+					"click": "TrainCard_train_attack",
 					"expect_state": [
 						"attack_squads",
-						"1"
-					]
+						"6"
+					],
+					"wait": 0.6
 				},
 				{
 					"click": "StartButton",
@@ -439,7 +431,7 @@
 				"dist": 999.0
 			},
 			"wait_after": 1.0,
-			"$note": "边界验收：进攻战里把机位推到战场最靠外的角（x≈104,z≈20）并拉到最大合法档 —— 这是玩家真能到达的极限视角，画面里必须全是地形（坡地/树林/立体侧壁），看不到任何图外虚空。"
+			"$note": "边界验收：进攻战里把机位推到战场最外角并拉到最大合法档，画面必须全是地形。"
 		},
 		"battle_edge": {
 			"scene": "res://Screens/scenes/战役.tscn",
@@ -455,6 +447,93 @@
 			},
 			"wait_after": 0.6,
 			"$note": "沙盘验收：低机位（24°）从战场内侧看出去 —— 近处是平整战术区，远侧是抬起来的土层斜坡与丘陵，能读出这块地是「有厚度的立体沙盘」而不是一张纸。"
+		},
+		"battle_airdrop": {
+			"scene": "res://Screens/scenes/战役.tscn",
+			"delay": 7.0,
+			"clicks": [
+				{
+					"click": "TrainCard_train_attack",
+					"expect_state": [
+						"attack_squads",
+						"6"
+					],
+					"wait": 0.0
+				}
+			],
+			"$note": "空降瞬间：6 名新兵从兵营格上方带重力落下、错峰 0.065s（截图停在半空）。",
+			"wait_after": 0.12
+		},
+		"battle_info": {
+			"scene": "res://Screens/scenes/战役.tscn",
+			"delay": 7.0,
+			"clicks": [
+				{
+					"click": "TrainCard_train_attack",
+					"expect_state": [
+						"attack_squads",
+						"6"
+					],
+					"wait": 0.6
+				},
+				{
+					"click": "StartButton",
+					"expect_state": [
+						"phase_name",
+						"attack"
+					],
+					"wait": 3.0
+				}
+			],
+			"squad_select_all": true,
+			"expect": "UnitInfo",
+			"expect_scene_state": [
+				"selected_count",
+				"6"
+			],
+			"wait_after": 0.6,
+			"$note": "全选我方 6 名单兵 → 只弹出只读信息面板（名称/血量/攻防/状态），没有任何指令入口。"
+		},
+		"battle_combat": {
+			"scene": "res://Screens/scenes/战役.tscn",
+			"delay": 8.0,
+			"clicks": [
+				{
+					"click": "TrainCard_train_attack",
+					"expect_state": [
+						"attack_squads",
+						"6"
+					],
+					"wait": 0.6
+				},
+				{
+					"click": "TrainCard_train_attack",
+					"expect_state": [
+						"attack_squads",
+						"12"
+					],
+					"wait": 0.6
+				},
+				{
+					"click": "StartButton",
+					"expect_state": [
+						"phase_name",
+						"attack"
+					],
+					"wait": 9.0
+				}
+			],
+			"expect_scene_state": [
+				"phase_name",
+				"attack"
+			],
+			"shot_camera": {
+				"focus_battle": true,
+				"dist": 20.0,
+				"pitch": 36.0
+			},
+			"wait_after": 0.4,
+			"$note": "接敌攻击：近距拍前冲/挥砍、受击闪白与脚下血条（动画不是静态平移）。"
 		}
 	}
 }

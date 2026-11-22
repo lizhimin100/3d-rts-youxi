@@ -107,7 +107,7 @@ namespace WarIsland.Model
         public double SlotError;
     }
 
-    /// <summary>一支小队的快照（世界坐标，米）。</summary>
+    /// <summary>一个独立单兵的快照（世界坐标，米）。</summary>
     public sealed class SquadView
     {
         public int Id;
@@ -118,7 +118,7 @@ namespace WarIsland.Model
         public double X;
         public double Z;
         public double Heading;
-        /// <summary>聚合血量：整队所有活着的成员之和。</summary>
+        /// <summary>血量：单兵制下就是这名士兵自己的血（不再聚合）。</summary>
         public double Hp;
         public double MaxHp;
         public int AliveCount;
@@ -135,6 +135,14 @@ namespace WarIsland.Model
         public string Role = SquadRoles.Any;
         /// <summary>当前时空里是否激活（false = 已生成但被冻结，Screens 不画）。</summary>
         public bool Active = true;
+        /// <summary>是否处于攻击态（射程内有活目标）。表现层用它播攻击动画/锁定站立。</summary>
+        public bool Engaged;
+        /// <summary>出生到现在的模型时间（秒）。表现层用它排序落地动画。</summary>
+        public double Age;
+        /// <summary>身位半径（米）—— 血条/落点圈按它算。</summary>
+        public double BodyRadius = 0.45;
+        /// <summary>攻击间隔（秒）—— 表现层按这个节拍重播攻击动作/弹道。</summary>
+        public double AttackCooldown = 1.0;
         public SquadMemberView[] Members = Array.Empty<SquadMemberView>();
     }
 

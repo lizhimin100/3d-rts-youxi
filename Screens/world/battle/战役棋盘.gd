@@ -11,22 +11,32 @@ extends Node3D
 ##     所以地面纹理细节始终透得出来。绝不是一块不透明厚板 —— 上一版画了 16cm 厚的实心块
 ##     + 侧面 + 亮边框，整片战场像贴了一叠瓷砖，把地形全遮死了；
 ##   · 相邻格只做 6%~10% 的明暗微差（`two_tone`），近看是一整块草地、远看能数清 18 格；
+##   · **2026-11-22 参考图改造**：格子主要靠"细虚线框"读出来 —— 浅暖白、0.1m 宽、
+##     0.85m 实线 + 0.55m 空隙、约 60% 不透明，四边内缩 0.18m；填充压到 12%，
+##     于是地面纹理从线缝与色层里持续透出来（原来的软边压暗整圈太重，读成瓷砖）；
 ##   · 只画几何，不做任何"这格能不能建"的判断 —— 那是 Model 的 FreePlayerTiles()。
 
 ## 棋盘色层的默认值（数据里 look.board 缺失时兜底；真值在 map_shells.json 的 look.board）
 ## fill_alpha 压得很低（0.20）：这一层是"草坪漆"，不是"色块"。低于 0.12 就数不清格子，
 ## 高于 0.30 就把地形纹理糊住了 —— 区间是观感规格，不是随手填的。
-const FILL_ALPHA_DEFAULT := 0.20
-const EDGE_ALPHA_DEFAULT := 0.34
-const EDGE_M_DEFAULT := 0.55
+const FILL_ALPHA_DEFAULT := 0.12
+const EDGE_ALPHA_DEFAULT := 0.30
+const EDGE_M_DEFAULT := 0.42
 const LIFT_DEFAULT := 0.02
-const TWO_TONE_DEFAULT := 0.08
+const TWO_TONE_DEFAULT := 0.07
 const TONE_COOL_DEFAULT := 0.35
+## 虚线框（参考图的读法）：线宽 / 线段长 / 空隙 / 四边内缩，单位都是米。
+const LINE_M_DEFAULT := 0.10
+const DASH_M_DEFAULT := 0.85
+const GAP_M_DEFAULT := 0.55
+const INSET_M_DEFAULT := 0.18
+const LINE_ALPHA_DEFAULT := 0.62
 ## 相邻格明暗差的合法区间：低于 6% 数不清格子，高于 10% 就变成"瓷砖"。
 const TWO_TONE_MIN := 0.06
 const TWO_TONE_MAX := 0.10
 
 var _slab: MeshInstance3D = null
+var _dashes: MeshInstance3D = null
 var _marks: MeshInstance3D = null
 var _highlight: MeshInstance3D = null
 var _arena: Dictionary = {}
@@ -41,6 +51,7 @@ var _dirty_marks := true
 
 func _ready() -> void:
 	_slab = _make_mesh_node("Tiles")
+	_dashes = _make_mesh_node("Dashes")
 	_marks = _make_mesh_node("Anchors")
 	_highlight = _make_mesh_node("Highlight")
 
@@ -133,6 +144,7 @@ func _rebuild() -> void:
 		mesh.surface_set_material(0, _tile_material("tile_a"))
 	if mesh.get_surface_count() > 1:
 		mesh.surface_set_material(1, _tile_material("tile_b"))
+	_rebuild_dashes()
 	_rebuild_marks()
 	_rebuild_highlight()
 
@@ -178,14 +190,93 @@ func _two_tone() -> float:
 	return clampf(_style("two_tone", TWO_TONE_DEFAULT), TWO_TONE_MIN, TWO_TONE_MAX)
 
 
-## 棋盘观感探针（截图断言读它）：证明这一层是"半透明草坪漆"而不是"不透明色块"。
-## alpha 高、双色差出区间、软边为 0 —— 任意一条不成立就读成瓷砖，所以这里给出 ok 判据。
+## 棋盘观感探针（截图断言读它）：证明这一层是"半透明草坪漆 + 细虚线框"而不是"不透明瓷砖"。
+## 判据（2026-11-22 参考图）：填充 ≤ 20% 且 ≥ 5%、双色差 6%~10%、虚线真实存在且不透明度过半。
 func look_report() -> String:
 	var a := _alpha()
 	var t := _two_tone()
-	var e := clampf(_style("edge_m", EDGE_M_DEFAULT), 0.0, 2.5)
-	var ok := a <= 0.34 and a >= 0.10 and t >= TWO_TONE_MIN and t <= TWO_TONE_MAX and e >= 0.25
-	return "alpha=%.2f tone=%.3f edge=%.2fm ok=%d" % [a, t, e, 1 if ok else 0]
+	var dash := _dash_len()
+	var gap := _gap_len()
+	var la := clampf(_style("line_alpha", LINE_ALPHA_DEFAULT), 0.0, 1.0)
+	var ok := a <= 0.20 and a >= 0.05 and t >= TWO_TONE_MIN and t <= TWO_TONE_MAX \
+		and dash > 0.05 and la >= 0.35 and la <= 0.92
+	return "alpha=%.2f tone=%.3f dash=%.2f/%.2f line_a=%.2f ok=%d" % [a, t, dash, gap, la, 1 if ok else 0]
+
+
+func _line_width() -> float:
+	return clampf(_style("line_m", LINE_M_DEFAULT), 0.02, 0.5)
+
+
+func _dash_len() -> float:
+	return clampf(_style("dash_m", DASH_M_DEFAULT), 0.15, 3.0)
+
+
+func _gap_len() -> float:
+	return clampf(_style("gap_m", GAP_M_DEFAULT), 0.05, 3.0)
+
+
+func _inset() -> float:
+	return clampf(_style("inset_m", INSET_M_DEFAULT), 0.0, 1.5)
+
+
+## 一格四边的虚线框：地面上的细长四边形，颜色来自主题的 line/rim，透明度来自 line_alpha。
+func _rebuild_dashes() -> void:
+	if _dashes == null:
+		return
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var lift := _lift() + 0.006
+	var col: Color = _col("line", Color(0.95, 0.90, 0.78))
+	col.a = clampf(_style("line_alpha", LINE_ALPHA_DEFAULT), 0.0, 1.0)
+	var w := _line_width() * 0.5
+	var dash := _dash_len()
+	var gap := _gap_len()
+	var inset := _inset()
+	var drawn := 0
+	for t in _arena.get("tiles", []):
+		var tile: Dictionary = t
+		var x := float(tile.get("x", 0.0))
+		var z := float(tile.get("z", 0.0))
+		var y := float(tile.get("terrain_y", 0.0)) + lift
+		var hw := maxf(float(tile.get("w", 4.0)) * 0.5 - inset, 0.2)
+		var hd := maxf(float(tile.get("d", 4.0)) * 0.5 - inset, 0.2)
+		# 四条边：沿边步进，画 dash 长、跳 gap 长
+		drawn += _dash_edge(st, Vector2(x - hw, z - hd), Vector2(x + hw, z - hd), y, w, dash, gap, col)
+		drawn += _dash_edge(st, Vector2(x + hw, z - hd), Vector2(x + hw, z + hd), y, w, dash, gap, col)
+		drawn += _dash_edge(st, Vector2(x + hw, z + hd), Vector2(x - hw, z + hd), y, w, dash, gap, col)
+		drawn += _dash_edge(st, Vector2(x - hw, z + hd), Vector2(x - hw, z - hd), y, w, dash, gap, col)
+	if drawn <= 0:
+		_dashes.mesh = null
+		return
+	var mesh := st.commit()
+	_dashes.mesh = mesh
+	_dashes.material_override = _line_mat()
+
+
+## 画一条边的虚线，返回画了几段（0 段就别 commit，否则引擎报 "No vertices were added"）
+func _dash_edge(st: SurfaceTool, a: Vector2, b: Vector2, y: float, half_w: float,
+		dash: float, gap: float, col: Color) -> int:
+	var dir := (b - a)
+	var len := dir.length()
+	if len < 1e-4:
+		return 0
+	var segs := 0
+	dir /= len
+	var n := Vector2(-dir.y, dir.x) * half_w
+	var s := 0.0
+	while s < len - 0.001:
+		var e := minf(s + dash, len)
+		var p0 := a + dir * s
+		var p1 := a + dir * e
+		var v0 := Vector3(p0.x + n.x, y, p0.y + n.y)
+		var v1 := Vector3(p1.x + n.x, y, p1.y + n.y)
+		var v2 := Vector3(p1.x - n.x, y, p1.y - n.y)
+		var v3 := Vector3(p0.x - n.x, y, p0.y - n.y)
+		_tri(st, v0, v1, v2, col)
+		_tri(st, v0, v2, v3, col)
+		segs += 1
+		s += dash + gap
+	return segs
 
 
 ## 一对相邻格的颜色：亮格用主题色，暗格按 `two_tone` 压暗。
@@ -381,9 +472,9 @@ func _rebuild_marks() -> void:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var build_col := _col("build_anchor", Color(0.75, 0.54, 0.18))
-	build_col.a = 0.42
+	build_col.a = 0.30
 	var spawn_col := _col("spawn_anchor", Color(0.30, 0.62, 1.0))
-	spawn_col.a = 0.55
+	spawn_col.a = 0.34
 	var lift := _lift()
 	var ratio := float(_spec.get("footprint_ratio", RtsTileSpec.FOOTPRINT_DEFAULT))
 	for t in _arena.get("tiles", []):

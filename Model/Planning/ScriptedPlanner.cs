@@ -155,8 +155,25 @@ namespace WarIsland.Model
                     case CardKind.Strategy:
                     {
                         if (!m.CanPlayStrategy(id)) break;
-                        double score = card.Effect == "focus" ? 64 : (card.Effect == "bulwark" ? 62 : 60);
-                        if (m.Army.Count == 0) score = 0;
+                        // 「加快训练」是**前置**牌：它只放大"之后打出的征召牌"，
+                        // 所以必须在任何训练牌之前出手 —— 给它最高分，
+                        // 否则脚本化规划器会先把手牌征召完、最后才打加速（等于白打）。
+                        double score;
+                        if (card.Effect == "train_boost")
+                        {
+                            bool haveTrain = false;
+                            foreach (var hid in m.Hand)
+                            {
+                                if (m.Cfg.Cards.TryGetValue(hid, out CardDef hc) && hc.Kind == CardKind.Train)
+                                {
+                                    haveTrain = true;
+                                    break;
+                                }
+                            }
+                            score = haveTrain ? 130 : 0;
+                        }
+                        else if (card.Effect == "focus") score = m.Army.Count > 0 ? 64 : 0;
+                        else score = m.Army.Count > 0 ? 62 : 0;
                         string cid = id;
                         list.Add(new Candidate
                         {

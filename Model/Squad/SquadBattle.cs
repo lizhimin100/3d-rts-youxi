@@ -55,6 +55,13 @@ namespace WarIsland.Model
         public double StuckZ;
 
         public readonly List<SquadMember> Members = new List<SquadMember>();
+        /// <summary>
+        /// 攻击态锁定（2026-11-22 根治"接敌被推走"）：
+        /// 只要射程内有活目标，这名单兵的位置与本 tick 的移动就**完全冻结** ——
+        /// 敌我友军的碰撞分离一律跳过它。没有这条，两条同速的队列会在接触的一瞬间
+        /// 互相挤开 1~2 米，画面上就是"打到一半被弹走"。
+        /// </summary>
+        public bool Locked;
         public int AliveCount;
         public double DamageDealt;
         public int Kills;
@@ -101,15 +108,19 @@ namespace WarIsland.Model
     }
 
     /// <summary>
-    /// 真小队战斗内核（纯 C#，20Hz 固定步长）。
+    /// 战斗内核（纯 C#，20Hz 固定步长）。
     ///
-    /// 原子性：
-    ///   · 移动/索敌/受击/死亡都以 <see cref="BattleSquad"/> 为单位；成员只是槽位上的"挂件"，
-    ///     没有独立寻路、没有独立指令，唯一动作是朝槽位弹簧收缩（+ 超出牵引绳就拉回）；
-    ///   · 外界（Screens）只能拿到小队 id 列表，永远拿不到"单个成员"的操控入口。
+    /// 原子性（2026-11-22 起）：
+    ///   · **一个实体 = 一名独立单兵**：自己寻路、自己索敌、自己受击、自己死；
+    ///     没有小队编制、没有阵型槽位、没有队内分散 AI（`SquadFormation.cs` 已删除）；
+    ///   · 成员列表恒定 1 项，且**槽位就是质心**（offset 0,0）——
+    ///     保留 Members 是为了跨语言快照契约（GDScript 仍按 members[0] 读血条/位置），
+    ///     但成员不再有任何独立位移，所以"槽位误差"这一指标恒为 0。
     ///
     /// 导航：
-    ///   · 质心沿 <see cref="SquadRouteGraph"/> 规划的脊线路径推进，局部靠小队圆-圆分离避障；
+    ///   · 每名单兵沿 <see cref="SquadRouteGraph"/> 规划的脊线路径推进，局部靠圆-圆分离避障；
+    ///   · 进入攻击态（射程内有活目标）→ <see cref="BattleSquad.Locked"/> 置真，
+    ///     位置冻结、分离跳过：这是"接敌不被推走"的唯一实现；
     ///   · 建筑不参与寻路（设计口径），所以这里没有任何格子/占格查询。
     ///
     /// 坐标：
@@ -122,10 +133,13 @@ namespace WarIsland.Model
         private const double Eps = 1e-9;
         /// <summary>近战判定容差（游戏数值）：0.06 米。</summary>
         private const double RangeSlack = 4.0;
-        /// <summary>小队间距系数：按"接触半径"分开；0.75 允许前后排贴到近战距离。</summary>
-        private const double SeparationFactor = 2.20;
-        /// <summary>槽位弹簧：每秒收敛系数。</summary>
-        private const double SlotSpring = 12.0;
+        /// <summary>
+        /// 单兵间距系数：按"身位直径"分开。1.55 = 两个人贴到肩膀擦肩，
+        /// 不会叠模；攻击态的单位完全不参与分离（见 <see cref="BattleSquad.Locked"/>）。
+        /// </summary>
+        private const double SeparationFactor = 1.55;
+        /// <summary>攻击态判定的额外容差（游戏数值）：0.12 米，射程边界不抖。</summary>
+        private const double LockSlack = 8.0;
         /// <summary>攻击移动的最小索敌半径（游戏数值）= 9 米；远程按自身射程 ×1.6 放宽。</summary>
         private const double DetectRadius = 600.0;
         /// <summary>驻守时的自动索敌半径下限（游戏数值）= 7.5 米。</summary>
@@ -276,7 +290,7 @@ namespace WarIsland.Model
         }
 
         /// <summary>
-        /// 带时空角色地生成一支小队（<paramref name="role"/> = attack / defend / ""）。
+        /// 生成**一名独立单兵**（<paramref name="role"/> = attack / defend / ""）。
         /// 角色决定它在哪一场里被推进；<see cref="SquadRoles.Any"/> 两场都在。
         /// </summary>
         public int AddSquadRole(int side, string unitId, int star, double worldX, double worldZ,
@@ -287,7 +301,7 @@ namespace WarIsland.Model
             if (!SquadRoles.IsValid(role)) role = SquadRoles.Any;
 
             var lane = _arena.WorldToLane(worldX, worldZ);
-            double radius = Math.Max(def.SquadRadius, 60.0);
+            double radius = def.NavRadius;
             lane = _route.ClampPoint(lane, radius);
 
             var squad = new BattleSquad
@@ -307,36 +321,29 @@ namespace WarIsland.Model
             };
 
             double starHp = _planning != null ? _planning.StarHpMult(squad.Star) : 1.0;
-            double starAtk = _planning != null ? _planning.StarAttackMult(squad.Star) : 1.0;
             var mods = side == 0 ? _playerMods : _enemyMods;
             squad.MoveMult = mods.MoveMult > 0.0 ? mods.MoveMult : 1.0;
             squad.ArmorMult = mods.ArmorMult > 0.0 ? mods.ArmorMult : 1.0;
             squad.CritAdd = mods.CritAdd;
             squad.Speed = RtsUnits.ToUnits(def.MoveSpeed) * squad.MoveMult;
 
-            var slots = SquadFormations.Slots(def);
-            // 小队之间只按"身位"分开：阵型本身允许互相穿插，否则近战永远够不到 1.4 米判定
-            squad.ContactRadius = SquadFormations.BodyUnits(def);
-            for (int i = 0; i < slots.Count; i++)
+            // 单兵：唯一成员的槽位就是质心（offset 0,0）。没有阵型、没有槽位弹簧。
+            squad.ContactRadius = UnitBody.BodyUnits(def);
+            var m = new SquadMember
             {
-                var m = new SquadMember
-                {
-                    Index = i,
-                    OffsetX = slots[i].X,
-                    OffsetZ = slots[i].Y,
-                    MaxHp = def.Hp * starHp,
-                    Cd = _rng.NextFloat() * 0.3,
-                    Retarget = _rng.NextFloat() * 0.2,
-                };
-                m.Hp = m.MaxHp;
-                var p = SlotPoint(squad, m);
-                m.X = p.X;
-                m.Z = p.Y;
-                squad.Members.Add(m);
-            }
-            squad.AliveCount = squad.Members.Count;
-            squad.HpMax = 0.0;
-            for (int i = 0; i < squad.Members.Count; i++) squad.HpMax += squad.Members[i].MaxHp;
+                Index = 0,
+                OffsetX = 0.0,
+                OffsetZ = 0.0,
+                MaxHp = def.Hp * starHp,
+                Cd = _rng.NextFloat() * 0.3,
+                Retarget = _rng.NextFloat() * 0.2,
+            };
+            m.Hp = m.MaxHp;
+            m.X = squad.X;
+            m.Z = squad.Z;
+            squad.Members.Add(m);
+            squad.AliveCount = 1;
+            squad.HpMax = m.MaxHp;
             squad.Hp = squad.HpMax;
             squad.OrderX = squad.X;
             squad.OrderZ = squad.Z;
@@ -347,33 +354,48 @@ namespace WarIsland.Model
             if (side == 0) _stats.PlayerSquadsSpawned += 1;
             else _stats.EnemySquadsSpawned += 1;
             StatOf(side, def.Id).Squads += 1;
-            StatOf(side, def.Id).Models += squad.Members.Count;
+            StatOf(side, def.Id).Models += 1;
             return squad.Id;
         }
 
         /// <summary>
-        /// 在战术格子的 SquadSpawnAnchor（格子正中心）瞬间生成整支小队。
-        /// ring=0 就是格子中心；同一座建筑连出多队时，后续队伍按"出队队列"往自家方向排开
-        /// （否则 6 支队叠在一个点上，靠分离弹开会把战场推到地图边缘）。
+        /// 在战术格子的出兵锚点（格子正中心）生成一整批单兵。
+        ///
+        /// 落点用 <see cref="UnitBody.SpawnRing"/>：黄金角螺旋 + 右下象限偏置，
+        /// 严格避开左上角建筑占地 —— 否则 6 个人会站在兵营里面。
+        /// <paramref name="count"/> = 这一批几个，<paramref name="ordinal"/> = 在同一格连出多批时的批次号。
         /// </summary>
-        public int AddSquadAtTile(int side, string unitId, int star, int tileIndex, string sourceBuilding = "", int ring = 0)
+        public int AddUnitsAtTile(int side, string unitId, int star, int tileIndex,
+            string sourceBuilding, int count, int ordinal, string role)
         {
-            return AddSquadAtTileRole(side, unitId, star, tileIndex, sourceBuilding, ring, SquadRoles.Any);
+            Vec2 center = _arena.TileSpawnWorld(tileIndex);
+            var ring = UnitBody.SpawnRing(Math.Max(count, 1));
+            // 同一格连出多批（同一张牌两张、或两座兵营各出一批）：整环按批次往外挪一圈，
+            // 不然第二批会和第一批落在同一圈点上。
+            double push = Math.Max(ordinal, 0) * (0.55 + 0.12 * Math.Sqrt(ring.Count));
+            double dir = side == 0 ? -1.0 : 1.0;
+            int made = 0;
+            for (int i = 0; i < ring.Count; i++)
+            {
+                double x = center.X + ring[i].X + dir * push * 0.35;
+                double z = center.Y + ring[i].Y + push;
+                int id = AddSquadRole(side, unitId, star, x, z, sourceBuilding, tileIndex, role);
+                if (id > 0) made += 1;
+            }
+            return made;
         }
 
-        /// <summary>在格子正中心生成整队，并指定时空角色（攻 / 防）。</summary>
+        /// <summary>兼容旧签名：一次出一名（count=1 的批次）。</summary>
+        public int AddSquadAtTile(int side, string unitId, int star, int tileIndex, string sourceBuilding = "", int ring = 0)
+        {
+            return AddUnitsAtTile(side, unitId, star, tileIndex, sourceBuilding, 1, ring, SquadRoles.Any);
+        }
+
+        /// <summary>兼容旧签名：在格子中心出**一名**指定时空角色的单兵。</summary>
         public int AddSquadAtTileRole(int side, string unitId, int star, int tileIndex,
             string sourceBuilding, int ring, string role)
         {
-            Vec2 world = _arena.TileSpawnWorld(tileIndex);
-            if (ring > 0)
-            {
-                double dir = side == 0 ? -1.0 : 1.0;
-                double back = ring * 2.0;
-                double lateral = ((ring % 2) * 2 - 1) * 1.0 * ((ring + 1) / 2);
-                world = new Vec2((float)(world.X + dir * back), (float)(world.Y + lateral));
-            }
-            return AddSquadRole(side, unitId, star, world.X, world.Y, sourceBuilding, tileIndex, role);
+            return AddUnitsAtTile(side, unitId, star, tileIndex, sourceBuilding, 1, ring, role);
         }
 
         /// <summary>切换当前时空：attack / defend / ""（切换后立刻生效，冻结的队伍停止一切结算）。</summary>
@@ -421,8 +443,9 @@ namespace WarIsland.Model
         }
 
         /// <summary>
-        /// 前压/后撤：把某一方某角色的队伍整体挪到指定世界点附近（据点已占领时的进攻出发点）。
-        /// 只改质心，不改槽位算法；返回搬动的队数。
+        /// 前压/后撤：把某一方某角色的**单兵**整体挪到指定世界点附近（据点已占领时的进攻出发点）。
+        /// 单兵没有阵型，所以这里按"每排 5 人、排距 1.1 米"铺一个薄方阵 ——
+        /// 全部落在同一点会被分离弹开，画面上等于开局抖一下。
         /// </summary>
         public int StageSide(int side, string role, double worldX, double worldZ)
         {
@@ -432,8 +455,11 @@ namespace WarIsland.Model
                 BattleSquad s = _squads[i];
                 if (!s.Alive || s.Purged || s.Side != side) continue;
                 if (!string.IsNullOrEmpty(role) && s.Role != role) continue;
-                double ox = worldX + (n % 3 - 1) * (s.Radius * RtsUnits.R1 * 1.4);
-                double oz = worldZ + (n / 3) * (s.Radius * RtsUnits.R1 * 1.6);
+                int col = n % 5;
+                int row = n / 5;
+                double dir = side == 0 ? -1.0 : 1.0;
+                double ox = worldX + dir * row * 1.15;
+                double oz = worldZ + (col - 2) * 1.05;
                 var lane = _arena.WorldToLane(ox, oz);
                 lane = _route.ClampPoint(lane, s.Radius);
                 s.X = lane.X;
@@ -443,15 +469,15 @@ namespace WarIsland.Model
                 s.Path.Clear();
                 s.PathIndex = 0;
                 s.TargetSquad = -1;
+                s.Locked = false;
                 s.StuckX = s.X;
                 s.StuckZ = s.Z;
                 s.StuckTimer = 0.0;
                 for (int m = 0; m < s.Members.Count; m++)
                 {
                     var mem = s.Members[m];
-                    Vec2 p = SlotPoint(s, mem);
-                    mem.X = p.X;
-                    mem.Z = p.Y;
+                    mem.X = s.X;
+                    mem.Z = s.Z;
                 }
                 n += 1;
             }
@@ -554,16 +580,17 @@ namespace WarIsland.Model
         }
 
         /// <summary>
-        /// 玩家侧指令白名单（2026-11-21 微操收敛）：**只有集火**。
+        /// 玩家侧指令白名单 —— **2026-11-22 起是空的**。
         ///
-        /// 玩家口径：战斗阶段"仅允许选中我方小队 → 指定攻击/集火某支敌方小队"，
-        /// 手动移动 / 停火 / 驻守全部移除，推进与接敌交给自动战斗与预设偏好。
-        /// 其余指令（Move / AttackMove / Hold / Stop）仍然保留给 AI、波次与推演用，
-        /// 只是**玩家拨不动** —— 所以拒绝发生在这一层，不在界面层假装禁用。
+        /// 玩家口径：「选中己方或敌人单位都不可操作，只显示它们的信息」。
+        /// 于是集火也一起下线了：战斗里玩家只观察，推进 / 索敌 / 攻击全部由自动战斗负责。
+        /// 其余指令（Move / AttackMove / Hold / Stop / Attack）仍然保留给 AI、波次与推演用，
+        /// 只是**玩家拨不动** —— 拒绝发生在这一层，不在界面层假装禁用。
         /// </summary>
         public static bool IsPlayerMicroOrder(string order)
         {
-            return SquadOrders.Parse(order) == SquadOrder.Attack;
+            _ = order;
+            return false;
         }
 
         /// <summary>玩家侧指令唯一入口：只接受 attack（集火），其它一律返回 0。</summary>
@@ -673,7 +700,7 @@ namespace WarIsland.Model
         // =================================================================
         // 选择（同样是队级）
         // =================================================================
-        /// <summary>点选：命中任意成员所属的小队即整队选中（side -1 = 不限）。</summary>
+        /// <summary>点选：命中一名单兵就选中它（side -1 = 不限）。</summary>
         public int PickSquad(double worldX, double worldZ, int side, double slackMeters = 0.4)
         {
             var lane = _arena.WorldToLane(worldX, worldZ);
@@ -695,7 +722,7 @@ namespace WarIsland.Model
             return best;
         }
 
-        /// <summary>框选：质心落在矩形内即整队入选（世界米）。</summary>
+        /// <summary>框选：单兵落在矩形内即入选（世界米）；选中只用于看信息，不下任何指令。</summary>
         public List<int> SquadsInRectWorld(double x0, double z0, double x1, double z1, int side)
         {
             double minX = Math.Min(x0, x1);
@@ -865,7 +892,33 @@ namespace WarIsland.Model
                         break;
                     }
                 }
+
+                // 攻击态锁定（唯一实现）：射程内有活目标 = 正在打 → 本 tick 不许动、
+                // 也不许被任何人（敌/友）的碰撞分离推开。
+                s.Locked = HasTargetInRange(s);
+                if (s.Locked) s.WantsMove = false;
             }
+        }
+
+        /// <summary>射程内是否有活着的敌人（含容差）—— 决定"是否处于攻击态"。</summary>
+        private bool HasTargetInRange(BattleSquad s)
+        {
+            double reach = s.MaxRange + RangeSlack + LockSlack;
+            double r2 = reach * reach;
+            for (int i = 0; i < _squads.Count; i++)
+            {
+                BattleSquad o = _squads[i];
+                if (!o.Alive || !IsActive(o) || o.Side == s.Side) continue;
+                for (int m = 0; m < o.Members.Count; m++)
+                {
+                    SquadMember tm = o.Members[m];
+                    if (!tm.Alive) continue;
+                    double dx = tm.X - s.X;
+                    double dz = tm.Z - s.Z;
+                    if (dx * dx + dz * dz <= r2) return true;
+                }
+            }
+            return false;
         }
 
         private void MoveSquads(double dt)
@@ -1061,10 +1114,13 @@ namespace WarIsland.Model
                 {
                     BattleSquad a = _squads[i];
                     if (!a.Alive || !IsActive(a)) continue;
+                    // 攻击态锁定：正在对砍的人不推别人、也不被别人推。
+                    // 这就是"接敌不会被挤走"的唯一判据（全局一处，别在别处再写一份）。
+                    if (a.Locked) continue;
                     for (int j = i + 1; j < _squads.Count; j++)
                     {
                         BattleSquad b = _squads[j];
-                        if (!b.Alive || !IsActive(b)) continue;
+                        if (!b.Alive || !IsActive(b) || b.Locked) continue;
                         double dx = a.X - b.X;
                         double dz = a.Z - b.Z;
                         double min = (a.ContactRadius + b.ContactRadius) * SeparationFactor;
@@ -1090,7 +1146,7 @@ namespace WarIsland.Model
                 for (int i = 0; i < _squads.Count; i++)
                 {
                     BattleSquad s = _squads[i];
-                    if (!s.Alive || !IsActive(s)) continue;
+                    if (!s.Alive || !IsActive(s) || s.Locked) continue;
                     // 分离是"挤"，不是"弹射"：每 tick 最多挪 0.9 个身位/秒的速度
                     double maxPush = Math.Max(s.Speed * Dt * 0.9, 6.0);
                     double len = Math.Sqrt(pushX[i] * pushX[i] + pushZ[i] * pushZ[i]);
@@ -1107,46 +1163,33 @@ namespace WarIsland.Model
             }
         }
 
+        /// <summary>
+        /// 成员位置对齐：单兵的唯一成员就站在质心上（偏移恒为 0），
+        /// 所以这里没有"弹簧收敛"也没有"牵引绳" —— 那套东西是编制时代的遗留。
+        /// 保留这个函数是为了槽位误差指标（恒 0）与快照契约不破。
+        /// </summary>
         private void UpdateMembers(double dt)
         {
-            double k = 1.0 - Math.Exp(-SlotSpring * dt);
+            _ = dt;
             for (int i = 0; i < _squads.Count; i++)
             {
                 BattleSquad s = _squads[i];
                 if (!s.Alive || !IsActive(s)) continue;
-                double leash = s.Radius * 1.45;
                 for (int m = 0; m < s.Members.Count; m++)
                 {
                     SquadMember mem = s.Members[m];
                     if (!mem.Alive) continue;
-                    Vec2 slot = SlotPoint(s, mem);
-                    mem.X += (slot.X - mem.X) * k;
-                    mem.Z += (slot.Y - mem.Z) * k;
-
-                    double dx = mem.X - s.X;
-                    double dz = mem.Z - s.Z;
-                    double d = Math.Sqrt(dx * dx + dz * dz);
-                    if (d > leash && d > 1e-6)
-                    {
-                        double f = leash / d;
-                        mem.X = s.X + dx * f;
-                        mem.Z = s.Z + dz * f;
-                    }
-                    double err = Dist(mem.X, mem.Z, slot.X, slot.Y);
-                    s.SlotErrorSum += err;
-                    s.SlotErrorSamples += 1;
+                    mem.X = s.X;
+                    mem.Z = s.Z;
                 }
             }
         }
 
+        /// <summary>成员槽位 = 质心（单兵没有阵型偏移）。</summary>
         private static Vec2 SlotPoint(BattleSquad s, SquadMember m)
         {
-            double c = Math.Cos(s.Heading);
-            double sn = Math.Sin(s.Heading);
-            // lane 平面：X 前、Z 右；旋转与 Godot 的 Y 轴一致（+heading 朝 +Z 转）
-            double x = s.X + m.OffsetX * c - m.OffsetZ * sn;
-            double z = s.Z + m.OffsetX * sn + m.OffsetZ * c;
-            return new Vec2((float)x, (float)z);
+            _ = m;
+            return new Vec2((float)s.X, (float)s.Z);
         }
 
         // =================================================================
@@ -1323,7 +1366,7 @@ namespace WarIsland.Model
                 double dz = tm.Z - p.Z;
                 double d = Math.Sqrt(dx * dx + dz * dz);
                 double step = p.Speed * dt;
-                double body = SquadFormations.BodyUnits(ts.Def);
+                double body = UnitBody.BodyUnits(ts.Def);
                 if (d <= step + body)
                 {
                     BattleSquad srcSquad = Find(p.SourceSquad);
@@ -1417,13 +1460,13 @@ namespace WarIsland.Model
 
             if (playerDps > 0.0 && _enemyBaseHp > 0.0)
             {
-                double dmg = playerDps * _arena.ZoneDpsPerSquad * (1.0 - _enemyDrainReduction) * dt;
+                double dmg = playerDps * _arena.ZoneDpsPerUnit * (1.0 - _enemyDrainReduction) * dt;
                 _enemyBaseHp -= dmg;
                 if (_stats.FirstContactSecond < 0.0) _stats.FirstContactSecond = Round2(_time);
             }
             if (enemyDps > 0.0 && _playerBaseHp > 0.0)
             {
-                double dmg = enemyDps * _arena.ZoneDpsPerSquad * (1.0 - _playerDrainReduction) * dt;
+                double dmg = enemyDps * _arena.ZoneDpsPerUnit * (1.0 - _playerDrainReduction) * dt;
                 _playerBaseHp -= dmg;
                 if (_stats.FirstContactSecond < 0.0) _stats.FirstContactSecond = Round2(_time);
             }
@@ -1503,9 +1546,11 @@ namespace WarIsland.Model
                 Vec2 anchor = _arena.TileSpawnWorld(entry.Tile);
                 for (int k = 0; k < count; k++)
                 {
+                    // 一排出 5 个、排距 1.15 米，往自家方向铺 —— 单兵时代没有"队形"，
+                    // 但一进场就叠在同一个点会被分离弹成一片散沙。
                     double dir = entry.Side == 0 ? -1.0 : 1.0;
-                    double back = index * 2.2;
-                    double lateral = ((index % 2) * 2 - 1) * 1.1 * ((index + 2) / 3);
+                    double back = (index / 5) * 1.15;
+                    double lateral = (index % 5 - 2) * 1.05;
                     int id = AddSquad(entry.Side, def.Id, Math.Max(ws.Star, 1),
                         anchor.X + dir * back, anchor.Y + lateral,
                         "", entry.Tile);
@@ -1568,6 +1613,10 @@ namespace WarIsland.Model
                     SourceBuilding = s.SourceBuilding,
                     Role = s.Role,
                     Active = IsActive(s),
+                    Engaged = s.Locked,
+                    Age = Round2(s.Age),
+                    BodyRadius = UnitBody.BodyMeters(s.Def),
+                    AttackCooldown = s.Def.AttackCooldown,
                 };
                 if (includeMembers)
                 {

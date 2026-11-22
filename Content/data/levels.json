@@ -1,20 +1,19 @@
 {
 	"version": 1.0,
-	"note": "关卡表：第 1 关 = 联盟 vs 豺狼人。一场两轮，各 90 秒：第 1 轮进攻（敌方按波次守家），第 2 轮防守（敌方按波次压家）。基地血量跨轮保留，轮末清空全部部队。 2026-11-21：lane.segments / intent_pool / enemy_buildings 供开发者编辑器读改；C# 只读原有 lane 字段，三段长度之和必须等于 lane.length。 2026-11-21：单场限时 90→60 秒，敌方波次时间按 2/3 重排（最高 51s）。",
+	"note": "关卡表：第 1 关 = 联盟 vs 豺狼人。一场两轮各 60 秒：第 1 轮进攻、第 2 轮防守。2026-11-22 单兵制：基地血量按 StS 体量压到 60~80；占区伤害改成 zone_dps_per_unit（每人每秒 0.45）；敌方波次 count 是**单兵个数**，进攻波次压在前 14 秒内全部到场（守军一次性投入），防守波次仍按 0/16/32/46 分批压上（攻城节奏）。",
 	"levels": [
 		{
 			"id": "level_1",
 			"display_name": "第一关 · 灰牙前哨",
 			"player_faction": "alliance",
 			"enemy_faction": "bandit",
-			"player_base_hp": 2600.0,
-			"enemy_base_hp": 3200.0,
+			"player_base_hp": 72.0,
+			"enemy_base_hp": 72.0,
 			"round_seconds": 60.0,
 			"lane": {
 				"length": 4000.0,
 				"width": 420.0,
 				"zone_depth": 600.0,
-				"zone_dps_per_squad": 9.0,
 				"spawn_offset": 250.0,
 				"base_stop": 120.0,
 				"note": "全部是游戏数值（×0.015 米）：4000 = 60 米长，420 = 6.3 米宽，600 = 9 米敌区。",
@@ -79,7 +78,8 @@
 						],
 						"note": "接敌段更宽，适合多小队平推与侧翼展开。"
 					}
-				}
+				},
+				"zone_dps_per_unit": 0.45
 			},
 			"rounds": [
 				{
@@ -91,54 +91,54 @@
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 2.0
+									"count": 5.0
 								},
 								{
 									"unit": "bandit_marauder",
-									"count": 2.0
+									"count": 3.0
 								}
 							]
 						},
 						{
-							"t": 16.0,
+							"t": 4.0,
 							"squads": [
 								{
 									"unit": "bandit_marauder",
-									"count": 2.0
+									"count": 3.0
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 1.0
+									"count": 2.0
 								}
 							]
 						},
 						{
-							"t": 32.0,
+							"t": 10.0,
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 2.0
+									"count": 5.0
 								},
 								{
 									"unit": "bandit_marauder",
-									"count": 2.0
+									"count": 3.0
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 1.0
+									"count": 2.0
 								}
 							]
 						},
 						{
-							"t": 46.0,
+							"t": 14.0,
 							"squads": [
 								{
 									"unit": "bandit_marauder",
-									"count": 2.0
+									"count": 3.0
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 1.0
+									"count": 2.0
 								}
 							]
 						}
@@ -153,11 +153,11 @@
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 2.0
+									"count": 5.0
 								},
 								{
 									"unit": "bandit_marauder",
-									"count": 2.0
+									"count": 3.0
 								}
 							]
 						},
@@ -166,11 +166,11 @@
 							"squads": [
 								{
 									"unit": "bandit_marauder",
-									"count": 2.0
+									"count": 3.0
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 1.0
+									"count": 2.0
 								}
 							]
 						},
@@ -179,11 +179,11 @@
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 2.0
+									"count": 5.0
 								},
 								{
 									"unit": "bandit_marauder",
-									"count": 2.0
+									"count": 3.0
 								}
 							]
 						},
@@ -192,11 +192,11 @@
 							"squads": [
 								{
 									"unit": "bandit_marauder",
-									"count": 2.0
+									"count": 3.0
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 1.0
+									"count": 2.0
 								}
 							]
 						},
@@ -205,7 +205,7 @@
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 2.0
+									"count": 5.0
 								}
 							]
 						}
@@ -298,14 +298,13 @@
 			"display_name": "平势 · 四台稳开 · 豺狼人 · 灰牙压上",
 			"player_faction": "alliance",
 			"enemy_faction": "bandit",
-			"player_base_hp": 2600.0,
-			"enemy_base_hp": 3200.0,
+			"player_base_hp": 72.0,
+			"enemy_base_hp": 72.0,
 			"round_seconds": 60.0,
 			"lane": {
 				"length": 4000.0,
 				"width": 420.0,
 				"zone_depth": 600.0,
-				"zone_dps_per_squad": 9.0,
 				"spawn_offset": 250.0,
 				"base_stop": 120.0,
 				"template": "even",
@@ -329,7 +328,8 @@
 						"width": 420.0,
 						"role": "enemy"
 					}
-				]
+				],
+				"zone_dps_per_unit": 0.45
 			},
 			"rounds": [
 				{
@@ -341,62 +341,62 @@
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 2.0,
+									"count": 5.0,
 									"star": 1.0
 								},
 								{
 									"unit": "bandit_marauder",
-									"count": 2.0,
+									"count": 3.0,
 									"star": 1.0
 								}
 							]
 						},
 						{
-							"t": 16.0,
+							"t": 4.0,
 							"squads": [
 								{
 									"unit": "bandit_marauder",
-									"count": 2.0,
+									"count": 3.0,
 									"star": 1.0
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 1.0,
+									"count": 2.0,
 									"star": 1.0
 								}
 							]
 						},
 						{
-							"t": 32.0,
+							"t": 10.0,
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 2.0,
+									"count": 5.0,
 									"star": 1.0
 								},
 								{
 									"unit": "bandit_marauder",
-									"count": 2.0,
+									"count": 3.0,
 									"star": 1.0
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 1.0,
+									"count": 2.0,
 									"star": 1.0
 								}
 							]
 						},
 						{
-							"t": 46.0,
+							"t": 14.0,
 							"squads": [
 								{
 									"unit": "bandit_marauder",
-									"count": 2.0,
+									"count": 3.0,
 									"star": 1.0
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 1.0,
+									"count": 2.0,
 									"star": 1.0
 								}
 							]
@@ -412,12 +412,12 @@
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 2.0,
+									"count": 5.0,
 									"star": 1.0
 								},
 								{
 									"unit": "bandit_marauder",
-									"count": 2.0,
+									"count": 3.0,
 									"star": 1.0
 								}
 							]
@@ -427,12 +427,12 @@
 							"squads": [
 								{
 									"unit": "bandit_marauder",
-									"count": 2.0,
+									"count": 3.0,
 									"star": 1.0
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 1.0,
+									"count": 2.0,
 									"star": 1.0
 								}
 							]
@@ -442,12 +442,12 @@
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 2.0,
+									"count": 5.0,
 									"star": 1.0
 								},
 								{
 									"unit": "bandit_marauder",
-									"count": 2.0,
+									"count": 3.0,
 									"star": 1.0
 								}
 							]
@@ -457,12 +457,12 @@
 							"squads": [
 								{
 									"unit": "bandit_marauder",
-									"count": 2.0,
+									"count": 3.0,
 									"star": 1.0
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 1.0,
+									"count": 2.0,
 									"star": 1.0
 								}
 							]
@@ -472,7 +472,7 @@
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 2.0,
+									"count": 5.0,
 									"star": 1.0
 								}
 							]
@@ -606,14 +606,13 @@
 			"display_name": "劣势 · 三台死守 · 豺狼人 · 灰牙压上",
 			"player_faction": "alliance",
 			"enemy_faction": "bandit",
-			"player_base_hp": 2600.0,
-			"enemy_base_hp": 3200.0,
+			"player_base_hp": 72.0,
+			"enemy_base_hp": 72.0,
 			"round_seconds": 60.0,
 			"lane": {
 				"length": 4000.0,
 				"width": 420.0,
 				"zone_depth": 600.0,
-				"zone_dps_per_squad": 9.0,
 				"spawn_offset": 250.0,
 				"base_stop": 120.0,
 				"template": "disadvantage",
@@ -637,7 +636,8 @@
 						"width": 420.0,
 						"role": "enemy"
 					}
-				]
+				],
+				"zone_dps_per_unit": 0.45
 			},
 			"rounds": [
 				{
@@ -649,62 +649,62 @@
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 2.0,
+									"count": 5.0,
 									"star": 1.0
 								},
 								{
 									"unit": "bandit_marauder",
-									"count": 2.0,
+									"count": 3.0,
 									"star": 1.0
 								}
 							]
 						},
 						{
-							"t": 16.0,
+							"t": 4.0,
 							"squads": [
 								{
 									"unit": "bandit_marauder",
-									"count": 2.0,
+									"count": 3.0,
 									"star": 1.0
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 1.0,
+									"count": 2.0,
 									"star": 1.0
 								}
 							]
 						},
 						{
-							"t": 32.0,
+							"t": 10.0,
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 2.0,
+									"count": 5.0,
 									"star": 1.0
 								},
 								{
 									"unit": "bandit_marauder",
-									"count": 2.0,
+									"count": 3.0,
 									"star": 1.0
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 1.0,
+									"count": 2.0,
 									"star": 1.0
 								}
 							]
 						},
 						{
-							"t": 46.0,
+							"t": 14.0,
 							"squads": [
 								{
 									"unit": "bandit_marauder",
-									"count": 2.0,
+									"count": 3.0,
 									"star": 1.0
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 1.0,
+									"count": 2.0,
 									"star": 1.0
 								}
 							]
@@ -720,12 +720,12 @@
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 2.0,
+									"count": 5.0,
 									"star": 1.0
 								},
 								{
 									"unit": "bandit_marauder",
-									"count": 2.0,
+									"count": 3.0,
 									"star": 1.0
 								}
 							]
@@ -735,12 +735,12 @@
 							"squads": [
 								{
 									"unit": "bandit_marauder",
-									"count": 2.0,
+									"count": 3.0,
 									"star": 1.0
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 1.0,
+									"count": 2.0,
 									"star": 1.0
 								}
 							]
@@ -750,12 +750,12 @@
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 2.0,
+									"count": 5.0,
 									"star": 1.0
 								},
 								{
 									"unit": "bandit_marauder",
-									"count": 2.0,
+									"count": 3.0,
 									"star": 1.0
 								}
 							]
@@ -765,12 +765,12 @@
 							"squads": [
 								{
 									"unit": "bandit_marauder",
-									"count": 2.0,
+									"count": 3.0,
 									"star": 1.0
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 1.0,
+									"count": 2.0,
 									"star": 1.0
 								}
 							]
@@ -780,7 +780,7 @@
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 2.0,
+									"count": 5.0,
 									"star": 1.0
 								}
 							]
@@ -908,14 +908,13 @@
 			"display_name": "平势 · 四台稳开 · 鱼人 · 潮汐抢滩",
 			"player_faction": "alliance",
 			"enemy_faction": "murloc",
-			"player_base_hp": 2600.0,
-			"enemy_base_hp": 2800.0,
+			"player_base_hp": 72.0,
+			"enemy_base_hp": 72.0,
 			"round_seconds": 60.0,
 			"lane": {
 				"length": 4000.0,
 				"width": 420.0,
 				"zone_depth": 600.0,
-				"zone_dps_per_squad": 9.0,
 				"spawn_offset": 250.0,
 				"base_stop": 120.0,
 				"template": "even",
@@ -939,7 +938,8 @@
 						"width": 420.0,
 						"role": "enemy"
 					}
-				]
+				],
+				"zone_dps_per_unit": 0.45
 			},
 			"rounds": [
 				{
@@ -951,22 +951,22 @@
 							"squads": [
 								{
 									"unit": "murloc_slave",
-									"count": 2.0,
+									"count": 7.0,
 									"star": 1.0
 								},
 								{
 									"unit": "murloc_raider",
-									"count": 2.0,
+									"count": 3.0,
 									"star": 1.0
 								}
 							]
 						},
 						{
-							"t": 16.0,
+							"t": 4.0,
 							"squads": [
 								{
 									"unit": "murloc_raider",
-									"count": 2.0,
+									"count": 3.0,
 									"star": 1.0
 								},
 								{
@@ -977,16 +977,16 @@
 							]
 						},
 						{
-							"t": 32.0,
+							"t": 10.0,
 							"squads": [
 								{
 									"unit": "murloc_slave",
-									"count": 2.0,
+									"count": 7.0,
 									"star": 1.0
 								},
 								{
 									"unit": "murloc_raider",
-									"count": 2.0,
+									"count": 3.0,
 									"star": 1.0
 								},
 								{
@@ -997,11 +997,11 @@
 							]
 						},
 						{
-							"t": 46.0,
+							"t": 14.0,
 							"squads": [
 								{
 									"unit": "murloc_raider",
-									"count": 2.0,
+									"count": 3.0,
 									"star": 1.0
 								},
 								{
@@ -1022,12 +1022,12 @@
 							"squads": [
 								{
 									"unit": "murloc_slave",
-									"count": 2.0,
+									"count": 7.0,
 									"star": 1.0
 								},
 								{
 									"unit": "murloc_raider",
-									"count": 2.0,
+									"count": 3.0,
 									"star": 1.0
 								}
 							]
@@ -1037,7 +1037,7 @@
 							"squads": [
 								{
 									"unit": "murloc_raider",
-									"count": 2.0,
+									"count": 3.0,
 									"star": 1.0
 								},
 								{
@@ -1052,12 +1052,12 @@
 							"squads": [
 								{
 									"unit": "murloc_slave",
-									"count": 2.0,
+									"count": 7.0,
 									"star": 1.0
 								},
 								{
 									"unit": "murloc_raider",
-									"count": 2.0,
+									"count": 3.0,
 									"star": 1.0
 								}
 							]
@@ -1067,7 +1067,7 @@
 							"squads": [
 								{
 									"unit": "murloc_raider",
-									"count": 2.0,
+									"count": 3.0,
 									"star": 1.0
 								},
 								{
@@ -1082,7 +1082,7 @@
 							"squads": [
 								{
 									"unit": "murloc_slave",
-									"count": 2.0,
+									"count": 7.0,
 									"star": 1.0
 								}
 							]

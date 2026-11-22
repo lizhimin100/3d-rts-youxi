@@ -33,8 +33,11 @@ const CAMERA_SCRIPT := "res://Screens/world/battle/战役镜头.gd"
 const BOARD_SCRIPT := "res://Screens/world/battle/战役棋盘.gd"
 const BUILDINGS_SCRIPT := "res://Screens/world/battle/战役建筑层.gd"
 const TERRAIN_SCRIPT := "res://Screens/world/battle/战役地形.gd"
-const SQUAD_LAYER := "res://Screens/world/squad/小队层.gd"
+const UNIT_LAYER := "res://Screens/world/units/单兵层.gd"
+const BLOOD_LAYER := "res://Screens/world/units/单位血条.gd"
 const HUD_SCRIPT := "res://Screens/hud/战役HUD.gd"
+const HUD_SCENE := "res://Screens/hud/战役HUD.tscn"
+const CARD_SCENE := "res://Screens/hud/卡牌.tscn"
 const BACKLOG := "res://Content/docs/backlog.md"
 
 const TOP_DIRS := ["Engine", "Model", "Screens", "Game", "Content", "Tests", "Tools", "Documents"]
@@ -51,6 +54,8 @@ const PURGED_PATHS := [
 	"Screens/scenes/人群演示.tscn",
 	"Screens/scenes/四季演示.tscn",
 	"Screens/world/规划沙盘.gd",
+	"Screens/world/squad",
+	"Model/Squad/SquadFormation.cs",
 	"Screens/hud/HUD.gd",
 	"Screens/hud/选择网格.gd",
 	"Game/core",
@@ -256,13 +261,26 @@ func _check_units_data() -> void:
 	_ok("敌人只有一个阵营有模型（%s）" % ", ".join(visible_factions.keys()),
 		visible_factions.size() == 2 and visible_factions.has("alliance"),
 		"阵营：%s" % ", ".join(visible_factions.keys()))
-	var sizes: Array[String] = []
+
+	# --- 2026-11-22 单兵制：一批编制字段必须**物理不存在**，只留 body_radius ---
+	var leftovers: Array[String] = []
+	var bodies: Array[String] = []
+	var pops: Array[String] = []
 	for u in units:
 		var row: Dictionary = u
-		var n := int(row.get("squad_size", 0))
-		if n < 2 or n > 8:
-			sizes.append("%s=%d" % [String(row.get("id", "?")), n])
-	_ok("小队编制人数在 2..8（%d 个兵种）" % units.size(), sizes.is_empty(), ", ".join(sizes))
+		var uid := String(row.get("id", "?"))
+		for k in ["squad_size", "formation", "squad_radius"]:
+			if row.has(k):
+				leftovers.append("%s.%s" % [uid, k])
+		var b := float(row.get("body_radius", 0.0))
+		if b < 0.15 - 0.0001 or b > 1.2 + 0.0001:
+			bodies.append("%s=%.2f" % [uid, b])
+		if int(row.get("pop_cost", -1)) != 0:
+			pops.append("%s=%d" % [uid, int(row.get("pop_cost", -1))])
+	_ok("单位卡没有小队编制字段（一个卡面 = 一名单兵）", leftovers.is_empty(), ", ".join(leftovers))
+	_ok("单兵身位 body_radius 在 0.15~1.2 米（%d 个兵种）" % units.size(), bodies.is_empty(),
+		", ".join(bodies))
+	_ok("征召只吃 CP 不吃人口（所有兵种 pop_cost = 0）", pops.is_empty(), ", ".join(pops))
 	var placeholder: Array[String] = []
 	for u in units:
 		var row: Dictionary = u
@@ -284,36 +302,73 @@ func _visible_count(units: Array, faction: String) -> int:
 func _check_planning_data() -> void:
 	var doc := JsonFile.read_dict(PLANNING_JSON, {})
 	var cards: Array = doc.get("cards", [])
-	var atk := 0
-	var dfn := 0
-	var build_cards := 0
+	var atk_cards := 0
+	var dfn_cards := 0
+	var atk_copies := 0
+	var dfn_copies := 0
+	var build_copies := 0
+	var boost_copies := 0
+	var atk_units := 0
+	var dfn_units := 0
 	var bad: Array[String] = []
 	for c in cards:
 		var row: Dictionary = c
 		var kind := String(row.get("kind", ""))
 		var role := String(row.get("role", ""))
+		var copies := int(row.get("count", 1))
+		var units := int(row.get("units", 0))
 		if kind == "train":
 			if role == "attack":
-				atk += 1
+				atk_cards += 1
+				atk_copies += copies
+				atk_units = units
 			elif role == "defend":
-				dfn += 1
+				dfn_cards += 1
+				dfn_copies += copies
+				dfn_units = units
 			else:
 				bad.append(String(row.get("id", "?")) + " 缺 role")
+			if copies < 1 or units < 1:
+				bad.append(String(row.get("id", "?")) + " 缺 count / units")
 		elif kind == "build":
-			build_cards += 1
+			build_copies += copies
 			if not bool(row.get("exhaust", false)) or not role.is_empty():
 				bad.append(String(row.get("id", "?")) + " 建造牌规格不对")
-	_ok("进攻 / 防守训练牌各 %d / %d 张" % [atk, dfn], atk >= 4 and dfn >= 4 and bad.is_empty(),
+		elif kind == "strategy":
+			boost_copies += copies
+	_ok("12 张初始卡组：进攻 ×%d / 防守 ×%d / 建造 ×%d / 加快训练 ×%d（共 %d）" % [
+			atk_copies, dfn_copies, build_copies, boost_copies,
+			atk_copies + dfn_copies + build_copies + boost_copies],
+		atk_copies == 5 and dfn_copies == 5 and build_copies == 1 and boost_copies == 1 and bad.is_empty(),
 		", ".join(bad))
-	_ok("建造牌 %d 张（打出即 Exhaust）" % build_cards, build_cards >= 3)
+	_ok("进攻牌一次 6 名 / 防守牌一次 5 名", atk_units == 6 and dfn_units == 5,
+		"attack=%d defend=%d" % [atk_units, dfn_units])
+
+	var strategies: Dictionary = doc.get("strategies", {})
+	var boost: Dictionary = strategies.get("train_boost", {})
+	_ok("「加快训练」= 本回合征召 ×1.5（数据在 strategies.train_boost）",
+		is_equal_approx(float(boost.get("train_count_mult", 0.0)), 1.5),
+		str(boost))
+
 	var cp: Dictionary = doc.get("cp", {})
 	_ok("CP 上限 ≥ 单次规划投入（%d / %d）" % [int(cp.get("cap", 0)), int(cp.get("start", 0))],
 		int(cp.get("cap", 0)) >= int(cp.get("start", 0)))
 
+	# 无农场牌也不许卡死：基地自带人口必须够造一座兵营
+	var pop: Dictionary = doc.get("pop", {})
+	var base_pop := int(pop.get("base", 0))
+	var barracks_pop := 0
+	for b in doc.get("buildings", []):
+		var row2: Dictionary = b
+		if String(row2.get("tag", "")) == "barracks":
+			barracks_pop = int(row2.get("pop", 0))
+	_ok("基地自带人口 %d ≥ 兵营所需 %d（无农场牌也不会卡死）" % [base_pop, barracks_pop],
+		base_pop >= maxi(barracks_pop, 1) and barracks_pop >= 1)
+
 	var squad := JsonFile.read_dict(SQUAD_JSON, {})
 	var outpost: Dictionary = squad.get("outpost", {})
 	var free: Dictionary = squad.get("free_defend", {})
-	_ok("据点与免费防守队都在数据里配了（不是写死在代码）",
+	_ok("据点与免费防守兵都在数据里配了（不是写死在代码）",
 		outpost.has("cp_cost") and String(free.get("unit", "")) != "",
 		"outpost=%s free=%s" % [str(outpost), str(free)])
 	# 建筑落位规格：唯一消费者是 RtsTileSpec；这里只核对数据在合法区间里
@@ -357,6 +412,25 @@ func _check_level_data() -> void:
 					bad.append("%s 波次 t=%.1f 越界" % [String(row.get("id", "?")), t])
 	_ok("组装关卡 %d 个：两轮 attack+defend、60 秒、波次不越界" % asm_levels,
 		asm_levels >= 1 and bad.is_empty(), ", ".join(bad.slice(0, 5)))
+
+	# 单兵制配平：基地血量按 StS 体量 60~80、占区伤害按"每人每秒"0.1~0.6
+	var hp_bad: Array[String] = []
+	var dps_bad: Array[String] = []
+	for lv in doc.get("levels", []):
+		var row3: Dictionary = lv
+		if not (row3.get("assembly", {}) as Dictionary).is_empty():
+			var php := float(row3.get("player_base_hp", 0.0))
+			var ehp := float(row3.get("enemy_base_hp", 0.0))
+			if php < 60.0 or php > 80.0 or ehp < 60.0 or ehp > 80.0:
+				hp_bad.append("%s=%.0f/%.0f" % [String(row3.get("id", "?")), php, ehp])
+		var lane2: Dictionary = row3.get("lane", {})
+		var dz := float(lane2.get("zone_dps_per_unit", 0.0))
+		if dz < 0.1 or dz > 0.6:
+			dps_bad.append("%s=%.2f" % [String(row3.get("id", "?")), dz])
+	_ok("双方基地血量按 StS 体量配在 60~80（%d 个组装关卡）" % asm_levels,
+		hp_bad.is_empty(), ", ".join(hp_bad))
+	_ok("占区伤害按单兵算且配在 0.1~0.6/人/秒（不会一回合秒基地）",
+		dps_bad.is_empty(), ", ".join(dps_bad))
 
 
 func _check_shell_data() -> void:
@@ -567,7 +641,7 @@ func _check_distance_law() -> void:
 	var src := _read("res://Model/Core/RtsUnits.cs")
 	_ok("R1 = 0.015 的唯一真源在 Model/Core/RtsUnits.cs", src.contains("0.015"))
 	var cjk: Array[String] = []
-	for f in _walk("res://Screens/world/battle") + _walk("res://Screens/world/squad") \
+	for f in _walk("res://Screens/world/battle") + _walk("res://Screens/world/units") \
 			+ _walk("res://Screens/hud") + _walk("res://Screens/ui"):
 		if not f.ends_with(".gd"):
 			continue
@@ -627,10 +701,16 @@ func _check_arena() -> void:
 	_ok("中立据点在战场里（可买下前压）", int(res.get("outpost_tile", 0)) > 0,
 		"outpost_tile=%d" % int(res.get("outpost_tile", 0)))
 
-	var probe: Dictionary = mdl.call("SquadFormationProbe",
+	var probe: Dictionary = mdl.call("UnitBodyProbe",
 		JsonFile.read_dict(UNITS_JSON, {}), JsonFile.read_dict(COMBAT_JSON, {}))
-	_ok("每个兵种的阵型槽位都贴合小队半径（%d 行）" % _arr(probe.get("rows", [])).size(),
+	_ok("单兵身位/落点环探针（%d 行，无小队槽位）" % _arr(probe.get("rows", [])).size(),
 		bool(probe.get("ok", false)), _err_text(probe.get("errors", [])))
+	var rows_p: Array = _arr(probe.get("rows", []))
+	if not rows_p.is_empty():
+		var r0: Dictionary = rows_p[0]
+		_ok("落点环是紧凑小阵列且避开左上建筑位（%d 点）" % int(r0.get("ring_points", 0)),
+			int(r0.get("ring_points", 0)) >= 9 and int(r0.get("ring_in_building", 1)) == 0,
+			str(r0))
 
 
 func _check_squad_roles() -> void:
@@ -652,8 +732,9 @@ func _check_squad_roles() -> void:
 	if card_def != "":
 		mdl.call("SquadSessionTrain", h, card_def)
 	st = mdl.call("SquadSessionState", h)
-	_ok("进攻 / 防守小队各产出 %d / %d 队" % [int(st.get("attack_squads", 0)), int(st.get("defend_squads", 0))],
-		int(st.get("attack_squads", 0)) >= 1 and int(st.get("defend_squads", 0)) >= 1)
+	_ok("一张进攻牌空降 %d 名 / 一张防守牌空降 %d 名" % [
+			int(st.get("attack_squads", 0)), int(st.get("defend_squads", 0))],
+		int(st.get("attack_squads", 0)) >= 6 and int(st.get("defend_squads", 0)) >= 5)
 
 	# 进进攻战：只有进攻队 active
 	mdl.call("SquadSessionEndPlanning", h)
@@ -670,8 +751,25 @@ func _check_squad_roles() -> void:
 			act_atk += 1
 		elif String(sq.get("role", "")) == "defend":
 			act_def += 1
-	_ok("进攻战只激活进攻小队（进攻 %d 激活 / 防守 %d 激活）" % [act_atk, act_def],
-		act_atk >= 1 and act_def == 0)
+	_ok("进攻战只激活进攻单位（进攻 %d 激活 / 防守 %d 激活）" % [act_atk, act_def],
+		act_atk >= 6 and act_def == 0)
+	# 单兵快照字段：一条视图 = 一个人；engaged / attack_cooldown 驱动表现层动画节拍
+	var snap: Dictionary = {}
+	for s2 in view.get("squads", []):
+		if bool((s2 as Dictionary).get("active", false)):
+			snap = s2
+			break
+	_ok("单兵快照：member_count=1 + engaged/attack_cooldown/body_radius 齐全",
+		int(snap.get("member_count", 0)) == 1 and snap.has("engaged")
+		and float(snap.get("attack_cooldown", 0.0)) > 0.0
+		and float(snap.get("body_radius", 0.0)) > 0.0,
+		"member_count=%d keys=%s" % [int(snap.get("member_count", -1)), str(snap.keys())])
+	# 微操已下线：玩家侧任何指令都必须被拒绝
+	var allowed := 0
+	for order in ["attack", "move", "attack_move", "hold", "stop"]:
+		if bool(mdl.call("SquadPlayerOrderAllowed", order)):
+			allowed += 1
+	_ok("玩家指令通道已关闭（集火/移动/驻守全部拒绝）", allowed == 0, "还允许 %d 条" % allowed)
 	_ok("进攻战阶段标记为 attack", String(st.get("round_kind", "")) == "attack")
 
 	# 切防守战：进攻队清场、防守队激活、白送据点防守队
@@ -688,8 +786,8 @@ func _check_squad_roles() -> void:
 			def_active += 1
 		elif String(sq.get("role", "")) == "attack":
 			atk_active += 1
-	_ok("防守战只激活防守小队 + 据点免费防守队（防守 %d / 进攻 %d）" % [def_active, atk_active],
-		def_active >= 2 and atk_active == 0)
+	_ok("防守战只激活防守单位 + 据点免费防守兵（防守 %d / 进攻 %d）" % [def_active, atk_active],
+		def_active >= 5 and atk_active == 0)
 	_ok("防守战阶段标记为 defend", String(st.get("round_kind", "")) == "defend")
 
 	# 轮末清场：双方部队都消失，但建筑数不变
@@ -701,7 +799,7 @@ func _check_squad_roles() -> void:
 		if bool((s as Dictionary).get("active", true)):
 			alive += 1
 	var built_after := (_arena_dict(mdl, h).get("player_buildings", []) as Array).size()
-	_ok("轮末清场：场上小队归零、建筑跨轮保留（%d → %d 座）" % [built_before, built_after],
+	_ok("轮末清场：场上单兵归零、建筑跨轮保留（%d → %d 座）" % [built_before, built_after],
 		alive == 0 and built_after == built_before and built_after >= 4)
 
 	mdl.call("SquadSessionFree", h)
@@ -753,25 +851,47 @@ func _check_battle_scene() -> void:
 
 
 func _check_squad_visuals() -> void:
-	var src := _read(SQUAD_LAYER)
-	_ok("小队层实例化真实 GLB（走 ArtKit.build_model + units.json 的 model_path）",
+	var src := _read(UNIT_LAYER)
+	_ok("单兵层实例化真实 GLB（走 ArtKit.build_model + units.json 的 model_path）",
 		src.contains("ArtKit.build_model") and src.contains("model_path"))
-	_ok("小队层没有退回纯色胶囊", not src.contains("CapsuleMesh"))
-	_ok("小队层用阵营换色（ArtKit.apply_team_color）", src.contains("apply_team_color"))
-	_ok("小队层用骨骼动画状态（idle / walk）",
-		src.contains("\"walk\"") and src.contains("\"idle\"") and src.contains("ArtKit.set_anim"))
-	_ok("攻/防脚下徽记用红/蓝区分",
-		src.contains("ATTACK_MARK") and src.contains("DEFEND_MARK") and src.contains("RoleMark"))
-	var bl := _read(BUILDINGS_SCRIPT)
+	_ok("单兵层没有退回纯色胶囊", not src.contains("CapsuleMesh"))
+	_ok("单兵层用阵营换色（ArtKit.apply_team_color）", src.contains("apply_team_color"))
+	_ok("骨骼动画接进状态机（idle / move / attack / death 四态）",
+		src.contains("ArtKit.set_anim") and src.contains("\"attack\"")
+		and src.contains("\"death\"") and src.contains("\"move\""))
+	_ok("错峰空降：落点高度 + 重力曲线 + 0.05~0.08s 间隔",
+		src.contains("DROP_HEIGHT") and src.contains("DROP_STAGGER")
+		and src.contains("1.0 - p * p") and float(_const_value(src, "DROP_STAGGER")) >= 0.05
+		and float(_const_value(src, "DROP_STAGGER")) <= 0.08)
+	_ok("落地压扁回弹 + 脚下光圈",
+		src.contains("squash") and src.contains("_land_ring") and src.contains("1.0 + squash"))
+	_ok("行走颠簸/前倾 + 攻击前冲/后坐（不是静态平移）",
+		src.contains("bob") and src.contains("lean") and src.contains("lunge"))
+	_ok("远程有简易弹道、受击有闪白",
+		src.contains("_fire_tracer") and src.contains("_mat_flash") and src.contains("material_override"))
+	_ok("单兵层没有任何玩家指令入口（只画，不下令）",
+		not src.contains("Order") and not src.contains("order_selected"))
+	var bl := _read(BLOOD_LAYER)
+	_ok("血条按人画（满血不画 / 选中必画）",
+		bl.contains("BAR_W") and bl.contains("_selected.has") and bl.contains("hp >= max_hp"))
+	var bl2 := _read(BUILDINGS_SCRIPT)
 	_ok("建筑层用 planning.json 的 model_path 实例化（不造占位盒）",
-		bl.contains("ArtKit.build_model") and bl.contains("model_path") and not bl.contains("BoxMesh"))
+		bl2.contains("ArtKit.build_model") and bl2.contains("model_path") and not bl2.contains("BoxMesh"))
 	_ok("建筑层按左上角建筑位对齐（building_x / building_z）",
-		bl.contains("building_x") and bl.contains("building_z"))
-	_ok("建筑层把超格模型缩进格子（不压邻格）", bl.contains("holder.scale"))
+		bl2.contains("building_x") and bl2.contains("building_z"))
+	_ok("建筑层把超格模型缩进格子（不压邻格）", bl2.contains("holder.scale"))
 	var terr := _read(TERRAIN_SCRIPT)
 	_ok("地形用底壳高度场生成网格（不是一块 PlaneMesh 涂色）",
 		terr.contains("heights") and terr.contains("PRIMITIVE_TRIANGLES") and not terr.contains("PlaneMesh"))
 	_ok("地形装饰实例化既有资产（RtsDecorLib，不现拼占位）", terr.contains("RtsDecorLib"))
+
+
+## 读脚本里的 `const NAME := 数字`
+func _const_value(src: String, name: String) -> String:
+	var re := RegEx.new()
+	re.compile("const\\s+" + name + "\\s*:?=\\s*([0-9.]+)")
+	var m := re.search(src)
+	return m.get_string(1) if m != null else "0"
 
 
 func _check_camera_rules() -> void:
@@ -793,6 +913,25 @@ func _check_board_rules() -> void:
 	_ok("棋盘画两种锚点（左上角建筑位 / 正中心出兵位）",
 		src.contains("building_x") and src.contains("spawn_x") and src.contains("_flat_ring"))
 	_ok("棋盘有挑格子的高亮通道", src.contains("set_armed") and src.contains("_rebuild_highlight"))
+	# 2026-11-22 参考图：格子靠"细虚线框"读出来（不是实心色块、不是厚边框）
+	_ok("棋盘用细虚线框画格子（dash/gap/line 三段真实存在）",
+		src.contains("_rebuild_dashes") and src.contains("_dash_edge")
+		and src.contains("dash_m") and src.contains("gap_m") and src.contains("line_m"))
+	var shell_doc := JsonFile.read_dict(SHELLS_JSON, {})
+	var sh: Dictionary = (shell_doc.get("shells", []) as Array)[0] \
+		if not (shell_doc.get("shells", []) as Array).is_empty() else {}
+	var bstyle: Dictionary = (sh.get("look", {}) as Dictionary).get("board", {})
+	var dash := float(bstyle.get("dash_m", 0.0))
+	var gap := float(bstyle.get("gap_m", 0.0))
+	var line_m := float(bstyle.get("line_m", 0.0))
+	var line_a := float(bstyle.get("line_alpha", 0.0))
+	var inset := float(bstyle.get("inset_m", -1.0))
+	_ok("虚线参数配在数据里（段 %.2fm / 空 %.2fm / 线宽 %.2fm）" % [dash, gap, line_m],
+		dash >= 0.4 and dash <= 1.6 and gap >= 0.25 and gap <= 1.2 and line_m >= 0.04 and line_m <= 0.2)
+	_ok("虚线不透明度 %.0f%%（既看得见又不盖住地表）" % (line_a * 100.0),
+		line_a >= 0.35 and line_a <= 0.92 and inset >= 0.0)
+	_ok("主题里有独立的线条色（换皮只改 board.theme.line）",
+		(sh.get("board", {}) as Dictionary).get("theme", {}).has("line"))
 
 
 # ===========================================================================
@@ -1008,16 +1147,94 @@ func _lum(c: Color) -> float:
 
 
 func _check_hud_rules() -> void:
+	# --- ① 必须是**可编辑 .tscn**（不是代码里拼出来的） ---
+	var packed := load(HUD_SCENE) as PackedScene
+	_ok("HUD 是可编辑 .tscn 场景（制作人可直接在编辑器微调）", packed != null, HUD_SCENE)
+	var card_packed := load(CARD_SCENE) as PackedScene
+	_ok("卡牌是可编辑 .tscn 场景（卡面单独一件）", card_packed != null, CARD_SCENE)
+	if packed == null:
+		return
+	var inst: Node = packed.instantiate()
+	# --- ② 分区节点齐全（顶部左/中/右、底部左/右、手牌、出牌区、信息、结算） ---
+	var lack: Array[String] = []
+	for n in ["TopBar", "PlayerBlock", "PlayerName", "HpValue", "GoldValue", "ScrollSlots",
+			"RoundLabel", "PhaseLabel", "TimerLabel", "MapButton", "IntentPanel", "IntentLabel",
+			"BottomLeftPanel", "CpOrb", "CpValue", "CpCap", "BoostBadge", "PopValue",
+			"DrawValue", "DrawIcon", "BottomRightPanel", "StartButton", "OutpostButton",
+			"SpeedButton", "DiscardValue", "DiscardIcon", "HandArea", "HandRow", "PlayZone",
+			"Toast", "ResultPanel", "UnitInfo"]:
+		if inst.find_child(String(n), true, false) == null:
+			lack.append(String(n))
+	_ok("HUD 场景分区节点齐全（%d 个命名节点）" % 32, lack.is_empty(), "缺：" + ", ".join(lack))
+	# --- ③ 只用容器 + 锚点：真实节点树里要有 Margin/HBox/VBox/PanelContainer，且没有裸像素根 ---
+	var n_panel := _count_class(inst, "PanelContainer")
+	var n_box := _count_class(inst, "HBoxContainer") + _count_class(inst, "VBoxContainer")
+	var n_margin := _count_class(inst, "MarginContainer")
+	_ok("HUD 用容器排版（Panel %d / Box %d / Margin %d）" % [n_panel, n_box, n_margin],
+		n_panel >= 6 and n_box >= 8 and n_margin >= 3)
+	var n_anchor := _count_anchored(inst)
+	_ok("HUD 各分区都靠锚点定位（%d 个锚定 Control，换分辨率不跑位）" % n_anchor, n_anchor >= 10)
+	# --- ④ 统一挂 main_theme.tres ---
+	var theme: Theme = load(UI_THEME) as Theme
+	var rootc := inst as Control
+	_ok("HUD 根节点挂 main_theme.tres", rootc != null and rootc.theme == theme)
+	inst.free()
+
+	# --- ⑤ 卡牌场景：费用球 + 图 + 描述 + 派系条 ---
+	var card_inst: Node = card_packed.instantiate() if card_packed != null else null
+	var card_lack: Array[String] = []
+	if card_inst == null:
+		card_lack.append("卡牌场景加载失败")
+	else:
+		for n in ["Visual", "Title", "Art", "Desc", "RoleTag", "Units", "CostOrb", "Cost"]:
+			if card_inst.find_child(String(n), true, false) == null:
+				card_lack.append(String(n))
+		var ctheme := (card_inst as Control).theme if card_inst is Control else null
+		if ctheme != theme:
+			card_lack.append("未挂 main_theme")
+		card_inst.free()
+	_ok("卡牌场景节点齐全且挂主题", card_lack.is_empty(), ", ".join(card_lack))
+
+	# --- ⑥ 脚本只绑引用/写文本/播动画：不许硬拼布局 ---
 	var src := _read(HUD_SCRIPT)
-	_ok("HUD 有敌方意图栏", src.contains("IntentPanel") and src.contains("IntentLabel"))
-	_ok("HUD 手牌区同时支持建造/训练/策略三类牌",
+	_ok("HUD 脚本不硬拼静态布局（没有 Control.new / 手写 offset 像素）",
+		not src.contains("Control.new") and not src.contains("offset_left =")
+		and not src.contains("custom_minimum_size = Vector2"))
+	_ok("HUD 卡牌三类前缀（建造/训练/策略）与点击契约一致",
 		src.contains("BuildCard_") and src.contains("TrainCard_") and src.contains("StrategyCard_"))
 	_ok("HUD 有开战 / 倍速 / 据点 / 重开四个按钮",
 		src.contains("StartButton") and src.contains("SpeedButton")
 		and src.contains("OutpostButton") and src.contains("RestartButton"))
 	_ok("HUD 卡牌可用性只读 Model 的 available/reason（不自己推规则）",
 		src.contains("\"available\"") and src.contains("\"reason\""))
+	_ok("HUD 有抽牌/弃牌飞行 + 出牌区判定（Tween，不是瞬移）",
+		src.contains("_fly_from_draw") and src.contains("_fly_to_discard") and src.contains("_is_over_play_zone"))
+	_ok("HUD 打出失败会抖动回弹（不是点一下就生效）",
+		src.contains("shake") and src.contains("_return_card"))
 	_ok("HUD 零写死中文文案", _count_cjk_literals(src) == 0, "实测 %d 处" % _count_cjk_literals(src))
+	var card_src := _read("res://Screens/hud/卡牌.gd")
+	_ok("卡牌脚本零写死中文", _count_cjk_literals(card_src) == 0,
+		"实测 %d 处" % _count_cjk_literals(card_src))
+
+
+func _count_class(root: Node, cls: String) -> int:
+	var n := 0
+	for c in root.get_children():
+		if c.is_class(cls):
+			n += 1
+		n += _count_class(c, cls)
+	return n
+
+
+func _count_anchored(root: Node) -> int:
+	var n := 0
+	for c in root.get_children():
+		if c is Control:
+			var ct := c as Control
+			if absf(ct.anchor_left) + absf(ct.anchor_top) + absf(ct.anchor_right) + absf(ct.anchor_bottom) > 0.001:
+				n += 1
+		n += _count_anchored(c)
+	return n
 
 
 # ===========================================================================
@@ -1047,7 +1264,7 @@ func _check_screens() -> void:
 	_ok("截图配方 %d 条、真实点击 %d 次、每次都有断言" % [recipes.size(), clicks],
 		bad.is_empty() and recipes.size() >= 10, ", ".join(bad.slice(0, 6)))
 	for need in ["battle_plan", "battle_build", "battle_train", "battle_attack",
-			"battle_defend", "battle_focus", "battle_models"]:
+			"battle_defend", "battle_info", "battle_models", "battle_airdrop", "battle_combat"]:
 		_ok("验收配方存在：" + need, recipes.has(need))
 
 

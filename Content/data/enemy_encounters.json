@@ -1,6 +1,6 @@
 {
 	"version": 1.0,
-	"note": "敌人遭遇卡：阵营（豺狼人/鱼人）、敌方基地血量、敌方战术格子上的固定建筑外观、按轮次权重的敌方攻防意图池，以及波次蓝图（角色 -> 兵种）。",
+	"note": "敌人遭遇卡：阵营 / 基地血量 / 攻防意图池。2026-11-22 单兵制：base_hp 压到 68~72（StS 体量），配 zone_dps_per_unit 0.24 时约 30 秒拆完，不会一回合秒杀。",
 	"factions": [
 		{
 			"id": "bandit",
@@ -20,7 +20,7 @@
 			"faction": "bandit",
 			"faction_display": "豺狼人",
 			"shell": "shell_ridge_01",
-			"base_hp": 3200.0,
+			"base_hp": 72.0,
 			"tile_buildings": [
 				{
 					"tile": 21.0,
@@ -220,7 +220,7 @@
 			"faction": "murloc",
 			"faction_display": "鱼人",
 			"shell": "shell_ridge_01",
-			"base_hp": 2800.0,
+			"base_hp": 68.0,
 			"tile_buildings": [
 				{
 					"tile": 21.0,

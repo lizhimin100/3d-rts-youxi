@@ -1,0 +1,162 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://Screens/hud/卡牌.gd" id="1_card"]
+[ext_resource type="Theme" path="res://Content/ui/main_theme.tres" id="2_theme"]
+[ext_resource type="Texture2D" path="res://Content/art/图标/单位/footman.png" id="3_art"]
+
+[sub_resource type="StyleBoxFlat" id="SB_card_body"]
+content_margin_left = 7.0
+content_margin_top = 6.0
+content_margin_right = 7.0
+content_margin_bottom = 6.0
+bg_color = Color(0.953, 0.925, 0.867, 0.97)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.42, 0.306, 0.188, 0.75)
+corner_radius_top_left = 9
+corner_radius_top_right = 9
+corner_radius_bottom_right = 9
+corner_radius_bottom_left = 9
+shadow_color = Color(0.165, 0.106, 0.059, 0.3)
+shadow_size = 10
+shadow_offset = Vector2(0, 4)
+
+[sub_resource type="StyleBoxFlat" id="SB_orb"]
+content_margin_left = 2.0
+content_margin_top = 2.0
+content_margin_right = 2.0
+content_margin_bottom = 2.0
+bg_color = Color(0.66, 0.2, 0.16, 0.98)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.953, 0.925, 0.867, 0.95)
+corner_radius_top_left = 20
+corner_radius_top_right = 20
+corner_radius_bottom_right = 20
+corner_radius_bottom_left = 20
+shadow_color = Color(0.165, 0.106, 0.059, 0.35)
+shadow_size = 5
+shadow_offset = Vector2(0, 2)
+
+[sub_resource type="StyleBoxFlat" id="SB_art"]
+content_margin_left = 0.0
+content_margin_top = 0.0
+content_margin_right = 0.0
+content_margin_bottom = 0.0
+bg_color = Color(0.86, 0.83, 0.75, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.42, 0.306, 0.188, 0.35)
+corner_radius_top_left = 5
+corner_radius_top_right = 5
+corner_radius_bottom_right = 5
+corner_radius_bottom_left = 5
+
+[node name="CardRoot" type="Control"]
+custom_minimum_size = Vector2(112, 164)
+layout_mode = 3
+anchors_preset = 0
+offset_right = 112.0
+offset_bottom = 164.0
+theme = ExtResource("2_theme")
+script = ExtResource("1_card")
+
+[node name="Visual" type="PanelContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_styles/panel = SubResource("SB_card_body")
+
+[node name="Body" type="VBoxContainer" parent="Visual"]
+mouse_filter = 2
+layout_mode = 2
+theme_override_constants/separation = 3
+
+[node name="Title" type="Label" parent="Visual/Body"]
+mouse_filter = 2
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.22, 0.161, 0.11, 1)
+theme_override_font_sizes/font_size = 14
+text = "征召进攻"
+horizontal_alignment = 1
+
+[node name="ArtFrame" type="PanelContainer" parent="Visual/Body"]
+mouse_filter = 2
+custom_minimum_size = Vector2(0, 54)
+layout_mode = 2
+theme_override_styles/panel = SubResource("SB_art")
+
+[node name="Art" type="TextureRect" parent="Visual/Body/ArtFrame"]
+mouse_filter = 2
+unique_name_in_owner = true
+layout_mode = 2
+texture = ExtResource("3_art")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Desc" type="Label" parent="Visual/Body"]
+mouse_filter = 2
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_colors/font_color = Color(0.435, 0.357, 0.263, 1)
+theme_override_font_sizes/font_size = 11
+text = "在兵营格中心空降 6 名进攻单位"
+autowrap_mode = 3
+
+[node name="Foot" type="HBoxContainer" parent="Visual/Body"]
+mouse_filter = 2
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="RoleTag" type="Label" parent="Visual/Body/Foot"]
+mouse_filter = 2
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.663, 0.231, 0.18, 1)
+theme_override_font_sizes/font_size = 11
+text = "进攻"
+
+[node name="Units" type="Label" parent="Visual/Body/Foot"]
+mouse_filter = 2
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.22, 0.161, 0.11, 1)
+theme_override_font_sizes/font_size = 11
+text = "6 名"
+horizontal_alignment = 2
+
+[node name="CostOrb" type="PanelContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 0
+offset_left = -7.0
+offset_top = -7.0
+offset_right = 29.0
+offset_bottom = 29.0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("SB_orb")
+
+[node name="Cost" type="Label" parent="CostOrb"]
+mouse_filter = 2
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.965, 0.91, 1)
+theme_override_font_sizes/font_size = 18
+text = "2"
+horizontal_alignment = 1
+vertical_alignment = 1

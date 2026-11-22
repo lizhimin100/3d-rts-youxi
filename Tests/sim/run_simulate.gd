@@ -2,7 +2,7 @@ extends SceneTree
 ## 职责：--simulate 的入口（纯 Model，无窗口）。
 ##
 ## 默认：**真小队攻防**（100 局）——
-##   规划（ScriptedPlanner）→ 训练牌按建筑格子中心出整队 → 质心沿脊线 A* 推进 →
+##   规划（ScriptedPlanner）→ 征召牌在兵营格中心空降 N 名单兵 → 每人沿脊线 A* 推进 →
 ##   成员弹性槽位 → 6 步伤害结算 → 双 90 秒 → 胜率 / DPS / 寻路 / 阵型报告。
 ##
 ## 用法：godot --headless --path . --script Tests/sim/run_simulate.gd -- \
@@ -72,7 +72,7 @@ func _run() -> void:
 	var encounters := JsonFile.read_dict(ENCOUNTERS_JSON, {})
 	var tuning := JsonFile.read_dict(SQUAD_JSON, {})
 	if tuning.is_empty():
-		tuning = {"zone_dps_per_squad": 18.0}
+		tuning = {"zone_dps_per_unit": 0.24}
 
 	var res: Dictionary = mdl.call("SquadSimulate",
 		units, combat, planning, levels, shells, layouts, encounters, tuning,
@@ -87,6 +87,9 @@ func _run() -> void:
 
 	_print_squad_report(res, games, seed_base)
 	var summary := _squad_summary(res, games, seed_base)
+	for key in ["avg_enemy_max_zone", "avg_player_zone_seconds", "avg_enemy_zone_seconds"]:
+		if res.has(key):
+			summary[key] = res[key]
 	print("SIM " + JSON.stringify(summary))
 	_write_out(summary)
 	quit(0)
@@ -96,19 +99,19 @@ func _run() -> void:
 # 小队报告
 # ===========================================================================
 func _print_squad_report(res: Dictionary, games: int, seed_base: int) -> void:
-	print("========== 真小队推演 · %s ==========" % String(res.get("level", _level_id)))
-	print("战场：%s ｜ %d 局 ｜ 种子 %d..%d ｜ 每局两轮各 90s（轮末清场）" % [
+	print("========== 单兵推演 · %s ==========" % String(res.get("level", _level_id)))
+	print("战场：%s ｜ %d 局 ｜ 种子 %d..%d ｜ 每局两轮各 60s（轮末清场）" % [
 		String(res.get("arena_name", res.get("arena", ""))), int(res.get("games", games)),
 		seed_base, seed_base + games - 1])
-	print("说明：训练牌 → 建筑格子 SquadSpawnAnchor 瞬间整队；质心沿脊线 A* 推进；成员弹性槽位；6 步结算。")
+	print("说明：征召牌 → 兵营格中心空降 N 名单兵；每人沿脊线 A* 推进；接敌锁定；6 步结算。")
 	print("------------------------------------------------------------------------------------------")
-	print("%-4s %-6s %-5s %-13s %-10s %-9s %-8s %-7s %-6s %-4s %-5s %s" % [
-		"idx", "seed", "res", "player_hp", "enemy_hp", "squads", "dmg", "dps/人", "zone", "卡住", "槽位", "reason"])
+	print("%-4s %-6s %-5s %-13s %-10s %-9s %-8s %-7s %-6s %-6s %-4s %-5s %s" % [
+		"idx", "seed", "res", "player_hp", "enemy_hp", "单兵", "dmg", "dps/人", "我方区", "敌方区", "卡住", "槽位", "reason"])
 
 	var rows: Array = res.get("rows", [])
 	for row in rows:
 		var r: Dictionary = row
-		print("%-4d %-6d %-5s %-13s %-10s %-9s %-8d %-7.2f %-6d %-4d %-5.2f %s" % [
+		print("%-4d %-6d %-5s %-13s %-10s %-9s %-8d %-7.2f %-6d %-6d %-4d %-5.2f %s" % [
 			int(r.get("index", 0)), int(r.get("seed", 0)), _outcome_en(String(r.get("outcome", ""))),
 			"%d (%d%%)" % [int(r.get("player_hp", 0)), int(r.get("player_hp_pct", 0))],
 			str(int(r.get("enemy_hp", 0))),
@@ -116,7 +119,7 @@ func _print_squad_report(res: Dictionary, games: int, seed_base: int) -> void:
 				int(r.get("player_squads_lost", 0))],
 			int(r.get("player_damage", 0)),
 			float(r.get("dps_member", 0.0)),
-			int(r.get("zone_max", 0)), int(r.get("stuck_events", 0)),
+			int(r.get("zone_max", 0)), int(r.get("enemy_zone_max", 0)), int(r.get("stuck_events", 0)),
 			float(r.get("slot_error", 0.0)),
 			String(r.get("top_reason", "")),
 		])
@@ -125,7 +128,7 @@ func _print_squad_report(res: Dictionary, games: int, seed_base: int) -> void:
 	print("汇总：胜 %d ｜ 负 %d ｜ 平 %d ｜ 胜率 %.1f%% ｜ 平均 %.1fs" % [
 		int(res.get("wins", 0)), int(res.get("losses", 0)), int(res.get("draws", 0)),
 		float(res.get("win_rate", 0.0)) * 100.0, float(res.get("avg_seconds", 0.0))])
-	print("均值：我方基地剩 %.0f%% ｜ 敌基地剩 %.0f ｜ 出兵 %.1f vs %.1f 队 ｜ 整队阵亡 %.1f 队" % [
+	print("均值：我方基地剩 %.0f%% ｜ 敌基地剩 %.0f ｜ 出兵 %.1f vs %.1f 名 ｜ 我方阵亡 %.1f 名" % [
 		float(res.get("avg_player_hp_pct", 0.0)), float(res.get("avg_enemy_hp", 0.0)),
 		float(res.get("avg_player_squads", 0.0)), float(res.get("avg_enemy_squads", 0.0)),
 		float(res.get("avg_player_squads_lost", 0.0))])

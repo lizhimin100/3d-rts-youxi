@@ -202,8 +202,8 @@ namespace WarIsland.Model
                             errors.Add($"关卡 {Id} 波次 → 单位 {sq.Unit} 已禁用（enabled=false）");
                         if (u.Faction != EnemyFaction)
                             errors.Add($"关卡 {Id} 波次 → {sq.Unit} 不属于敌方阵营 {EnemyFaction}");
-                        if (sq.Count < 1 || sq.Count > 6)
-                            errors.Add($"关卡 {Id} 波次 → {sq.Unit} count={sq.Count} 越界（1..6）");
+                        if (sq.Count < 1 || sq.Count > 24)
+                            errors.Add($"关卡 {Id} 波次 → {sq.Unit} count={sq.Count} 越界（1..24 名单兵）");
                         if (sq.Star < 1 || sq.Star > 3)
                             errors.Add($"关卡 {Id} 波次 → {sq.Unit} star={sq.Star} 越界（1..3）");
                     }
