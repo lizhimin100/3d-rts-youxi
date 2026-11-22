@@ -257,6 +257,60 @@
 				"x": -37.0,
 				"z": 0.0
 			}
+		},
+		"theme_backdrop": {
+			"description": "主题陈列室背景：执行阶段收起 HUD → 干净 3D 实景（存 Content/ui/assets/showcase_backdrop.png）",
+			"scene": "res://Screens/scenes/主场景.tscn",
+			"delay": 8,
+			"hide_ui": true,
+			"wait_after": 0.3
+		},
+		"theme": {
+			"description": "UI 主题陈列室（温润木石风）：常驻 HUD / 选中浮窗 / 按钮四态与语义变体 / 两种进度条；真点重置、集火、防守、切换各验状态",
+			"scene": "res://Screens/ui/ThemeShowcase.tscn",
+			"delay": 0.8,
+			"clicks": [
+				{
+					"click": "ResetButton",
+					"expect": "ResetTip",
+					"expect_state": [
+						"last_action",
+						"reset"
+					]
+				},
+				{
+					"click": "FocusButton",
+					"expect": "FocusTip",
+					"expect_state": [
+						"last_action",
+						"focus_fire"
+					]
+				},
+				{
+					"click": "DefendButton",
+					"expect": "DefendTip",
+					"expect_state": [
+						"last_action",
+						"defend"
+					]
+				},
+				{
+					"click": "ToggleButton",
+					"expect": "ToggleTipOn",
+					"expect_state": [
+						"last_action",
+						"toggle"
+					]
+				}
+			],
+			"wait_after": 0.2
+		},
+		"theme_hover": {
+			"description": "UI 主题：悬停态 + 气泡（鼠标停在「悬停」按钮上，验证 hover 描边与 TooltipPanel）",
+			"scene": "res://Screens/ui/ThemeShowcase.tscn",
+			"delay": 0.8,
+			"hover_control": "BtnHover",
+			"hover_wait": 1.2
 		}
 	}
 }

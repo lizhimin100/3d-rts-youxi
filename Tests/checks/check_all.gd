@@ -24,6 +24,10 @@ const LEVELS_JSON := "res://Content/data/levels.json"
 const SHELLS_JSON := "res://Content/data/map_shells.json"
 const LAYOUTS_JSON := "res://Content/data/player_layouts.json"
 const ENCOUNTERS_JSON := "res://Content/data/enemy_encounters.json"
+## 2026-11-22 UI 主题（温润木石风）：主题资源 / 陈列室 / 风格指南三件套
+const UI_THEME := "res://Content/ui/main_theme.tres"
+const UI_SHOWCASE := "res://Screens/ui/ThemeShowcase.tscn"
+const UI_STYLE_GUIDE := "res://Content/docs/ui_style_guide.md"
 const SHELL_STORE := preload("res://Screens/editor/shell_store.gd")
 const ASSEMBLY_API := preload("res://Game/map/关卡装配.gd")
 const LEVEL_ID := "level_1"
@@ -75,6 +79,7 @@ func _run() -> void:
 	_check_save()
 	_check_release_gate()
 	_check_screens()
+	_check_ui_theme()
 	_check_docs()
 	_check_legacy_removed()
 	_finish()
@@ -1997,6 +2002,14 @@ func _check_screens() -> void:
 		var has_assert: bool = r.has("expect") or r.has("expect_scene_state")
 		if r.has("click") and not has_assert:
 			problems.append("%s 有 click 但没有 expect / expect_scene_state（点了不算成功，要验状态）" % name)
+		for item in (r.get("clicks", []) as Array):
+			if not (item is Dictionary):
+				problems.append("%s 的 clicks 项不是字典" % name)
+				continue
+			var c := item as Dictionary
+			if String(c.get("click", "")).is_empty() \
+					or not (c.has("expect") or c.has("expect_state")):
+				problems.append("%s 的 clicks 有项缺 click / expect（多点几次也要逐项验状态）" % name)
 	_ok("截图画面表（%d 个画面）" % screens.size(), problems.is_empty(), "; ".join(problems))
 
 
@@ -2169,6 +2182,120 @@ func _count_cjk_literals(text: String) -> int:
 			continue
 		i += 1
 	return count
+
+
+## 2026-11-22 UI 主题（温润木石风）：主题资源 / 陈列室 / 风格指南三件套。
+## 这里不重推色值公式：色板是设计决策，检查只保证"能加载、变体挂对基类、字号只有三档、
+## 陈列室真的用主题而不是脚本现拼、截图配方真的点了并验状态"。
+func _check_ui_theme() -> void:
+	var theme: Theme = load(UI_THEME) as Theme
+	_ok("UI 主题 main_theme.tres 可加载", theme != null, UI_THEME)
+	if theme == null:
+		return
+
+	var want_base := {
+		"HudPanel": "PanelContainer", "FloatPanel": "PanelContainer",
+		"CardPanel": "PanelContainer", "InsetPanel": "PanelContainer",
+		"AttackButton": "Button", "DefenseButton": "Button",
+		"PrimaryButton": "Button", "GhostButton": "Button",
+		"CountdownBar": "ProgressBar",
+		"TitleLabel": "Label", "HeaderLabel": "Label", "ValueLabel": "Label",
+		"CaptionLabel": "Label", "AttackLabel": "Label", "DefenseLabel": "Label",
+	}
+	var bad_base: Array[String] = []
+	for t in want_base.keys():
+		var got := String(theme.get_type_variation_base(String(t)))
+		if got != String(want_base[t]):
+			bad_base.append("%s→%s" % [t, got])
+	_ok("主题变体挂在正确基类上（%d 个）" % want_base.size(), bad_base.is_empty(), ", ".join(bad_base))
+
+	var bad_state: Array[String] = []
+	for t in ["Button", "AttackButton", "DefenseButton"]:
+		for s in ["normal", "hover", "pressed", "disabled"]:
+			if not theme.has_stylebox(String(s), String(t)):
+				bad_state.append("%s/%s" % [t, s])
+	_ok("Button（含进攻/防守变体）四态样式齐全", bad_state.is_empty(), ", ".join(bad_state))
+
+	var fs_body := theme.default_font_size
+	var fs_title := theme.get_font_size("font_size", "TitleLabel")
+	var fs_value := theme.get_font_size("font_size", "ValueLabel")
+	var fs_cap := theme.get_font_size("font_size", "CaptionLabel")
+	_ok("三档字号唯一（正文 %d / 标题 %d / 角标 %d）" % [fs_body, fs_title, fs_cap],
+		fs_body == 18 and fs_title == 28 and fs_value == 28 and fs_cap == 14,
+		"%d/%d/%d/%d" % [fs_body, fs_title, fs_value, fs_cap])
+	_ok("主题默认字体是系统字体栈（不打包字体文件）",
+		theme.default_font != null and theme.default_font is SystemFont,
+		str(theme.default_font.get_class()) if theme.default_font != null else "缺字体")
+
+	var hud := theme.get_stylebox("panel", "HudPanel") as StyleBoxFlat
+	var flt := theme.get_stylebox("panel", "FloatPanel") as StyleBoxFlat
+	var shape_ok := hud != null and flt != null \
+		and hud.corner_radius_top_left >= 8 and hud.border_width_left >= 1 \
+		and hud.bg_color.a >= 0.85 and hud.bg_color.a <= 0.93 \
+		and flt.bg_color.a > hud.bg_color.a
+	_ok("HUD 极简底板 / 浮窗底板有区分度（圆角 + 描边 + 85%~93% 哑光）", shape_ok,
+		"hud=%s float=%s" % [hud.bg_color if hud != null else "-", flt.bg_color if flt != null else "-"])
+
+	var atk := theme.get_stylebox("normal", "AttackButton") as StyleBoxFlat
+	var dfn := theme.get_stylebox("normal", "DefenseButton") as StyleBoxFlat
+	_ok("进攻红 / 防守蓝方向正确且不是荧光色（S<0.8）",
+		atk != null and dfn != null and atk.bg_color.r > atk.bg_color.b + 0.3 \
+		and dfn.bg_color.b > dfn.bg_color.r + 0.3 \
+		and atk.bg_color.s < 0.8 and dfn.bg_color.s < 0.8,
+		"atk=%s def=%s" % [atk.bg_color if atk != null else "-", dfn.bg_color if dfn != null else "-"])
+
+	# 陈列室：根节点挂主题、关键样例齐全、脚本只切状态（界面必须是 .tscn 静态搭出来的）
+	var packed := load(UI_SHOWCASE) as PackedScene
+	var inst: Node = packed.instantiate() if packed != null else null
+	var lack: Array[String] = []
+	if inst == null:
+		lack.append("场景加载失败")
+	else:
+		for n in ["Backdrop", "HudCard", "FloatCard", "KitCard", "DockCard", "RatioCard",
+				"FocusButton", "DefendButton", "ToggleButton", "HealthBar", "CountdownBar",
+				"FocusTip", "DefendTip", "ToggleTipOn", "ResetTip"]:
+			if inst.find_child(String(n), true, false) == null:
+				lack.append(String(n))
+		var root := inst as Control
+		if root == null or root.theme != theme:
+			lack.append("根节点未挂 main_theme.tres")
+	_ok("陈列室 ThemeShowcase.tscn 节点齐全 + 根节点挂主题", lack.is_empty(), ", ".join(lack))
+	if inst != null:
+		inst.free()
+
+	var src := _read("res://Screens/ui/ThemeShowcase.gd")
+	_ok("陈列室脚本只切状态（不 add_child / 不 new 控件 / 不写样式覆盖）",
+		not src.is_empty() and not src.contains("add_child(") \
+		and not src.contains(".new()") and not src.contains("add_theme_"))
+
+	var tscn := _read(UI_SHOWCASE)
+	_ok("陈列室样式全部来自主题（场景里零 theme_override_styles）",
+		tscn.contains("theme = ExtResource") and not tscn.contains("theme_override_styles"))
+
+	var screens: Dictionary = JsonFile.read_dict(SCREENS, {}).get("screens", {})
+	var rec: Dictionary = screens.get("theme", {})
+	var clicks: Array = rec.get("clicks", [])
+	var bad_clicks: Array[String] = []
+	for it in clicks:
+		if not (it is Dictionary):
+			bad_clicks.append("非字典项")
+			continue
+		var c := it as Dictionary
+		if String(c.get("click", "")).is_empty() \
+				or not (c.has("expect") or c.has("expect_state")):
+			bad_clicks.append(String(c.get("click", "?")))
+	_ok("截图配方 theme 用真实多次点击（%d 次，每次都有断言）" % clicks.size(),
+		clicks.size() >= 3 and bad_clicks.is_empty() \
+		and String(rec.get("scene", "")) == UI_SHOWCASE, ", ".join(bad_clicks))
+
+	var guide := _read(UI_STYLE_GUIDE)
+	var lack_hex: Array[String] = []
+	for h in ["#E9DFCB", "#38291C", "#A93B2E", "#2E5C93", "#C08A2E"]:
+		if not guide.contains(String(h)):
+			lack_hex.append(String(h))
+	_ok("风格指南记录了色板 Hex 与 60 / 30 / 10 比例",
+		lack_hex.is_empty() and guide.contains("60%") \
+		and guide.contains("30%") and guide.contains("10%"), ", ".join(lack_hex))
 
 
 func _ok(name: String, cond: bool, detail: String = "") -> void:

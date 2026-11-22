@@ -46,6 +46,16 @@ func _run() -> void:
 		_fail("没有这个画面：%s（现有：%s）" % [_screen, ", ".join(recipes.keys())])
 		return
 	var recipe: Dictionary = recipes[_screen]
+	# --- 可选：把客户区钉成精确像素（1920x1080 会被任务栏裁成 1061，验收要的是原尺寸）---
+	var size_arg := _arg("--shot-size")
+	if not size_arg.is_empty():
+		var parts := size_arg.split("x")
+		if parts.size() == 2:
+			var want := Vector2i(int(parts[0]), int(parts[1]))
+			get_window().size = want
+			await get_tree().process_frame
+			await get_tree().process_frame
+			print("[shot] 客户区 %s（请求 %s）" % [str(get_window().size), size_arg])
 	var scene_path := String(recipe.get("scene", "res://Screens/scenes/主场景.tscn"))
 	var packed: PackedScene = load(scene_path)
 	if packed == null:
@@ -55,6 +65,28 @@ func _run() -> void:
 	add_child(_scene)
 	await get_tree().create_timer(float(recipe.get("delay", 8.0))).timeout
 	await get_tree().process_frame
+
+	# --- 可选：拍"干净 3D 实景"（主题陈列室背景用）---
+	# hide_ui：收掉所有 CanvasLayer（HUD/气泡/光标），只留 3D；hide_nodes：按名字再收几个 3D 层。
+	if bool(recipe.get("hide_ui", false)):
+		var hid := 0
+		for c in _scene.get_children():
+			if c is CanvasLayer:
+				(c as CanvasLayer).visible = false
+				hid += 1
+		print("[shot] hide_ui 收起 %d 个 CanvasLayer" % hid)
+	for n in (recipe.get("hide_nodes", []) as Array):
+		var hn := _find(_scene, String(n))
+		if hn is Node3D:
+			(hn as Node3D).visible = false
+		elif hn is CanvasItem:
+			(hn as CanvasItem).visible = false
+		else:
+			_fail("hide_nodes 找不到可隐藏的节点：" + String(n))
+			return
+	if recipe.has("hide_ui") or recipe.has("hide_nodes"):
+		await get_tree().create_timer(0.3).timeout
+		await get_tree().process_frame
 
 	if recipe.has("select_unit"):
 		var unit_id := String(recipe["select_unit"])
@@ -127,6 +159,36 @@ func _run() -> void:
 				_fail("点了 %s 但 %s 没出现（点不动 / 事件没进去）" % [click_name, expect_name])
 				return
 			print("[shot] 交互通过：点击 %s → %s 出现" % [click_name, expect_name])
+
+	# --- 可选：一次点多个控件（主题陈列室这类"多按钮各点一下"的验收）---
+	# 每项：{click, expect?, expect_state?[属性, 子串], wait?}
+	# 纪律：每一项都要有自己的断言（expect 或 expect_state），不许"只点不验"。
+	if recipe.has("clicks"):
+		var jobs: Array = recipe["clicks"]
+		if jobs.is_empty():
+			_fail("clicks 是空数组（配了就要点）")
+			return
+		for job in jobs:
+			var jd: Dictionary = job
+			var click_name := String(jd.get("click", ""))
+			if click_name.is_empty():
+				_fail("clicks 里有一项没写 click")
+				return
+			if not await _click_control(click_name):
+				return
+			var expect_name := String(jd.get("expect", ""))
+			if not expect_name.is_empty():
+				if not _shown(expect_name):
+					_fail("点了 %s 但 %s 没出现（点不动 / 事件没进去）" % [click_name, expect_name])
+					return
+				print("[shot] 交互通过：点击 %s → %s 出现" % [click_name, expect_name])
+			if jd.has("expect_state"):
+				if not _assert_state(jd["expect_state"] as Array):
+					return
+			if expect_name.is_empty() and not jd.has("expect_state"):
+				_fail("clicks 里的 %s 没有 expect / expect_state（点了拿什么判定？）" % click_name)
+				return
+			await get_tree().create_timer(float(jd.get("wait", 0.25))).timeout
 
 	# --- 可选：摆一个固定机位（证明"地块有厚度"这类需要低机位的验收） ---
 	if recipe.has("shot_camera"):
@@ -402,6 +464,58 @@ func _run() -> void:
 		return
 	print("SHOT PASS %s（%s，%d 字节）" % [saved, _screen, size])
 	get_tree().quit(0)
+
+
+## 用**真实鼠标事件**点一个控件（motion → down → up），并等按钮把状态改完。
+func _click_control(click_name: String) -> bool:
+	var node := _find(_scene, click_name)
+	if node == null:
+		_fail("找不到要点的控件：" + click_name)
+		return false
+	if not (node is Control):
+		_fail("节点不是 Control：" + click_name)
+		return false
+	var ctrl := node as Control
+	if not ctrl.is_visible_in_tree():
+		_fail("控件不可见：" + click_name)
+		return false
+	var center := ctrl.get_global_rect().get_center()
+	var vp := get_viewport()
+	var motion := InputEventMouseMotion.new()
+	motion.position = center
+	motion.global_position = center
+	vp.push_input(motion, true)
+	var down := InputEventMouseButton.new()
+	down.button_index = MOUSE_BUTTON_LEFT
+	down.pressed = true
+	down.position = center
+	down.global_position = center
+	vp.push_input(down, true)
+	await get_tree().process_frame
+	var up: InputEventMouseButton = down.duplicate()
+	up.pressed = false
+	vp.push_input(up, true)
+	await get_tree().create_timer(0.35).timeout
+	return true
+
+
+## 控件存在且真的在树里可见。
+func _shown(node_name: String) -> bool:
+	var n := _find(_scene, node_name)
+	return n != null and n is Control and (n as Control).is_visible_in_tree()
+
+
+## 读场景属性做状态断言：[属性名, 必须包含的子串]。
+func _assert_state(pair: Array) -> bool:
+	if pair.size() < 2:
+		_fail("expect_state needs [property, substring]")
+		return false
+	var got := str(_scene.get(String(pair[0])))
+	if not got.contains(String(pair[1])):
+		_fail("scene.%s = '%s' (want '%s')" % [pair[0], got, pair[1]])
+		return false
+	print("[shot] state ok: %s = %s" % [pair[0], got])
+	return true
 
 
 func _select_unit(unit_id: String) -> bool:

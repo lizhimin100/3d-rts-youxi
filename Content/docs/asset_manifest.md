@@ -136,8 +136,15 @@
 | 资源 | 路径 | 大小 | 说明 |
 |---|---|---|---|
 | 战斗环境 | `res://Content/art/环境/战斗环境.tres` | 1.6 KB | 天空 / 雾 / 泛光 / SSAO / 调色（主场景同款） |
-| UI 主题 | `res://Content/art/主题/游戏主题.tres` | 5.2 KB | 面板 / 按钮 / 字体（`ArtKit.ui_theme()`） |
+| UI 主题（现行 HUD） | `res://Content/art/主题/游戏主题.tres` | 5.2 KB | 深色 + 暖金；面板 / 按钮 / 字体（`ArtKit.ui_theme()`） |
+| UI 主题（温润木石风） | `res://Content/ui/main_theme.tres` | 23 KB | 浅暖灰底 + 深棕描边 + 红攻/蓝防/金 CP；三档字号 + 类型变体 |
+| 主题陈列室 | `res://Screens/ui/ThemeShowcase.tscn` | 32 KB | 常驻 HUD / 选中浮窗 / 按钮四态 / 两种进度条；`--shot theme` |
+| 陈列室 3D 背景 | `res://Content/ui/assets/showcase_backdrop.png` | 1.4 MB | 执行阶段收起 HUD 的实景截图（`--shot theme_backdrop`） |
 | 联盟调色板 | `res://Content/art/调色板/联盟调色板.tres` | — | 自然物 / 队伍色取色的唯一来源 |
+
+`Content/ui/assets/` **没有九宫格贴图**，所以新主题一律用 `StyleBoxFlat`（精细圆角 + 1~2px 描边 +
+85%~94% 哑光底 + 微弱暖阴影）；将来补九宫格时只换 StyleBox，不改控件结构。
+色板来源、对比度与调参入口见 `res://Content/docs/ui_style_guide.md`。
 
 编辑器环境：`战斗环境.tres` **复制一份**再改背景/雾（`duplicate(true)`），不许改共享资源。
 

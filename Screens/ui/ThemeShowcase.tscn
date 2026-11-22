@@ -1,0 +1,997 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://Screens/ui/ThemeShowcase.gd" id="1_showcase"]
+[ext_resource type="Theme" path="res://Content/ui/main_theme.tres" id="2_theme"]
+[ext_resource type="Texture2D" path="res://Content/ui/assets/showcase_backdrop.png" id="3_backdrop"]
+[ext_resource type="Texture2D" path="res://Content/art/图标/sword.svg" id="4_sword"]
+[ext_resource type="Texture2D" path="res://Content/art/图标/coin.svg" id="5_coin"]
+
+[node name="ThemeShowcase" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("2_theme")
+script = ExtResource("1_showcase")
+
+[node name="Backdrop" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("3_backdrop")
+expand_mode = 1
+stretch_mode = 6
+
+[node name="Wash" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.953, 0.925, 0.867, 0.34)
+
+[node name="Safe" type="MarginContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 28
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 28
+theme_override_constants/margin_bottom = 16
+
+[node name="Page" type="VBoxContainer" parent="Safe"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="HeaderCard" type="PanelContainer" parent="Safe/Page"]
+layout_mode = 2
+theme_type_variation = &"HudPanel"
+
+[node name="TopBar" type="HBoxContainer" parent="Safe/Page/HeaderCard"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="Titles" type="VBoxContainer" parent="Safe/Page/HeaderCard/TopBar"]
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="Title" type="Label" parent="Safe/Page/HeaderCard/TopBar/Titles"]
+layout_mode = 2
+theme_type_variation = &"TitleLabel"
+text = "战争原岛 · UI 主题陈列室"
+
+[node name="Sub" type="Label" parent="Safe/Page/HeaderCard/TopBar/Titles"]
+layout_mode = 2
+theme_type_variation = &"CaptionLabel"
+text = "温润木石风（方案 B） · 浅暖灰底 / 深棕描边 / 红攻·蓝防·金 CP · 60-30-10"
+
+[node name="TopSpacer" type="Control" parent="Safe/Page/HeaderCard/TopBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Palette" type="HBoxContainer" parent="Safe/Page/HeaderCard/TopBar"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="SwStone" type="VBoxContainer" parent="Safe/Page/HeaderCard/TopBar/Palette"]
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="Chip" type="ColorRect" parent="Safe/Page/HeaderCard/TopBar/Palette/SwStone"]
+custom_minimum_size = Vector2(92, 12)
+layout_mode = 2
+mouse_filter = 2
+color = Color(0.914, 0.875, 0.796, 1)
+
+[node name="Name" type="Label" parent="Safe/Page/HeaderCard/TopBar/Palette/SwStone"]
+layout_mode = 2
+theme_type_variation = &"CaptionLabel"
+horizontal_alignment = 1
+text = "石材 #E9DFCB"
+
+[node name="SwInk" type="VBoxContainer" parent="Safe/Page/HeaderCard/TopBar/Palette"]
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="Chip" type="ColorRect" parent="Safe/Page/HeaderCard/TopBar/Palette/SwInk"]
+custom_minimum_size = Vector2(92, 12)
+layout_mode = 2
+mouse_filter = 2
+color = Color(0.22, 0.161, 0.11, 1)
+
+[node name="Name" type="Label" parent="Safe/Page/HeaderCard/TopBar/Palette/SwInk"]
+layout_mode = 2
+theme_type_variation = &"CaptionLabel"
+horizontal_alignment = 1
+text = "墨 #38291C"
+
+[node name="SwAtk" type="VBoxContainer" parent="Safe/Page/HeaderCard/TopBar/Palette"]
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="Chip" type="ColorRect" parent="Safe/Page/HeaderCard/TopBar/Palette/SwAtk"]
+custom_minimum_size = Vector2(92, 12)
+layout_mode = 2
+mouse_filter = 2
+color = Color(0.663, 0.231, 0.18, 1)
+
+[node name="Name" type="Label" parent="Safe/Page/HeaderCard/TopBar/Palette/SwAtk"]
+layout_mode = 2
+theme_type_variation = &"CaptionLabel"
+horizontal_alignment = 1
+text = "进攻 #A93B2E"
+
+[node name="SwDef" type="VBoxContainer" parent="Safe/Page/HeaderCard/TopBar/Palette"]
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="Chip" type="ColorRect" parent="Safe/Page/HeaderCard/TopBar/Palette/SwDef"]
+custom_minimum_size = Vector2(92, 12)
+layout_mode = 2
+mouse_filter = 2
+color = Color(0.18, 0.361, 0.576, 1)
+
+[node name="Name" type="Label" parent="Safe/Page/HeaderCard/TopBar/Palette/SwDef"]
+layout_mode = 2
+theme_type_variation = &"CaptionLabel"
+horizontal_alignment = 1
+text = "防守 #2E5C93"
+
+[node name="SwGold" type="VBoxContainer" parent="Safe/Page/HeaderCard/TopBar/Palette"]
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="Chip" type="ColorRect" parent="Safe/Page/HeaderCard/TopBar/Palette/SwGold"]
+custom_minimum_size = Vector2(92, 12)
+layout_mode = 2
+mouse_filter = 2
+color = Color(0.753, 0.541, 0.18, 1)
+
+[node name="Name" type="Label" parent="Safe/Page/HeaderCard/TopBar/Palette/SwGold"]
+layout_mode = 2
+theme_type_variation = &"CaptionLabel"
+horizontal_alignment = 1
+text = "CP #C08A2E"
+
+[node name="Body" type="HBoxContainer" parent="Safe/Page"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 14
+
+[node name="HudCol" type="VBoxContainer" parent="Safe/Page/Body"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 12
+
+[node name="HudCard" type="PanelContainer" parent="Safe/Page/Body/HudCol"]
+layout_mode = 2
+theme_type_variation = &"HudPanel"
+
+[node name="HudBox" type="VBoxContainer" parent="Safe/Page/Body/HudCol/HudCard"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="HudHead" type="HBoxContainer" parent="Safe/Page/Body/HudCol/HudCard/HudBox"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="Safe/Page/Body/HudCol/HudCard/HudBox/HudHead"]
+layout_mode = 2
+theme_type_variation = &"TitleLabel"
+text = "战场态势"
+
+[node name="Spacer" type="Control" parent="Safe/Page/Body/HudCol/HudCard/HudBox/HudHead"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Tag" type="Label" parent="Safe/Page/Body/HudCol/HudCard/HudBox/HudHead"]
+layout_mode = 2
+theme_type_variation = &"CaptionLabel"
+text = "常驻 HUD"
+
+[node name="Stats" type="HBoxContainer" parent="Safe/Page/Body/HudCol/HudCard/HudBox"]
+layout_mode = 2
+theme_override_constants/separation = 18
+
+[node name="CpBox" type="VBoxContainer" parent="Safe/Page/Body/HudCol/HudCard/HudBox/Stats"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 0
+
+[node name="Cap" type="Label" parent="Safe/Page/Body/HudCol/HudCard/HudBox/Stats/CpBox"]
+layout_mode = 2
+theme_type_variation = &"CaptionLabel"
+text = "CP 指挥点"
+
+[node name="Row" type="HBoxContainer" parent="Safe/Page/Body/HudCol/HudCard/HudBox/Stats/CpBox"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Icon" type="TextureRect" parent="Safe/Page/Body/HudCol/HudCard/HudBox/Stats/CpBox/Row"]
+custom_minimum_size = Vector2(20, 20)
+layout_mode = 2
+size_flags_vertical = 4
+mouse_filter = 2
+texture = ExtResource("5_coin")
+expand_mode = 1
+stretch_mode = 5
+modulate = Color(0.486, 0.329, 0.067, 1)
+
+[node name="Value" type="Label" parent="Safe/Page/Body/HudCol/HudCard/HudBox/Stats/CpBox/Row"]
+layout_mode = 2
+theme_type_variation = &"ValueLabel"
+text = "12"
+
+[node name="PopBox" type="VBoxContainer" parent="Safe/Page/Body/HudCol/HudCard/HudBox/Stats"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 0
+
+[node name="Cap" type="Label" parent="Safe/Page/Body/HudCol/HudCard/HudBox/Stats/PopBox"]
+layout_mode = 2
+theme_type_variation = &"CaptionLabel"
+text = "人口"
+
+[node name="Row" type="HBoxContainer" parent="Safe/Page/Body/HudCol/HudCard/HudBox/Stats/PopBox"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="Value" type="Label" parent="Safe/Page/Body/HudCol/HudCard/HudBox/Stats/PopBox/Row"]
+layout_mode = 2
+theme_type_variation = &"ValueLabel"
+text = "24"
+
+[node name="Max" type="Label" parent="Safe/Page/Body/HudCol/HudCard/HudBox/Stats/PopBox/Row"]
+layout_mode = 2
+size_flags_vertical = 8
+theme_type_variation = &"CaptionLabel"
+text = "/ 40"
+
+[node name="SquadBox" type="VBoxContainer" parent="Safe/Page/Body/HudCol/HudCard/HudBox/Stats"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 0
+
+[node name="Cap" type="Label" parent="Safe/Page/Body/HudCol/HudCard/HudBox/Stats/SquadBox"]
+layout_mode = 2
+theme_type_variation = &"CaptionLabel"
+text = "剩余小队"
+
+[node name="Value" type="Label" parent="Safe/Page/Body/HudCol/HudCard/HudBox/Stats/SquadBox"]
+layout_mode = 2
+theme_type_variation = &"ValueLabel"
+text = "3"
+
+[node name="BaseRow" type="VBoxContainer" parent="Safe/Page/Body/HudCol/HudCard/HudBox"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="Head" type="HBoxContainer" parent="Safe/Page/Body/HudCol/HudCard/HudBox/BaseRow"]
+layout_mode = 2
+
+[node name="Name" type="Label" parent="Safe/Page/Body/HudCol/HudCard/HudBox/BaseRow/Head"]
+layout_mode = 2
+text = "主基地"
+
+[node name="Spacer" type="Control" parent="Safe/Page/Body/HudCol/HudCard/HudBox/BaseRow/Head"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Val" type="Label" parent="Safe/Page/Body/HudCol/HudCard/HudBox/BaseRow/Head"]
+layout_mode = 2
+theme_type_variation = &"CaptionLabel"
+text = "1440 / 2000"
+
+[node name="BaseBar" type="ProgressBar" parent="Safe/Page/Body/HudCol/HudCard/HudBox/BaseRow"]
+custom_minimum_size = Vector2(0, 18)
+layout_mode = 2
+value = 72.0
+show_percentage = false
+
+[node name="IntentHead" type="HBoxContainer" parent="Safe/Page/Body/HudCol/HudCard/HudBox"]
+layout_mode = 2
+
+[node name="Name" type="Label" parent="Safe/Page/Body/HudCol/HudCard/HudBox/IntentHead"]
+layout_mode = 2
+theme_type_variation = &"AttackLabel"
+text = "敌方意图"
+
+[node name="Spacer" type="Control" parent="Safe/Page/Body/HudCol/HudCard/HudBox/IntentHead"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Val" type="Label" parent="Safe/Page/Body/HudCol/HudCard/HudBox/IntentHead"]
+layout_mode = 2
+theme_type_variation = &"CaptionLabel"
+text = "第 1 波 · 60 秒"
+
+[node name="IntentRow" type="HBoxContainer" parent="Safe/Page/Body/HudCol/HudCard/HudBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="IntentA" type="PanelContainer" parent="Safe/Page/Body/HudCol/HudCard/HudBox/IntentRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"CardPanel"
+
+[node name="Row" type="HBoxContainer" parent="Safe/Page/Body/HudCol/HudCard/HudBox/IntentRow/IntentA"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Chip" type="ColorRect" parent="Safe/Page/Body/HudCol/HudCard/HudBox/IntentRow/IntentA/Row"]
+custom_minimum_size = Vector2(10, 10)
+layout_mode = 2
+size_flags_vertical = 4
+mouse_filter = 2
+color = Color(0.663, 0.231, 0.18, 1)
+
+[node name="Text" type="Label" parent="Safe/Page/Body/HudCol/HudCard/HudBox/IntentRow/IntentA/Row"]
+layout_mode = 2
+theme_type_variation = &"AttackLabel"
+text = "左路 · 突袭"
+
+[node name="IntentB" type="PanelContainer" parent="Safe/Page/Body/HudCol/HudCard/HudBox/IntentRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"CardPanel"
+
+[node name="Row" type="HBoxContainer" parent="Safe/Page/Body/HudCol/HudCard/HudBox/IntentRow/IntentB"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Chip" type="ColorRect" parent="Safe/Page/Body/HudCol/HudCard/HudBox/IntentRow/IntentB/Row"]
+custom_minimum_size = Vector2(10, 10)
+layout_mode = 2
+size_flags_vertical = 4
+mouse_filter = 2
+color = Color(0.18, 0.361, 0.576, 1)
+
+[node name="Text" type="Label" parent="Safe/Page/Body/HudCol/HudCard/HudBox/IntentRow/IntentB/Row"]
+layout_mode = 2
+theme_type_variation = &"DefenseLabel"
+text = "右路 · 固守"
+
+[node name="CountRow" type="VBoxContainer" parent="Safe/Page/Body/HudCol/HudCard/HudBox"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="Head" type="HBoxContainer" parent="Safe/Page/Body/HudCol/HudCard/HudBox/CountRow"]
+layout_mode = 2
+
+[node name="Name" type="Label" parent="Safe/Page/Body/HudCol/HudCard/HudBox/CountRow/Head"]
+layout_mode = 2
+text = "战斗倒计时"
+
+[node name="Spacer" type="Control" parent="Safe/Page/Body/HudCol/HudCard/HudBox/CountRow/Head"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Val" type="Label" parent="Safe/Page/Body/HudCol/HudCard/HudBox/CountRow/Head"]
+layout_mode = 2
+theme_type_variation = &"CaptionLabel"
+text = "00:38"
+
+[node name="CountBar" type="ProgressBar" parent="Safe/Page/Body/HudCol/HudCard/HudBox/CountRow"]
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+theme_type_variation = &"CountdownBar"
+value = 63.0
+show_percentage = false
+
+[node name="HudSpacer" type="Control" parent="Safe/Page/Body/HudCol"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="DockCard" type="PanelContainer" parent="Safe/Page/Body/HudCol"]
+layout_mode = 2
+theme_type_variation = &"HudPanel"
+
+[node name="DockBox" type="VBoxContainer" parent="Safe/Page/Body/HudCol/DockCard"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="DockHead" type="HBoxContainer" parent="Safe/Page/Body/HudCol/DockCard/DockBox"]
+layout_mode = 2
+
+[node name="Name" type="Label" parent="Safe/Page/Body/HudCol/DockCard/DockBox/DockHead"]
+layout_mode = 2
+theme_type_variation = &"CaptionLabel"
+text = "底栏命令格（常驻 HUD 底板）"
+
+[node name="Spacer" type="Control" parent="Safe/Page/Body/HudCol/DockCard/DockBox/DockHead"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Tag" type="Label" parent="Safe/Page/Body/HudCol/DockCard/DockBox/DockHead"]
+layout_mode = 2
+theme_type_variation = &"CaptionLabel"
+text = "图标 + 名称 + CP"
+
+[node name="DockRow" type="HBoxContainer" parent="Safe/Page/Body/HudCol/DockCard/DockBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="DockAttack" type="Button" parent="Safe/Page/Body/HudCol/DockCard/DockBox/DockRow"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"AttackButton"
+text = "进攻"
+
+[node name="DockDefend" type="Button" parent="Safe/Page/Body/HudCol/DockCard/DockBox/DockRow"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"DefenseButton"
+text = "防守"
+
+[node name="DockBuild" type="Button" parent="Safe/Page/Body/HudCol/DockCard/DockBox/DockRow"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PrimaryButton"
+text = "建造"
+
+[node name="FloatCol" type="VBoxContainer" parent="Safe/Page/Body"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 12
+
+[node name="FloatCard" type="PanelContainer" parent="Safe/Page/Body/FloatCol"]
+layout_mode = 2
+theme_type_variation = &"FloatPanel"
+
+[node name="FloatBox" type="VBoxContainer" parent="Safe/Page/Body/FloatCol/FloatCard"]
+layout_mode = 2
+theme_override_constants/separation = 9
+
+[node name="FloatHead" type="HBoxContainer" parent="Safe/Page/Body/FloatCol/FloatCard/FloatBox"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="Safe/Page/Body/FloatCol/FloatCard/FloatBox/FloatHead"]
+layout_mode = 2
+theme_type_variation = &"TitleLabel"
+text = "第 3 小队"
+
+[node name="Spacer" type="Control" parent="Safe/Page/Body/FloatCol/FloatCard/FloatBox/FloatHead"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Tag" type="Label" parent="Safe/Page/Body/FloatCol/FloatCard/FloatBox/FloatHead"]
+layout_mode = 2
+theme_type_variation = &"CaptionLabel"
+text = "选中唤出浮窗"
+
+[node name="UnitRow" type="HBoxContainer" parent="Safe/Page/Body/FloatCol/FloatCard/FloatBox"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Icon" type="TextureRect" parent="Safe/Page/Body/FloatCol/FloatCard/FloatBox/UnitRow"]
+custom_minimum_size = Vector2(30, 30)
+layout_mode = 2
+size_flags_vertical = 4
+mouse_filter = 2
+texture = ExtResource("4_sword")
+expand_mode = 1
+stretch_mode = 5
+modulate = Color(0.22, 0.161, 0.11, 1)
+
+[node name="Text" type="VBoxContainer" parent="Safe/Page/Body/FloatCol/FloatCard/FloatBox/UnitRow"]
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="Name" type="Label" parent="Safe/Page/Body/FloatCol/FloatCard/FloatBox/UnitRow/Text"]
+layout_mode = 2
+text = "联盟步兵"
+
+[node name="Meta" type="Label" parent="Safe/Page/Body/FloatCol/FloatCard/FloatBox/UnitRow/Text"]
+layout_mode = 2
+theme_type_variation = &"CaptionLabel"
+text = "12 人 · 老兵（+15% 攻击）"
+
+[node name="HpHead" type="HBoxContainer" parent="Safe/Page/Body/FloatCol/FloatCard/FloatBox"]
+layout_mode = 2
+
+[node name="Name" type="Label" parent="Safe/Page/Body/FloatCol/FloatCard/FloatBox/HpHead"]
+layout_mode = 2
+text = "聚合生命"
+
+[node name="Spacer" type="Control" parent="Safe/Page/Body/FloatCol/FloatCard/FloatBox/HpHead"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Val" type="Label" parent="Safe/Page/Body/FloatCol/FloatCard/FloatBox/HpHead"]
+layout_mode = 2
+theme_type_variation = &"CaptionLabel"
+text = "8 / 12"
+
+[node name="HpBar" type="ProgressBar" parent="Safe/Page/Body/FloatCol/FloatCard/FloatBox"]
+custom_minimum_size = Vector2(0, 18)
+layout_mode = 2
+value = 67.0
+show_percentage = false
+
+[node name="Stats" type="Label" parent="Safe/Page/Body/FloatCol/FloatCard/FloatBox"]
+layout_mode = 2
+theme_type_variation = &"CaptionLabel"
+text = "攻击 18 · 护甲 4 · 射程 125（游戏数值，非米）"
+
+[node name="Rule" type="ColorRect" parent="Safe/Page/Body/FloatCol/FloatCard/FloatBox"]
+custom_minimum_size = Vector2(0, 1)
+layout_mode = 2
+mouse_filter = 2
+color = Color(0.663, 0.553, 0.4, 0.55)
+
+[node name="Actions" type="HBoxContainer" parent="Safe/Page/Body/FloatCol/FloatCard/FloatBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="FocusButton" type="Button" parent="Safe/Page/Body/FloatCol/FloatCard/FloatBox/Actions"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"AttackButton"
+text = "集火"
+
+[node name="DefendButton" type="Button" parent="Safe/Page/Body/FloatCol/FloatCard/FloatBox/Actions"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"DefenseButton"
+text = "防守"
+
+[node name="ResetButton" type="Button" parent="Safe/Page/Body/FloatCol/FloatCard/FloatBox/Actions"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+theme_type_variation = &"GhostButton"
+text = "重置"
+
+[node name="FocusTip" type="Label" parent="Safe/Page/Body/FloatCol/FloatCard/FloatBox"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"AttackLabel"
+text = "已下令：集火当前目标"
+
+[node name="DefendTip" type="Label" parent="Safe/Page/Body/FloatCol/FloatCard/FloatBox"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"DefenseLabel"
+text = "姿态：原地防守"
+
+[node name="ToggleTipOn" type="Label" parent="Safe/Page/Body/FloatCol/FloatCard/FloatBox"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"CaptionLabel"
+text = "演示按钮已恢复可用"
+
+[node name="ToggleTipOff" type="Label" parent="Safe/Page/Body/FloatCol/FloatCard/FloatBox"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"CaptionLabel"
+text = "演示按钮已禁用"
+
+[node name="ResetTip" type="Label" parent="Safe/Page/Body/FloatCol/FloatCard/FloatBox"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"CaptionLabel"
+text = "演示状态已重置"
+
+[node name="CardSample" type="PanelContainer" parent="Safe/Page/Body/FloatCol"]
+layout_mode = 2
+theme_type_variation = &"CardPanel"
+
+[node name="CardBox" type="VBoxContainer" parent="Safe/Page/Body/FloatCol/CardSample"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="CardHead" type="HBoxContainer" parent="Safe/Page/Body/FloatCol/CardSample/CardBox"]
+layout_mode = 2
+
+[node name="Name" type="Label" parent="Safe/Page/Body/FloatCol/CardSample/CardBox/CardHead"]
+layout_mode = 2
+theme_type_variation = &"TitleLabel"
+text = "农场"
+
+[node name="Spacer" type="Control" parent="Safe/Page/Body/FloatCol/CardSample/CardBox/CardHead"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Cost" type="Label" parent="Safe/Page/Body/FloatCol/CardSample/CardBox/CardHead"]
+layout_mode = 2
+theme_type_variation = &"ValueLabel"
+text = "4 CP"
+
+[node name="CardInset" type="PanelContainer" parent="Safe/Page/Body/FloatCol/CardSample/CardBox"]
+layout_mode = 2
+theme_type_variation = &"InsetPanel"
+
+[node name="Row" type="HBoxContainer" parent="Safe/Page/Body/FloatCol/CardSample/CardBox/CardInset"]
+layout_mode = 2
+
+[node name="Text" type="Label" parent="Safe/Page/Body/FloatCol/CardSample/CardBox/CardInset/Row"]
+layout_mode = 2
+theme_type_variation = &"CaptionLabel"
+text = "建造 6 秒 · 食物 +6"
+
+[node name="Spacer" type="Control" parent="Safe/Page/Body/FloatCol/CardSample/CardBox/CardInset/Row"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Type" type="Label" parent="Safe/Page/Body/FloatCol/CardSample/CardBox/CardInset/Row"]
+layout_mode = 2
+theme_type_variation = &"CaptionLabel"
+text = "建筑卡"
+
+[node name="CardFoot" type="HBoxContainer" parent="Safe/Page/Body/FloatCol/CardSample/CardBox"]
+layout_mode = 2
+
+[node name="Hint" type="Label" parent="Safe/Page/Body/FloatCol/CardSample/CardBox/CardFoot"]
+layout_mode = 2
+theme_type_variation = &"CaptionLabel"
+text = "卡面内页：最亮纸色 + 细边"
+
+[node name="Spacer" type="Control" parent="Safe/Page/Body/FloatCol/CardSample/CardBox/CardFoot"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Tag" type="Label" parent="Safe/Page/Body/FloatCol/CardSample/CardBox/CardFoot"]
+layout_mode = 2
+theme_type_variation = &"CaptionLabel"
+text = "Exhaust"
+
+[node name="RatioCard" type="PanelContainer" parent="Safe/Page/Body/FloatCol"]
+layout_mode = 2
+theme_type_variation = &"CardPanel"
+
+[node name="RatioBox" type="VBoxContainer" parent="Safe/Page/Body/FloatCol/RatioCard"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="RatioHead" type="HBoxContainer" parent="Safe/Page/Body/FloatCol/RatioCard/RatioBox"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="Safe/Page/Body/FloatCol/RatioCard/RatioBox/RatioHead"]
+layout_mode = 2
+theme_type_variation = &"TitleLabel"
+text = "配色比例"
+
+[node name="Spacer" type="Control" parent="Safe/Page/Body/FloatCol/RatioCard/RatioBox/RatioHead"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Tag" type="Label" parent="Safe/Page/Body/FloatCol/RatioCard/RatioBox/RatioHead"]
+layout_mode = 2
+theme_type_variation = &"CaptionLabel"
+text = "60 / 30 / 10"
+
+[node name="RatioBar" type="HBoxContainer" parent="Safe/Page/Body/FloatCol/RatioCard/RatioBox"]
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="Base" type="ColorRect" parent="Safe/Page/Body/FloatCol/RatioCard/RatioBox/RatioBar"]
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 6.0
+mouse_filter = 2
+color = Color(0.863, 0.812, 0.706, 1)
+
+[node name="Ink" type="ColorRect" parent="Safe/Page/Body/FloatCol/RatioCard/RatioBox/RatioBar"]
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 3.0
+mouse_filter = 2
+color = Color(0.22, 0.161, 0.11, 1)
+
+[node name="Accent" type="ColorRect" parent="Safe/Page/Body/FloatCol/RatioCard/RatioBox/RatioBar"]
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 1.0
+mouse_filter = 2
+color = Color(0.663, 0.231, 0.18, 1)
+
+[node name="RatioLegend" type="HBoxContainer" parent="Safe/Page/Body/FloatCol/RatioCard/RatioBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="L1" type="Label" parent="Safe/Page/Body/FloatCol/RatioCard/RatioBox/RatioLegend"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"CaptionLabel"
+text = "60% 石材底板"
+
+[node name="L2" type="Label" parent="Safe/Page/Body/FloatCol/RatioCard/RatioBox/RatioLegend"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"CaptionLabel"
+text = "30% 墨线文字"
+horizontal_alignment = 1
+
+[node name="L3" type="Label" parent="Safe/Page/Body/FloatCol/RatioCard/RatioBox/RatioLegend"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"CaptionLabel"
+text = "10% 红蓝金"
+horizontal_alignment = 2
+
+[node name="KitCol" type="VBoxContainer" parent="Safe/Page/Body"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 12
+
+[node name="KitCard" type="PanelContainer" parent="Safe/Page/Body/KitCol"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_type_variation = &"HudPanel"
+
+[node name="KitBox" type="VBoxContainer" parent="Safe/Page/Body/KitCol/KitCard"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="KitHead" type="HBoxContainer" parent="Safe/Page/Body/KitCol/KitCard/KitBox"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="Safe/Page/Body/KitCol/KitCard/KitBox/KitHead"]
+layout_mode = 2
+theme_type_variation = &"TitleLabel"
+text = "控件图鉴"
+
+[node name="Spacer" type="Control" parent="Safe/Page/Body/KitCol/KitCard/KitBox/KitHead"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Tag" type="Label" parent="Safe/Page/Body/KitCol/KitCard/KitBox/KitHead"]
+layout_mode = 2
+theme_type_variation = &"CaptionLabel"
+text = "main_theme.tres"
+
+[node name="StateCap" type="Label" parent="Safe/Page/Body/KitCol/KitCard/KitBox"]
+layout_mode = 2
+theme_type_variation = &"CaptionLabel"
+text = "按钮 · 四态（按下态用 toggle 常驻；悬停态把鼠标移上去）"
+
+[node name="StateGrid" type="GridContainer" parent="Safe/Page/Body/KitCol/KitCard/KitBox"]
+layout_mode = 2
+theme_override_constants/h_separation = 8
+theme_override_constants/v_separation = 8
+columns = 2
+
+[node name="BtnNormal" type="Button" parent="Safe/Page/Body/KitCol/KitCard/KitBox/StateGrid"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "普通"
+
+[node name="BtnPressed" type="Button" parent="Safe/Page/Body/KitCol/KitCard/KitBox/StateGrid"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+toggle_mode = true
+button_pressed = true
+text = "按下"
+
+[node name="BtnDisabled" type="Button" parent="Safe/Page/Body/KitCol/KitCard/KitBox/StateGrid"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+disabled = true
+text = "禁用"
+
+[node name="BtnHover" type="Button" parent="Safe/Page/Body/KitCol/KitCard/KitBox/StateGrid"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+tooltip_text = "把鼠标移上来，看悬停描边与提亮"
+text = "悬停"
+
+[node name="VarCap" type="Label" parent="Safe/Page/Body/KitCol/KitCard/KitBox"]
+layout_mode = 2
+theme_type_variation = &"CaptionLabel"
+text = "语义变体"
+
+[node name="VarRowA" type="HBoxContainer" parent="Safe/Page/Body/KitCol/KitCard/KitBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="BtnAttack" type="Button" parent="Safe/Page/Body/KitCol/KitCard/KitBox/VarRowA"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"AttackButton"
+text = "进攻"
+
+[node name="BtnDefense" type="Button" parent="Safe/Page/Body/KitCol/KitCard/KitBox/VarRowA"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"DefenseButton"
+text = "防守"
+
+[node name="VarRowB" type="HBoxContainer" parent="Safe/Page/Body/KitCol/KitCard/KitBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="BtnPrimary" type="Button" parent="Safe/Page/Body/KitCol/KitCard/KitBox/VarRowB"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PrimaryButton"
+text = "规划结束"
+
+[node name="BtnGhost" type="Button" parent="Safe/Page/Body/KitCol/KitCard/KitBox/VarRowB"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"GhostButton"
+text = "取消"
+
+[node name="ToggleCap" type="Label" parent="Safe/Page/Body/KitCol/KitCard/KitBox"]
+layout_mode = 2
+theme_type_variation = &"CaptionLabel"
+text = "禁用切换（真实状态变化）"
+
+[node name="ToggleRow" type="HBoxContainer" parent="Safe/Page/Body/KitCol/KitCard/KitBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="ToggleButton" type="Button" parent="Safe/Page/Body/KitCol/KitCard/KitBox/ToggleRow"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"GhostButton"
+text = "切换演示按钮"
+
+[node name="DemoButton" type="Button" parent="Safe/Page/Body/KitCol/KitCard/KitBox/ToggleRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+disabled = true
+text = "演示按钮"
+
+[node name="BarCap" type="Label" parent="Safe/Page/Body/KitCol/KitCard/KitBox"]
+layout_mode = 2
+theme_type_variation = &"CaptionLabel"
+text = "进度条 · 小队聚合血条 8 / 12"
+
+[node name="HealthBar" type="ProgressBar" parent="Safe/Page/Body/KitCol/KitCard/KitBox"]
+custom_minimum_size = Vector2(0, 18)
+layout_mode = 2
+value = 67.0
+show_percentage = false
+
+[node name="CountCap" type="Label" parent="Safe/Page/Body/KitCol/KitCard/KitBox"]
+layout_mode = 2
+theme_type_variation = &"CaptionLabel"
+text = "进度条 · 60 秒倒计时 00:38"
+
+[node name="CountdownBar" type="ProgressBar" parent="Safe/Page/Body/KitCol/KitCard/KitBox"]
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+theme_type_variation = &"CountdownBar"
+value = 63.0
+show_percentage = false
+
+[node name="ValueCap" type="Label" parent="Safe/Page/Body/KitCol/KitCard/KitBox"]
+layout_mode = 2
+theme_type_variation = &"CaptionLabel"
+text = "强调数值 / 角标"
+
+[node name="ValueRow" type="HBoxContainer" parent="Safe/Page/Body/KitCol/KitCard/KitBox"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="V1" type="Label" parent="Safe/Page/Body/KitCol/KitCard/KitBox/ValueRow"]
+layout_mode = 2
+theme_type_variation = &"ValueLabel"
+text = "12"
+
+[node name="C1" type="Label" parent="Safe/Page/Body/KitCol/KitCard/KitBox/ValueRow"]
+layout_mode = 2
+size_flags_vertical = 8
+theme_type_variation = &"CaptionLabel"
+text = "CP"
+
+[node name="V2" type="Label" parent="Safe/Page/Body/KitCol/KitCard/KitBox/ValueRow"]
+layout_mode = 2
+theme_type_variation = &"ValueLabel"
+text = "24"
+
+[node name="C2" type="Label" parent="Safe/Page/Body/KitCol/KitCard/KitBox/ValueRow"]
+layout_mode = 2
+size_flags_vertical = 8
+theme_type_variation = &"CaptionLabel"
+text = "/ 40"
+
+[node name="V3" type="Label" parent="Safe/Page/Body/KitCol/KitCard/KitBox/ValueRow"]
+layout_mode = 2
+theme_type_variation = &"ValueLabel"
+text = "3"
+
+[node name="C3" type="Label" parent="Safe/Page/Body/KitCol/KitCard/KitBox/ValueRow"]
+layout_mode = 2
+size_flags_vertical = 8
+theme_type_variation = &"CaptionLabel"
+text = "队"
+
+[node name="FontCap" type="Label" parent="Safe/Page/Body/KitCol/KitCard/KitBox"]
+layout_mode = 2
+theme_type_variation = &"CaptionLabel"
+text = "字体三档（同一系统字体栈，不打包字体文件）"
+
+[node name="FontRow" type="HBoxContainer" parent="Safe/Page/Body/KitCol/KitCard/KitBox"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="T1" type="Label" parent="Safe/Page/Body/KitCol/KitCard/KitBox/FontRow"]
+layout_mode = 2
+theme_type_variation = &"TitleLabel"
+text = "标题 28"
+
+[node name="T2" type="Label" parent="Safe/Page/Body/KitCol/KitCard/KitBox/FontRow"]
+layout_mode = 2
+size_flags_vertical = 8
+text = "正文 18"
+
+[node name="T3" type="Label" parent="Safe/Page/Body/KitCol/KitCard/KitBox/FontRow"]
+layout_mode = 2
+size_flags_vertical = 8
+theme_type_variation = &"CaptionLabel"
+text = "角标 14"
+
+[node name="KitSpacer" type="Control" parent="Safe/Page/Body/KitCol/KitCard/KitBox"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="VariantNote" type="PanelContainer" parent="Safe/Page/Body/KitCol/KitCard/KitBox"]
+layout_mode = 2
+theme_type_variation = &"InsetPanel"
+
+[node name="Text" type="Label" parent="Safe/Page/Body/KitCol/KitCard/KitBox/VariantNote"]
+layout_mode = 2
+theme_type_variation = &"CaptionLabel"
+text = "变体：HudPanel / FloatPanel / CardPanel / InsetPanel · AttackButton / DefenseButton / PrimaryButton / GhostButton"
+autowrap_mode = 3
+
+[node name="FootCard" type="PanelContainer" parent="Safe/Page"]
+layout_mode = 2
+theme_type_variation = &"CardPanel"
+
+[node name="Foot" type="HBoxContainer" parent="Safe/Page/FootCard"]
+layout_mode = 2
+
+[node name="Left" type="Label" parent="Safe/Page/FootCard/Foot"]
+layout_mode = 2
+theme_type_variation = &"CaptionLabel"
+text = "主题：Content/ui/main_theme.tres · 陈列室：Screens/ui/ThemeShowcase.tscn"
+
+[node name="Spacer" type="Control" parent="Safe/Page/FootCard/Foot"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Right" type="Label" parent="Safe/Page/FootCard/Foot"]
+layout_mode = 2
+theme_type_variation = &"CaptionLabel"
+text = "点击「集火 / 防守 / 切换演示按钮 / 重置」验证交互 · 1920×1080 与 1600×720 均可读"
+
+[connection signal="pressed" from="Safe/Page/Body/FloatCol/FloatCard/FloatBox/Actions/FocusButton" to="." method="_on_focus_pressed"]
+[connection signal="pressed" from="Safe/Page/Body/FloatCol/FloatCard/FloatBox/Actions/DefendButton" to="." method="_on_defend_pressed"]
+[connection signal="pressed" from="Safe/Page/Body/FloatCol/FloatCard/FloatBox/Actions/ResetButton" to="." method="_on_reset_pressed"]
+[connection signal="pressed" from="Safe/Page/Body/KitCol/KitCard/KitBox/ToggleRow/ToggleButton" to="." method="_on_toggle_pressed"]

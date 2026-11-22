@@ -767,7 +767,7 @@
 		},
 		{
 			"path": "Screens/editor/map_shell/shell_view.gd",
-			"size": 98519
+			"size": 98924
 		},
 		{
 			"path": "Screens/editor/map_shell/shell_view.gd.uid",
@@ -1084,6 +1084,18 @@
 		{
 			"path": "Screens/screens/README.md",
 			"size": 628
+		},
+		{
+			"path": "Screens/ui/ThemeShowcase.gd",
+			"size": 1677
+		},
+		{
+			"path": "Screens/ui/ThemeShowcase.gd.uid",
+			"size": 20
+		},
+		{
+			"path": "Screens/ui/ThemeShowcase.tscn",
+			"size": 34826
 		},
 		{
 			"path": "Screens/world/art/地表细节.gd",
@@ -1819,7 +1831,7 @@
 		},
 		{
 			"path": "Tests/checks/check_all.gd",
-			"size": 107513
+			"size": 113979
 		},
 		{
 			"path": "Tests/checks/check_all.gd.uid",
@@ -1827,7 +1839,7 @@
 		},
 		{
 			"path": "Tests/checks/shot_runner.gd",
-			"size": 15602
+			"size": 19447
 		},
 		{
 			"path": "Tests/checks/shot_runner.gd.uid",
@@ -2171,7 +2183,7 @@
 		},
 		{
 			"path": "Tools/run-game.ps1",
-			"size": 8014
+			"size": 8576
 		},
 		{
 			"path": "Tools/修举盾姿势.py",
@@ -2715,7 +2727,7 @@
 		},
 		{
 			"path": "Content/data/screens.json",
-			"size": 8633
+			"size": 10081
 		},
 		{
 			"path": "Content/data/shell_board.json",
@@ -2743,11 +2755,11 @@
 		},
 		{
 			"path": "Content/i18n/ui.csv",
-			"size": 44578
+			"size": 44564
 		},
 		{
 			"path": "Content/i18n/ui.en.translation",
-			"size": 25072
+			"size": 25044
 		},
 		{
 			"path": "Content/i18n/ui.note.translation",
@@ -2759,7 +2771,7 @@
 		},
 		{
 			"path": "Content/keys/assets.json",
-			"size": 11720
+			"size": 11933
 		},
 		{
 			"path": "addons/map_shell_editor/plugin.cfg",

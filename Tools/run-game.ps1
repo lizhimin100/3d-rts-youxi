@@ -31,6 +31,7 @@ function Show-Usage {
   Tools/run-game.ps1 --simulate --lane       旧横道口径（历史基线对照）
   Tools/run-game.ps1 --squad                 试玩真小队（框选 / 移动 / 集火 / 驻守）
   Tools/run-game.ps1 --shot <画面> <输出.png> 离屏截图（hud 画面会真点一次「建造」）
+  Tools/run-game.ps1 --shot theme out.png --shot-res=1920x1080  指定分辨率截图（默认 1600x900）
   Tools/run-game.ps1 --import                重新扫描资源（加了新类名/新场景后跑一次）
   Tools/run-game.ps1 --round-test            半回合制自检（规划/执行/CP/小队/部署，无窗口）
   Tools/run-game.ps1 --help                  这张表
@@ -62,6 +63,8 @@ $mode = "run"
 $pass = @()
 $shotName = $null
 $shotOut = $null
+## 截图分辨率（默认沿用旧口径 1600x900；低中端手机验收传 1600x720）
+$shotRes = "1600x900"
 ## 短局/长局开关：必须放在 `--` 之后，OS.get_cmdline_user_args() 才收得到。
 $userMode = ""
 ## 其它游戏参数（--map= / --speed= / --no-adjutant …）：同样必须放在 `--` 之后。
@@ -69,6 +72,12 @@ $gameArgs = @()
 
 for ($i = 0; $i -lt $Rest.Count; $i++) {
     $a = $Rest[$i]
+    # --shot-res 要在 switch 之前截住：switch 是精确匹配，带 = 的参数会掉进 default。
+    if ($a -like "--shot-res=*") {
+        $shotRes = $a.Substring("--shot-res=".Length)
+        if ($shotRes -notmatch '^\d{3,4}x\d{3,4}$') { throw "--shot-res 格式应为 宽x高，例如 1600x720" }
+        continue
+    }
     switch ($a) {
         "--help"     { Show-Usage; exit 0 }
         "--check"    { $mode = "check"; continue }
@@ -157,7 +166,7 @@ switch ($mode) {
         # 规划阶段只在短局存在，所以 planning* 画面必须显式带 --short。
         $shotMode = @()
         if ($shotName -like "planning*") { $shotMode = @("--short") }
-        & $Godot --path $Root --resolution 1600x900 --audio-driver Dummy "res://Tests/checks/shot_runner.tscn" -- @shotMode "--screen=$shotName" "--shot-out=$abs" "--offscreen"
+        & $Godot --path $Root --resolution $shotRes --audio-driver Dummy "res://Tests/checks/shot_runner.tscn" -- @shotMode "--screen=$shotName" "--shot-out=$abs" "--shot-size=$shotRes" "--offscreen"
         $code = $LASTEXITCODE
         if ($code -eq 0 -and (Test-Path $abs)) {
             Write-Host "[run-game] 截图：$abs"
