@@ -8,7 +8,7 @@
 	},
 	"free_defend": {
 		"enabled": true,
-		"unit": "alliance_pikeman",
+		"unit": "alliance_footman",
 		"star": 1
 	}
 }

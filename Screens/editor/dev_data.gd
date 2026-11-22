@@ -570,11 +570,16 @@ func compose_level(shell_id: String, layout_id: String, encounter_id: String) ->
 	if String(layout.get("shell", "")) != shell_id or String(enc.get("shell", "")) != shell_id:
 		return {}
 	var spine: Dictionary = shell.get("spine", {})
-	var length_logic := float(spine.get("length_logic", 4000.0))
 	var width_logic := float(spine.get("width_logic", 420.0))
+	# lane 是**一维横道口径**：0 = 地图左缘、length = 地图右缘（单位 = 游戏数值）。
+	# 区域多边形给的是世界米（x 从 -size.x/2 起），必须先减掉 origin_x 再换算 ——
+	# 少了这一步，玩家区右缘（-32m）会被算成 zone_depth = -2133（2026-11-22 扩容后真实踩到）。
+	var sz: Vector2 = ShellStore.size_of(shell)
+	var ox := -sz.x * 0.5
+	var length_logic := ShellStore.logic_of(sz.x)
 	# 赛区分段：玩家区右缘 = 第一段结束；敌方区左缘 = 第二段结束（米 → 游戏数值）
-	var zone_depth := ShellStore.logic_of(region_x_extent(shell, "player").y)
-	var push := ShellStore.logic_of(region_x_extent(shell, "enemy").x)
+	var zone_depth := ShellStore.logic_of(region_x_extent(shell, "player").y - ox)
+	var push := ShellStore.logic_of(region_x_extent(shell, "enemy").x - ox)
 	if push <= zone_depth or push >= length_logic:
 		return {}
 	var kind := String(layout.get("kind", "even"))
@@ -750,12 +755,19 @@ func _validate_units() -> Array:
 	var list := unit_list()
 	if list.size() != 12:
 		return [false, "units=%d" % list.size()]
+	var visible := 0
 	for u in list:
 		if String(u.get("id", "")).is_empty():
 			return [false, "empty id"]
+		# render=false 的兵种只实现逻辑、不上场，model_path 必须留空（否则删资产会留悬空路径）
+		if not bool(u.get("render", true)):
+			if not String(u.get("model_path", "")).is_empty():
+				return [false, String(u.get("id", "")) + " render=false but model_path set"]
+			continue
+		visible += 1
 		if not bool(u.get("use_placeholder_mesh", false)) and String(u.get("model_path", "")).is_empty():
 			return [false, String(u.get("id", "")) + " model_path empty"]
-	return [true, "12 units"]
+	return [true, "12 units / %d visible" % visible]
 
 
 func _validate_attrs() -> Array:

@@ -1,15 +1,23 @@
 extends Node3D
-## 职责：用底壳的 `terrain.heights` + `surface.palette` 生成**真实地形网格**（顶面 + 土层侧壁 + 底面），
-##       再把 `decorations` 里的树/岩石实例化成既有资产（`RtsDecorLib`），并对外提供 `height_at()`。
+## 职责：底壳高度场 → **真实地形网格**（草地/泥土贴图 + 顶点色染色 + 陡面岩壁）、
+##       地块的立体厚度（土层侧壁 + 倒角 + 底面）、以及装饰（树/岩石）的实例化与合批。
 ## 属于：Screens/world/battle（表现层）
 ##
-## 为什么不铺一张单面平板再涂个颜色：那正是"色块占位"。底壳本来就有 1.5m 的高度场与
-## 地表调色板，这里把它按编辑器同一套绕序/坡度明暗画出来，局内看到的和编辑器里看到的是同一块地。
-##
-## 三个区靠**地表色带**区分（草地 / 泥土 / 沙地 / 岩石），不是靠三块不同颜色的板子。
+## 纪律（2026-11-22 重写，起因见下）：
+##   · **地表材质只有一份**：`RtsTerrainAssets` 的 `地形材质.tres`（→ `地形.gdshader`）。
+##     上一版这里现 new 了一个 `StandardMaterial3D` 只吃顶点色，等于把美术画的草地/泥土贴图
+##     全丢了 —— 局内地面变成纯色塑料布，而编辑器里是好的。现在两边都走同一份材质与同一套参数。
+##   · 顶点色只做"乘法染色 + 干度"（口径在 `RtsTerrainAssets.vertex_tint`），配色交给贴图。
+##   · 三块战术区是 **Y = 0 的绝对平面**（生成规则在 `ShellStore.terrain_height`，这里只画数据）。
+##   · 地块是**有厚度的立体块**：侧壁落到 `min(h) - depth`，顶面沿内法线收 `bevel` 做倒角，
+##     再补一张底面封口 —— 从任何角度都不是"薄皮悬浮"。
+##   · 装饰只实例化既有资产（`RtsDecorLib`），远景带（auto 行）走 MultiMesh 合批，一手不动模型。
 
-const THICK := 6.0          # 土层厚度（米）；只影响观感，不参与任何判定
-const SKIRT := 0.0
+## 侧壁/底面的最终高度兜底（数据里 board.depth 缺失时用）
+## 允许合批的装饰种类（合批材质带贴图的那几种；见 装饰库._batch_material）
+const BATCHABLE := ["grass", "rubble"]
+const DEPTH_FALLBACK := 6.0
+const BEVEL_FALLBACK := 0.35
 
 var _shell: Dictionary = {}
 var _heights := PackedFloat32Array()
@@ -19,22 +27,25 @@ var _cols := 0
 var _rows := 0
 var _ox := 0.0
 var _oz := 0.0
-var _palette: Array = []
+var _size := Vector2(120.0, 63.0)
+var _hmin := 0.0
+var _hmax := 0.0
+var _camps: Array[Vector2] = []
+var _terrain_mat: ShaderMaterial = null
 
 
 func build(shell: Dictionary) -> void:
 	_shell = shell
 	var size: Dictionary = shell.get("size", {})
-	var sx := float(size.get("x", 120.0))
-	var sz := float(size.get("z", 63.0))
+	_size = Vector2(float(size.get("x", 120.0)), float(size.get("z", 63.0)))
 	var terr: Dictionary = shell.get("terrain", {})
 	_cell = maxf(float(terr.get("cell", 1.5)), 0.5)
-	_cols = int(round(sx / _cell)) + 1
-	_rows = int(round(sz / _cell)) + 1
-	_ox = -sx * 0.5
-	_oz = -sz * 0.5
-	_palette = (shell.get("surface", {}) as Dictionary).get("palette", [])
-	_surface = (shell.get("surface", {}) as Dictionary).get("index", [])
+	_cols = int(round(_size.x / _cell)) + 1
+	_rows = int(round(_size.y / _cell)) + 1
+	_ox = -_size.x * 0.5
+	_oz = -_size.y * 0.5
+	var surf: Dictionary = shell.get("surface", {})
+	_surface = surf.get("index", [])
 
 	_heights = PackedFloat32Array()
 	var raw: Array = terr.get("heights", [])
@@ -45,14 +56,28 @@ func build(shell: Dictionary) -> void:
 	else:
 		# 数据对不上就铺平（绝不因为高度场缺一块而黑屏）
 		_heights.resize(_cols * _rows)
-		_heights.fill(1.0)
+		_heights.fill(0.0)
+	_hmin = 1e9
+	_hmax = -1e9
+	for h in _heights:
+		_hmin = minf(_hmin, h)
+		_hmax = maxf(_hmax, h)
+	if _hmax < _hmin:
+		_hmin = 0.0
+		_hmax = 0.0
+	# 营地压暗的落点只取一次（每顶点再去翻 tiles 字典会很贵）
+	_camps.clear()
+	for t in shell.get("tiles", []):
+		var td: Dictionary = t
+		if String(td.get("role", "build")) == "keep":
+			_camps.append(Vector2(float(td.get("x", 0.0)), float(td.get("z", 0.0))))
 
-	_build_mesh()
+	_build_terrain()
 	_build_decor()
 
 
 # ===========================================================================
-# 高度查询（双线性，与 ShellStore.height_at_shell 同一套）
+# 高度查询（双线性，与 ShellStore.height_at 同一套）
 # ===========================================================================
 func height_at(x: float, z: float) -> float:
 	if _heights.is_empty():
@@ -70,129 +95,269 @@ func height_at(x: float, z: float) -> float:
 	return lerpf(a, b, tz)
 
 
+## 一小块地是不是平的（棋盘/建筑贴地用：平面上不反复采样）
+func is_flat(x: float, z: float) -> bool:
+	return absf(height_at(x, z)) < 0.001
+
+
 # ===========================================================================
-# 网格
+# 网格：顶面（贴图）+ 侧壁倒角 + 底面，同一个 ArrayMesh 的三条 surface
 # ===========================================================================
-func _build_mesh() -> void:
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-
-	var verts := PackedVector3Array()
-	verts.resize(_cols * _rows)
-	for r in _rows:
-		for c in _cols:
-			var i := r * _cols + c
-			verts[i] = Vector3(_ox + float(c) * _cell, _heights[i], _oz + float(r) * _cell)
-
-	for r in _rows - 1:
-		for c in _cols - 1:
-			var a := r * _cols + c
-			var b := a + 1
-			var cc := a + _cols
-			var d := cc + 1
-			# 每个小四边形按自己的两格地表色取平均，形成"色带"而不是色块
-			var col := _cell_color(c, r, verts)
-			_tri(st, verts[a], verts[b], verts[cc], col)
-			_tri(st, verts[b], verts[d], verts[cc], col)
-
-	# 土层侧壁：沿四边把顶面接到 base 平面
-	var base_y := _hmin() - THICK
-	for c in _cols - 1:
-		_wall(st, verts[c], verts[c + 1], base_y)
-		var top := (_rows - 1) * _cols
-		_wall(st, verts[top + c + 1], verts[top + c], base_y)
-	for r in _rows - 1:
-		_wall(st, verts[(r + 1) * _cols], verts[r * _cols], base_y)
-		_wall(st, verts[r * _cols + _cols - 1], verts[(r + 1) * _cols + _cols - 1], base_y)
-
-	var mesh := st.commit()
+func _build_terrain() -> void:
+	var mesh := ArrayMesh.new()
+	_add_top_surface(mesh)
+	_add_block_surfaces(mesh)
 	var mi := MeshInstance3D.new()
 	mi.name = "Terrain"
 	mi.mesh = mesh
-	var m := StandardMaterial3D.new()
-	m.vertex_color_use_as_albedo = true
-	m.roughness = 1.0
-	m.metallic = 0.0
-	# 顶点色已经带坡度明暗；再开一点细节缩放，避免大面积死平
-	m.uv1_scale = Vector3(0.08, 0.08, 1.0)
-	m.cull_mode = BaseMaterial3D.CULL_DISABLED
-	mi.material_override = m
+	# 地块投阴影太重（整片地形自己压自己），只接收阴影
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mi)
 
 
-func _tri(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, col: Color) -> void:
-	# 绕序不可靠时让引擎自己算：这里显式给一个朝上的法线，保证大地不会从下面被打亮
-	var n := (b - a).cross(c - a).normalized()
-	if n.y < 0.0:
-		n = -n
-	st.set_color(col)
-	st.set_normal(n)
-	st.add_vertex(a)
-	st.set_color(col)
-	st.set_normal(n)
-	st.add_vertex(b)
-	st.set_color(col)
-	st.set_normal(n)
-	st.add_vertex(c)
+func _add_top_surface(mesh: ArrayMesh) -> void:
+	var verts := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var colors := PackedColorArray()
+	verts.resize(_cols * _rows)
+	normals.resize(_cols * _rows)
+	colors.resize(_cols * _rows)
+	for row in _rows:
+		for col in _cols:
+			var i := row * _cols + col
+			verts[i] = Vector3(_ox + float(col) * _cell, _heights[i], _oz + float(row) * _cell)
+			var hl := _heights[row * _cols + maxi(col - 1, 0)]
+			var hr := _heights[row * _cols + mini(col + 1, _cols - 1)]
+			var hd := _heights[maxi(row - 1, 0) * _cols + col]
+			var hu := _heights[mini(row + 1, _rows - 1) * _cols + col]
+			var dx := (hr - hl) / (_cell * 2.0)
+			var dz := (hu - hd) / (_cell * 2.0)
+			normals[i] = Vector3(-dx, 1.0, -dz).normalized()
+			colors[i] = RtsTerrainAssets.vertex_tint(verts[i], normals[i], _hmin, _hmax, _camps)
+
+	var indices := PackedInt32Array()
+	indices.resize((_cols - 1) * (_rows - 1) * 6)
+	var k := 0
+	for row in _rows - 1:
+		for col in _cols - 1:
+			var a := row * _cols + col
+			var b := a + 1
+			var c := a + _cols
+			var d := c + 1
+			# 顺时针正面：a→b→c / b→d→c
+			indices[k] = a
+			indices[k + 1] = b
+			indices[k + 2] = c
+			indices[k + 3] = b
+			indices[k + 4] = d
+			indices[k + 5] = c
+			k += 6
+	var arrays: Array = []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_COLOR] = colors
+	arrays[Mesh.ARRAY_INDEX] = indices
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	mesh.surface_set_material(0, _terrain_material())
 
 
-func _wall(st: SurfaceTool, top_a: Vector3, top_b: Vector3, base_y: float) -> void:
-	var col := Color(0.30, 0.26, 0.21).srgb_to_linear()
-	var a := top_a
-	var b := top_b
-	var ad := Vector3(a.x, base_y, a.z)
-	var bd := Vector3(b.x, base_y, b.z)
-	_tri(st, a, b, bd, col)
-	_tri(st, a, bd, ad, col)
+## 地形材质 = **工程里那一份** `Content/art/材质/地形材质.tres`（→ 地形.gdshader）。
+## 参数（map_half / mat_cells / mat_map / 图集 / 草地泥土贴图）全部由 RtsTerrainAssets 绑定，
+## 这里不再写第二套配色 —— 编辑器看到的地表就是这里画出来的地表。
+func _terrain_material() -> Material:
+	_terrain_mat = RtsTerrainAssets.make_terrain_material()
+	if _terrain_mat != null:
+		RtsTerrainAssets.bind_terrain_material(_terrain_mat, _size.x, _size.y, _surface,
+			_cols, _rows, _ox, _oz, _cell, String(_shell.get("biome", "temperate")))
+		return _terrain_mat
+	# 兜底：材质资源被删了也别让地面变成纯色 —— 至少把草地贴图铺上
+	var std := StandardMaterial3D.new()
+	if ResourceLoader.exists(RtsTerrainAssets.TEX_GRASS_PATH):
+		std.albedo_texture = load(RtsTerrainAssets.TEX_GRASS_PATH) as Texture2D
+		std.uv1_scale = Vector3(1.0 / RtsTerrainAssets.TILE_M, 1.0 / RtsTerrainAssets.TILE_M, 1.0)
+		std.uv1_triplanar = true
+	std.vertex_color_use_as_albedo = true
+	std.vertex_color_is_srgb = true
+	std.roughness = 0.96
+	std.metallic = 0.0
+	std.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+	return std
 
 
-func _hmin() -> float:
-	var v := 1e9
-	for h in _heights:
-		v = minf(v, h)
-	return 0.0 if v > 1e8 else v
+## 侧壁 + 倒角 + 底面（几何口径与底壳编辑器完全一致，直接搬过来）。
+func _add_block_surfaces(mesh: ArrayMesh) -> void:
+	var board: Dictionary = _shell.get("board", {})
+	var depth := clampf(float(board.get("depth", DEPTH_FALLBACK)), 1.0, 24.0)
+	var bevel := clampf(float(board.get("bevel", BEVEL_FALLBACK)), 0.0, 1.2)
+	var base_y := _hmin - depth
+
+	# 周长（CCW：南 → 东 → 北 → 西，与顶面绕序同一套）
+	var ring: Array = []
+	for col in _cols:
+		ring.append([col, 0])
+	for row in range(1, _rows):
+		ring.append([_cols - 1, row])
+	for col in range(_cols - 2, -1, -1):
+		ring.append([col, _rows - 1])
+	for row in range(_rows - 2, 0, -1):
+		ring.append([0, row])
+	var n := ring.size()
+	if n < 4:
+		return
+	# 每个周长点的内法线（相邻两条边的内法线取平均，转角才不会有缝）
+	var inward: Array[Vector2] = []
+	inward.resize(n)
+	for i in n:
+		var prev: Array = ring[(i - 1 + n) % n]
+		var cur: Array = ring[i]
+		var next: Array = ring[(i + 1) % n]
+		var p := Vector2(_ox + float(cur[0]) * _cell, _oz + float(cur[1]) * _cell)
+		var pp := Vector2(_ox + float(prev[0]) * _cell, _oz + float(prev[1]) * _cell)
+		var pn := Vector2(_ox + float(next[0]) * _cell, _oz + float(next[1]) * _cell)
+		var d0 := (p - pp).normalized()
+		var d1 := (pn - p).normalized()
+		# 周长是 CCW（南→东→北→西），左法线 = 指向地图内部
+		inward[i] = (Vector2(-d0.y, d0.x) + Vector2(-d1.y, d1.x)).normalized()
+		if inward[i].length_squared() < 0.001:
+			inward[i] = Vector2.ZERO
+
+	var sv := PackedVector3Array()
+	var sn := PackedVector3Array()
+	var sc := PackedColorArray()
+	var si := PackedInt32Array()
+	var run := 0.0
+	for i in n:
+		var j := (i + 1) % n
+		var a: Array = ring[i]
+		var b: Array = ring[j]
+		var ax := _ox + float(a[0]) * _cell
+		var az := _oz + float(a[1]) * _cell
+		var bx := _ox + float(b[0]) * _cell
+		var bz := _oz + float(b[1]) * _cell
+		var ay := _h(ax, az)
+		var by := _h(bx, bz)
+		var seg := maxf(Vector2(bx - ax, bz - az).length(), 0.001)
+		var dir := Vector3(bx - ax, 0.0, bz - az).normalized()
+		var out := Vector3.UP.cross(dir).normalized()
+		if out.length_squared() < 0.001:
+			out = Vector3.FORWARD
+		var ca := Vector2(ax + inward[i].x * bevel, az + inward[i].y * bevel)
+		var cb := Vector2(bx + inward[j].x * bevel, bz + inward[j].y * bevel)
+		var base := sv.size()
+		# 0 顶A / 1 顶B / 2 倒角A / 3 倒角B / 4 底A / 5 底B
+		sv.append(Vector3(ax, ay, az))
+		sv.append(Vector3(bx, by, bz))
+		sv.append(Vector3(ca.x, ay - bevel * 0.75, ca.y))
+		sv.append(Vector3(cb.x, by - bevel * 0.75, cb.y))
+		sv.append(Vector3(ax, base_y, az))
+		sv.append(Vector3(bx, base_y, bz))
+		for q in 6:
+			sn.append(out)
+		# 倒角越靠下越暗一点（土层）
+		sc.append(Color(1.06, 1.02, 0.96))
+		sc.append(Color(1.06, 1.02, 0.96))
+		sc.append(Color(0.92, 0.88, 0.82))
+		sc.append(Color(0.92, 0.88, 0.82))
+		sc.append(Color(0.62, 0.58, 0.54))
+		sc.append(Color(0.62, 0.58, 0.54))
+		# 侧面 UV 按"沿周长走的米数 × 从顶往下的米数"，三平面材质不读它，但留着给换皮用
+		si.append_array([base + 0, base + 1, base + 3, base + 0, base + 3, base + 2])
+		si.append_array([base + 2, base + 3, base + 5, base + 2, base + 5, base + 4])
+		run += seg
+	var arrays: Array = []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = sv
+	arrays[Mesh.ARRAY_NORMAL] = sn
+	arrays[Mesh.ARRAY_COLOR] = sc
+	arrays[Mesh.ARRAY_INDEX] = si
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	mesh.surface_set_material(mesh.get_surface_count() - 1, _load_mat("block_side",
+		Color(0.34, 0.27, 0.20)))
+
+	# 底面：两块三角，法线朝下；从下方也看不到破洞
+	var bv := PackedVector3Array([
+		Vector3(_ox, base_y, _oz),
+		Vector3(_ox, base_y, _oz + float(_rows - 1) * _cell),
+		Vector3(_ox + float(_cols - 1) * _cell, base_y, _oz + float(_rows - 1) * _cell),
+		Vector3(_ox + float(_cols - 1) * _cell, base_y, _oz),
+	])
+	var bn := PackedVector3Array([Vector3.DOWN, Vector3.DOWN, Vector3.DOWN, Vector3.DOWN])
+	var bi := PackedInt32Array([0, 1, 2, 0, 2, 3])
+	var b_arrays: Array = []
+	b_arrays.resize(Mesh.ARRAY_MAX)
+	b_arrays[Mesh.ARRAY_VERTEX] = bv
+	b_arrays[Mesh.ARRAY_NORMAL] = bn
+	b_arrays[Mesh.ARRAY_INDEX] = bi
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, b_arrays)
+	mesh.surface_set_material(mesh.get_surface_count() - 1, _load_mat("block_bottom",
+		Color(0.11, 0.09, 0.075)))
 
 
-## 一小块地的颜色：地表调色板 + 坡度压暗 + 轻微噪声（读起来像地形，不像色块）
-func _cell_color(c: int, r: int, verts: PackedVector3Array) -> Color:
-	var i := r * _cols + c
-	var idx := 0
-	if i < _surface.size():
-		idx = int(_surface[i])
-	var base := Color(0.42, 0.46, 0.30)
-	if idx >= 0 and idx < _palette.size():
-		var p: Dictionary = _palette[idx]
-		# 调色板写的是 sRGB；顶点色在 Godot 里按线性解释，必须换算
-		base = Color(String(p.get("color", "#5D6B3F"))).srgb_to_linear()
-	# 坡度：法线近似（东西/南北高度差）
-	var hl := verts[r * _cols + maxi(c - 1, 0)].y
-	var hr := verts[r * _cols + mini(c + 1, _cols - 1)].y
-	var hd := verts[maxi(r - 1, 0) * _cols + c].y
-	var hu := verts[mini(r + 1, _rows - 1) * _cols + c].y
-	var slope := clampf((absf(hr - hl) + absf(hu - hd)) / (_cell * 2.0) * 2.2, 0.0, 0.55)
-	base = base.darkened(slope)
-	# 极轻微的棋盘噪声，让同一色带不至于完全一致
-	var noise := float((c * 73856093) ^ (r * 19349663)) / 4294967296.0
-	return base.lightened(0.04 * noise)
+func _load_mat(kind: String, fallback: Color) -> Material:
+	var m := RtsTerrainAssets.skin_material(kind)
+	if m != null:
+		return m
+	var std := StandardMaterial3D.new()
+	std.albedo_color = fallback
+	std.roughness = 0.97
+	std.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+	std.cull_mode = BaseMaterial3D.CULL_DISABLED
+	return std
+
+
+func _h(x: float, z: float) -> float:
+	return height_at(x, z)
 
 
 # ===========================================================================
-# 装饰
+# 装饰：手摆行走单件实例，远景带（auto + batch）走 MultiMesh 合批
 # ===========================================================================
 func _build_decor() -> void:
 	var holder := Node3D.new()
 	holder.name = "Decor"
 	add_child(holder)
+	var batches := {}      # kind -> Array[Transform3D]
 	for d in _shell.get("decorations", []):
 		var row: Dictionary = d
 		var kind := String(row.get("kind", "tree"))
+		var x := float(row.get("x", 0.0))
+		var z := float(row.get("z", 0.0))
+		var y := height_at(x, z)
+		var s := float(row.get("scale", 1.0))
+		var yaw := deg_to_rad(float(row.get("yaw", 0.0)))
+		# 只对"合批材质有贴图"的种类合批（草丛 / 碎石）。树与岩石的合批材质是**纯白**的，
+		# 一旦走 MultiMesh 就变成一片白疙瘩 —— 这类必须走单件实例，让 自然材质库 上真材质。
+		if bool(row.get("batch", false)) and BATCHABLE.has(kind):
+			if not batches.has(kind):
+				batches[kind] = []
+			var basis := Basis(Vector3.UP, yaw).scaled(Vector3(s, s, s))
+			(batches[kind] as Array).append(Transform3D(basis, Vector3(x, y, z)))
+			continue
 		var n := RtsDecorLib.instantiate(StringName(kind), holder)
 		if n == null:
 			continue
-		var x := float(row.get("x", 0.0))
-		var z := float(row.get("z", 0.0))
-		# y 用高度场重新采样（数据里的 y 可能来自别的尺寸）
-		n.position = Vector3(x, height_at(x, z), z)
-		n.rotation.y = deg_to_rad(float(row.get("yaw", 0.0)))
-		var s := float(row.get("scale", 1.0))
+		n.position = Vector3(x, y, z)
+		n.rotation.y = yaw
 		n.scale = Vector3(s, s, s)
+	# 合批：同一种类一次 draw call（远景带几百棵树也不掉帧）
+	for kind in batches.keys():
+		var xfs: Array = batches[kind]
+		var mmi := RtsDecorLib.make_multimesh(StringName(String(kind)), xfs, [])
+		if mmi != null:
+			mmi.name = "Batch_%s" % String(kind)
+			holder.add_child(mmi)
+
+
+## 自检用：画出来的装饰件数（单件 + 合批实例）
+func decor_count() -> int:
+	var n := 0
+	for c in get_children():
+		if String(c.name) != "Decor":
+			continue
+		for d in c.get_children():
+			if d is MultiMeshInstance3D and (d as MultiMeshInstance3D).multimesh != null:
+				n += (d as MultiMeshInstance3D).multimesh.instance_count
+			else:
+				n += 1
+	return n

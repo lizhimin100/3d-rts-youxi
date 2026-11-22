@@ -2206,7 +2206,7 @@ func _drag_apply(g: Vector3) -> void:
 				continue
 			td["x"] = nx
 			td["z"] = nz
-			td["side"] = ShellStore.side_of(nx)
+			td["side"] = ShellStore.side_at(shell, nx, nz)
 			td["terrain_y"] = snappedf(_h(nx, nz), 0.001)
 		else:
 			var list: Array = shell.get("decorations", [])
@@ -2472,7 +2472,7 @@ func add_tile(g: Vector3) -> void:
 	var scale := float(ShellStore.board_of(shell)["tile_scale"])
 	list.append({
 		"index": idx,
-		"side": ShellStore.side_of(x),
+		"side": ShellStore.side_at(shell, x, z),
 		"role": "build",
 		"x": x,
 		"z": z,
@@ -2499,7 +2499,7 @@ func move_tile(index: int, g: Vector3) -> void:
 	var z := _snap_value(g.z, true)
 	td["x"] = x
 	td["z"] = z
-	td["side"] = ShellStore.side_of(x)
+	td["side"] = ShellStore.side_at(shell, x, z)
 	td["terrain_y"] = snappedf(ShellStore.height_at_shell(shell, heights, x, z), 0.001)
 	_build_tiles()
 	_rebuild_selection_rings()

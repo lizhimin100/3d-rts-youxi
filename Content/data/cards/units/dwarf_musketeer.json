@@ -39,7 +39,7 @@
 		"mana_regen": 0,
 		"mana_cost": 0,
 		"ability_cooldown": 8,
-		"model_path": "res://Content/art/模型/步兵.glb",
+		"model_path": "res://Content/art/模型/方块人/方块人_步兵.glb",
 		"model_scale": 1,
 		"anim_set": 1,
 		"def_role": "ranged",

@@ -76,6 +76,8 @@ var _shell: Dictionary = {}
 var _layout: Dictionary = {}
 var _encounter: Dictionary = {}
 var _board_theme: Dictionary = {}
+var _look: Dictionary = {}
+var _tile_spec: Dictionary = {}
 var _building_defs: Dictionary = {}
 var _card_meta: Dictionary = {}
 
@@ -172,6 +174,9 @@ func _load_data() -> bool:
 		return false
 	_encounter = encounter
 	_board_theme = (_shell.get("board", {}) as Dictionary).get("theme", {})
+	# 观感（布光/棋盘色层/地形染色）与建筑落位规格都从数据来，代码里不写死
+	_look = _shell.get("look", {})
+	_tile_spec = RtsTileSpec.spec_from(_planning)
 
 	# 注意：**不要把缩短后的时长写回关卡** —— 关卡的 round_seconds 是规则真源，
 	# 波次时间（0..60）要按它校验；--phase-seconds 只改"表现层这一场跑多久"。
@@ -228,37 +233,8 @@ func _find_row(doc: Dictionary, key: String, id: String) -> Dictionary:
 # 3D 世界
 # ===========================================================================
 func _build_world() -> void:
-	var env := Environment.new()
-	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color(0.055, 0.07, 0.09)
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.68, 0.74, 0.84)
-	env.ambient_light_energy = 0.55
-	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-	env.fog_enabled = true
-	env.fog_light_color = Color(0.42, 0.48, 0.56)
-	env.fog_density = 0.0016
-	var we := WorldEnvironment.new()
-	we.name = "Env"
-	we.environment = env
-	add_child(we)
-
-	var sun := DirectionalLight3D.new()
-	sun.name = "Sun"
-	sun.rotation_degrees = Vector3(-46.0, -62.0, 0.0)
-	sun.light_energy = 1.15
-	sun.shadow_enabled = true
-	sun.directional_shadow_max_distance = 220.0
-	add_child(sun)
-
-	var fill := DirectionalLight3D.new()
-	fill.name = "Fill"
-	fill.rotation_degrees = Vector3(36.0, 138.0, 0.0)
-	fill.light_energy = 0.32
-	fill.shadow_enabled = false
-	add_child(fill)
-
-	# 地形（真实高度场网格 + 装饰）
+	_build_environment()
+	# 地形（真实高度场网格 + 地块侧壁 + 装饰）
 	_terrain = Node3D.new()
 	_terrain.name = "Terrain"
 	_terrain.set_script(load(TERRAIN_PATH) as Script)
@@ -271,7 +247,7 @@ func _build_world() -> void:
 	_board.name = "Board"
 	_board.set_script(load(BOARD_PATH) as Script)
 	add_child(_board)
-	_board.call("set_arena", _arena, _board_theme)
+	_board.call("set_arena", _arena, _board_theme, _tile_spec, _look)
 	board_cols = 6
 	board_rows = 3
 	board_tiles = 18
@@ -281,7 +257,7 @@ func _build_world() -> void:
 	_buildings.name = "Buildings"
 	_buildings.set_script(load(BUILDINGS_PATH) as Script)
 	add_child(_buildings)
-	_buildings.call("configure", _building_defs, PLAYER_COLOR, ENEMY_COLOR)
+	_buildings.call("configure", _building_defs, PLAYER_COLOR, ENEMY_COLOR, _tile_spec)
 	_buildings.call("set_arena", _arena)
 
 	# 小队（真实 GLB）
@@ -293,12 +269,12 @@ func _build_world() -> void:
 	_squad_layer.call("set_ground", ground)
 	_squad_layer.call("set_arena", _arena)
 
-	# 镜头
+	# 镜头（夹取范围 = 三块势力区域外包矩形，不是底壳尺寸）
 	_camera = Node3D.new()
 	_camera.name = "Camera"
 	_camera.set_script(load(CAMERA_PATH) as Script)
 	add_child(_camera)
-	_camera.call("setup", _arena)
+	_camera.call("setup", _arena, _playfield_rect())
 
 	# HUD
 	var canvas := CanvasLayer.new()
@@ -313,6 +289,114 @@ func _build_world() -> void:
 	_hud.name = "BattleHUD"
 	_hud.set_script(load(HUD_PATH) as Script)
 	canvas.add_child(_hud)
+
+
+# ===========================================================================
+# 布光 / 天空 / 雾（观感参数全在 shell 的 look 块里，不在代码里写死）
+# ===========================================================================
+#
+# 目标平台是 Steam + 低中端手机，所以这里**只用最便宜的那一档**：
+# 一张程序天空 + 一盏主方向光（软阴影）+ 一盏冷色补光 + 极轻的距离雾。
+# 明确不开：SSAO / SSIL / SSR / SDFGI / 体积雾 / Glow —— 这几样在手机上不是"贵"，是"跑不动"。
+func _build_environment() -> void:
+	var look := _look
+	var env := Environment.new()
+	var sky_mat := ProceduralSkyMaterial.new()
+	var sky: Dictionary = look.get("sky", {})
+	sky_mat.sky_top_color = _hex(sky, "top", "#6E9BCB")
+	sky_mat.sky_horizon_color = _hex(sky, "horizon", "#DCE4E6")
+	sky_mat.ground_bottom_color = _hex(sky, "ground", "#8C8676")
+	sky_mat.ground_horizon_color = _hex(sky, "horizon", "#DCE4E6")
+	sky_mat.sky_energy_multiplier = float(sky.get("energy", 0.9))
+	var sky_res := Sky.new()
+	sky_res.sky_material = sky_mat
+	env.background_mode = Environment.BG_SKY
+	env.sky = sky_res
+	var amb: Dictionary = look.get("ambient", {})
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
+	env.ambient_light_sky_contribution = 0.9
+	env.ambient_light_color = _hex(amb, "color", "#BFD0DF")
+	env.ambient_light_energy = float(amb.get("energy", 0.62))
+	# 色调映射：ACES（轻量且不洗白），对比/饱和只微调 —— 低饱和度才是"沙盘"而不是"糖水片"
+	var tm: Dictionary = look.get("tonemap", {})
+	env.tonemap_mode = Environment.TONE_MAPPER_AGX \
+		if String(tm.get("mode", "aces")) == "agx" else Environment.TONE_MAPPER_ACES
+	env.tonemap_exposure = float(tm.get("exposure", 1.0))
+	env.tonemap_white = float(tm.get("white", 1.0))
+	env.adjustment_enabled = true
+	env.adjustment_contrast = float(tm.get("contrast", 1.05))
+	env.adjustment_saturation = float(tm.get("saturation", 1.04))
+	env.adjustment_brightness = 1.0
+	# 距离雾：只用来柔化地图最远那圈边缘，浓度极低（否则战场会糊成一片）
+	var fog: Dictionary = look.get("fog", {})
+	env.fog_enabled = true
+	env.fog_light_color = _hex(fog, "color", "#C3D0D8")
+	env.fog_density = float(fog.get("density", 0.0038))
+	env.fog_sky_affect = 0.25
+	# 高开销特效全部明确关闭（截图验收与自检都会核这几项）
+	env.ssao_enabled = false
+	env.ssil_enabled = false
+	env.ssr_enabled = false
+	env.sdfgi_enabled = false
+	env.volumetric_fog_enabled = false
+	env.glow_enabled = false
+	var we := WorldEnvironment.new()
+	we.name = "Env"
+	we.environment = env
+	add_child(we)
+
+	# 主方向光：暖色、约 50° 俯角、侧前方打光（把建筑立面和地块厚度照出层次）
+	var sun_k: Dictionary = look.get("sun", {})
+	var sun := DirectionalLight3D.new()
+	sun.name = "Sun"
+	sun.rotation_degrees = Vector3(float(sun_k.get("pitch_deg", -50.0)),
+		float(sun_k.get("yaw_deg", -56.0)), 0.0)
+	sun.light_color = _hex(sun_k, "color", "#FFE9C9")
+	sun.light_energy = float(sun_k.get("energy", 1.28))
+	sun.shadow_enabled = bool(sun_k.get("shadow", true))
+	sun.shadow_blur = float(sun_k.get("shadow_blur", 1.25))
+	sun.light_angular_distance = float(sun_k.get("angular_distance", 0.7))
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+	sun.directional_shadow_max_distance = 260.0
+	add_child(sun)
+
+	# 补光：冷色、不投影（阴影里有蓝，不会死黑）
+	var fill_k: Dictionary = look.get("fill", {})
+	var fill := DirectionalLight3D.new()
+	fill.name = "Fill"
+	fill.rotation_degrees = Vector3(float(fill_k.get("pitch_deg", -34.0)),
+		float(fill_k.get("yaw_deg", 128.0)), 0.0)
+	fill.light_color = _hex(fill_k, "color", "#9CBCE8")
+	fill.light_energy = float(fill_k.get("energy", 0.26))
+	fill.shadow_enabled = false
+	add_child(fill)
+
+
+func _hex(d: Dictionary, key: String, fallback: String) -> Color:
+	var v := String(d.get(key, fallback))
+	return Color(v) if not v.is_empty() else Color(fallback)
+
+
+## 战场可玩范围 = 三块势力区域多边形的外包矩形（世界米）。
+## 镜头夹取、截图取景都以它为准；底壳比它大一大圈，就是为了让这圈外面还有地。
+func _playfield_rect() -> Rect2:
+	var min_x := 1e9
+	var max_x := -1e9
+	var min_z := 1e9
+	var max_z := -1e9
+	var regions: Dictionary = _shell.get("regions", {})
+	for kind in ["player", "neutral", "enemy"]:
+		for row in (regions.get(kind, []) as Array):
+			if row is Array and (row as Array).size() >= 2:
+				min_x = minf(min_x, float(row[0]))
+				max_x = maxf(max_x, float(row[0]))
+				min_z = minf(min_z, float(row[1]))
+				max_z = maxf(max_z, float(row[1]))
+	if min_x > max_x:
+		return Rect2(Vector2(float(_arena.get("min_x", -104.0)), float(_arena.get("min_z", -22.0))),
+			Vector2(float(_arena.get("max_x", 104.0)) - float(_arena.get("min_x", -104.0)),
+				float(_arena.get("max_z", 22.0)) - float(_arena.get("min_z", -22.0))))
+	return Rect2(Vector2(min_x, min_z), Vector2(max_x - min_x, max_z - min_z))
 
 
 # ===========================================================================
@@ -654,12 +738,17 @@ func spawn_enemy_demo() -> void:
 
 ## 截图/自检用固定机位：
 ##   { "focus_tile": 8 }  盯住某一格；{ "focus": [x, z] } 盯住世界点；
-##   { "dist": 26 }       机位距离（仍受"一个区"上限约束）。
+##   { "dist": 26 }       机位距离；
+##   { "wide": true }     先放开夹取范围（验收"整张图有没有露出图外虚空"用）。
 ## 会关掉自动跟随，保证连拍两张是同一个构图。
 func apply_shot_camera(spec: Dictionary) -> void:
 	if _camera == null:
 		return
 	_camera.call("stop_follow")
+	if bool(spec.get("wide", false)):
+		_camera.call("frame_wide", _playfield_rect())
+	if spec.has("pitch"):
+		_camera.call("set_pitch_deg", float(spec["pitch"]))
 	var fx := float(_arena.get("player_zone_x", -32.0))
 	var fz := 0.0
 	if spec.has("focus_tile"):
@@ -671,9 +760,9 @@ func apply_shot_camera(spec: Dictionary) -> void:
 		if arr.size() >= 2:
 			fx = float(arr[0])
 			fz = float(arr[1])
-	_camera.call("set_focus_world", fx, fz)
 	if spec.has("dist"):
 		_camera.call("set_distance", float(spec["dist"]))
+	_camera.call("set_focus_world", fx, fz)
 	_camera.call("snap")
 
 
@@ -814,7 +903,7 @@ func restart() -> void:
 		return
 	_buildings.call("set_arena", _arena)
 	_buildings.call("rebuild")
-	_board.call("set_arena", _arena, _board_theme)
+	_board.call("set_arena", _arena, _board_theme, _tile_spec, _look)
 	_squad_layer.call("set_arena", _arena)
 	_camera.call("apply_phase", "planning", true)
 	_refresh(true)

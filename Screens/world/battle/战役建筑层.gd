@@ -1,11 +1,14 @@
 extends Node3D
 ## 职责：把战场上的建筑（玩家布局卡 + 敌人遭遇卡 + 规划期新建）实例化成**工程里真实的 3D 模型**，
-##       并按 `TacticalTile` 的规范把它们摆到格子的**左上角建筑位**。
+##       并按 `TacticalTile` 的规范把它们摆到格子的**左上象限建筑位**。
 ## 属于：Screens/world/battle（表现层）
 ##
 ## 纪律：
 ##   · 只用 `planning.json` 里已有的 model_path（大本营 / 兵营 / 农场 / 哨塔…），不造占位盒；
+##   · **尺寸靠 AABB 归一化**：水平占地 = 单格边长的 38%~44%（唯一实现在 `RtsTileSpec`）。
+##     不是"缩到格子的 92%"—— 那会把出兵位和邻格一起吃掉；
 ##   · 贴地靠"模型自身 AABB 的最低点"，不靠猜高度 —— 换模型不用改代码；
+##   · 玩家侧建筑正面朝 +Z（面向游玩镜头），朝向增量在 `planning.json` 的 board.building 里；
 ##   · 阵营换色统一走 `ArtKit.apply_team_color`（铁誓资产包只染 team / team_trim）；
 ##   · 建筑在战斗期**不参与寻路**，这里也不做任何碰撞体。
 
@@ -13,6 +16,7 @@ const KEEP := &"keep"
 
 var _arena: Dictionary = {}
 var _defs: Dictionary = {}          # def_id -> {model_path, model_scale}
+var _spec: Dictionary = {}          # RtsTileSpec.spec_from(planning) 的产物
 var _built := {}                    # "side:tile" -> Node3D
 var _player_color := Color(0.30, 0.62, 1.00)
 var _enemy_color := Color(1.00, 0.32, 0.26)
@@ -22,10 +26,12 @@ func _ready() -> void:
 	set_process(false)
 
 
-func configure(defs: Dictionary, player_color: Color, enemy_color: Color) -> void:
+func configure(defs: Dictionary, player_color: Color, enemy_color: Color,
+		spec: Dictionary = {}) -> void:
 	_defs = defs
 	_player_color = player_color
 	_enemy_color = enemy_color
+	_spec = spec if not spec.is_empty() else RtsTileSpec.spec_from({})
 
 
 func set_arena(arena: Dictionary) -> void:
@@ -68,22 +74,17 @@ func _add(row: Dictionary, side: String, team_color: Color) -> void:
 	add_child(holder)
 
 	# 模型自身 AABB（holder 局部空间，不含 holder 自己的变换）→
-	# 用它把"footprint 左上角"对到格子的建筑锚点（TacticalTile 的唯一口径）。
+	# 用它把"占地"归一化到单格边长的 38%~44%，再把底面贴到格子高度。
 	var box := _bounds_of(holder)
-	# 模型比格子大就等比缩到格子里：建筑必须是"占一格"，不能压到邻格去。
-	var tw := float(tile.get("w", 7.0)) * 0.92
-	var td := float(tile.get("d", 7.0)) * 0.92
-	var k := 1.0
-	if box.size.x > tw or box.size.z > td:
-		k = minf(tw / maxf(box.size.x, 0.01), td / maxf(box.size.z, 0.01))
-		holder.scale = Vector3(k, k, k)
-	var yaw := deg_to_rad(float(tile.get("yaw", 0.0)))
+	var ratio := float(def.get("footprint_ratio", _spec.get("footprint_ratio", RtsTileSpec.FOOTPRINT_DEFAULT)))
+	var k := RtsTileSpec.fit_scale(box.size, float(tile.get("w", 7.0)), float(tile.get("d", 7.0)), ratio)
+	holder.scale = Vector3(k, k, k)
+	# 底座中心 → 格子左上象限；锚点仍以 Model 的左上角角点为准
 	var ax := float(tile.get("building_x", tile.get("x", 0.0)))
 	var az := float(tile.get("building_z", tile.get("z", 0.0)))
-	# 左上角对齐：把包围盒左上角（-X/-Z）搬到锚点，等价于中心偏移 (+w/2, +d/2)
-	var off := Vector3(box.size.x * 0.5 * k, 0.0, box.size.z * 0.5 * k).rotated(Vector3.UP, yaw)
-	holder.position = Vector3(ax + off.x, float(tile.get("terrain_y", 0.0)) - box.position.y * k, az + off.z)
-	holder.rotation.y = yaw
+	var c := RtsTileSpec.center(tile, Vector2(ax, az), _spec)
+	holder.position = Vector3(c.x, float(tile.get("terrain_y", 0.0)) - box.position.y * k, c.y)
+	holder.rotation.y = deg_to_rad(RtsTileSpec.yaw_deg(tile, _spec, side))
 	ArtKit.apply_team_color(holder, team_color)
 	_built["%s:%d" % [side, tile_index]] = holder
 

@@ -101,6 +101,11 @@ func update_view(view: Dictionary, selected: Array, order_point: Vector3, has_or
 			continue
 		var sid := int(sq.get("id", 0))
 		var shown := _sync_squad(sq, selected.has(sid))
+		if shown < 0:
+			# render=false 的兵种：场上没有模型，但小队仍然存在（占阵地/吃伤害/给基地抽血）。
+			# 保留它脚下的攻防徽记与选中环，否则玩家会以为这支部队"凭空消失"了。
+			live[sid] = true
+			continue
 		if shown <= 0:
 			continue
 		total += shown
@@ -217,12 +222,25 @@ func _sync_squad(sq: Dictionary, is_selected: bool) -> int:
 		ring.position = Vector3(0.0, 0.03, 0.0)
 		var r := maxf(float(sq.get("radius", 1.4)), 0.9) * 1.05
 		ring.scale = Vector3(r / 0.85, 1.0, r / 0.85)
-	return shown
+	return -1 if not _renders(unit_id) else shown
+
+
+## 这个兵种有没有上场模型（`units.json` 的 render 开关）。
+func _renders(unit_id: String) -> bool:
+	var def: Dictionary = _units.get(unit_id, {})
+	return bool(def.get("render", true))
 
 
 ## 造一个成员视觉：真实 GLB + 阵营色 + 动画器。找不到模型返回 null（不硬塞方块）。
+##
+## `render=false` 的兵种（长枪兵 / 弓箭手 / 鱼人阵营）**只实现逻辑、不上场**：
+## 它们的编制、伤害、占位全部照常跑（Model 说了算），只是不实例化任何模型 ——
+## 于是场上"看不到人"，但小队本身仍然占阵地、吃伤害、给敌方基地抽血。
+## 这条分支必须早返回：不能滑到下面的 build_model，否则会去加载一个已经被删掉的资产。
 func _make_member(unit_id: String) -> Dictionary:
 	var def: Dictionary = _units.get(unit_id, {})
+	if not bool(def.get("render", true)):
+		return {}
 	var path := String(def.get("model_path", ""))
 	if path.is_empty():
 		if not _warned.has(unit_id):
@@ -275,6 +293,20 @@ func _h(x: float, z: float) -> float:
 # ===========================================================================
 func _draw_lines(live: Dictionary) -> void:
 	if _lines == null:
+		return
+	# 规划期没有任何集火线与指令点时，别开 surface —— 空 surface 每帧刷一条
+	# "No vertices were added, surface can't be created" 的引擎 ERROR（白占日志与性能）。
+	var has_focus := false
+	for s in _view.get("squads", []):
+		var sq: Dictionary = s
+		if not _selected.has(int(sq.get("id", 0))):
+			continue
+		if int(sq.get("target_squad", -1)) > 0:
+			has_focus = true
+			break
+	if not has_focus and not _has_order:
+		if _lines.get_surface_count() > 0:
+			_lines.clear_surfaces()
 		return
 	_lines.clear_surfaces()
 	_lines.surface_begin(Mesh.PRIMITIVE_LINES)

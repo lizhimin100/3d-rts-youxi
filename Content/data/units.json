@@ -1,6 +1,6 @@
 {
 	"version": 1.0,
-	"note": "三大阵营 12 兵种。距离一律是**游戏数值**（R1 = 0.015 米/单位），近战无投射物、远程生成投射物；命中/闪避/暴击默认 100/0/0，随机词条留给后续升星与策略牌。passive_trait 最多 1 个、自动触发，当前全部留空。 2026-11-21 起每个兵种带 model_path / model_scale：开发者编辑器直接改这两项；鱼人模型未就绪时用占位网格。",
+	"note": "三大阵营 12 兵种。距离一律是**游戏数值**（R1 = 0.015 米/单位）。2026-11-22 起每个兵种带 render：true = 场上有真实 3D 模型，false = 只实现逻辑不上场（长枪兵/弓箭手/整个鱼人阵营）。当前可见：联盟步兵 + 联盟弩兵 + 豺狼人。model_path 只在 render=true 时非空，删模型资产不会留下悬空路径。",
 	"factions": {
 		"alliance": {
 			"display_name": "联盟",
@@ -26,7 +26,7 @@
 			"enabled": true,
 			"squad_size": 5.0,
 			"formation": "square",
-			"squad_radius": 110.0,
+			"squad_radius": 100.0,
 			"hp": 150.0,
 			"attack_damage": 13.0,
 			"attack_cooldown": 1.5,
@@ -45,10 +45,11 @@
 			"projectile_speed": 0.0,
 			"pop_cost": 5.0,
 			"passive_trait": null,
-			"model_path": "res://Content/art/模型/步兵.glb",
+			"render": true,
+			"model_path": "res://Content/art/模型/方块人/方块人_步兵.glb",
 			"model_scale": 1.0,
 			"use_placeholder_mesh": false,
-			"note": "顶前的一线；95 射程 = 1.425 米，和长枪 155 正好差两个身位（0.9 米）。"
+			"note": "本轮唯一有模型的近战兵种：方块人占位资产（美术精模未就绪）。"
 		},
 		{
 			"id": "alliance_pikeman",
@@ -76,10 +77,11 @@
 			"projectile_speed": 0.0,
 			"pop_cost": 4.0,
 			"passive_trait": null,
-			"model_path": "res://Content/art/模型/方块人/方块人_步兵.glb",
+			"render": false,
+			"model_path": "",
 			"model_scale": 1.0,
 			"use_placeholder_mesh": false,
-			"note": "155 - 95 = 60 游戏数值 = 0.9 米 = 两倍 0.45 身位：刚好站在步兵身后隔排刺击。"
+			"note": "只实现逻辑、暂不上场（无模型）。保留在表里：战斗公式与训练牌仍按它算。"
 		},
 		{
 			"id": "alliance_archer",
@@ -107,10 +109,11 @@
 			"projectile_speed": 26.0,
 			"pop_cost": 4.0,
 			"passive_trait": null,
-			"model_path": "res://Content/art/模型/弓箭手.glb",
+			"render": false,
+			"model_path": "",
 			"model_scale": 1.0,
 			"use_placeholder_mesh": false,
-			"note": "650 射程 = 9.75 米；穿刺克制轻甲/无甲，怕重甲与坚固甲。"
+			"note": "只实现逻辑、暂不上场（无模型）。保留在表里：战斗公式与训练牌仍按它算。"
 		},
 		{
 			"id": "alliance_crossbowman",
@@ -119,7 +122,7 @@
 			"enabled": true,
 			"squad_size": 4.0,
 			"formation": "scatter",
-			"squad_radius": 105.0,
+			"squad_radius": 100.0,
 			"hp": 100.0,
 			"attack_damage": 22.0,
 			"attack_cooldown": 2.6,
@@ -138,6 +141,7 @@
 			"projectile_speed": 32.0,
 			"pop_cost": 4.0,
 			"passive_trait": null,
+			"render": true,
 			"model_path": "res://Content/art/模型/方块人/方块人_弩兵.glb",
 			"model_scale": 1.0,
 			"use_placeholder_mesh": false,
@@ -169,6 +173,7 @@
 			"projectile_speed": 0.0,
 			"pop_cost": 6.0,
 			"passive_trait": null,
+			"render": true,
 			"model_path": "res://Content/art/模型/野怪/豺狼人斥候.glb",
 			"model_scale": 1.0,
 			"use_placeholder_mesh": false,
@@ -200,6 +205,7 @@
 			"projectile_speed": 0.0,
 			"pop_cost": 4.0,
 			"passive_trait": null,
+			"render": true,
 			"model_path": "res://Content/art/模型/野怪/豺狼人战士.glb",
 			"model_scale": 1.0,
 			"use_placeholder_mesh": false,
@@ -231,6 +237,7 @@
 			"projectile_speed": 24.0,
 			"pop_cost": 4.0,
 			"passive_trait": null,
+			"render": true,
 			"model_path": "res://Content/art/模型/野怪/豺狼人萨满.glb",
 			"model_scale": 1.0,
 			"use_placeholder_mesh": false,
@@ -262,6 +269,7 @@
 			"projectile_speed": 0.0,
 			"pop_cost": 2.0,
 			"passive_trait": null,
+			"render": true,
 			"model_path": "res://Content/art/模型/野怪/豺狼人战士.glb",
 			"model_scale": 1.0,
 			"use_placeholder_mesh": false,
@@ -293,10 +301,11 @@
 			"projectile_speed": 0.0,
 			"pop_cost": 8.0,
 			"passive_trait": null,
-			"model_path": "res://Content/art/模型/方块人/方块人_农民.glb",
-			"model_scale": 0.92,
+			"render": false,
+			"model_path": "",
+			"model_scale": 1.0,
 			"use_placeholder_mesh": false,
-			"note": "8 人一队的无甲海；65 射程最短，必须贴脸。",
+			"note": "鱼人阵营：只实现逻辑、暂不上场（无模型）。",
 			"model_note": "仓库没有鱼人模型：复用最接近的既有资产 + 阵营色区分（2026-11-22）"
 		},
 		{
@@ -325,10 +334,11 @@
 			"projectile_speed": 0.0,
 			"pop_cost": 4.0,
 			"passive_trait": null,
-			"model_path": "res://Content/art/模型/野怪/豺狼人斥候.glb",
+			"render": false,
+			"model_path": "",
 			"model_scale": 1.0,
 			"use_placeholder_mesh": false,
-			"note": "轻甲近战，标准 95 射程。",
+			"note": "鱼人阵营：只实现逻辑、暂不上场（无模型）。",
 			"model_note": "仓库没有鱼人模型：复用最接近的既有资产 + 阵营色区分（2026-11-22）"
 		},
 		{
@@ -357,10 +367,11 @@
 			"projectile_speed": 24.0,
 			"pop_cost": 4.0,
 			"passive_trait": null,
-			"model_path": "res://Content/art/模型/方块人/方块人_弩兵.glb",
-			"model_scale": 0.95,
+			"render": false,
+			"model_path": "",
+			"model_scale": 1.0,
 			"use_placeholder_mesh": false,
-			"note": "550 射程：比联盟弓手近 100，容易被弩兵先手。",
+			"note": "鱼人阵营：只实现逻辑、暂不上场（无模型）。",
 			"model_note": "仓库没有鱼人模型：复用最接近的既有资产 + 阵营色区分（2026-11-22）"
 		},
 		{
@@ -389,10 +400,11 @@
 			"projectile_speed": 0.0,
 			"pop_cost": 2.0,
 			"passive_trait": null,
-			"model_path": "res://Content/art/模型/精模/魔金傀儡.glb",
-			"model_scale": 0.5,
+			"render": false,
+			"model_path": "",
+			"model_scale": 1.0,
 			"use_placeholder_mesh": false,
-			"note": "2 人一队的重甲肉盾，用穿刺/魔法处理。",
+			"note": "鱼人阵营：只实现逻辑、暂不上场（无模型）。",
 			"model_note": "仓库没有鱼人模型：复用最接近的既有资产 + 阵营色区分（2026-11-22）"
 		}
 	]

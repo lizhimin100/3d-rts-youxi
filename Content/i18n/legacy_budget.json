@@ -1,6 +1,6 @@
 {
 	"version": 1,
-	"total": 432,
+	"total": 460,
 	"by_dir": {
 		"Screens": {
 			"Screens/world/art/地表资源.gd": 7,
@@ -19,7 +19,7 @@
 			"Screens/world/battle/战役镜头.gd": 1
 		},
 		"Tests": {
-			"Tests/checks/check_all.gd": 192,
+			"Tests/checks/check_all.gd": 220,
 			"Tests/checks/shot_runner.gd": 44,
 			"Tests/checks/synth_probe.gd": 54,
 			"Tests/sim/run_simulate.gd": 27

@@ -2,9 +2,12 @@ extends Node3D
 ## 职责：三阶段动态相机（规划锁玩家区 / 进攻锁中立+敌方 / 防守锁中立+玩家）。
 ## 属于：Screens/world/battle（表现层）
 ##
-## 口径（2026-11-22）：
+## 口径（2026-11-22 修订）：
 ##   · **构图靠"框矩形"算距离，不靠调参**：给定地面矩形与安全边距，二分出刚好装下的机位距离。
 ##     这样 1920x1080 / 1600x720 / 任何窗口比例都不会裁切（截图验收就是这么过的）。
+##   · **夹取范围 = 三块势力区域的外包矩形**（`setup()` 由战场传进来），**不是**底壳尺寸。
+##     底壳为了挡住图外虚空已经扩到 368×184m，若还按底壳夹镜头，玩家会被允许把机位推到战场
+##     外 60m 的荒地上、从那儿一眼望出图外 —— 那是"看不到虚空"这条要求的真正反面。
 ##   · 规划阶段：镜头**锁死**在玩家区（3×6 棋盘居中），禁止平移；缩放也是固定的，
 ##     因为敌方意图要靠 UI 栏读，不该靠偷看。
 ##   · 攻防阶段：允许在"双区并集"里平移 + 缩放，但注视点**不许离开战场**，
@@ -33,6 +36,8 @@ const BATTLE_ZOOM := 0.85
 var camera: Camera3D = null
 
 var _arena: Dictionary = {}
+var _playfield := Rect2()           # 战场可玩范围（三块势力区域外包矩形，世界 XZ）
+var _pitch_deg := PITCH_DEG         # 俯角；只有截图脚本会临时改它（set_pitch_deg）
 var _phase := "planning"
 var _focus := Vector3.ZERO          # 当前注视点（平滑值）
 var _dist := 60.0                   # 当前机位距离（平滑值）
@@ -60,10 +65,17 @@ func _ready() -> void:
 	camera.current = true
 
 
-func setup(arena: Dictionary) -> void:
+func setup(arena: Dictionary, playfield: Rect2 = Rect2()) -> void:
 	if camera == null:
 		_ready()
 	_arena = arena
+	_playfield = playfield
+	if _playfield.size.x <= 0.0 or _playfield.size.y <= 0.0:
+		# 没传战场矩形（旧调用）：退回整块底壳
+		_playfield = Rect2(
+			Vector2(float(arena.get("min_x", -104.0)), float(arena.get("min_z", -22.0))),
+			Vector2(float(arena.get("max_x", 104.0)) - float(arena.get("min_x", -104.0)),
+				float(arena.get("max_z", 22.0)) - float(arena.get("min_z", -22.0))))
 	_ready_done = true
 	apply_phase(_phase, true)
 
@@ -71,12 +83,9 @@ func setup(arena: Dictionary) -> void:
 ## 阶段切换：planning / attack / defend / result
 func apply_phase(phase: String, instant: bool = false) -> void:
 	_phase = phase
-	var min_x := float(_arena.get("min_x", -104.0))
-	var max_x := float(_arena.get("max_x", 104.0))
-	var min_z := float(_arena.get("min_z", -22.0))
-	var max_z := float(_arena.get("max_z", 22.0))
-	var pz := float(_arena.get("player_zone_x", min_x + 72.0))
-	var ez := float(_arena.get("enemy_zone_x", max_x - 72.0))
+	var pz := float(_arena.get("player_zone_x", _playfield.position.x + 72.0))
+	var ez := float(_arena.get("enemy_zone_x", _playfield.end.x - 72.0))
+	var pf := _playfield
 
 	match phase:
 		"planning":
@@ -90,22 +99,22 @@ func apply_phase(phase: String, instant: bool = false) -> void:
 		"attack":
 			_locked = false
 			# 允许平移的范围 = 中立区 ∪ 敌方区（整片战场，不能移出去）
-			_bounds = Rect2(Vector2(pz, min_z), Vector2(max_x - pz, max_z - min_z))
+			_bounds = Rect2(Vector2(pz, pf.position.y), Vector2(pf.end.x - pz, pf.size.y))
 			# 最大拉远只够装下**一个区**（敌方区）—— 两个区之和永远装不进一屏
-			_dist_fit = _fit_region_distance(ez, max_x, min_z, max_z)
+			_dist_fit = _fit_region_distance(ez, pf.end.x, pf.position.y, pf.end.y)
 			_want_dist = _dist_fit * BATTLE_ZOOM
 			# 开局看住"我方前压点 → 中立区"，而不是两区正中（正中看不到自己人）
 			_want_focus = Vector3(pz + 20.0, 0.0, 0.0)
 		"defend":
 			_locked = false
-			_bounds = Rect2(Vector2(min_x, min_z), Vector2(ez - min_x, max_z - min_z))
-			_dist_fit = _fit_region_distance(min_x, pz, min_z, max_z)
+			_bounds = Rect2(Vector2(pf.position.x, pf.position.y), Vector2(ez - pf.position.x, pf.size.y))
+			_dist_fit = _fit_region_distance(pf.position.x, pz, pf.position.y, pf.end.y)
 			_want_dist = _dist_fit * BATTLE_ZOOM
 			_want_focus = Vector3(pz - 20.0, 0.0, 0.0)
 		_:
 			# result：保持当前机位，只解锁
 			_locked = false
-			_bounds = Rect2(Vector2(min_x, min_z), Vector2(max_x - min_x, max_z - min_z))
+			_bounds = pf
 
 	if instant:
 		_focus = _want_focus
@@ -140,11 +149,11 @@ func _player_rect() -> Rect2:
 		min_z = minf(min_z, float(tile.get("z", 0.0)) - hd)
 		max_z = maxf(max_z, float(tile.get("z", 0.0)) + hd)
 	if min_x > max_x:
-		# 没有玩家格子（异常底壳）：退回整区
-		min_x = float(_arena.get("min_x", -104.0))
-		max_x = float(_arena.get("player_zone_x", min_x + 72.0))
-		min_z = float(_arena.get("min_z", -22.0))
-		max_z = float(_arena.get("max_z", 22.0))
+		# 没有玩家格子（异常底壳）：退回战场矩形
+		min_x = _playfield.position.x
+		max_x = float(_arena.get("player_zone_x", _playfield.end.x))
+		min_z = _playfield.position.y
+		max_z = _playfield.end.y
 	var pad := 3.0
 	return Rect2(Vector2(min_x - pad, min_z - pad), Vector2((max_x - min_x) + pad * 2.0, (max_z - min_z) + pad * 2.0))
 
@@ -204,7 +213,7 @@ func _fits(center: Vector3, probes: Array[Vector3], dist: float,
 
 
 func _place(center: Vector3, dist: float) -> void:
-	var pitch := deg_to_rad(PITCH_DEG)
+	var pitch := deg_to_rad(_pitch_deg)
 	var yaw := deg_to_rad(YAW_DEG)
 	var dir := Vector3(sin(yaw) * cos(pitch), sin(pitch), cos(yaw) * cos(pitch))
 	camera.global_position = center + dir * dist
@@ -271,6 +280,24 @@ func snap() -> void:
 	_apply_transform()
 
 
+## 截图用：临时改俯角（验证"地块有厚度"必须用低机位平视侧壁，正常游玩永远是 58° 俯角）。
+func set_pitch_deg(deg: float) -> void:
+	_pitch_deg = clampf(deg, 6.0, 89.0)
+
+
+## 截图用：把夹取范围放开到整个战场，并把最大拉远抬到"能看见四周边缘"的一档。
+## **只有截图脚本会调它**（`apply_shot_camera` 的 wide 分支），玩家入口碰不到。
+## 用途是验收"任意合法机位都看不到图外虚空"：镜头允许放到最远，画面里也不许有虚空。
+func frame_wide(rect: Rect2) -> void:
+	_locked = false
+	# 注意：这里连**注视点**一起放宽（grow），否则"从外面看这块地有多厚"这种机位根本到不了边界外
+	_bounds = rect.grow(rect.size.x * 0.45)
+	_dist_fit = maxf(_fit_distance(rect, 0.99, 0.99, -0.99) * 1.6, DIST_MIN + 1.0)
+	_want_dist = _dist_fit
+	_want_focus = Vector3(rect.position.x + rect.size.x * 0.5, 0.0,
+		rect.position.y + rect.size.y * 0.5)
+
+
 func set_focus_world(x: float, z: float) -> void:
 	_manual_idle = 0.0
 	_want_focus = _clamp_focus(Vector3(x, 0.0, z))
@@ -322,6 +349,11 @@ func phase_name() -> String:
 
 func bounds_rect() -> Rect2:
 	return _bounds
+
+
+## 战场可玩范围（三块势力区域外包矩形）：截图/自检用它验证"镜头永远不出战场"。
+func playfield_rect() -> Rect2:
+	return _playfield
 
 
 func fit_distance() -> float:

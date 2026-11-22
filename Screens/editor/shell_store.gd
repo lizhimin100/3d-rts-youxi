@@ -117,17 +117,69 @@ static func cell_of_world(shell: Dictionary, x: float, z: float) -> Vector2:
 	return Vector2((x - float(g["origin_x"])) / cell, (z - float(g["origin_z"])) / cell)
 
 
-## 未雕刻时的初始起伏：通道两侧抬成坡，走廊本身基本平（0.9 m 上下）。
+## 三块势力区域的**外包矩形**（世界米）：战术区地面强制平整的唯一口径。
+##
+## 为什么必须是一条硬规则：寻路、格子贴地、建筑落位、小队站位全都假定战术区是水平面。
+## 高度场只要在战术区里起伏 30cm，格子就会一半陷进土里、一半浮在空中（2026-11-22 之前的真实故障）。
+## 因此 `terrain_height()` 在这个矩形内**恒返回 0**，起伏只允许出现在矩形外的周边环境带。
+static func play_area(shell: Dictionary) -> Rect2:
+	var min_x := 1e9
+	var max_x := -1e9
+	var min_z := 1e9
+	var max_z := -1e9
+	for kind in REGION_IDS:
+		for p in region_points(shell, kind):
+			min_x = minf(min_x, p.x)
+			max_x = maxf(max_x, p.x)
+			min_z = minf(min_z, p.y)
+			max_z = maxf(max_z, p.y)
+	if min_x > max_x:
+		# 没有区域多边形（新建图的第一帧）：整图按平整处理，宁可不起伏也不要陷地
+		var sz := size_of(shell)
+		return Rect2(-sz.x * 0.5, -sz.y * 0.5, sz.x, sz.y)
+	return Rect2(min_x, min_z, max_x - min_x, max_z - min_z)
+
+
+## 平整区外缘的抬升带宽度（米）：从 0 平滑抬到丘陵高度，避免硬折角。
+const RIM_RAMP_M := 13.0
+## 抬升带外沿的基准高度（米）：像一圈缓坡把战场围在中间。
+const RIM_BASE_H := 2.2
+## 丘陵起伏振幅（米）：只改观感，不参与任何判定。
+## 2.6 太温吞 —— 从 60m 高的机位看下去就是一整片平绿，读不出"立体沙盘"。
+const HILL_AMP := 7.5
+
+## 未雕刻时的丘陵噪声：只负责"高低不平"，不含平整区判定（判定在 terrain_height）。
 static func procedural_height(seed_value: int, x: float, z: float) -> float:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
 	var p1 := rng.randf_range(0.0, TAU)
 	var p2 := rng.randf_range(0.0, TAU)
 	var p3 := rng.randf_range(0.0, TAU)
-	var ridge := 0.45 * sin(x * 0.13 + p1) + 0.35 * cos(z * 0.17 + p2) + 0.20 * sin((x + z) * 0.09 + p3)
-	var bank := smoothstep(2.0, 14.0, absf(z))
-	var h := 0.9 + 2.4 * (0.35 + ridge) * bank
-	return clampf(h, -1.2, 4.5)
+	# 两层：40~70m 的大起伏（读得出"坡"）+ 12~20m 的碎起伏（读得出"不是塑料布"）。
+	# 波长再长就退回"整张图一个大缓坡"，再短会在环境带里起尖包。
+	var ridge := 0.45 * sin(x * 0.13 + p1) + 0.35 * cos(z * 0.17 + p2) \
+		+ 0.20 * sin((x + z) * 0.09 + p3)
+	var fine := 0.55 * sin(x * 0.31 + p2) * cos(z * 0.27 + p3)
+	var h := RIM_BASE_H + HILL_AMP * (0.45 + ridge * 0.55 + fine * 0.30)
+	return clampf(h, RIM_BASE_H - HILL_AMP * 0.55, RIM_BASE_H + HILL_AMP * 1.1)
+
+
+## 底壳的**初始地面高度**（未雕刻时）：战术区恒 0，区外按距离平滑抬成丘陵。
+##
+## 这是"三块作战区绝对平整 + 周边立体地形"两条要求的唯一实现：
+## 编辑器、生成脚本、局内都读同一份 heights（数据），但生成规则只在这里写一次。
+static func terrain_height(shell: Dictionary, x: float, z: float) -> float:
+	var area := play_area(shell)
+	var d := maxf(maxf(area.position.x - x, x - (area.position.x + area.size.x)), 0.0)
+	var dz := maxf(maxf(area.position.y - z, z - (area.position.y + area.size.y)), 0.0)
+	var outside := sqrt(d * d + dz * dz)
+	if outside <= 0.001:
+		return 0.0
+	var w := smoothstep(0.0, RIM_RAMP_M, outside)
+	var h := w * procedural_height(int(shell.get("seed", 1)), x, z)
+	# 外缘再缓缓抬高一点：远处高地挡住地平线，玩家在任何合法机位都看不到图外的虚空
+	h += w * clampf((outside - RIM_RAMP_M) * 0.10, 0.0, 5.0)
+	return clampf(h, 0.0, 14.0)
 
 
 static func heights_or_procedural(shell: Dictionary) -> PackedFloat32Array:
@@ -137,7 +189,6 @@ static func heights_or_procedural(shell: Dictionary) -> PackedFloat32Array:
 	var have: Array = (shell.get("terrain", {}) as Dictionary).get("heights", [])
 	var out := PackedFloat32Array()
 	out.resize(cols * rows)
-	var seed_value := int(shell.get("seed", 1))
 	if have.size() == cols * rows:
 		for i in cols * rows:
 			out[i] = float(have[i])
@@ -145,7 +196,7 @@ static func heights_or_procedural(shell: Dictionary) -> PackedFloat32Array:
 	for row in rows:
 		for col in cols:
 			var w := world_of_cell(shell, col, row)
-			out[row * cols + col] = procedural_height(seed_value, w.x, w.y)
+			out[row * cols + col] = terrain_height(shell, w.x, w.y)
 	return out
 
 
@@ -199,16 +250,30 @@ static func autopaint(shell: Dictionary) -> Array:
 	var g := grid_of(shell)
 	var cols := int(g["cols"])
 	var rows := int(g["rows"])
+	var area := play_area(shell).grow(1.5)
 	var out: Array = []
 	out.resize(cols * rows)
 	for row in rows:
 		for col in cols:
 			var w := world_of_cell(shell, col, row)
+			# 战术区**整片草地**：草坪棋盘的底色必须干净，泥点只留给区外的行军道。
+			# （上一版在 |z| ≤ 5 铺了一条 10m 宽的泥带，正好从中间那道格子底下穿过，
+			#   棋盘再透明也会被这条泥路抢戏。）
 			var idx := 0
-			if absf(w.y) <= 5.0:
+			var wobble := 1.6 * sin(w.x * 0.055) + 1.0 * sin(w.x * 0.021 + 1.7)
+			# 泥地只铺到**远离战场**的环境带（离区边 26m 以外）：贴着棋盘的那圈必须是干净草坪，
+			# 否则玩家第一眼看到的是一摊泥，而不是一块可读的战场。
+			if not area.has_point(w) and _outside_of(area, w) > 26.0 and absf(w.y) <= 2.4 + wobble:
 				idx = 1
 			out[row * cols + col] = idx
 	return out
+
+
+## 点到矩形的水平距离（矩形内返回 0）。只服务地表铺色，不做任何玩法判定。
+static func _outside_of(rect: Rect2, p: Vector2) -> float:
+	var dx := maxf(maxf(rect.position.x - p.x, p.x - rect.end.x), 0.0)
+	var dz := maxf(maxf(rect.position.y - p.y, p.y - rect.end.y), 0.0)
+	return sqrt(dx * dx + dz * dz)
 
 
 static func surface_index(shell: Dictionary) -> Array:
@@ -427,7 +492,7 @@ static func apply_map_size(shell: Dictionary, new_size: Vector2, scale_tiles: bo
 		td["z"] = nz
 		td["w"] = nw
 		td["d"] = nd
-		td["side"] = side_of(nx)
+		td["side"] = side_at(resized, nx, nz)
 	resized["tiles"] = tile_list
 	if scale_tiles:
 		var board := board_of(resized)
@@ -739,8 +804,32 @@ static func min_gap_meters(shell: Dictionary) -> float:
 	return best
 
 
+## 纯 x 正负的兜底归属（只在地块外/区域多边形缺失时用）。
 static func side_of(x: float) -> String:
 	return "player" if x < 0.0 else "enemy"
+
+
+## 一个点属于哪块势力区（返回 player / neutral / enemy）。
+##
+## **为什么不能只看 x 正负**：底壳是三列布局（玩家 / 中立 / 敌方），中立区跨 x=0，
+## 只按 x 正负分会把中立据点格判成敌方格 —— 2026-11-22 扩容重生成时真踩到了：
+## 据点格 side 变 enemy，`SquadArena.NeutralOutpostTile` 直接变 0，据点玩法整条断掉。
+##
+## 这里只做**三块区域外包矩形**的归属（编辑器摆格子的即时分类）。
+## 多边形级的"点在区域内"判定仍然只有 Model/Map/RegionPolygon 一份实现。
+static func side_at(shell: Dictionary, x: float, z: float) -> String:
+	for kind in REGION_IDS:
+		var pts := region_points(shell, kind)
+		if pts.size() < 3:
+			continue
+		var lo := pts[0]
+		var hi := pts[0]
+		for p in pts:
+			lo = Vector2(minf(lo.x, p.x), minf(lo.y, p.y))
+			hi = Vector2(maxf(hi.x, p.x), maxf(hi.y, p.y))
+		if x >= lo.x - 0.001 and x <= hi.x + 0.001 and z >= lo.y - 0.001 and z <= hi.y + 0.001:
+			return kind
+	return side_of(x)
 
 
 ## 局内规则：布局卡激活的格子才可建造，未激活的渲染成碎石遗迹。

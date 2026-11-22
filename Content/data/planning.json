@@ -19,11 +19,11 @@
 			"build_barracks",
 			"build_farm",
 			"train_footman_atk",
-			"train_pikeman_def",
-			"train_archer_atk",
-			"train_archer_def"
+			"train_footman_def",
+			"train_crossbow_atk",
+			"train_crossbow_def"
 		],
-		"note": "起手 6 张：2 张建造 + 4 张一攻一防的训练牌，保证第一次规划两场都能出人。"
+		"note": "起手 6 张：2 张建造 + 4 张一攻一防的训练牌（步兵 / 弩兵），保证第一次规划两场都能出人 —— 且起手全是**场上真有模型**的兵种。"
 	},
 	"merge": {
 		"required": 3.0,
@@ -446,7 +446,7 @@
 		}
 	],
 	"deck": {
-		"size": 16,
+		"size": 16.0,
 		"start": [
 			"build_farm",
 			"build_farm",
@@ -454,17 +454,27 @@
 			"build_barracks",
 			"build_tower",
 			"train_footman_atk",
+			"train_footman_atk",
 			"train_footman_def",
-			"train_pikeman_atk",
-			"train_pikeman_def",
-			"train_archer_atk",
-			"train_archer_def",
+			"train_footman_def",
 			"train_crossbow_atk",
+			"train_crossbow_atk",
+			"train_crossbow_def",
 			"train_crossbow_def",
 			"strategy_forced_march",
 			"strategy_bulwark",
 			"strategy_focus"
 		],
-		"note": "16 张：5 建造（Exhaust）+ 8 训练（4 兵种 × 攻/防，循环）+ 3 策略（循环）。"
+		"note": "16 张：5 建造（Exhaust）+ 8 训练（步兵 / 弩兵 × 攻防，各两张，循环）+ 3 策略（循环）。长枪兵 / 弓手的卡仍留在 card 表里（逻辑与数值都在），但**不进卡组**：它们没有模型，上场等于打出一支看不见的部队。"
+	},
+	"placement": {
+		"note": "战术格子上「建筑落位」的表现层规格（唯一消费者 RtsTileSpec）。footprint_ratio = 水平占地 / 单格边长，合法区间 38%~44%；anchor_u/v = 底座中心相对格中心的本地方向偏移（以格边长为单位，负 X / 负 Z = 格子左上象限）；facing_deg = 朝向增量（工程约定模型正面 -Z，玩家侧 +180 让它面向游玩镜头 +Z）。",
+		"footprint_ratio": 0.38,
+		"anchor_u": -0.29,
+		"anchor_v": -0.29,
+		"facing_deg": {
+			"player": 180.0,
+			"enemy": 0.0
+		}
 	}
 }

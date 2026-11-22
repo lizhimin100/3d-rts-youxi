@@ -175,14 +175,14 @@
 					]
 				},
 				{
-					"click": "TrainCard_train_archer_atk",
+					"click": "TrainCard_train_crossbow_atk",
 					"expect_state": [
 						"attack_squads",
 						"2"
 					]
 				},
 				{
-					"click": "TrainCard_train_pikeman_def",
+					"click": "TrainCard_train_crossbow_def",
 					"expect_state": [
 						"defend_squads",
 						"1"
@@ -216,7 +216,7 @@
 					]
 				},
 				{
-					"click": "TrainCard_train_pikeman_def",
+					"click": "TrainCard_train_crossbow_def",
 					"expect_state": [
 						"defend_squads",
 						"1"
@@ -287,7 +287,7 @@
 					]
 				},
 				{
-					"click": "TrainCard_train_archer_atk",
+					"click": "TrainCard_train_crossbow_atk",
 					"expect_state": [
 						"attack_squads",
 						"2"
@@ -307,7 +307,7 @@
 				"1"
 			],
 			"wait_after": 0.6,
-			"$note": "验收「不是纯色占位」：开战后我方小队前压到玩家区前缘的开阔地，近距拍真实 GLB 实例（步兵 5 + 弓手 4 = 9）。",
+			"$note": "验收「不是纯色占位」：开战后我方小队前压到玩家区前缘的开阔地，近距拍真实 GLB 实例（步兵 5 + 弩兵 4 = 9）。",
 			"shot_camera": {
 				"focus": [
 					-40.0,
@@ -315,6 +315,96 @@
 				],
 				"dist": 22
 			}
+		},
+		"battle_space": {
+			"scene": "res://Screens/scenes/战役.tscn",
+			"delay": 7.0,
+			"clicks": [
+				{
+					"click": "BuildCard_build_barracks",
+					"expect_state": [
+						"armed_card",
+						"build_barracks"
+					]
+				},
+				{
+					"click": "TrainCard_train_footman_atk",
+					"expect_state": [
+						"attack_squads",
+						"1"
+					]
+				},
+				{
+					"click": "TrainCard_train_crossbow_atk",
+					"expect_state": [
+						"attack_squads",
+						"2"
+					]
+				}
+			],
+			"map_click": [
+				0.52,
+				0.49
+			],
+			"expect_scene_state": [
+				"built_count",
+				"5"
+			],
+			"shot_camera": {
+				"focus_tile": 10,
+				"dist": 20.0
+			},
+			"wait_after": 1.2,
+			"$note": "空间规格验收：建筑占单格 38~44% 且底座在格子左上象限、正面朝镜头 +Z；出兵位在格中心（有红徽记）；棋盘是半透明双色微差、透得出草地纹理。"
+		},
+		"battle_extent": {
+			"scene": "res://Screens/scenes/战役.tscn",
+			"delay": 7.0,
+			"clicks": [
+				{
+					"click": "TrainCard_train_footman_atk",
+					"expect_state": [
+						"attack_squads",
+						"1"
+					]
+				},
+				{
+					"click": "StartButton",
+					"expect_state": [
+						"phase_name",
+						"attack"
+					],
+					"wait": 2.0
+				}
+			],
+			"expect_scene_state": [
+				"phase_name",
+				"attack"
+			],
+			"shot_camera": {
+				"focus": [
+					102.0,
+					18.0
+				],
+				"dist": 999.0
+			},
+			"wait_after": 1.0,
+			"$note": "边界验收：进攻战里把机位推到战场最靠外的角（x≈104,z≈20）并拉到最大合法档 —— 这是玩家真能到达的极限视角，画面里必须全是地形（坡地/树林/立体侧壁），看不到任何图外虚空。"
+		},
+		"battle_edge": {
+			"scene": "res://Screens/scenes/战役.tscn",
+			"delay": 7.0,
+			"shot_camera": {
+				"wide": true,
+				"pitch": 24.0,
+				"focus": [
+					0.0,
+					-4.0
+				],
+				"dist": 112.0
+			},
+			"wait_after": 0.6,
+			"$note": "沙盘验收：低机位（24°）从战场内侧看出去 —— 近处是平整战术区，远侧是抬起来的土层斜坡与丘陵，能读出这块地是「有厚度的立体沙盘」而不是一张纸。"
 		}
 	}
 }

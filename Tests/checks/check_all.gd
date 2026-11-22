@@ -108,6 +108,7 @@ func _run() -> void:
 	_check_squad_visuals()
 	_check_camera_rules()
 	_check_board_rules()
+	_check_scene_visuals()
 	_check_hud_rules()
 	_check_screens()
 	_check_i18n()
@@ -224,18 +225,37 @@ func _check_units_data() -> void:
 	var doc := JsonFile.read_dict(UNITS_JSON, {})
 	var units: Array = doc.get("units", [])
 	var no_model: Array[String] = []
+	var dangling: Array[String] = []
 	var enabled := 0
+	var visible := 0
+	var visible_factions := {}
 	for u in units:
 		var row: Dictionary = u
 		if not bool(row.get("enabled", true)):
 			continue
 		enabled += 1
+		var render := bool(row.get("render", true))
 		var path := String(row.get("model_path", ""))
+		if not render:
+			# 只实现逻辑、不上场：model_path 必须留空 —— 免得删了资产还留一条悬空路径
+			if not path.is_empty():
+				dangling.append(String(row.get("id", "?")))
+			continue
+		visible += 1
+		visible_factions[String(row.get("faction", "?"))] = true
 		if path.is_empty():
 			no_model.append(String(row.get("id", "?")))
 		elif not FileAccess.file_exists(path):
 			no_model.append(String(row.get("id", "?")) + "(缺文件)")
-	_ok("每个启用兵种都绑定了真实 3D 模型（%d 个）" % enabled, no_model.is_empty(), ", ".join(no_model))
+	_ok("每个上场的兵种都绑定了真实 3D 模型（%d 个 / 启用 %d 个）" % [visible, enabled],
+		no_model.is_empty(), ", ".join(no_model))
+	_ok("不上场的兵种不留悬空 model_path", dangling.is_empty(), ", ".join(dangling))
+	# 视觉口径（2026-11-22 收敛）：联盟只留 2 个兵种有模型，敌人只留 1 个阵营
+	_ok("场上只画 2 个联盟兵种（步兵 / 弩兵）", _visible_count(units, "alliance") == 2,
+		"实测 %d" % _visible_count(units, "alliance"))
+	_ok("敌人只有一个阵营有模型（%s）" % ", ".join(visible_factions.keys()),
+		visible_factions.size() == 2 and visible_factions.has("alliance"),
+		"阵营：%s" % ", ".join(visible_factions.keys()))
 	var sizes: Array[String] = []
 	for u in units:
 		var row: Dictionary = u
@@ -249,6 +269,16 @@ func _check_units_data() -> void:
 		if bool(row.get("use_placeholder_mesh", false)):
 			placeholder.append(String(row.get("id", "?")))
 	_ok("没有任何兵种退回占位网格", placeholder.is_empty(), ", ".join(placeholder))
+
+
+func _visible_count(units: Array, faction: String) -> int:
+	var n := 0
+	for u in units:
+		var row: Dictionary = u
+		if String(row.get("faction", "")) == faction and bool(row.get("render", true)) \
+				and bool(row.get("enabled", true)):
+			n += 1
+	return n
 
 
 func _check_planning_data() -> void:
@@ -286,6 +316,18 @@ func _check_planning_data() -> void:
 	_ok("据点与免费防守队都在数据里配了（不是写死在代码）",
 		outpost.has("cp_cost") and String(free.get("unit", "")) != "",
 		"outpost=%s free=%s" % [str(outpost), str(free)])
+	# 建筑落位规格：唯一消费者是 RtsTileSpec；这里只核对数据在合法区间里
+	var place: Dictionary = doc.get("placement", {})
+	var ratio := float(place.get("footprint_ratio", 0.0))
+	_ok("建筑水平占地配在 38%%~44%% 之间（实测 %.0f%%）" % (ratio * 100.0),
+		ratio >= 0.38 - 0.0001 and ratio <= 0.44 + 0.0001,
+		"placement.footprint_ratio=%.3f" % ratio)
+	_ok("建筑底座中心锚在格子左上象限（anchor_u/v 都是负的）",
+		float(place.get("anchor_u", 0.0)) < -0.05 and float(place.get("anchor_v", 0.0)) < -0.05,
+		"u=%.2f v=%.2f" % [float(place.get("anchor_u", 0.0)), float(place.get("anchor_v", 0.0))])
+	var facing: Dictionary = place.get("facing_deg", {})
+	_ok("玩家侧建筑朝向增量 = 180°（模型正面 -Z → 面向镜头 +Z）",
+		absf(float(facing.get("player", 0.0)) - 180.0) < 0.01, str(facing))
 
 
 func _check_level_data() -> void:
@@ -402,6 +444,62 @@ func _check_shell_data() -> void:
 	_ok("棋盘双色主题写在底壳数据里（可换皮）",
 		theme.has("light") and theme.has("dark") and theme.has("rim"),
 		str(theme.keys()))
+
+	# --- 三块战术区必须绝对平整（Y = 0）---
+	# 这是"格子不陷地"的根：战术区里只要有一处起伏，格子就会一半埋进土里。
+	var regions: Dictionary = sh.get("regions", {})
+	var area := _region_bbox(regions)
+	var outside := 0
+	var worst := 0.0
+	var hills := 0.0
+	for row in rows:
+		var wz := -sz * 0.5 + float(row) * cell
+		for col in cols:
+			var wx := -sx * 0.5 + float(col) * cell
+			var h := absf(float(heights[row * cols + col]))
+			if area.has_point(Vector2(wx, wz)):
+				if h > 0.001:
+					outside += 1
+					worst = maxf(worst, h)
+			else:
+				hills = maxf(hills, h)
+	_ok("三块战术区地表严格平整 Y=0（区外最高 %.1f m）" % hills,
+		outside == 0 and hills > 2.0, "区内 %d 点不平，最大 %.3f m" % [outside, worst])
+
+	# --- 底壳必须比战场大一圈：镜头贴到边界也看不到图外的虚空 ---
+	var pf_half_x := maxf(absf(area.position.x), absf(area.end.x))
+	var pf_half_z := maxf(absf(area.position.y), absf(area.end.y))
+	var ext_x := sx * 0.5 - pf_half_x
+	var ext_z := sz * 0.5 - pf_half_z
+	_ok("外围地形超出镜头可移动边界 60%% 以上（X %+.0f m / Z %+.0f m）" % [ext_x, ext_z],
+		ext_x >= pf_half_x * 0.6 and ext_z >= pf_half_z * 0.6,
+		"X %.0f/%.0f  Z %.0f/%.0f" % [ext_x, pf_half_x * 0.6, ext_z, pf_half_z * 0.6])
+
+	# --- 远景装饰带：战术区之外要有树/岩石 ---
+	var outer_decor := 0
+	for d in sh.get("decorations", []):
+		var row2: Dictionary = d
+		if not area.grow(2.0).has_point(Vector2(float(row2.get("x", 0.0)), float(row2.get("z", 0.0)))):
+			outer_decor += 1
+	_ok("远景装饰带已铺到战术区之外（%d 件）" % outer_decor, outer_decor >= 40)
+
+
+## 三块势力区域多边形的外包矩形（世界 XZ）。
+func _region_bbox(regions: Dictionary) -> Rect2:
+	var min_x := 1e9
+	var max_x := -1e9
+	var min_z := 1e9
+	var max_z := -1e9
+	for kind in ["player", "neutral", "enemy"]:
+		for row in (regions.get(kind, []) as Array):
+			if row is Array and (row as Array).size() >= 2:
+				min_x = minf(min_x, float(row[0]))
+				max_x = maxf(max_x, float(row[0]))
+				min_z = minf(min_z, float(row[1]))
+				max_z = maxf(max_z, float(row[1]))
+	if min_x > max_x:
+		return Rect2()
+	return Rect2(Vector2(min_x, min_z), Vector2(max_x - min_x, max_z - min_z))
 
 
 func _check_layouts_and_encounters() -> void:
@@ -692,6 +790,76 @@ func _check_board_rules() -> void:
 	_ok("棋盘画两种锚点（左上角建筑位 / 正中心出兵位）",
 		src.contains("building_x") and src.contains("spawn_x") and src.contains("_flat_ring"))
 	_ok("棋盘有挑格子的高亮通道", src.contains("set_armed") and src.contains("_rebuild_highlight"))
+
+
+# ===========================================================================
+# 6b. 3D 战场观感（地形材质 / 棋盘色层 / 立体地块 / 布光）
+# ===========================================================================
+##
+## 这一组是为了别再退回"纯色塑料布 + 瓷砖棋盘 + 薄皮地块"：
+## 2026-11-22 之前的三个问题都不是"调参没调好"，而是**用了另一份实现**——
+## 地形现造材质、棋盘画实心块、地块只有一张平面。断言盯的是"有没有走唯一那份实现"。
+func _check_scene_visuals() -> void:
+	var assets := _read("res://Screens/world/art/地表资源.gd")
+	_ok("地表贴图/图集/mat_map 只有一份实现（RtsTerrainAssets）",
+		assets.contains("mat_map_texture") and assets.contains("atlas_rgba")
+		and assets.contains("tex_grass") and assets.contains("bind_terrain_material"))
+
+	var terr := _read(TERRAIN_SCRIPT)
+	_ok("地形用工程里的地形材质（不再现造纯色材质）",
+		terr.contains("make_terrain_material") and terr.contains("bind_terrain_material"))
+	_ok("地块是立体块（顶面 + 侧壁 + 倒角 + 底面）",
+		terr.contains("_add_block_surfaces") and terr.contains("bevel") and terr.contains("base_y"))
+	_ok("侧壁/底面吃皮肤表材质（不是纯色）",
+		terr.contains("skin_material") and terr.contains("block_side"))
+
+	var brd := _read(BOARD_SCRIPT)
+	_ok("棋盘是半透明色层（透出地形纹理，不是不透明色块）",
+		brd.contains("TRANSPARENCY_ALPHA") and brd.contains("fill_alpha"))
+	_ok("棋盘相邻格明暗差夹在 6%~10%",
+		brd.contains("TWO_TONE_MIN") and brd.contains("TWO_TONE_MAX"))
+	_ok("棋盘与地形共用同一张草地贴图（世界 XZ 投影对齐）",
+		brd.contains("uv1_world_triplanar") and brd.contains("TILE_M"))
+
+	var shell_doc := JsonFile.read_dict(SHELLS_JSON, {})
+	var sh: Dictionary = (shell_doc.get("shells", []) as Array)[0] \
+		if not (shell_doc.get("shells", []) as Array).is_empty() else {}
+	var look: Dictionary = sh.get("look", {})
+	var bstyle: Dictionary = look.get("board", {})
+	var two := float(bstyle.get("two_tone", 0.0))
+	_ok("棋盘相邻格观感明暗差配在 6%%~10%%（实测 %.0f%%）" % (two * 100.0),
+		two >= 0.06 - 0.0001 and two <= 0.10 + 0.0001)
+	_ok("棋盘半透明度配在数据里（%d%%）" % int(float(bstyle.get("fill_alpha", 0.0)) * 100.0),
+		float(bstyle.get("fill_alpha", 0.0)) > 0.0 and float(bstyle.get("fill_alpha", 1.0)) < 0.8)
+
+	var bl := _read(BUILDINGS_SCRIPT)
+	_ok("建筑按 AABB 归一化到单格 38%~44%（数据驱动，不写死魔法数）",
+		bl.contains("RtsTileSpec.fit_scale") and bl.contains("footprint_ratio"))
+	_ok("建筑底座锚在左上象限、朝向由数据给（玩家侧面向 +Z）",
+		bl.contains("RtsTileSpec.center") and bl.contains("RtsTileSpec.yaw_deg")
+		and bl.contains("building_x") and bl.contains("building_z"))
+
+	var battle := _read("res://Screens/world/battle/战役战场.gd")
+	_ok("布光 = 程序天空 + ACES 色调映射 + 补光",
+		battle.contains("ProceduralSkyMaterial") and battle.contains("TONE_MAPPER_ACES")
+		and battle.contains("DirectionalLight3D"))
+	var off := ["ssao_enabled = false", "ssil_enabled = false", "ssr_enabled = false",
+		"sdfgi_enabled = false", "volumetric_fog_enabled = false"]
+	var missing: Array[String] = []
+	for k in off:
+		if not battle.contains(k):
+			missing.append(k)
+	_ok("高开销特效全部关闭（SSAO / SSIL / SSR / SDFGI / 体积雾）", missing.is_empty(), ", ".join(missing))
+	var proj := _read("res://project.godot")
+	_ok("渲染后端是 Mobile（低中端手机）", proj.contains("rendering_method=\"mobile\""))
+
+	var cam := _read(CAMERA_SCRIPT)
+	_ok("镜头夹取范围来自战场矩形（不是底壳尺寸，扩容后不会望出图外）",
+		cam.contains("playfield") and cam.contains("_playfield"))
+
+
+func _lum(c: Color) -> float:
+	return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
 
 
 func _check_hud_rules() -> void:
