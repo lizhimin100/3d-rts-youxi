@@ -589,8 +589,11 @@ func _check_combat_formula() -> void:
 		_ok("六步伤害（内核）", false, "bridge=null")
 		return
 	var rules := JsonFile.read_dict(COMBAT_JSON, {})
-	var mid: Dictionary = mdl.call("CombatProbe", 100.0, 0, 0.0, 0, rules, 0.5, 0.5)
-	var armored: Dictionary = mdl.call("CombatProbe", 100.0, 0, 10.0, 0, rules, 0.5, 0.5)
+	# 注意：`dodge` 在 C# 侧是**可选参数**，但 GDScript 走 call() 时必须把 8 个参数全给齐 ——
+	# 少给一个，引擎会报 "Nonexistent function 'CombatProbe'"，整个函数静默中止，
+	# 后面三条断言一起消失（这不是"参数不匹配的提示"，是"函数不存在"的误导性报错）。
+	var mid: Dictionary = mdl.call("CombatProbe", 100.0, 0, 0.0, 0, rules, 0.5, 0.5, 0.0)
+	var armored: Dictionary = mdl.call("CombatProbe", 100.0, 0, 10.0, 0, rules, 0.5, 0.5, 0.0)
 	var miss: Dictionary = mdl.call("CombatProbe", 100.0, 0, 0.0, 0, rules, 0.5, 0.5, 100.0)
 	_ok("零甲基准伤害 = 100（命中）",
 		bool(mid.get("hit", false)) and is_equal_approx(float(mid.get("damage", 0.0)), 100.0),
@@ -818,8 +821,13 @@ func _check_scene_visuals() -> void:
 		brd.contains("TRANSPARENCY_ALPHA") and brd.contains("fill_alpha"))
 	_ok("棋盘相邻格明暗差夹在 6%~10%",
 		brd.contains("TWO_TONE_MIN") and brd.contains("TWO_TONE_MAX"))
-	_ok("棋盘与地形共用同一张草地贴图（世界 XZ 投影对齐）",
-		brd.contains("uv1_world_triplanar") and brd.contains("TILE_M"))
+	# 2026-11-22：棋盘改成"纯色半透明漆 + 网格化软边"，**不再自己叠一张草地贴图**。
+	# 早先那版让色层也三平面铺草地（8m）而地形底材走 12.5m，两层周期打架 → 重影，
+	# 而且色层不受光、亮度比地面高，整片棋盘像浮着一层塑料膜。
+	_ok("棋盘不吃贴图（颜色只来自顶点色，纹理细节由底层地形透出来）",
+		brd.contains("albedo_texture = null") and brd.contains("vertex_color_use_as_albedo"))
+	_ok("棋盘用网格化顶点色做软边（不是硬边框）",
+		brd.contains("GRID") and brd.contains("_tri_c") and brd.contains("edge.lerp(fill"))
 
 	var shell_doc := JsonFile.read_dict(SHELLS_JSON, {})
 	var sh: Dictionary = (shell_doc.get("shells", []) as Array)[0] \
@@ -856,6 +864,143 @@ func _check_scene_visuals() -> void:
 	var cam := _read(CAMERA_SCRIPT)
 	_ok("镜头夹取范围来自战场矩形（不是底壳尺寸，扩容后不会望出图外）",
 		cam.contains("playfield") and cam.contains("_playfield"))
+
+	_check_visuals_runtime(shell_doc, sh, look)
+
+
+# ===========================================================================
+# 6c. 3D 战场观感 —— **真跑代码**的那一半
+# ===========================================================================
+#
+# 6b 那批断言全是 `src.contains("...")`：写对了就绿，哪怕运行时根本没生效。
+# 2026-11-22 就是被这个坑了一次 —— 地形贴图压根没画到地上、建筑实测 0.38 也看不出来，
+# 检查照样 160 项全过。所以这一组改成：喂真实输入、读真实输出。
+func _check_visuals_runtime(shell_doc: Dictionary, sh: Dictionary, look: Dictionary) -> void:
+	# --- ① 着色器旋钮：数据里写的每个 key 都必须在着色器里真实存在 ---
+	var mat_res := load("res://Content/art/材质/地形材质.tres")
+	_ok("地形材质能加载且是 ShaderMaterial", mat_res is ShaderMaterial, str(mat_res))
+	if mat_res is ShaderMaterial:
+		var sm := mat_res as ShaderMaterial
+		var have := {}
+		for u in sm.shader.get_shader_uniform_list():
+			have[String(u.get("name", ""))] = true
+		var miss_keys: Array[String] = []
+		for key in RtsTerrainAssets.LOOK_UNIFORMS.keys():
+			if not have.has(String(key)):
+				miss_keys.append(String(key))
+		_ok("look.terrain 每个旋钮都真实存在于着色器（%d 个）" % RtsTerrainAssets.LOOK_UNIFORMS.size(),
+			miss_keys.is_empty(), "着色器里没有：" + ", ".join(miss_keys))
+		_ok("着色器有底材对比放大 / 细节层 / 独立平铺距离",
+			have.has("base_contrast") and have.has("detail_gain") and have.has("base_tile_m"))
+		var contrast := float(sm.get_shader_parameter(&"base_contrast"))
+		var detail := float(sm.get_shader_parameter(&"detail_gain"))
+		_ok("材质默认值已把底材花斑放大（contrast %.2f / detail %.2f）" % [contrast, detail],
+			contrast > 1.0 and detail > 1.0)
+		# 数据覆盖层必须能真的写进去（返回条数 > 0）
+		var probe := RtsTerrainAssets.make_terrain_material()
+		var applied := RtsTerrainAssets.apply_look(probe, look.get("terrain", {}))
+		_ok("look.terrain 的旋钮能写进材质（%d 条）" % applied, applied > 0)
+
+	# --- ② 地形高度场：战术区严格平整、区外必须抬起来（土坎/丘陵） ---
+	var terr: Dictionary = sh.get("terrain", {})
+	var cell := float(terr.get("cell", 2.0))
+	var sx := float((sh.get("size", {}) as Dictionary).get("x", 400.0))
+	var sz := float((sh.get("size", {}) as Dictionary).get("z", 200.0))
+	var cols := int(round(sx / cell)) + 1
+	var rows := int(round(sz / cell)) + 1
+	var heights: Array = terr.get("heights", [])
+	# 紧贴战术区外的一圈土坎：实测高度（不是看源码里有没有写常量）。
+	# 采样点取"区边 +6~10m"这段 —— 土坎前面留了 6m 草地缓冲（RIM_STEP_GAP），
+	# 贴着边线量只会量到缓冲带的 0。
+	var regions: Dictionary = sh.get("regions", {})
+	var neutral: Array = regions.get("neutral", [])
+	var z_lo := -20.0
+	var z_hi := 20.0
+	if neutral.size() >= 3:
+		z_lo = float((neutral[0] as Array)[1])
+		z_hi = float((neutral[2] as Array)[1])
+	var rim := 0.0
+	for zc in [z_lo - 9.0, z_hi + 9.0]:
+		var ci := clampi(int(round((0.0 + sx * 0.5) / cell)), 0, cols - 1)
+		var ri := clampi(int(round((zc + sz * 0.5) / cell)), 0, rows - 1)
+		if ri * cols + ci < heights.size():
+			rim = maxf(rim, float(heights[ri * cols + ci]))
+	_ok("战术区外 9m 有一圈抬起来的土坎（实测 %.2f m）" % rim, rim >= 1.5)
+
+	# --- ③ RtsTileSpec：建筑落位的三段真实计算 ---
+	var planning_doc := JsonFile.read_dict(PLANNING_JSON, {})
+	var spec := RtsTileSpec.spec_from(planning_doc)
+	var tile7 := {"x": 0.0, "z": 0.0, "w": 7.0, "d": 7.0, "yaw": 0.0,
+		"building_x": -3.5, "building_z": -3.5}
+	var k := RtsTileSpec.fit_scale(Vector3(9.0, 4.0, 5.0), 7.0, 7.0, 0.41)
+	_ok("fit_scale 把最长水平边压到 0.41 格（9m 模型 → %.2f m）" % (k * 9.0),
+		absf(k * 9.0 - 0.41 * 7.0) < 0.001, "k=%.4f" % k)
+	var c := RtsTileSpec.center(tile7, Vector2(-3.5, -3.5), spec)
+	_ok("center 把底座中心推到格子左上（偏移 %.2f / %.2f 格）" % [c.x / 7.0, c.y / 7.0],
+		absf(c.x / 7.0 - float(spec.get("anchor_u", -0.26))) < 0.01
+		and absf(c.y / 7.0 - float(spec.get("anchor_v", -0.26))) < 0.01, str(c))
+	_ok("玩家侧朝向 = 模型正面(-Z) 转到 +Z（180°）",
+		absf(RtsTileSpec.yaw_deg(tile7, spec, "player") - 180.0) < 0.01)
+	_ok("敌方格（底壳 yaw 180）不叠 180，正面仍朝镜头",
+		absf(RtsTileSpec.yaw_deg({"yaw": 180.0}, spec, "enemy") - 180.0) < 0.01,
+		"%.0f" % RtsTileSpec.yaw_deg({"yaw": 180.0}, spec, "enemy"))
+	_ok("占地比例与左上偏移写在 planning.json 的 placement 里（数据驱动）",
+		planning_doc.get("placement", {}).has("footprint_ratio")
+		and planning_doc.get("placement", {}).has("anchor_u"))
+
+	# --- ④ 出场兵种必须有模型（没模型的只许留在表里、不许进关卡/卡组）---
+	var units_doc := JsonFile.read_dict(UNITS_JSON, {})
+	var by_id := {}
+	for u in units_doc.get("units", []):
+		by_id[String((u as Dictionary).get("id", ""))] = u
+	var enc_by_id := {}
+	for e in JsonFile.read_dict(ENCOUNTERS_JSON, {}).get("encounters", []):
+		enc_by_id[String((e as Dictionary).get("id", ""))] = e
+	var lv_doc := JsonFile.read_dict(LEVELS_JSON, {})
+	var naked: Array[String] = []
+	var playable := 0
+	for lv in lv_doc.get("levels", []):
+		var asm: Dictionary = (lv as Dictionary).get("assembly", {})
+		if asm.is_empty():
+			continue
+		playable += 1
+		var enc: Dictionary = enc_by_id.get(String(asm.get("enemy_encounter", "")), {})
+		for role in (enc.get("unit_roles", {}) as Dictionary).values():
+			var uid := String(role)
+			if not by_id.has(uid) or String((by_id[uid] as Dictionary).get("model_path", "")).is_empty():
+				if not naked.has(uid):
+					naked.append(uid)
+	# 玩家侧：卡组里出现的训练牌，其兵种也必须有模型
+	var card_by_id := {}
+	for c2 in planning_doc.get("cards", []):
+		card_by_id[String((c2 as Dictionary).get("id", ""))] = c2
+	for cid in (planning_doc.get("deck", {}) as Dictionary).get("start", []):
+		var unit := String((card_by_id.get(String(cid), {}) as Dictionary).get("unit", ""))
+		if unit.is_empty():
+			continue
+		if not by_id.has(unit) or String((by_id[unit] as Dictionary).get("model_path", "")).is_empty():
+			if not naked.has(unit):
+				naked.append(unit)
+	_ok("可玩关卡（%d 个）里会出场的兵种都有模型" % playable, naked.is_empty(),
+		"没有模型却会上场：" + ", ".join(naked))
+
+	# --- ⑤ 敌人只有一种外观（三档数值共用同一个 GLB）---
+	var looks := {}
+	for u in units_doc.get("units", []):
+		var row: Dictionary = u
+		if String(row.get("faction", "")) != "bandit":
+			continue
+		var mp := String(row.get("model_path", ""))
+		if not mp.is_empty():
+			looks[mp] = true
+	_ok("敌人只有一种外观（%d 个 GLB）" % looks.size(), looks.size() == 1,
+		", ".join(looks.keys()))
+
+	# --- ⑥ 远景雾只吃远处（深度模式），近处不许发灰 ---
+	var fog: Dictionary = look.get("fog", {})
+	_ok("远景距离雾用深度模式且起点 ≥ 60 m（近处不吃雾）",
+		String(fog.get("mode", "")) == "depth" and float(fog.get("begin", 0.0)) >= 60.0,
+		"%s begin=%.0f" % [String(fog.get("mode", "")), float(fog.get("begin", 0.0))])
 
 
 func _lum(c: Color) -> float:

@@ -136,13 +136,23 @@ vec3 base_boost(vec3 c, vec3 tint) {
     return max(d * tint, vec3(0.0));
 }
 
+// 草地底材：**两个不可公约的尺度混一次**。
+// 单尺度平铺时，512² 手绘花纹会在 17m 一个周期上"复读"，近景一眼就看出是在贴壁纸
+//（同一朵花纹反复出现）。第二层走 0.61 倍周期 + 偏移，两层的最小公倍数远大于整张地图，
+// 复读就被打散了。代价是地上多一次贴图取样 —— 低端手机也扛得住（纯 2D 采样，无额外光源）。
+vec3 grass_tex(vec2 uv) {
+    vec3 g1 = texture(tex_grass, uv).rgb;
+    vec3 g2 = texture(tex_grass, uv * 0.61 + vec2(0.37, 0.71)).rgb;
+    return mix(g1, g2, 0.45);
+}
+
 // 第二层（细高频）：同一张草地贴图按 detail_tile_m 再铺一遍，只取亮度，归一到 1 附近。
 // 只作用在朝上的面（upness 门控），崖壁不吃草地细节。
 float detail_mod(float upness) {
     if (detail_gain <= 0.01) {
         return 1.0;
     }
-    vec3 s = texture(tex_grass, v_world.xz / max(detail_tile_m, 0.05)).rgb;
+    vec3 s = grass_tex(v_world.xz / max(detail_tile_m, 0.05));
     float lum = dot(s, vec3(0.2126, 0.7152, 0.0722));
     float mean_lum = max(dot(base_mean.rgb, vec3(0.2126, 0.7152, 0.0722)), 0.02);
     return mix(1.0, lum / mean_lum, detail_gain * clamp(upness, 0.0, 1.0));
@@ -208,7 +218,7 @@ void fragment() {
 
     // 底材：走 base_tile_m（12.5m），和 8m 的地块格点错开周期，避免两套复读叠成方阵
     vec2 tuv = v_world.xz / max(base_tile_m, 0.5);
-    vec3 col_a = base_boost(texture(tex_grass, tuv).rgb, mat_a_tint.rgb);
+    vec3 col_a = base_boost(grass_tex(tuv), mat_a_tint.rgb);
     vec3 col_b = base_boost(texture(tex_dirt, tuv).rgb, mat_b_tint.rgb);
     vec3 col_c = base_boost(texture(tex_cracked, tuv).rgb,
                             mix(mat_b_tint.rgb, mat_a_tint.rgb, 0.16));
@@ -241,7 +251,10 @@ void fragment() {
     }
 
     // ── 崖壁：不走地块，三平面取岩石细节 ─────────────────────────────────
-    float cliff = smoothstep(0.82, 0.46, upness);
+    // 阈值按"能看见土坎"定。注意地形法线是**中央差分**算出来的（2m 格点），
+    // 一条 2m 宽、2.5m 高的土坎，顶点法线的 upness 只有 ~0.85 —— 所以阈值必须开在
+    // 0.97~0.68 这段，土坎才读成岩壁/土层；开在 0.82 时它会被算成"平地"继续铺草。
+    float cliff = smoothstep(0.98, 0.74, upness);
     if (cliff > 0.002) {
         vec3 tw = abs(wn);
         tw /= (tw.x + tw.y + tw.z + 1e-4);

@@ -147,6 +147,14 @@ const RIM_BASE_H := 2.2
 ## 丘陵起伏振幅（米）：只改观感，不参与任何判定。
 ## 2.6 太温吞 —— 从 60m 高的机位看下去就是一整片平绿，读不出"立体沙盘"。
 const HILL_AMP := 7.5
+## 紧贴战术区的一圈**土坎**：几米内抬起来，肉眼看得出"这块地是抬起来的立体块"。
+## 坡度 = RIM_STEP_H / RIM_STEP_M ≈ 51°，着色器按"陡面"把它画成岩壁/土层（见 地形.gdshader 的 cliff）。
+## 太小（<2m）等于没有；太大（>6m）会把玩家区围成坑、俯视时挡住棋盘后排。
+const RIM_STEP_M := 3.2
+const RIM_STEP_H := 4.0
+## 土坎离战术区边缘的**草地缓冲带**（米）：0 会让土坎紧贴边线，读起来像绕着战场的一条土路；
+## 留 6m 草地再起坡，流程就是"平整战场 → 一圈草地 → 抬起来的土坎/丘陵"，层次才对。
+const RIM_STEP_GAP := 6.0
 
 ## 未雕刻时的丘陵噪声：只负责"高低不平"，不含平整区判定（判定在 terrain_height）。
 static func procedural_height(seed_value: int, x: float, z: float) -> float:
@@ -177,6 +185,11 @@ static func terrain_height(shell: Dictionary, x: float, z: float) -> float:
 		return 0.0
 	var w := smoothstep(0.0, RIM_RAMP_M, outside)
 	var h := w * procedural_height(int(shell.get("seed", 1)), x, z)
+	# 紧贴战术区的土坎：3.2m 内抬 4m（≈51°），一圈连续的立体边缘。
+	# 起伏 ±18% 是为了别像一圈混凝土围墙 —— 但它始终是"陡面"，着色器会把它画成岩壁。
+	var step := smoothstep(RIM_STEP_GAP, RIM_STEP_GAP + RIM_STEP_M, outside) * RIM_STEP_H
+	step *= 0.82 + 0.18 * sin(x * 0.083 + z * 0.061)
+	h = maxf(h, step)
 	# 外缘再缓缓抬高一点：远处高地挡住地平线，玩家在任何合法机位都看不到图外的虚空
 	h += w * clampf((outside - RIM_RAMP_M) * 0.10, 0.0, 5.0)
 	return clampf(h, 0.0, 14.0)
@@ -261,9 +274,9 @@ static func autopaint(shell: Dictionary) -> Array:
 			#   棋盘再透明也会被这条泥路抢戏。）
 			var idx := 0
 			var wobble := 1.6 * sin(w.x * 0.055) + 1.0 * sin(w.x * 0.021 + 1.7)
-			# 泥地只铺到**远离战场**的环境带（离区边 26m 以外）：贴着棋盘的那圈必须是干净草坪，
-			# 否则玩家第一眼看到的是一摊泥，而不是一块可读的战场。
-			if not area.has_point(w) and _outside_of(area, w) > 26.0 and absf(w.y) <= 2.4 + wobble:
+			# 泥地只铺到**远离战场**的环境带（离区边 38m 以外）且只落在近水平的地面上：
+			# 贴坡的裸土会连成一条又宽又亮的"土路"，在俯视构图里比重还高过棋盘。
+			if not area.has_point(w) and _outside_of(area, w) > 38.0 and absf(w.y) <= 1.4 + wobble * 0.5:
 				idx = 1
 			out[row * cols + col] = idx
 	return out

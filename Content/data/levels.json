@@ -314,19 +314,19 @@
 					{
 						"name_key": "editor.level.segment_1",
 						"length": 600.0,
-						"width": 420,
+						"width": 420.0,
 						"role": "player"
 					},
 					{
 						"name_key": "editor.level.segment_2",
 						"length": 2000.0,
-						"width": 420,
+						"width": 420.0,
 						"role": "neutral"
 					},
 					{
 						"name_key": "editor.level.segment_3",
 						"length": 1400.0,
-						"width": 420,
+						"width": 420.0,
 						"role": "enemy"
 					}
 				]
@@ -341,13 +341,13 @@
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								},
 								{
 									"unit": "bandit_marauder",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								}
 							]
 						},
@@ -356,13 +356,13 @@
 							"squads": [
 								{
 									"unit": "bandit_marauder",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 1,
-									"star": 1
+									"count": 1.0,
+									"star": 1.0
 								}
 							]
 						},
@@ -371,18 +371,18 @@
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								},
 								{
 									"unit": "bandit_marauder",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 1,
-									"star": 1
+									"count": 1.0,
+									"star": 1.0
 								}
 							]
 						},
@@ -391,13 +391,13 @@
 							"squads": [
 								{
 									"unit": "bandit_marauder",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 1,
-									"star": 1
+									"count": 1.0,
+									"star": 1.0
 								}
 							]
 						}
@@ -412,13 +412,13 @@
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								},
 								{
 									"unit": "bandit_marauder",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								}
 							]
 						},
@@ -427,13 +427,13 @@
 							"squads": [
 								{
 									"unit": "bandit_marauder",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 1,
-									"star": 1
+									"count": 1.0,
+									"star": 1.0
 								}
 							]
 						},
@@ -442,13 +442,13 @@
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								},
 								{
 									"unit": "bandit_marauder",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								}
 							]
 						},
@@ -457,13 +457,13 @@
 							"squads": [
 								{
 									"unit": "bandit_marauder",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 1,
-									"star": 1
+									"count": 1.0,
+									"star": 1.0
 								}
 							]
 						},
@@ -472,8 +472,8 @@
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								}
 							]
 						}
@@ -525,7 +525,7 @@
 			"intent_templates": {},
 			"enemy_buildings": [
 				{
-					"tile": 7,
+					"tile": 7.0,
 					"building": "watchtower",
 					"star": 2.0,
 					"yaw": 180.0,
@@ -533,7 +533,7 @@
 					"y": 0.388888888888889
 				},
 				{
-					"tile": 9,
+					"tile": 9.0,
 					"building": "barracks",
 					"star": 3.0,
 					"yaw": 180.0,
@@ -541,7 +541,7 @@
 					"y": 0.341269841269841
 				},
 				{
-					"tile": 10,
+					"tile": 10.0,
 					"building": "watchtower",
 					"star": 2.0,
 					"yaw": 180.0,
@@ -549,7 +549,7 @@
 					"y": 0.658730158730159
 				},
 				{
-					"tile": 11,
+					"tile": 11.0,
 					"building": "keep",
 					"star": 2.0,
 					"yaw": 180.0,
@@ -622,19 +622,19 @@
 					{
 						"name_key": "editor.level.segment_1",
 						"length": 600.0,
-						"width": 420,
+						"width": 420.0,
 						"role": "player"
 					},
 					{
 						"name_key": "editor.level.segment_2",
 						"length": 2000.0,
-						"width": 420,
+						"width": 420.0,
 						"role": "neutral"
 					},
 					{
 						"name_key": "editor.level.segment_3",
 						"length": 1400.0,
-						"width": 420,
+						"width": 420.0,
 						"role": "enemy"
 					}
 				]
@@ -649,13 +649,13 @@
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								},
 								{
 									"unit": "bandit_marauder",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								}
 							]
 						},
@@ -664,13 +664,13 @@
 							"squads": [
 								{
 									"unit": "bandit_marauder",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 1,
-									"star": 1
+									"count": 1.0,
+									"star": 1.0
 								}
 							]
 						},
@@ -679,18 +679,18 @@
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								},
 								{
 									"unit": "bandit_marauder",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 1,
-									"star": 1
+									"count": 1.0,
+									"star": 1.0
 								}
 							]
 						},
@@ -699,13 +699,13 @@
 							"squads": [
 								{
 									"unit": "bandit_marauder",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 1,
-									"star": 1
+									"count": 1.0,
+									"star": 1.0
 								}
 							]
 						}
@@ -720,13 +720,13 @@
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								},
 								{
 									"unit": "bandit_marauder",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								}
 							]
 						},
@@ -735,13 +735,13 @@
 							"squads": [
 								{
 									"unit": "bandit_marauder",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 1,
-									"star": 1
+									"count": 1.0,
+									"star": 1.0
 								}
 							]
 						},
@@ -750,13 +750,13 @@
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								},
 								{
 									"unit": "bandit_marauder",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								}
 							]
 						},
@@ -765,13 +765,13 @@
 							"squads": [
 								{
 									"unit": "bandit_marauder",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 1,
-									"star": 1
+									"count": 1.0,
+									"star": 1.0
 								}
 							]
 						},
@@ -780,8 +780,8 @@
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								}
 							]
 						}
@@ -833,7 +833,7 @@
 			"intent_templates": {},
 			"enemy_buildings": [
 				{
-					"tile": 7,
+					"tile": 7.0,
 					"building": "watchtower",
 					"star": 2.0,
 					"yaw": 180.0,
@@ -841,7 +841,7 @@
 					"y": 0.388888888888889
 				},
 				{
-					"tile": 9,
+					"tile": 9.0,
 					"building": "barracks",
 					"star": 3.0,
 					"yaw": 180.0,
@@ -849,7 +849,7 @@
 					"y": 0.341269841269841
 				},
 				{
-					"tile": 10,
+					"tile": 10.0,
 					"building": "watchtower",
 					"star": 2.0,
 					"yaw": 180.0,
@@ -857,7 +857,7 @@
 					"y": 0.658730158730159
 				},
 				{
-					"tile": 11,
+					"tile": 11.0,
 					"building": "keep",
 					"star": 2.0,
 					"yaw": 180.0,
@@ -924,19 +924,19 @@
 					{
 						"name_key": "editor.level.segment_1",
 						"length": 600.0,
-						"width": 420,
+						"width": 420.0,
 						"role": "player"
 					},
 					{
 						"name_key": "editor.level.segment_2",
 						"length": 2000.0,
-						"width": 420,
+						"width": 420.0,
 						"role": "neutral"
 					},
 					{
 						"name_key": "editor.level.segment_3",
 						"length": 1400.0,
-						"width": 420,
+						"width": 420.0,
 						"role": "enemy"
 					}
 				]
@@ -951,13 +951,13 @@
 							"squads": [
 								{
 									"unit": "murloc_slave",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								},
 								{
 									"unit": "murloc_raider",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								}
 							]
 						},
@@ -966,13 +966,13 @@
 							"squads": [
 								{
 									"unit": "murloc_raider",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								},
 								{
 									"unit": "murloc_lord",
-									"count": 1,
-									"star": 1
+									"count": 1.0,
+									"star": 1.0
 								}
 							]
 						},
@@ -981,18 +981,18 @@
 							"squads": [
 								{
 									"unit": "murloc_slave",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								},
 								{
 									"unit": "murloc_raider",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								},
 								{
 									"unit": "murloc_lord",
-									"count": 1,
-									"star": 1
+									"count": 1.0,
+									"star": 1.0
 								}
 							]
 						},
@@ -1001,13 +1001,13 @@
 							"squads": [
 								{
 									"unit": "murloc_raider",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								},
 								{
 									"unit": "murloc_lord",
-									"count": 1,
-									"star": 1
+									"count": 1.0,
+									"star": 1.0
 								}
 							]
 						}
@@ -1022,13 +1022,13 @@
 							"squads": [
 								{
 									"unit": "murloc_slave",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								},
 								{
 									"unit": "murloc_raider",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								}
 							]
 						},
@@ -1037,13 +1037,13 @@
 							"squads": [
 								{
 									"unit": "murloc_raider",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								},
 								{
 									"unit": "murloc_lord",
-									"count": 1,
-									"star": 1
+									"count": 1.0,
+									"star": 1.0
 								}
 							]
 						},
@@ -1052,13 +1052,13 @@
 							"squads": [
 								{
 									"unit": "murloc_slave",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								},
 								{
 									"unit": "murloc_raider",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								}
 							]
 						},
@@ -1067,13 +1067,13 @@
 							"squads": [
 								{
 									"unit": "murloc_raider",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								},
 								{
 									"unit": "murloc_lord",
-									"count": 1,
-									"star": 1
+									"count": 1.0,
+									"star": 1.0
 								}
 							]
 						},
@@ -1082,8 +1082,8 @@
 							"squads": [
 								{
 									"unit": "murloc_slave",
-									"count": 2,
-									"star": 1
+									"count": 2.0,
+									"star": 1.0
 								}
 							]
 						}
@@ -1135,7 +1135,7 @@
 			"intent_templates": {},
 			"enemy_buildings": [
 				{
-					"tile": 7,
+					"tile": 7.0,
 					"building": "watchtower",
 					"star": 2.0,
 					"yaw": 180.0,
@@ -1143,7 +1143,7 @@
 					"y": 0.388888888888889
 				},
 				{
-					"tile": 9,
+					"tile": 9.0,
 					"building": "barracks",
 					"star": 2.0,
 					"yaw": 180.0,
@@ -1151,7 +1151,7 @@
 					"y": 0.341269841269841
 				},
 				{
-					"tile": 10,
+					"tile": 10.0,
 					"building": "watchtower",
 					"star": 3.0,
 					"yaw": 180.0,
@@ -1159,7 +1159,7 @@
 					"y": 0.658730158730159
 				},
 				{
-					"tile": 11,
+					"tile": 11.0,
 					"building": "keep",
 					"star": 2.0,
 					"yaw": 180.0,

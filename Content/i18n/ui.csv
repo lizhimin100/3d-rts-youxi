@@ -574,7 +574,6 @@ shell.map.tile_scale,格子倍率,Tile scale,底板
 shell.map.canvas,画布 {w} × {d} m（含四周冗余）,Canvas {w} × {d} m (with margin),底板
 shell.tile.snap_grid,对齐网格,Snap to grid,格子面板
 shell.state.invalid,参数无效：{msg},Invalid: {msg},状态
-
 battle.base.player,我方基地 {hp}/{max},Our base {hp}/{max},战役 HUD 顶栏
 battle.base.enemy,敌方基地 {hp}/{max},Enemy base {hp}/{max},战役 HUD 顶栏
 battle.phase.planning,规划阶段,Planning,战役 HUD 阶段

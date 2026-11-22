@@ -39,12 +39,15 @@ var _warned: Dictionary = {}
 
 func _ready() -> void:
 	_build_lines()
-	_ring_mesh = _make_ring_mesh(0.72, 0.98, 0.010)
+	# 选中圈是**细**白圈，套在攻/防徽记外侧一圈（不是压在同一半径上）：
+	# 上一版角色徽记 1.25~1.70 m、选中圈按半径缩放到 1.27~1.73 m —— 两圈几乎重合，
+	# 深透测试打架，画面上是一坨 0.45 m 宽的白色甜甜圈，把红/蓝徽记整个盖住。
+	_ring_mesh = _make_ring_mesh(1.76, 1.90, 0.012)
 	# 攻/防徽记要绕在整队脚下（不是一小圈），否则被模型挡住看不见
-	_mark_mesh = _make_ring_mesh(1.25, 1.70, 0.0)
-	_mat_attack = _flat_mat(ATTACK_MARK)
-	_mat_defend = _flat_mat(DEFEND_MARK)
-	_mat_select = _flat_mat(Color(1, 1, 1, 0.9))
+	_mark_mesh = _make_ring_mesh(1.34, 1.58, 0.0)
+	_mat_attack = _flat_mat(Color(ATTACK_MARK, 0.72))
+	_mat_defend = _flat_mat(Color(DEFEND_MARK, 0.72))
+	_mat_select = _flat_mat(Color(0.90, 0.96, 1.0, 0.55))
 
 
 ## 地面高度查询（由 战役战场 注入：`func(x, z) -> float`）。
@@ -220,8 +223,8 @@ func _sync_squad(sq: Dictionary, is_selected: bool) -> int:
 	if ring != null:
 		ring.visible = is_selected
 		ring.position = Vector3(0.0, 0.03, 0.0)
-		var r := maxf(float(sq.get("radius", 1.4)), 0.9) * 1.05
-		ring.scale = Vector3(r / 0.85, 1.0, r / 0.85)
+		# 不再按 squad radius 缩放：徽记本身是固定 1.7 m 的环，选中圈必须跟着它走，
+		# 两圈各自按不同口径缩放就一定会撞在一起（见 _ready 里的说明）。
 	return -1 if not _renders(unit_id) else shown
 
 
