@@ -42495,9 +42495,9 @@
 				"tile_scale": 1.0,
 				"snap": 1.0,
 				"theme": {
-					"light": "#A8B274",
-					"dark": "#7F8C52",
-					"rim": "#B9B183",
+					"light": "#75904C",
+					"dark": "#6A8445",
+					"rim": "#93A868",
 					"edge": "#3E4630",
 					"keep": "#6E5B3A",
 					"keep_dark": "#5F4E32",
@@ -42512,52 +42512,72 @@
 				"note": "战场观感（布光/天空/雾/棋盘色层/地形染色）。表现层只读这里，不在代码里写死观感常数。",
 				"renderer": "mobile",
 				"sun": {
-					"yaw_deg": -56.0,
-					"pitch_deg": -50.0,
-					"color": "#FFE3B8",
-					"energy": 1.55,
+					"yaw_deg": -58.0,
+					"pitch_deg": -52.0,
+					"color": "#FFE6C4",
+					"energy": 1.45,
 					"shadow": true,
-					"shadow_blur": 1.4,
-					"angular_distance": 0.9
+					"shadow_blur": 1.45,
+					"angular_distance": 1.0
 				},
 				"fill": {
-					"yaw_deg": 128.0,
-					"pitch_deg": -34.0,
-					"color": "#8FB2E0",
-					"energy": 0.22
+					"yaw_deg": 126.0,
+					"pitch_deg": -30.0,
+					"color": "#93B7E6",
+					"energy": 0.32
 				},
 				"sky": {
-					"top": "#5E86B8",
-					"horizon": "#CBD8DE",
-					"ground": "#7E7A6C",
-					"energy": 0.55
+					"top": "#6E93BE",
+					"horizon": "#D3DDE2",
+					"ground": "#7C8A7A",
+					"energy": 0.62
 				},
 				"ambient": {
-					"color": "#A9BCD0",
-					"energy": 0.28
+					"color": "#A8BED4",
+					"energy": 0.34
 				},
 				"fog": {
-					"color": "#BCC9D2",
-					"density": 0.0011
+					"color": "#C8D4DC",
+					"mode": "depth",
+					"begin": 120.0,
+					"end": 440.0,
+					"curve": 1.6
 				},
 				"tonemap": {
 					"mode": "aces",
-					"exposure": 0.95,
+					"exposure": 1.0,
 					"white": 1.0,
-					"contrast": 1.09,
-					"saturation": 1.06
+					"contrast": 1.06,
+					"saturation": 1.05
 				},
 				"terrain": {
+					"variation": 1.0,
 					"tint_strength": 0.85,
-					"dry_strength": 0.85
+					"dry_strength": 0.85,
+					"albedo_gain": 0.98,
+					"base_contrast": 1.1,
+					"base_sat": 1.10,
+					"base_tile_m": 17.0,
+					"base_mean": "#838D4F",
+					"detail_tile_m": 2.4,
+					"detail_gain": 5.5,
+					"atlas_n_strength": 0.35,
+					"mat_a_tint": "#9DB8C9",
+					"mat_b_tint": "#C8C2AE",
+					"band_edge": 0.58,
+					"band_soft": 0.22,
+					"shadow_strength": 0.5,
+					"ambient_flat": 0.12,
+					"note": "地表观感：底材（草地/泥土/裂纹）本身是低对比图（std 0.9%），base_contrast/detail_gain 把它的花斑放大回可见；base_mean 必须等于底材均值（亮度守恒）。"
 				},
 				"board": {
-					"fill_alpha": 0.52,
-					"border_alpha": 0.6,
-					"border_m": 0.3,
-					"lift_m": 0.018,
-					"two_tone": 0.1,
-					"border_darken": 0.42
+					"fill_alpha": 0.3,
+					"two_tone": 0.09,
+					"tone_cool": 0.35,
+					"edge_m": 0.8,
+					"edge_alpha": 0.62,
+					"edge_darken": 0.380,
+					"lift_m": 0.02
 				}
 			}
 		}

@@ -58,9 +58,30 @@ uniform float tint_strength : hint_range(0.0, 1.0) = 0.85;
 uniform float dry_strength : hint_range(0.0, 1.0) = 0.85;
 /// 两种地块的**调色**：底材是美术画的中性图，直接上会偏亮偏黄（草地几乎是荧光绿）。
 /// 按魔兽 3 的 tileset 思路给两套色偏 —— 改观感不用重出贴图。
-uniform vec4 mat_a_tint : source_color = vec4(0.62, 0.80, 0.50, 1.0);
-uniform vec4 mat_b_tint : source_color = vec4(0.86, 0.74, 0.62, 1.0);
-uniform float albedo_gain : hint_range(0.3, 1.6) = 0.96;
+uniform vec4 mat_a_tint : source_color = vec4(1.0, 1.0, 1.0, 1.0);
+uniform vec4 mat_b_tint : source_color = vec4(1.0, 1.0, 1.0, 1.0);
+uniform float albedo_gain : hint_range(0.3, 1.6) = 0.98;
+
+/// 底材自身的花斑放大倍数。
+///
+/// **为什么需要它**：工程里那三张底材（草地/泥土/裂纹泥地）是**低对比**图 ——
+/// 实测标准差只有 2/255（0.9%）。它们本来是给"近景 1~2m 一铺"画的，可地形按 8m 平铺，
+/// 于是在 50~90m 的战略机位下整片地被平均成一个纯色，观感就是"塑料布"。
+/// 真实纹理一直在，只是幅度被平铺距离和机位吃掉了。这里把**偏离均值的部分**放大，
+/// 均值不动（亮度不变），纹理层次才回得来 —— 不新增任何贴图。
+uniform float base_contrast : hint_range(0.5, 4.0) = 2.2;
+/// 底材饱和度：放大对比会把颜色一起推灰，这里补回来。
+uniform float base_sat : hint_range(0.0, 2.0) = 1.12;
+/// 底材均值（sRGB 语义，草地 131/141/79）。放大以它为中心，所以亮度守恒。
+uniform vec4 base_mean : source_color = vec4(0.514, 0.553, 0.310, 1.0);
+/// **底材颜色的平铺距离**（米），和 `tile_m`（8m 地块格点，管 mat_map）解耦。
+/// 为什么要单独一个：底材贴图本身有大块花斑，按 8m 铺会在战略机位下露出明显的 8m 方阵复读。
+/// 换成一个和 8 互质的距离（12.5m），两层复读周期错开，画面就不再"一格一格"。
+uniform float base_tile_m : hint_range(2.0, 64.0) = 12.5;
+/// 第二层细节的平铺距离（米）：同一张草地贴图再铺一遍，只取亮度做高频调制。
+uniform float detail_tile_m : hint_range(0.4, 8.0) = 2.4;
+/// 细节层强度：0 = 关（退回纯 8m 平铺）。
+uniform float detail_gain : hint_range(0.0, 12.0) = 6.0;
 /// 生态换色：**只动地块，不动崖壁**。
 /// 乘一个色偏没法把"绿草"变"黄沙"（乘只会变暗不变色相），所以走"亮度保留 + 色相替换"：
 /// 取地块颜色的亮度当细节噪声，乘生态基色，再按 biome_mix 混回去。
@@ -103,6 +124,28 @@ uint tile_hash(ivec2 p) {
     h *= 2246822519u;
     h ^= h >> 13u;
     return h;
+}
+
+// 底材放大：以 base_mean 为中心拉开对比（亮度守恒），再把被拉灰的饱和度补回来。
+// 这三张底材原本是近景 1~2m 的材质图，8m 平铺 + 战略机位等于把它压成纯色。
+vec3 base_boost(vec3 c, vec3 tint) {
+    vec3 m = max(base_mean.rgb, vec3(0.02));
+    vec3 d = (c - m) * base_contrast + m;
+    float l = dot(d, vec3(0.2126, 0.7152, 0.0722));
+    d = mix(vec3(l), d, base_sat);
+    return max(d * tint, vec3(0.0));
+}
+
+// 第二层（细高频）：同一张草地贴图按 detail_tile_m 再铺一遍，只取亮度，归一到 1 附近。
+// 只作用在朝上的面（upness 门控），崖壁不吃草地细节。
+float detail_mod(float upness) {
+    if (detail_gain <= 0.01) {
+        return 1.0;
+    }
+    vec3 s = texture(tex_grass, v_world.xz / max(detail_tile_m, 0.05)).rgb;
+    float lum = dot(s, vec3(0.2126, 0.7152, 0.0722));
+    float mean_lum = max(dot(base_mean.rgb, vec3(0.2126, 0.7152, 0.0722)), 0.02);
+    return mix(1.0, lum / mean_lum, detail_gain * clamp(upness, 0.0, 1.0));
 }
 
 void vertex() {
@@ -163,11 +206,12 @@ void fragment() {
 
     vec4 m = textureLod(atlas_rgba, uv, lod);
 
-    // 底材：同一个 8m 平铺节奏，交界两侧的踩踏才对得上
-    vec2 tuv = v_world.xz / tile_m;
-    vec3 col_a = texture(tex_grass, tuv).rgb * mat_a_tint.rgb;
-    vec3 col_b = texture(tex_dirt, tuv).rgb * mat_b_tint.rgb;
-    vec3 col_c = texture(tex_cracked, tuv).rgb * mix(mat_b_tint.rgb, mat_a_tint.rgb, 0.16);
+    // 底材：走 base_tile_m（12.5m），和 8m 的地块格点错开周期，避免两套复读叠成方阵
+    vec2 tuv = v_world.xz / max(base_tile_m, 0.5);
+    vec3 col_a = base_boost(texture(tex_grass, tuv).rgb, mat_a_tint.rgb);
+    vec3 col_b = base_boost(texture(tex_dirt, tuv).rgb, mat_b_tint.rgb);
+    vec3 col_c = base_boost(texture(tex_cracked, tuv).rgb,
+                            mix(mat_b_tint.rgb, mat_a_tint.rgb, 0.16));
 
     // 干度：两个泥种之间是软的（它们只在 B 侧出现，交界形状由同一张图集决定）
     float dry = clamp((v_col.a - 0.5) / max(dry_strength, 0.001) + 0.5, 0.0, 1.0);
@@ -175,6 +219,8 @@ void fragment() {
 
     // 二选一：没有 mix、没有 smoothstep、没有 alpha
     vec3 tile_col = (m.r > 0.5) ? dirt_col : col_a;
+    // 细高频细节：把"同一张草地贴图"再铺一遍，只调亮度 —— 近处看得见草叶，远处 mip 自动抹平
+    tile_col *= detail_mod(upness);
 
     // 接触阴影（B 侧 7.5cm，压 34%）+ 受光边（A 侧 3cm，提 5%）：一暗一亮，不对称
     float sd = (m.g * 2.0 - 1.0) * sd_max_m;

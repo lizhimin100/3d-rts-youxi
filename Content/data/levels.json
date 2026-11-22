@@ -1204,12 +1204,8 @@
 					}
 				]
 			},
-			"assembly": {
-				"shell": "shell_ridge_01",
-				"player_layout": "layout_even_four",
-				"enemy_encounter": "enc_murloc_tide",
-				"r1": 0.015
-			}
+			"assembly": {},
+			"note": "2026-11-22：鱼人阵营只实现逻辑、没有模型，这个关卡暂时不可组装（assembly 置空 → 选关时自动跳过）。等鱼人美术就绪再填回来。"
 		}
 	],
 	"assemblies": [

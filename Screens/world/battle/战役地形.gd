@@ -32,10 +32,16 @@ var _hmin := 0.0
 var _hmax := 0.0
 var _camps: Array[Vector2] = []
 var _terrain_mat: ShaderMaterial = null
+## 观感旋钮（`map_shells.json` 的 `look.terrain`）：地形自己也只读数据，不写死观感常数。
+var _look: Dictionary = {}
+## 顶点色低频起伏倍率（`look.terrain.variation`）
+var _variation := 1.0
 
 
-func build(shell: Dictionary) -> void:
+func build(shell: Dictionary, look: Dictionary = {}) -> void:
 	_shell = shell
+	_look = look.get("terrain", {}) if look.has("terrain") else {}
+	_variation = float(_look.get("variation", 1.0))
 	var size: Dictionary = shell.get("size", {})
 	_size = Vector2(float(size.get("x", 120.0)), float(size.get("z", 63.0)))
 	var terr: Dictionary = shell.get("terrain", {})
@@ -133,7 +139,8 @@ func _add_top_surface(mesh: ArrayMesh) -> void:
 			var dx := (hr - hl) / (_cell * 2.0)
 			var dz := (hu - hd) / (_cell * 2.0)
 			normals[i] = Vector3(-dx, 1.0, -dz).normalized()
-			colors[i] = RtsTerrainAssets.vertex_tint(verts[i], normals[i], _hmin, _hmax, _camps)
+			colors[i] = RtsTerrainAssets.vertex_tint(verts[i], normals[i], _hmin, _hmax,
+				_camps, _variation)
 
 	var indices := PackedInt32Array()
 	indices.resize((_cols - 1) * (_rows - 1) * 6)
@@ -170,8 +177,13 @@ func _terrain_material() -> Material:
 	if _terrain_mat != null:
 		RtsTerrainAssets.bind_terrain_material(_terrain_mat, _size.x, _size.y, _surface,
 			_cols, _rows, _ox, _oz, _cell, String(_shell.get("biome", "temperate")))
+		# 观感旋钮最后写：它要覆盖材质里的默认值（数据 > 资源里的手调值）
+		var n := RtsTerrainAssets.apply_look(_terrain_mat, _look)
+		print("[terrain] material=terrain.tres look_applied=%d %s" % [n, material_report()])
 		return _terrain_mat
 	# 兜底：材质资源被删了也别让地面变成纯色 —— 至少把草地贴图铺上
+	# （提示语用 ASCII：i18n 预算按"含中文的字符串字面量"计数，新代码不许增长）
+	push_warning("[terrain] terrain material missing -> fallback to single grass texture")
 	var std := StandardMaterial3D.new()
 	if ResourceLoader.exists(RtsTerrainAssets.TEX_GRASS_PATH):
 		std.albedo_texture = load(RtsTerrainAssets.TEX_GRASS_PATH) as Texture2D
@@ -183,6 +195,18 @@ func _terrain_material() -> Material:
 	std.metallic = 0.0
 	std.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
 	return std
+
+
+## 自检 / 截图断言用：**真的绑上了什么**（不是读源码里有没有写）。
+## 形如 "shader=1 tex=4 atlas=2 matmap=52 contrast=2.20 detail=6.00"
+func material_report() -> String:
+	if _terrain_mat == null:
+		return "shader=0 tex=0 atlas=0 matmap=0 contrast=0.00 detail=0.00"
+	var p := RtsTerrainAssets.probe(_terrain_mat)
+	return "shader=%d tex=%d atlas=%d matmap=%d contrast=%.2f detail=%.2f" % [
+		1 if bool(p.get("shader", false)) else 0,
+		int(p.get("tex", 0)), int(p.get("atlas", 0)), int(p.get("mat_map_px", 0)),
+		float(p.get("contrast", 0.0)), float(p.get("detail", 0.0))]
 
 
 ## 侧壁 + 倒角 + 底面（几何口径与底壳编辑器完全一致，直接搬过来）。

@@ -347,15 +347,65 @@
 				0.49
 			],
 			"expect_scene_state": [
-				"built_count",
-				"5"
+				"visual_probe",
+				"visual_ok=1"
 			],
 			"shot_camera": {
 				"focus_tile": 10,
 				"dist": 20.0
 			},
 			"wait_after": 1.2,
-			"$note": "空间规格验收：建筑占单格 38~44% 且底座在格子左上象限、正面朝镜头 +Z；出兵位在格中心（有红徽记）；棋盘是半透明双色微差、透得出草地纹理。"
+			"$note": "空间规格验收：建筑占单格 38~44% 且底座在格子左上象限、正面朝镜头 +Z；出兵位在格中心（有蓝环）；棋盘是半透明双色微差、透得出草地纹理。断言读 visual_probe —— 量的是摆上去之后的世界尺寸，不是读配置。"
+		},
+		"battle_ground": {
+			"scene": "res://Screens/scenes/战役.tscn",
+			"delay": 6.0,
+			"expect_scene_state": [
+				"terrain_probe",
+				"tex=4"
+			],
+			"shot_camera": {
+				"focus": [
+					-70.0,
+					-16.0
+				],
+				"dist": 18.0,
+				"pitch": 40.0
+			},
+			"wait_after": 0.6,
+			"$note": "地表纹理验收：贴地近拍草地/泥土底材 —— 必须看得出草叶与斑驳（不是纯色塑料）；断言证明 4 张底材 + 2 张图集真的绑在材质上。"
+		},
+		"battle_board": {
+			"scene": "res://Screens/scenes/战役.tscn",
+			"delay": 6.0,
+			"expect_scene_state": [
+				"board_probe",
+				"ok=1"
+			],
+			"shot_camera": {
+				"focus": [
+					-66.0,
+					0.0
+				],
+				"dist": 58.0,
+				"pitch": 82.0
+			},
+			"wait_after": 0.6,
+			"$note": "棋盘验收：俯视玩家区 3×6 —— 一眼数得清 18 格、相邻格只有轻微冷暖/明暗差、地面纹理仍透得出来。"
+		},
+		"battle_sandbox": {
+			"scene": "res://Screens/scenes/战役.tscn",
+			"delay": 6.0,
+			"shot_camera": {
+				"focus": [
+					-64.0,
+					-14.0
+				],
+				"dist": 46.0,
+				"pitch": 22.0
+			},
+			"wait_after": 0.6,
+			"$note": "沙盘厚度验收：低机位（22°）从战术区往北看 —— 平整战术区之外是抬起来的土层/岩壁，地块有厚度、不是一张纸。"
 		},
 		"battle_extent": {
 			"scene": "res://Screens/scenes/战役.tscn",

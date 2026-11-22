@@ -108,17 +108,25 @@ static func mat_map_texture(index: Array, cols: int, rows: int, origin_x: float,
 ## 顶点色口径：rgb = 1.0 附近的乘法染色（大尺度冷暖 ±3.5% / 营地压暗 / 陡面偏灰），a = 干度。
 ## **顶点色在 Godot 里按线性解释**，而这里算的是 sRGB 语义的乘法系数 —— 系数乘的是着色器里
 ## 已经 sRGB 解码过的贴图颜色，所以不要在这里 srgb_to_linear（那是纯色直出的口径）。
+##
+## `variation` = 大尺度冷暖起伏的倍率（数据 `look.terrain.variation`）。
+## 为什么要有这个旋钮：底材贴图本身的对比只有 0.9%（见 `地形.gdshader` 里 base_contrast 的说明），
+## 大尺度上再没有起伏，整片地就是一整块色板。这里给的是**米级的低频冷暖**，
+## 和贴图的高频细节叠在一起，地形才像"一块地"而不是"一张纸"。
 static func vertex_tint(pos: Vector3, normal: Vector3, h_min: float, h_max: float,
-		camps: Array) -> Color:
+		camps: Array, variation: float = 1.0) -> Color:
 	var rng_h := maxf(h_max - h_min, 0.001)
 	var alt := clampf((pos.y - h_min) / rng_h, 0.0, 1.0)
 	var up := clampf(normal.y, 0.0, 1.0)
+	var vk := clampf(variation, 0.0, 3.0)
 	var warm := sin(pos.x * 0.052 + pos.z * 0.031) * 0.55 \
 		+ sin(pos.z * 0.074 - pos.x * 0.021 + 1.7) * 0.45
-	var k := 1.0 + warm * 0.035
-	var tr := k * 1.012
+	# 第二层更低频、幅度更小的冷暖：破掉第一层 120m 级的对称感
+	var warm2 := sin(pos.x * 0.017 - pos.z * 0.013 + 0.6) * 0.6
+	var k := 1.0 + (warm * 0.030 + warm2 * 0.022) * vk
+	var tr := k * 1.014
 	var tg := k
-	var tb := k * 0.978
+	var tb := k * 0.974
 	var dry := smoothstep(0.30, 0.95, alt) * 0.85 + warm * 0.12
 	var steep := 1.0 - up
 	if steep > 0.06:
@@ -181,3 +189,97 @@ static func make_terrain_material() -> ShaderMaterial:
 	if base is ShaderMaterial:
 		return (base as ShaderMaterial).duplicate(true) as ShaderMaterial
 	return null
+
+
+# ===========================================================================
+# 观感数据 → 着色器参数（数据化：观感只改 map_shells.json 的 look.terrain）
+# ===========================================================================
+#
+# 类型：f = 浮点 / i = 整数 / c = 颜色（"#RRGGBB" 字符串或 Color）。
+# **表里没有的 key 一律不写** —— 少写一个参数就是"退回材质默认值"，
+# 所以这张表就是"哪些旋钮允许美术从数据里调"的清单。
+const LOOK_UNIFORMS := {
+	"albedo_gain": "f",
+	"base_contrast": "f",
+	"base_sat": "f",
+	"base_tile_m": "f",
+	"detail_tile_m": "f",
+	"detail_gain": "f",
+	"tint_strength": "f",
+	"dry_strength": "f",
+	"atlas_n_strength": "f",
+	"band_edge": "f",
+	"band_soft": "f",
+	"shadow_strength": "f",
+	"ambient_flat": "f",
+	"rock_detail_gain": "f",
+	"rock_scale": "f",
+	"max_lod": "f",
+	"variant_count": "i",
+	"mat_a_tint": "c",
+	"mat_b_tint": "c",
+	"base_mean": "c",
+	"shadow_color": "c",
+	"rock_tint": "c",
+}
+
+
+## 把 `look.terrain` 里的旋钮写进材质。返回真正写进去的条数（自检读它）。
+static func apply_look(mat: ShaderMaterial, look: Dictionary) -> int:
+	if mat == null or look.is_empty():
+		return 0
+	var n := 0
+	for key in LOOK_UNIFORMS.keys():
+		if not look.has(key):
+			continue
+		var kind := String(LOOK_UNIFORMS[key])
+		var v: Variant = look[key]
+		match kind:
+			"f":
+				mat.set_shader_parameter(StringName(key), float(v))
+			"i":
+				mat.set_shader_parameter(StringName(key), int(v))
+			"c":
+				var c := color_of(v, Color.WHITE)
+				mat.set_shader_parameter(StringName(key), c)
+			_:
+				continue
+		n += 1
+	return n
+
+
+## 数据里的颜色：既接受 "#RRGGBB" 字符串，也接受 Color（Color 直传，不走 sRGB 换算）。
+static func color_of(v: Variant, fallback: Color) -> Color:
+	if v is Color:
+		return v as Color
+	if v is String and not String(v).is_empty():
+		return Color(String(v))
+	return fallback
+
+
+## 地表链路探针（自检 / 截图断言用）：**读的是材质上真的绑了什么**，不是读源码有没有写。
+## 返回 {shader: bool, tex: int, atlas: int, mat_map_px: int, contrast: float, detail: float}
+static func probe(mat: ShaderMaterial) -> Dictionary:
+	if mat == null:
+		return {"shader": false, "tex": 0, "atlas": 0, "mat_map_px": 0,
+			"contrast": 0.0, "detail": 0.0}
+	var tex := 0
+	for key in ["tex_grass", "tex_dirt", "tex_cracked", "rock_detail"]:
+		if mat.get_shader_parameter(StringName(key)) is Texture2D:
+			tex += 1
+	var atlas := 0
+	for key in ["atlas_rgba", "atlas_n"]:
+		if mat.get_shader_parameter(StringName(key)) is Texture2D:
+			atlas += 1
+	var px := 0
+	var mm: Variant = mat.get_shader_parameter(&"mat_map")
+	if mm is Texture2D and (mm as Texture2D).get_width() > 0:
+		px = (mm as Texture2D).get_width()
+	return {
+		"shader": true,
+		"tex": tex,
+		"atlas": atlas,
+		"mat_map_px": px,
+		"contrast": float(mat.get_shader_parameter(&"base_contrast")),
+		"detail": float(mat.get_shader_parameter(&"detail_gain")),
+	}

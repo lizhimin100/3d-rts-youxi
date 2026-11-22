@@ -14,11 +14,14 @@ extends Node3D
 ##   · 只画几何，不做任何"这格能不能建"的判断 —— 那是 Model 的 FreePlayerTiles()。
 
 ## 棋盘色层的默认值（数据里 look.board 缺失时兜底；真值在 map_shells.json 的 look.board）
-const FILL_ALPHA_DEFAULT := 0.30
-const BORDER_ALPHA_DEFAULT := 0.46
-const BORDER_M_DEFAULT := 0.22
-const LIFT_DEFAULT := 0.018
+## fill_alpha 压得很低（0.20）：这一层是"草坪漆"，不是"色块"。低于 0.12 就数不清格子，
+## 高于 0.30 就把地形纹理糊住了 —— 区间是观感规格，不是随手填的。
+const FILL_ALPHA_DEFAULT := 0.20
+const EDGE_ALPHA_DEFAULT := 0.34
+const EDGE_M_DEFAULT := 0.55
+const LIFT_DEFAULT := 0.02
 const TWO_TONE_DEFAULT := 0.08
+const TONE_COOL_DEFAULT := 0.35
 ## 相邻格明暗差的合法区间：低于 6% 数不清格子，高于 10% 就变成"瓷砖"。
 const TWO_TONE_MIN := 0.06
 const TWO_TONE_MAX := 0.10
@@ -108,9 +111,10 @@ func _rebuild() -> void:
 		var ri := zs.find(snappedf(float(tile.get("z", 0.0)), 0.01))
 		var even := ((ci + ri) % 2) == 0
 		var fill := _tile_color(side, role, even)
-		var border := _border_color(fill)
+		var edge := _edge_color(fill)
+		var edge_norm := _edge_soft(tile)
 		var st := st_even if even else st_odd
-		_paint_tile(st, tile, lift, fill, border)
+		_paint_tile(st, tile, lift, fill, edge, edge_norm)
 		if even:
 			n_even += 1
 		else:
@@ -174,6 +178,16 @@ func _two_tone() -> float:
 	return clampf(_style("two_tone", TWO_TONE_DEFAULT), TWO_TONE_MIN, TWO_TONE_MAX)
 
 
+## 棋盘观感探针（截图断言读它）：证明这一层是"半透明草坪漆"而不是"不透明色块"。
+## alpha 高、双色差出区间、软边为 0 —— 任意一条不成立就读成瓷砖，所以这里给出 ok 判据。
+func look_report() -> String:
+	var a := _alpha()
+	var t := _two_tone()
+	var e := clampf(_style("edge_m", EDGE_M_DEFAULT), 0.0, 2.5)
+	var ok := a <= 0.34 and a >= 0.10 and t >= TWO_TONE_MIN and t <= TWO_TONE_MAX and e >= 0.25
+	return "alpha=%.2f tone=%.3f edge=%.2fm ok=%d" % [a, t, e, 1 if ok else 0]
+
+
 ## 一对相邻格的颜色：亮格用主题色，暗格按 `two_tone` 压暗。
 ##
 ## **为什么要按 alpha 补偿**：这是一层半透明色层，压暗量会被 alpha 稀释
@@ -181,7 +195,7 @@ func _two_tone() -> float:
 ## 画面上相邻格的亮度差才是数据里写的那 6%~10% —— 否则永远"看起来没差别"。
 func _pair(light: Color, dark: Color) -> Array:
 	var a := maxf(_alpha(), 0.12)
-	var k := clampf(_two_tone() / a, 0.02, 0.55)
+	var k := clampf(_two_tone() / a, 0.02, 0.80)
 	var ll := _lum(light)
 	# 皮肤自己给了一对"已经落在 6%~10%"的颜色就照用；给得不对（手改 JSON 很容易）就按
 	# two_tone 反算 —— 棋盘的观感是规格，不是每个皮肤各调一次的玄学。
@@ -189,7 +203,19 @@ func _pair(light: Color, dark: Color) -> Array:
 		var d := (ll - _lum(dark)) / ll
 		if d >= TWO_TONE_MIN and d <= TWO_TONE_MAX:
 			return [light, dark]
-	return [light, light.darkened(k)]
+	# 暗格：先按 alpha 反算压暗，再给一点点"偏冷"的色相偏移（PvZ 草坪的两条割痕是靠冷暖分的，
+	# 只靠明暗会读成"脏了一块"）。最后把亮度校回目标值，确保画面上仍是那 6~10%。
+	var out := light.darkened(k)
+	var cool := clampf(_style("tone_cool", TONE_COOL_DEFAULT), 0.0, 1.0)
+	if cool > 0.001:
+		out = Color(out.r * (1.0 - 0.10 * cool), out.g * (1.0 - 0.02 * cool),
+			out.b * (1.0 + 0.14 * cool), out.a)
+		var want := _lum(light) * (1.0 - k)
+		var got := _lum(out)
+		if got > 0.0001:
+			var s := want / got
+			out = Color(out.r * s, out.g * s, out.b * s, out.a)
+	return [light, out]
 
 
 func _lum(c: Color) -> float:
@@ -221,18 +247,38 @@ func _tile_color(side: String, role: String, even: bool) -> Color:
 			return l
 
 
-## 内框线：同色压暗 + 略高不透明度（读起来像"格线"，不像"瓷砖缝"）。
-func _border_color(fill: Color) -> Color:
-	var darken := clampf(_style("border_darken", 0.22), 0.0, 0.6)
+## 格边：同色压暗 + 略高不透明度（读起来像"草坪分格缝"，不像"瓷砖缝"）。
+func _edge_color(fill: Color) -> Color:
+	var darken := clampf(_style("edge_darken", 0.14), 0.0, 0.6)
 	var c := fill.darkened(darken)
-	c.a = clampf(_style("border_alpha", BORDER_ALPHA_DEFAULT), 0.0, 1.0)
+	c.a = clampf(_style("edge_alpha", EDGE_ALPHA_DEFAULT), 0.0, 1.0)
 	return c
 
 
+## 软边宽度（占格边长的比例）：0.55m 的软边在 7m 格子上是 8%，正好"看得出分格、看不出线"。
+func _edge_soft(tile: Dictionary) -> float:
+	var m := clampf(_style("edge_m", EDGE_M_DEFAULT), 0.0, 2.5)
+	var span := maxf(minf(float(tile.get("w", 7.0)), float(tile.get("d", 7.0))), 0.01)
+	return clampf(m / span, 0.004, 0.30)
+
+
 # ===========================================================================
-# 一格 = 内面（半透明填充）+ 一圈内框线（略暗略实），全部贴地
+# 一格 = 一张"草坪漆"：中心平涂 + 靠边柔和压暗（网格化顶点色渐变）
 # ===========================================================================
-func _paint_tile(st: SurfaceTool, tile: Dictionary, lift: float, fill: Color, border: Color) -> void:
+#
+# 为什么用网格而不是"填充 + 一圈实心边框"：
+#   上一版是 16cm 厚实心块 + 不透明填充 + 0.3m 亮边框 —— 画面上是一叠瓷砖，
+#   地形纹理一点透不出来，格子还比地面高一截。现在（2026-11-22）改成：
+#     · 每个格子拆成 GRID×GRID 的小片，颜色按"到格边的距离"渐变：
+#       中心 = 底色，靠边渐变到略暗一点的同色 —— 这就是"轻微边缘压暗"，
+#       读起来是草坪的分格缝，不是瓷砖缝；
+#     · 整层半透明（fill_alpha 从数据来），底下的草地贴图/交界阴影全程透得出来；
+#     · 双色微差靠 `_pair`：按 alpha 反算出"压暗多少"，合成后的亮度差才是数据里那 6~10%。
+const GRID := 4
+
+
+func _paint_tile(st: SurfaceTool, tile: Dictionary, lift: float, fill: Color, edge: Color,
+		edge_norm: float) -> void:
 	var x := float(tile.get("x", 0.0))
 	var z := float(tile.get("z", 0.0))
 	var y := float(tile.get("terrain_y", 0.0)) + lift
@@ -241,29 +287,44 @@ func _paint_tile(st: SurfaceTool, tile: Dictionary, lift: float, fill: Color, bo
 	var yaw := deg_to_rad(float(tile.get("yaw", 0.0)))
 	var c := cos(yaw)
 	var s := sin(yaw)
-	var bw := clampf(_style("border_m", BORDER_M_DEFAULT), 0.0, minf(hw, hd) * 0.4)
-	var ow: Array[Vector3] = _corners(x, z, y, hw, hd, c, s)
-	var iw: Array[Vector3] = _corners(x, z, y, hw - bw, hd - bw, c, s)
-	# 外缘（内框线）：四条梯形带
-	for i in 4:
-		var o0: Vector3 = ow[i]
-		var o1: Vector3 = ow[(i + 1) % 4]
-		var i0: Vector3 = iw[i]
-		var i1: Vector3 = iw[(i + 1) % 4]
-		_tri(st, o0, o1, i1, border)
-		_tri(st, o0, i1, i0, border)
-	# 内面：填充
-	_tri(st, iw[0], iw[1], iw[2], fill)
-	_tri(st, iw[0], iw[2], iw[3], fill)
+	var soft := clampf(edge_norm, 0.001, 0.5)
+	var rows := GRID + 1
+	var grid: Array[Vector3] = []
+	var cols: Array[Color] = []
+	grid.resize(rows * rows)
+	cols.resize(rows * rows)
+	for j in rows:
+		var v := float(j) / float(GRID)
+		for i in rows:
+			var u := float(i) / float(GRID)
+			var lx := (u * 2.0 - 1.0) * hw
+			var lz := (v * 2.0 - 1.0) * hd
+			grid[j * rows + i] = Vector3(x + lx * c + lz * s, y, z - lx * s + lz * c)
+			# 到最近格边的"归一化深度"：0 = 正好在边上，1 = 越过软边宽度
+			var d := minf(minf(u, 1.0 - u), minf(v, 1.0 - v)) / soft
+			var t := smoothstep(0.0, 1.0, clampf(d, 0.0, 1.0))
+			cols[j * rows + i] = edge.lerp(fill, t)
+	for j in GRID:
+		for i in GRID:
+			var a: int = j * rows + i
+			var b: int = a + 1
+			var cc: int = a + rows
+			var d2: int = cc + 1
+			_tri_c(st, grid[a], grid[b], grid[d2], cols[a], cols[b], cols[d2])
+			_tri_c(st, grid[a], grid[d2], grid[cc], cols[a], cols[d2], cols[cc])
 
 
-func _corners(x: float, z: float, y: float, hw: float, hd: float, c: float, s: float) -> Array[Vector3]:
-	var out: Array[Vector3] = []
-	for pair in [[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]]:
-		var lx: float = float(pair[0]) * hw
-		var lz: float = float(pair[1]) * hd
-		out.append(Vector3(x + lx * c + lz * s, y, z - lx * s + lz * c))
-	return out
+func _tri_c(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3,
+		ca: Color, cb: Color, cc: Color, normal: Vector3 = Vector3.UP) -> void:
+	st.set_color(ca)
+	st.set_normal(normal)
+	st.add_vertex(a)
+	st.set_color(cb)
+	st.set_normal(normal)
+	st.add_vertex(b)
+	st.set_color(cc)
+	st.set_normal(normal)
+	st.add_vertex(c)
 
 
 func _tri(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, col: Color,
@@ -279,10 +340,14 @@ func _tri(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, col: Color,
 	st.add_vertex(c)
 
 
-## 色层材质：直接吃皮肤表里的 `tile_a / tile_b`（同一张草地贴图），只做三件事：
-##   ① 世界 XZ 三平面投影（8m 一铺，和地表贴图完全对齐 → 纹理细节连成一片）；
-##   ② 开顶点色（颜色与透明度都来自顶点色，主题说了算）；
-##   ③ 半透明混合（底层地形的草叶/交界阴影始终透得出来）。
+## 色层材质：**一层纯色半透明漆**，颜色 100% 来自顶点色（主题说了算），不吃任何贴图。
+##
+## 为什么不再叠一张草地贴图：上一版让色层自己也三平面铺同一张草地，结果两层纹理
+## 各走各的周期（地形 12.5m / 色层 8m），叠出来是"重影"，而且色层不受光、亮度比地面高，
+## 整片棋盘像浮在地面上的一层塑料膜。现在只做三件事：
+##   ① 顶点色当底色（含透明度）；
+##   ② 半透明混合 —— 底层地形的草叶、交界阴影按 (1-alpha) 原样透出来；
+##   ③ 不受光、不写深度、不投阴影（它是一层油漆，不是一块板）。
 func _tile_material(key: String) -> Material:
 	var base := RtsTerrainAssets.skin_material(key)
 	var m: StandardMaterial3D = null
@@ -290,17 +355,14 @@ func _tile_material(key: String) -> Material:
 		m = (base as StandardMaterial3D).duplicate() as StandardMaterial3D
 	if m == null:
 		m = StandardMaterial3D.new()
-		if ResourceLoader.exists(RtsTerrainAssets.TEX_GRASS_PATH):
-			m.albedo_texture = load(RtsTerrainAssets.TEX_GRASS_PATH) as Texture2D
+	m.albedo_texture = null
 	m.albedo_color = Color.WHITE
 	m.vertex_color_use_as_albedo = true
 	# 不受光：这一层是半透明"草坪漆"，跟着地形自己的两阶光照走会出现双份明暗
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	m.uv1_scale = Vector3(1.0 / RtsTerrainAssets.TILE_M, 1.0 / RtsTerrainAssets.TILE_M, 1.0)
-	m.uv1_triplanar = true
-	m.uv1_world_triplanar = true
-	m.uv1_triplanar_sharpness = 1.0
+	m.uv1_triplanar = false
+	m.uv1_scale = Vector3.ONE
 	m.cull_mode = BaseMaterial3D.CULL_DISABLED
 	m.roughness = 0.95
 	m.metallic = 0.0
@@ -319,15 +381,15 @@ func _rebuild_marks() -> void:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var build_col := _col("build_anchor", Color(0.75, 0.54, 0.18))
-	build_col.a = 0.55
+	build_col.a = 0.42
 	var spawn_col := _col("spawn_anchor", Color(0.30, 0.62, 1.0))
-	spawn_col.a = 0.85
+	spawn_col.a = 0.55
 	var lift := _lift()
 	var ratio := float(_spec.get("footprint_ratio", RtsTileSpec.FOOTPRINT_DEFAULT))
 	for t in _arena.get("tiles", []):
 		var tile: Dictionary = t
-		var side := String(tile.get("side", "player"))
-		if side == "neutral":
+		# 只给我方格子画锚点：敌方/中立每格都画会变成一片圈圈，反而看不清战场。
+		if String(tile.get("side", "player")) != "player":
 			continue
 		var y := float(tile.get("terrain_y", 0.0)) + lift + 0.008
 		# 建筑位：左上象限中心的一个小方框（大小 = 建筑实际占地的外沿）
@@ -337,10 +399,10 @@ func _rebuild_marks() -> void:
 			var c := RtsTileSpec.center(tile, Vector2(ax, az), _spec)
 			var half := RtsTileSpec.span_of(tile, ratio) * 0.5 * 1.04
 			_flat_ring_rect(st, c.x, c.y, half, half, 0.07, y, build_col)
-		# 出兵位：正中心圆环
+		# 出兵位：正中心圆环（细一圈，别抢建筑的视线）
 		var sx := float(tile.get("spawn_x", tile.get("x", 0.0)))
 		var sz := float(tile.get("spawn_z", tile.get("z", 0.0)))
-		_flat_ring(st, sx, sz, 0.62, 0.46, y, spawn_col)
+		_flat_ring(st, sx, sz, 0.58, 0.49, y, spawn_col)
 	_marks.mesh = st.commit()
 	_marks.material_override = _line_mat()
 	_dirty_marks = false

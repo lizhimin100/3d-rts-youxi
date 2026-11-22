@@ -18,6 +18,7 @@ var _arena: Dictionary = {}
 var _defs: Dictionary = {}          # def_id -> {model_path, model_scale}
 var _spec: Dictionary = {}          # RtsTileSpec.spec_from(planning) 的产物
 var _built := {}                    # "side:tile" -> Node3D
+var _measured: Array = []           # 每次 rebuild 的实测值（自检/截图断言读它）
 var _player_color := Color(0.30, 0.62, 1.00)
 var _enemy_color := Color(1.00, 0.32, 0.26)
 
@@ -46,6 +47,7 @@ func rebuild() -> void:
 		if is_instance_valid(n):
 			n.queue_free()
 	_built.clear()
+	_measured.clear()
 	for b in _arena.get("player_buildings", []):
 		_add(b as Dictionary, "player", _player_color)
 	for b in _arena.get("enemy_buildings", []):
@@ -87,6 +89,7 @@ func _add(row: Dictionary, side: String, team_color: Color) -> void:
 	holder.rotation.y = deg_to_rad(RtsTileSpec.yaw_deg(tile, _spec, side))
 	ArtKit.apply_team_color(holder, team_color)
 	_built["%s:%d" % [side, tile_index]] = holder
+	_record(side, def_id, tile, holder, box, k)
 
 
 func _tile(index: int) -> Dictionary:
@@ -95,6 +98,78 @@ func _tile(index: int) -> Dictionary:
 		if int(d.get("index", 0)) == index:
 			return d
 	return {}
+
+
+# ===========================================================================
+# 实测：建筑到底多大、站哪、朝哪（自检读这里，不看配置也不看源码）
+# ===========================================================================
+#
+# 为什么要在运行时量：`footprint_ratio` 只是"想要多少"，真正落到画面上的是
+# "模型 AABB × 归一化系数"。中间任何一个环节错了（AABB 取错、缩放顺序反了、
+# LOD 组把三档包围盒合并了），配置依然是 0.38，画面却是另一个尺寸 ——
+# 所以断言必须量**摆上去之后的世界尺寸**。
+func _record(side: String, def_id: String, tile: Dictionary, holder: Node3D,
+		box: AABB, k: float) -> void:
+	var tw := maxf(float(tile.get("w", 7.0)), 0.01)
+	var td := maxf(float(tile.get("d", 7.0)), 0.01)
+	var span_x := box.size.x * k
+	var span_z := box.size.z * k
+	var yaw := holder.rotation.y
+	var ac := absf(cos(yaw))
+	var as_ := absf(sin(yaw))
+	var ex := span_x * 0.5 * ac + span_z * 0.5 * as_
+	var ez := span_x * 0.5 * as_ + span_z * 0.5 * ac
+	var tx := float(tile.get("x", 0.0))
+	var tz := float(tile.get("z", 0.0))
+	var cx := holder.position.x
+	var cz := holder.position.z
+	var inside := (cx - ex >= tx - tw * 0.5 - 0.02) and (cx + ex <= tx + tw * 0.5 + 0.02) \
+		and (cz - ez >= tz - td * 0.5 - 0.02) and (cz + ez <= tz + td * 0.5 + 0.02)
+	_measured.append({
+		"def": def_id,
+		"side": side,
+		"tile": int(tile.get("index", 0)),
+		# 水平占地 / 单格短边（口径与 RtsTileSpec.fit_scale 一致）
+		"ratio": maxf(span_x, span_z) / minf(tw, td),
+		# 底座中心相对格中心的本地偏移（以格边长为单位，负 = 左上）
+		"off_u": (cx - tx) / tw,
+		"off_v": (cz - tz) / td,
+		"yaw": rad_to_deg(yaw),
+		"inside": inside,
+		"height": box.size.y * k,
+	})
+
+
+## 实测摘要（一行）：截图断言 `expect_scene_state: ["space_probe", "..."]` 读它。
+func measure_text() -> String:
+	if _measured.is_empty():
+		return "n=0 space_ok=0"
+	var lo := 9.0
+	var hi := -9.0
+	var inside := 0
+	var yaw_p := 0.0
+	var yaw_e := 0.0
+	var uv := Vector2.ZERO
+	for m in _measured:
+		var row: Dictionary = m
+		lo = minf(lo, float(row.get("ratio", 0.0)))
+		hi = maxf(hi, float(row.get("ratio", 0.0)))
+		if bool(row.get("inside", false)):
+			inside += 1
+		if String(row.get("side", "")) == "player":
+			yaw_p = float(row.get("yaw", 0.0))
+			uv = Vector2(float(row.get("off_u", 0.0)), float(row.get("off_v", 0.0)))
+		else:
+			yaw_e = float(row.get("yaw", 0.0))
+	var want_u := float(_spec.get("anchor_u", RtsTileSpec.ANCHOR_U_DEFAULT))
+	var want_v := float(_spec.get("anchor_v", RtsTileSpec.ANCHOR_V_DEFAULT))
+	var ok := lo >= RtsTileSpec.FOOTPRINT_MIN - 0.006 and hi <= RtsTileSpec.FOOTPRINT_MAX + 0.006 \
+		and absf(uv.x - want_u) <= 0.02 and absf(uv.y - want_v) <= 0.02 \
+		and inside == _measured.size() \
+		and absf(rad_to_deg(deg_to_rad(yaw_p)) - 180.0) <= 2.0
+	return "n=%d ratio=%.3f..%.3f uv=%.2f,%.2f yaw_p=%.0f yaw_e=%.0f inside=%d/%d space_ok=%d" % [
+		_measured.size(), lo, hi, uv.x, uv.y, yaw_p, yaw_e, inside, _measured.size(),
+		1 if ok else 0]
 
 
 ## 递归合并所有 MeshInstance3D 的 AABB（换算到 root 的局部空间）

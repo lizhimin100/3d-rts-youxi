@@ -174,9 +174,10 @@
 			"pop_cost": 6.0,
 			"passive_trait": null,
 			"render": true,
-			"model_path": "res://Content/art/模型/野怪/豺狼人斥候.glb",
+			"model_path": "res://Content/art/模型/野怪/豺狼人战士.glb",
 			"model_scale": 1.0,
 			"use_placeholder_mesh": false,
+			"model_note": "2026-11-22：敌人收敛成**一种外观**（豺狼人战士）。轻/线/精锐只是数值档位，共用同一个模型，避免场上出现三种一眼分不清的豺狼人。",
 			"note": "6 人一队的廉价前排，单兵弱但总血量和出手数不低。"
 		},
 		{
@@ -238,9 +239,10 @@
 			"pop_cost": 4.0,
 			"passive_trait": null,
 			"render": true,
-			"model_path": "res://Content/art/模型/野怪/豺狼人萨满.glb",
+			"model_path": "res://Content/art/模型/野怪/豺狼人战士.glb",
 			"model_scale": 1.0,
 			"use_placeholder_mesh": false,
+			"model_note": "2026-11-22：与斥候/战士共用同一模型（敌人只有一种外观）。",
 			"note": "魔法 650：打重甲 1.25，打中甲只有 0.75；用来逼玩家换阵。"
 		},
 		{

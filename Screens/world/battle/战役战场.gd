@@ -57,6 +57,16 @@ var attack_squads := 0
 var defend_squads := 0
 var player_hp := 0.0
 var enemy_hp := 0.0
+## 实测探针（截图断言的唯一入口）：都是"量出来的世界尺寸/绑定状态"，不是读配置。
+##   space_probe   = 建筑占地比例 / 左上偏移 / 朝向 / 是否越格
+##   terrain_probe = 地形材质到底绑了几张贴图、mat_map 多大、对比放大多少
+##   board_probe   = 棋盘色层的透明度与双色微差（决定"透不透底 / 数不数得清格子"）
+var space_probe := ""
+var terrain_probe := ""
+var board_probe := ""
+## 三者的合并判据：截图配方只断言这一条（`["visual_probe", "visual_ok=1"]`），
+## 详细数值同时出现在同一行里，报告直接抄它。
+var visual_probe := ""
 
 var _mdl: RefCounted = null
 var _handle := 0
@@ -239,7 +249,7 @@ func _build_world() -> void:
 	_terrain.name = "Terrain"
 	_terrain.set_script(load(TERRAIN_PATH) as Script)
 	add_child(_terrain)
-	_terrain.call("build", _shell)
+	_terrain.call("build", _shell, _look)
 	var ground := Callable(_terrain, "height_at")
 
 	# 棋盘
@@ -327,12 +337,23 @@ func _build_environment() -> void:
 	env.adjustment_contrast = float(tm.get("contrast", 1.05))
 	env.adjustment_saturation = float(tm.get("saturation", 1.04))
 	env.adjustment_brightness = 1.0
-	# 距离雾：只用来柔化地图最远那圈边缘，浓度极低（否则战场会糊成一片）
+	# 距离雾：只用来柔化地图最远那圈边缘。
+	# **必须用深度模式**：指数雾在 60m 处就吃掉三成对比度，整片战场会发白发灰
+	# （2026-11-22 的实测色：近处 113,136,69 → 60m 处 163,184,139）。
+	# 深度模式 + begin/end，战场近处零影响，只把 120m 以外的树林与地块边缘按曲线淡出去。
 	var fog: Dictionary = look.get("fog", {})
 	env.fog_enabled = true
-	env.fog_light_color = _hex(fog, "color", "#C3D0D8")
-	env.fog_density = float(fog.get("density", 0.0038))
-	env.fog_sky_affect = 0.25
+	env.fog_light_color = _hex(fog, "color", "#C8D4DC")
+	if String(fog.get("mode", "depth")) == "depth":
+		env.fog_mode = Environment.FOG_MODE_DEPTH
+		env.fog_depth_begin = float(fog.get("begin", 120.0))
+		env.fog_depth_end = float(fog.get("end", 440.0))
+		env.fog_depth_curve = float(fog.get("curve", 1.6))
+		env.fog_density = 1.0
+	else:
+		env.fog_mode = Environment.FOG_MODE_EXPONENTIAL
+		env.fog_density = float(fog.get("density", 0.0026))
+	env.fog_sky_affect = 0.15
 	# 高开销特效全部明确关闭（截图验收与自检都会核这几项）
 	env.ssao_enabled = false
 	env.ssil_enabled = false
@@ -486,6 +507,31 @@ func _refresh(force: bool) -> void:
 		if force or _hud_tick >= 0.1:
 			_hud.call("refresh", _state, _view, phase_name, phase_left, _selected.size(), _extra_hud())
 			_hud_tick = 0.0
+	# 探针每帧刷新（重建建筑/换阶段后立刻可断言，不用等下一次 force）
+	if _buildings != null and is_instance_valid(_buildings):
+		space_probe = String(_buildings.call("measure_text"))
+	if _terrain != null and is_instance_valid(_terrain):
+		terrain_probe = String(_terrain.call("material_report"))
+	if _board != null and is_instance_valid(_board):
+		board_probe = String(_board.call("look_report"))
+	visual_probe = "space[%s] terrain[%s] board[%s] visual_ok=%d" % [
+		space_probe, terrain_probe, board_probe, 1 if _visual_ok() else 0]
+
+
+## 三条探针同时成立才算过：
+##   space  —— 占地 38~44% / 左上偏移 / 正面朝镜头 / 不越格（空场时 n=0 不算错）
+##   terrain —— 真的绑上了着色器 + 4 张底材 + 2 张图集 + 非零 mat_map
+##   board  —— 半透明、双色差在 6~10%、有软边
+func _visual_ok() -> bool:
+	if not terrain_probe.contains("shader=1") or not terrain_probe.contains("tex=4"):
+		return false
+	if not terrain_probe.contains("atlas=2") or terrain_probe.contains("matmap=0"):
+		return false
+	if not board_probe.contains("ok=1"):
+		return false
+	if space_probe.contains("n=0"):
+		return true
+	return space_probe.contains("space_ok=1")
 
 
 ## 顶部敌方意图栏：告诉玩家"这一场要面对什么"，而不是让他拖镜头去偷看。
