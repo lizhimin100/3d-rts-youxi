@@ -10,8 +10,8 @@
 			"size": 20
 		},
 		"audio/synth_bank.gd": {
-			"sha256": "ca48ca7e17d79ad145c3cab8d9bff78cd8289ccd420efbc8627b43a2e71ffd31",
-			"size": 9465
+			"sha256": "b41e1104b9ae75d07b85136821d69481df17753a45aa8672dc1ba80750ae8172",
+			"size": 9224
 		},
 		"audio/synth_bank.gd.uid": {
 			"sha256": "94eae879136d8942d47e3828872eb37b4b5fa41f38ade830586320d4d7f9ebcc",
@@ -26,8 +26,8 @@
 			"size": 20
 		},
 		"boot/app.gd": {
-			"sha256": "03dfd8f94eafb67f80c0b6401cc9a2eedd79af223145ad93673a8196a5c00773",
-			"size": 4166
+			"sha256": "9db6843b55b6e9e5fa96cac7c2dfea923b1c5fd7ae4441a53f36d1be31a35a56",
+			"size": 4034
 		},
 		"boot/app.gd.uid": {
 			"sha256": "dca15b27e7ce92b4f4e317b8cd6ef4ae792bf4964ffc1da7c120fc3ca705a5dc",
