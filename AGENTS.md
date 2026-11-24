@@ -64,6 +64,8 @@ addons/     Godot 编辑器插件：war_island_editor=数据工作台（默认�
 ./Tools/run-game.ps1 --shot squad _qa/squad.png # 真点训练牌 + 真右键移动（另有 squad_box/focus/hold/exec）
 ./Tools/run-game.ps1 --import                 # 新增 class_name / 场景 / 资源后跑一次
 dotnet build 战争原岛.csproj                   # 只编译内核 + 宿主
+# 本机无 Godot 时的纯 Model 跑分（_qa 已 gitignore；直接引用 WarIsland.Model）
+dotnet run -c Release --project _qa/phase1_harness -- --games=100
 ```
 
 - **通过判据**：`--check` 退出码 0 且输出 `CHECK 通过 N 项 / 失败 0`；`--shot` 退出码 0 且输出 `SHOT PASS`；`--simulate` 退出码 0 且有 `SIM {...}`。**不接受"0 条断言算通过"**。
@@ -76,9 +78,11 @@ dotnet build 战争原岛.csproj                   # 只编译内核 + 宿主
 
 ### 已确认
 
-- **2026-11-22 单兵制（推翻「真小队」）**：`units.json` 删掉 `squad_size/formation/squad_radius`，`SquadFormation.cs` 物理删除；一张征召牌产 N 名**独立单兵**（进攻 6 / 防守 5，卡面 `units`；「加快训练」本回合 ×1.5 → 9 / 8）。**攻击态（射程内有活目标）位置冻结**，敌我友军碰撞跳过它（根治接敌被推走）；玩家指令白名单**清空**。基地 72 血、占区 `zone_dps_per_unit=0.45`。表现层 `Screens/world/units/`。详见 `Documents/单兵制.md`。
+- **2026-11-24 单场死斗 + 4×4 + 按列 3 格棋盘**：取消攻防轮/占区抽血，每轮 60 秒；45 秒狂暴；按幸存 `base_damage` 差值扣基地血；护甲/攻击各 4 类 + 跳字；棋盘每列 3 格、填满才开下一列。Phase 1 已落运动学。详见 `Documents/单兵制.md`。
 
-- **2026-11-20 正式转型《战争原岛》**：单通道 3D 长横道；规划阶段打牌/建造/升星三合一；执行阶段攻防双场、小队自动推进 + 局部微操。
+- **2026-11-22 单兵制（推翻「真小队」）**：`units.json` 删掉 `squad_size/formation/squad_radius`，`SquadFormation.cs` 物理删除；一张征召牌产 N 名**独立单兵**。~~攻击态（射程内有活目标）位置冻结，敌我友军碰撞跳过它（根治接敌被推走）~~（**2026-11-24 作废**：改为 `invMass=0`，推不动但仍推别人；硬核在所有情况下生效）。玩家指令白名单**清空**。基地 72 血、占区 `zone_dps_per_unit=0.45`。详见 `Documents/单兵制.md`。
+
+- ~~**2026-11-20 正式转型《战争原岛》**~~（2026-11-24 作废"攻防双场/局部微操"）：单通道 3D；规划打牌/建造/升星三合一。
 - **2026-11-20 距离铁律 `R1 = 0.015`**：`Model/` 只认游戏数值，`Screens/` 才乘 R1 换米；真值只在 `Model/Core/RtsUnits.cs`。
 - **2026-11-20 `Model/` 改为纯 C# 内核**（`net8.0` 类库、零 Godot）；GDScript 侧经 `Game/adapters/` 转发；宿主 `战争原岛.csproj` 只留 `Screens/` 的桥与编辑器脚本。
 - **2026-11-20 `Views/` 物理更名为 `Screens/`**：3D 表现与输入统一入口；`res://Views` 全仓库清零。
@@ -89,9 +93,9 @@ dotnet build 战争原岛.csproj                   # 只编译内核 + 宿主
 - **2026-11-21 12 兵种进 `Content/data/units.json`**：三大阵营各 4；距离全用游戏数值；近战无投射物、远程有；默认命中/闪避/暴击 100/0/0；弩兵 `35%+3` 破甲；`bandit_lord` 暂 `enabled=false`；鱼人走占位网格。
 - **2026-11-21 规划与双 60 秒**：`planning.json` 管 CP/人口/卡牌/3 合 1；`levels.json` 管第 1 关两轮波次；建造牌 Exhaust、训练牌按 Tag 全场产兵、策略牌循环；轮末清场，定性复盘按 code 聚合。详见 `Documents/战斗与规划.md`。
 - **2026-11-21 地图底壳 × 玩家布局卡 × 敌人遭遇卡 三分离**：旧 3D 地图编辑器下线，换成 `addons/map_shell_editor`（只做地形/地表笔刷、纯视觉装饰、弯曲脊线、三块势力区域多边形、战术格子）。玩家激活哪几个格子与开局建筑写 `Content/data/player_layouts.json`；敌方阵营/基地血量/格子固定建筑/按轮次权重的攻防意图池写 `Content/data/enemy_encounters.json`；`levels.json` 只放 `assembly = {shell, player_layout, enemy_encounter}` 与组合生成的关卡。未激活格子局内状态为 `ruin`（唯一实现在 `Game/map/关卡装配.gd`）。详见 `Documents/地图底壳与关卡组装.md`。
-- **2026-11-21 底壳编辑器重构（取代赛道圆环 + 候选石台）**：① 删除 4 个分割环，`regions` 存玩家/中立/敌方三块 **XZ 多边形**，点在多边形内与校验的唯一实现在 `Model/Map/RegionPolygon.cs`（桥转发 `RegionContains / RegionValidate`）；② 候选石台改 **TacticalTile**，唯一定义在 `Model/Map/TacticalTile.cs`：`BuildingAnchor = 左上角`、`SquadSpawnAnchor = 正中心`，格间边到边间隙 ≥ 1.0 m；③ 编辑器支持点选/拖框多选/拖动贴合地形/Delete/Ctrl+Z，选中脚下复用 `Content/art/特效/选中圈.tscn`；④ 装饰只准实例化 `Content/docs/asset_manifest.md` 登记的现有资产，**禁止**现拼占位树/水/地面材质。
-- **2026-11-21 真小队（Squad）重建**：`Model/Squad/` 是唯一小队实体；`units.json` 每兵种带 `formation`（square/scatter/wedge）+ `squad_radius`（三位数游戏数值）；质心沿底壳 `spine.points` 做 A* + 走廊平滑，成员只跟弹性槽位；**建筑不参与寻路**；训练牌在格子的 `SquadSpawnAnchor` 瞬间出整队；`Screens/` 只读 `SquadView` 画胶囊 + 单条聚合血条。验证：`--simulate`（100 局胜率/DPS）、`--squad`（试玩）、`--check`（20 条小队断言）。详见 `Documents/小队系统.md`。
-- **2026-11-22 3D 战场视觉规格（地表纹理 / 棋盘 / 落位 / 布光 / 兵种可见范围）**：观感旋钮全部在 `map_shells.json` 的 `look` 块，代码只读。① 地表必须走 `地形材质.tres → 地形.gdshader`，底材是**低对比图**（std 0.9%），靠 `base_contrast` / `base_tile_m` / `detail_gain` 放大回可见，**两张草地贴图按 1.0 / 0.61 双尺度混合**打散复读；② 棋盘是一层**半透明纯色漆**（`fill_alpha 0.30`，不吃贴图）+ 4×4 网格化软边，相邻格 9% 冷暖微差；③ 建筑按 AABB 归一化到单格 41%（`planning.json` 的 `placement`，区间 0.38~0.44），底座锚在左上象限（-0.26 格），玩家侧正面朝 +Z；④ 战术区外留 6m 草地再抬 4m 土坎（`ShellStore.RIM_STEP_*`），着色器把陡面画成岩壁；⑤ 雾**必须深度模式**（`begin 120 / end 440`），指数雾会让 60m 处发白。**断言必须量运行时真值**（`space_probe` / `terrain_probe` / `board_probe` / `visual_probe`），不许再靠 `src.contains("...")`。详见 `Documents/美术规范.md` §6。
+- **2026-11-21 底壳编辑器重构（取代赛道圆环 + 候选石台）**：① 删除 4 个分割环，`regions` 存玩家/中立/敌方三块 **XZ 多边形**，点在多边形内与校验的唯一实现在 `Model/Map/RegionPolygon.cs`（桥转发 `RegionContains / RegionValidate`）；② 候选石台改 **TacticalTile**，唯一定义在 `Model/Map/TacticalTile.cs`：`BuildingAnchor = 左上角`、`SquadSpawnAnchor = 正中心`，格间边到边间隙 ≥ 1.0 m；③ 编辑器支持多选/拖动/删除/撤销，选中脚下复用 `Content/art/特效/选中圈.tscn`；④ 装饰只准实例化 `Content/docs/asset_manifest.md` 登记的现有资产，**禁止**现拼占位树/水/地面材质。
+- ~~**2026-11-21 真小队（Squad）重建**~~（**2026-11-22 作废**：单兵制删除编制）：`Model/Squad/` 曾是唯一小队实体，质心沿 `spine.points` A*、成员跟弹性槽位；现已被单兵制取代。详见 `Documents/小队系统.md`（历史）。
+- **2026-11-22 3D 战场视觉规格（地表纹理 / 棋盘 / 落位 / 布光 / 兵种可见范围）**：观感旋钮全部在 `map_shells.json` 的 `look` 块，代码只读。① 地表必须走 `地形材质.tres → 地形.gdshader`，底材是**低对比图**（std 0.9%），靠 `base_contrast` / `base_tile_m` / `detail_gain` 放大回可见，**两张草地贴图按 1.0 / 0.61 双尺度混合**打散复读；② 棋盘是一层**半透明纯色漆**（`fill_alpha 0.30`，不吃贴图）+ 4×4 网格化软边，相邻格 9% 冷暖微差；③ 建筑按 AABB 归一化到单格 41%，底座锚在左上象限（-0.26 格），玩家侧正面朝 +Z；④ 战术区外留 6m 草地再抬 4m 土坎，着色器把陡面画成岩壁；⑤ 雾**必须深度模式**，指数雾会让 60m 处发白。**断言必须量运行时真值**（`space_probe` / `terrain_probe` / `board_probe` / `visual_probe`），不许再靠 `src.contains("...")`。详见 `Documents/美术规范.md` §6。
 - **2026-11-22 UI 主题（温润木石风）**：新 UI 统一用 `Content/ui/main_theme.tres`（浅暖灰底 `#E9DFCB` + 深棕墨 `#38291C` + 进攻红 `#A93B2E` / 防守蓝 `#2E5C93` / CP 金 `#C08A2E`；字号只三档 28/18/14；变体 `HudPanel/FloatPanel/CardPanel/InsetPanel`、`AttackButton/DefenseButton/PrimaryButton/GhostButton`、`CountdownBar`、`Title/Value/Caption/Attack/DefenseLabel`）。陈列室 `Screens/ui/ThemeShowcase.tscn`（`--shot theme`，真点多按钮）。**不动**现役深色 HUD 的 `Content/art/主题/游戏主题.tres`；全局切换前必须先给 HUD 出浅色映射。色板与调参见 `Content/docs/ui_style_guide.md`。
 - **2026-11-14 按「七块砖」重排**：`Engine/Model/Screens/Game/Content/Tests/Tools/Documents` 八目录（七块砖 + 迁移期 Game/）。
 - **2026-11-14 数值真源 = JSON**：`Content/data/*.json`；旧 `.tres` 卡退役到 `Content/legacy/cards/`。

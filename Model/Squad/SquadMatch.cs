@@ -59,6 +59,25 @@ namespace WarIsland.Model
         public double AvgStraightLength;
         public double FirstContactSecond = -1.0;
 
+        /// <summary>本局峰值：同一 tick 的深度重叠对数（见 SquadBattleStats）。</summary>
+        public int OverlapPairsMax;
+        /// <summary>本局峰值：最大重叠深度（游戏数值）。</summary>
+        public double OverlapDepthMax;
+        /// <summary>最大重叠发生的时刻 / 两个单位 id（诊断用）。</summary>
+        public double OverlapWorstTime = -1.0;
+        public int OverlapWorstA = -1;
+        public int OverlapWorstB = -1;
+        /// <summary>本局峰值：分离之后仍残留的深度重叠（玩家可见）。</summary>
+        public int OverlapPairsAfterMax;
+        public double OverlapDepthAfterMax;
+        /// <summary>本局：分离之后仍有深度重叠的 tick 数。</summary>
+        public int OverlapAfterTicks;
+        /// <summary>本局累计：已进攻击态却打不出去的"人·秒"。</summary>
+        public double UnfiredEngagedSeconds;
+        /// <summary>本局朝向反转次数 / 战斗秒数。</summary>
+        public int HeadingFlips;
+        public double HeadingFlipsPerSec;
+
         public readonly List<string> Reviews = new List<string>();
         public readonly List<string> ReviewCodes = new List<string>();
         public string TopReason => ReviewCodes.Count > 0 ? ReviewCodes[0] : "";
@@ -147,6 +166,9 @@ namespace WarIsland.Model
             double seconds = 0.0;
             foreach (SquadRoundResult rr in result.Rounds) seconds += rr.Seconds;
             result.Seconds = Math.Round(seconds * 10.0) / 10.0;
+            result.HeadingFlipsPerSec = result.Seconds > 1e-6
+                ? Math.Round(result.HeadingFlips / result.Seconds, 2)
+                : 0.0;
             result.PlayerSquadsProduced = (result.AttackPlan?.ArmySquads ?? 0) + (result.DefendPlan?.ArmySquads ?? 0);
             result.EnemySquadsSpawned = 0;
             foreach (SquadRoundResult rr in result.Rounds) result.EnemySquadsSpawned += rr.Stats.EnemySquadsSpawned;
@@ -184,6 +206,19 @@ namespace WarIsland.Model
             r.AvgPathLength += s.AvgPathLength;
             r.AvgStraightLength += s.AvgStraightLength;
             if (r.FirstContactSecond < 0.0) r.FirstContactSecond = s.FirstContactSecond;
+            if (s.OverlapPairsMax > r.OverlapPairsMax) r.OverlapPairsMax = s.OverlapPairsMax;
+            if (s.OverlapPairsAfterMax > r.OverlapPairsAfterMax) r.OverlapPairsAfterMax = s.OverlapPairsAfterMax;
+            if (s.OverlapDepthAfterMax > r.OverlapDepthAfterMax) r.OverlapDepthAfterMax = s.OverlapDepthAfterMax;
+            r.OverlapAfterTicks += s.OverlapAfterTicks;
+            if (s.OverlapDepthMax > r.OverlapDepthMax)
+            {
+                r.OverlapDepthMax = s.OverlapDepthMax;
+                r.OverlapWorstTime = s.OverlapWorstTime;
+                r.OverlapWorstA = s.OverlapWorstA;
+                r.OverlapWorstB = s.OverlapWorstB;
+            }
+            r.UnfiredEngagedSeconds += s.UnfiredEngagedSeconds;
+            r.HeadingFlips += s.HeadingFlips;
             MergeUnits(r.PlayerByUnit, s.PlayerByUnit);
             MergeUnits(r.EnemyByUnit, s.EnemyByUnit);
         }

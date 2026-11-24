@@ -785,6 +785,44 @@ namespace WarIsland.Bridge
             };
         }
 
+        /// <summary>
+        /// 自动布阵探针：给 count 个人算棋盘出生位，返回两两最小中心距（游戏数值 / 米）。
+        /// `bodyUnits` 是参考身位和（步兵 = 60）；判定用 MinDistance ≥ bodyUnits × hard_core。
+        /// </summary>
+        public Godot.Collections.Dictionary FormationProbe(
+            int count,
+            double bodyUnits,
+            Godot.Collections.Dictionary squadDict)
+        {
+            var tuning = SquadTuning.FromDict(ToPlainDict(squadDict));
+            int n = Math.Clamp(count, 2, 64);
+            var pts = new List<System.Numerics.Vector2>(n);
+            for (int i = 0; i < n; i++)
+                pts.Add(FormationPlan.TileSlot(i, tuning.TileFiles, tuning.FilePitch, tuning.RankPitch));
+            double min = double.MaxValue;
+            for (int i = 0; i < n; i++)
+            {
+                for (int j = i + 1; j < n; j++)
+                {
+                    double dx = pts[i].X - pts[j].X;
+                    double dy = pts[i].Y - pts[j].Y;
+                    double d = Math.Sqrt(dx * dx + dy * dy);
+                    if (d < min) min = d;
+                }
+            }
+            double need = Math.Max(bodyUnits, 1.0) * tuning.HardCoreFactor;
+            return new Godot.Collections.Dictionary
+            {
+                { "ok", min + 1e-6 >= need },
+                { "points", n },
+                { "min_distance_units", min },
+                { "min_distance_m", min * RtsUnits.R1 },
+                { "need_units", need },
+                { "file_pitch", tuning.FilePitch },
+                { "rank_pitch", tuning.RankPitch },
+            };
+        }
+
         /// <summary>100 局纯 Model 小队攻防推演（胜率 + DPS + 阵型/寻路指标）。</summary>
         public Godot.Collections.Dictionary SquadSimulate(
             Godot.Collections.Dictionary unitsDict,
@@ -894,6 +932,13 @@ namespace WarIsland.Bridge
                 { "avg_path_ratio", sim.AvgPathStraightRatio },
                 { "avg_stuck_events", sim.AvgStuckEvents },
                 { "avg_slot_error", sim.AvgSlotError },
+                { "avg_overlap_pairs_max", sim.AvgOverlapPairsMax },
+                { "avg_overlap_depth_max_m", sim.AvgOverlapDepthMaxMeters },
+                { "avg_overlap_pairs_after_max", sim.AvgOverlapPairsAfterMax },
+                { "avg_overlap_depth_after_max_m", sim.AvgOverlapDepthAfterMaxMeters },
+                { "avg_overlap_after_ticks", sim.AvgOverlapAfterTicks },
+                { "avg_unfired_engaged_seconds", sim.AvgUnfiredEngagedSeconds },
+                { "avg_heading_flips_per_sec", sim.AvgHeadingFlipsPerSec },
                 { "avg_enemy_max_zone", sim.AvgEnemyMaxZone },
                 { "avg_player_zone_seconds", sim.AvgPlayerZoneSeconds },
                 { "avg_enemy_zone_seconds", sim.AvgEnemyZoneSeconds },
@@ -932,6 +977,13 @@ namespace WarIsland.Bridge
                     { "enemy_zone_seconds", r.EnemyZoneSeconds },
                     { "stuck_events", r.StuckEvents },
                     { "slot_error", r.SlotError },
+                    { "overlap_pairs_max", r.OverlapPairsMax },
+                    { "overlap_depth_max", r.OverlapDepthMax },
+                    { "overlap_pairs_after_max", r.OverlapPairsAfterMax },
+                    { "overlap_depth_after_max", r.OverlapDepthAfterMax },
+                    { "overlap_after_ticks", r.OverlapAfterTicks },
+                    { "unfired_engaged_seconds", r.UnfiredEngagedSeconds },
+                    { "heading_flips_per_sec", r.HeadingFlipsPerSec },
                     { "cp_left", r.CpLeft },
                     { "pop_blocked", r.PopBlocked },
                     { "top_reason", r.TopReason },

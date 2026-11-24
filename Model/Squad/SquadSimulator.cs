@@ -32,6 +32,22 @@ namespace WarIsland.Model
         public int CpLeft;
         public int PopBlocked;
         public string TopReason = "";
+        /// <summary>本局峰值：深度重叠对数。</summary>
+        public int OverlapPairsMax;
+        /// <summary>本局峰值：最大重叠深度（游戏数值）。</summary>
+        public double OverlapDepthMax;
+        public double OverlapWorstTime = -1.0;
+        public int OverlapWorstA = -1;
+        public int OverlapWorstB = -1;
+        /// <summary>本局峰值：分离之后仍残留的深度重叠。</summary>
+        public int OverlapPairsAfterMax;
+        public double OverlapDepthAfterMax;
+        /// <summary>本局：分离之后仍有深度重叠的 tick 数。</summary>
+        public int OverlapAfterTicks;
+        /// <summary>本局累计：已进攻击态却打不出去的"人·秒"。</summary>
+        public double UnfiredEngagedSeconds;
+        /// <summary>本局朝向反转次数 / 战斗秒数。</summary>
+        public double HeadingFlipsPerSec;
     }
 
     /// <summary>一批小队推演的汇总（--simulate 的返回）。</summary>
@@ -67,6 +83,20 @@ namespace WarIsland.Model
         public int AvgEnemyMaxZone;
         public double AvgPlayerZoneSeconds;
         public double AvgEnemyZoneSeconds;
+        /// <summary>均值：本局峰值深度重叠对数。</summary>
+        public double AvgOverlapPairsMax;
+        /// <summary>均值：本局峰值最大重叠深度（米）。</summary>
+        public double AvgOverlapDepthMaxMeters;
+        /// <summary>均值：分离之后仍残留的深度重叠对数。</summary>
+        public double AvgOverlapPairsAfterMax;
+        /// <summary>均值：分离之后的最大重叠深度（米）。</summary>
+        public double AvgOverlapDepthAfterMaxMeters;
+        /// <summary>均值：分离之后仍有深度重叠的 tick 数。</summary>
+        public double AvgOverlapAfterTicks;
+        /// <summary>均值：本局累计"已进攻击态却打不出去"的人·秒。</summary>
+        public double AvgUnfiredEngagedSeconds;
+        /// <summary>均值：朝向反转次数 / 战斗秒数。</summary>
+        public double AvgHeadingFlipsPerSec;
         public readonly Dictionary<string, int> ReviewCounts = new Dictionary<string, int>(StringComparer.Ordinal);
         public readonly Dictionary<string, SquadUnitStat> PlayerByUnit = new Dictionary<string, SquadUnitStat>(StringComparer.Ordinal);
         public readonly Dictionary<string, SquadUnitStat> EnemyByUnit = new Dictionary<string, SquadUnitStat>(StringComparer.Ordinal);
@@ -145,6 +175,13 @@ namespace WarIsland.Model
                 summary.AvgEnemyMaxZone += r.EnemyMaxZone;
                 summary.AvgPlayerZoneSeconds += r.PlayerZoneSeconds;
                 summary.AvgEnemyZoneSeconds += r.EnemyZoneSeconds;
+                summary.AvgOverlapPairsMax += r.OverlapPairsMax;
+                summary.AvgOverlapDepthMaxMeters += r.OverlapDepthMax * RtsUnits.R1;
+                summary.AvgOverlapPairsAfterMax += r.OverlapPairsAfterMax;
+                summary.AvgOverlapDepthAfterMaxMeters += r.OverlapDepthAfterMax * RtsUnits.R1;
+                summary.AvgOverlapAfterTicks += r.OverlapAfterTicks;
+                summary.AvgUnfiredEngagedSeconds += r.UnfiredEngagedSeconds;
+                summary.AvgHeadingFlipsPerSec += r.HeadingFlipsPerSec;
                 summary.TotalPlayerKills += r.PlayerKills;
                 summary.TotalEnemyKills += r.EnemyKills;
                 totalSeconds += r.Seconds;
@@ -196,6 +233,16 @@ namespace WarIsland.Model
                     CpLeft = (r.AttackPlan?.CpLeft ?? 0) + (r.DefendPlan?.CpLeft ?? 0),
                     PopBlocked = (r.AttackPlan?.PopBlocked ?? 0) + (r.DefendPlan?.PopBlocked ?? 0),
                     TopReason = r.TopReason,
+                    OverlapPairsMax = r.OverlapPairsMax,
+                    OverlapDepthMax = Math.Round(r.OverlapDepthMax * RtsUnits.R1, 3),
+                    OverlapPairsAfterMax = r.OverlapPairsAfterMax,
+                    OverlapDepthAfterMax = Math.Round(r.OverlapDepthAfterMax * RtsUnits.R1, 3),
+                    OverlapAfterTicks = r.OverlapAfterTicks,
+                    OverlapWorstTime = r.OverlapWorstTime,
+                    OverlapWorstA = r.OverlapWorstA,
+                    OverlapWorstB = r.OverlapWorstB,
+                    UnfiredEngagedSeconds = Math.Round(r.UnfiredEngagedSeconds, 1),
+                    HeadingFlipsPerSec = r.HeadingFlipsPerSec,
                 };
                 summary.Rows.Add(row);
 
@@ -220,6 +267,13 @@ namespace WarIsland.Model
             summary.AvgEnemyMaxZone = (int)Math.Round((double)summary.AvgEnemyMaxZone / nGames);
             summary.AvgPlayerZoneSeconds = Math.Round(summary.AvgPlayerZoneSeconds / nGames * 10.0) / 10.0;
             summary.AvgEnemyZoneSeconds = Math.Round(summary.AvgEnemyZoneSeconds / nGames * 10.0) / 10.0;
+            summary.AvgOverlapPairsMax = Math.Round(summary.AvgOverlapPairsMax / nGames * 10.0) / 10.0;
+            summary.AvgOverlapDepthMaxMeters = Math.Round(summary.AvgOverlapDepthMaxMeters / nGames * 1000.0) / 1000.0;
+            summary.AvgOverlapPairsAfterMax = Math.Round(summary.AvgOverlapPairsAfterMax / nGames * 10.0) / 10.0;
+            summary.AvgOverlapDepthAfterMaxMeters = Math.Round(summary.AvgOverlapDepthAfterMaxMeters / nGames * 1000.0) / 1000.0;
+            summary.AvgOverlapAfterTicks = Math.Round(summary.AvgOverlapAfterTicks / nGames * 10.0) / 10.0;
+            summary.AvgUnfiredEngagedSeconds = Math.Round(summary.AvgUnfiredEngagedSeconds / nGames * 10.0) / 10.0;
+            summary.AvgHeadingFlipsPerSec = Math.Round(summary.AvgHeadingFlipsPerSec / nGames * 100.0) / 100.0;
             summary.AvgSlotError = Math.Round(summary.AvgSlotError / nGames * 1000.0) / 1000.0;
             summary.AvgPlayerDps = totalSeconds > 1e-6 ? Math.Round(summary.AvgPlayerDamage * nGames / totalSeconds * 10.0) / 10.0 : 0.0;
             summary.AvgPlayerDpsPerMember = totalMemberSeconds > 1e-6

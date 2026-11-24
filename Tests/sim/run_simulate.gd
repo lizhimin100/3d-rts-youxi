@@ -138,6 +138,12 @@ func _print_squad_report(res: Dictionary, games: int, seed_base: int) -> void:
 	print("寻路：平均路径 %.0f 游戏数值（直线比 %.2f）｜ 卡住脱困 %.1f 次/局 ｜ 槽位偏离 %.2f m" % [
 		float(res.get("avg_path_length", 0.0)), float(res.get("avg_path_ratio", 0.0)),
 		float(res.get("avg_stuck_events", 0.0)), float(res.get("avg_slot_error", 0.0))])
+	print("运动学：深叠峰值 %.1f 对 / %.3f m（分离后 %.1f 对 / %.3f m，残留 %.1f tick）｜ 空挥 %.1f 人·秒 ｜ 朝向翻转 %.2f/s" % [
+		float(res.get("avg_overlap_pairs_max", 0.0)), float(res.get("avg_overlap_depth_max_m", 0.0)),
+		float(res.get("avg_overlap_pairs_after_max", 0.0)), float(res.get("avg_overlap_depth_after_max_m", 0.0)),
+		float(res.get("avg_overlap_after_ticks", 0.0)),
+		float(res.get("avg_unfired_engaged_seconds", 0.0)),
+		float(res.get("avg_heading_flips_per_sec", 0.0))])
 
 	print("------------------------------------------------------------------------------------------")
 	print("DPS 明细（我方）：")
@@ -211,6 +217,13 @@ func _squad_summary(res: Dictionary, games: int, seed_base: int) -> Dictionary:
 		"avg_path_ratio": float(res.get("avg_path_ratio", 0.0)),
 		"avg_stuck_events": float(res.get("avg_stuck_events", 0.0)),
 		"avg_slot_error": float(res.get("avg_slot_error", 0.0)),
+		"avg_overlap_pairs_max": float(res.get("avg_overlap_pairs_max", 0.0)),
+		"avg_overlap_depth_max_m": float(res.get("avg_overlap_depth_max_m", 0.0)),
+		"avg_overlap_pairs_after_max": float(res.get("avg_overlap_pairs_after_max", 0.0)),
+		"avg_overlap_depth_after_max_m": float(res.get("avg_overlap_depth_after_max_m", 0.0)),
+		"avg_overlap_after_ticks": float(res.get("avg_overlap_after_ticks", 0.0)),
+		"avg_unfired_engaged_seconds": float(res.get("avg_unfired_engaged_seconds", 0.0)),
+		"avg_heading_flips_per_sec": float(res.get("avg_heading_flips_per_sec", 0.0)),
 		"player_dps_rows": res.get("player_dps_rows", []),
 		"review_counts": res.get("review_counts", {}),
 		"samples": samples_brief,

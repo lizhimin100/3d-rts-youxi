@@ -100,7 +100,7 @@ namespace WarIsland.Model
             InstantTrain = instantTrain;
             Tuning = SquadTuning.FromDict(tuning);
             Match = new PlanningMatch(planning, units, seed);
-            Battle = new SquadBattle(units, rules, arena, planning, seed ^ 0x5F3759DF);
+            Battle = new SquadBattle(units, rules, arena, planning, seed ^ 0x5F3759DF, Tuning);
             if (playerBaseHp >= 0.0)
             {
                 Battle.SetBaseHp(playerBaseHp, enemyBaseHp >= 0.0 ? enemyBaseHp : arena.EnemyBaseHp);

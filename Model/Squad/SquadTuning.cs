@@ -27,6 +27,28 @@ namespace WarIsland.Model
         /// <summary>白送几名 —— 单兵制下的数量，不是"几队"。</summary>
         public int FreeDefendCount = 3;
 
+        // =================================================================
+        // 2026-11-24 运动学（Phase 1）：布阵 + 分离几何 + 朝向
+        // =================================================================
+        /// <summary>同排相邻两人的中心距（游戏数值，默认 96 = 1.44 m）。</summary>
+        public double FilePitch = FormationPlan.FilePitchDefault;
+        /// <summary>相邻两排的中心距（游戏数值，默认 144 = 2.16 m）。</summary>
+        public double RankPitch = FormationPlan.RankPitchDefault;
+        /// <summary>近战线最后一排 → 远程线第一排的额外间距（游戏数值，默认 240 = 3.60 m）。</summary>
+        public double LineGap = FormationPlan.LineGapDefault;
+        /// <summary>战场单排人数上限（偶数，默认 24）。</summary>
+        public int MaxFiles = FormationPlan.MaxFilesDefault;
+        /// <summary>棋盘格内出生位的单排人数（默认 4，保证 7 m 格内放得下）。</summary>
+        public int TileFiles = FormationPlan.TileFilesDefault;
+        /// <summary>硬核 = 身位和 × 该系数；0.90 表示允许 10% 贴身重叠。</summary>
+        public double HardCoreFactor = 0.90;
+        /// <summary>停火线 = 射程 × 该系数；必须 &lt; 1.0（开火线是射程 + 4）。</summary>
+        public double StandOffRatio = 0.92;
+        /// <summary>转向速度（度/秒，默认 540）。</summary>
+        public double TurnRateDeg = 540.0;
+        /// <summary>朝向死区（度，默认 6）：差值小于它就不转，防止微抖。</summary>
+        public double FacingDeadzoneDeg = 6.0;
+
         public static SquadTuning FromDict(IDictionary<string, object> d)
         {
             var t = new SquadTuning();
@@ -49,6 +71,25 @@ namespace WarIsland.Model
                 t.FreeDefendStar = JVal.Int(free, "star", t.FreeDefendStar);
                 t.FreeDefendCount = JVal.Int(free, "count", t.FreeDefendCount);
             }
+
+            var formation = JVal.Dict(d, "formation");
+            if (formation != null)
+            {
+                t.FilePitch = JVal.Double(formation, "file_pitch", t.FilePitch);
+                t.RankPitch = JVal.Double(formation, "rank_pitch", t.RankPitch);
+                t.LineGap = JVal.Double(formation, "line_gap", t.LineGap);
+                t.MaxFiles = JVal.Int(formation, "max_files", t.MaxFiles);
+                t.TileFiles = JVal.Int(formation, "tile_files", t.TileFiles);
+            }
+
+            var combat = JVal.Dict(d, "combat");
+            if (combat != null)
+            {
+                t.HardCoreFactor = JVal.Double(combat, "hard_core_factor", t.HardCoreFactor);
+                t.StandOffRatio = JVal.Double(combat, "stand_off_ratio", t.StandOffRatio);
+                t.TurnRateDeg = JVal.Double(combat, "turn_rate_deg", t.TurnRateDeg);
+                t.FacingDeadzoneDeg = JVal.Double(combat, "facing_deadzone_deg", t.FacingDeadzoneDeg);
+            }
             return t;
         }
 
@@ -70,6 +111,27 @@ namespace WarIsland.Model
             }
             if (FreeDefendStar < 1 || FreeDefendStar > 3)
                 errors.Add($"squad.json：free_defend.star={FreeDefendStar} 越界（1..3）");
+
+            if (FilePitch < 48.0 || FilePitch > 240.0)
+                errors.Add($"squad.json：formation.file_pitch={FilePitch} 越界（48..240）");
+            if (RankPitch < 72.0 || RankPitch > 360.0)
+                errors.Add($"squad.json：formation.rank_pitch={RankPitch} 越界（72..360）");
+            if (LineGap < 0.0 || LineGap > 960.0)
+                errors.Add($"squad.json：formation.line_gap={LineGap} 越界（0..960）");
+            if (MaxFiles < 2 || MaxFiles > 64)
+                errors.Add($"squad.json：formation.max_files={MaxFiles} 越界（2..64）");
+            if (TileFiles < 2 || TileFiles > 12)
+                errors.Add($"squad.json：formation.tile_files={TileFiles} 越界（2..12）");
+            if (HardCoreFactor < 0.80 || HardCoreFactor >= 1.0)
+                errors.Add($"squad.json：combat.hard_core_factor={HardCoreFactor} 越界（0.80..0.99）");
+            if (StandOffRatio < 0.80 || StandOffRatio >= 1.0)
+                errors.Add($"squad.json：combat.stand_off_ratio={StandOffRatio} 越界（0.80..0.99）");
+            if (TurnRateDeg < 90.0 || TurnRateDeg > 1440.0)
+                errors.Add($"squad.json：combat.turn_rate_deg={TurnRateDeg} 越界（90..1440）");
+            if (FacingDeadzoneDeg < 0.0 || FacingDeadzoneDeg > 45.0)
+                errors.Add($"squad.json：combat.facing_deadzone_deg={FacingDeadzoneDeg} 越界（0..45）");
+            if (FilePitch < RankPitch * 0.5)
+                errors.Add($"squad.json：file_pitch={FilePitch} 小于 rank_pitch 的一半，排内会挤成一列");
             return errors;
         }
     }

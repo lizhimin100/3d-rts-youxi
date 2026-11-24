@@ -56,12 +56,22 @@ namespace WarIsland.Model
 
         public readonly List<SquadMember> Members = new List<SquadMember>();
         /// <summary>
-        /// 攻击态锁定（2026-11-22 根治"接敌被推走"）：
-        /// 只要射程内有活目标，这名单兵的位置与本 tick 的移动就**完全冻结** ——
-        /// 敌我友军的碰撞分离一律跳过它。没有这条，两条同速的队列会在接触的一瞬间
-        /// 互相挤开 1~2 米，画面上就是"打到一半被弹走"。
+        /// 攻击态质量锁定（2026-11-24 修正）：
+        /// 只要射程内（R+4）有活目标，这名单兵 `invMass=0` —— **推不动，但仍按份额推别人**；
+        /// 硬核在所有情况下生效。2026-11-22 的"整对跳过分离"已删除：那会让增援穿过正在对砍的人、
+        /// 两个锁定单位叠在同一点，目标死后又一次性弹开。
         /// </summary>
         public bool Locked;
+        /// <summary>
+        /// 是否"正在打"（R+4 实际开火线，带 0.25 s 滞回）。表现层用它播攻击动作；
+        /// 与 <see cref="Locked"/> 的区别：Locked 是"推不动"的质量状态（R+4，无滞回），
+        /// Engaged 是"够得着"的稳定表现态（R+4 进、R+12 出）。
+        /// </summary>
+        public bool Engaged;
+        /// <summary>朝向反转计数：上一次转向的方向 / 连续转过多少 / 反转后累计多少。</summary>
+        public int LastTurnSign;
+        public double TurnAccum;
+        public double FlipAccum;
         public int AliveCount;
         public double DamageDealt;
         public int Kills;
@@ -134,23 +144,32 @@ namespace WarIsland.Model
         /// <summary>近战判定容差（游戏数值）：0.06 米。</summary>
         private const double RangeSlack = 4.0;
         /// <summary>
-        /// 单兵间距系数：按"身位直径"分开。1.55 = 两个人贴到肩膀擦肩，
-        /// 不会叠模；攻击态的单位完全不参与分离（见 <see cref="BattleSquad.Locked"/>）。
+        /// 硬核系数在 `SquadTuning.HardCoreFactor`（默认 0.90），不再有 1.55。
+        /// 1.55×身位和 经常大于近战射程（领主 vs 步兵 110.5 &gt; 99），是"够不着"的根因；
+        /// 行军间距由 <see cref="FormationPlan.FilePitchDefault"/>（96）保证，碰撞只留一个半径。
         /// </summary>
-        private const double SeparationFactor = 1.55;
         /// <summary>攻击态判定的额外容差（游戏数值）：0.12 米，射程边界不抖。</summary>
         private const double LockSlack = 8.0;
         /// <summary>攻击移动的最小索敌半径（游戏数值）= 9 米；远程按自身射程 ×1.6 放宽。</summary>
         private const double DetectRadius = 600.0;
         /// <summary>驻守时的自动索敌半径下限（游戏数值）= 7.5 米。</summary>
         private const double HoldDetectMin = 500.0;
+        /// <summary>
+        /// 重叠读数的固定标尺（0.90×身位和）。**不跟随配置变化**，
+        /// 这样改前/改后的 overlap 指标是同一把尺子；正常贴身（d≈硬核）不算深叠。
+        /// </summary>
+        private const double MetricHardCoreFactor = 0.90;
 
         private readonly UnitCatalog _units;
         private readonly CombatRules _rules;
         private readonly SquadArena _arena;
         private readonly PlanningConfig _planning;
+        private readonly SquadTuning _tuning;
         private readonly Rng _rng;
         private readonly SquadRouteGraph _route;
+
+        /// <summary>每格已用到的阵位号：同一格连出多批时继续往后排，绝不回到同一组点。</summary>
+        private readonly Dictionary<int, int> _tileCursor = new Dictionary<int, int>();
 
         private readonly List<BattleSquad> _squads = new List<BattleSquad>();
         private readonly List<SquadShot> _shots = new List<SquadShot>();
@@ -172,12 +191,14 @@ namespace WarIsland.Model
         private readonly RoundModifiers _playerMods = new RoundModifiers();
         private readonly RoundModifiers _enemyMods = new RoundModifiers();
 
-        public SquadBattle(UnitCatalog units, CombatRules rules, SquadArena arena, PlanningConfig planning, int seed)
+        public SquadBattle(UnitCatalog units, CombatRules rules, SquadArena arena, PlanningConfig planning, int seed,
+            SquadTuning tuning = null)
         {
             _units = units ?? throw new ArgumentNullException(nameof(units));
             _rules = rules ?? throw new ArgumentNullException(nameof(rules));
             _arena = arena ?? throw new ArgumentNullException(nameof(arena));
             _planning = planning;
+            _tuning = tuning ?? new SquadTuning();
             _rng = new Rng(seed);
             _route = arena.Route;
             _playerBaseHp = Math.Max(arena.PlayerBaseHp, 0.0);
@@ -361,27 +382,33 @@ namespace WarIsland.Model
         /// <summary>
         /// 在战术格子的出兵锚点（格子正中心）生成一整批单兵。
         ///
-        /// 落点用 <see cref="UnitBody.SpawnRing"/>：黄金角螺旋 + 右下象限偏置，
-        /// 严格避开左上角建筑占地 —— 否则 6 个人会站在兵营里面。
-        /// <paramref name="count"/> = 这一批几个，<paramref name="ordinal"/> = 在同一格连出多批时的批次号。
+        /// 2026-11-24 起不再用黄金角环（`SpawnRing(6)` 自身最小点距只有 0.744 m，
+        /// 小于身位直径，一张牌就会互叠）。改为 <see cref="FormationPlan.TileSlot"/>：
+        /// 每格维护一个只增不减的 slot 游标，同格连出多批继续往后排；列距 96 / 排距 144，
+        /// 起点在格子右下象限（+60,+60），构造上避开左上建筑占地。
+        /// <paramref name="ordinal"/> 仅为兼容旧签名保留，真实批次号由 <see cref="_tileCursor"/> 决定。
         /// </summary>
         public int AddUnitsAtTile(int side, string unitId, int star, int tileIndex,
             string sourceBuilding, int count, int ordinal, string role)
         {
+            _ = ordinal;
             Vec2 center = _arena.TileSpawnWorld(tileIndex);
-            var ring = UnitBody.SpawnRing(Math.Max(count, 1));
-            // 同一格连出多批（同一张牌两张、或两座兵营各出一批）：整环按批次往外挪一圈，
-            // 不然第二批会和第一批落在同一圈点上。
-            double push = Math.Max(ordinal, 0) * (0.55 + 0.12 * Math.Sqrt(ring.Count));
-            double dir = side == 0 ? -1.0 : 1.0;
+            _tileCursor.TryGetValue(tileIndex, out int slot);
             int made = 0;
-            for (int i = 0; i < ring.Count; i++)
+            int n = Math.Max(count, 1);
+            for (int i = 0; i < n; i++)
             {
-                double x = center.X + ring[i].X + dir * push * 0.35;
-                double z = center.Y + ring[i].Y + push;
+                Vec2 off = FormationPlan.TileSlot(slot, _tuning.TileFiles, _tuning.FilePitch, _tuning.RankPitch);
+                double x = center.X + off.X * RtsUnits.R1;
+                double z = center.Y + off.Y * RtsUnits.R1;
                 int id = AddSquadRole(side, unitId, star, x, z, sourceBuilding, tileIndex, role);
-                if (id > 0) made += 1;
+                if (id > 0)
+                {
+                    made += 1;
+                    slot += 1;
+                }
             }
+            _tileCursor[tileIndex] = slot;
             return made;
         }
 
@@ -428,6 +455,8 @@ namespace WarIsland.Model
                 s.AliveCount = 0;
                 s.TargetSquad = -1;
                 s.Order = SquadOrder.Stop;
+                s.Locked = false;
+                s.Engaged = false;
                 s.Path.Clear();
                 for (int m = 0; m < s.Members.Count; m++) s.Members[m].Alive = false;
                 n += 1;
@@ -443,24 +472,39 @@ namespace WarIsland.Model
         }
 
         /// <summary>
-        /// 前压/后撤：把某一方某角色的**单兵**整体挪到指定世界点附近（据点已占领时的进攻出发点）。
-        /// 单兵没有阵型，所以这里按"每排 5 人、排距 1.1 米"铺一个薄方阵 ——
-        /// 全部落在同一点会被分离弹开，画面上等于开局抖一下。
+        /// 前压/后撤：把某一方某角色的单兵整体挪到指定世界点附近。
+        /// 2026-11-24 起用 <see cref="FormationPlan.BattleSlot"/>：
+        /// 近战在前、远程在后（按 `projectile` 判定），中轴向外对称、超宽折行；
+        /// 近战线占 `meleeRanks` 排，远程线整体再后退 `meleeRanks×rank_pitch + line_gap`。
         /// </summary>
         public int StageSide(int side, string role, double worldX, double worldZ)
         {
-            int n = 0;
+            var units = new List<BattleSquad>();
+            int melee = 0;
             for (int i = 0; i < _squads.Count; i++)
             {
                 BattleSquad s = _squads[i];
                 if (!s.Alive || s.Purged || s.Side != side) continue;
                 if (!string.IsNullOrEmpty(role) && s.Role != role) continue;
-                int col = n % 5;
-                int row = n / 5;
-                double dir = side == 0 ? -1.0 : 1.0;
-                double ox = worldX + dir * row * 1.15;
-                double oz = worldZ + (col - 2) * 1.05;
-                var lane = _arena.WorldToLane(ox, oz);
+                units.Add(s);
+                if (FormationPlan.LineOf(s.Def) == UnitLine.Melee) melee += 1;
+            }
+            if (units.Count == 0) return 0;
+
+            int files = Math.Max(_tuning.MaxFiles, 2);
+            int meleeRanks = FormationPlan.Ranks(melee, files);
+            Vec2 anchor = _arena.WorldToLane(worldX, worldZ);
+            int dirX = side == 0 ? -1 : 1;
+            int slotMelee = 0;
+            int slotRanged = 0;
+            int n = 0;
+            for (int i = 0; i < units.Count; i++)
+            {
+                BattleSquad s = units[i];
+                UnitLine line = FormationPlan.LineOf(s.Def);
+                int slot = line == UnitLine.Melee ? slotMelee++ : slotRanged++;
+                Vec2 lane = FormationPlan.BattleSlot(anchor.X, anchor.Y, dirX, line, slot, files, meleeRanks,
+                    _tuning.FilePitch, _tuning.RankPitch, _tuning.LineGap);
                 lane = _route.ClampPoint(lane, s.Radius);
                 s.X = lane.X;
                 s.Z = lane.Y;
@@ -470,6 +514,11 @@ namespace WarIsland.Model
                 s.PathIndex = 0;
                 s.TargetSquad = -1;
                 s.Locked = false;
+                s.Engaged = false;
+                s.LastTurnSign = 0;
+                s.TurnAccum = 0.0;
+                s.FlipAccum = 0.0;
+                s.Heading = side == 0 ? 0.0 : Math.PI;
                 s.StuckX = s.X;
                 s.StuckZ = s.Z;
                 s.StuckTimer = 0.0;
@@ -783,7 +832,6 @@ namespace WarIsland.Model
             SpawnDueWaves(_time);
 
             UpdateOrders(dt);
-            MoveSquads(dt);
             ResolveSeparation();
             UpdateMembers(dt);
             UpdateAttacks(dt);
@@ -825,6 +873,18 @@ namespace WarIsland.Model
                     }
                 }
 
+                // Phase 1：先算"够不够得着"，再决定动不动。
+                // hasFire = 实际开火线（R+4）；hasLock = 免推挤的滞回线（R+12）。
+                // Locked 只对"正在追打"的 Attack/AttackMove 生效；Hold 靠 invMass=0.15 抗推。
+                bool hasFire = HasTargetInRange(s, s.MaxRange + RangeSlack);
+                bool hasLock = HasTargetInRange(s, s.MaxRange + RangeSlack + LockSlack);
+                bool canLock = s.Order == SquadOrder.Attack || s.Order == SquadOrder.AttackMove;
+                s.Engaged = hasFire || (s.Engaged && hasLock);
+                // 质量锁定只认"真的够得着"（R+4）；R+12 只用于表现滞回。
+                // 否则单位会停在 99~107 的锁定带里：有攻击态、却永远不进开火线。
+                s.Locked = canLock && hasFire;
+                double standOff = s.MaxRange * _tuning.StandOffRatio;
+
                 switch (s.Order)
                 {
                     case SquadOrder.Attack:
@@ -832,9 +892,8 @@ namespace WarIsland.Model
                         if (s.TargetSquad < 0) { s.Order = SquadOrder.Hold; s.WantsMove = false; break; }
                         BattleSquad t = Find(s.TargetSquad);
                         if (t == null || !t.Alive) { s.Order = SquadOrder.Hold; s.WantsMove = false; break; }
-                        bool engaged = Engaged(s, t);
-                        s.WantsMove = !engaged;
-                        if (!engaged) MoveToward(s, t.X, t.Z, dt);
+                        s.WantsMove = !s.Locked;
+                        if (!s.Locked) MoveToward(s, t.X, t.Z, dt, standOff);
                         s.OrderX = t.X;
                         s.OrderZ = t.Z;
                         break;
@@ -860,22 +919,21 @@ namespace WarIsland.Model
                                 }
                                 else
                                 {
-                                    bool engaged = Engaged(s, t);
-                                    s.WantsMove = !engaged;
-                                    if (!engaged) MoveToward(s, t.X, t.Z, dt);
+                                    s.WantsMove = !s.Locked;
+                                    if (!s.Locked) MoveToward(s, t.X, t.Z, dt, standOff);
                                     break;
                                 }
                             }
                             else s.TargetSquad = -1;
                         }
-                        s.WantsMove = true;
-                        FollowPath(s, dt);
+                        s.WantsMove = !s.Locked;
+                        if (!s.Locked) FollowPath(s, dt);
                         break;
                     }
                     case SquadOrder.Move:
                     {
-                        s.WantsMove = true;
-                        FollowPath(s, dt);
+                        s.WantsMove = !s.Locked;
+                        if (!s.Locked) FollowPath(s, dt);
                         break;
                     }
                     case SquadOrder.Hold:
@@ -893,18 +951,20 @@ namespace WarIsland.Model
                     }
                 }
 
-                // 攻击态锁定（唯一实现）：射程内有活目标 = 正在打 → 本 tick 不许动、
-                // 也不许被任何人（敌/友）的碰撞分离推开。
-                s.Locked = HasTargetInRange(s);
-                if (s.Locked) s.WantsMove = false;
+                // 面向目标：射程内优先看敌人，6° 死区与转速在 TurnToward 里。
+                if (s.Engaged && s.TargetSquad >= 0)
+                {
+                    BattleSquad t = Find(s.TargetSquad);
+                    if (t != null && t.Alive)
+                        TurnToward(s, Math.Atan2(t.Z - s.Z, t.X - s.X), dt);
+                }
             }
         }
 
-        /// <summary>射程内是否有活着的敌人（含容差）—— 决定"是否处于攻击态"。</summary>
-        private bool HasTargetInRange(BattleSquad s)
+        /// <summary>给定半径内是否有活着的敌人 —— 开火判定与锁定滞回共用这一个扫描。</summary>
+        private bool HasTargetInRange(BattleSquad s, double range)
         {
-            double reach = s.MaxRange + RangeSlack + LockSlack;
-            double r2 = reach * reach;
+            double r2 = range * range;
             for (int i = 0; i < _squads.Count; i++)
             {
                 BattleSquad o = _squads[i];
@@ -919,23 +979,6 @@ namespace WarIsland.Model
                 }
             }
             return false;
-        }
-
-        private void MoveSquads(double dt)
-        {
-            for (int i = 0; i < _squads.Count; i++)
-            {
-                BattleSquad s = _squads[i];
-                if (!s.Alive || !IsActive(s)) continue;
-                if (s.Order == SquadOrder.Hold || s.Order == SquadOrder.Stop || !s.WantsMove)
-                {
-                    s.StuckTimer = 0.0;
-                    s.StuckX = s.X;
-                    s.StuckZ = s.Z;
-                    continue;
-                }
-                CheckStuck(s, dt);
-            }
         }
 
         private void FollowPath(BattleSquad s, double dt)
@@ -969,31 +1012,40 @@ namespace WarIsland.Model
             MoveToward(s, wp.X, wp.Y, dt);
         }
 
-        private void MoveToward(BattleSquad s, double tx, double tz, double dt)
+        /// <summary>
+        /// 朝目标点走一步。
+        /// <paramref name="stopDistance"/> = 停火线（打单位时传 0.92R；走路/追路径传 0）。
+        /// 关键：步长裁到"剩余到停火线的距离"，**永不超过**，所以不会在射程边界上反复进出。
+        /// 另外，任何一步都不许跨进别人（敌/友/塔）的硬核；被挡住时只保留切向分量。
+        /// </summary>
+        private void MoveToward(BattleSquad s, double tx, double tz, double dt, double stopDistance = 0.0)
         {
             double dx = tx - s.X;
             double dz = tz - s.Z;
             double d = Math.Sqrt(dx * dx + dz * dz);
-            if (d < 0.5) return;
-            double step = Math.Min(d, s.Speed * dt);
+            if (d <= stopDistance + 0.5) return;
+            double step = Math.Min(d - stopDistance, s.Speed * dt);
             if (step <= 0.0) return;
             double stepX = dx / d * step;
             double stepZ = dz / d * step;
 
-            // 身体阻挡：敌人在正前方贴住了，就把"朝它走"的分量剪掉（沿着它滑），
-            // 否则同速追击会永远从对方身上穿过去 —— 近战一辈子打不到人。
-            // Move 是"强行军"：不恋战、可以挤过去（玩家点地板就是要点地板）。
-            bool canPin = s.Order != SquadOrder.Move;
-            for (int i = 0; canPin && i < _squads.Count; i++)
+            // 硬核阻挡：不许一步跨进任何单位的硬核。
+            // 注意：这里**不再只挡敌人、也不再只挡 1.65 倍身位** —— 那是"近战够不着"的根因。
+            for (int i = 0; i < _squads.Count; i++)
             {
                 BattleSquad o = _squads[i];
-                if (!o.Alive || !IsActive(o) || o.Side == s.Side) continue;
+                if (o == s || !o.Alive || !IsActive(o)) continue;
+                // 只挡敌人：友军交给分离去挤。若连友军也挡，后排会被前排堵死在同一条路径点上。
+                if (o.Side == s.Side) continue;
                 double ex = s.X - o.X;
                 double ez = s.Z - o.Z;
                 double ed = Math.Sqrt(ex * ex + ez * ez);
                 if (ed < 1e-6) continue;
-                double pin = (s.ContactRadius + o.ContactRadius) * (SeparationFactor + 0.10);
-                if (ed > pin) continue;
+                double hardCore = (s.ContactRadius + o.ContactRadius) * _tuning.HardCoreFactor;
+                double afterX = s.X + stepX;
+                double afterZ = s.Z + stepZ;
+                double ad = Dist(afterX, afterZ, o.X, o.Z);
+                if (ad >= hardCore || ad >= ed) continue;
                 double nx = ex / ed;
                 double nz = ez / ed;
                 double dot = stepX * nx + stepZ * nz;
@@ -1009,7 +1061,8 @@ namespace WarIsland.Model
             s.Z += stepZ;
             s.Travelled += moved;
             _stats.ActualTravelled += moved;
-            if (moved > 1e-6)
+            // 微小残余步长（< 2 cm）不驱动朝向，避免"原地抖头"。
+            if (moved > 1.5)
             {
                 double want = Math.Atan2(stepZ, stepX);
                 TurnToward(s, want, dt);
@@ -1020,10 +1073,35 @@ namespace WarIsland.Model
         private void TurnToward(BattleSquad s, double want, double dt)
         {
             double diff = NormalizeAngle(want - s.Heading);
-            double maxTurn = 7.0 * dt;
+            double dead = _tuning.FacingDeadzoneDeg * Math.PI / 180.0;
+            // 6° 死区：差值在死区内完全不转。没有它，射程边界/微小残余步长会让模型来回甩头。
+            if (Math.Abs(diff) <= dead) return;
+            double maxTurn = _tuning.TurnRateDeg * Math.PI / 180.0 * dt;
             if (diff > maxTurn) diff = maxTurn;
             if (diff < -maxTurn) diff = -maxTurn;
             s.Heading = NormalizeAngle(s.Heading + diff);
+
+            // 朝向反转计数（Phase 0 读数）：同向累计，反向时把累计弧长并入 FlipAccum；
+            // 累计超过 34° 才记一次，过滤"贴着阈值左右各抖 1°"的微抖。
+            if (Math.Abs(diff) > 1e-6)
+            {
+                int sign = diff > 0.0 ? 1 : -1;
+                if (s.LastTurnSign != 0 && sign != s.LastTurnSign)
+                {
+                    s.FlipAccum += Math.Abs(s.TurnAccum);
+                    if (s.FlipAccum > 0.6)
+                    {
+                        _stats.HeadingFlips += 1;
+                        s.FlipAccum = 0.0;
+                    }
+                    s.TurnAccum = 0.0;
+                }
+                else
+                {
+                    s.TurnAccum += Math.Abs(diff);
+                }
+                s.LastTurnSign = sign;
+            }
         }
 
         private void PlanPath(BattleSquad s, Vec2 target)
@@ -1050,60 +1128,64 @@ namespace WarIsland.Model
             }
         }
 
-        private void CheckStuck(BattleSquad s, double dt)
-        {
-            // 身边就有敌人 = 在打仗，不是卡住；只有"想走却谁都碰不到"才计一次脱困
-            if (AnyEnemyWithin(s, s.MaxRange + s.ContactRadius + 220.0))
-            {
-                s.StuckX = s.X;
-                s.StuckZ = s.Z;
-                s.StuckTimer = 0.0;
-                return;
-            }
-            double moved = Dist(s.X, s.Z, s.StuckX, s.StuckZ);
-            if (moved > 55.0)
-            {
-                s.StuckX = s.X;
-                s.StuckZ = s.Z;
-                s.StuckTimer = 0.0;
-                return;
-            }
-            s.StuckTimer += dt;
-            if (s.StuckTimer < 1.5) return;
-            s.StuckTimer = 0.0;
-            _stats.StuckEvents += 1;
-
-            double sign = (s.Id % 2 == 0) ? 1.0 : -1.0;
-            if (s.Order == SquadOrder.Attack && s.TargetSquad >= 0)
-            {
-                BattleSquad t = Find(s.TargetSquad);
-                if (t != null)
-                {
-                    s.OrderZ = t.Z + sign * 180.0;
-                    s.X += sign * 40.0;
-                }
-            }
-            else
-            {
-                s.OrderZ += sign * 180.0;
-                s.X += sign * 40.0;
-            }
-            ClampSquad(s);
-            if (s.Order == SquadOrder.Move || s.Order == SquadOrder.AttackMove)
-            {
-                PlanPath(s, new Vec2((float)s.OrderX, (float)s.OrderZ));
-                _stats.Repaths += 1;
-            }
-        }
-
         // =================================================================
         // 避障 / 成员槽位
         // =================================================================
+        /// <summary>
+        /// Phase 0 读数：每 tick 在分离之前量一次"真实叠模"。
+        /// deepPairs = 中心距 &lt; 0.5×0.90×身位和（半个人叠进去）；
+        /// maxOverlap = 0.90×身位和 − 中心距（最大重叠深度，游戏数值）。
+        /// </summary>
+        private void MeasureOverlap(bool after)
+        {
+            int deepPairs = 0;
+            double maxOverlap = 0.0;
+            int worstA = -1;
+            int worstB = -1;
+            for (int i = 0; i < _squads.Count; i++)
+            {
+                BattleSquad a = _squads[i];
+                if (!a.Alive || !IsActive(a)) continue;
+                for (int j = i + 1; j < _squads.Count; j++)
+                {
+                    BattleSquad b = _squads[j];
+                    if (!b.Alive || !IsActive(b)) continue;
+                    double hardCore = (a.ContactRadius + b.ContactRadius) * MetricHardCoreFactor;
+                    double d = Dist(a.X, a.Z, b.X, b.Z);
+                    if (d >= hardCore) continue;
+                    double overlap = hardCore - d;
+                    if (overlap > maxOverlap)
+                    {
+                        maxOverlap = overlap;
+                        worstA = a.Id;
+                        worstB = b.Id;
+                    }
+                    if (d < hardCore * 0.5) deepPairs += 1;
+                }
+            }
+            if (after)
+            {
+                if (deepPairs > 0) _stats.OverlapAfterTicks += 1;
+                if (deepPairs > _stats.OverlapPairsAfterMax) _stats.OverlapPairsAfterMax = deepPairs;
+                if (maxOverlap > _stats.OverlapDepthAfterMax) _stats.OverlapDepthAfterMax = maxOverlap;
+                return;
+            }
+            if (deepPairs > _stats.OverlapPairsMax) _stats.OverlapPairsMax = deepPairs;
+            if (maxOverlap > _stats.OverlapDepthMax)
+            {
+                _stats.OverlapDepthMax = maxOverlap;
+                _stats.OverlapWorstTime = Round2(_time);
+                _stats.OverlapWorstA = worstA;
+                _stats.OverlapWorstB = worstB;
+            }
+        }
+
         private void ResolveSeparation()
         {
+            MeasureOverlap(false);
             var pushX = new double[_squads.Count];
             var pushZ = new double[_squads.Count];
-            for (int pass = 0; pass < 2; pass++)
+            for (int pass = 0; pass < 5; pass++)
             {
                 for (int i = 0; i < pushX.Length; i++)
                 {
@@ -1114,16 +1196,13 @@ namespace WarIsland.Model
                 {
                     BattleSquad a = _squads[i];
                     if (!a.Alive || !IsActive(a)) continue;
-                    // 攻击态锁定：正在对砍的人不推别人、也不被别人推。
-                    // 这就是"接敌不会被挤走"的唯一判据（全局一处，别在别处再写一份）。
-                    if (a.Locked) continue;
                     for (int j = i + 1; j < _squads.Count; j++)
                     {
                         BattleSquad b = _squads[j];
-                        if (!b.Alive || !IsActive(b) || b.Locked) continue;
+                        if (!b.Alive || !IsActive(b)) continue;
                         double dx = a.X - b.X;
                         double dz = a.Z - b.Z;
-                        double min = (a.ContactRadius + b.ContactRadius) * SeparationFactor;
+                        double min = (a.ContactRadius + b.ContactRadius) * _tuning.HardCoreFactor;
                         double d2 = dx * dx + dz * dz;
                         if (d2 >= min * min) continue;
                         double d = Math.Sqrt(d2);
@@ -1137,16 +1216,29 @@ namespace WarIsland.Model
                         double overlap = min - d;
                         double nx = dx / d;
                         double nz = dz / d;
-                        pushX[i] += nx * overlap * 0.5;
-                        pushZ[i] += nz * overlap * 0.5;
-                        pushX[j] -= nx * overlap * 0.5;
-                        pushZ[j] -= nz * overlap * 0.5;
+
+                        // 质量分离（2026-11-24 唯一实现）：
+                        // 攻击态/塔 invMass=0 → 自己推不动，但仍然按份额推别人；
+                        // 两个都不可推时各让一半 —— 所以"锁定"再也不会变成"整对跳过、互相穿模"。
+                        double invA = InvMass(a);
+                        double invB = InvMass(b);
+                        double sum = invA + invB;
+                        if (sum <= 1e-9)
+                        {
+                            invA = 0.5;
+                            invB = 0.5;
+                            sum = 1.0;
+                        }
+                        pushX[i] += nx * overlap * (invA / sum);
+                        pushZ[i] += nz * overlap * (invA / sum);
+                        pushX[j] -= nx * overlap * (invB / sum);
+                        pushZ[j] -= nz * overlap * (invB / sum);
                     }
                 }
                 for (int i = 0; i < _squads.Count; i++)
                 {
                     BattleSquad s = _squads[i];
-                    if (!s.Alive || !IsActive(s) || s.Locked) continue;
+                    if (!s.Alive || !IsActive(s)) continue;
                     // 分离是"挤"，不是"弹射"：每 tick 最多挪 0.9 个身位/秒的速度
                     double maxPush = Math.Max(s.Speed * Dt * 0.9, 6.0);
                     double len = Math.Sqrt(pushX[i] * pushX[i] + pushZ[i] * pushZ[i]);
@@ -1161,6 +1253,20 @@ namespace WarIsland.Model
                     ClampSquad(s);
                 }
             }
+            // 分离之后仍残留的深度重叠 = 玩家真正看到的叠模。
+            MeasureOverlap(true);
+        }
+
+        /// <summary>
+        /// 分离质量：攻击态 / 静止塔 = 0（推不动），驻守 = 0.15（很难推），行军 = 1。
+        /// 注意这里返回的是 **invMass**（越小越难推），不是质量本身。
+        /// </summary>
+        private static double InvMass(BattleSquad s)
+        {
+            if (s.Locked) return 0.0;
+            if (s.Speed <= 1e-9) return 0.0;
+            if (s.Order == SquadOrder.Hold || s.Order == SquadOrder.Stop) return 0.15;
+            return 1.0;
         }
 
         /// <summary>
@@ -1217,6 +1323,10 @@ namespace WarIsland.Model
                     if (!TryResolveTarget(mem.Target, s.Side, out BattleSquad ts, out SquadMember tm)) continue;
 
                     double d = Dist(mem.X, mem.Z, tm.X, tm.Z);
+                    // Phase 0 读数：冷却已好、也进了攻击态，却因为距离不够打不出去。
+                    // 正常战斗应接近 0；停火线在开火线之外时它会持续上涨。
+                    if (s.Engaged && d > s.MaxRange + RangeSlack)
+                        _stats.UnfiredEngagedSeconds += dt;
                     if (d > s.MaxRange + RangeSlack) continue;
 
                     var atk = new CombatAttacker
@@ -1291,7 +1401,9 @@ namespace WarIsland.Model
                             best = (t.Id << 8) | i;
                         }
                     }
-                    if (best >= 0) return best;
+                    // 只在目标确实进入开火线时才死守它；目标太远就继续扫描最近的敌人。
+                    // 否则会出现"锁定了一个远处目标，身边明明有人却一直不开火"。
+                    if (best >= 0 && bestD <= s.MaxRange + RangeSlack) return best;
                 }
             }
             double scan = s.MaxRange * 1.6;
@@ -1309,6 +1421,7 @@ namespace WarIsland.Model
                     best = (t.Id << 8) | i;
                 }
             }
+            if (best >= 0) s.TargetSquad = best >> 8;
             return best;
         }
 
@@ -1537,25 +1650,38 @@ namespace WarIsland.Model
         {
             if (entry.Wave == null) return;
             Vec2 goal = BaseWorld(entry.Side);
-            int index = 0;
+
+            // 先数这一波有几名近战，远程线整体后退 meleeRanks×rank_pitch + line_gap。
+            int melee = 0;
+            foreach (WaveSquad ws in entry.Wave.Squads)
+            {
+                UnitDef def = _units.Get(ws.Unit);
+                if (def == null || !def.Enabled) continue;
+                if (FormationPlan.LineOf(def) == UnitLine.Melee) melee += Math.Max(ws.Count, 1);
+            }
+            int files = Math.Max(_tuning.MaxFiles, 2);
+            int meleeRanks = FormationPlan.Ranks(melee, files);
+            Vec2 anchorWorld = _arena.TileSpawnWorld(entry.Tile);
+            Vec2 anchor = _arena.WorldToLane(anchorWorld.X, anchorWorld.Y);
+            int dirX = entry.Side == 0 ? -1 : 1;
+            int slotMelee = 0;
+            int slotRanged = 0;
+
             foreach (WaveSquad ws in entry.Wave.Squads)
             {
                 UnitDef def = _units.Get(ws.Unit);
                 if (def == null || !def.Enabled) continue;
                 int count = Math.Max(ws.Count, 1);
-                Vec2 anchor = _arena.TileSpawnWorld(entry.Tile);
+                UnitLine line = FormationPlan.LineOf(def);
                 for (int k = 0; k < count; k++)
                 {
-                    // 一排出 5 个、排距 1.15 米，往自家方向铺 —— 单兵时代没有"队形"，
-                    // 但一进场就叠在同一个点会被分离弹成一片散沙。
-                    double dir = entry.Side == 0 ? -1.0 : 1.0;
-                    double back = (index / 5) * 1.15;
-                    double lateral = (index % 5 - 2) * 1.05;
+                    int slot = line == UnitLine.Melee ? slotMelee++ : slotRanged++;
+                    Vec2 lane = FormationPlan.BattleSlot(anchor.X, anchor.Y, dirX, line, slot, files, meleeRanks,
+                        _tuning.FilePitch, _tuning.RankPitch, _tuning.LineGap);
+                    Vec2 world = _arena.LaneToWorld(lane.X, lane.Y);
                     int id = AddSquad(entry.Side, def.Id, Math.Max(ws.Star, 1),
-                        anchor.X + dir * back, anchor.Y + lateral,
-                        "", entry.Tile);
+                        world.X, world.Y, "", entry.Tile);
                     if (id >= 0) OrderAttackMove(id, goal.X, goal.Y);
-                    index += 1;
                 }
             }
         }
@@ -1613,7 +1739,7 @@ namespace WarIsland.Model
                     SourceBuilding = s.SourceBuilding,
                     Role = s.Role,
                     Active = IsActive(s),
-                    Engaged = s.Locked,
+                    Engaged = s.Engaged,
                     Age = Round2(s.Age),
                     BodyRadius = UnitBody.BodyMeters(s.Def),
                     AttackCooldown = s.Def.AttackCooldown,

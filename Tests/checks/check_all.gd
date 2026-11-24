@@ -109,6 +109,7 @@ func _run() -> void:
 	_check_arena()
 	_check_squad_roles()
 	_check_squad_sim()
+	_check_phase1_kinematics()
 	_check_battle_scene()
 	_check_squad_visuals()
 	_check_camera_rules()
@@ -703,14 +704,12 @@ func _check_arena() -> void:
 
 	var probe: Dictionary = mdl.call("UnitBodyProbe",
 		JsonFile.read_dict(UNITS_JSON, {}), JsonFile.read_dict(COMBAT_JSON, {}))
-	_ok("单兵身位/落点环探针（%d 行，无小队槽位）" % _arr(probe.get("rows", [])).size(),
+	_ok("单兵身位探针（%d 行，无小队槽位）" % _arr(probe.get("rows", [])).size(),
 		bool(probe.get("ok", false)), _err_text(probe.get("errors", [])))
-	var rows_p: Array = _arr(probe.get("rows", []))
-	if not rows_p.is_empty():
-		var r0: Dictionary = rows_p[0]
-		_ok("落点环是紧凑小阵列且避开左上建筑位（%d 点）" % int(r0.get("ring_points", 0)),
-			int(r0.get("ring_points", 0)) >= 9 and int(r0.get("ring_in_building", 1)) == 0,
-			str(r0))
+	var fp: Dictionary = mdl.call("FormationProbe", 9, 60.0,
+		JsonFile.read_dict(SQUAD_JSON, {}))
+	_ok("棋盘出生位两两 ≥ 硬核（9 人，最小 %.3f m）" % float(fp.get("min_distance_m", 0.0)),
+		bool(fp.get("ok", false)), str(fp))
 
 
 func _check_squad_roles() -> void:
@@ -832,6 +831,58 @@ func _check_squad_sim() -> void:
 	_ok("推演有真实战报（DPS > 0、出兵 > 0）",
 		float(a.get("avg_player_dps", 0.0)) > 0.0 and float(a.get("avg_player_squads", 0.0)) >= 2.0,
 		"dps=%.1f squads=%.1f" % [float(a.get("avg_player_dps", 0.0)), float(a.get("avg_player_squads", 0.0))])
+	# Phase 1 运动学读数（运行时）：叠模要接近 0，空挥要接近 0，朝向不要高频反转。
+	_ok("运动学：分离后深叠 ≤ 4 对 / 空挥 ≤ 20 人·秒 / 朝向反转 ≤ 8/s",
+		float(a.get("avg_overlap_pairs_after_max", 99.0)) <= 4.0
+		and float(a.get("avg_unfired_engaged_seconds", 999.0)) <= 20.0
+		and float(a.get("avg_heading_flips_per_sec", 99.0)) <= 8.0,
+		"overlap_after=%.1f unfired=%.1f flips=%.2f" % [
+			float(a.get("avg_overlap_pairs_after_max", -1.0)),
+			float(a.get("avg_unfired_engaged_seconds", -1.0)),
+			float(a.get("avg_heading_flips_per_sec", -1.0))])
+
+
+func _check_phase1_kinematics() -> void:
+	var squad := JsonFile.read_dict(SQUAD_JSON, {})
+	var formation: Dictionary = squad.get("formation", {})
+	var combat: Dictionary = squad.get("combat", {})
+	var fp := float(formation.get("file_pitch", 0.0))
+	var rp := float(formation.get("rank_pitch", 0.0))
+	var lg := float(formation.get("line_gap", 0.0))
+	_ok("自动布阵间距 = 96 / 144 / 240（游戏数值）",
+		is_equal_approx(fp, 96.0) and is_equal_approx(rp, 144.0) and is_equal_approx(lg, 240.0),
+		"file=%.0f rank=%.0f gap=%.0f" % [fp, rp, lg])
+	var hard := float(combat.get("hard_core_factor", 1.0))
+	var stand := float(combat.get("stand_off_ratio", 1.0))
+	var turn := float(combat.get("turn_rate_deg", 0.0))
+	var dead := float(combat.get("facing_deadzone_deg", -1.0))
+	_ok("硬核 0.90 / 停火 0.92R / 转向 540°·s⁻¹ / 死区 6°",
+		is_equal_approx(hard, 0.9) and is_equal_approx(stand, 0.92)
+		and is_equal_approx(turn, 540.0) and is_equal_approx(dead, 6.0),
+		"hard=%.2f stand=%.2f turn=%.0f dead=%.1f" % [hard, stand, turn, dead])
+
+	# 每个近战都必须能走进自己的开火线：HardCore(自己+任意敌人) < 自己的射程。
+	var units_doc := JsonFile.read_dict(UNITS_JSON, {})
+	var rows: Array = units_doc.get("units", [])
+	var bad := ""
+	for a in rows:
+		var ua: Dictionary = a
+		if not bool(ua.get("enabled", false)) or bool(ua.get("projectile", false)):
+			continue
+		var ra := float(ua.get("body_radius", 0.0)) / 0.015
+		var range_a := float(ua.get("attack_range", 0.0))
+		for b in rows:
+			var ub: Dictionary = b
+			if not bool(ub.get("enabled", false)):
+				continue
+			var rb := float(ub.get("body_radius", 0.0)) / 0.015
+			var need := (ra + rb) * hard
+			if need >= range_a:
+				bad = "%s vs %s: %.1f ≥ %.1f" % [String(ua.get("id", "")), String(ub.get("id", "")), need, range_a]
+				break
+		if bad != "":
+			break
+	_ok("每个近战都能走进自己的开火线（HardCore < 射程）", bad == "", bad)
 
 
 # ===========================================================================

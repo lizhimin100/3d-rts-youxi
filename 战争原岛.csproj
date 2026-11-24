@@ -20,6 +20,8 @@
     <Compile Remove="Model/**/*.cs" />
     <Compile Remove="dist/**/*.cs" />
     <Compile Remove=".godot/**/*.cs" />
+    <!-- _qa 是本地跑分/探针目录（已 gitignore）：里面的临时 C# harness 不能进宿主工程 -->
+    <Compile Remove="_qa/**/*.cs" />
   </ItemGroup>
 
   <ItemGroup>

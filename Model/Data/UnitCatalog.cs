@@ -187,11 +187,8 @@ namespace WarIsland.Model
                 // 单兵身位闭环（小队编制已取消：没有任何槽位/阵型校验了）
                 errors.AddRange(UnitBody.Validate(u));
 
-                // 近战无投射物、远程必须生成投射物
-                if (u.IsMelee && u.Projectile)
-                    errors.Add($"{tag}：近战（{u.AttackRange}）不该有投射物");
-                if (!u.IsMelee && !u.Projectile)
-                    errors.Add($"{tag}：远程（{u.AttackRange}）必须 projectile=true");
+                // 2026-11-24：阵位分类只认 projectile（无投射物 = 近战前排；有 = 远程后排）。
+                // 不再用射程分界 —— 长枪兵 155 仍算近战；也允许未来出现"短射程投射物"。
                 if (u.Projectile && u.ProjectileSpeed <= 0.0)
                     errors.Add($"{tag}：远程投射物速度必须 > 0");
 

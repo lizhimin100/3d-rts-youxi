@@ -1,6 +1,6 @@
 {
-	"version": 2.0,
-	"note": "单兵模式专属旋钮。zone_dps_per_unit：**一名单兵**停在敌区里每秒给敌方基地造成的伤害（覆盖 levels.json 的 lane 值；单兵制下必须是 0.1~0.5 量级）。outpost：中立据点，规划期花 CP 买下，进攻部队下一场从「中立区靠敌侧」前压出发。free_defend：防守战开场白送几名据点防守兵（不占 CP / 人口）。",
+	"version": 2.1,
+	"note": "单兵模式专属旋钮。zone_dps_per_unit：**一名单兵**停在敌区里每秒给敌方基地造成的伤害（覆盖 levels.json 的 lane 值；单兵制下必须是 0.1~0.5 量级）。outpost：中立据点，规划期花 CP 买下，进攻部队下一场从「中立区靠敌侧」前压出发。free_defend：防守战开场白送几名据点防守兵（不占 CP / 人口）。formation：自动布阵间距（全游戏数值）；combat：硬核/停火线/转向。",
 	"outpost": {
 		"enabled": true,
 		"cp_cost": 5
@@ -11,5 +11,18 @@
 		"star": 1,
 		"count": 3
 	},
-	"zone_dps_per_unit": 0.45
+	"zone_dps_per_unit": 0.45,
+	"formation": {
+		"file_pitch": 96,
+		"rank_pitch": 144,
+		"line_gap": 240,
+		"max_files": 24,
+		"tile_files": 4
+	},
+	"combat": {
+		"hard_core_factor": 0.9,
+		"stand_off_ratio": 0.92,
+		"turn_rate_deg": 540.0,
+		"facing_deadzone_deg": 6.0
+	}
 }

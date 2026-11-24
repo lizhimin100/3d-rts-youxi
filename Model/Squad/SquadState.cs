@@ -135,7 +135,7 @@ namespace WarIsland.Model
         public string Role = SquadRoles.Any;
         /// <summary>当前时空里是否激活（false = 已生成但被冻结，Screens 不画）。</summary>
         public bool Active = true;
-        /// <summary>是否处于攻击态（射程内有活目标）。表现层用它播攻击动画/锁定站立。</summary>
+        /// <summary>是否处于攻击态（R+4 实际开火线，带滞回）。表现层用它播攻击动画。</summary>
         public bool Engaged;
         /// <summary>出生到现在的模型时间（秒）。表现层用它排序落地动画。</summary>
         public double Age;
@@ -189,6 +189,33 @@ namespace WarIsland.Model
         public double StraightLengthSum;
         public double ActualTravelled;
         public double FirstContactSecond = -1.0;
+
+        /// <summary>
+        /// 同一 tick 内"深度重叠"（d &lt; 0.5×硬核）的对数峰值。
+        /// 口径：出生/前压把多人放在同一点时，这个值会跳到几十；
+        /// 正常接敌时单位贴身是允许的，但不应出现"半个人叠进去"的深度重叠。
+        /// </summary>
+        public int OverlapPairsMax;
+        /// <summary>同一 tick 内的最大重叠深度（游戏数值，报告时 ×R1 换成米）。</summary>
+        public double OverlapDepthMax;
+        /// <summary>最大重叠发生的时刻 / 两个单位 id（诊断用）。</summary>
+        public double OverlapWorstTime = -1.0;
+        public int OverlapWorstA = -1;
+        public int OverlapWorstB = -1;
+        /// <summary>分离**之后**仍残留的深度重叠对数（这才是玩家真正看到的叠模）。</summary>
+        public int OverlapPairsAfterMax;
+        /// <summary>分离之后的最大重叠深度（游戏数值）。</summary>
+        public double OverlapDepthAfterMax;
+        /// <summary>分离之后仍有深度重叠的 tick 数（判断是"一瞬"还是"持续叠模"）。</summary>
+        public int OverlapAfterTicks;
+        /// <summary>
+        /// "已进入攻击态、冷却已好、却因距离不够没打出去"的累计人·秒。
+        /// 口径：`mem.Cd &lt;= 0 && s.Engaged && 目标距离 &gt; MaxRange + RangeSlack`。
+        /// 正常战斗应接近 0；正死区（1.02R 停火）会让它持续上涨。
+        /// </summary>
+        public double UnfiredEngagedSeconds;
+        /// <summary>朝向左右反转次数（累计先转过 34° 才记一次，过滤微抖）。</summary>
+        public int HeadingFlips;
 
         public readonly Dictionary<string, SquadUnitStat> PlayerByUnit = new Dictionary<string, SquadUnitStat>(StringComparer.Ordinal);
         public readonly Dictionary<string, SquadUnitStat> EnemyByUnit = new Dictionary<string, SquadUnitStat>(StringComparer.Ordinal);
