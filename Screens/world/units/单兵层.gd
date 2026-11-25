@@ -1,14 +1,17 @@
 extends Node3D
-## 职责：把 `SquadView`（**一名独立单兵一条快照**）画成工程里的真实 3D 单位 ——
-##       错峰空降、行走颠簸与前倾、攻击前冲 / 开火后坐、简易弹道、受击闪白、死亡倒地。
+## 职责：把 `UnitView`（**一名独立单兵一条快照**）画成工程里的真实 3D 单位 ——
+##       错峰空降、行走颠簸与前倾、攻击前冲 / 开火后坐、简易弹道、受击闪白、死亡倒地、
+##       **伤害跳字（红/白/常规/MISS）**。
 ## 属于：Screens/world/units（表现层）
 ##
 ## 纪律：
 ##   · 模型路径只来自 `Content/data/units.json` 的 `model_path`；没有"按兵种 id 现拼方块"的分支；
 ##   · 位置/朝向/血量全部来自快照（世界米），这里只做插值与动画；
-##   · 表现层不判断"谁能打谁"：`engaged` 由 Model 给，这里只决定播什么动作；
+##   · 表现层不判断"谁能打谁"：动作只按 `state`（march/fight/hold/dead）切，
+##     `state_age` 小于 STATE_DEBOUNCE 时**不换动作**（防抖，接敌边界不会闪帧）；
 ##   · **没有任何操控入口**：选中只画一圈选中环 + 血条，不下指令、不改位置；
-##   · 单兵制（2026-11-22）：每条视图 = 一个人，没有再按 `members` 铺成员。
+##   · 单兵制（2026-11-22）：每条视图 = 一个人，没有成员层；
+##   · 伤害跳字只消费 Model 的 `events[]`（target_id / amount / feedback），不自己算颜色。
 ##
 ## 动画口径（为什么"看起来像真在打"）：
 ##   ① 骨骼层：模型自带 walk / attack / shoot / death 就直接播（ArtKit 会做名字映射与降级）；
@@ -26,6 +29,12 @@ const DROP_STAGGER := 0.065
 
 const ATTACK_HOLD := 0.36
 const FLASH_TIME := 0.11
+## 状态防抖：state_age 不到这个秒数就不换动作（接敌/脱战边界只抖一帧的世界，不跟）
+const STATE_DEBOUNCE := 0.15
+## 跳字：同屏上限与寿命。超出就丢弃（宁可少一条，不要掉帧）
+const JUMP_CAP := 40
+const JUMP_PER_FRAME := 24
+const JUMP_LIFE := 0.72
 
 const PLAYER_COLOR := Color(0.36, 0.62, 0.98)
 const ENEMY_COLOR := Color(0.92, 0.42, 0.34)
@@ -46,6 +55,10 @@ var _ring_mesh: ArrayMesh = null
 var _shot_mesh: BoxMesh = null
 var _shot_mat: StandardMaterial3D = null
 var _fx_root: Node3D = null
+var _jump_root: Node3D = null
+var _jump_pool: Array = []
+var _jump_live := 0
+var _jump_total := 0
 var _t := 0.0
 
 
@@ -70,6 +83,9 @@ func _ready() -> void:
 	_fx_root = Node3D.new()
 	_fx_root.name = "UnitFx"
 	add_child(_fx_root)
+	_jump_root = Node3D.new()
+	_jump_root.name = "DamageJump"
+	add_child(_jump_root)
 
 
 func set_ground(fn: Callable) -> void:
@@ -92,10 +108,8 @@ func update_view(view: Dictionary, selected: Array, _order_point: Vector3, _has_
 	_selected = selected
 	var live := {}
 	var fresh: Array = []
-	for s in view.get("squads", []):
+	for s in view.get("units", []):
 		var sq: Dictionary = s
-		if not bool(sq.get("active", true)):
-			continue
 		var sid := int(sq.get("id", 0))
 		live[sid] = true
 		if _units.has(sid):
@@ -136,9 +150,103 @@ func anim_report() -> String:
 			bone += 1
 		if not bool(rec.get("landed", true)):
 			dropping += 1
-		if String(rec.get("state", "")) == "attack":
+		if String(rec.get("state", "")) == "fight":
 			attacking += 1
-	return "units=%d bone=%d drop=%d atk=%d" % [_units.size(), bone, dropping, attacking]
+	return "units=%d bone=%d drop=%d atk=%d jump=%d jumps=%d" % [
+		_units.size(), bone, dropping, attacking, _jump_live, _jump_total]
+
+
+# ===========================================================================
+# 伤害跳字（消费 Model 的 events[]，不自己算颜色）
+# ===========================================================================
+## 每帧由 战役战场 调一次：`events` 里每条 = {target_id, amount, feedback, x, z, lethal, t}。
+## feedback 四值：crit_or_counter（红）/ resisted（白）/ normal（常规）/ miss（灰蓝 MISS）。
+func push_hits(events: Array) -> void:
+	if events.is_empty():
+		return
+	var n := mini(events.size(), JUMP_PER_FRAME)
+	for i in n:
+		var e: Variant = events[i]
+		if e is Dictionary:
+			_spawn_jump(e)
+
+
+func _spawn_jump(e: Dictionary) -> void:
+	var fb := String(e.get("feedback", "normal"))
+	var amount := float(e.get("amount", 0.0))
+	if fb != "miss" and amount < 0.5:
+		return
+	var lbl := _take_label()
+	if lbl == null:
+		return
+	if fb == "miss":
+		lbl.text = "MISS"
+		lbl.modulate = Color(0.74, 0.80, 0.88, 1.0)
+	else:
+		lbl.text = str(int(round(amount)))
+		match fb:
+			"crit_or_counter":
+				lbl.modulate = Color(1.0, 0.30, 0.24, 1.0)
+			"resisted":
+				lbl.modulate = Color(0.97, 0.97, 0.93, 1.0)
+			_:
+				lbl.modulate = Color(1.0, 0.86, 0.52, 1.0)
+	var wx := float(e.get("x", 0.0))
+	var wz := float(e.get("z", 0.0))
+	var y := _h(wx, wz) + 1.95
+	lbl.position = Vector3(wx, y, wz)
+	lbl.scale = Vector3.ONE * (1.3 if fb == "crit_or_counter" else 1.0)
+	lbl.visible = true
+	_jump_live += 1
+	_jump_total += 1
+	var tw := create_tween().set_parallel(true)
+	tw.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tw.tween_property(lbl, "position:y", y + 0.95, JUMP_LIFE)
+	tw.tween_property(lbl, "modulate:a", 0.0, JUMP_LIFE * 0.8).set_delay(JUMP_LIFE * 0.2)
+	tw.chain().tween_callback(func() -> void: _recycle_label(lbl))
+	lbl.set_meta("tw", tw)
+
+
+func _take_label() -> Label3D:
+	for lbl in _jump_pool:
+		var node: Label3D = lbl
+		if is_instance_valid(node) and not node.visible:
+			return node
+	if _jump_pool.size() < JUMP_CAP:
+		var fresh := _make_label()
+		_jump_pool.append(fresh)
+		return fresh
+	# 池满：抢最老的那个（仍在飘的先收掉）
+	for lbl in _jump_pool:
+		var node: Label3D = lbl
+		if is_instance_valid(node):
+			var tw = node.get_meta("tw", null)
+			if tw != null and (tw as Tween).is_valid():
+				(tw as Tween).kill()
+			node.visible = false
+			_jump_live = maxi(_jump_live - 1, 0)
+			return node
+	return null
+
+
+func _make_label() -> Label3D:
+	var lbl := Label3D.new()
+	lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	lbl.no_depth_test = true
+	lbl.font_size = 48
+	lbl.outline_size = 10
+	lbl.pixel_size = 0.0055
+	lbl.outline_modulate = Color(0.06, 0.05, 0.04, 0.92)
+	lbl.visible = false
+	_jump_root.add_child(lbl)
+	return lbl
+
+
+func _recycle_label(lbl: Label3D) -> void:
+	if not is_instance_valid(lbl):
+		return
+	lbl.visible = false
+	_jump_live = maxi(_jump_live - 1, 0)
 
 
 func _make_unit(sq: Dictionary, delay: float) -> void:
@@ -265,39 +373,37 @@ func _animate(rec: Dictionary, delta: float) -> void:
 	var want := _yaw(float(sq.get("heading", 0.0)))
 	root.rotation.y = lerp_angle(root.rotation.y, want, 1.0 - exp(-12.0 * delta))
 
-	# ---- ④ 状态机：攻击（按攻击冷却重播）> 行走 > 待机 ----
-	# 注意：不能"进了攻击就播一次然后一直站着"—— 60 秒对砍里那只读得出第一刀。
-	var engaged := bool(sq.get("engaged", false))
+	# ---- ④ 状态机：**只认 Model 的 state**（march/fight/hold/dead），带 0.15 秒防抖 ----
+	# 旧口径是读 `engaged` 布尔：接敌边界一抖就换动作，动画闪帧；现在改成
+	# "state 变了 && 新状态已经稳定 STATE_DEBOUNCE 秒"才换，出手节拍仍按攻击冷却重播。
+	var raw := String(sq.get("state", "hold"))
+	var age := float(sq.get("state_age", 0.0))
+	var moving := bool(sq.get("moving", moved))
+	if raw != String(rec["state"]) and (age >= STATE_DEBOUNCE or raw == "dead"):
+		rec["state"] = raw
+		_play_state(rec, raw, moving)
+		# 进入战斗立刻允许第一刀，不必等冷却走完一个周期
+		if raw == "fight":
+			rec["cd"] = 0.0
+	var state := String(rec["state"])
 	var cd := float(rec["cd"]) - delta
-	var state := "idle"
-	if engaged:
-		if cd <= 0.0:
-			cd = maxf(float(sq.get("attack_cooldown", 1.2)), 0.35)
-			rec["atk"] = ATTACK_HOLD
-			rec["state"] = "attack"
-			_play_state(rec, "attack", false)
-		state = "attack"
+	if state == "fight" and cd <= 0.0:
+		cd = maxf(float(sq.get("attack_cooldown", 1.2)), 0.35)
+		rec["atk"] = ATTACK_HOLD
+		_play_state(rec, "fight", false)
+	if state == "fight" or float(rec["atk"]) > 0.0:
 		rec["atk"] = maxf(float(rec["atk"]) - delta, 0.0)
-	elif float(rec["atk"]) > 0.0:
-		rec["atk"] = maxf(float(rec["atk"]) - delta, 0.0)
-		state = "attack"
-	elif moved:
-		state = "walk"
-	else:
-		state = "idle"
 	rec["cd"] = maxf(cd, 0.0)
-	if state != String(rec["state"]):
-		rec["state"] = state
-		_play_state(rec, state, moved)
 
 	# ---- ⑤ 程序层重心动画（骨骼只管四肢）----
 	if model != null:
-		var amp := 1.0 if state != "idle" else 0.35
-		rec["bob"] = float(rec["bob"]) + delta * (9.0 if state == "walk" else 2.2)
+		var walking := state == "march"
+		var amp := 1.0 if state != "hold" else 0.35
+		rec["bob"] = float(rec["bob"]) + delta * (9.0 if walking else 2.2)
 		var bob := sin(float(rec["bob"])) * 0.055 * amp
-		var lean := 0.14 if state == "walk" else 0.0
+		var lean := 0.14 if walking else 0.0
 		var lunge := 0.0
-		if state == "attack":
+		if state == "fight":
 			var p := 1.0 - clampf(float(rec["atk"]) / ATTACK_HOLD, 0.0, 1.0)
 			# 0→0.35：向前顶；0.35→1：收回来（远程是后坐，符号相反）
 			var curve := sin(clampf(p / 0.45, 0.0, 1.0) * PI)
@@ -400,20 +506,23 @@ func _play_state(rec: Dictionary, state: String, moving: bool) -> void:
 	var def: Dictionary = rec.get("def", {})
 	var ranged := _is_ranged(rec)
 	var speed := 1.0
-	if state == "walk":
+	if state == "march" and moving:
 		# 步频跟真实地速走：走得快 → 迈得急（不然脚底打滑）
 		speed = clampf(float(rec["sq"].get("move_speed", 4.0)) / 3.2, 0.8, 2.2)
-	ArtKit.set_anim(anim, _clip_for(state, ranged, def), speed, state == "attack")
-	if state == "attack" and ranged:
+	ArtKit.set_anim(anim, _clip_for(state, ranged, def), speed, state == "fight")
+	if state == "fight" and ranged:
 		_fire_tracer(rec)
 
 
+## Model 的 state → 骨骼动画名（ArtKit 负责名字映射与缺省降级）。
 func _clip_for(state: String, ranged: bool, _def: Dictionary) -> String:
 	match state:
-		"attack":
+		"fight":
 			return "shoot" if ranged else "attack"
-		"walk":
+		"march":
 			return "move"
+		"dead":
+			return "death"
 		_:
 			return "idle"
 
@@ -462,7 +571,7 @@ func _collect_meshes(n: Node, out: Array) -> void:
 ## 简易弹道：从射手胸口朝目标拉一根 0.1 秒的亮条（远程单位开火时触发的唯一视觉）
 func _fire_tracer(rec: Dictionary) -> void:
 	var sq: Dictionary = rec["sq"]
-	var target := int(sq.get("target_squad", -1))
+	var target := int(sq.get("target_id", -1))
 	if target < 0 or not _units.has(target):
 		return
 	var other: Dictionary = _units[target]

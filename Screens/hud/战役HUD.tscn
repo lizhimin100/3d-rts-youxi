@@ -469,14 +469,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
 theme_type_variation = &"PrimaryButton"
-text = "开始进攻"
-
-[node name="OutpostButton" type="Button" parent="BottomRightPanel/BRMargin/BRCol"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 34)
-layout_mode = 2
-theme_type_variation = &"GhostButton"
-text = "占领据点"
+text = "结束规划 · 开打"
 
 [node name="SpeedButton" type="Button" parent="BottomRightPanel/BRMargin/BRCol"]
 unique_name_in_owner = true

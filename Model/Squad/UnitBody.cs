@@ -12,7 +12,7 @@ namespace WarIsland.Model
     ///   · 没有阵型槽位、没有队内分散 AI —— 每个兵自己寻路、自己索敌、自己受击、自己死；
     ///   · 只剩两个几何量：一个"身位"（碰撞/接敌距离）和一个"导航半径"（脊线夹取/抵达判定）。
     ///
-    /// 历史包袱说明：类型名仍带 Squad（`SquadBattle` / `SquadView` / `SquadSession`），
+    /// 历史包袱说明：类型名仍带 Squad（`BattleSim` / `UnitView` / `CampaignSession`），
     /// 那是跨语言契约（GDScript 桥 + 136 条自检 + 截图配方都按这个名字调），
     /// 但语义已经是"一个 Squad 实体 = 一名单兵"。改名字只会制造一次大范围迁移，
     /// 不会让玩法变得更对 —— 所以名字留、编制删。

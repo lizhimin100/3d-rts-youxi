@@ -4,15 +4,13 @@ using System.Collections.Generic;
 namespace WarIsland.Model
 {
     /// <summary>训练牌一行（给 UI 画卡 + 可用性原因）。</summary>
-    public sealed class SquadTrainEntry
+    public sealed class TrainCardEntry
     {
         public string CardId = "";
         public string DisplayName = "";
         public string UnitId = "";
         public string UnitName = "";
         public string Tag = "";
-        /// <summary>2026-11-24 起恒为空（攻防轮已取消，字段只留给桥契约）。</summary>
-        public string Role = "";
         public int CostCp;
         /// <summary>这张牌现在打出去会产几名单兵（已含本回合「加快训练」倍率与 per_building 建筑数）。</summary>
         public int Units;
@@ -22,12 +20,15 @@ namespace WarIsland.Model
         public string Reason = "ok";
     }
 
-    /// <summary>规划/执行阶段的会话快照。</summary>
-    public sealed class SquadSessionState
+    /// <summary>规划/执行阶段的会话快照（UI 只读这个 + BattleView）。</summary>
+    public sealed class CampaignInfo
     {
+        /// <summary>planning / executing / result。</summary>
         public string Phase = "planning";
-        /// <summary>"" = 还没开打；attack / defend = 当前是第几场（UI 两段式展示）；done = 本轮结束。</summary>
+        /// <summary>"" = 还没开打；battle = 正在打本轮；done = 本轮已结算。</summary>
         public string RoundKind = "";
+        /// <summary>当前轮次（从 0 起）。</summary>
+        public int RoundIndex;
         public int PlanningIndex;
         public int Cp;
         public int CpStart;
@@ -35,18 +36,17 @@ namespace WarIsland.Model
         public int PopUsed;
         public int PopCap;
         public int PopBlocked;
-        public int ArmySquads;
-        public int ArmyModels;
-        public int AttackSquads;
-        public int DefendSquads;
-        public bool OutpostCaptured;
-        public bool OutpostAvailable;
-        public int OutpostCpCost;
+        /// <summary>本轮军队人数（ArmyPlan 合计）。</summary>
+        public int ArmyUnits;
+        /// <summary>强制顺次填充格：tile / col / row（-1 = 棋盘已满）。</summary>
+        public int NextFillTile;
+        public int NextFillCol;
+        public int NextFillRow;
         public double TrainCountMult = 1.0;
         public int DrawPile;
         public int DiscardPile;
         public int HandCount;
-        /// <summary>本局已打过的轮数 / 当前轮次（单轮死斗）。</summary>
+        /// <summary>本局已结算的轮数。</summary>
         public int RoundsPlayed;
         public string Outcome = "";
         public double PlayerBaseHp;
@@ -54,7 +54,7 @@ namespace WarIsland.Model
         /// <summary>战败简报（只有战败非空）。</summary>
         public string DefeatRecord = "";
         public readonly List<string> Hand = new List<string>();
-        public readonly List<SquadTrainEntry> TrainCards = new List<SquadTrainEntry>();
+        public readonly List<TrainCardEntry> TrainCards = new List<TrainCardEntry>();
         public readonly List<string> Log = new List<string>();
     }
 
@@ -63,20 +63,20 @@ namespace WarIsland.Model
     ///
     /// 2026-11-24 起规则全部下沉：
     ///   · 规划/建造/升星 → <see cref="BoardSession"/>（竖列顺序、3 合 1、光环/经济）；
-    ///   · 单场 60 秒死斗 → <see cref="BattleSession"/> / <see cref="SquadBattle"/>；
+    ///   · 单场 60 秒死斗 → <see cref="BattleSession"/> / <see cref="BattleSim"/>；
     ///   · 幸存 base_damage 结算 → <see cref="RoundResolver"/>。
     ///
     /// 这个类只做三件事：把 UI 的调用翻译成上面三层的调用、保持旧方法名、维护
     /// "每轮开场清场 + 从 ArmyPlan 重新落地"的会话状态。它**不写任何战斗/规划公式**。
     /// </summary>
-    public sealed class SquadSession
+    public sealed class CampaignSession
     {
-        public readonly SquadArena Arena;
+        public readonly BattleArena Arena;
         public readonly BoardSession Board;
         /// <summary>当前这一场的战斗内核（每轮新建，避免 finished/time/stats 跨轮残留）。</summary>
-        public SquadBattle Battle { get; private set; }
+        public BattleSim Battle { get; private set; }
         public readonly bool InstantTrain;
-        public readonly SquadTuning Tuning;
+        public readonly BattleTuning Tuning;
 
         private readonly UnitCatalog _units;
         private readonly CombatRules _rules;
@@ -97,11 +97,11 @@ namespace WarIsland.Model
         private int _roundIndex = -1;
         private string _outcome = "";
 
-        public SquadSession(
+        public CampaignSession(
             UnitCatalog units,
             CombatRules rules,
             PlanningConfig planning,
-            SquadArena arena,
+            BattleArena arena,
             int seed,
             bool instantTrain,
             double playerBaseHp = -1.0,
@@ -110,7 +110,7 @@ namespace WarIsland.Model
         {
             Arena = arena ?? throw new ArgumentNullException(nameof(arena));
             InstantTrain = instantTrain;
-            Tuning = SquadTuning.FromDict(tuning);
+            Tuning = BattleTuning.FromDict(tuning);
 
             var notes = new List<string>();
             Board = BoardSession.Create(planning, units, arena.ShellDict, arena.LayoutDict, seed, notes);
@@ -125,18 +125,17 @@ namespace WarIsland.Model
             _playerHpMax = Math.Max(_playerHp, arena.Level != null ? arena.Level.PlayerBaseHp : _playerHp);
             _enemyHpMax = Math.Max(_enemyHp, arena.Level != null ? arena.Level.EnemyBaseHp : _enemyHp);
 
-            Battle = new SquadBattle(units, rules, arena, planning, seed ^ 0x5F3759DF, Tuning);
+            Battle = new BattleSim(units, rules, arena, planning, seed ^ 0x5F3759DF, Tuning);
             Battle.SetBaseHp(_playerHp, _enemyHp, _playerHpMax, _enemyHpMax);
             SyncArenaBuildings();
         }
 
         public bool Executing => _executing;
         public IReadOnlyList<string> Log => _log;
-        /// <summary>"" = 规划中；attack / defend = 当前场次；done = 本轮已结算。</summary>
+        /// <summary>"" = 规划中；battle = 本轮战斗中；done = 本轮已结算。</summary>
         public string RoundKind { get; private set; } = "";
-        public bool OutpostCaptured => false;
-        public int OutpostCpCost => 0;
-        public bool OutpostAvailable => false;
+        /// <summary>当前轮次（0 起）；-1 = 还没开打。</summary>
+        public int RoundIndex => _roundIndex;
         public string Outcome => _outcome;
         public IReadOnlyList<RoundResult> Rounds => _roundResults;
         public string DefeatRecord { get; private set; } = "";
@@ -170,8 +169,7 @@ namespace WarIsland.Model
                     PlannedSquad sq = produced[i];
                     int tile = sq.SourceTile;
                     if (tile <= 0) continue;
-                    Battle.AddUnitsAtTile(0, sq.UnitId, sq.Star, tile, sq.SourceBuilding,
-                        Math.Max(sq.Units, 1), 0, SquadRoles.Any);
+                    Battle.AddUnitsAtTile(0, sq.UnitId, sq.Star, tile, sq.SourceBuilding, Math.Max(sq.Units, 1));
                 }
             }
             _log.Add($"train:{cardId}->{n}");
@@ -212,8 +210,6 @@ namespace WarIsland.Model
             return ok;
         }
 
-        public bool CaptureOutpost() => false;
-
         /// <summary>收规划：把 Army 固化成 ArmyPlan（军队在每轮开场统一落地）。</summary>
         public void EndPlanning(bool spawnArmy = true)
         {
@@ -226,31 +222,31 @@ namespace WarIsland.Model
         }
 
         // =================================================================
-        // 执行：单场死斗（UI 的两段 = 连续两轮）
+        // 执行：**每轮一场**（CampaignRun 的唯一循环）
+        //
+        //   规划(第 N 轮) → EndPlanning → BeginRound → 60 秒死斗
+        //   → SettleRound（幸存 base_damage 扣基地）→ 若还没分出胜负 →
+        //   回到规划(第 N+1 轮)，重新打牌/建造/升星。
+        //
+        // 2026-11-25 Phase 3 删除：BeginAttack / BeginDefend / EndRound / BeginExecution
+        // —— 那是"规划一次、attack+defend 连打两场"的旧两段式，单轮死斗里不存在。
         // =================================================================
-        public void BeginAttack() => StartRound(0, "attack");
-
-        public void BeginDefend()
+        /// <summary>开打本轮（第 N 轮的第一场，也是唯一一场）。</summary>
+        public void BeginRound()
         {
-            if (!_executing) BeginAttack();
-            if (!_settled) SettleCurrent(true);
-            StartRound(Math.Max(_roundIndex + 1, 1), "defend");
+            if (_settled) _roundIndex += 1;
+            StartRound(Math.Max(_roundIndex, 0), "battle");
         }
 
-        public void EndRound()
+        /// <summary>结算本轮：扣基地血、清场、给出胜负；下一轮请先 <see cref="BeginPlanning"/>。</summary>
+        public void SettleRound()
         {
             if (!_settled) SettleCurrent(true);
-            Battle.PurgeSide(1, null);
-            Battle.PurgeSide(0, null);
+            Battle.PurgeSide(1);
+            Battle.PurgeSide(0);
             _executing = false;
             RoundKind = "done";
-            _log.Add("round:done");
-        }
-
-        public void BeginExecution(int roundIndex = 0)
-        {
-            if (roundIndex <= 0) BeginAttack();
-            else BeginDefend();
+            _log.Add("round:settled");
         }
 
         private void StartRound(int index, string kind)
@@ -262,7 +258,7 @@ namespace WarIsland.Model
 
             // 每轮开场：新建一份战斗内核（不继承上一场的 finished/time/stats），
             // 棋盘建筑与基地血保留；部队由 ArmyPlan 重新落地。
-            Battle = new SquadBattle(_units, _rules, Arena, _planning, _seed ^ (0x5F3759DF + index * 7919), Tuning);
+            Battle = new BattleSim(_units, _rules, Arena, _planning, _seed ^ (0x5F3759DF + index * 7919), Tuning);
             _plan = Board.BuildArmyPlan();
             Battle.SetModifiers(Match.Mods, null);
             Battle.SetArmyModifiers(_plan.Modifiers);
@@ -319,7 +315,7 @@ namespace WarIsland.Model
                    $"致命扣血：{fatal}，扣 {rr.EnemyBaseDamageApplied:0.#} 点。";
         }
 
-        /// <summary>把棋盘建筑同步到 SquadArena（3D 表现层按 arena.player_buildings 渲染）。</summary>
+        /// <summary>把棋盘建筑同步到 BattleArena（3D 表现层按 arena.player_buildings 渲染）。</summary>
         private void SyncArenaBuildings()
         {
             Arena.PlayerBuildings.Clear();
@@ -339,9 +335,9 @@ namespace WarIsland.Model
         // =================================================================
         // 快照
         // =================================================================
-        public SquadSessionState State()
+        public CampaignInfo State()
         {
-            var state = new SquadSessionState
+            var state = new CampaignInfo
             {
                 Phase = _executing ? "executing" : "planning",
                 RoundKind = RoundKind,
@@ -352,13 +348,11 @@ namespace WarIsland.Model
                 PopUsed = Match.PopUsed(),
                 PopCap = Match.PopCap(),
                 PopBlocked = Match.PopBlocked,
-                ArmySquads = _plan != null && _plan.UnitCount > 0 ? _plan.UnitCount : ArmyCount(),
-                ArmyModels = _plan != null && _plan.UnitCount > 0 ? _plan.UnitCount : ArmyCount(),
-                AttackSquads = ArmyCount(),
-                DefendSquads = 0,
-                OutpostCaptured = false,
-                OutpostAvailable = false,
-                OutpostCpCost = 0,
+                ArmyUnits = _plan != null && _plan.UnitCount > 0 ? _plan.UnitCount : ArmyCount(),
+                NextFillTile = Board.NextFillTile(),
+                NextFillCol = Board.NextFillCol,
+                NextFillRow = Board.NextFillRow,
+                RoundIndex = Math.Max(_roundIndex, 0),
                 TrainCountMult = Match.Mods.TrainCountMult,
                 DrawPile = Match.DrawPile.Count,
                 DiscardPile = Match.Discard.Count,
@@ -389,14 +383,13 @@ namespace WarIsland.Model
                 int units = Match.Mods.UnitsOf(card);
                 if (card.PerBuilding) units *= Math.Max(buildings, 0);
 
-                state.TrainCards.Add(new SquadTrainEntry
+                state.TrainCards.Add(new TrainCardEntry
                 {
                     CardId = card.Id,
                     DisplayName = card.DisplayName,
                     UnitId = card.Unit,
                     UnitName = def != null ? def.DisplayName : card.Unit,
                     Tag = card.BuildingTag,
-                    Role = "",
                     CostCp = card.CostCp,
                     Units = units,
                     Buildings = buildings,

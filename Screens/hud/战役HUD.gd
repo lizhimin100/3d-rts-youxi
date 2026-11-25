@@ -48,7 +48,6 @@ var _flash: Tween = null
 @onready var _discard_caption: Label = %DiscardCaption
 @onready var _discard_icon: TextureRect = %DiscardIcon
 @onready var _start_btn: Button = %StartButton
-@onready var _outpost_btn: Button = %OutpostButton
 @onready var _speed_btn: Button = %SpeedButton
 @onready var _restart_btn: Button = %RestartButton
 @onready var _play_zone: PanelContainer = %PlayZone
@@ -112,13 +111,11 @@ func _localize_static() -> void:
 	_discard_caption.text = I18n.t("battle.hud.discard")
 	_start_btn.text = I18n.t("battle.start")
 	_restart_btn.text = I18n.t("battle.restart")
-	_outpost_btn.text = I18n.t("battle.outpost.button")
 	_speed_btn.text = I18n.t("battle.speed_button", {"x": "1"})
 
 
 func _wire_buttons() -> void:
 	_start_btn.pressed.connect(func() -> void: _call_root("begin_execution"))
-	_outpost_btn.pressed.connect(func() -> void: _call_root("capture_outpost"))
 	_speed_btn.pressed.connect(_toggle_speed)
 	_restart_btn.pressed.connect(func() -> void: _call_root("restart"))
 	_map_button.pressed.connect(_on_map_pressed)
@@ -181,11 +178,9 @@ func _refresh_top(state: Dictionary, view: Dictionary, phase: String, seconds: f
 	_gold_value.text = str(int(extra.get("gold", 0)))
 	_round_label.text = I18n.t("battle.hud.round", {"n": int(state.get("planning_index", 1))})
 	match phase:
-		"attack":
-			_phase_label.text = I18n.t("battle.phase.attack")
-			_timer_label.text = "%02d" % int(ceil(maxf(seconds, 0.0)))
-		"defend":
-			_phase_label.text = I18n.t("battle.phase.defend")
+		"battle":
+			_phase_label.text = I18n.t("battle.phase.battle",
+				{"n": int(state.get("round_index", 0)) + 1})
 			_timer_label.text = "%02d" % int(ceil(maxf(seconds, 0.0)))
 		"result":
 			_phase_label.text = I18n.t("battle.phase.result")
@@ -213,10 +208,11 @@ func _refresh_info(extra: Dictionary) -> void:
 		"armor": int(round(float(info.get("armor", 0.0)))),
 		"cd": "%.1f" % float(info.get("cooldown", 1.0))})
 	var state_key := "battle.info.state.idle"
-	if bool(info.get("engaged", false)):
-		state_key = "battle.info.state.engaged"
-	elif int(info.get("side", 0)) == 0:
-		state_key = "battle.info.state.moving"
+	match String(info.get("state", "hold")):
+		"fight":
+			state_key = "battle.info.state.fight"
+		"march":
+			state_key = "battle.info.state.march"
 	_info_state.text = "%s · %s" % [tag, I18n.t(state_key)]
 
 
@@ -245,9 +241,7 @@ func _refresh_bottom(state: Dictionary, phase: String, extra: Dictionary) -> voi
 func _refresh_actions(state: Dictionary, phase: String, extra: Dictionary) -> void:
 	_start_btn.visible = phase == PHASE_PLANNING
 	_start_btn.disabled = phase != PHASE_PLANNING
-	_outpost_btn.visible = phase == PHASE_PLANNING and bool(state.get("outpost_available", false))
-	_outpost_btn.disabled = bool(state.get("outpost_captured", false))
-	_speed_btn.visible = phase == "attack" or phase == "defend"
+	_speed_btn.visible = phase == "battle"
 	_speed_btn.text = I18n.t("battle.speed_button", {"x": "%.0f" % float(extra.get("time_scale", 1.0))})
 	_discard_icon.visible = true
 
@@ -373,7 +367,6 @@ func _card_meta(card_id: String, state: Dictionary, phase: String, extra: Dictio
 	var defs: Dictionary = extra.get("cards", {})
 	var d: Dictionary = defs.get(card_id, {})
 	var kind := String(d.get("kind", "train"))
-	var role := String(d.get("role", ""))
 	var cost := int(d.get("cost_cp", 0))
 	var units := 0
 	var available := phase == PHASE_PLANNING and int(state.get("cp", 0)) >= cost
@@ -391,47 +384,42 @@ func _card_meta(card_id: String, state: Dictionary, phase: String, extra: Dictio
 		reason = "ok"
 	if kind == "strategy":
 		units = 0
-	var tint := _card_tint(kind, role)
-	var role_name := _role_label(kind, role)
+	var tint := _card_tint(kind)
+	var tag_line := _role_label(kind)
 	return {
 		"card_id": card_id,
 		"kind": kind,
-		"role": role,
 		"cost_cp": cost,
 		"units": units,
 		"available": available,
 		"reason": reason,
 		"display_name": String(d.get("display_name", card_id)),
-		"tag_line": role_name,
-		"desc": _card_desc(kind, role, units, d, extra),
+		"tag_line": tag_line,
+		"desc": _card_desc(kind, units, d, extra),
 		"art": _card_icon(kind, d, extra),
 		"tint": tint,
 	}
 
 
-func _card_tint(kind: String, role: String) -> String:
+func _card_tint(kind: String) -> String:
 	if kind == "build":
 		return "#D5DCC4"
 	if kind == "strategy":
 		return "#EFDFB8"
-	if role == "defend":
-		return "#C6D5E6"
 	return "#E9C9BA"
 
 
-func _role_label(kind: String, role: String) -> String:
+func _role_label(kind: String) -> String:
 	if kind == "build":
 		return I18n.t("battle.card.build")
 	if kind == "strategy":
 		return I18n.t("battle.card.strategy")
-	if role == "defend":
-		return I18n.t("battle.card.defend")
-	return I18n.t("battle.card.attack")
+	return I18n.t("battle.card.train")
 
 
-func _card_desc(kind: String, role: String, units: int, d: Dictionary, extra: Dictionary) -> String:
+func _card_desc(kind: String, units: int, d: Dictionary, extra: Dictionary) -> String:
 	if kind == "train":
-		return I18n.t("battle.card.desc_train", {"units": units, "role": _role_label(kind, role)})
+		return I18n.t("battle.card.desc_train", {"units": units, "role": _role_label(kind)})
 	if kind == "build":
 		var bid := String(d.get("building", ""))
 		var b: Dictionary = (extra.get("buildings", {}) as Dictionary).get(bid, {})

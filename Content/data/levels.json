@@ -13,7 +13,6 @@
 			"lane": {
 				"length": 4000.0,
 				"width": 420.0,
-				"zone_depth": 600.0,
 				"spawn_offset": 250.0,
 				"note": "全部是游戏数值（×0.015 米）：4000 = 60 米长，420 = 6.3 米宽，600 = 9 米敌区。",
 				"template": "平势",
@@ -314,7 +313,6 @@
 			"lane": {
 				"length": 4000.0,
 				"width": 420.0,
-				"zone_depth": 600.0,
 				"spawn_offset": 250.0,
 				"template": "even",
 				"note": "composed from map shell; lengths are game units (x R1 = meters)",
@@ -626,7 +624,6 @@
 			"lane": {
 				"length": 4000.0,
 				"width": 420.0,
-				"zone_depth": 600.0,
 				"spawn_offset": 250.0,
 				"template": "disadvantage",
 				"note": "composed from map shell; lengths are game units (x R1 = meters)",
@@ -932,7 +929,6 @@
 			"lane": {
 				"length": 4000.0,
 				"width": 420.0,
-				"zone_depth": 600.0,
 				"spawn_offset": 250.0,
 				"template": "even",
 				"note": "composed from map shell; lengths are game units (x R1 = meters)",

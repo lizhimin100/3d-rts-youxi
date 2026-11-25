@@ -3,21 +3,21 @@ using System.Collections.Generic;
 
 namespace WarIsland.Model
 {
-    /// <summary>横道几何与基地抽血规则（全部是游戏数值，落世界时乘 R1）。</summary>
+    /// <summary>
+    /// 横道几何（全部是游戏数值，落世界时乘 R1）。
+    /// 2026-11-25 Phase 3：`zone_depth` / `zone_dps_per_squad`（占区抽血）已物理删除 ——
+    /// 单轮死斗的胜负只由「幸存者 base_damage」结算，不存在"停在敌区按秒抽血"。
+    /// </summary>
     public sealed class LaneConfig
     {
         public double Length = 4000.0;
         public double Width = 420.0;
-        public double ZoneDepth = 600.0;
-        public double ZoneDpsPerSquad = 9.0;
         public double SpawnOffset = 250.0;
         public double BaseStop = 120.0;
 
         public double HalfWidth => Width * 0.5;
         public double PlayerSpawnX => SpawnOffset;
         public double EnemySpawnX => Length - SpawnOffset;
-        public double PlayerZoneEnd => ZoneDepth;
-        public double EnemyZoneStart => Length - ZoneDepth;
     }
 
     public sealed class WaveSquad
@@ -129,8 +129,6 @@ namespace WarIsland.Model
             {
                 lv.Lane.Length = JVal.Double(lane, "length", lv.Lane.Length);
                 lv.Lane.Width = JVal.Double(lane, "width", lv.Lane.Width);
-                lv.Lane.ZoneDepth = JVal.Double(lane, "zone_depth", lv.Lane.ZoneDepth);
-                lv.Lane.ZoneDpsPerSquad = JVal.Double(lane, "zone_dps_per_squad", lv.Lane.ZoneDpsPerSquad);
                 lv.Lane.SpawnOffset = JVal.Double(lane, "spawn_offset", lv.Lane.SpawnOffset);
                 lv.Lane.BaseStop = JVal.Double(lane, "base_stop", lv.Lane.BaseStop);
             }

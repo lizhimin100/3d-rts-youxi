@@ -126,13 +126,16 @@ namespace WarIsland.Bridge
         }
 
         // =================================================================
-        // 2026-11-21 真小队：编制 / 脊线寻路 / 队级指令 / 100 局推演
+        // 2026-11-25 Phase 3：战役会话（规划 → 单场死斗 → 结算 → 下一轮规划）
+        //
+        // 命名口径：Model 侧已全部去 Squad 化（CampaignSession / BattleSim / UnitView），
+        // 桥这边同步改成 Campaign* / Battle*，GDScript 按名字调用，没有第二份映射表。
         // =================================================================
-        private readonly Dictionary<int, SquadSession> _squadSessions = new Dictionary<int, SquadSession>();
-        private int _nextSquadHandle = 1;
+        private readonly Dictionary<int, CampaignSession> _sessions = new Dictionary<int, CampaignSession>();
+        private int _nextHandle = 1;
 
-        /// <summary>建一个"规划 + 执行"的小队会话；返回 { ok, handle, errors, arena }。</summary>
-        public Godot.Collections.Dictionary SquadSessionNew(
+        /// <summary>建一局战役会话；返回 { ok, handle, errors, arena }。</summary>
+        public Godot.Collections.Dictionary CampaignNew(
             Godot.Collections.Dictionary unitsDict,
             Godot.Collections.Dictionary combatDict,
             Godot.Collections.Dictionary planningDict,
@@ -148,7 +151,7 @@ namespace WarIsland.Bridge
             var rules = CombatRules.FromDict(ToPlainDict(combatDict));
             var units = UnitCatalog.FromDict(ToPlainDict(unitsDict), rules, notes);
             var planning = PlanningConfig.FromDict(ToPlainDict(planningDict), units, notes);
-            var arena = SquadArena.FromDict(
+            var arena = BattleArena.FromDict(
                 ToPlainDict(levelDict), ToPlainDict(shellDict), ToPlainDict(layoutDict),
                 ToPlainDict(encounterDict), units, ToPlainDict(tuningDict));
 
@@ -158,7 +161,7 @@ namespace WarIsland.Bridge
             errors.AddRange(units.Validate());
             errors.AddRange(planning.Validate(units));
             errors.AddRange(arena.Validate(units));
-            errors.AddRange(SquadTuning.FromDict(ToPlainDict(tuningDict)).Validate(units));
+            errors.AddRange(BattleTuning.FromDict(ToPlainDict(tuningDict)).Validate(units));
             if (errors.Count > 0)
             {
                 return new Godot.Collections.Dictionary
@@ -169,10 +172,10 @@ namespace WarIsland.Bridge
                 };
             }
 
-            var session = new SquadSession(units, rules, planning, arena, seed, instantTrain,
+            var session = new CampaignSession(units, rules, planning, arena, seed, instantTrain,
                 -1.0, -1.0, ToPlainDict(tuningDict));
-            int handle = _nextSquadHandle++;
-            _squadSessions[handle] = session;
+            int handle = _nextHandle++;
+            _sessions[handle] = session;
             return new Godot.Collections.Dictionary
             {
                 { "ok", true },
@@ -183,49 +186,49 @@ namespace WarIsland.Bridge
             };
         }
 
-        public void SquadSessionFree(int handle)
+        public void CampaignFree(int handle)
         {
-            _squadSessions.Remove(handle);
+            _sessions.Remove(handle);
         }
 
-        private SquadSession Session(int handle)
+        private CampaignSession Session(int handle)
         {
-            _squadSessions.TryGetValue(handle, out SquadSession session);
+            _sessions.TryGetValue(handle, out CampaignSession session);
             return session;
         }
 
-        public Godot.Collections.Dictionary SquadSessionBeginPlanning(int handle)
+        public Godot.Collections.Dictionary CampaignBeginPlanning(int handle)
         {
             var session = Session(handle);
             if (session == null) return Err("会话已失效");
             session.BeginPlanning();
-            return OkState(session);
+            return InfoDict(session);
         }
 
-        public Godot.Collections.Dictionary SquadSessionTrain(int handle, string cardId)
+        public Godot.Collections.Dictionary CampaignTrain(int handle, string cardId)
         {
             var session = Session(handle);
             if (session == null) return Err("会话已失效");
             int n = session.PlayTrainCard(cardId);
-            var d = OkState(session);
+            var d = InfoDict(session);
             d["produced"] = n;
             return d;
         }
 
-        /// <summary>打建造牌并落到指定战术格子（tile=0 = 自动挑第一块空格）。</summary>
-        public Godot.Collections.Dictionary SquadSessionBuild(int handle, string cardId, int tile)
+        /// <summary>打建造牌并落到指定战术格子（tile=0 = 自动挑下一个顺次填充位）。</summary>
+        public Godot.Collections.Dictionary CampaignBuild(int handle, string cardId, int tile)
         {
             var session = Session(handle);
             if (session == null) return Err("会话已失效");
             bool ok = session.PlayBuildCardAt(cardId, tile);
-            var d = OkState(session);
+            var d = InfoDict(session);
             d["built"] = ok;
             d["tile"] = tile;
             return d;
         }
 
-        /// <summary>规划期还能放建筑的玩家格子（HUD 高亮/自检口径）。</summary>
-        public Godot.Collections.Array SquadSessionFreeTiles(int handle)
+        /// <summary>规划期还能放建筑的玩家格子（严格模式下只有 1 个：下一个顺次填充位）。</summary>
+        public Godot.Collections.Array CampaignFreeTiles(int handle)
         {
             var arr = new Godot.Collections.Array();
             var session = Session(handle);
@@ -234,73 +237,77 @@ namespace WarIsland.Bridge
             return arr;
         }
 
-        /// <summary>买下中立据点（规划期动作；只花 CP，不动人口）。</summary>
-        public Godot.Collections.Dictionary SquadSessionCaptureOutpost(int handle)
-        {
-            var session = Session(handle);
-            if (session == null) return Err("会话已失效");
-            bool ok = session.CaptureOutpost();
-            var d = OkState(session);
-            d["captured"] = ok;
-            return d;
-        }
-
-        public Godot.Collections.Dictionary SquadSessionAttack(int handle)
-        {
-            var session = Session(handle);
-            if (session == null) return Err("会话已失效");
-            session.BeginAttack();
-            return OkState(session);
-        }
-
-        public Godot.Collections.Dictionary SquadSessionDefend(int handle)
-        {
-            var session = Session(handle);
-            if (session == null) return Err("会话已失效");
-            session.BeginDefend();
-            return OkState(session);
-        }
-
-        public Godot.Collections.Dictionary SquadSessionEndRound(int handle)
-        {
-            var session = Session(handle);
-            if (session == null) return Err("会话已失效");
-            session.EndRound();
-            return OkState(session);
-        }
-
         /// <summary>打一张策略牌（只影响本轮）。</summary>
-        public Godot.Collections.Dictionary SquadSessionStrategy(int handle, string cardId)
+        public Godot.Collections.Dictionary CampaignStrategy(int handle, string cardId)
         {
             var session = Session(handle);
             if (session == null) return Err("会话已失效");
             bool ok = session.Match.PlayStrategy(cardId);
-            var d = OkState(session);
+            var d = InfoDict(session);
             d["played"] = ok;
             return d;
         }
 
-        public Godot.Collections.Dictionary SquadSessionEndPlanning(int handle)
+        public Godot.Collections.Dictionary CampaignEndPlanning(int handle)
         {
             var session = Session(handle);
             if (session == null) return Err("会话已失效");
-            session.EndPlanning(true);
-            return OkState(session);
+            session.EndPlanning();
+            return InfoDict(session);
         }
 
-        public Godot.Collections.Dictionary SquadSessionBeginExecution(int handle, int roundIndex)
+        /// <summary>开打本轮（每轮只有一场；下一轮必须先回规划）。</summary>
+        public Godot.Collections.Dictionary CampaignBeginRound(int handle)
         {
             var session = Session(handle);
             if (session == null) return Err("会话已失效");
-            session.BeginExecution(roundIndex);
-            return OkState(session);
+            session.BeginRound();
+            return InfoDict(session);
         }
 
-        public Godot.Collections.Dictionary SquadSessionState(int handle)
+        /// <summary>结算本轮：幸存 base_damage 扣基地 → 清场 → 给出胜负。</summary>
+        public Godot.Collections.Dictionary CampaignSettleRound(int handle)
         {
             var session = Session(handle);
             if (session == null) return Err("会话已失效");
-            return OkState(session);
+            session.SettleRound();
+            return InfoDict(session);
+        }
+
+        public Godot.Collections.Dictionary CampaignInfo(int handle)
+        {
+            var session = Session(handle);
+            if (session == null) return Err("会话已失效");
+            return InfoDict(session);
+        }
+
+        /// <summary>
+        /// 建筑事件队列（天降落子 / 升星金光的唯一来源）：
+        /// `kind` = placed / upgraded，`col/row` 是 6×3 棋盘逻辑坐标，`id` = 建筑 id，`star` = 星级。
+        /// </summary>
+        public Godot.Collections.Dictionary CampaignBoardEvents(int handle)
+        {
+            var session = Session(handle);
+            if (session == null) return Err("会话已失效");
+            var events = new Godot.Collections.Array();
+            foreach (BoardEvent e in session.Board.DrainEvents())
+            {
+                events.Add(new Godot.Collections.Dictionary
+                {
+                    { "kind", e.Kind },
+                    { "tile", e.Tile },
+                    { "col", e.Col },
+                    { "row", e.Row },
+                    { "id", e.DefId },
+                    { "star", e.Star },
+                    { "planning", e.PlanningIndex },
+                });
+            }
+            return new Godot.Collections.Dictionary
+            {
+                { "ok", true },
+                { "events", events },
+            };
         }
 
         private static Godot.Collections.Dictionary Err(string msg)
@@ -312,11 +319,11 @@ namespace WarIsland.Bridge
             };
         }
 
-        private static Godot.Collections.Dictionary OkState(SquadSession session)
+        private static Godot.Collections.Dictionary InfoDict(CampaignSession session)
         {
-            SquadSessionState st = session.State();
+            CampaignInfo st = session.State();
             var cards = new Godot.Collections.Array();
-            foreach (SquadTrainEntry c in st.TrainCards)
+            foreach (TrainCardEntry c in st.TrainCards)
             {
                 cards.Add(new Godot.Collections.Dictionary
                 {
@@ -325,7 +332,6 @@ namespace WarIsland.Bridge
                     { "unit_id", c.UnitId },
                     { "unit_name", c.UnitName },
                     { "tag", c.Tag },
-                    { "role", c.Role },
                     { "cost_cp", c.CostCp },
                     { "units", c.Units },
                     { "buildings", c.Buildings },
@@ -339,11 +345,8 @@ namespace WarIsland.Bridge
                 { "ok", true },
                 { "phase", st.Phase },
                 { "round_kind", st.RoundKind },
-                { "attack_squads", st.AttackSquads },
-                { "defend_squads", st.DefendSquads },
-                { "outpost_captured", st.OutpostCaptured },
-                { "outpost_available", st.OutpostAvailable },
-                { "outpost_cp_cost", st.OutpostCpCost },
+                { "round_index", st.RoundIndex },
+                { "rounds_played", st.RoundsPlayed },
                 { "planning_index", st.PlanningIndex },
                 { "cp", st.Cp },
                 { "cp_start", st.CpStart },
@@ -351,8 +354,10 @@ namespace WarIsland.Bridge
                 { "pop_used", st.PopUsed },
                 { "pop_cap", st.PopCap },
                 { "pop_blocked", st.PopBlocked },
-                { "army_squads", st.ArmySquads },
-                { "army_models", st.ArmyModels },
+                { "army_units", st.ArmyUnits },
+                { "next_fill_tile", st.NextFillTile },
+                { "next_fill_col", st.NextFillCol },
+                { "next_fill_row", st.NextFillRow },
                 { "train_count_mult", st.TrainCountMult },
                 { "draw_pile", st.DrawPile },
                 { "discard_pile", st.DiscardPile },
@@ -360,8 +365,6 @@ namespace WarIsland.Bridge
                 { "hand", ToGodotArray(st.Hand) },
                 { "train_cards", cards },
                 { "log", ToGodotArray(st.Log) },
-                // 2026-11-24：单轮死斗
-                { "rounds_played", st.RoundsPlayed },
                 { "outcome", st.Outcome },
                 { "player_base_hp", st.PlayerBaseHp },
                 { "enemy_base_hp", st.EnemyBaseHp },
@@ -369,74 +372,81 @@ namespace WarIsland.Bridge
             };
         }
 
-        public Godot.Collections.Dictionary SquadStep(int handle, double dt)
+        /// <summary>
+        /// 推进一场战斗。**返回值里带这一帧的伤害跳字事件**（队列在 Model 侧排空）：
+        /// `events[]` = { target_id, amount, feedback, x, z, lethal, t }，
+        /// feedback 只有四个值：crit_or_counter（红）/ resisted（白）/ normal / miss。
+        /// </summary>
+        public Godot.Collections.Dictionary BattleStep(int handle, double dt)
         {
             var session = Session(handle);
             if (session == null) return Err("会话已失效");
             session.Battle.Step(dt);
+            var events = new Godot.Collections.Array();
+            foreach (HitEvent e in session.Battle.DrainHits())
+            {
+                events.Add(new Godot.Collections.Dictionary
+                {
+                    { "target_id", e.TargetId },
+                    { "amount", e.Amount },
+                    { "feedback", e.Feedback },
+                    { "x", e.X },
+                    { "z", e.Z },
+                    { "lethal", e.Lethal },
+                    { "t", e.T },
+                });
+            }
             return new Godot.Collections.Dictionary
             {
                 { "ok", true },
                 { "time", Math.Round(session.Battle.Time * 100.0) / 100.0 },
                 { "finished", session.Battle.Finished },
                 { "outcome", session.Battle.Outcome },
+                { "events", events },
+                { "events_dropped", session.Battle.HitsDropped },
             };
         }
 
-        /// <summary>小队战场快照（世界坐标，米）。</summary>
-        public Godot.Collections.Dictionary SquadView(int handle)
+        /// <summary>
+        /// 战斗快照（世界坐标，米）。一名单兵一条：
+        /// `state` = march / fight / hold / dead，`state_age` = 该状态已持续秒数，
+        /// `moving` = 本 tick 是否真的位移。表现层**只按这三个字段切动画**。
+        /// </summary>
+        public Godot.Collections.Dictionary BattleSnapshot(int handle)
         {
             var session = Session(handle);
             if (session == null) return Err("会话已失效");
-            SquadBattleView view = session.Battle.View(true);
-            var squads = new Godot.Collections.Array();
-            foreach (SquadView s in view.Squads)
+            BattleView view = session.Battle.View();
+            var units = new Godot.Collections.Array();
+            foreach (UnitView u in view.Units)
             {
-                var members = new Godot.Collections.Array();
-                foreach (SquadMemberView m in s.Members)
+                units.Add(new Godot.Collections.Dictionary
                 {
-                    members.Add(new Godot.Collections.Dictionary
-                    {
-                        { "index", m.Index },
-                        { "x", m.X },
-                        { "z", m.Z },
-                        { "hp", m.Hp },
-                        { "max_hp", m.MaxHp },
-                        { "alive", m.Alive },
-                        { "slot_x", m.SlotX },
-                        { "slot_z", m.SlotZ },
-                        { "slot_error", Math.Round(m.SlotError, 3) },
-                    });
-                }
-                squads.Add(new Godot.Collections.Dictionary
-                {
-                    { "id", s.Id },
-                    { "side", s.Side },
-                    { "unit_id", s.UnitId },
-                    { "display_name", s.DisplayName },
-                    { "star", s.Star },
-                    { "x", s.X },
-                    { "z", s.Z },
-                    { "heading", s.Heading },
-                    { "hp", s.Hp },
-                    { "max_hp", s.MaxHp },
-                    { "alive_count", s.AliveCount },
-                    { "member_count", s.MemberCount },
-                    { "order", s.Order },
-                    { "target_squad", s.TargetSquad },
-                    { "radius", s.Radius },
-                    { "move_speed", s.MoveSpeed },
-                    { "kills", s.Kills },
-                    { "damage_dealt", s.DamageDealt },
-                    { "spawn_tile", s.SpawnTile },
-                    { "source_building", s.SourceBuilding },
-                    { "role", s.Role },
-                    { "active", s.Active },
-                    { "engaged", s.Engaged },
-                    { "age", s.Age },
-                    { "body_radius", s.BodyRadius },
-                    { "attack_cooldown", s.AttackCooldown },
-                    { "members", members },
+                    { "id", u.Id },
+                    { "side", u.Side },
+                    { "unit_id", u.UnitId },
+                    { "display_name", u.DisplayName },
+                    { "star", u.Star },
+                    { "x", u.X },
+                    { "z", u.Z },
+                    { "heading", u.Heading },
+                    { "hp", u.Hp },
+                    { "max_hp", u.MaxHp },
+                    { "alive", u.Alive },
+                    { "order", u.Order },
+                    { "target_id", u.TargetUnit },
+                    { "radius", u.Radius },
+                    { "move_speed", u.MoveSpeed },
+                    { "kills", u.Kills },
+                    { "damage_dealt", u.DamageDealt },
+                    { "spawn_tile", u.SpawnTile },
+                    { "source_building", u.SourceBuilding },
+                    { "state", u.State },
+                    { "state_age", u.StateAge },
+                    { "moving", u.Moving },
+                    { "age", u.Age },
+                    { "body_radius", u.BodyRadius },
+                    { "attack_cooldown", u.AttackCooldown },
                 });
             }
             return new Godot.Collections.Dictionary
@@ -449,12 +459,12 @@ namespace WarIsland.Bridge
                 { "player_hp_max", view.PlayerBaseHpMax },
                 { "enemy_hp", view.EnemyBaseHp },
                 { "enemy_hp_max", view.EnemyBaseHpMax },
-                { "squads", squads },
+                { "units", units },
                 { "stats", StatsDict(view.Stats) },
             };
         }
 
-        private static Godot.Collections.Dictionary StatsDict(SquadBattleStats st)
+        private static Godot.Collections.Dictionary StatsDict(BattleStats st)
         {
             if (st == null) return new Godot.Collections.Dictionary();
             return new Godot.Collections.Dictionary
@@ -463,96 +473,56 @@ namespace WarIsland.Bridge
                 { "enemy_damage", st.EnemyDamage },
                 { "player_kills", st.PlayerKills },
                 { "enemy_kills", st.EnemyKills },
-                { "player_models_lost", st.PlayerModelsLost },
-                { "enemy_models_lost", st.EnemyModelsLost },
-                { "player_squads_lost", st.PlayerSquadsLost },
-                { "enemy_squads_lost", st.EnemySquadsLost },
-                { "player_squads_spawned", st.PlayerSquadsSpawned },
-                { "enemy_squads_spawned", st.EnemySquadsSpawned },
-                { "player_zone_seconds", st.PlayerZoneSeconds },
-                { "enemy_zone_seconds", st.EnemyZoneSeconds },
-                { "player_max_zone", st.PlayerMaxZone },
-                { "enemy_max_zone", st.EnemyMaxZone },
+                { "player_units_lost", st.PlayerUnitsLost },
+                { "enemy_units_lost", st.EnemyUnitsLost },
+                { "player_units_spawned", st.PlayerUnitsSpawned },
+                { "enemy_units_spawned", st.EnemyUnitsSpawned },
                 { "stuck_events", st.StuckEvents },
                 { "repaths", st.Repaths },
-                { "slot_error_m", st.AvgSlotErrorMeters },
                 { "path_length", st.AvgPathLength },
                 { "first_contact", st.FirstContactSecond },
+                { "feedback_crit_or_counter", st.FeedbackCritOrCounter },
+                { "feedback_resisted", st.FeedbackResisted },
+                { "feedback_normal", st.FeedbackNormal },
+                { "feedback_miss", st.FeedbackMiss },
                 { "player_by_unit", UnitStatsDict(st.PlayerByUnit) },
                 { "enemy_by_unit", UnitStatsDict(st.EnemyByUnit) },
             };
         }
 
-        private static Godot.Collections.Dictionary UnitStatsDict(Dictionary<string, SquadUnitStat> map)
+        private static Godot.Collections.Dictionary UnitStatsDict(Dictionary<string, UnitStat> map)
         {
             var d = new Godot.Collections.Dictionary();
             foreach (var kv in map)
             {
                 d[kv.Key] = new Godot.Collections.Dictionary
                 {
-                    { "squads", kv.Value.Squads },
-                    { "models", kv.Value.Models },
+                    { "units", kv.Value.Units },
                     { "kills", kv.Value.Kills },
                     { "losses", kv.Value.Losses },
                     { "damage", kv.Value.Damage },
-                    { "dps_member", kv.Value.DpsPerMember },
-                    { "dps_squad", kv.Value.DpsPerSquad },
+                    { "dps_unit", kv.Value.DpsPerUnit },
                 };
             }
             return d;
         }
 
-        /// <summary>点选整队（世界米）。side -1 = 不限；返回 squad id，-1 = 没点到。</summary>
-        public int SquadPickWorld(int handle, double worldX, double worldZ, int side, double slack)
+        /// <summary>点选一名单兵（世界米）。side -1 = 不限；返回 unit id，-1 = 没点到。</summary>
+        public int BattlePickWorld(int handle, double worldX, double worldZ, int side, double slack)
         {
             var session = Session(handle);
             if (session == null) return -1;
-            return session.Battle.PickSquad(worldX, worldZ, side, slack);
+            return session.Battle.PickUnit(worldX, worldZ, side, slack);
         }
-
-        /// <summary>框选整队（世界米）→ squad id 数组。</summary>
-        public Godot.Collections.Array SquadBoxWorld(int handle, double x0, double z0, double x1, double z1, int side)
-        {
-            var session = Session(handle);
-            var arr = new Godot.Collections.Array();
-            if (session == null) return arr;
-            foreach (int id in session.Battle.SquadsInRectWorld(x0, z0, x1, z1, side)) arr.Add(id);
-            return arr;
-        }
-
-        /// <summary>对一组小队下指令：move / attack_move / hold / stop / attack。</summary>
-        /// <summary>
-        /// 玩家侧小队指令：**只接受 attack（集火）**。
-        /// 2026-11-21 微操收敛：移动 / 攻击移动 / 停火 / 驻守从玩家手里移除，
-        /// 推进与接敌交给自动战斗与预设偏好；这里返回 0 就是"这条指令玩家拨不动"。
-        /// </summary>
-        public int SquadOrder(int handle, Godot.Collections.Array ids, string order, double worldX, double worldZ, int targetSquad)
-        {
-            var session = Session(handle);
-            if (session == null) return 0;
-            var list = new List<int>();
-            foreach (Variant v in ids) list.Add(v.AsInt32());
-            return session.Battle.OrderPlayerMany(list, order, targetSquad);
-        }
-
-        /// <summary>玩家侧指令是否被白名单接受（界面用它决定回执文案，不猜）。</summary>
-        public bool SquadPlayerOrderAllowed(string order) => SquadBattle.IsPlayerMicroOrder(order);
 
         /// <summary>
-        /// **AI / 预设偏好 / 推演**用的队级指令（Move / AttackMove / Hold / Stop 全通）。
-        /// 不是玩家入口：玩家只能走 SquadOrder（只有集火）。自检用它对寻路/驻守做真验证。
+        /// 玩家侧指令是否被白名单接受 —— **恒 false**（单兵自动接战，玩家只观察）。
+        /// 保留这个入口是为了让自检能证明"通道确实关着"，不是给界面留后门。
         /// </summary>
-        public int SquadAutoOrder(int handle, Godot.Collections.Array ids, string order, double worldX, double worldZ, int targetSquad)
-        {
-            var session = Session(handle);
-            if (session == null) return 0;
-            var list = new List<int>();
-            foreach (Variant v in ids) list.Add(v.AsInt32());
-            return session.Battle.OrderMany(list, order, worldX, worldZ, targetSquad);
-        }
+        public bool BattlePlayerOrderAllowed(string order) => BattleSim.IsPlayerMicroOrder(order);
 
         /// <summary>时间倍率（1x / 2x）：只改推进速率，不改任何数值。</summary>
-        public double SquadSetTimeScale(int handle, double scale)
+        public double BattleSetTimeScale(int handle, double scale)
         {
             var session = Session(handle);
             if (session == null) return 0.0;
@@ -560,26 +530,26 @@ namespace WarIsland.Bridge
             return session.Battle.TimeScale;
         }
 
-        public double SquadTimeScale(int handle)
+        public double BattleTimeScale(int handle)
         {
             var session = Session(handle);
             return session == null ? 0.0 : session.Battle.TimeScale;
         }
 
-        /// <summary>直接生成一支小队（试玩初始阵容 / 自检用）；世界米。</summary>
-        public int SquadSpawn(int handle, int side, string unitId, int star, double worldX, double worldZ)
+        /// <summary>直接生成一名单兵（试玩初始阵容 / 自检用）；世界米。</summary>
+        public int BattleSpawn(int handle, int side, string unitId, int star, double worldX, double worldZ)
         {
             var session = Session(handle);
             if (session == null) return -1;
-            return session.Battle.AddSquad(side, unitId, star, worldX, worldZ);
+            return session.Battle.AddUnit(side, unitId, star, worldX, worldZ);
         }
 
-        public Godot.Collections.Dictionary SquadDebugPath(int handle, int squadId)
+        public Godot.Collections.Dictionary BattleDebugPath(int handle, int unitId)
         {
             var session = Session(handle);
             if (session == null) return Err("会话已失效");
             var points = new Godot.Collections.Array();
-            foreach (System.Numerics.Vector2 p in session.Battle.DebugPath(squadId))
+            foreach (System.Numerics.Vector2 p in session.Battle.DebugPath(unitId))
             {
                 var w = session.Battle.Arena.LaneToWorld(p.X, p.Y);
                 points.Add(new Godot.Collections.Dictionary { { "x", w.X }, { "z", w.Y } });
@@ -587,21 +557,21 @@ namespace WarIsland.Bridge
             return new Godot.Collections.Dictionary
             {
                 { "ok", true },
-                { "length", session.Battle.DebugPathLength(squadId) },
-                { "length_m", session.Battle.DebugPathLength(squadId) * RtsUnits.R1 },
+                { "length", session.Battle.DebugPathLength(unitId) },
+                { "length_m", session.Battle.DebugPathLength(unitId) * RtsUnits.R1 },
                 { "points", points },
             };
         }
 
         /// <summary>战场几何（格子锚点 / 脊线 / 势力区），世界米。</summary>
-        public Godot.Collections.Dictionary SquadArenaInfo(int handle)
+        public Godot.Collections.Dictionary BattleArenaInfo(int handle)
         {
             var session = Session(handle);
             if (session == null) return Err("会话已失效");
             return ArenaInfoDict(session.Arena);
         }
 
-        private static Godot.Collections.Dictionary ArenaInfoDict(SquadArena arena)
+        private static Godot.Collections.Dictionary ArenaInfoDict(BattleArena arena)
         {
             var ridge = new Godot.Collections.Array();
             foreach (System.Numerics.Vector2 p in arena.Route.Ridge)
@@ -655,7 +625,6 @@ namespace WarIsland.Bridge
             var enemyBase = arena.LaneToWorld(arena.EnemyBaseX, 0.0);
             var pZone = arena.LaneToWorld(arena.PlayerZoneEnd, 0.0);
             var eZone = arena.LaneToWorld(arena.EnemyZoneStart, 0.0);
-            var outpostStage = arena.OutpostStageWorld();
             var min = arena.LaneToWorld(arena.MinX, arena.MinY);
             var max = arena.LaneToWorld(arena.MaxX, arena.MaxY);
             return new Godot.Collections.Dictionary
@@ -676,22 +645,16 @@ namespace WarIsland.Bridge
                 { "enemy_base_z", enemyBase.Y },
                 { "player_zone_x", pZone.X },
                 { "enemy_zone_x", eZone.X },
-                { "neutral_start_x", arena.NeutralStartWorldX },
-                { "neutral_end_x", arena.NeutralEndWorldX },
-                { "outpost_tile", arena.NeutralOutpostTile },
-                { "outpost_x", outpostStage.X },
-                { "outpost_z", outpostStage.Y },
                 { "player_base_tile", arena.PlayerBaseTile },
                 { "enemy_base_tile", arena.EnemyBaseTile },
                 { "ridge", ridge },
                 { "tiles", tiles },
                 { "player_buildings", playerBuildings },
                 { "enemy_buildings", enemyBuildings },
-                { "zone_dps_per_unit", arena.ZoneDpsPerUnit },
             };
         }
 
-        private static Godot.Collections.Array RoundsDict(SquadArena arena)
+        private static Godot.Collections.Array RoundsDict(BattleArena arena)
         {
             var arr = new Godot.Collections.Array();
             foreach (LevelRound r in arena.Rounds)
@@ -714,7 +677,7 @@ namespace WarIsland.Bridge
         }
 
         /// <summary>只校验小队战场（--check 的入口）。</summary>
-        public Godot.Collections.Dictionary SquadArenaValidate(
+        public Godot.Collections.Dictionary BattleArenaValidate(
             Godot.Collections.Dictionary unitsDict,
             Godot.Collections.Dictionary combatDict,
             Godot.Collections.Dictionary levelDict,
@@ -725,7 +688,7 @@ namespace WarIsland.Bridge
         {
             var rules = CombatRules.FromDict(ToPlainDict(combatDict));
             var units = UnitCatalog.FromDict(ToPlainDict(unitsDict), rules, new List<string>());
-            var arena = SquadArena.FromDict(
+            var arena = BattleArena.FromDict(
                 ToPlainDict(levelDict), ToPlainDict(shellDict), ToPlainDict(layoutDict),
                 ToPlainDict(encounterDict), units, ToPlainDict(tuningDict));
             var errors = new List<string>();
@@ -740,8 +703,6 @@ namespace WarIsland.Bridge
                 { "tiles", arena.Tiles.Count },
                 { "player_buildings", arena.PlayerBuildings.Count },
                 { "enemy_buildings", arena.EnemyBuildings.Count },
-                { "zone_dps_per_unit", arena.ZoneDpsPerUnit },
-                { "outpost_tile", arena.NeutralOutpostTile },
                 { "deploy_player", arena.Battlefield.DeployPlayer },
                 { "deploy_enemy", arena.Battlefield.DeployEnemy },
                 { "battlefield_width", arena.Battlefield.Width },
@@ -804,7 +765,7 @@ namespace WarIsland.Bridge
             double bodyUnits,
             Godot.Collections.Dictionary squadDict)
         {
-            var tuning = SquadTuning.FromDict(ToPlainDict(squadDict));
+            var tuning = BattleTuning.FromDict(ToPlainDict(squadDict));
             int n = Math.Clamp(count, 2, 64);
             var pts = new List<System.Numerics.Vector2>(n);
             for (int i = 0; i < n; i++)
@@ -890,7 +851,62 @@ namespace WarIsland.Bridge
             };
         }
 
-        public Godot.Collections.Dictionary SquadSimulate(
+        /// <summary>
+        /// Phase 3 契约自检（纯 Model）：状态机 / 跳字队列 / 建筑事件 / 平衡带 + 4 项反向验错。
+        /// 参数与 <see cref="Phase2SelfCheck"/> 相同（少一个 encounter）。
+        /// </summary>
+        public Godot.Collections.Dictionary Phase3SelfCheck(
+            Godot.Collections.Dictionary unitsDict,
+            Godot.Collections.Dictionary combatDict,
+            Godot.Collections.Dictionary planningDict,
+            Godot.Collections.Dictionary levelsDict,
+            Godot.Collections.Dictionary shellsDict,
+            Godot.Collections.Dictionary layoutsDict,
+            Godot.Collections.Dictionary tuningDict,
+            string levelId)
+        {
+            var plainLevels = ToPlainDict(levelsDict);
+            var levelRow = FindRow(plainLevels, "levels", levelId);
+            if (levelRow == null)
+            {
+                return new Godot.Collections.Dictionary
+                {
+                    { "ok", false },
+                    { "checks", 0 },
+                    { "errors", ToGodotArray(new List<string> { "找不到关卡：" + levelId }) },
+                    { "lines", new Godot.Collections.Array() },
+                };
+            }
+            var asm = JValDict(levelRow, "assembly");
+            var shell = asm != null ? FindRow(ToPlainDict(shellsDict), "shells", StrOf(asm, "shell")) : null;
+            var layout = asm != null ? FindRow(ToPlainDict(layoutsDict), "layouts", StrOf(asm, "player_layout")) : null;
+            if (shell == null || layout == null)
+            {
+                return new Godot.Collections.Dictionary
+                {
+                    { "ok", false },
+                    { "checks", 0 },
+                    { "errors", ToGodotArray(new List<string> { "关卡 assembly 缺底壳或布局卡" }) },
+                    { "lines", new Godot.Collections.Array() },
+                };
+            }
+
+            CheckReport report = Phase3Checks.Run(
+                ToPlainDict(unitsDict), ToPlainDict(combatDict), ToPlainDict(planningDict),
+                shell, layout, plainLevels, ToPlainDict(tuningDict), levelId);
+
+            var lines = new Godot.Collections.Array();
+            foreach (string line in report.Lines) lines.Add(line);
+            return new Godot.Collections.Dictionary
+            {
+                { "ok", report.Ok },
+                { "checks", report.Checks },
+                { "errors", ToGodotArray(report.Errors) },
+                { "lines", lines },
+            };
+        }
+
+        public Godot.Collections.Dictionary BattleSimulate(
             Godot.Collections.Dictionary unitsDict,
             Godot.Collections.Dictionary combatDict,
             Godot.Collections.Dictionary planningDict,
@@ -955,7 +971,7 @@ namespace WarIsland.Bridge
                 };
             }
 
-            var arena = SquadArena.FromDict(
+            var arena = BattleArena.FromDict(
                 FindRow(ToPlainDict(levelsDict), "levels", levelId),
                 shell, layout, encounter, units, ToPlainDict(tuningDict));
             errors.AddRange(arena.Validate(units));
@@ -968,7 +984,7 @@ namespace WarIsland.Bridge
                 };
             }
 
-            var sim = SquadSimulator.Run(units, rules, planning, arena, games, seedBase, ToPlainDict(tuningDict));
+            var sim = BattleSimulator.Run(units, rules, planning, arena, games, seedBase, ToPlainDict(tuningDict));
             var outDict = new Godot.Collections.Dictionary
             {
                 { "ok", sim.Ok },
@@ -986,18 +1002,16 @@ namespace WarIsland.Bridge
                 { "avg_enemy_hp", sim.AvgEnemyHp },
                 { "avg_player_hp_pct", sim.AvgPlayerHpPct },
                 { "avg_seconds", sim.AvgSeconds },
-                { "avg_player_squads", sim.AvgPlayerSquads },
-                { "avg_enemy_squads", sim.AvgEnemySquads },
-                { "avg_player_squads_lost", sim.AvgPlayerSquadsLost },
-                { "avg_player_models_lost", sim.AvgPlayerModelsLost },
-                { "avg_enemy_models_lost", sim.AvgEnemyModelsLost },
+                { "avg_player_units", sim.AvgPlayerUnits },
+                { "avg_enemy_units", sim.AvgEnemyUnits },
+                { "avg_player_units_lost", sim.AvgPlayerUnitsLost },
+                { "avg_enemy_units_lost", sim.AvgEnemyUnitsLost },
                 { "avg_player_damage", sim.AvgPlayerDamage },
                 { "avg_player_dps", sim.AvgPlayerDps },
-                { "avg_player_dps_per_member", sim.AvgPlayerDpsPerMember },
+                { "avg_player_dps_per_unit", sim.AvgPlayerDpsPerMember },
                 { "avg_path_length", sim.AvgPathLength },
                 { "avg_path_ratio", sim.AvgPathStraightRatio },
                 { "avg_stuck_events", sim.AvgStuckEvents },
-                { "avg_slot_error", sim.AvgSlotError },
                 { "avg_overlap_pairs_max", sim.AvgOverlapPairsMax },
                 { "avg_overlap_depth_max_m", sim.AvgOverlapDepthMaxMeters },
                 { "avg_overlap_pairs_after_max", sim.AvgOverlapPairsAfterMax },
@@ -1009,15 +1023,14 @@ namespace WarIsland.Bridge
                 { "avg_rounds", sim.AvgRounds },
                 { "total_rounds", sim.TotalRounds },
                 { "avg_round_base_damage", sim.AvgRoundBaseDamage },
+                { "round_seconds_p50", sim.RoundSecondsP50 },
+                { "round_seconds_in_band_rate", sim.RoundSecondsInBandRate },
                 { "avg_player_base_damage_dealt", sim.AvgPlayerBaseDamageDealt },
                 { "berserk_rounds", sim.TotalBerserkRounds },
                 { "berserk_round_rate", sim.BerserkRoundRate },
                 { "tie_diff_rounds", sim.TotalTieDiffRounds },
                 { "tie_diff_round_rate", sim.TieDiffRoundRate },
                 { "round_histogram", RoundHistogramDict(sim.RoundHistogram) },
-                { "avg_enemy_max_zone", sim.AvgEnemyMaxZone },
-                { "avg_player_zone_seconds", sim.AvgPlayerZoneSeconds },
-                { "avg_enemy_zone_seconds", sim.AvgEnemyZoneSeconds },
                 { "total_player_kills", sim.TotalPlayerKills },
                 { "total_enemy_kills", sim.TotalEnemyKills },
                 { "review_counts", ToGodotDict(sim.ReviewCounts) },
@@ -1026,7 +1039,7 @@ namespace WarIsland.Bridge
             };
 
             var rows = new Godot.Collections.Array();
-            foreach (SquadSimRow r in sim.Rows)
+            foreach (SimRow r in sim.Rows)
             {
                 rows.Add(new Godot.Collections.Dictionary
                 {
@@ -1037,22 +1050,15 @@ namespace WarIsland.Bridge
                     { "player_hp", r.PlayerHp },
                     { "enemy_hp", r.EnemyHp },
                     { "player_hp_pct", r.PlayerHpPct },
-                    { "player_squads", r.PlayerSquads },
-                    { "enemy_squads", r.EnemySquads },
-                    { "player_squads_lost", r.PlayerSquadsLost },
-                    { "enemy_squads_lost", r.EnemySquadsLost },
-                    { "player_models_lost", r.PlayerModelsLost },
-                    { "enemy_models_lost", r.EnemyModelsLost },
+                    { "player_units", r.PlayerUnits },
+                    { "enemy_units", r.EnemyUnits },
+                    { "player_units_lost", r.PlayerUnitsLost },
+                    { "enemy_units_lost", r.EnemyUnitsLost },
                     { "player_damage", r.PlayerDamage },
                     { "enemy_damage", r.EnemyDamage },
                     { "dps_member", r.DpsPerMember },
                     { "seconds", r.Seconds },
-                    { "zone_max", r.ZoneMax },
-                    { "enemy_zone_max", r.EnemyZoneMax },
-                    { "player_zone_seconds", r.PlayerZoneSeconds },
-                    { "enemy_zone_seconds", r.EnemyZoneSeconds },
                     { "stuck_events", r.StuckEvents },
-                    { "slot_error", r.SlotError },
                     { "overlap_pairs_max", r.OverlapPairsMax },
                     { "overlap_depth_max", r.OverlapDepthMax },
                     { "overlap_pairs_after_max", r.OverlapPairsAfterMax },
@@ -1072,7 +1078,7 @@ namespace WarIsland.Bridge
             outDict["rows"] = rows;
 
             var samples = new Godot.Collections.Array();
-            foreach (SquadMatchResult s in sim.Samples)
+            foreach (MatchResult s in sim.Samples)
             {
                 samples.Add(new Godot.Collections.Dictionary
                 {
@@ -1087,8 +1093,7 @@ namespace WarIsland.Bridge
                     { "berserk_rounds", s.BerserkRounds },
                     { "tie_diff_rounds", s.TieDiffRounds },
                     { "defeat_record", s.DefeatRecord },
-                    { "army", s.PlayerSquadsProduced },
-                    { "defend_squads", 0 },
+                    { "army", s.PlayerUnitsProduced },
                     { "reviews", ToGodotArray(s.Reviews) },
                     { "review_codes", ToGodotArray(s.ReviewCodes) },
                     { "dps_rows", UnitStatsRows(s.PlayerByUnit) },
@@ -1108,8 +1113,8 @@ namespace WarIsland.Bridge
             return d;
         }
 
-        private static Godot.Collections.Array UnitStatsRows(Dictionary<string, SquadUnitStat> map)        {
-            var list = new List<SquadUnitStat>(map.Values);
+        private static Godot.Collections.Array UnitStatsRows(Dictionary<string, UnitStat> map)        {
+            var list = new List<UnitStat>(map.Values);
             list.Sort((a, b) =>
             {
                 int c = b.Damage.CompareTo(a.Damage);
@@ -1117,18 +1122,16 @@ namespace WarIsland.Bridge
                 return string.CompareOrdinal(a.UnitId, b.UnitId);
             });
             var rows = new Godot.Collections.Array();
-            foreach (SquadUnitStat s in list)
+            foreach (UnitStat s in list)
             {
                 rows.Add(new Godot.Collections.Dictionary
                 {
                     { "unit_id", s.UnitId },
-                    { "squads", s.Squads },
-                    { "models", s.Models },
+                    { "units", s.Units },
                     { "kills", s.Kills },
                     { "losses", s.Losses },
                     { "damage", s.Damage },
-                    { "dps_member", s.DpsPerMember },
-                    { "dps_squad", s.DpsPerSquad },
+                    { "dps_unit", s.DpsPerUnit },
                 });
             }
             return rows;

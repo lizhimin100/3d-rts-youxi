@@ -10,7 +10,7 @@ namespace WarIsland.Model
     /// 与棋盘**不共享坐标/实体**：战场是 levels.json 的 battlefield 矩形，
     /// 双方从各自部署线直接对冲（March → Engage），不读格子、不建建筑。
     ///
-    /// 唯一的战斗内核仍然是 <see cref="SquadBattle"/>：
+    /// 唯一的战斗内核仍然是 <see cref="BattleSim"/>：
     ///   · 这里只做"把 ArmyPlan 摆到部署线 + 排敌方波次 + 45 秒狂暴 + 60 秒结算"；
     ///   · 伤害/克制/分离/朝向全部在内核里，不在这里重写。
     /// </summary>
@@ -20,7 +20,7 @@ namespace WarIsland.Model
             UnitCatalog units,
             CombatRules rules,
             PlanningConfig planning,
-            SquadArena arena,
+            BattleArena arena,
             LevelDef level,
             LevelRound round,
             int roundIndex,
@@ -28,17 +28,17 @@ namespace WarIsland.Model
             double playerBaseHp,
             double enemyBaseHp,
             int seed,
-            SquadTuning tuning)
+            BattleTuning tuning)
         {
             if (units == null) throw new ArgumentNullException(nameof(units));
             if (rules == null) throw new ArgumentNullException(nameof(rules));
             if (planning == null) throw new ArgumentNullException(nameof(planning));
             if (arena == null) throw new ArgumentNullException(nameof(arena));
             if (level == null) throw new ArgumentNullException(nameof(level));
-            tuning = tuning ?? new SquadTuning();
+            tuning = tuning ?? new BattleTuning();
             plan = plan ?? new ArmyPlan();
 
-            var battle = new SquadBattle(units, rules, arena, planning, seed, tuning);
+            var battle = new BattleSim(units, rules, arena, planning, seed, tuning);
             battle.SetBaseHp(playerBaseHp, enemyBaseHp);
             battle.SetArmyModifiers(plan.Modifiers);
             SpawnArmy(battle, plan, level, tuning, arena);
@@ -58,14 +58,14 @@ namespace WarIsland.Model
         /// 只写位置与指令，不改任何战斗数值。
         /// </summary>
         public static void SpawnArmy(
-            SquadBattle battle,
+            BattleSim battle,
             ArmyPlan plan,
             LevelDef level,
-            SquadTuning tuning,
-            SquadArena arena)
+            BattleTuning tuning,
+            BattleArena arena)
         {
             if (battle == null || plan == null || level == null || arena == null) return;
-            tuning = tuning ?? new SquadTuning();
+            tuning = tuning ?? new BattleTuning();
             Battlefield bf = level.Battlefield ?? new Battlefield();
             UnitCatalog units = battle.Units;
 
@@ -99,8 +99,8 @@ namespace WarIsland.Model
                     Vec2 lane = FormationPlan.BattleSlot(frontX, frontZ, dirX, line, slot, files, meleeRanks,
                         tuning.FilePitch, tuning.RankPitch, tuning.LineGap);
                     Vec2 world = arena.LaneToWorld(lane.X, lane.Y);
-                    int id = battle.AddSquadEx(0, def.Id, u.Star, world.X, world.Y,
-                        u.SourceBuilding, u.SourceTile, SquadRoles.Any, mods);
+                    int id = battle.AddUnit(0, def.Id, u.Star, world.X, world.Y,
+                        u.SourceBuilding, u.SourceTile, mods);
                     if (id > 0) battle.OrderMarch(id, goal.X, goal.Y);
                 }
             }
@@ -121,15 +121,15 @@ namespace WarIsland.Model
                     double x = frontX - (rank + 1) * tuning.RankPitch;
                     double z = sideSign * (flankZ + rank * tuning.FilePitch);
                     Vec2 world = arena.LaneToWorld(x, z);
-                    int id = battle.AddSquadEx(0, def.Id, t.Star, world.X, world.Y,
-                        t.SourceBuilding, t.SourceTile, SquadRoles.Any, mods);
+                    int id = battle.AddUnit(0, def.Id, t.Star, world.X, world.Y,
+                        t.SourceBuilding, t.SourceTile, mods);
                     if (id > 0) battle.OrderHold(id);
                 }
             }
         }
 
         /// <summary>把一轮的敌方波次排到敌方部署线（直线对冲，不走脊线）。</summary>
-        public static void ScheduleEnemyWaves(SquadBattle battle, LevelRound round, LevelDef level, SquadArena arena)
+        public static void ScheduleEnemyWaves(BattleSim battle, LevelRound round, LevelDef level, BattleArena arena)
         {
             if (battle == null || round == null || level == null || arena == null) return;
             Battlefield bf = level.Battlefield ?? new Battlefield();

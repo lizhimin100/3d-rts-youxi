@@ -12,7 +12,7 @@ namespace WarIsland.Model
     ///   · berserk / settle：45 秒狂暴与 60 秒结算。
     /// 旧的 outpost / free_defend / zone_dps 已物理删除（占区抽血不再存在）。
     /// </summary>
-    public sealed class SquadTuning
+    public sealed class BattleTuning
     {
         // ---- 布阵（游戏数值） ----
         public double FilePitch = FormationPlan.FilePitchDefault;
@@ -35,9 +35,9 @@ namespace WarIsland.Model
         // ---- 结算 ----
         public int BaseDamageCap = 48;
 
-        public static SquadTuning FromDict(IDictionary<string, object> d)
+        public static BattleTuning FromDict(IDictionary<string, object> d)
         {
-            var t = new SquadTuning();
+            var t = new BattleTuning();
             if (d == null) return t;
 
             var formation = JVal.Dict(d, "formation");
@@ -79,32 +79,32 @@ namespace WarIsland.Model
         {
             var errors = new List<string>();
             if (FilePitch < 48.0 || FilePitch > 240.0)
-                errors.Add($"squad.json：formation.file_pitch={FilePitch} 越界（48..240）");
+                errors.Add($"battle.json：formation.file_pitch={FilePitch} 越界（48..240）");
             if (RankPitch < 72.0 || RankPitch > 360.0)
-                errors.Add($"squad.json：formation.rank_pitch={RankPitch} 越界（72..360）");
+                errors.Add($"battle.json：formation.rank_pitch={RankPitch} 越界（72..360）");
             if (LineGap < 0.0 || LineGap > 960.0)
-                errors.Add($"squad.json：formation.line_gap={LineGap} 越界（0..960）");
+                errors.Add($"battle.json：formation.line_gap={LineGap} 越界（0..960）");
             if (MaxFiles < 2 || MaxFiles > 64)
-                errors.Add($"squad.json：formation.max_files={MaxFiles} 越界（2..64）");
+                errors.Add($"battle.json：formation.max_files={MaxFiles} 越界（2..64）");
             if (TileFiles < 2 || TileFiles > 12)
-                errors.Add($"squad.json：formation.tile_files={TileFiles} 越界（2..12）");
+                errors.Add($"battle.json：formation.tile_files={TileFiles} 越界（2..12）");
             if (HardCoreFactor < 0.80 || HardCoreFactor >= 1.0)
-                errors.Add($"squad.json：combat.hard_core_factor={HardCoreFactor} 越界（0.80..0.99）");
+                errors.Add($"battle.json：combat.hard_core_factor={HardCoreFactor} 越界（0.80..0.99）");
             if (StandOffRatio < 0.80 || StandOffRatio >= 1.0)
-                errors.Add($"squad.json：combat.stand_off_ratio={StandOffRatio} 越界（0.80..0.99）");
+                errors.Add($"battle.json：combat.stand_off_ratio={StandOffRatio} 越界（0.80..0.99）");
             if (TurnRateDeg < 90.0 || TurnRateDeg > 1440.0)
-                errors.Add($"squad.json：combat.turn_rate_deg={TurnRateDeg} 越界（90..1440）");
+                errors.Add($"battle.json：combat.turn_rate_deg={TurnRateDeg} 越界（90..1440）");
             if (FacingDeadzoneDeg < 0.0 || FacingDeadzoneDeg > 45.0)
-                errors.Add($"squad.json：combat.facing_deadzone_deg={FacingDeadzoneDeg} 越界（0..45）");
+                errors.Add($"battle.json：combat.facing_deadzone_deg={FacingDeadzoneDeg} 越界（0..45）");
             if (FilePitch < RankPitch * 0.5)
-                errors.Add($"squad.json：file_pitch={FilePitch} 小于 rank_pitch 的一半，排内会挤成一列");
+                errors.Add($"battle.json：file_pitch={FilePitch} 小于 rank_pitch 的一半，排内会挤成一列");
 
             if (BerserkStartSeconds < 30.0 || BerserkStartSeconds > LevelDef.RoundSecondsSpec - 5.0)
-                errors.Add($"squad.json：berserk.start_seconds={BerserkStartSeconds} 越界（30..{LevelDef.RoundSecondsSpec - 5:0}）");
+                errors.Add($"battle.json：berserk.start_seconds={BerserkStartSeconds} 越界（30..{LevelDef.RoundSecondsSpec - 5:0}）");
             if (BerserkAttackSpeedMult < 1.0 || BerserkAttackSpeedMult > 4.0)
-                errors.Add($"squad.json：berserk.attack_speed_mult={BerserkAttackSpeedMult} 越界（1..4）");
+                errors.Add($"battle.json：berserk.attack_speed_mult={BerserkAttackSpeedMult} 越界（1..4）");
             if (BaseDamageCap < 1 || BaseDamageCap > 200)
-                errors.Add($"squad.json：settle.base_damage_cap={BaseDamageCap} 越界（1..200）");
+                errors.Add($"battle.json：settle.base_damage_cap={BaseDamageCap} 越界（1..200）");
 
             // 近战可达性：逐个近战检查"它 vs 场上最大身位"的硬核必须小于自己的射程。
             // 不能用 2×最大身位（两个最大单位互撞的极端）——那会把小鱼人奴隶误判成够不着。
@@ -123,7 +123,7 @@ namespace WarIsland.Model
                     double need = (UnitBody.BodyUnits(a) + maxRadius) * HardCoreFactor;
                     if (need >= a.AttackRange)
                     {
-                        errors.Add($"squad.json：{a.Id} 的硬核 {need:0.0} ≥ 射程 {a.AttackRange:0}（近战会够不着）");
+                        errors.Add($"battle.json：{a.Id} 的硬核 {need:0.0} ≥ 射程 {a.AttackRange:0}（近战会够不着）");
                         break;
                     }
                 }

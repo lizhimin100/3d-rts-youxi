@@ -368,6 +368,10 @@ func _run() -> void:
 		await get_tree().create_timer(0.35).timeout
 		print("[shot] map right click (%.0f, %.0f)" % [rpos.x, rpos.y])
 
+	# --- 动画探针：场景暴露 anim_report 就打印（--shot 的读数，不参与判定） ---
+	if _scene.get("anim_report") != null:
+		print("[shot] anim_report=%s" % String(_scene.get("anim_report")))
+
 	# --- 可选：读取场景属性做状态断言（例如 last_order 必须包含某个词） ---
 	if recipe.has("expect_scene_state"):
 		# 走同一个 _assert_state：子串 / ">=N" 数值下限两套语义只有一份实现

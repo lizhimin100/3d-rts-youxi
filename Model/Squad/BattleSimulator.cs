@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace WarIsland.Model
 {
     /// <summary>100 局报告里的一行。</summary>
-    public sealed class SquadSimRow
+    public sealed class SimRow
     {
         public int Index;
         public int Seed;
@@ -13,22 +13,15 @@ namespace WarIsland.Model
         public double PlayerHp;
         public double EnemyHp;
         public double PlayerHpPct;
-        public int PlayerSquads;
-        public int EnemySquads;
-        public int PlayerSquadsLost;
-        public int EnemySquadsLost;
-        public int PlayerModelsLost;
-        public int EnemyModelsLost;
+        public int PlayerUnits;
+        public int EnemyUnits;
+        public int PlayerUnitsLost;
+        public int EnemyUnitsLost;
         public double PlayerDamage;
         public double EnemyDamage;
         public double DpsPerMember;
         public double Seconds;
-        public int ZoneMax;
-        public int EnemyZoneMax;
-        public double PlayerZoneSeconds;
-        public double EnemyZoneSeconds;
         public int StuckEvents;
-        public double SlotError;
         public int CpLeft;
         public int PopBlocked;
         public string TopReason = "";
@@ -56,7 +49,7 @@ namespace WarIsland.Model
     }
 
     /// <summary>一批小队推演的汇总（--simulate 的返回）。</summary>
-    public sealed class SquadSimSummary
+    public sealed class SimSummary
     {
         public bool Ok;
         public string ArenaId = "";
@@ -71,23 +64,18 @@ namespace WarIsland.Model
         public double AvgEnemyHp;
         public double AvgPlayerHpPct;
         public double AvgSeconds;
-        public double AvgPlayerSquads;
-        public double AvgEnemySquads;
-        public double AvgPlayerSquadsLost;
-        public double AvgPlayerModelsLost;
-        public double AvgEnemyModelsLost;
+        public double AvgPlayerUnits;
+        public double AvgEnemyUnits;
+        public double AvgPlayerUnitsLost;
+        public double AvgEnemyUnitsLost;
         public double AvgPlayerDps;
         public double AvgPlayerDpsPerMember;
         public double AvgPlayerDamage;
         public double AvgPathLength;
         public double AvgPathStraightRatio;
         public double AvgStuckEvents;
-        public double AvgSlotError;
         public int TotalPlayerKills;
         public int TotalEnemyKills;
-        public int AvgEnemyMaxZone;
-        public double AvgPlayerZoneSeconds;
-        public double AvgEnemyZoneSeconds;
         /// <summary>均值：本局峰值深度重叠对数。</summary>
         public double AvgOverlapPairsMax;
         /// <summary>均值：本局峰值最大重叠深度（米）。</summary>
@@ -105,6 +93,10 @@ namespace WarIsland.Model
         // ---- 2026-11-24：单轮死斗汇总 ----
         /// <summary>平均每局轮数。</summary>
         public double AvgRounds;
+        /// <summary>每轮战斗时长中位数（秒）——"自然分出胜负"的主读数。</summary>
+        public double RoundSecondsP50;
+        /// <summary>落在 25~40 秒区间的轮次占比。</summary>
+        public double RoundSecondsInBandRate;
         /// <summary>平均每轮我方对基地造成的伤害。</summary>
         public double AvgRoundBaseDamage;
         /// <summary>狂暴触发率（触发狂暴的轮数 / 总轮数）。</summary>
@@ -118,10 +110,12 @@ namespace WarIsland.Model
         /// <summary>总回合数分布：轮数 → 局数（报告"多少局打了几轮"）。</summary>
         public readonly Dictionary<int, int> RoundHistogram = new Dictionary<int, int>();
         public readonly Dictionary<string, int> ReviewCounts = new Dictionary<string, int>(StringComparer.Ordinal);
-        public readonly Dictionary<string, SquadUnitStat> PlayerByUnit = new Dictionary<string, SquadUnitStat>(StringComparer.Ordinal);
-        public readonly Dictionary<string, SquadUnitStat> EnemyByUnit = new Dictionary<string, SquadUnitStat>(StringComparer.Ordinal);
-        public readonly List<SquadSimRow> Rows = new List<SquadSimRow>();
-        public readonly List<SquadMatchResult> Samples = new List<SquadMatchResult>();
+        public readonly Dictionary<string, UnitStat> PlayerByUnit = new Dictionary<string, UnitStat>(StringComparer.Ordinal);
+        public readonly Dictionary<string, UnitStat> EnemyByUnit = new Dictionary<string, UnitStat>(StringComparer.Ordinal);
+        /// <summary>所有轮次的战斗时长（秒），用于分位数/区间占比。</summary>
+        public readonly List<double> RoundSeconds = new List<double>();
+        public readonly List<SimRow> Rows = new List<SimRow>();
+        public readonly List<MatchResult> Samples = new List<MatchResult>();
         public readonly List<string> Errors = new List<string>();
     }
 
@@ -129,18 +123,18 @@ namespace WarIsland.Model
     /// 小队对局批量推演：每局独立种子，跑完整两轮 60 秒（规划 + 出兵 + 脊线推进 + 6 步结算）。
     /// 纯 Model，不读引擎时间/帧率；同 seed + 同配置 = 同结果。
     /// </summary>
-    public static class SquadSimulator
+    public static class BattleSimulator
     {
-        public static SquadSimSummary Run(
+        public static SimSummary Run(
             UnitCatalog units,
             CombatRules combat,
             PlanningConfig planning,
-            SquadArena arena,
+            BattleArena arena,
             int games,
             int seedBase,
             IDictionary<string, object> tuning = null)
         {
-            var summary = new SquadSimSummary
+            var summary = new SimSummary
             {
                 ArenaId = arena != null ? arena.Id : "",
                 ArenaName = arena != null ? arena.DisplayName : "",
@@ -154,7 +148,7 @@ namespace WarIsland.Model
                 return summary;
             }
 
-            var winSamples = new List<SquadMatchResult>();
+            var winSamples = new List<MatchResult>();
             double totalSeconds = 0.0;
             double totalMemberSeconds = 0.0;
             double totalSquadSeconds = 0.0;
@@ -165,10 +159,10 @@ namespace WarIsland.Model
             for (int i = 0; i < summary.Games; i++)
             {
                 int seed = seedBase + i;
-                SquadMatchResult r;
+                MatchResult r;
                 try
                 {
-                    r = SquadMatch.Run(units, combat, planning, arena, seed, tuning);
+                    r = MatchRun.Run(units, combat, planning, arena, seed, tuning);
                 }
                 catch (Exception e)
                 {
@@ -184,17 +178,17 @@ namespace WarIsland.Model
                 summary.AvgEnemyHp += r.EnemyBaseHp;
                 summary.AvgPlayerHpPct += r.PlayerBaseHpStart > 0.0 ? r.PlayerBaseHp / r.PlayerBaseHpStart : 0.0;
                 summary.AvgSeconds += r.Seconds;
-                summary.AvgPlayerSquads += r.PlayerSquadsProduced;
-                summary.AvgEnemySquads += r.EnemySquadsSpawned;
-                summary.AvgPlayerSquadsLost += r.PlayerSquadsLost;
-                summary.AvgPlayerModelsLost += r.PlayerModelsLost;
-                summary.AvgEnemyModelsLost += r.EnemyModelsLost;
+                summary.AvgPlayerUnits += r.PlayerUnitsProduced;
+                summary.AvgEnemyUnits += r.EnemyUnitsProduced;
+                summary.AvgPlayerUnitsLost += r.PlayerUnitsLost;
+                summary.AvgEnemyUnitsLost += r.EnemyUnitsLost;
+                
                 summary.AvgPlayerDamage += r.PlayerDamage;
                 summary.AvgStuckEvents += r.StuckEvents;
-                summary.AvgSlotError += r.AvgSlotErrorMeters;
-                summary.AvgEnemyMaxZone += r.EnemyMaxZone;
-                summary.AvgPlayerZoneSeconds += r.PlayerZoneSeconds;
-                summary.AvgEnemyZoneSeconds += r.EnemyZoneSeconds;
+                
+                
+                
+                
                 summary.AvgOverlapPairsMax += r.OverlapPairsMax;
                 summary.AvgOverlapDepthMaxMeters += r.OverlapDepthMax * RtsUnits.R1;
                 summary.AvgOverlapPairsAfterMax += r.OverlapPairsAfterMax;
@@ -213,8 +207,8 @@ namespace WarIsland.Model
                 totalSeconds += r.Seconds;
                 foreach (var kv in r.PlayerByUnit)
                 {
-                    totalMemberSeconds += kv.Value.MemberSeconds;
-                    totalSquadSeconds += kv.Value.SquadSeconds;
+                    totalMemberSeconds += kv.Value.AliveSeconds;
+                    
                 }
                 if (r.AvgPathLength > 0.0)
                 {
@@ -225,13 +219,15 @@ namespace WarIsland.Model
                 MergeUnits(summary.PlayerByUnit, r.PlayerByUnit);
                 MergeUnits(summary.EnemyByUnit, r.EnemyByUnit);
 
+                for (int q = 0; q < r.Rounds.Count; q++)
+                    summary.RoundSeconds.Add(r.Rounds[q].Seconds);
                 foreach (string code in r.ReviewCodes)
                 {
                     summary.ReviewCounts.TryGetValue(code, out int n);
                     summary.ReviewCounts[code] = n + 1;
                 }
 
-                var row = new SquadSimRow
+                var row = new SimRow
                 {
                     Index = i + 1,
                     Seed = seed,
@@ -240,22 +236,15 @@ namespace WarIsland.Model
                     PlayerHp = Math.Round(r.PlayerBaseHp),
                     EnemyHp = Math.Round(r.EnemyBaseHp),
                     PlayerHpPct = Math.Round((r.PlayerBaseHpStart > 0.0 ? r.PlayerBaseHp / r.PlayerBaseHpStart : 0.0) * 100.0),
-                    PlayerSquads = r.PlayerSquadsProduced,
-                    EnemySquads = r.EnemySquadsSpawned,
-                    PlayerSquadsLost = r.PlayerSquadsLost,
-                    EnemySquadsLost = r.EnemySquadsLost,
-                    PlayerModelsLost = r.PlayerModelsLost,
-                    EnemyModelsLost = r.EnemyModelsLost,
+                    PlayerUnits = r.PlayerUnitsProduced,
+                    EnemyUnits = r.EnemyUnitsProduced,
+                    PlayerUnitsLost = r.PlayerUnitsLost,
+                    EnemyUnitsLost = r.EnemyUnitsLost,
                     PlayerDamage = Math.Round(r.PlayerDamage),
                     EnemyDamage = Math.Round(r.EnemyDamage),
                     DpsPerMember = Math.Round(DpsOf(r.PlayerByUnit), 2),
                     Seconds = r.Seconds,
-                    ZoneMax = r.PlayerMaxZone,
-                    EnemyZoneMax = r.EnemyMaxZone,
-                    PlayerZoneSeconds = Math.Round(r.PlayerZoneSeconds, 1),
-                    EnemyZoneSeconds = Math.Round(r.EnemyZoneSeconds, 1),
                     StuckEvents = r.StuckEvents,
-                    SlotError = Math.Round(r.AvgSlotErrorMeters, 2),
                     CpLeft = (r.AttackPlan?.CpLeft ?? 0) + (r.DefendPlan?.CpLeft ?? 0),
                     PopBlocked = (r.AttackPlan?.PopBlocked ?? 0) + (r.DefendPlan?.PopBlocked ?? 0),
                     TopReason = r.TopReason,
@@ -287,16 +276,13 @@ namespace WarIsland.Model
             summary.AvgEnemyHp = Math.Round(summary.AvgEnemyHp / nGames * 10.0) / 10.0;
             summary.AvgPlayerHpPct = Math.Round(summary.AvgPlayerHpPct / nGames * 1000.0) / 10.0;
             summary.AvgSeconds = Math.Round(summary.AvgSeconds / nGames * 10.0) / 10.0;
-            summary.AvgPlayerSquads = Math.Round(summary.AvgPlayerSquads / nGames * 10.0) / 10.0;
-            summary.AvgEnemySquads = Math.Round(summary.AvgEnemySquads / nGames * 10.0) / 10.0;
-            summary.AvgPlayerSquadsLost = Math.Round(summary.AvgPlayerSquadsLost / nGames * 10.0) / 10.0;
-            summary.AvgPlayerModelsLost = Math.Round(summary.AvgPlayerModelsLost / nGames * 10.0) / 10.0;
-            summary.AvgEnemyModelsLost = Math.Round(summary.AvgEnemyModelsLost / nGames * 10.0) / 10.0;
+            summary.AvgPlayerUnits = Math.Round(summary.AvgPlayerUnits / nGames * 10.0) / 10.0;
+            summary.AvgEnemyUnits = Math.Round(summary.AvgEnemyUnits / nGames * 10.0) / 10.0;
+            summary.AvgPlayerUnitsLost = Math.Round(summary.AvgPlayerUnitsLost / nGames * 10.0) / 10.0;
+            summary.AvgEnemyUnitsLost = Math.Round(summary.AvgEnemyUnitsLost / nGames * 10.0) / 10.0;
             summary.AvgPlayerDamage = Math.Round(summary.AvgPlayerDamage / nGames * 10.0) / 10.0;
             summary.AvgStuckEvents = Math.Round(summary.AvgStuckEvents / nGames * 10.0) / 10.0;
-            summary.AvgEnemyMaxZone = (int)Math.Round((double)summary.AvgEnemyMaxZone / nGames);
-            summary.AvgPlayerZoneSeconds = Math.Round(summary.AvgPlayerZoneSeconds / nGames * 10.0) / 10.0;
-            summary.AvgEnemyZoneSeconds = Math.Round(summary.AvgEnemyZoneSeconds / nGames * 10.0) / 10.0;
+
             summary.AvgOverlapPairsMax = Math.Round(summary.AvgOverlapPairsMax / nGames * 10.0) / 10.0;
             summary.AvgOverlapDepthMaxMeters = Math.Round(summary.AvgOverlapDepthMaxMeters / nGames * 1000.0) / 1000.0;
             summary.AvgOverlapPairsAfterMax = Math.Round(summary.AvgOverlapPairsAfterMax / nGames * 10.0) / 10.0;
@@ -304,10 +290,20 @@ namespace WarIsland.Model
             summary.AvgOverlapAfterTicks = Math.Round(summary.AvgOverlapAfterTicks / nGames * 10.0) / 10.0;
             summary.AvgUnfiredEngagedSeconds = Math.Round(summary.AvgUnfiredEngagedSeconds / nGames * 10.0) / 10.0;
             summary.AvgHeadingFlipsPerSec = Math.Round(summary.AvgHeadingFlipsPerSec / nGames * 100.0) / 100.0;
-            summary.AvgSlotError = Math.Round(summary.AvgSlotError / nGames * 1000.0) / 1000.0;
             double totalBaseDealt = summary.AvgPlayerBaseDamageDealt;
             summary.AvgPlayerBaseDamageDealt = Math.Round(totalBaseDealt / nGames * 10.0) / 10.0;
             summary.AvgRounds = Math.Round((double)summary.TotalRounds / nGames * 10.0) / 10.0;
+            if (summary.RoundSeconds.Count > 0)
+            {
+                var sorted = new List<double>(summary.RoundSeconds);
+                sorted.Sort();
+                summary.RoundSecondsP50 = Math.Round(sorted[sorted.Count / 2] * 10.0) / 10.0;
+                int inBand = 0;
+                foreach (double sec in sorted)
+                    if (sec >= BalanceBand.RoundSecondsMin && sec <= BalanceBand.RoundSecondsMax) inBand += 1;
+                summary.RoundSecondsInBandRate =
+                    Math.Round((double)inBand / sorted.Count * 1000.0) / 1000.0;
+            }
             summary.AvgRoundBaseDamage = summary.TotalRounds > 0
                 ? Math.Round(totalBaseDealt / summary.TotalRounds * 10.0) / 10.0
                 : 0.0;
@@ -327,7 +323,7 @@ namespace WarIsland.Model
 
             if (summary.Samples.Count < 3)
             {
-                foreach (SquadMatchResult r in winSamples)
+                foreach (MatchResult r in winSamples)
                 {
                     if (summary.Samples.Count >= 3) break;
                     summary.Samples.Add(r);
@@ -337,38 +333,38 @@ namespace WarIsland.Model
             return summary;
         }
 
-        private static void MergeUnits(Dictionary<string, SquadUnitStat> dst, Dictionary<string, SquadUnitStat> src)
+        private static void MergeUnits(Dictionary<string, UnitStat> dst, Dictionary<string, UnitStat> src)
         {
             foreach (var kv in src)
             {
-                if (!dst.TryGetValue(kv.Key, out SquadUnitStat a))
+                if (!dst.TryGetValue(kv.Key, out UnitStat a))
                 {
-                    a = new SquadUnitStat { UnitId = kv.Key };
+                    a = new UnitStat { UnitId = kv.Key };
                     dst[kv.Key] = a;
                 }
-                SquadUnitStat b = kv.Value;
-                a.Squads += b.Squads;
-                a.Models += b.Models;
+                UnitStat b = kv.Value;
+                a.Units += b.Units;
+                
                 a.Kills += b.Kills;
                 a.Losses += b.Losses;
                 a.Damage += b.Damage;
-                a.MemberSeconds += b.MemberSeconds;
-                a.SquadSeconds += b.SquadSeconds;
+                a.AliveSeconds += b.AliveSeconds;
+                
             }
         }
 
-        private static double SumDamage(Dictionary<string, SquadUnitStat> map)
+        private static double SumDamage(Dictionary<string, UnitStat> map)
         {
             double d = 0.0;
             foreach (var kv in map) d += kv.Value.Damage;
             return d;
         }
 
-        private static double DpsOf(Dictionary<string, SquadUnitStat> map)
+        private static double DpsOf(Dictionary<string, UnitStat> map)
         {
             double dmg = SumDamage(map);
             double sec = 0.0;
-            foreach (var kv in map) sec += kv.Value.MemberSeconds;
+            foreach (var kv in map) sec += kv.Value.AliveSeconds;
             return sec > 1e-6 ? dmg / sec : 0.0;
         }
     }

@@ -65,7 +65,7 @@ namespace WarIsland.Model
             var units = UnitCatalog.FromDict(unitsDict, rules, notes);
             var planning = PlanningConfig.FromDict(planningDict, units, notes);
             var levels = LevelSet.FromDict(levelsDict, units, notes);
-            var tuning = SquadTuning.FromDict(tuningDict);
+            var tuning = BattleTuning.FromDict(tuningDict);
 
             // ---- 1. 规则表 ----
             var ruleErrors = new List<string>(notes);

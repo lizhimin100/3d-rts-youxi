@@ -80,7 +80,7 @@ func setup(arena: Dictionary, playfield: Rect2 = Rect2()) -> void:
 	apply_phase(_phase, true)
 
 
-## 阶段切换：planning / attack / defend / result
+## 阶段切换：planning / battle / result（2026-11-25 Phase 3：attack+defend 两段式已删除）
 func apply_phase(phase: String, instant: bool = false) -> void:
 	_phase = phase
 	var pz := float(_arena.get("player_zone_x", _playfield.position.x + 72.0))
@@ -96,7 +96,7 @@ func apply_phase(phase: String, instant: bool = false) -> void:
 				rect.position.y + rect.size.y * 0.5)
 			_dist_fit = _want_dist
 			_bounds = rect
-		"attack":
+		"battle":
 			_locked = false
 			# 允许平移的范围 = 中立区 ∪ 敌方区（整片战场，不能移出去）
 			_bounds = Rect2(Vector2(pz, pf.position.y), Vector2(pf.end.x - pz, pf.size.y))
@@ -105,12 +105,6 @@ func apply_phase(phase: String, instant: bool = false) -> void:
 			_want_dist = _dist_fit * BATTLE_ZOOM
 			# 开局看住"我方前压点 → 中立区"，而不是两区正中（正中看不到自己人）
 			_want_focus = Vector3(pz + 20.0, 0.0, 0.0)
-		"defend":
-			_locked = false
-			_bounds = Rect2(Vector2(pf.position.x, pf.position.y), Vector2(ez - pf.position.x, pf.size.y))
-			_dist_fit = _fit_region_distance(pf.position.x, pz, pf.position.y, pf.end.y)
-			_want_dist = _dist_fit * BATTLE_ZOOM
-			_want_focus = Vector3(pz - 20.0, 0.0, 0.0)
 		_:
 			# result：保持当前机位，只解锁
 			_locked = false

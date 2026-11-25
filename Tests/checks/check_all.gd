@@ -21,7 +21,7 @@ const LEVELS_JSON := "res://Content/data/levels.json"
 const SHELLS_JSON := "res://Content/data/map_shells.json"
 const LAYOUTS_JSON := "res://Content/data/player_layouts.json"
 const ENCOUNTERS_JSON := "res://Content/data/enemy_encounters.json"
-const SQUAD_JSON := "res://Content/data/squad.json"
+const BATTLE_JSON := "res://Content/data/battle.json"
 
 const UI_THEME := "res://Content/ui/main_theme.tres"
 const UI_SHOWCASE := "res://Screens/ui/ThemeShowcase.tscn"
@@ -56,6 +56,15 @@ const PURGED_PATHS := [
 	"Screens/world/规划沙盘.gd",
 	"Screens/world/squad",
 	"Model/Squad/SquadFormation.cs",
+	# 2026-11-25 Phase 3：Squad* 类型与 squad.json 已迁名/物理删除（历史债务清零的硬证据）
+	"Model/Squad/SquadBattle.cs",
+	"Model/Squad/SquadArena.cs",
+	"Model/Squad/SquadSession.cs",
+	"Model/Squad/SquadState.cs",
+	"Model/Squad/SquadMatch.cs",
+	"Model/Squad/SquadSimulator.cs",
+	"Model/Squad/SquadTuning.cs",
+	"Content/data/squad.json",
 	"Screens/hud/HUD.gd",
 	"Screens/hud/选择网格.gd",
 	"Game/core",
@@ -107,8 +116,9 @@ func _run() -> void:
 	_check_distance_law()
 	_check_combat_formula()
 	_check_arena()
-	_check_squad_roles()
+	_check_round_loop()
 	_check_phase2_rules()
+	_check_phase3_rules()
 	_check_squad_sim()
 	_check_phase1_kinematics()
 	_check_battle_scene()
@@ -211,7 +221,7 @@ func _check_hard_paths() -> void:
 func _check_json_tables() -> void:
 	var bad: Array[String] = []
 	for p in [COMBAT_JSON, UNITS_JSON, PLANNING_JSON, LEVELS_JSON, SHELLS_JSON,
-			LAYOUTS_JSON, ENCOUNTERS_JSON, SQUAD_JSON, SCREENS]:
+			LAYOUTS_JSON, ENCOUNTERS_JSON, BATTLE_JSON, SCREENS]:
 		if JsonFile.read_dict(p, {}).is_empty():
 			bad.append(p.replace("res://", ""))
 	_ok("九张数据表都能解析且非空", bad.is_empty(), ", ".join(bad))
@@ -257,9 +267,13 @@ func _check_units_data() -> void:
 	_ok("每个上场的兵种都绑定了真实 3D 模型（%d 个 / 启用 %d 个）" % [visible, enabled],
 		no_model.is_empty(), ", ".join(no_model))
 	_ok("不上场的兵种不留悬空 model_path", dangling.is_empty(), ", ".join(dangling))
-	# 视觉口径（2026-11-22 收敛）：联盟只留 2 个兵种有模型，敌人只留 1 个阵营
-	_ok("场上只画 2 个联盟兵种（步兵 / 弩兵）", _visible_count(units, "alliance") == 2,
-		"实测 %d" % _visible_count(units, "alliance"))
+	# 视觉口径（2026-11-25 Phase 3）：联盟 2 个兵种 + 2 座哨塔有模型；敌人只留 1 个阵营
+	_ok("场上只画 2 个联盟**步兵**兵种（步兵 / 弩兵）",
+		_visible_count(units, "alliance", false) == 2,
+		"实测 %d" % _visible_count(units, "alliance", false))
+	_ok("哨塔实体渲染开关已打开（2 座 static 塔有模型）",
+		_visible_count(units, "alliance", true) == 2,
+		"实测 %d" % _visible_count(units, "alliance", true))
 	_ok("敌人只有一个阵营有模型（%s）" % ", ".join(visible_factions.keys()),
 		visible_factions.size() == 2 and visible_factions.has("alliance"),
 		"阵营：%s" % ", ".join(visible_factions.keys()))
@@ -291,12 +305,12 @@ func _check_units_data() -> void:
 	_ok("没有任何兵种退回占位网格", placeholder.is_empty(), ", ".join(placeholder))
 
 
-func _visible_count(units: Array, faction: String) -> int:
+func _visible_count(units: Array, faction: String, want_static: bool = false) -> int:
 	var n := 0
 	for u in units:
 		var row: Dictionary = u
 		if String(row.get("faction", "")) == faction and bool(row.get("render", true)) \
-				and bool(row.get("enabled", true)):
+				and bool(row.get("enabled", true)) and bool(row.get("static", false)) == want_static:
 			n += 1
 	return n
 
@@ -693,10 +707,10 @@ func _check_arena() -> void:
 	if mdl == null:
 		_ok("小队战场校验", false, "bridge=null")
 		return
-	var res: Dictionary = mdl.call("SquadArenaValidate",
+	var res: Dictionary = mdl.call("BattleArenaValidate",
 		JsonFile.read_dict(UNITS_JSON, {}), JsonFile.read_dict(COMBAT_JSON, {}),
 		_json_level(), _json_shell(), _json_layout(), _json_encounter(),
-		JsonFile.read_dict(SQUAD_JSON, {}))
+		JsonFile.read_dict(BATTLE_JSON, {}))
 	_ok("小队战场可组装（%d 格 / %d 玩家建筑 / %d 敌方建筑）" % [
 			int(res.get("tiles", 0)), int(res.get("player_buildings", 0)),
 			int(res.get("enemy_buildings", 0))],
@@ -714,80 +728,115 @@ func _check_arena() -> void:
 	_ok("单兵身位探针（%d 行，无小队槽位）" % _arr(probe.get("rows", [])).size(),
 		bool(probe.get("ok", false)), _err_text(probe.get("errors", [])))
 	var fp: Dictionary = mdl.call("FormationProbe", 9, 60.0,
-		JsonFile.read_dict(SQUAD_JSON, {}))
+		JsonFile.read_dict(BATTLE_JSON, {}))
 	_ok("棋盘出生位两两 ≥ 硬核（9 人，最小 %.3f m）" % float(fp.get("min_distance_m", 0.0)),
 		bool(fp.get("ok", false)), str(fp))
 
 
-func _check_squad_roles() -> void:
-	# 名字保留（入口不变），内容已改为**单轮单场死斗**：不再有 attack/defend 角色。
+func _check_round_loop() -> void:
+	# 单轮死斗的循环（Phase 3）：规划 → EndPlanning → BeginRound → 战斗 → SettleRound
+	#   → 没分胜负就回规划（**每轮重规划**）；不是旧的"规划一次、attack+defend 连打两场"。
 	var mdl := _mdl()
 	if mdl == null:
 		return
 	var h := _new_session(mdl)
 	if h <= 0:
-		_ok("建战役会话", false, "SquadSessionNew 失败")
+		_ok("建战役会话", false, "CampaignNew 失败")
 		return
 
-	var st: Dictionary = mdl.call("SquadSessionState", h)
+	var st: Dictionary = mdl.call("CampaignInfo", h)
 	var card := _first_train_card(st)
-	_ok("起手牌里有可打的征召牌（无 role 区分）", card != "", card)
+	_ok("起手牌里有可打的征召牌", card != "", card)
 	if card != "":
-		mdl.call("SquadSessionTrain", h, card)
-	st = mdl.call("SquadSessionState", h)
-	_ok("一张征召牌产出 %d 名（per_building：每座建筑各一批）" % int(st.get("attack_squads", 0)),
-		int(st.get("attack_squads", 0)) >= 3, str(st.get("train_cards", [])))
+		mdl.call("CampaignTrain", h, card)
+	st = mdl.call("CampaignInfo", h)
+	_ok("一张征召牌产出 %d 名（per_building：每座建筑各一批）" % int(st.get("army_units", 0)),
+		int(st.get("army_units", 0)) >= 3, str(st.get("train_cards", [])))
+	_ok("规划期给出强制顺次填充位 (col,row)",
+		int(st.get("next_fill_col", -1)) >= 0 and int(st.get("next_fill_row", -1)) >= 0,
+		"%d,%d (tile %d)" % [int(st.get("next_fill_col", -1)),
+			int(st.get("next_fill_row", -1)), int(st.get("next_fill_tile", 0))])
 
-	mdl.call("SquadSessionEndPlanning", h)
-	mdl.call("SquadSessionAttack", h)
-	st = mdl.call("SquadSessionState", h)
-	var view: Dictionary = mdl.call("SquadView", h)
+	mdl.call("CampaignEndPlanning", h)
+	mdl.call("CampaignBeginRound", h)
+	st = mdl.call("CampaignInfo", h)
+	var view: Dictionary = mdl.call("BattleSnapshot", h)
 	var alive := 0
 	var snap: Dictionary = {}
-	for s in view.get("squads", []):
+	for s in view.get("units", []):
 		var sq: Dictionary = s
-		if not bool(sq.get("active", true)):
-			continue
 		alive += 1
 		if snap.is_empty():
 			snap = sq
 	_ok("单场死斗：我方 %d 名单兵落到部署线" % alive, alive >= 3)
-	_ok("单兵快照：member_count=1 + engaged/attack_cooldown/body_radius 齐全",
-		int(snap.get("member_count", 0)) == 1 and snap.has("engaged")
+	_ok("单兵快照：state / state_age / moving / target_id / attack_cooldown / body_radius 齐全",
+		snap.has("state") and snap.has("state_age") and snap.has("moving") and snap.has("target_id")
 		and float(snap.get("attack_cooldown", 0.0)) > 0.0
 		and float(snap.get("body_radius", 0.0)) > 0.0,
-		"member_count=%d keys=%s" % [int(snap.get("member_count", -1)), str(snap.keys())])
+		str(snap.keys()))
+	# 反向验错：旧的成员层 / 攻防时空字段必须真的消失
+	# （谁把 members / engaged / role / active 加回快照，这两条立刻打红）
+	_ok("反向验错：快照里不再有 members / member_count / engaged",
+		not snap.has("members") and not snap.has("member_count") and not snap.has("engaged"),
+		str(snap.keys()))
+	_ok("反向验错：快照里不再有 role / active（攻防时空字段已删）",
+		not snap.has("role") and not snap.has("active"))
+
+	# 部署线相距 18 米、行军 4.4 m/s → 接敌约 4~5 秒；给 12 秒窗口（240 tick）再断言跳字
+	var events := 0
+	for i in 240:
+		var step: Dictionary = mdl.call("BattleStep", h, 0.05)
+		events += (step.get("events", []) as Array).size()
+	_ok("BattleStep 返回伤害跳字事件（12 秒内 ≥ 1 条）", events > 0, "%d 条" % events)
+
 	var allowed := 0
 	for order in ["attack", "move", "attack_move", "hold", "stop"]:
-		if bool(mdl.call("SquadPlayerOrderAllowed", order)):
+		if bool(mdl.call("BattlePlayerOrderAllowed", order)):
 			allowed += 1
 	_ok("玩家指令通道已关闭（单兵自动接战）", allowed == 0, "还允许 %d 条" % allowed)
-	_ok("当前轮次标记为 attack（UI 两段式展示的第 1 场）", String(st.get("round_kind", "")) == "attack")
-
-	# 第 2 场：清场 → 从 ArmyPlan 重新落地
-	mdl.call("SquadSessionDefend", h)
-	st = mdl.call("SquadSessionState", h)
-	view = mdl.call("SquadView", h)
-	var alive2 := 0
-	for s2 in view.get("squads", []):
-		if bool((s2 as Dictionary).get("active", true)):
-			alive2 += 1
-	_ok("下一轮重新落地：我方 %d 名（每轮从 ArmyPlan 重开）" % alive2, alive2 >= 3)
-	_ok("第 2 场标记为 defend", String(st.get("round_kind", "")) == "defend")
+	_ok("本轮标记为 battle（一轮只有一场）", String(st.get("round_kind", "")) == "battle")
 
 	# 轮末清场：双方部队消失，建筑保留
 	var built_before := (_arena_dict(mdl, h).get("player_buildings", []) as Array).size()
-	mdl.call("SquadSessionEndRound", h)
-	view = mdl.call("SquadView", h)
-	var alive3 := 0
-	for s3 in view.get("squads", []):
-		if bool((s3 as Dictionary).get("active", true)):
-			alive3 += 1
+	mdl.call("CampaignSettleRound", h)
+	view = mdl.call("BattleSnapshot", h)
+	var alive3 := (view.get("units", []) as Array).size()
 	var built_after := (_arena_dict(mdl, h).get("player_buildings", []) as Array).size()
 	_ok("轮末清场：场上单兵归零、建筑保留（%d → %d 座）" % [built_before, built_after],
 		alive3 == 0 and built_after == built_before and built_after >= 4)
 
-	mdl.call("SquadSessionFree", h)
+	# 下一轮：回到规划 → 再开一场（round_index 前进）
+	var round_before := int(st.get("round_index", 0))
+	mdl.call("CampaignBeginPlanning", h)
+	mdl.call("CampaignBeginRound", h)
+	st = mdl.call("CampaignInfo", h)
+	_ok("每轮重规划：第 %d 轮又开了一场（round_index 前进）" % (int(st.get("round_index", 0)) + 1),
+		int(st.get("round_index", 0)) == round_before + 1,
+		"%d → %d" % [round_before, int(st.get("round_index", 0))])
+	_ok("战败简报字段已通过桥暴露（defeat_record）", st.has("defeat_record"))
+	mdl.call("CampaignSettleRound", h)
+	mdl.call("CampaignFree", h)
+
+
+func _check_phase3_rules() -> void:
+	# Phase 3 的契约断言全部在 C# Phase3Checks（唯一实现，含 4 项反向验错）；
+	# GDScript 只把同一批数据喂进去并读结果，不重写任何规则。
+	var mdl := _mdl()
+	if mdl == null:
+		_ok("Phase 3 契约自检", false, "bridge=null")
+		return
+	var res: Dictionary = mdl.call("Phase3SelfCheck",
+		JsonFile.read_dict(UNITS_JSON, {}), JsonFile.read_dict(COMBAT_JSON, {}),
+		JsonFile.read_dict(PLANNING_JSON, {}), JsonFile.read_dict(LEVELS_JSON, {}),
+		JsonFile.read_dict(SHELLS_JSON, {}), JsonFile.read_dict(LAYOUTS_JSON, {}),
+		JsonFile.read_dict(BATTLE_JSON, {}), String(_json_level().get("id", "")))
+	_ok("Phase 3 契约自检（状态机 / 跳字 / 建筑事件 / 平衡带 / 4 项反向验错）%d 项" % int(res.get("checks", 0)),
+		bool(res.get("ok", false)) and int(res.get("checks", 0)) >= 15,
+		_err_text(res.get("errors", [])))
+	if not bool(res.get("ok", true)):
+		for line in _arr(res.get("lines", [])):
+			if String(line).begins_with("FAIL"):
+				print("  · " + String(line))
 
 
 func _check_phase2_rules() -> void:
@@ -801,7 +850,7 @@ func _check_phase2_rules() -> void:
 		JsonFile.read_dict(UNITS_JSON, {}), JsonFile.read_dict(COMBAT_JSON, {}),
 		JsonFile.read_dict(PLANNING_JSON, {}), JsonFile.read_dict(LEVELS_JSON, {}),
 		JsonFile.read_dict(SHELLS_JSON, {}), JsonFile.read_dict(LAYOUTS_JSON, {}),
-		JsonFile.read_dict(ENCOUNTERS_JSON, {}), JsonFile.read_dict(SQUAD_JSON, {}),
+		JsonFile.read_dict(ENCOUNTERS_JSON, {}), JsonFile.read_dict(BATTLE_JSON, {}),
 		String(_json_level().get("id", "")))
 	var lines := _arr(res.get("lines", []))
 	_ok("Phase 2 规则自检（4×4 / base_damage / 竖列棋盘 / 单轮 / 狂暴 / 结算 / 跳字）%d 项" % int(res.get("checks", 0)),
@@ -817,17 +866,17 @@ func _check_squad_sim() -> void:
 	var mdl := _mdl()
 	if mdl == null:
 		return
-	var a: Dictionary = mdl.call("SquadSimulate",
+	var a: Dictionary = mdl.call("BattleSimulate",
 		JsonFile.read_dict(UNITS_JSON, {}), JsonFile.read_dict(COMBAT_JSON, {}),
 		JsonFile.read_dict(PLANNING_JSON, {}), JsonFile.read_dict(LEVELS_JSON, {}),
 		JsonFile.read_dict(SHELLS_JSON, {}), JsonFile.read_dict(LAYOUTS_JSON, {}),
-		JsonFile.read_dict(ENCOUNTERS_JSON, {}), JsonFile.read_dict(SQUAD_JSON, {}),
+		JsonFile.read_dict(ENCOUNTERS_JSON, {}), JsonFile.read_dict(BATTLE_JSON, {}),
 		"level_asm_even_four__gnoll_press", 3, 7)
-	var b: Dictionary = mdl.call("SquadSimulate",
+	var b: Dictionary = mdl.call("BattleSimulate",
 		JsonFile.read_dict(UNITS_JSON, {}), JsonFile.read_dict(COMBAT_JSON, {}),
 		JsonFile.read_dict(PLANNING_JSON, {}), JsonFile.read_dict(LEVELS_JSON, {}),
 		JsonFile.read_dict(SHELLS_JSON, {}), JsonFile.read_dict(LAYOUTS_JSON, {}),
-		JsonFile.read_dict(ENCOUNTERS_JSON, {}), JsonFile.read_dict(SQUAD_JSON, {}),
+		JsonFile.read_dict(ENCOUNTERS_JSON, {}), JsonFile.read_dict(BATTLE_JSON, {}),
 		"level_asm_even_four__gnoll_press", 3, 7)
 	_ok("3 局推演能跑完", bool(a.get("ok", false)) and int(a.get("games", 0)) == 3,
 		_err_text(a.get("errors", [])))
@@ -838,8 +887,8 @@ func _check_squad_sim() -> void:
 		"a=%d/%d b=%d/%d" % [int(a.get("wins", 0)), int(a.get("draws", 0)),
 			int(b.get("wins", 0)), int(b.get("draws", 0))])
 	_ok("推演有真实战报（DPS > 0、出兵 > 0）",
-		float(a.get("avg_player_dps", 0.0)) > 0.0 and float(a.get("avg_player_squads", 0.0)) >= 2.0,
-		"dps=%.1f squads=%.1f" % [float(a.get("avg_player_dps", 0.0)), float(a.get("avg_player_squads", 0.0))])
+		float(a.get("avg_player_dps", 0.0)) > 0.0 and float(a.get("avg_player_units", 0.0)) >= 2.0,
+		"dps=%.1f units=%.1f" % [float(a.get("avg_player_dps", 0.0)), float(a.get("avg_player_units", 0.0))])
 	# Phase 1 运动学读数（运行时）：叠模要接近 0，空挥要接近 0，朝向不要高频反转。
 	_ok("运动学：分离后深叠 ≤ 4 对 / 空挥 ≤ 20 人·秒 / 朝向反转 ≤ 8/s",
 		float(a.get("avg_overlap_pairs_after_max", 99.0)) <= 4.0
@@ -866,7 +915,7 @@ func _check_squad_sim() -> void:
 
 
 func _check_phase1_kinematics() -> void:
-	var squad := JsonFile.read_dict(SQUAD_JSON, {})
+	var squad := JsonFile.read_dict(BATTLE_JSON, {})
 	var formation: Dictionary = squad.get("formation", {})
 	var combat: Dictionary = squad.get("combat", {})
 	var fp := float(formation.get("file_pitch", 0.0))
@@ -918,8 +967,8 @@ func _check_battle_scene() -> void:
 	var src := _read(BATTLE_SCRIPT)
 	_ok("战役脚本零写死中文文案（全部走 I18n）", _count_cjk_literals(src) == 0,
 		"实测 %d 处" % _count_cjk_literals(src))
-	for k in ["phase_name", "round_kind", "built_count", "attack_squads", "defend_squads",
-			"model_instances", "time_scale", "armed_card", "capture_outpost", "train_card",
+	for k in ["phase_name", "round_kind", "built_count", "army_units", "round_index",
+			"model_instances", "time_scale", "armed_card", "anim_report", "train_card",
 			"arm_build", "begin_execution", "screen_pos_of_enemy", "select_all_squads"]:
 		_ok("战役脚本对界面/截图暴露 " + k, src.contains(k))
 
@@ -970,9 +1019,9 @@ func _const_value(src: String, name: String) -> String:
 
 func _check_camera_rules() -> void:
 	var src := _read(CAMERA_SCRIPT)
-	_ok("三阶段相机有 apply_phase（planning / attack / defend / result）",
+	_ok("三阶段相机有 apply_phase（planning / battle / result）",
 		src.contains("func apply_phase") and src.contains("\"planning\"")
-		and src.contains("\"attack\"") and src.contains("\"defend\""))
+		and src.contains("\"battle\"") and not src.contains("\"defend\""))
 	_ok("规划阶段锁定（不可平移）", src.contains("_locked = true"))
 	_ok("攻防阶段允许平移但夹在战场内", src.contains("_clamp_focus") and src.contains("_bounds"))
 	_ok("构图靠二分距离装矩形（不靠调参，任何比例不裁切）",
@@ -1234,12 +1283,12 @@ func _check_hud_rules() -> void:
 	for n in ["TopBar", "PlayerBlock", "PlayerName", "HpValue", "GoldValue", "ScrollSlots",
 			"RoundLabel", "PhaseLabel", "TimerLabel", "MapButton", "IntentPanel", "IntentLabel",
 			"BottomLeftPanel", "CpOrb", "CpValue", "CpCap", "BoostBadge", "PopValue",
-			"DrawValue", "DrawIcon", "BottomRightPanel", "StartButton", "OutpostButton",
+			"DrawValue", "DrawIcon", "BottomRightPanel", "StartButton",
 			"SpeedButton", "DiscardValue", "DiscardIcon", "HandArea", "HandRow", "PlayZone",
 			"Toast", "ResultPanel", "UnitInfo"]:
 		if inst.find_child(String(n), true, false) == null:
 			lack.append(String(n))
-	_ok("HUD 场景分区节点齐全（%d 个命名节点）" % 32, lack.is_empty(), "缺：" + ", ".join(lack))
+	_ok("HUD 场景分区节点齐全（%d 个命名节点）" % 31, lack.is_empty(), "缺：" + ", ".join(lack))
 	# --- ③ 只用容器 + 锚点：真实节点树里要有 Margin/HBox/VBox/PanelContainer，且没有裸像素根 ---
 	var n_panel := _count_class(inst, "PanelContainer")
 	var n_box := _count_class(inst, "HBoxContainer") + _count_class(inst, "VBoxContainer")
@@ -1276,9 +1325,9 @@ func _check_hud_rules() -> void:
 		and not src.contains("custom_minimum_size = Vector2"))
 	_ok("HUD 卡牌三类前缀（建造/训练/策略）与点击契约一致",
 		src.contains("BuildCard_") and src.contains("TrainCard_") and src.contains("StrategyCard_"))
-	_ok("HUD 有开战 / 倍速 / 据点 / 重开四个按钮",
+	_ok("HUD 有开战 / 倍速 / 重开三个按钮（据点按钮已随占区玩法删除）",
 		src.contains("StartButton") and src.contains("SpeedButton")
-		and src.contains("OutpostButton") and src.contains("RestartButton"))
+		and src.contains("RestartButton") and not src.contains("OutpostButton"))
 	_ok("HUD 卡牌可用性只读 Model 的 available/reason（不自己推规则）",
 		src.contains("\"available\"") and src.contains("\"reason\""))
 	_ok("HUD 有抽牌/弃牌飞行 + 出牌区判定（Tween，不是瞬移）",
@@ -1337,8 +1386,8 @@ func _check_screens() -> void:
 				bad.append("%s/%s 点了没断言" % [name, String(j.get("click", ""))])
 	_ok("截图配方 %d 条、真实点击 %d 次、每次都有断言" % [recipes.size(), clicks],
 		bad.is_empty() and recipes.size() >= 10, ", ".join(bad.slice(0, 6)))
-	for need in ["battle_plan", "battle_build", "battle_train", "battle_attack",
-			"battle_defend", "battle_info", "battle_models", "battle_airdrop", "battle_combat"]:
+	for need in ["battle_plan", "battle_build", "battle_train", "battle_fight",
+			"battle_info", "battle_models", "battle_airdrop", "battle_combat"]:
 		_ok("验收配方存在：" + need, recipes.has(need))
 
 
@@ -1354,8 +1403,8 @@ func _check_i18n() -> void:
 	var st: Dictionary = i18n.call("stats")
 	_ok("ui.csv 可装载（%d 条 / %d 种语言）" % [int(st.get("keys", 0)), int(st.get("locales", 0))],
 		int(st.get("keys", 0)) > 0 and String(st.get("error", "")).is_empty(), String(st.get("error", "")))
-	for key in ["battle.phase.planning", "battle.phase.attack", "battle.phase.defend",
-			"battle.start", "battle.intent.planning", "battle.outpost.button"]:
+	for key in ["battle.phase.planning", "battle.phase.battle", "battle.phase.battle_tip",
+			"battle.start", "battle.intent.round", "battle.round.next"]:
 		_ok("战役文案已定义：" + key, bool(i18n.call("has", key)))
 
 	var f := FileAccess.open("res://Content/i18n/ui.csv", FileAccess.READ)
@@ -1673,20 +1722,20 @@ func _find_row(doc: Dictionary, key: String, id: String) -> Dictionary:
 
 
 func _new_session(mdl: RefCounted) -> int:
-	var res: Dictionary = mdl.call("SquadSessionNew",
+	var res: Dictionary = mdl.call("CampaignNew",
 		JsonFile.read_dict(UNITS_JSON, {}), JsonFile.read_dict(COMBAT_JSON, {}),
 		JsonFile.read_dict(PLANNING_JSON, {}), _json_level(), _json_shell(),
-		_json_layout(), _json_encounter(), JsonFile.read_dict(SQUAD_JSON, {}), 20261122, true)
+		_json_layout(), _json_encounter(), JsonFile.read_dict(BATTLE_JSON, {}), 20261122, true)
 	if not bool(res.get("ok", false)):
 		print("  · 建会话失败：" + _err_text(res.get("errors", [])))
 		return 0
 	var h := int(res.get("handle", 0))
-	mdl.call("SquadSessionBeginPlanning", h)
+	mdl.call("CampaignBeginPlanning", h)
 	return h
 
 
 func _arena_dict(mdl: RefCounted, h: int) -> Dictionary:
-	return mdl.call("SquadArenaInfo", h)
+	return mdl.call("BattleArenaInfo", h)
 
 
 func _first_train_card(state: Dictionary) -> String:

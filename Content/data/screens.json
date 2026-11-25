@@ -153,93 +153,51 @@
 			"delay": 7.0,
 			"clicks": [
 				{
-					"click": "TrainCard_train_attack",
+					"click": "TrainCard_train_footman",
 					"expect_state": [
-						"attack_squads",
-						"6"
+						"army_units",
+						">=3"
 					],
 					"wait": 0.8
 				}
 			],
 			"wait_after": 0.5,
-			"$note": "真点「征召进攻」→ 兵营格中心空降 6 名独立进攻单兵（脚下红环）。"
+			"$note": "真点「征召步兵」→ 兵营格中心错峰空降（脚下光圈）。断言 army_units（ArmyPlan 合计人数）。"
 		},
-		"battle_attack": {
+		"battle_fight": {
 			"scene": "res://Screens/scenes/战役.tscn",
 			"delay": 7.0,
 			"clicks": [
 				{
-					"click": "TrainCard_train_attack",
+					"click": "TrainCard_train_footman",
 					"expect_state": [
-						"attack_squads",
-						"6"
+						"army_units",
+						">=3"
 					],
-					"wait": 0.6
-				},
-				{
-					"click": "TrainCard_train_attack",
-					"expect_state": [
-						"attack_squads",
-						"12"
-					],
-					"wait": 0.6
+					"wait": 0.5
 				},
 				{
 					"click": "StartButton",
 					"expect_state": [
 						"phase_name",
-						"attack"
+						"battle"
 					],
-					"wait": 9.0
+					"wait": 10.0
 				}
 			],
 			"expect_scene_state": [
 				"live_units",
 				">=1"
 			],
-			"wait_after": 2.0,
-			"$note": "进攻战 9 秒：12 名步兵压上接敌。断言 live_units —— 画面里必须真的有人（不是空草地）。",
+			"wait_after": 1.5,
+			"$note": "真开战 10 秒：点「开战」→ phase_name=battle → 场上必须还有活人；读数看 anim_report（units/bone/drop/atk/jump）。",
 			"shot_camera": {
 				"focus_battle": true,
 				"dist": 24.0,
 				"pitch": 36.0
 			}
 		},
-		"battle_defend": {
-			"scene": "res://Screens/scenes/战役.tscn",
-			"delay": 7.0,
-			"clicks": [
-				{
-					"click": "TrainCard_train_defend",
-					"expect_state": [
-						"defend_squads",
-						"5"
-					],
-					"wait": 0.6
-				},
-				{
-					"click": "StartButton",
-					"expect_state": [
-						"phase_name",
-						"attack"
-					],
-					"wait": 21.0
-				},
-				{
-					"click": "SpeedButton",
-					"expect_state": [
-						"time_scale",
-						"2"
-					]
-				}
-			],
-			"expect_scene_state": [
-				"phase_name",
-				"defend"
-			],
-			"wait_after": 6.0,
-			"$note": "防守战：进攻战打完自动切「中立区+玩家区」，激活防守单位 + 据点免费防守兵。必须用 --phase-seconds=20 拍。"
-		},
+		
 		"battle_focus": {
 			"scene": "res://Screens/scenes/战役.tscn",
 			"delay": 7.0,

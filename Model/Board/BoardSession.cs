@@ -12,6 +12,27 @@ namespace WarIsland.Model
     }
 
     /// <summary>
+    /// 棋盘上发生的一件事（2026-11-25 Phase 3 的表现层契约）。
+    ///
+    /// 口径：**只有两个 kind** ——
+    ///   · `placed`   —— 建造牌落位成功（`DefId` = 建筑 id，`Star` = 1）；
+    ///   · `upgraded` —— 3 合 1 升星（`Star` = 新星级，最高 3）。
+    /// 周末接"天降落子 / 升星金光"直接用这两个事件，不要自己比较前后快照。
+    /// 格子坐标一次给全：`Col/Row` 是 6 列 × 3 行的逻辑坐标，`Tile` 是数据里的格子号。
+    /// </summary>
+    public sealed class BoardEvent
+    {
+        public string Kind = "";
+        public int Tile;
+        public int Col;
+        public int Row;
+        public string DefId = "";
+        public int Star;
+        /// <summary>事件发生时的规划编号（第几次规划），用于表现层排序/去重。</summary>
+        public int PlanningIndex;
+    }
+
+    /// <summary>
     /// 棋盘会话（BoardSession）—— 规划期的唯一规则实现。
     ///
     /// 负责：
@@ -39,6 +60,36 @@ namespace WarIsland.Model
         public int PlanningIndex => Match.PlanningIndex;
         public int LastEconomyCp { get; private set; }
         public IReadOnlyList<string> Log => _log;
+
+        // ---- 2026-11-25 Phase 3：建筑事件队列（表现层"天降落子 / 升星金光"的唯一来源）----
+        private readonly List<BoardEvent> _events = new List<BoardEvent>();
+
+        /// <summary>排空建筑事件队列（UI 每帧调一次）。</summary>
+        public List<BoardEvent> DrainEvents()
+        {
+            var list = new List<BoardEvent>(_events.Count);
+            list.AddRange(_events);
+            _events.Clear();
+            return list;
+        }
+
+        /// <summary>下一个必须填的格子坐标；0 / -1 = 棋盘满了。</summary>
+        public int NextFillCol => NextFillTile() > 0 ? Arena.ColumnOf(NextFillTile()) : -1;
+        public int NextFillRow => NextFillTile() > 0 ? Arena.RowOf(NextFillTile()) : -1;
+
+        private void Emit(string kind, int tile, string defId, int star)
+        {
+            _events.Add(new BoardEvent
+            {
+                Kind = kind,
+                Tile = tile,
+                Col = Arena.ColumnOf(tile),
+                Row = Arena.RowOf(tile),
+                DefId = defId ?? "",
+                Star = star,
+                PlanningIndex = Match.PlanningIndex,
+            });
+        }
 
         public bool AllowFreePlacement
         {
@@ -227,6 +278,7 @@ namespace WarIsland.Model
             _plotTile[plot] = target;
             _plotBuilding[plot] = Match.BuildingAt(plot);
             _log.Add($"build:{card.Building}@{target}(plot{plot})");
+            Emit("placed", target, card.Building, 1);
             return target;
         }
 
@@ -254,6 +306,7 @@ namespace WarIsland.Model
             _plotTile.Remove(sourcePlot);
             _plotBuilding.Remove(sourcePlot);
             _log.Add($"merge:{target.DefId}@{targetTile}={target.Star}★(-{sourceTile})");
+            Emit("upgraded", targetTile, target.DefId, target.Star);
             return target.Star;
         }
 

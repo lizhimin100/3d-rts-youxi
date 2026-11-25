@@ -577,40 +577,34 @@ shell.state.invalid,参数无效：{msg},Invalid: {msg},状态
 battle.base.player,我方基地 {hp}/{max},Our base {hp}/{max},战役 HUD 顶栏
 battle.base.enemy,敌方基地 {hp}/{max},Enemy base {hp}/{max},战役 HUD 顶栏
 battle.phase.planning,规划阶段,Planning,战役 HUD 阶段
-battle.phase.attack,进攻战,Attack,战役 HUD 阶段
-battle.phase.defend,防守战,Defend,战役 HUD 阶段
+battle.phase.battle,第 {n} 轮 · 交战,Round {n} · Battle,战役 HUD 阶段
+battle.phase.battle_tip,交战开始：单兵自动接战，你只观察,Battle begins: units fight automatically,战役 HUD 提示
+battle.intent.round,第 {round} 轮 · {name} 派 {waves} 名来犯,Round {round} · {name}: {waves} incoming,战役 HUD 意图栏
+battle.round.next,第 {n} 轮规划：重新打牌 / 建造 / 升星,Round {n} planning: redraw, build, upgrade,战役 HUD 提示
+battle.info.state.fight,交战中,Fighting,选中单位状态
+battle.info.state.march,推进中,Advancing,选中单位状态
+battle.card.train,征召,Recruit,卡面派系条：征召
 battle.phase.result,本轮结算,Round over,战役 HUD 阶段
-battle.phase.attack_tip,进攻战开始：只激活待命进攻的单位,Attack begins: attack units deploy,战役 HUD 提示
-battle.phase.defend_tip,进攻战结束，防守战开始：激活待命防守的单位,Defend begins: defense units deploy,战役 HUD 提示
 battle.cp,CP {cp},CP {cp},战役 HUD 顶栏
 battle.pop,人口 {used}/{cap},Pop {used}/{cap},战役 HUD 顶栏
 battle.selected,已选 {n} 名,{n} units selected,战役 HUD 顶栏
 battle.card_cost,{name} · {cost},{name} · {cost},战役 HUD 卡牌
 battle.spawned,已空降 {n} 名（落在兵营格中心）,Dropped {n} units at the barracks,战役 HUD 回执
-battle.start,开始进攻,Start attack,战役 HUD 按钮
+battle.start,结束规划 · 开打,End planning · Fight,战役 HUD 按钮
 battle.restart,重开一局,Restart,战役 HUD 按钮
 battle.speed_button,倍速 {x}x,Speed {x}x,战役 HUD 按钮
 battle.speed,战斗倍速 {x}x,Battle speed {x}x,战役 HUD 回执
-battle.outpost.button,占领据点,Take outpost,战役 HUD 按钮
-battle.outpost.done,已买下中立据点：进攻部队从靠敌侧前压,Outpost taken: forces stage forward,战役 HUD 回执
-battle.outpost.fail,买不下据点（CP 不够 / 本图没有据点）,Cannot take outpost,战役 HUD 回执
 battle.build.pick_tile,选一个空格子放建筑（左上角是建筑位）,Pick a free tile,战役 HUD 提示
 battle.build.done,{name} 已落到 {tile} 号格子,{name} placed on tile {tile},战役 HUD 回执
 battle.build.failed,这一格放不下（已被占用 / 不是建造格）,Cannot build here,战役 HUD 回执
 battle.strategy.done,策略牌已生效（只影响本轮）,Strategy applied,战役 HUD 回执
 battle.only_planning,只有规划阶段能打牌,Planning only,战役 HUD 提示
 battle.order.none,先框选我方单位,Select your units first,战役 HUD 提示
-battle.order.focus_only,只能集火敌方单位（推进由自动战斗负责）,Only focus fire on enemy units,战役 HUD 提示
-battle.order.only_in_battle,规划阶段不用下令，开战后才能集火,Orders only in battle,战役 HUD 提示
-battle.receipt.attack,集火 {n} 名,Focus fire {n} units,战役 HUD 回执
 battle.reason.not_in_hand,不在手牌,Not in hand,战役 HUD 卡牌原因
 battle.reason.no_cp,CP 不够,Not enough CP,战役 HUD 卡牌原因
 battle.reason.no_building,没有对应建筑,No building,战役 HUD 卡牌原因
 battle.reason.no_pop,人口不够,Not enough pop,战役 HUD 卡牌原因
 battle.reason.ok,可训练,Ready,战役 HUD 卡牌原因
-battle.intent.planning,本轮敌情 · {name}　进攻战 {attack} 名守军 / 防守战 {defend} 名来犯,Intel · {name},战役 HUD 意图栏
-battle.intent.attack,进攻战 · {name} 有 {waves} 名守军,Attack · {name}: {waves} defenders,战役 HUD 意图栏
-battle.intent.defend,防守战 · {name} 派 {waves} 名来攻,Defend · {name}: {waves} incoming,战役 HUD 意图栏
 battle.intent.done,本轮结束 · {name},Round over · {name},战役 HUD 意图栏
 battle.result.title,本轮结算,Round result,战役 HUD 结算
 battle.result.win,胜利 · 敌方基地已破,Victory · enemy base destroyed,战役 HUD 结算
@@ -634,8 +628,6 @@ battle.hud.discard,弃牌堆,Discard,弃牌堆
 battle.hud.hand,手牌,Hand,手牌区标题
 battle.hud.pop,人口,Pop,人口
 battle.card.units,{n} 名,{n} units,卡面产出人数
-battle.card.attack,进攻,Attack,卡面派系条：进攻
-battle.card.defend,防守,Defend,卡面派系条：防守
 battle.card.build,建造,Build,卡面派系条：建造
 battle.card.strategy,策略,Skill,卡面派系条：策略
 battle.play_zone,出牌区,Play zone,拖拽出牌提示区
@@ -655,8 +647,6 @@ battle.card.desc_strategy,本回合征召产出 +{pct}%,+{pct}% recruits this tu
 battle.order.info_only,只能查看单位信息（本作不做战斗微操）,View only — no micro control,右键提示
 battle.info.title,单位信息,Unit info,选中信息面板标题
 battle.info.stats,攻 {dmg} · 护甲 {armor} · 间隔 {cd}s,ATK {dmg} · ARM {armor} · {cd}s,选中信息数值行
-battle.info.state.engaged,交战中,Engaged,选中单位状态
-battle.info.state.moving,推进中,Advancing,选中单位状态
 battle.info.state.idle,待命,Idle,选中单位状态
 battle.info.side.friend,我方,Ally,选中信息阵营
 battle.info.side.enemy,敌方,Enemy,选中信息阵营

@@ -114,7 +114,7 @@ namespace WarIsland.Model
         public int PopBlocked { get; private set; }
 
         /// <summary>
-        /// 即时出兵（SquadSession 的"训练牌立刻在格子中心生成整队"）占的人口。
+        /// 即时出兵（CampaignSession 的"训练牌立刻在格子中心生成整队"）占的人口。
         /// 这些队不进 <see cref="Army"/>（已经落地了），但人口必须照算，否则会无限刷兵。
         /// </summary>
         public int ExtraPop { get; private set; }

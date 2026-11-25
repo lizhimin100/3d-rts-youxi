@@ -4,7 +4,7 @@ extends Node3D
 ## 属于：Screens/world/battle（表现层）
 ##
 ## 纪律：
-##   · 格子位置/尺寸/贴地高度全部来自 `SquadArena`（世界米），这里不重算锚点；
+##   · 格子位置/尺寸/贴地高度全部来自 `BattleArena`（世界米），这里不重算锚点；
 ##     两个锚点直接用桥给的 `building_x/z` 与 `spawn_x/z`（唯一实现在 TacticalTile.cs）；
 ##   · 颜色来自 `map_shells.json` 的 `board.theme`（可换皮）；这里不接受写死色值调用；
 ##   · **棋盘是一层"草坪漆"**：贴地、半透明、和地表用同一张草地贴图（世界 XZ 投影），

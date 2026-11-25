@@ -19,7 +19,7 @@ const LEVELS_JSON := "res://Content/data/levels.json"
 const SHELLS_JSON := "res://Content/data/map_shells.json"
 const LAYOUTS_JSON := "res://Content/data/player_layouts.json"
 const ENCOUNTERS_JSON := "res://Content/data/enemy_encounters.json"
-const SQUAD_JSON := "res://Content/data/squad.json"
+const BATTLE_JSON := "res://Content/data/battle.json"
 
 ## 有 assembly（底壳 + 布局卡 + 遭遇卡）的默认关卡
 const DEFAULT_SQUAD_LEVEL := "level_asm_even_four__gnoll_press"
@@ -70,11 +70,11 @@ func _run() -> void:
 	var shells := JsonFile.read_dict(SHELLS_JSON, {})
 	var layouts := JsonFile.read_dict(LAYOUTS_JSON, {})
 	var encounters := JsonFile.read_dict(ENCOUNTERS_JSON, {})
-	var tuning := JsonFile.read_dict(SQUAD_JSON, {})
+	var tuning := JsonFile.read_dict(BATTLE_JSON, {})
 	if tuning.is_empty():
 		tuning = {}
 
-	var res: Dictionary = mdl.call("SquadSimulate",
+	var res: Dictionary = mdl.call("BattleSimulate",
 		units, combat, planning, levels, shells, layouts, encounters, tuning,
 		_level_id, games, seed_base)
 	if not bool(res.get("ok", false)):
@@ -87,12 +87,42 @@ func _run() -> void:
 
 	_print_squad_report(res, games, seed_base)
 	var summary := _squad_summary(res, games, seed_base)
-	for key in ["avg_enemy_max_zone", "avg_player_zone_seconds", "avg_enemy_zone_seconds"]:
-		if res.has(key):
-			summary[key] = res[key]
 	print("SIM " + JSON.stringify(summary))
 	_write_out(summary)
+	# 配平门禁（Phase 3）：四条区间全部成立才算过；否则退出码 1。
+	var fails := _band_check(res)
+	if fails > 0:
+		print("BAND FAIL %d 项 —— 调参范围见 Model/Battle/Phase3Checks.cs 的 BalanceBand" % fails)
+		quit(1)
+		return
+	print("BAND PASS")
 	quit(0)
+
+
+## 配平门禁的唯一读数口（与 C# BalanceBand 同一口径；这里只做区间比较，不改规则）
+func _band_check(res: Dictionary) -> int:
+	var total := float(res.get("total_rounds", 0))
+	var sec_per_round := 0.0
+	if float(res.get("avg_rounds", 0.0)) > 0.0:
+		sec_per_round = float(res.get("avg_seconds", 0.0)) / float(res.get("avg_rounds", 1.0))
+	var rows := [
+		["狂暴率 15~30%", float(res.get("berserk_round_rate", 0.0)), 0.15, 0.30],
+		["胜率 45~55%", float(res.get("win_rate", 0.0)), 0.45, 0.55],
+		["平均 3~5 轮", float(res.get("avg_rounds", 0.0)), 3.0, 5.0],
+		["单轮 25~40 秒", sec_per_round, 25.0, 40.0],
+	]
+	var fails := 0
+	for r in rows:
+		var name := String(r[0])
+		var v := float(r[1])
+		var lo := float(r[2])
+		var hi := float(r[3])
+		var ok := v >= lo and v <= hi
+		print("  %s %s  实测 %.3f（区间 %.2f..%.2f，%d 轮）" % [
+			"OK  " if ok else "FAIL", name, v, lo, hi, int(total)])
+		if not ok:
+			fails += 1
+	return fails
 
 
 # ===========================================================================
@@ -115,10 +145,10 @@ func _print_squad_report(res: Dictionary, games: int, seed_base: int) -> void:
 			int(r.get("index", 0)), int(r.get("seed", 0)), _outcome_en(String(r.get("outcome", ""))),
 			"%d (%d%%)" % [int(r.get("player_hp", 0)), int(r.get("player_hp_pct", 0))],
 			str(int(r.get("enemy_hp", 0))),
-			"%d/%d 亡%d" % [int(r.get("player_squads", 0)), int(r.get("enemy_squads", 0)),
-				int(r.get("player_squads_lost", 0))],
+			"%d/%d 亡%d" % [int(r.get("player_units", 0)), int(r.get("enemy_units", 0)),
+				int(r.get("player_units_lost", 0))],
 			int(r.get("player_damage", 0)),
-			float(r.get("dps_member", 0.0)),
+			float(r.get("dps_unit", 0.0)),
 			int(r.get("rounds", 0)), int(r.get("base_damage_dealt", 0)),
 			int(r.get("stuck_events", 0)),
 			String(r.get("top_reason", "")),
@@ -130,8 +160,8 @@ func _print_squad_report(res: Dictionary, games: int, seed_base: int) -> void:
 		float(res.get("win_rate", 0.0)) * 100.0, float(res.get("avg_seconds", 0.0))])
 	print("均值：我方基地剩 %.0f%% ｜ 敌基地剩 %.0f ｜ 出兵 %.1f vs %.1f 名 ｜ 我方阵亡 %.1f 名" % [
 		float(res.get("avg_player_hp_pct", 0.0)), float(res.get("avg_enemy_hp", 0.0)),
-		float(res.get("avg_player_squads", 0.0)), float(res.get("avg_enemy_squads", 0.0)),
-		float(res.get("avg_player_squads_lost", 0.0))])
+		float(res.get("avg_player_units", 0.0)), float(res.get("avg_enemy_units", 0.0)),
+		float(res.get("avg_player_units_lost", 0.0))])
 	print("单轮死斗：平均 %.2f 轮 ｜ 单轮扣血 %.1f ｜ 每局打出基地伤 %.1f" % [
 		float(res.get("avg_rounds", 0.0)), float(res.get("avg_round_base_damage", 0.0)),
 		float(res.get("avg_player_base_damage_dealt", 0.0))])
@@ -140,12 +170,15 @@ func _print_squad_report(res: Dictionary, games: int, seed_base: int) -> void:
 		float(res.get("berserk_round_rate", 0.0)) * 100.0,
 		int(res.get("tie_diff_rounds", 0)), int(res.get("total_rounds", 0)),
 		float(res.get("tie_diff_round_rate", 0.0)) * 100.0])
+	print("节奏：单轮中位数 %.1fs ｜ 25~40s 占比 %.0f%%" % [
+		float(res.get("round_seconds_p50", 0.0)),
+		float(res.get("round_seconds_in_band_rate", 0.0)) * 100.0])
 	print("输出：我方总伤害 %.0f ｜ 战斗 DPS %.1f ｜ 人均 DPS %.2f" % [
 		float(res.get("avg_player_damage", 0.0)), float(res.get("avg_player_dps", 0.0)),
-		float(res.get("avg_player_dps_per_member", 0.0))])
-	print("寻路：平均路径 %.0f 游戏数值（直线比 %.2f）｜ 卡住脱困 %.1f 次/局 ｜ 槽位偏离 %.2f m" % [
+		float(res.get("avg_player_dps_per_unit", 0.0))])
+	print("寻路：平均路径 %.0f 游戏数值（直线比 %.2f）｜ 卡住脱困 %.1f 次/局" % [
 		float(res.get("avg_path_length", 0.0)), float(res.get("avg_path_ratio", 0.0)),
-		float(res.get("avg_stuck_events", 0.0)), float(res.get("avg_slot_error", 0.0))])
+		float(res.get("avg_stuck_events", 0.0))])
 	print("运动学：深叠峰值 %.1f 对 / %.3f m（分离后 %.1f 对 / %.3f m，残留 %.1f tick）｜ 空挥 %.1f 人·秒 ｜ 朝向翻转 %.2f/s" % [
 		float(res.get("avg_overlap_pairs_max", 0.0)), float(res.get("avg_overlap_depth_max_m", 0.0)),
 		float(res.get("avg_overlap_pairs_after_max", 0.0)), float(res.get("avg_overlap_depth_after_max_m", 0.0)),
@@ -155,12 +188,12 @@ func _print_squad_report(res: Dictionary, games: int, seed_base: int) -> void:
 
 	print("------------------------------------------------------------------------------------------")
 	print("DPS 明细（我方）：")
-	print("%-24s %-6s %-7s %-10s %-10s %-10s %s" % ["兵种", "队数", "人数", "总伤害", "DPS/人", "DPS/队", "击杀/阵亡"])
+	print("%-24s %-7s %-10s %-10s %s" % ["兵种", "人数", "总伤害", "DPS/人", "击杀/阵亡"])
 	for row in res.get("player_dps_rows", []):
 		var d: Dictionary = row
-		print("%-24s %-6d %-7d %-10.0f %-10.2f %-10.2f %d/%d" % [
-			String(d.get("unit_id", "")), int(d.get("squads", 0)), int(d.get("models", 0)),
-			float(d.get("damage", 0.0)), float(d.get("dps_member", 0.0)), float(d.get("dps_squad", 0.0)),
+		print("%-24s %-7d %-10.0f %-10.2f %d/%d" % [
+			String(d.get("unit_id", "")), int(d.get("units", 0)),
+			float(d.get("damage", 0.0)), float(d.get("dps_unit", 0.0)),
 			int(d.get("kills", 0)), int(d.get("losses", 0))])
 
 	var counts: Dictionary = res.get("review_counts", {})
@@ -214,16 +247,15 @@ func _squad_summary(res: Dictionary, games: int, seed_base: int) -> Dictionary:
 		"avg_seconds": float(res.get("avg_seconds", 0.0)),
 		"avg_player_hp_pct": float(res.get("avg_player_hp_pct", 0.0)),
 		"avg_enemy_hp": float(res.get("avg_enemy_hp", 0.0)),
-		"avg_player_squads": float(res.get("avg_player_squads", 0.0)),
-		"avg_enemy_squads": float(res.get("avg_enemy_squads", 0.0)),
-		"avg_player_squads_lost": float(res.get("avg_player_squads_lost", 0.0)),
+		"avg_player_units": float(res.get("avg_player_units", 0.0)),
+		"avg_enemy_units": float(res.get("avg_enemy_units", 0.0)),
+		"avg_player_units_lost": float(res.get("avg_player_units_lost", 0.0)),
 		"avg_player_damage": float(res.get("avg_player_damage", 0.0)),
 		"avg_player_dps": float(res.get("avg_player_dps", 0.0)),
-		"avg_player_dps_per_member": float(res.get("avg_player_dps_per_member", 0.0)),
+		"avg_player_dps_per_unit": float(res.get("avg_player_dps_per_unit", 0.0)),
 		"avg_path_length": float(res.get("avg_path_length", 0.0)),
 		"avg_path_ratio": float(res.get("avg_path_ratio", 0.0)),
 		"avg_stuck_events": float(res.get("avg_stuck_events", 0.0)),
-		"avg_slot_error": float(res.get("avg_slot_error", 0.0)),
 		"avg_overlap_pairs_max": float(res.get("avg_overlap_pairs_max", 0.0)),
 		"avg_overlap_depth_max_m": float(res.get("avg_overlap_depth_max_m", 0.0)),
 		"avg_overlap_pairs_after_max": float(res.get("avg_overlap_pairs_after_max", 0.0)),
@@ -237,6 +269,8 @@ func _squad_summary(res: Dictionary, games: int, seed_base: int) -> Dictionary:
 		"avg_player_base_damage_dealt": float(res.get("avg_player_base_damage_dealt", 0.0)),
 		"berserk_rounds": int(res.get("berserk_rounds", 0)),
 		"berserk_round_rate": float(res.get("berserk_round_rate", 0.0)),
+		"round_seconds_p50": float(res.get("round_seconds_p50", 0.0)),
+		"round_seconds_in_band_rate": float(res.get("round_seconds_in_band_rate", 0.0)),
 		"tie_diff_rounds": int(res.get("tie_diff_rounds", 0)),
 		"tie_diff_round_rate": float(res.get("tie_diff_round_rate", 0.0)),
 		"player_dps_rows": res.get("player_dps_rows", []),

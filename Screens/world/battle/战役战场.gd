@@ -1,11 +1,13 @@
 extends Node3D
-## 职责：**战役垂直切片的总装配与调度**——读数据、建会话、建 3D 世界、跑「规划 → 进攻战 → 防守战 → 结算」。
+## 职责：**战役垂直切片的总装配与调度**——读数据、建会话、建 3D 世界，
+##       跑「规划 → 单场死斗 → 幸存 base_damage 结算 → 下一轮规划」直到一方基地归零。
 ## 属于：Screens/world/battle（表现层根节点）
 ##
 ## 纪律（与本项目内核分工一致）：
-##   · 玩法规则全部在 Model（C#）：这里只传世界米、调 SquadStep、读 SquadView；
-##   · 玩家能操作的最小单位是**小队**：没有任何"选中单个成员"的入口；
-##   · 建造落位 / 产兵 / 攻防时空切换都由 Model 判定，这里只把结果画出来；
+##   · 玩法规则全部在 Model（C#）：这里只传世界米、调 BattleStep、读 BattleSnapshot；
+##   · 玩家**只观察不下令**：选中只读信息，没有任何指令入口；
+##   · 每轮只有一场战斗；战果由 RoundResolver 按幸存 base_damage 结算，
+##     回到规划后可以继续打牌/建造/升星（每轮重规划，不是"规划一次连打两场"）；
 ##   · 相机三阶段规则写在 战役镜头.gd（唯一实现），这里只切阶段。
 
 const JsonFile := preload("res://Engine/util/json_file.gd")
@@ -27,7 +29,7 @@ const LEVELS_JSON := "res://Content/data/levels.json"
 const SHELLS_JSON := "res://Content/data/map_shells.json"
 const LAYOUTS_JSON := "res://Content/data/player_layouts.json"
 const ENCOUNTERS_JSON := "res://Content/data/enemy_encounters.json"
-const SQUAD_JSON := "res://Content/data/squad.json"
+const BATTLE_JSON := "res://Content/data/battle.json"
 
 const DEFAULT_LEVEL := "level_asm_even_four__gnoll_press"
 const PLAYER_COLOR := Color(0.30, 0.62, 1.00)
@@ -48,16 +50,15 @@ var board_cols := 0
 var board_rows := 0
 var board_tiles := 0
 var built_count := 0
-var outpost_captured := false
 var armed_card := ""
 var model_instances := 0
 ## 1 = 场上真的有 GLB 实例（0 = 退回占位/没模型）；截图与自检读这个，别读具体数量。
 var real_models := 0
 var phase_left := 0.0
-var attack_squads := 0
+var round_index := 0
 ## 场上还活着的单位数（双方、当前时空）—— 截图/自检可以拿它断言"画面里真的有人"。
 var live_units := 0
-var defend_squads := 0
+var army_units := 0
 var player_hp := 0.0
 var enemy_hp := 0.0
 ## 实测探针（截图断言的唯一入口）：都是"量出来的世界尺寸/绑定状态"，不是读配置。
@@ -67,6 +68,8 @@ var enemy_hp := 0.0
 var space_probe := ""
 var terrain_probe := ""
 var board_probe := ""
+## 单兵层动画探针（--shot 的读数）：units/bone/drop/atk/jump/jumps
+var anim_report := ""
 ## 三者的合并判据：截图配方只断言这一条（`["visual_probe", "visual_ok=1"]`），
 ## 详细数值同时出现在同一行里，报告直接抄它。
 var visual_probe := ""
@@ -157,7 +160,7 @@ func _load_data() -> bool:
 	_shells = JsonFile.read_dict(SHELLS_JSON, {})
 	_layouts = JsonFile.read_dict(LAYOUTS_JSON, {})
 	_encounters = JsonFile.read_dict(ENCOUNTERS_JSON, {})
-	_tuning = JsonFile.read_dict(SQUAD_JSON, {})
+	_tuning = JsonFile.read_dict(BATTLE_JSON, {})
 	for u in _units_doc.get("units", []):
 		var row: Dictionary = u
 		_unit_defs[String(row.get("id", ""))] = row
@@ -198,7 +201,7 @@ func _load_data() -> bool:
 
 
 func _new_session() -> bool:
-	var res: Dictionary = _mdl.call("SquadSessionNew",
+	var res: Dictionary = _mdl.call("CampaignNew",
 		_units_doc, _combat, _planning, _level, _shell, _layout, _encounter, _tuning, _seed, true)
 	if not bool(res.get("ok", false)):
 		var errs: Array = res.get("errors", [])
@@ -209,16 +212,16 @@ func _new_session() -> bool:
 		return false
 	_handle = int(res.get("handle", 0))
 	_arena = res.get("arena", {})
-	_mdl.call("SquadSessionBeginPlanning", _handle)
-	_state = _mdl.call("SquadSessionState", _handle)
-	_view = _mdl.call("SquadView", _handle)
+	_mdl.call("CampaignBeginPlanning", _handle)
+	_state = _mdl.call("CampaignInfo", _handle)
+	_view = _mdl.call("BattleSnapshot", _handle)
 	phase_name = "planning"
 	round_kind = ""
+	round_index = 0
 	phase_left = _round_seconds
 	_selected.clear()
 	_has_order = false
 	last_order = ""
-	outpost_captured = false
 	armed_card = ""
 	return true
 
@@ -432,13 +435,15 @@ func _playfield_rect() -> Rect2:
 func _process(delta: float) -> void:
 	if _handle == 0:
 		return
-	if phase_name == "attack" or phase_name == "defend":
-		_mdl.call("SquadStep", _handle, minf(delta, 0.1))
+	if phase_name == "battle":
+		var step: Dictionary = _mdl.call("BattleStep", _handle, minf(delta, 0.1))
+		# 伤害跳字：Model 每帧把队列排空一次，这里原样丢给表现层（不重算颜色）
+		_squad_layer.call("push_hits", step.get("events", []))
 		phase_left -= delta * time_scale
-		_view = _mdl.call("SquadView", _handle)
+		_view = _mdl.call("BattleSnapshot", _handle)
 		_feed_camera_follow()
 		if phase_left <= 0.0 or bool(_view.get("finished", false)):
-			_advance_phase()
+			_finish_round()
 	_hud_tick += delta
 	_refresh(false)
 
@@ -447,9 +452,9 @@ func _process(delta: float) -> void:
 func _feed_camera_follow() -> void:
 	var sum := Vector3.ZERO
 	var n := 0
-	for s in _view.get("squads", []):
+	for s in _view.get("units", []):
 		var sq: Dictionary = s
-		if int(sq.get("side", 0)) != 0 or not bool(sq.get("active", true)):
+		if int(sq.get("side", 0)) != 0:
 			continue
 		sum += Vector3(float(sq.get("x", 0.0)), 0.0, float(sq.get("z", 0.0)))
 		n += 1
@@ -460,28 +465,32 @@ func _feed_camera_follow() -> void:
 	_camera.call("follow_world", c.x, c.z)
 
 
-func _advance_phase() -> void:
-	if phase_name == "attack":
-		_mdl.call("SquadSessionDefend", _handle)
-		_state = _mdl.call("SquadSessionState", _handle)
-		phase_name = "defend"
-		round_kind = "defend"
-		phase_left = _round_seconds
-		_view = _mdl.call("SquadView", _handle)
-		status_text = I18n.t("battle.phase.defend_tip")
-		_camera.call("apply_phase", "defend")
-		_refresh(true)
-		return
-	if phase_name == "defend":
-		_mdl.call("SquadSessionEndRound", _handle)
-		_state = _mdl.call("SquadSessionState", _handle)
+## 本轮打完：结算（幸存 base_damage 扣基地）→ 决出胜负就进 result，
+## 没决出来就回 planning 重新打牌（**每轮重规划**，这是 Phase 3 的循环口径）。
+func _finish_round() -> void:
+	_mdl.call("CampaignSettleRound", _handle)
+	_state = _mdl.call("CampaignInfo", _handle)
+	_view = _mdl.call("BattleSnapshot", _handle)
+	round_kind = "done"
+	phase_left = 0.0
+	if String(_state.get("outcome", "")) != "":
 		phase_name = "result"
-		round_kind = "done"
-		phase_left = 0.0
-		_view = _mdl.call("SquadView", _handle)
 		status_text = _result_text()
 		_camera.call("apply_phase", "result")
 		_refresh(true)
+		return
+	_mdl.call("CampaignBeginPlanning", _handle)
+	_state = _mdl.call("CampaignInfo", _handle)
+	_view = _mdl.call("BattleSnapshot", _handle)
+	phase_name = "planning"
+	round_kind = ""
+	round_index = int(_state.get("round_index", 0))
+	phase_left = _round_seconds
+	_selected.clear()
+	armed_card = ""
+	status_text = I18n.t("battle.round.next", {"n": round_index + 1})
+	_camera.call("apply_phase", "planning")
+	_refresh(true)
 
 
 func _result_text() -> String:
@@ -498,13 +507,11 @@ func _refresh(force: bool) -> void:
 	selected_count = _selected.size()
 	player_hp = float(_view.get("player_hp", 0.0))
 	enemy_hp = float(_view.get("enemy_hp", 0.0))
-	attack_squads = int(_state.get("attack_squads", 0))
+	army_units = int(_state.get("army_units", 0))
+	round_index = int(_state.get("round_index", 0))
 	live_units = 0
-	for _sq in _view.get("squads", []):
-		if bool((_sq as Dictionary).get("active", true)):
-			live_units += 1
-	defend_squads = int(_state.get("defend_squads", 0))
-	outpost_captured = bool(_state.get("outpost_captured", false))
+	for _sq in _view.get("units", []):
+		live_units += 1
 	built_count = (_arena.get("player_buildings", []) as Array).size()
 
 	if _squad_layer != null and is_instance_valid(_squad_layer):
@@ -524,6 +531,8 @@ func _refresh(force: bool) -> void:
 		terrain_probe = String(_terrain.call("material_report"))
 	if _board != null and is_instance_valid(_board):
 		board_probe = String(_board.call("look_report"))
+	if _squad_layer != null and is_instance_valid(_squad_layer):
+		anim_report = String(_squad_layer.call("anim_report"))
 	visual_probe = "space[%s] terrain[%s] board[%s] visual_ok=%d" % [
 		space_probe, terrain_probe, board_probe, 1 if _visual_ok() else 0]
 
@@ -547,31 +556,26 @@ func _visual_ok() -> bool:
 ## 顶部敌方意图栏：告诉玩家"这一场要面对什么"，而不是让他拖镜头去偷看。
 func _intent_text() -> String:
 	var name := String(_encounter.get("display_name", ""))
-	match phase_name:
-		"attack":
-			return I18n.t("battle.intent.attack", {"name": name, "waves": _wave_count("attack")})
-		"defend":
-			return I18n.t("battle.intent.defend", {"name": name, "waves": _wave_count("defend")})
-		"result":
-			return I18n.t("battle.intent.done", {"name": name})
-		_:
-			return I18n.t("battle.intent.planning", {
-				"name": name,
-				"attack": _wave_count("attack"),
-				"defend": _wave_count("defend"),
-			})
+	if phase_name == "result":
+		return I18n.t("battle.intent.done", {"name": name})
+	return I18n.t("battle.intent.round", {
+		"name": name,
+		"round": round_index + 1,
+		"waves": _wave_count(round_index),
+	})
 
 
-func _wave_count(kind: String) -> int:
-	for r in _arena.get("rounds", []):
-		var row: Dictionary = r
-		if String(row.get("kind", "")) != kind:
-			continue
-		var n := 0
-		for w in row.get("waves", []):
-			n += int((w as Dictionary).get("count", 0))
-		return n
-	return 0
+## 第 n 轮（0 起）的敌军总人数。关卡 rounds 不够长时按最后一轮重复。
+func _wave_count(index: int) -> int:
+	var rows: Array = _arena.get("rounds", [])
+	if rows.is_empty():
+		return 0
+	var row: Dictionary = rows[mini(index, rows.size() - 1)]
+	var n := 0
+	for w in row.get("enemy_waves", []):
+		for sq in (w as Dictionary).get("squads", []):
+			n += int((sq as Dictionary).get("count", 0))
+	return n
 
 
 ## 选中单位的信息（**只读**，HUD 用它显示"这是谁"，不提供任何操作）。
@@ -579,7 +583,7 @@ func _selected_info() -> Dictionary:
 	if _selected.is_empty():
 		return {}
 	var sid := int(_selected[0])
-	for s in _view.get("squads", []):
+	for s in _view.get("units", []):
 		var sq: Dictionary = s
 		if int(sq.get("id", 0)) != sid:
 			continue
@@ -592,7 +596,8 @@ func _selected_info() -> Dictionary:
 			"damage": float(def.get("attack_damage", 0.0)),
 			"cooldown": float(def.get("attack_cooldown", 1.0)),
 			"armor": float(def.get("armor", 0.0)),
-			"engaged": bool(sq.get("engaged", false)),
+			"state": String(sq.get("state", "hold")),
+			"state_age": float(sq.get("state_age", 0.0)),
 			"star": int(sq.get("star", 1)),
 		}
 	return {}
@@ -610,7 +615,10 @@ func _extra_hud() -> Dictionary:
 		"intent": _intent_text(),
 		"last_order": last_order,
 		"armed_card": armed_card,
-		"outpost_captured": outpost_captured,
+		"next_fill_tile": int(_state.get("next_fill_tile", 0)),
+		"next_fill_col": int(_state.get("next_fill_col", -1)),
+		"next_fill_row": int(_state.get("next_fill_row", -1)),
+		"round_index": round_index,
 		"time_scale": time_scale,
 		"status": status_text,
 		"model_instances": model_instances,
@@ -720,7 +728,7 @@ func tile_at(x: float, z: float) -> int:
 
 func pick_at_screen(pos: Vector2) -> void:
 	var p := ground_at_screen(pos)
-	var id := int(_mdl.call("SquadPickWorld", _handle, p.x, p.z, 0, 0.8))
+	var id := int(_mdl.call("BattlePickWorld", _handle, p.x, p.z, 0, 0.8))
 	_selected.clear()
 	if id > 0:
 		_selected.append(id)
@@ -732,9 +740,9 @@ func box_select_screen(rect: Rect2) -> void:
 	var cam: Camera3D = _camera.get("camera")
 	if cam == null:
 		return
-	for s in _view.get("squads", []):
+	for s in _view.get("units", []):
 		var sq: Dictionary = s
-		if int(sq.get("side", 0)) != 0 or not bool(sq.get("active", true)):
+		if int(sq.get("side", 0)) != 0:
 			continue
 		var sp := cam.unproject_position(Vector3(float(sq.get("x", 0.0)), 1.0, float(sq.get("z", 0.0))))
 		if rect.has_point(sp):
@@ -744,9 +752,9 @@ func box_select_screen(rect: Rect2) -> void:
 
 func select_all_squads() -> void:
 	_selected.clear()
-	for s in _view.get("squads", []):
+	for s in _view.get("units", []):
 		var sq: Dictionary = s
-		if int(sq.get("side", 0)) == 0 and bool(sq.get("active", true)):
+		if int(sq.get("side", 0)) == 0:
 			_selected.append(int(sq.get("id", 0)))
 	status_text = I18n.t("battle.selected", {"n": _selected.size()})
 
@@ -775,9 +783,9 @@ func screen_pos_of_enemy() -> Vector2:
 	var center := vp * 0.5
 	var best := Vector2(-1.0, -1.0)
 	var best_d := 1e12
-	for s in _view.get("squads", []):
+	for s in _view.get("units", []):
 		var sq: Dictionary = s
-		if int(sq.get("side", 0)) != 1 or not bool(sq.get("active", true)):
+		if int(sq.get("side", 0)) != 1:
 			continue
 		var sp := cam.unproject_position(Vector3(float(sq.get("x", 0.0)), 1.0, float(sq.get("z", 0.0))))
 		if sp.x < 8.0 or sp.y < 8.0 or sp.x > vp.x - 8.0 or sp.y > vp.y - 8.0:
@@ -796,8 +804,8 @@ func spawn_enemy_demo() -> void:
 	if _handle == 0:
 		return
 	var x := (float(_arena.get("player_zone_x", -32.0)) + float(_arena.get("enemy_zone_x", 32.0))) * 0.5
-	_mdl.call("SquadSpawn", _handle, 1, "bandit_marauder", 1, x, 0.0)
-	_view = _mdl.call("SquadView", _handle)
+	_mdl.call("BattleSpawn", _handle, 1, "bandit_marauder", 1, x, 0.0)
+	_view = _mdl.call("BattleSnapshot", _handle)
 	select_all_squads()
 	_refresh(true)
 
@@ -845,14 +853,12 @@ func _battle_centroid() -> Vector3:
 	var hot_n := 0
 	var all := Vector3.ZERO
 	var all_n := 0
-	for s in _view.get("squads", []):
+	for s in _view.get("units", []):
 		var sq: Dictionary = s
-		if not bool(sq.get("active", true)):
-			continue
 		var p := Vector3(float(sq.get("x", 0.0)), 0.0, float(sq.get("z", 0.0)))
 		all += p
 		all_n += 1
-		if bool(sq.get("engaged", false)):
+		if String(sq.get("state", "")) == "fight":
 			hot += p
 			hot_n += 1
 	if hot_n > 0:
@@ -881,7 +887,7 @@ func arm_build(card_id: String) -> void:
 		cancel_arm()
 		return
 	armed_card = card_id
-	_board.call("set_armed", true, _mdl.call("SquadSessionFreeTiles", _handle))
+	_board.call("set_armed", true, _mdl.call("CampaignFreeTiles", _handle))
 	status_text = I18n.t("battle.build.pick_tile")
 
 
@@ -893,15 +899,17 @@ func cancel_arm() -> void:
 
 
 func _build_at(tile: int) -> void:
-	var res: Dictionary = _mdl.call("SquadSessionBuild", _handle, armed_card, tile)
+	var res: Dictionary = _mdl.call("CampaignBuild", _handle, armed_card, tile)
 	if not bool(res.get("built", false)):
 		status_text = I18n.t("battle.build.failed")
 		return
 	_state = res
-	_arena = _mdl.call("SquadArenaInfo", _handle)
+	_arena = _mdl.call("BattleArenaInfo", _handle)
 	_buildings.call("set_arena", _arena)
 	_buildings.call("rebuild")
-	_view = _mdl.call("SquadView", _handle)
+	_view = _mdl.call("BattleSnapshot", _handle)
+	# 建筑事件（placed / upgraded）→ 直接转给建筑层；周末的"天降落子 / 升星金光"挂这里
+	_buildings.call("push_board_events", _mdl.call("CampaignBoardEvents", _handle).get("events", []))
 	var name := armed_card
 	for b in _planning.get("buildings", []):
 		var row: Dictionary = b
@@ -918,7 +926,7 @@ func train_card(card_id: String) -> void:
 	if phase_name != "planning":
 		status_text = I18n.t("battle.only_planning")
 		return
-	var res: Dictionary = _mdl.call("SquadSessionTrain", _handle, card_id)
+	var res: Dictionary = _mdl.call("CampaignTrain", _handle, card_id)
 	if not bool(res.get("ok", false)):
 		status_text = String(res.get("error", ""))
 		return
@@ -933,12 +941,12 @@ func train_card(card_id: String) -> void:
 		status_text = I18n.t("battle.reason." + reason)
 		return
 	_state = res
-	_view = _mdl.call("SquadView", _handle)
+	_view = _mdl.call("BattleSnapshot", _handle)
 	_selected.clear()
-	var squads: Array = _view.get("squads", [])
-	var start := maxi(squads.size() - n, 0)
-	for i in range(start, squads.size()):
-		var sq: Dictionary = squads[i]
+	var units: Array = _view.get("units", [])
+	var start := maxi(units.size() - n, 0)
+	for i in range(start, units.size()):
+		var sq: Dictionary = units[i]
 		if int(sq.get("side", 0)) == 0:
 			_selected.append(int(sq.get("id", 0)))
 	status_text = I18n.t("battle.spawned", {"n": n})
@@ -949,21 +957,9 @@ func play_strategy(card_id: String) -> void:
 	if phase_name != "planning":
 		status_text = I18n.t("battle.only_planning")
 		return
-	var res: Dictionary = _mdl.call("SquadSessionStrategy", _handle, card_id)
+	var res: Dictionary = _mdl.call("CampaignStrategy", _handle, card_id)
 	_state = res
 	status_text = I18n.t("battle.strategy.done") if bool(res.get("played", false)) else I18n.t("battle.reason.no_cp")
-	_refresh(true)
-
-
-func capture_outpost() -> void:
-	if phase_name != "planning":
-		return
-	var res: Dictionary = _mdl.call("SquadSessionCaptureOutpost", _handle)
-	_state = res
-	if bool(res.get("captured", false)):
-		status_text = I18n.t("battle.outpost.done")
-	else:
-		status_text = I18n.t("battle.outpost.fail")
 	_refresh(true)
 
 
@@ -971,28 +967,29 @@ func begin_execution() -> void:
 	if _handle == 0 or phase_name != "planning":
 		return
 	cancel_arm()
-	_mdl.call("SquadSessionEndPlanning", _handle)
-	_mdl.call("SquadSessionAttack", _handle)
-	_state = _mdl.call("SquadSessionState", _handle)
-	phase_name = "attack"
-	round_kind = "attack"
+	_mdl.call("CampaignEndPlanning", _handle)
+	_mdl.call("CampaignBeginRound", _handle)
+	_state = _mdl.call("CampaignInfo", _handle)
+	phase_name = "battle"
+	round_kind = "battle"
+	round_index = int(_state.get("round_index", 0))
 	phase_left = _round_seconds
-	_view = _mdl.call("SquadView", _handle)
-	status_text = I18n.t("battle.phase.attack_tip")
-	_camera.call("apply_phase", "attack")
+	_view = _mdl.call("BattleSnapshot", _handle)
+	status_text = I18n.t("battle.phase.battle_tip")
+	_camera.call("apply_phase", "battle")
 	_refresh(true)
 
 
 func set_time_scale(scale: float) -> void:
 	if _handle == 0:
 		return
-	time_scale = float(_mdl.call("SquadSetTimeScale", _handle, scale))
+	time_scale = float(_mdl.call("BattleSetTimeScale", _handle, scale))
 	status_text = I18n.t("battle.speed", {"x": "%.0f" % time_scale})
 
 
 func restart() -> void:
 	if _handle > 0:
-		_mdl.call("SquadSessionFree", _handle)
+		_mdl.call("CampaignFree", _handle)
 	_handle = 0
 	_seed += 1
 	if not _new_session():

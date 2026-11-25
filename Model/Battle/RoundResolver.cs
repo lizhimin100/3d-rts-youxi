@@ -30,7 +30,7 @@ namespace WarIsland.Model
         public bool TieDiffUsed;
         public bool PlayerWiped;
         public bool EnemyWiped;
-        public SquadBattleStats Stats;
+        public BattleStats Stats;
 
         /// <summary>敌方幸存单位中，真正把基地血打穿的那几个（战败简报用）。</summary>
         public readonly List<string> EnemyFatalUnits = new List<string>();
@@ -100,8 +100,8 @@ namespace WarIsland.Model
         public static RoundResult Settle(
             int index,
             string label,
-            SquadBattle battle,
-            SquadTuning tuning,
+            BattleSim battle,
+            BattleTuning tuning,
             double playerBaseHpBefore,
             double enemyBaseHpBefore,
             bool timeUp)
@@ -172,12 +172,12 @@ namespace WarIsland.Model
             return r;
         }
 
-        private static void CollectEnemyFatalUnits(SquadBattle battle, RoundResult r)
+        private static void CollectEnemyFatalUnits(BattleSim battle, RoundResult r)
         {
             r.EnemyFatalUnits.Clear();
-            List<BattleSquad> list = battle.Survivors(1);
+            List<BattleUnit> list = battle.Survivors(1);
             list.Sort((a, b) => b.Def.BaseDamageOf(b.Star).CompareTo(a.Def.BaseDamageOf(a.Star)));
-            foreach (BattleSquad s in list)
+            foreach (BattleUnit s in list)
             {
                 double dmg = s.Def.BaseDamageOf(s.Star);
                 if (dmg <= 0.0) continue;

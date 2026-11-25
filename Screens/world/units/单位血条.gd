@@ -6,7 +6,7 @@ extends Control
 ##   · 单兵制：一条血条 = 一个人（不再有"小队聚合血条"）；
 ##   · 满血的人不画 —— 60 个人同时挂血条会把战场糊住；挨过打才出现，
 ##     选中的人永远显示（信息优先）；
-##   · 只读 SquadView 的 hp / max_hp；不写任何规则。
+##   · 只读 UnitView 的 hp / max_hp；不写任何规则。
 
 const BAR_W := 24.0
 const BAR_H := 3.5
@@ -37,10 +37,8 @@ func _draw() -> void:
 	if _camera == null or _view.is_empty() or not is_instance_valid(_camera):
 		return
 	var vp := get_viewport_rect().size
-	for s in _view.get("squads", []):
+	for s in _view.get("units", []):
 		var sq: Dictionary = s
-		if not bool(sq.get("active", true)):
-			continue
 		var hp := float(sq.get("hp", 0.0))
 		var max_hp := float(sq.get("max_hp", 1.0))
 		if hp <= 0.0 or max_hp <= 0.0:

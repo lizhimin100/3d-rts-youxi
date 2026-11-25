@@ -15,7 +15,7 @@ namespace WarIsland.Model
     }
 
     /// <summary>
-    /// 小队战场（SquadArena）—— 把「底壳 spine/tiles/regions + 玩家布局卡 + 敌人遭遇卡 + 关卡轮次」
+    /// 小队战场（BattleArena）—— 把「底壳 spine/tiles/regions + 玩家布局卡 + 敌人遭遇卡 + 关卡轮次」
     /// 组装成纯 C# 可推演的战场。
     ///
     /// 口径：
@@ -24,7 +24,7 @@ namespace WarIsland.Model
     ///   · 脊线来自 `map_shells.json` 的 `spine.points`（Catmull-Rom 采样点），等价于 Path3D 导出的路径点；
     ///   · **建筑不进入寻路**：这里只记录"哪一格有哪座建筑"，从不生成障碍。
     /// </summary>
-    public sealed class SquadArena
+    public sealed class BattleArena
     {
         public string Id = "";
         public string DisplayName = "";
@@ -53,12 +53,6 @@ namespace WarIsland.Model
         public double PlayerBaseHp;
         public double EnemyBaseHp;
         public double RoundSeconds = LevelDef.RoundSecondsSpec;
-        /// <summary>
-        /// 一名**单兵**停在敌区里每秒给敌方基地造成的伤害（2026-11-22 由"每队"改为"每人"）。
-        /// 口径：单兵制下基地只有 60~80 血，所以这个值必须是 0.1~0.5 量级；
-        /// 写 9 或 48（编制时代的数）会让 8 个人在 1 秒内把基地抽干。
-        /// </summary>
-        public double ZoneDpsPerUnit = 0.24;
         /// <summary>底壳声明的脊线逻辑长度（游戏数值），用来校验脊线点没有丢段。</summary>
         public double SpineLengthLogic;
 
@@ -82,42 +76,6 @@ namespace WarIsland.Model
         public int EnemyBaseTile;
         public int PlayerBarracksTile;
         public int EnemyBarracksTile;
-        /// <summary>中立据点格（side=neutral、role=build 的第一格）；0 = 这张底壳没有据点。</summary>
-        public int NeutralOutpostTile;
-
-        /// <summary>中立区靠我方一侧的世界 X（= 玩家区边界，米）。</summary>
-        public double NeutralStartWorldX => OriginX + PlayerZoneEnd * RtsUnits.R1;
-
-        /// <summary>中立区靠敌方一侧的世界 X（米）。</summary>
-        public double NeutralEndWorldX => OriginX + EnemyZoneStart * RtsUnits.R1;
-
-        /// <summary>
-        /// 已占领据点时进攻小队的出发点（世界米，lane Z=0）：中立区靠敌侧，再退 6 米。
-        /// 这条口径的唯一实现，UI/自检都读它，不许各写一份。
-        /// </summary>
-        public Vec2 OutpostStageWorld()
-        {
-            double x = NeutralEndWorldX - 6.0;
-            return new Vec2((float)x, 0f);
-        }
-
-        /// <summary>
-        /// 没买据点时的进攻出发点：**玩家区前缘**（边界内侧 8 米）。
-        /// 为什么不是"从建造格出发"：单场只有 60 秒，从棋盘后排走到敌方基地要 30 秒以上，
-        /// 等于把一整场耗在行军上；"前缘集结"是小队玩法的预设偏好，不是玩家微操。
-        /// </summary>
-        public Vec2 PlayerFrontStageWorld()
-        {
-            double x = NeutralStartWorldX - 8.0;
-            return new Vec2((float)x, 0f);
-        }
-
-        /// <summary>本场进攻小队的出发点：买了据点走据点，否则走玩家区前缘。</summary>
-        public Vec2 AttackStageWorld(bool outpostCaptured)
-        {
-            return outpostCaptured ? OutpostStageWorld() : PlayerFrontStageWorld();
-        }
-
         /// <summary>
         /// 打建造牌时把建筑落到指定战术格子（Screens 只报"玩家点了哪一格"）。
         /// 同一格已有建筑 → 拒绝；格子不存在 → 拒绝。
@@ -207,7 +165,7 @@ namespace WarIsland.Model
         // =================================================================
         // 装载
         // =================================================================
-        public static SquadArena FromDict(
+        public static BattleArena FromDict(
             IDictionary<string, object> level,
             IDictionary<string, object> shell,
             IDictionary<string, object> layout,
@@ -215,7 +173,7 @@ namespace WarIsland.Model
             UnitCatalog units,
             IDictionary<string, object> tuning = null)
         {
-            var arena = new SquadArena();
+            var arena = new BattleArena();
             arena.ShellDict = shell;
             arena.LayoutDict = layout;
 
@@ -304,7 +262,6 @@ namespace WarIsland.Model
             // 2026-11-24：关卡是运行时唯一真源；遭遇卡的 base_hp 只留给生成器建议，不再覆盖。
             arena.EnemyBaseHp = arena.Level.EnemyBaseHp;
             arena.RoundSeconds = arena.Level.RoundSeconds;
-            arena.ZoneDpsPerUnit = 0.0; // 占区抽血已删除，字段只留给桥契约
 
             arena.Rounds.Clear();
             arena.Rounds.AddRange(arena.Level.Rounds);
@@ -346,7 +303,6 @@ namespace WarIsland.Model
 
             arena.PlayerBaseTile = FindRoleTile(arena, RegionKinds.Player, "keep");
             arena.EnemyBaseTile = FindRoleTile(arena, RegionKinds.Enemy, "keep");
-            arena.NeutralOutpostTile = FindSideTile(arena, RegionKinds.Neutral);
             arena.PlayerBarracksTile = arena.FirstTileOfBuilding(RegionKinds.Player, "barracks");
             if (arena.PlayerBarracksTile == 0) arena.PlayerBarracksTile = arena.PlayerBaseTile;
             arena.EnemyBarracksTile = arena.FirstTileOfBuilding(RegionKinds.Enemy, "barracks");
@@ -380,7 +336,7 @@ namespace WarIsland.Model
             }
         }
 
-        private static int FindRoleTile(SquadArena arena, string side, string role)
+        private static int FindRoleTile(BattleArena arena, string side, string role)
         {
             for (int i = 0; i < arena.Tiles.Count; i++)
             {
@@ -395,7 +351,7 @@ namespace WarIsland.Model
         }
 
         /// <summary>某一侧的第一个格子（中立据点用；找不到 = 0）。</summary>
-        private static int FindSideTile(SquadArena arena, string side)
+        private static int FindSideTile(BattleArena arena, string side)
         {
             for (int i = 0; i < arena.Tiles.Count; i++)
             {
@@ -470,7 +426,6 @@ namespace WarIsland.Model
             if (EnemyBaseHp <= 0.0) errors.Add($"arena：enemy_base_hp={EnemyBaseHp} 必须 > 0");
             if (RoundSeconds <= 0.0 || RoundSeconds > 120.0)
                 errors.Add($"arena：round_seconds={RoundSeconds} 非法");
-            // 占区抽血已删除：ZoneDpsPerUnit 不再参与校验。
 
             var seenTiles = new HashSet<int>();
             foreach (TacticalTile t in Tiles) seenTiles.Add(t.Index);

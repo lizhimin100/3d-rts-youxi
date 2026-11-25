@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace WarIsland.Model
 {
-    public sealed class SquadRoundResult
+    public sealed class MatchRound
     {
         /// <summary>轮次标签（"第 1 轮"…）。2026-11-24 起不再有 attack/defend。</summary>
         public string Kind = "";
@@ -20,11 +20,11 @@ namespace WarIsland.Model
         public double EnemyBaseDamage;
         public bool TieDiffUsed;
         public bool BerserkTriggered;
-        public SquadBattleStats Stats;
+        public BattleStats Stats;
     }
 
     /// <summary>一局（单轮单场死斗循环）的战斗结果。</summary>
-    public sealed class SquadMatchResult
+    public sealed class MatchResult
     {
         public string ArenaId = "";
         public string ArenaName = "";
@@ -36,25 +36,23 @@ namespace WarIsland.Model
         public double PlayerBaseHpStart;
         public double EnemyBaseHpStart;
         public double Seconds;
-        public int PlayerSquadsProduced;
-        public int EnemySquadsSpawned;
+        public int PlayerUnitsProduced;
+        public int EnemyUnitsProduced;
 
-        public readonly List<SquadRoundResult> Rounds = new List<SquadRoundResult>();
+        public readonly List<MatchRound> Rounds = new List<MatchRound>();
         /// <summary>本局最后一份规划快照（单轮制只保留一份，字段名沿用旧契约）。</summary>
         public PlanningSnapshot AttackPlan;
         public PlanningSnapshot DefendPlan;
 
-        public readonly Dictionary<string, SquadUnitStat> PlayerByUnit = new Dictionary<string, SquadUnitStat>(StringComparer.Ordinal);
-        public readonly Dictionary<string, SquadUnitStat> EnemyByUnit = new Dictionary<string, SquadUnitStat>(StringComparer.Ordinal);
+        public readonly Dictionary<string, UnitStat> PlayerByUnit = new Dictionary<string, UnitStat>(StringComparer.Ordinal);
+        public readonly Dictionary<string, UnitStat> EnemyByUnit = new Dictionary<string, UnitStat>(StringComparer.Ordinal);
 
         public double PlayerDamage;
         public double EnemyDamage;
         public int PlayerKills;
         public int EnemyKills;
-        public int PlayerModelsLost;
-        public int EnemyModelsLost;
-        public int PlayerSquadsLost;
-        public int EnemySquadsLost;
+        public int PlayerUnitsLost;
+        public int EnemyUnitsLost;
         public int PlayerMaxZone;
         public int EnemyMaxZone;
         public double PlayerZoneSeconds;
@@ -66,7 +64,7 @@ namespace WarIsland.Model
         public double AvgStraightLength;
         public double FirstContactSecond = -1.0;
 
-        /// <summary>本局峰值：同一 tick 的深度重叠对数（见 SquadBattleStats）。</summary>
+        /// <summary>本局峰值：同一 tick 的深度重叠对数（见 BattleStats）。</summary>
         public int OverlapPairsMax;
         /// <summary>本局峰值：最大重叠深度（游戏数值）。</summary>
         public double OverlapDepthMax;
@@ -109,17 +107,17 @@ namespace WarIsland.Model
     ///
     /// 这里的 `Squad*` 名字是跨语言契约（Phase 3 才改名），不是"小队编制"。
     /// </summary>
-    public static class SquadMatch
+    public static class MatchRun
     {
-        public static SquadMatchResult Run(
+        public static MatchResult Run(
             UnitCatalog units,
             CombatRules combat,
             PlanningConfig planning,
-            SquadArena arena,
+            BattleArena arena,
             int seed,
             IDictionary<string, object> tuning = null)
         {
-            var result = new SquadMatchResult
+            var result = new MatchResult
             {
                 ArenaId = arena != null ? arena.Id : "",
                 ArenaName = arena != null ? arena.DisplayName : "",
@@ -142,8 +140,8 @@ namespace WarIsland.Model
             result.Outcome = campaign.Outcome;
             result.OutcomeText = campaign.OutcomeText;
             result.Seconds = campaign.Seconds;
-            result.PlayerSquadsProduced = campaign.PlayerUnitsProduced;
-            result.EnemySquadsSpawned = campaign.EnemyUnitsSpawned;
+            result.PlayerUnitsProduced = campaign.PlayerUnitsProduced;
+            result.EnemyUnitsProduced = campaign.EnemyUnitsSpawned;
             result.RoundsPlayed = campaign.Rounds;
             result.PlayerBaseDamageDealt = campaign.PlayerBaseDamageDealt;
             result.EnemyBaseDamageTaken = campaign.PlayerBaseDamageTaken;
@@ -154,7 +152,7 @@ namespace WarIsland.Model
             for (int i = 0; i < campaign.RoundResults.Count; i++)
             {
                 RoundResult rr = campaign.RoundResults[i];
-                result.Rounds.Add(new SquadRoundResult
+                result.Rounds.Add(new MatchRound
                 {
                     Kind = rr.Label,
                     Label = rr.Label,
@@ -186,20 +184,20 @@ namespace WarIsland.Model
             return result;
         }
 
-        private static void Merge(SquadMatchResult r, SquadBattleStats s)
+        private static void Merge(MatchResult r, BattleStats s)
         {
             if (s == null) return;
             r.PlayerDamage += s.PlayerDamage;
             r.EnemyDamage += s.EnemyDamage;
             r.PlayerKills += s.PlayerKills;
             r.EnemyKills += s.EnemyKills;
-            r.PlayerModelsLost += s.PlayerModelsLost;
-            r.EnemyModelsLost += s.EnemyModelsLost;
-            r.PlayerSquadsLost += s.PlayerSquadsLost;
-            r.EnemySquadsLost += s.EnemySquadsLost;
+            
+            
+            r.PlayerUnitsLost += s.PlayerUnitsLost;
+            r.EnemyUnitsLost += s.EnemyUnitsLost;
             r.StuckEvents += s.StuckEvents;
             r.Repaths += s.Repaths;
-            r.AvgSlotErrorMeters += s.AvgSlotErrorMeters;
+            
             r.AvgPathLength += s.AvgPathLength;
             r.AvgStraightLength += s.AvgStraightLength;
             if (r.FirstContactSecond < 0.0) r.FirstContactSecond = s.FirstContactSecond;
@@ -220,31 +218,31 @@ namespace WarIsland.Model
             MergeUnits(r.EnemyByUnit, s.EnemyByUnit);
         }
 
-        private static void MergeUnits(Dictionary<string, SquadUnitStat> dst, Dictionary<string, SquadUnitStat> src)
+        private static void MergeUnits(Dictionary<string, UnitStat> dst, Dictionary<string, UnitStat> src)
         {
             if (src == null) return;
             foreach (var kv in src)
             {
-                if (!dst.TryGetValue(kv.Key, out SquadUnitStat a))
+                if (!dst.TryGetValue(kv.Key, out UnitStat a))
                 {
-                    a = new SquadUnitStat { UnitId = kv.Key };
+                    a = new UnitStat { UnitId = kv.Key };
                     dst[kv.Key] = a;
                 }
-                SquadUnitStat b = kv.Value;
-                a.Squads += b.Squads;
-                a.Models += b.Models;
+                UnitStat b = kv.Value;
+                a.Units += b.Units;
+                
                 a.Kills += b.Kills;
                 a.Losses += b.Losses;
                 a.Damage += b.Damage;
-                a.MemberSeconds += b.MemberSeconds;
-                a.SquadSeconds += b.SquadSeconds;
+                a.AliveSeconds += b.AliveSeconds;
+                
             }
         }
 
         /// <summary>
         /// 定性复盘：胜利只留一句总结；战败只留简要死因（不再构建全场统计报表）。
         /// </summary>
-        private static void BuildReview(SquadMatchResult r, CampaignResult c)
+        private static void BuildReview(MatchResult r, CampaignResult c)
         {
             r.Reviews.Clear();
             r.ReviewCodes.Clear();

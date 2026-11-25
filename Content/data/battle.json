@@ -1,6 +1,6 @@
 {
 	"version": 3.0,
-	"note": "战斗场景全局口味（Phase 3 再改名 battle.json）。formation：自动布阵间距（全游戏数值）；combat：硬核/停火线/转向；berserk：45 秒狂暴（攻速×2、护甲归零），防止纯肉盾互刮拖满 60 秒；settle：幸存单位 base_damage 单轮上限。旧的 outpost / free_defend / zone_dps_per_unit 已删除（占区抽血不再存在）。",
+	"note": "战斗场景全局口味（2026-11-25 Phase 3 由 squad.json 迁名而来）。formation：自动布阵间距（全游戏数值）；combat：硬核/停火线/转向；berserk：45 秒狂暴（攻速×2、护甲归零），防止纯肉盾互刮拖满 60 秒；settle：幸存单位 base_damage 单轮上限。旧的 outpost / free_defend / zone_dps_per_unit 已删除（占区抽血不再存在）。",
 	"formation": {
 		"file_pitch": 96,
 		"rank_pitch": 144,

@@ -52,7 +52,7 @@ namespace WarIsland.Model
             PlanningConfig planning,
             IDictionary<string, object> shell,
             IDictionary<string, object> layout,
-            SquadArena arena,
+            BattleArena arena,
             LevelDef level,
             int seed,
             IDictionary<string, object> tuningDict = null)
@@ -72,7 +72,7 @@ namespace WarIsland.Model
                 return result;
             }
 
-            var tuning = SquadTuning.FromDict(tuningDict);
+            var tuning = BattleTuning.FromDict(tuningDict);
             var notes = new List<string>();
             BoardSession board = BoardSession.Create(planning, units, shell, layout, seed, notes);
             result.Notes.AddRange(notes);
@@ -102,7 +102,7 @@ namespace WarIsland.Model
                 result.PlayerBaseDamageTaken += rr.EnemyBaseDamageApplied;
                 if (rr.BerserkTriggered) result.BerserkRounds += 1;
                 if (rr.TieDiffUsed) result.TieDiffRounds += 1;
-                if (rr.Stats != null) result.EnemyUnitsSpawned += rr.Stats.EnemySquadsSpawned;
+                if (rr.Stats != null) result.EnemyUnitsSpawned += rr.Stats.EnemyUnitsSpawned;
 
                 playerHp = rr.PlayerBaseHpAfter;
                 enemyHp = rr.EnemyBaseHpAfter;

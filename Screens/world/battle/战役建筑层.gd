@@ -212,6 +212,63 @@ func _mesh_instances(n: Node) -> Array:
 	return out
 
 
+# ===========================================================================
+# 建筑事件（Phase 3 契约）：placed / upgraded
+# ===========================================================================
+#
+# 事件由 BoardSession 产出（`BoardEvent`），经 ModelBridge.CampaignBoardEvents 送到这里。
+# 每条：{kind, tile, col, row, id, star, planning}。
+# 现在这里只做**最轻的那一下**（落子 = 从 2.2 米落下 + 压扁回弹；升星 = 放大回弹），
+# 周末要接"天降落子 / 升星金光"就把 _fx_placed / _fx_upgraded 换掉，**不要动事件契约**。
+var _board_events: Array = []
+var _board_event_counts := {}
+
+
+func push_board_events(events: Array) -> void:
+	for e in events:
+		if not (e is Dictionary):
+			continue
+		var ev: Dictionary = e
+		_board_events.append(ev)
+		var kind := String(ev.get("kind", ""))
+		_board_event_counts[kind] = int(_board_event_counts.get(kind, 0)) + 1
+		if kind == "placed":
+			_fx_placed(ev)
+		elif kind == "upgraded":
+			_fx_upgraded(ev)
+
+
+## 探针：自检/截图读这一行（事件真的到过表现层多少次）
+func board_event_report() -> String:
+	return "placed=%d upgraded=%d" % [
+		int(_board_event_counts.get("placed", 0)), int(_board_event_counts.get("upgraded", 0))]
+
+
+func _fx_placed(ev: Dictionary) -> void:
+	var holder: Node3D = _built.get("player:%d" % int(ev.get("tile", 0)), null)
+	if holder == null or not is_instance_valid(holder):
+		return
+	var y0 := holder.position.y
+	var base := holder.scale
+	holder.position.y = y0 + 2.2
+	holder.scale = Vector3(base.x * 1.08, base.y * 0.9, base.z * 1.08)
+	var t := create_tween().set_parallel(true)
+	t.set_trans(Tween.TRANS_QUAD)
+	t.tween_property(holder, "position:y", y0, 0.26).set_ease(Tween.EASE_IN)
+	t.tween_property(holder, "scale", base, 0.30).set_ease(Tween.EASE_OUT)
+
+
+func _fx_upgraded(ev: Dictionary) -> void:
+	var holder: Node3D = _built.get("player:%d" % int(ev.get("tile", 0)), null)
+	if holder == null or not is_instance_valid(holder):
+		return
+	var base := holder.scale
+	holder.scale = base * 1.16
+	var t := create_tween()
+	t.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	t.tween_property(holder, "scale", base, 0.28)
+
+
 ## 自检用：当前重建出来的建筑实例数（口径 = 真的有人站在场上）
 func instance_count() -> int:
 	var n := 0
