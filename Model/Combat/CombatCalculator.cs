@@ -62,10 +62,15 @@ namespace WarIsland.Model
         public double ArmorTaken;
         public double Counter;
         public double Damage;
+        /// <summary>跳字反馈等级：暴击/克制 = 红，被抵抗 = 白，普通 = 常规色。</summary>
+        public DamageFeedback Feedback;
+
+        /// <summary>跨语言 key（normal / crit_or_counter / resisted / miss）。</summary>
+        public string FeedbackKey => CombatTypes.FeedbackKey(Feedback);
     }
 
     /// <summary>
-    /// 6 步伤害结算 —— **全游戏唯一实现**（2026-11-21 规格）。
+    /// 6 步伤害结算 —— **全游戏唯一实现**（2026-11-21 规格，2026-11-24 收成 4×4）。
     ///
     /// 严格按顺序：
     ///   1) 实际命中率 = MAX(攻方命中 - 防方闪避, 0) / 100；
@@ -73,8 +78,11 @@ namespace WarIsland.Model
     ///   3) 有效护甲 = 基础护甲 × (1 - 百分比穿透) - 固定穿透；
     ///   4) 护甲承伤：有效护甲 >= 0 时 1/(1 + 有效护甲×0.06)；
     ///                 有效护甲 &lt; 0 时 MIN(1 - 有效护甲×0.06, 3)（负甲最多 3 倍）；
-    ///   5) 查 6×6 攻击/护甲克制表；
+    ///   5) 查 4×4 攻击/护甲克制表；
     ///   6) 最终伤害 = 基础 × 暴击 × 承伤 × 克制 × 攻击倍率 × 承伤倍率。
+    ///
+    /// 同一次结算里顺带产出 <see cref="DamageBreakdown.Feedback"/>（跳字分级），
+    /// 表现层只读它，不许再查一遍表。
     ///
     /// 纯函数：随机数由调用方传入 [0,1)，同输入必然同输出。
     /// 期望 DPS 走 <see cref="ExpectedDps"/>：**乘实际命中率**，并且复用
@@ -162,6 +170,12 @@ namespace WarIsland.Model
 
             // 5) 克制
             br.Counter = CounterMultiplier(rules, attacker.AttackType, defender.ArmorType);
+
+            // 5.5) 跳字反馈（在命中/暴击/克制都算完之后定级）
+            if (!br.Hit) br.Feedback = DamageFeedback.Miss;
+            else if (br.Crit || br.Counter > 1.0 + 1e-9) br.Feedback = DamageFeedback.CritOrCounter;
+            else if (br.Counter < 1.0 - 1e-9) br.Feedback = DamageFeedback.Resisted;
+            else br.Feedback = DamageFeedback.Normal;
 
             // 6) 最终伤害
             if (!br.Hit)

@@ -48,6 +48,11 @@ namespace WarIsland.Model
         public double UnfiredEngagedSeconds;
         /// <summary>本局朝向反转次数 / 战斗秒数。</summary>
         public double HeadingFlipsPerSec;
+        // ---- 2026-11-24：单轮死斗 ----
+        public int Rounds;
+        public double BaseDamageDealt;
+        public int BerserkRounds;
+        public int TieDiffRounds;
     }
 
     /// <summary>一批小队推演的汇总（--simulate 的返回）。</summary>
@@ -97,6 +102,21 @@ namespace WarIsland.Model
         public double AvgUnfiredEngagedSeconds;
         /// <summary>均值：朝向反转次数 / 战斗秒数。</summary>
         public double AvgHeadingFlipsPerSec;
+        // ---- 2026-11-24：单轮死斗汇总 ----
+        /// <summary>平均每局轮数。</summary>
+        public double AvgRounds;
+        /// <summary>平均每轮我方对基地造成的伤害。</summary>
+        public double AvgRoundBaseDamage;
+        /// <summary>狂暴触发率（触发狂暴的轮数 / 总轮数）。</summary>
+        public double BerserkRoundRate;
+        /// <summary>60 秒双方幸存差值结算率（差值结算轮数 / 总轮数）。</summary>
+        public double TieDiffRoundRate;
+        public int TotalRounds;
+        public int TotalBerserkRounds;
+        public int TotalTieDiffRounds;
+        public double AvgPlayerBaseDamageDealt;
+        /// <summary>总回合数分布：轮数 → 局数（报告"多少局打了几轮"）。</summary>
+        public readonly Dictionary<int, int> RoundHistogram = new Dictionary<int, int>();
         public readonly Dictionary<string, int> ReviewCounts = new Dictionary<string, int>(StringComparer.Ordinal);
         public readonly Dictionary<string, SquadUnitStat> PlayerByUnit = new Dictionary<string, SquadUnitStat>(StringComparer.Ordinal);
         public readonly Dictionary<string, SquadUnitStat> EnemyByUnit = new Dictionary<string, SquadUnitStat>(StringComparer.Ordinal);
@@ -182,6 +202,12 @@ namespace WarIsland.Model
                 summary.AvgOverlapAfterTicks += r.OverlapAfterTicks;
                 summary.AvgUnfiredEngagedSeconds += r.UnfiredEngagedSeconds;
                 summary.AvgHeadingFlipsPerSec += r.HeadingFlipsPerSec;
+                summary.TotalRounds += r.RoundsPlayed;
+                summary.TotalBerserkRounds += r.BerserkRounds;
+                summary.TotalTieDiffRounds += r.TieDiffRounds;
+                summary.AvgPlayerBaseDamageDealt += r.PlayerBaseDamageDealt;
+                summary.RoundHistogram.TryGetValue(r.RoundsPlayed, out int roundCount);
+                summary.RoundHistogram[r.RoundsPlayed] = roundCount + 1;
                 summary.TotalPlayerKills += r.PlayerKills;
                 summary.TotalEnemyKills += r.EnemyKills;
                 totalSeconds += r.Seconds;
@@ -243,6 +269,10 @@ namespace WarIsland.Model
                     OverlapWorstB = r.OverlapWorstB,
                     UnfiredEngagedSeconds = Math.Round(r.UnfiredEngagedSeconds, 1),
                     HeadingFlipsPerSec = r.HeadingFlipsPerSec,
+                    Rounds = r.RoundsPlayed,
+                    BaseDamageDealt = Math.Round(r.PlayerBaseDamageDealt, 1),
+                    BerserkRounds = r.BerserkRounds,
+                    TieDiffRounds = r.TieDiffRounds,
                 };
                 summary.Rows.Add(row);
 
@@ -275,6 +305,18 @@ namespace WarIsland.Model
             summary.AvgUnfiredEngagedSeconds = Math.Round(summary.AvgUnfiredEngagedSeconds / nGames * 10.0) / 10.0;
             summary.AvgHeadingFlipsPerSec = Math.Round(summary.AvgHeadingFlipsPerSec / nGames * 100.0) / 100.0;
             summary.AvgSlotError = Math.Round(summary.AvgSlotError / nGames * 1000.0) / 1000.0;
+            double totalBaseDealt = summary.AvgPlayerBaseDamageDealt;
+            summary.AvgPlayerBaseDamageDealt = Math.Round(totalBaseDealt / nGames * 10.0) / 10.0;
+            summary.AvgRounds = Math.Round((double)summary.TotalRounds / nGames * 10.0) / 10.0;
+            summary.AvgRoundBaseDamage = summary.TotalRounds > 0
+                ? Math.Round(totalBaseDealt / summary.TotalRounds * 10.0) / 10.0
+                : 0.0;
+            summary.BerserkRoundRate = summary.TotalRounds > 0
+                ? Math.Round((double)summary.TotalBerserkRounds / summary.TotalRounds * 1000.0) / 1000.0
+                : 0.0;
+            summary.TieDiffRoundRate = summary.TotalRounds > 0
+                ? Math.Round((double)summary.TotalTieDiffRounds / summary.TotalRounds * 1000.0) / 1000.0
+                : 0.0;
             summary.AvgPlayerDps = totalSeconds > 1e-6 ? Math.Round(summary.AvgPlayerDamage * nGames / totalSeconds * 10.0) / 10.0 : 0.0;
             summary.AvgPlayerDpsPerMember = totalMemberSeconds > 1e-6
                 ? Math.Round(SumDamage(summary.PlayerByUnit) / totalMemberSeconds * 100.0) / 100.0

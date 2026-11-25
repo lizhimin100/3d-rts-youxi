@@ -360,6 +360,12 @@ namespace WarIsland.Bridge
                 { "hand", ToGodotArray(st.Hand) },
                 { "train_cards", cards },
                 { "log", ToGodotArray(st.Log) },
+                // 2026-11-24：单轮死斗
+                { "rounds_played", st.RoundsPlayed },
+                { "outcome", st.Outcome },
+                { "player_base_hp", st.PlayerBaseHp },
+                { "enemy_base_hp", st.EnemyBaseHp },
+                { "defeat_record", st.DefeatRecord },
             };
         }
 
@@ -736,6 +742,10 @@ namespace WarIsland.Bridge
                 { "enemy_buildings", arena.EnemyBuildings.Count },
                 { "zone_dps_per_unit", arena.ZoneDpsPerUnit },
                 { "outpost_tile", arena.NeutralOutpostTile },
+                { "deploy_player", arena.Battlefield.DeployPlayer },
+                { "deploy_enemy", arena.Battlefield.DeployEnemy },
+                { "battlefield_width", arena.Battlefield.Width },
+                { "rounds", arena.Rounds.Count },
                 { "size_x", arena.SizeX },
                 { "size_z", arena.SizeZ },
             };
@@ -824,6 +834,62 @@ namespace WarIsland.Bridge
         }
 
         /// <summary>100 局纯 Model 小队攻防推演（胜率 + DPS + 阵型/寻路指标）。</summary>
+        /// <summary>
+        /// Phase 2 规则自检（4×4 / base_damage / 竖列棋盘 / 单轮波次 / 狂暴 / 结算 / 跳字）+ 3 项反向验错。
+        /// GDScript 侧只读 ok/checks/errors，不重写任何规则。
+        /// </summary>
+        public Godot.Collections.Dictionary Phase2SelfCheck(
+            Godot.Collections.Dictionary unitsDict,
+            Godot.Collections.Dictionary combatDict,
+            Godot.Collections.Dictionary planningDict,
+            Godot.Collections.Dictionary levelsDict,
+            Godot.Collections.Dictionary shellsDict,
+            Godot.Collections.Dictionary layoutsDict,
+            Godot.Collections.Dictionary encountersDict,
+            Godot.Collections.Dictionary tuningDict,
+            string levelId)
+        {
+            var plainLevels = ToPlainDict(levelsDict);
+            var levelRow = FindRow(plainLevels, "levels", levelId);
+            if (levelRow == null)
+            {
+                return new Godot.Collections.Dictionary
+                {
+                    { "ok", false },
+                    { "checks", 0 },
+                    { "errors", ToGodotArray(new List<string> { "找不到关卡：" + levelId }) },
+                    { "lines", new Godot.Collections.Array() },
+                };
+            }
+            var asm = JValDict(levelRow, "assembly");
+            var shell = asm != null ? FindRow(ToPlainDict(shellsDict), "shells", StrOf(asm, "shell")) : null;
+            var layout = asm != null ? FindRow(ToPlainDict(layoutsDict), "layouts", StrOf(asm, "player_layout")) : null;
+            if (shell == null || layout == null)
+            {
+                return new Godot.Collections.Dictionary
+                {
+                    { "ok", false },
+                    { "checks", 0 },
+                    { "errors", ToGodotArray(new List<string> { "关卡 assembly 缺底壳或布局卡" }) },
+                    { "lines", new Godot.Collections.Array() },
+                };
+            }
+
+            CheckReport report = Phase2Checks.Run(
+                ToPlainDict(unitsDict), ToPlainDict(combatDict), ToPlainDict(planningDict),
+                shell, layout, plainLevels, ToPlainDict(tuningDict), levelId, true);
+
+            var lines = new Godot.Collections.Array();
+            foreach (string line in report.Lines) lines.Add(line);
+            return new Godot.Collections.Dictionary
+            {
+                { "ok", report.Ok },
+                { "checks", report.Checks },
+                { "errors", ToGodotArray(report.Errors) },
+                { "lines", lines },
+            };
+        }
+
         public Godot.Collections.Dictionary SquadSimulate(
             Godot.Collections.Dictionary unitsDict,
             Godot.Collections.Dictionary combatDict,
@@ -939,6 +1005,16 @@ namespace WarIsland.Bridge
                 { "avg_overlap_after_ticks", sim.AvgOverlapAfterTicks },
                 { "avg_unfired_engaged_seconds", sim.AvgUnfiredEngagedSeconds },
                 { "avg_heading_flips_per_sec", sim.AvgHeadingFlipsPerSec },
+                // 2026-11-24：单轮死斗读数
+                { "avg_rounds", sim.AvgRounds },
+                { "total_rounds", sim.TotalRounds },
+                { "avg_round_base_damage", sim.AvgRoundBaseDamage },
+                { "avg_player_base_damage_dealt", sim.AvgPlayerBaseDamageDealt },
+                { "berserk_rounds", sim.TotalBerserkRounds },
+                { "berserk_round_rate", sim.BerserkRoundRate },
+                { "tie_diff_rounds", sim.TotalTieDiffRounds },
+                { "tie_diff_round_rate", sim.TieDiffRoundRate },
+                { "round_histogram", RoundHistogramDict(sim.RoundHistogram) },
                 { "avg_enemy_max_zone", sim.AvgEnemyMaxZone },
                 { "avg_player_zone_seconds", sim.AvgPlayerZoneSeconds },
                 { "avg_enemy_zone_seconds", sim.AvgEnemyZoneSeconds },
@@ -984,6 +1060,10 @@ namespace WarIsland.Bridge
                     { "overlap_after_ticks", r.OverlapAfterTicks },
                     { "unfired_engaged_seconds", r.UnfiredEngagedSeconds },
                     { "heading_flips_per_sec", r.HeadingFlipsPerSec },
+                    { "rounds", r.Rounds },
+                    { "base_damage_dealt", r.BaseDamageDealt },
+                    { "berserk_rounds", r.BerserkRounds },
+                    { "tie_diff_rounds", r.TieDiffRounds },
                     { "cp_left", r.CpLeft },
                     { "pop_blocked", r.PopBlocked },
                     { "top_reason", r.TopReason },
@@ -1002,8 +1082,13 @@ namespace WarIsland.Bridge
                     { "player_hp", Math.Round(s.PlayerBaseHp) },
                     { "enemy_hp", Math.Round(s.EnemyBaseHp) },
                     { "player_damage", Math.Round(s.PlayerDamage) },
-                    { "attack_squads", s.AttackPlan != null ? s.AttackPlan.ArmySquads : 0 },
-                    { "defend_squads", s.DefendPlan != null ? s.DefendPlan.ArmySquads : 0 },
+                    { "rounds", s.RoundsPlayed },
+                    { "base_damage_dealt", Math.Round(s.PlayerBaseDamageDealt) },
+                    { "berserk_rounds", s.BerserkRounds },
+                    { "tie_diff_rounds", s.TieDiffRounds },
+                    { "defeat_record", s.DefeatRecord },
+                    { "army", s.PlayerSquadsProduced },
+                    { "defend_squads", 0 },
                     { "reviews", ToGodotArray(s.Reviews) },
                     { "review_codes", ToGodotArray(s.ReviewCodes) },
                     { "dps_rows", UnitStatsRows(s.PlayerByUnit) },
@@ -1013,8 +1098,17 @@ namespace WarIsland.Bridge
             return outDict;
         }
 
-        private static Godot.Collections.Array UnitStatsRows(Dictionary<string, SquadUnitStat> map)
+        /// <summary>回合数分布（轮数 → 局数）；键用字符串，GDScript 侧直接读。</summary>
+        private static Godot.Collections.Dictionary RoundHistogramDict(Dictionary<int, int> hist)
         {
+            var d = new Godot.Collections.Dictionary();
+            var keys = new List<int>(hist.Keys);
+            keys.Sort();
+            foreach (int k in keys) d[k.ToString()] = hist[k];
+            return d;
+        }
+
+        private static Godot.Collections.Array UnitStatsRows(Dictionary<string, SquadUnitStat> map)        {
             var list = new List<SquadUnitStat>(map.Values);
             list.Sort((a, b) =>
             {
@@ -1300,7 +1394,8 @@ namespace WarIsland.Bridge
                 bool matched = false;
                 foreach (var b in cfg.Buildings.Values)
                 {
-                    if (b.Tag == c.Tag && b.Trains.Contains(c.Unit)) matched = true;
+                    if (b.Kind != BuildingKinds.Producer) continue;
+                    if (b.Tag == c.BuildingTag && b.Trains.Contains(c.Unit)) matched = true;
                 }
                 if (matched) n++;
             }

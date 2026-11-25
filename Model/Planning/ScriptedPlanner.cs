@@ -6,9 +6,11 @@ namespace WarIsland.Model
     /// <summary>
     /// 脚本化规划器（--simulate 与自动对局用）。
     ///
-    /// 它不是“聪明 AI”，只是一套**可复现的决策顺序**，用来证明规划规则能跑通：
-    ///   兵营 → 训练 → 人口不够补农场 → 防守补哨塔 → 策略 → 3 合 1。
-    /// 所有选择只依赖当前 PlanningMatch 状态与牌面，不读引擎时间/帧率。
+    /// 它不是"聪明 AI"，只是一套**可复现的决策顺序**，用来证明规划规则能跑通：
+    ///   兵营 → 加快训练 → 征召 → 经济/光环 → 3 合 1 → 哨塔。
+    /// 所有选择只依赖当前 BoardSession 状态与牌面，不读引擎时间/帧率。
+    ///
+    /// 2026-11-24 起只规划**一场**（单轮死斗），不再区分进攻/防守角色。
     /// </summary>
     public static class ScriptedPlanner
     {
@@ -19,22 +21,13 @@ namespace WarIsland.Model
             public Func<bool> Run;
         }
 
-        public static void Plan(PlanningMatch m, bool defending)
+        public static void Plan(BoardSession board)
         {
-            Plan(m, defending, defending ? SquadRoles.Defend : SquadRoles.Attack);
-        }
-
-        /// <summary>
-        /// 带时空角色的规划：本轮只需要"这一场"的兵。
-        /// 角色不符的训练牌会被打 0 分（仍然可打，只是排在最后），
-        /// 这样 CP 会优先落在本轮的队伍上，不会一半钱买了另一场。
-        /// </summary>
-        public static void Plan(PlanningMatch m, bool defending, string role)
-        {
+            if (board == null) return;
             var blocked = new HashSet<string>(StringComparer.Ordinal);
-            for (int guard = 0; guard < 48; guard++)
+            for (int guard = 0; guard < 64; guard++)
             {
-                var list = BuildCandidates(m, defending, role, blocked);
+                var list = BuildCandidates(board, blocked);
                 if (list.Count == 0) return;
                 list.Sort((a, b) =>
                 {
@@ -44,7 +37,7 @@ namespace WarIsland.Model
                 });
 
                 bool acted = false;
-                foreach (var cand in list)
+                foreach (Candidate cand in list)
                 {
                     if (cand.Run())
                     {
@@ -57,36 +50,51 @@ namespace WarIsland.Model
             }
         }
 
-        private static List<Candidate> BuildCandidates(PlanningMatch m, bool defending, string role, HashSet<string> blocked)
+        private static List<Candidate> BuildCandidates(BoardSession board, HashSet<string> blocked)
         {
             var list = new List<Candidate>();
-            var cfg = m.Cfg;
+            PlanningMatch m = board.Match;
+            PlanningConfig cfg = board.Cfg;
 
-            // ---- 3 合 1（只在人口被卡死、额外产线用不上时做） ----
-            if (m.CountTag("barracks") >= 3 && m.PopFree() < 6)
+            int producers = m.CountKind(BuildingKinds.Producer);
+            int rangedProducers = CountProducersOfTag(m, "ranged");
+            int economy = m.CountKind(BuildingKinds.Economy);
+            int supports = m.CountKind(BuildingKinds.Support);
+            int defenses = m.CountKind(BuildingKinds.Defense);
+
+            // ---- 3 合 1：同名建筑 ≥3 且人口吃紧时，把产线升星（少占格、保人口） ----
+            if (m.PopFree() < 6)
             {
-                var barracks = BuildingsOfTag(m, "barracks");
-                for (int i = 0; i < barracks.Count; i++)
+                var groups = new Dictionary<string, List<BoardBuilding>>(StringComparer.Ordinal);
+                foreach (BoardBuilding b in board.Buildings)
                 {
-                    for (int j = i + 1; j < barracks.Count; j++)
+                    if (string.Equals(b.DefId, "keep", StringComparison.Ordinal)) continue;
+                    if (!groups.TryGetValue(b.DefId, out List<BoardBuilding> g))
                     {
-                        int a = barracks[i].Plot;
-                        int b = barracks[j].Plot;
-                        if (!m.CanMerge(a, b)) continue;
-                        string key = $"merge:{a}+{b}";
-                        if (blocked.Contains(key)) continue;
-                        int ta = a, tb = b;
-                        list.Add(new Candidate
-                        {
-                            Score = 86,
-                            Key = key,
-                            Run = () => m.Merge(ta, tb),
-                        });
+                        g = new List<BoardBuilding>();
+                        groups[b.DefId] = g;
                     }
+                    g.Add(b);
+                }
+                foreach (var kv in groups)
+                {
+                    if (kv.Value.Count < 3) continue;
+                    kv.Value.Sort((a, b) => board.Arena.OrderOf(a.Tile).CompareTo(board.Arena.OrderOf(b.Tile)));
+                    int target = kv.Value[0].Tile;
+                    int source = kv.Value[1].Tile;
+                    int second = kv.Value[2].Tile;
+                    string key = $"merge:{target}+{source}+{second}";
+                    if (blocked.Contains(key)) continue;
+                    list.Add(new Candidate
+                    {
+                        Score = 86,
+                        Key = key,
+                        Run = () => board.Merge(target, source) > 0 && board.Merge(target, second) > 0,
+                    });
                 }
             }
 
-            foreach (var id in new List<string>(m.Hand))
+            foreach (string id in new List<string>(m.Hand))
             {
                 if (!cfg.Cards.TryGetValue(id, out CardDef card)) continue;
                 if (blocked.Contains("card:" + id)) continue;
@@ -95,28 +103,27 @@ namespace WarIsland.Model
                 {
                     case CardKind.Build:
                     {
-                        if (!m.CanPlayBuild(id)) break;
+                        if (m.Cp < card.CostCp) break;
                         double score = 10;
                         if (card.Building == "barracks")
-                        {
-                            int n = m.CountTag("barracks");
-                            score = n < 2 ? 110 : (n < 3 && m.Cp >= card.CostCp + 4 ? 72 : 20);
-                        }
-                        else if (card.Building == "farm")
-                        {
-                            score = m.PopFree() < 8 ? 95 : (m.Cp >= card.CostCp + 4 ? 45 : 10);
-                        }
+                            score = producers < 1 ? 120 : (producers < 2 ? 108 : (m.Cp >= card.CostCp + 4 ? 58 : 18));
+                        else if (card.Building == "archery_range")
+                            score = rangedProducers < 1 && HasTrainCard(m, "ranged") ? 112 : (m.Cp >= card.CostCp + 4 ? 44 : 12);
+                        else if (card.Building == "lumbermill")
+                            score = economy < 1 ? 74 : (m.Cp >= card.CostCp + 6 ? 52 : 16);
+                        else if (card.Building == "blacksmith")
+                            score = supports < 1 && producers > 0 ? 70 : (m.Cp >= card.CostCp + 6 ? 40 : 8);
                         else if (card.Building == "watchtower")
-                        {
-                            int n = m.CountTag("tower");
-                            score = defending ? (n < 2 ? 78 : 30) : 22;
-                        }
+                            score = defenses < 2 && m.Cp >= card.CostCp + 5 ? 48 : 12;
+                        else if (card.Building == "farm")
+                            score = m.PopFree() < 8 ? 95 : 20;
+
                         string cid = id;
                         list.Add(new Candidate
                         {
                             Score = score,
                             Key = "card:" + id,
-                            Run = () => m.PlayBuild(cid),
+                            Run = () => board.PlaceBuild(cid) > 0,
                         });
                         break;
                     }
@@ -124,30 +131,25 @@ namespace WarIsland.Model
                     case CardKind.Train:
                     {
                         if (!m.CanPlayTrain(id)) break;
-                        // 时空角色硬过滤：单场推演里"另一场"的兵是纯负担（既占人口又不参战）。
-                        // 演练双场时（SquadSession 一次规划供两场）不传 role，这里就不生效。
-                        if (!string.IsNullOrEmpty(role) && !string.IsNullOrEmpty(card.Role) && card.Role != role)
-                            break;
-                        var unit = m.Units.Get(card.Unit);
+                        UnitDef unit = m.Units.Get(card.Unit);
                         if (unit == null) break;
                         int owned = 0;
-                        foreach (var s in m.Army)
+                        foreach (PlannedSquad s in m.Army)
                         {
-                            if (s.UnitId == unit.Id) owned++;
+                            if (s.UnitId == unit.Id) owned += Math.Max(s.Units, 1);
                         }
                         double score;
-                        if (unit.Id == "alliance_footman") score = owned == 0 ? 92 : 84;
-                        else if (unit.Id == "alliance_pikeman") score = 82;
-                        else if (unit.Id == "alliance_archer") score = 80;
+                        if (unit.Id == "alliance_footman") score = owned == 0 ? 96 : 90;
+                        else if (unit.Id == "alliance_archer") score = 82;
+                        else if (unit.Id == "alliance_pikeman") score = 80;
                         else score = 76;
-                        if (unit.IsMelee && defending) score += 2;
-                        if (owned >= 2) score -= 12; // 别把鸡蛋全放一个兵种
+                        if (owned >= 18) score -= 14;
                         string cid = id;
                         list.Add(new Candidate
                         {
                             Score = score,
                             Key = "card:" + id,
-                            Run = () => m.PlayTrain(cid) > 0,
+                            Run = () => board.PlayTrain(cid) > 0,
                         });
                         break;
                     }
@@ -155,31 +157,17 @@ namespace WarIsland.Model
                     case CardKind.Strategy:
                     {
                         if (!m.CanPlayStrategy(id)) break;
-                        // 「加快训练」是**前置**牌：它只放大"之后打出的征召牌"，
-                        // 所以必须在任何训练牌之前出手 —— 给它最高分，
-                        // 否则脚本化规划器会先把手牌征召完、最后才打加速（等于白打）。
                         double score;
                         if (card.Effect == "train_boost")
-                        {
-                            bool haveTrain = false;
-                            foreach (var hid in m.Hand)
-                            {
-                                if (m.Cfg.Cards.TryGetValue(hid, out CardDef hc) && hc.Kind == CardKind.Train)
-                                {
-                                    haveTrain = true;
-                                    break;
-                                }
-                            }
-                            score = haveTrain ? 130 : 0;
-                        }
-                        else if (card.Effect == "focus") score = m.Army.Count > 0 ? 64 : 0;
-                        else score = m.Army.Count > 0 ? 62 : 0;
+                            score = HasTrainCard(m, null) ? 130 : 0;
+                        else
+                            score = m.Army.Count > 0 ? 62 : 0;
                         string cid = id;
                         list.Add(new Candidate
                         {
                             Score = score,
                             Key = "card:" + id,
-                            Run = () => m.PlayStrategy(cid),
+                            Run = () => board.PlayStrategy(cid),
                         });
                         break;
                     }
@@ -188,16 +176,26 @@ namespace WarIsland.Model
             return list;
         }
 
-        private static List<PlanBuilding> BuildingsOfTag(PlanningMatch m, string tag)
+        private static bool HasTrainCard(PlanningMatch m, string buildingTag)
         {
-            var list = new List<PlanBuilding>();
-            foreach (var b in m.Buildings)
+            foreach (string hid in m.Hand)
             {
-                var def = m.DefOf(b);
-                if (def != null && def.Tag == tag) list.Add(b);
+                if (!m.Cfg.Cards.TryGetValue(hid, out CardDef hc)) continue;
+                if (hc.Kind != CardKind.Train) continue;
+                if (string.IsNullOrEmpty(buildingTag) || hc.BuildingTag == buildingTag) return true;
             }
-            list.Sort((a, b) => a.Plot.CompareTo(b.Plot));
-            return list;
+            return false;
+        }
+
+        private static int CountProducersOfTag(PlanningMatch m, string tag)
+        {
+            int n = 0;
+            foreach (PlanBuilding b in m.Buildings)
+            {
+                BuildingDef def = m.DefOf(b);
+                if (def != null && def.Kind == BuildingKinds.Producer && def.Tag == tag) n++;
+            }
+            return n;
         }
     }
 }

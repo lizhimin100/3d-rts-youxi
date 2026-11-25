@@ -108,6 +108,7 @@ func _run() -> void:
 	_check_combat_formula()
 	_check_arena()
 	_check_squad_roles()
+	_check_phase2_rules()
 	_check_squad_sim()
 	_check_phase1_kinematics()
 	_check_battle_scene()
@@ -302,76 +303,75 @@ func _visible_count(units: Array, faction: String) -> int:
 
 func _check_planning_data() -> void:
 	var doc := JsonFile.read_dict(PLANNING_JSON, {})
-	var cards: Array = doc.get("cards", [])
-	var atk_cards := 0
-	var dfn_cards := 0
-	var atk_copies := 0
-	var dfn_copies := 0
-	var build_copies := 0
-	var boost_copies := 0
-	var atk_units := 0
-	var dfn_units := 0
 	var bad: Array[String] = []
-	for c in cards:
+	var train_cards := 0
+	var build_cards := 0
+	var strategy_cards := 0
+	var train_units := 0
+	for c in doc.get("cards", []):
 		var row: Dictionary = c
 		var kind := String(row.get("kind", ""))
-		var role := String(row.get("role", ""))
-		var copies := int(row.get("count", 1))
-		var units := int(row.get("units", 0))
+		var cid := String(row.get("id", "?"))
+		if row.has("role"):
+			bad.append(cid + " 仍有 role")
 		if kind == "train":
-			if role == "attack":
-				atk_cards += 1
-				atk_copies += copies
-				atk_units = units
-			elif role == "defend":
-				dfn_cards += 1
-				dfn_copies += copies
-				dfn_units = units
-			else:
-				bad.append(String(row.get("id", "?")) + " 缺 role")
-			if copies < 1 or units < 1:
-				bad.append(String(row.get("id", "?")) + " 缺 count / units")
+			train_cards += 1
+			train_units = maxi(train_units, int(row.get("units", 0)))
+			if String(row.get("building_tag", "")).is_empty():
+				bad.append(cid + " 缺 building_tag")
+			if String(row.get("units_mode", "")) not in ["per_building", "split"]:
+				bad.append(cid + " units_mode 非法")
+			if bool(row.get("exhaust", true)):
+				bad.append(cid + " 训练牌不该 exhaust")
 		elif kind == "build":
-			build_copies += copies
-			if not bool(row.get("exhaust", false)) or not role.is_empty():
-				bad.append(String(row.get("id", "?")) + " 建造牌规格不对")
+			build_cards += 1
+			if not bool(row.get("exhaust", false)):
+				bad.append(cid + " 建造牌必须 exhaust")
 		elif kind == "strategy":
-			boost_copies += copies
-	_ok("12 张初始卡组：进攻 ×%d / 防守 ×%d / 建造 ×%d / 加快训练 ×%d（共 %d）" % [
-			atk_copies, dfn_copies, build_copies, boost_copies,
-			atk_copies + dfn_copies + build_copies + boost_copies],
-		atk_copies == 5 and dfn_copies == 5 and build_copies == 1 and boost_copies == 1 and bad.is_empty(),
+			strategy_cards += 1
+		else:
+			bad.append(cid + " kind 非法")
+	_ok("卡组：训练 ×%d / 建造 ×%d / 策略 ×%d（无 role）" % [train_cards, build_cards, strategy_cards],
+		train_cards >= 1 and build_cards >= 1 and strategy_cards >= 1 and bad.is_empty(),
 		", ".join(bad))
-	_ok("进攻牌一次 6 名 / 防守牌一次 5 名", atk_units == 6 and dfn_units == 5,
-		"attack=%d defend=%d" % [atk_units, dfn_units])
+	_ok("训练牌一次产出（per_building）×%d 名" % train_units, train_units >= 1)
 
-	var strategies: Dictionary = doc.get("strategies", {})
-	var boost: Dictionary = strategies.get("train_boost", {})
-	_ok("「加快训练」= 本回合征召 ×1.5（数据在 strategies.train_boost）",
-		is_equal_approx(float(boost.get("train_count_mult", 0.0)), 1.5),
-		str(boost))
+	var hand: Array = (doc.get("hand", {}) as Dictionary).get("opening", [])
+	_ok("起手牌 %d 张（单轮死斗只准备一场）" % hand.size(), hand.size() >= 5 and hand.size() <= 10)
+
+	var boost: Dictionary = (doc.get("strategies", {}) as Dictionary).get("train_boost", {})
+	_ok("「加快训练」= 本回合征召 ×1.5", is_equal_approx(float(boost.get("train_count_mult", 0.0)), 1.5), str(boost))
 
 	var cp: Dictionary = doc.get("cp", {})
 	_ok("CP 上限 ≥ 单次规划投入（%d / %d）" % [int(cp.get("cap", 0)), int(cp.get("start", 0))],
 		int(cp.get("cap", 0)) >= int(cp.get("start", 0)))
 
-	# 无农场牌也不许卡死：基地自带人口必须够造一座兵营
 	var pop: Dictionary = doc.get("pop", {})
 	var base_pop := int(pop.get("base", 0))
-	var barracks_pop := 0
+	var producer_pop := 0
 	for b in doc.get("buildings", []):
 		var row2: Dictionary = b
-		if String(row2.get("tag", "")) == "barracks":
-			barracks_pop = int(row2.get("pop", 0))
-	_ok("基地自带人口 %d ≥ 兵营所需 %d（无农场牌也不会卡死）" % [base_pop, barracks_pop],
-		base_pop >= maxi(barracks_pop, 1) and barracks_pop >= 1)
+		if String(row2.get("kind", "")) == "producer":
+			producer_pop = maxi(producer_pop, int(row2.get("pop", 0)))
+	_ok("基地自带人口 %d ≥ 产兵建筑所需 %d（无农场牌也不会卡死）" % [base_pop, producer_pop],
+		base_pop >= maxi(producer_pop, 1))
 
-	var squad := JsonFile.read_dict(SQUAD_JSON, {})
-	var outpost: Dictionary = squad.get("outpost", {})
-	var free: Dictionary = squad.get("free_defend", {})
-	_ok("据点与免费防守兵都在数据里配了（不是写死在代码）",
-		outpost.has("cp_cost") and String(free.get("unit", "")) != "",
-		"outpost=%s free=%s" % [str(outpost), str(free)])
+	var kinds := {}
+	var effect_bad: Array[String] = []
+	for b2 in doc.get("buildings", []):
+		var bd: Dictionary = b2
+		var kind2 := String(bd.get("kind", ""))
+		kinds[kind2] = int(kinds.get(kind2, 0)) + 1
+		if kind2 == "support" and not bd.has("aura"):
+			effect_bad.append(String(bd.get("id", "?")) + " 缺 aura")
+		if kind2 == "economy" and not bd.has("economy"):
+			effect_bad.append(String(bd.get("id", "?")) + " 缺 economy")
+		if kind2 == "defense" and not bd.has("defense"):
+			effect_bad.append(String(bd.get("id", "?")) + " 缺 defense")
+	_ok("建筑大类齐全（keep/producer/economy/support/defense）", kinds.size() >= 5, str(kinds))
+	_ok("光环/经济/防御效果都写在数据里（不是代码分支）", effect_bad.is_empty(), ", ".join(effect_bad))
+	_ok("不再有占区减伤字段 max_drain_reduction", not doc.has("max_drain_reduction"))
+
 	# 建筑落位规格：唯一消费者是 RtsTileSpec；这里只核对数据在合法区间里
 	var place: Dictionary = doc.get("placement", {})
 	var ratio := float(place.get("footprint_ratio", 0.0))
@@ -395,43 +395,47 @@ func _check_level_data() -> void:
 		if (row.get("assembly", {}) as Dictionary).is_empty():
 			continue
 		asm_levels += 1
+		var lid := String(row.get("id", "?"))
 		var secs := float(row.get("round_seconds", 0.0))
 		if not is_equal_approx(secs, 60.0):
-			bad.append("%s round_seconds=%.1f" % [String(row.get("id", "?")), secs])
+			bad.append("%s 时长 %.1f" % [lid, secs])
 		var rounds: Array = row.get("rounds", [])
-		if rounds.size() != 2:
-			bad.append("%s 轮数=%d" % [String(row.get("id", "?")), rounds.size()])
-			continue
-		if String((rounds[0] as Dictionary).get("kind", "")) != "attack":
-			bad.append("%s 第 1 轮不是 attack" % String(row.get("id", "?")))
-		if String((rounds[1] as Dictionary).get("kind", "")) != "defend":
-			bad.append("%s 第 2 轮不是 defend" % String(row.get("id", "?")))
+		if rounds.is_empty():
+			bad.append(lid + " 没有轮次")
 		for r in rounds:
-			for w in (r as Dictionary).get("enemy_waves", []):
+			var rd: Dictionary = r
+			if rd.has("kind"):
+				bad.append(lid + " 仍有 kind=attack/defend")
+			var waves: Array = rd.get("enemy_waves", [])
+			if waves.is_empty():
+				bad.append(lid + " 有空轮次")
+			for w in waves:
 				var t := float((w as Dictionary).get("t", 0.0))
 				if t < 0.0 or t > secs + 0.001:
-					bad.append("%s 波次 t=%.1f 越界" % [String(row.get("id", "?")), t])
-	_ok("组装关卡 %d 个：两轮 attack+defend、60 秒、波次不越界" % asm_levels,
+					bad.append("%s 波次 t=%.1f 越界" % [lid, t])
+		var bf: Dictionary = row.get("battlefield", {})
+		if bf.is_empty():
+			bad.append(lid + " 缺 battlefield")
+		else:
+			var dp := float(bf.get("deploy_player", 0.0))
+			var de := float(bf.get("deploy_enemy", 0.0))
+			if dp <= 0.0 or de <= 0.0 or de - dp < 1200.0:
+				bad.append(lid + " 部署线非法")
+			if float(bf.get("width", 0.0)) < 600.0:
+				bad.append(lid + " 战场太窄")
+	_ok("组装关卡 %d 个：单轮波次（无 attack/defend）、60 秒、battlefield 合法" % asm_levels,
 		asm_levels >= 1 and bad.is_empty(), ", ".join(bad.slice(0, 5)))
 
-	# 单兵制配平：基地血量按 StS 体量 60~80、占区伤害按"每人每秒"0.1~0.6
 	var hp_bad: Array[String] = []
-	var dps_bad: Array[String] = []
-	for lv in doc.get("levels", []):
-		var row3: Dictionary = lv
-		if not (row3.get("assembly", {}) as Dictionary).is_empty():
-			var php := float(row3.get("player_base_hp", 0.0))
-			var ehp := float(row3.get("enemy_base_hp", 0.0))
-			if php < 60.0 or php > 80.0 or ehp < 60.0 or ehp > 80.0:
-				hp_bad.append("%s=%.0f/%.0f" % [String(row3.get("id", "?")), php, ehp])
-		var lane2: Dictionary = row3.get("lane", {})
-		var dz := float(lane2.get("zone_dps_per_unit", 0.0))
-		if dz < 0.1 or dz > 0.6:
-			dps_bad.append("%s=%.2f" % [String(row3.get("id", "?")), dz])
-	_ok("双方基地血量按 StS 体量配在 60~80（%d 个组装关卡）" % asm_levels,
-		hp_bad.is_empty(), ", ".join(hp_bad))
-	_ok("占区伤害按单兵算且配在 0.1~0.6/人/秒（不会一回合秒基地）",
-		dps_bad.is_empty(), ", ".join(dps_bad))
+	for lv2 in doc.get("levels", []):
+		var row2: Dictionary = lv2
+		if (row2.get("assembly", {}) as Dictionary).is_empty():
+			continue
+		var php := float(row2.get("player_base_hp", 0.0))
+		var ehp := float(row2.get("enemy_base_hp", 0.0))
+		if php < 30.0 or php > 120.0 or ehp < 30.0 or ehp > 120.0:
+			hp_bad.append("%s=%.0f/%.0f" % [String(row2.get("id", "?")), php, ehp])
+	_ok("双方基地血量在 30~120（单轮 base_damage 结算）", hp_bad.is_empty(), ", ".join(hp_bad))
 
 
 func _check_shell_data() -> void:
@@ -699,8 +703,11 @@ func _check_arena() -> void:
 		bool(res.get("ok", false)), _err_text(res.get("errors", [])))
 	_ok("脊线点数 ≥ 5（A* 沿脊线推进，不是直线点对点）",
 		int(res.get("ridge_points", 0)) >= 5, "实际 %d" % int(res.get("ridge_points", 0)))
-	_ok("中立据点在战场里（可买下前压）", int(res.get("outpost_tile", 0)) > 0,
-		"outpost_tile=%d" % int(res.get("outpost_tile", 0)))
+	_ok("战场部署线：玩家 %d → 敌方 %d（相距 ≥ 1200 游戏数值）" % [
+			int(res.get("deploy_player", 0)), int(res.get("deploy_enemy", 0))],
+		int(res.get("deploy_enemy", 0)) - int(res.get("deploy_player", 0)) >= 1200)
+	_ok("关卡按单轮波次解析（%d 轮，无 attack/defend 要求）" % int(res.get("rounds", 0)),
+		int(res.get("rounds", 0)) >= 1)
 
 	var probe: Dictionary = mdl.call("UnitBodyProbe",
 		JsonFile.read_dict(UNITS_JSON, {}), JsonFile.read_dict(COMBAT_JSON, {}))
@@ -713,95 +720,97 @@ func _check_arena() -> void:
 
 
 func _check_squad_roles() -> void:
+	# 名字保留（入口不变），内容已改为**单轮单场死斗**：不再有 attack/defend 角色。
 	var mdl := _mdl()
 	if mdl == null:
 		return
 	var h := _new_session(mdl)
 	if h <= 0:
-		_ok("建小队会话", false, "SquadSessionNew 失败")
+		_ok("建战役会话", false, "SquadSessionNew 失败")
 		return
 
-	# 规划：打一张进攻牌 + 一张防守牌 → 两队都要落地（建筑格中心）
 	var st: Dictionary = mdl.call("SquadSessionState", h)
-	var card_atk := _first_card(st, "attack")
-	var card_def := _first_card(st, "defend")
-	_ok("起手牌里同时有进攻牌与防守牌", card_atk != "" and card_def != "", "%s / %s" % [card_atk, card_def])
-	if card_atk != "":
-		mdl.call("SquadSessionTrain", h, card_atk)
-	if card_def != "":
-		mdl.call("SquadSessionTrain", h, card_def)
+	var card := _first_train_card(st)
+	_ok("起手牌里有可打的征召牌（无 role 区分）", card != "", card)
+	if card != "":
+		mdl.call("SquadSessionTrain", h, card)
 	st = mdl.call("SquadSessionState", h)
-	_ok("一张进攻牌空降 %d 名 / 一张防守牌空降 %d 名" % [
-			int(st.get("attack_squads", 0)), int(st.get("defend_squads", 0))],
-		int(st.get("attack_squads", 0)) >= 6 and int(st.get("defend_squads", 0)) >= 5)
+	_ok("一张征召牌产出 %d 名（per_building：每座建筑各一批）" % int(st.get("attack_squads", 0)),
+		int(st.get("attack_squads", 0)) >= 3, str(st.get("train_cards", [])))
 
-	# 进进攻战：只有进攻队 active
 	mdl.call("SquadSessionEndPlanning", h)
 	mdl.call("SquadSessionAttack", h)
 	st = mdl.call("SquadSessionState", h)
 	var view: Dictionary = mdl.call("SquadView", h)
-	var act_atk := 0
-	var act_def := 0
+	var alive := 0
+	var snap: Dictionary = {}
 	for s in view.get("squads", []):
 		var sq: Dictionary = s
 		if not bool(sq.get("active", true)):
 			continue
-		if String(sq.get("role", "")) == "attack":
-			act_atk += 1
-		elif String(sq.get("role", "")) == "defend":
-			act_def += 1
-	_ok("进攻战只激活进攻单位（进攻 %d 激活 / 防守 %d 激活）" % [act_atk, act_def],
-		act_atk >= 6 and act_def == 0)
-	# 单兵快照字段：一条视图 = 一个人；engaged / attack_cooldown 驱动表现层动画节拍
-	var snap: Dictionary = {}
-	for s2 in view.get("squads", []):
-		if bool((s2 as Dictionary).get("active", false)):
-			snap = s2
-			break
+		alive += 1
+		if snap.is_empty():
+			snap = sq
+	_ok("单场死斗：我方 %d 名单兵落到部署线" % alive, alive >= 3)
 	_ok("单兵快照：member_count=1 + engaged/attack_cooldown/body_radius 齐全",
 		int(snap.get("member_count", 0)) == 1 and snap.has("engaged")
 		and float(snap.get("attack_cooldown", 0.0)) > 0.0
 		and float(snap.get("body_radius", 0.0)) > 0.0,
 		"member_count=%d keys=%s" % [int(snap.get("member_count", -1)), str(snap.keys())])
-	# 微操已下线：玩家侧任何指令都必须被拒绝
 	var allowed := 0
 	for order in ["attack", "move", "attack_move", "hold", "stop"]:
 		if bool(mdl.call("SquadPlayerOrderAllowed", order)):
 			allowed += 1
-	_ok("玩家指令通道已关闭（集火/移动/驻守全部拒绝）", allowed == 0, "还允许 %d 条" % allowed)
-	_ok("进攻战阶段标记为 attack", String(st.get("round_kind", "")) == "attack")
+	_ok("玩家指令通道已关闭（单兵自动接战）", allowed == 0, "还允许 %d 条" % allowed)
+	_ok("当前轮次标记为 attack（UI 两段式展示的第 1 场）", String(st.get("round_kind", "")) == "attack")
 
-	# 切防守战：进攻队清场、防守队激活、白送据点防守队
+	# 第 2 场：清场 → 从 ArmyPlan 重新落地
 	mdl.call("SquadSessionDefend", h)
-	view = mdl.call("SquadView", h)
 	st = mdl.call("SquadSessionState", h)
-	var def_active := 0
-	var atk_active := 0
-	for s in view.get("squads", []):
-		var sq: Dictionary = s
-		if not bool(sq.get("active", true)):
-			continue
-		if String(sq.get("role", "")) == "defend":
-			def_active += 1
-		elif String(sq.get("role", "")) == "attack":
-			atk_active += 1
-	_ok("防守战只激活防守单位 + 据点免费防守兵（防守 %d / 进攻 %d）" % [def_active, atk_active],
-		def_active >= 5 and atk_active == 0)
-	_ok("防守战阶段标记为 defend", String(st.get("round_kind", "")) == "defend")
+	view = mdl.call("SquadView", h)
+	var alive2 := 0
+	for s2 in view.get("squads", []):
+		if bool((s2 as Dictionary).get("active", true)):
+			alive2 += 1
+	_ok("下一轮重新落地：我方 %d 名（每轮从 ArmyPlan 重开）" % alive2, alive2 >= 3)
+	_ok("第 2 场标记为 defend", String(st.get("round_kind", "")) == "defend")
 
-	# 轮末清场：双方部队都消失，但建筑数不变
+	# 轮末清场：双方部队消失，建筑保留
 	var built_before := (_arena_dict(mdl, h).get("player_buildings", []) as Array).size()
 	mdl.call("SquadSessionEndRound", h)
 	view = mdl.call("SquadView", h)
-	var alive := 0
-	for s in view.get("squads", []):
-		if bool((s as Dictionary).get("active", true)):
-			alive += 1
+	var alive3 := 0
+	for s3 in view.get("squads", []):
+		if bool((s3 as Dictionary).get("active", true)):
+			alive3 += 1
 	var built_after := (_arena_dict(mdl, h).get("player_buildings", []) as Array).size()
-	_ok("轮末清场：场上单兵归零、建筑跨轮保留（%d → %d 座）" % [built_before, built_after],
-		alive == 0 and built_after == built_before and built_after >= 4)
+	_ok("轮末清场：场上单兵归零、建筑保留（%d → %d 座）" % [built_before, built_after],
+		alive3 == 0 and built_after == built_before and built_after >= 4)
 
 	mdl.call("SquadSessionFree", h)
+
+
+func _check_phase2_rules() -> void:
+	# Phase 2 的规则断言全部在 C# Phase2Checks（唯一实现，含 3 项反向验错）；
+	# GDScript 只负责把同一批数据喂进去并读结果，不重写任何规则。
+	var mdl := _mdl()
+	if mdl == null:
+		_ok("Phase 2 规则自检", false, "bridge=null")
+		return
+	var res: Dictionary = mdl.call("Phase2SelfCheck",
+		JsonFile.read_dict(UNITS_JSON, {}), JsonFile.read_dict(COMBAT_JSON, {}),
+		JsonFile.read_dict(PLANNING_JSON, {}), JsonFile.read_dict(LEVELS_JSON, {}),
+		JsonFile.read_dict(SHELLS_JSON, {}), JsonFile.read_dict(LAYOUTS_JSON, {}),
+		JsonFile.read_dict(ENCOUNTERS_JSON, {}), JsonFile.read_dict(SQUAD_JSON, {}),
+		String(_json_level().get("id", "")))
+	var lines := _arr(res.get("lines", []))
+	_ok("Phase 2 规则自检（4×4 / base_damage / 竖列棋盘 / 单轮 / 狂暴 / 结算 / 跳字）%d 项" % int(res.get("checks", 0)),
+		bool(res.get("ok", false)) and int(res.get("checks", 0)) >= 30,
+		_err_text(res.get("errors", [])))
+	if not bool(res.get("ok", true)):
+		for line in lines:
+			if String(line).begins_with("FAIL"):
+				print("  · " + String(line))
 
 
 func _check_squad_sim() -> void:
@@ -840,6 +849,20 @@ func _check_squad_sim() -> void:
 			float(a.get("avg_overlap_pairs_after_max", -1.0)),
 			float(a.get("avg_unfired_engaged_seconds", -1.0)),
 			float(a.get("avg_heading_flips_per_sec", -1.0))])
+	# 2026-11-24：单轮单场死斗（基地血只在 60 秒结算时按幸存 base_damage 扣）
+	_ok("单轮死斗：平均轮数 ≥ 1、单轮扣血 > 0、无僵持",
+		float(a.get("avg_rounds", 0.0)) >= 1.0
+		and float(a.get("avg_round_base_damage", 0.0)) > 0.0
+		and int(a.get("draws", 1)) == 0,
+		"rounds=%.2f dmg/round=%.1f draws=%d" % [
+			float(a.get("avg_rounds", -1.0)),
+			float(a.get("avg_round_base_damage", -1.0)),
+			int(a.get("draws", -1))])
+	_ok("狂暴 / 差值结算读数存在（45 秒狂暴 + 60 秒兜底）",
+		a.has("berserk_round_rate") and a.has("tie_diff_round_rate"),
+		"berserk=%.1f%% tie=%.1f%%" % [
+			float(a.get("berserk_round_rate", 0.0)) * 100.0,
+			float(a.get("tie_diff_round_rate", 0.0)) * 100.0])
 
 
 func _check_phase1_kinematics() -> void:
@@ -1666,11 +1689,10 @@ func _arena_dict(mdl: RefCounted, h: int) -> Dictionary:
 	return mdl.call("SquadArenaInfo", h)
 
 
-func _first_card(state: Dictionary, role: String) -> String:
+func _first_train_card(state: Dictionary) -> String:
 	for c in state.get("train_cards", []):
 		var card: Dictionary = c
-		if bool(card.get("in_hand", false)) and String(card.get("role", "")) == role \
-				and bool(card.get("available", false)):
+		if bool(card.get("in_hand", false)) and bool(card.get("available", false)):
 			return String(card.get("card_id", ""))
 	return ""
 

@@ -58,9 +58,31 @@ namespace WarIsland.Model
         public bool UsePlaceholderMesh;
         public string Note = "";
 
+        /// <summary>
+        /// 幸存时对敌方基地的伤害（1/2/3 星）。唯一消费点是 RoundResolver；
+        /// 长度为 3、非负；<see cref="Static"/> 单位必须全 0。
+        /// </summary>
+        public double[] BaseDamage = { 1.0, 2.0, 3.0 };
+
+        /// <summary>
+        /// 静止单位（哨塔/箭塔/障碍）：不参与布阵、不移动、invMass=0。
+        /// 2026-11-24 冻结：战场上的塔是**实体**，不是棋盘建筑；被拆不影响棋盘，也不贡献基地伤害。
+        /// </summary>
+        public bool Static;
+
         public bool IsMelee => AttackRange < MeleeMaxRange;
 
         public string Role => IsMelee ? "melee" : "ranged";
+
+        /// <summary>幸存时按星级取基地伤害；越界夹到 3 项。</summary>
+        public double BaseDamageOf(int star)
+        {
+            if (BaseDamage == null || BaseDamage.Length == 0) return 0.0;
+            int i = star - 1;
+            if (i < 0) i = 0;
+            if (i >= BaseDamage.Length) i = BaseDamage.Length - 1;
+            return BaseDamage[i] > 0.0 ? BaseDamage[i] : 0.0;
+        }
 
         /// <summary>导航半径（游戏数值）—— 单兵只有身位，没有小队半径。</summary>
         public double NavRadius => UnitBody.NavRadius(this);
@@ -161,9 +183,38 @@ namespace WarIsland.Model
                     errors.Add($"{tag}：attack_range={u.AttackRange} 必须是整数游戏数值");
 
                 if (!CombatTypes.IsValidAttack(u.AttackType))
-                    errors.Add($"{tag}：attack_type 非法（只允许 普通/穿刺/魔法/攻城/混乱/神力）");
+                    errors.Add($"{tag}：attack_type 非法（只允许 普通/穿刺/魔法/攻城）");
                 if (!CombatTypes.IsValidArmor(u.ArmorType))
-                    errors.Add($"{tag}：armor_type 非法（只允许 无甲/轻甲/中甲/重甲/坚固甲/神圣甲）");
+                    errors.Add($"{tag}：armor_type 非法（只允许 无甲/轻甲/中甲/重甲）");
+
+                if (u.BaseDamage == null || u.BaseDamage.Length != 3)
+                {
+                    errors.Add($"{tag}：base_damage 必须是 3 项（1/2/3 星）");
+                }
+                else
+                {
+                    for (int i = 0; i < u.BaseDamage.Length; i++)
+                    {
+                        if (double.IsNaN(u.BaseDamage[i]) || u.BaseDamage[i] < 0.0)
+                            errors.Add($"{tag}：base_damage[{i}]={u.BaseDamage[i]} 必须 >= 0");
+                    }
+                }
+
+                if (u.Static)
+                {
+                    if (u.MoveSpeed > 1e-9)
+                        errors.Add($"{tag}：static=true 的单位 move_speed 必须为 0（现在是 {u.MoveSpeed}）");
+                    if (u.BaseDamage != null)
+                    {
+                        for (int i = 0; i < u.BaseDamage.Length; i++)
+                        {
+                            if (u.BaseDamage[i] > 1e-9)
+                                errors.Add($"{tag}：static=true 的单位 base_damage 必须全 0（塔/障碍不贡献基地伤害）");
+                        }
+                    }
+                    if (!u.Projectile)
+                        errors.Add($"{tag}：static=true 的哨塔必须是投射物单位（projectile=true）");
+                }
 
                 if (u.Armor < 0.0 || u.Armor > 100.0)
                     errors.Add($"{tag}：armor={u.Armor} 越界（0..100）");
@@ -179,8 +230,15 @@ namespace WarIsland.Model
                 if (u.ArmorPenPct < 0.0 || u.ArmorPenPct > 1.0)
                     errors.Add($"{tag}：armor_pen_pct={u.ArmorPenPct} 越界（0..1）");
 
-                if (u.MoveSpeed <= 0.0 || u.MoveSpeed > 10.0)
-                    errors.Add($"{tag}：move_speed={u.MoveSpeed} 越界（0..10 米/秒）");
+                if (u.Static)
+                {
+                    if (u.MoveSpeed < 0.0 || u.MoveSpeed > 10.0)
+                        errors.Add($"{tag}：move_speed={u.MoveSpeed} 越界（0..10 米/秒）");
+                }
+                else if (u.MoveSpeed <= 0.0 || u.MoveSpeed > 10.0)
+                {
+                    errors.Add($"{tag}：move_speed={u.MoveSpeed} 越界（0..10 米/秒；只有 static=true 允许 0）");
+                }
                 if (u.BodyRadius <= 0.0 || u.BodyRadius > 2.0)
                     errors.Add($"{tag}：body_radius={u.BodyRadius} 越界（0..2 米）");
 
@@ -330,8 +388,11 @@ namespace WarIsland.Model
                     ProjectileSpeed = JVal.Double(ud, "projectile_speed", 0.0),
                     PopCost = JVal.Int(ud, "pop_cost", 0),
                     PassiveTrait = JVal.Str(ud, "passive_trait", ""),
+                    Static = JVal.Bool(ud, "static", false),
                     Note = JVal.Str(ud, "note", ""),
                 };
+                double[] baseDamage = JVal.DoubleArray(ud, "base_damage", 3);
+                if (baseDamage != null) u.BaseDamage = baseDamage;
 
                 string attackName = JVal.Str(ud, "attack_type", "");
                 u.AttackType = CombatTypes.TryParseAttack(attackName, out int at) ? at : -1;

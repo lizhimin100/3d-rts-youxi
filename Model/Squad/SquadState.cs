@@ -217,6 +217,19 @@ namespace WarIsland.Model
         /// <summary>朝向左右反转次数（累计先转过 34° 才记一次，过滤微抖）。</summary>
         public int HeadingFlips;
 
+        // ---- 2026-11-24：狂暴与跳字反馈 ----
+        /// <summary>本场是否触发 45 秒狂暴。</summary>
+        public bool BerserkTriggered;
+        public double BerserkSecond = -1.0;
+        /// <summary>跳字分级计数（暴击或克制 / 被抵抗 / 普通 / 未命中）。</summary>
+        public int FeedbackCritOrCounter;
+        public int FeedbackResisted;
+        public int FeedbackNormal;
+        public int FeedbackMiss;
+        public double FeedbackCritDamage;
+        public double FeedbackResistedDamage;
+        public double FeedbackNormalDamage;
+
         public readonly Dictionary<string, SquadUnitStat> PlayerByUnit = new Dictionary<string, SquadUnitStat>(StringComparer.Ordinal);
         public readonly Dictionary<string, SquadUnitStat> EnemyByUnit = new Dictionary<string, SquadUnitStat>(StringComparer.Ordinal);
 

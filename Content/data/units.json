@@ -1,6 +1,6 @@
 {
-	"version": 1.0,
-	"note": "三大阵营 12 兵种。**一个卡面 = 一名独立单兵**（2026-11-22 起）：没有 squad_size / formation / squad_radius 这些编制字段，产出数量写在 planning.json 的卡牌 units 上。距离一律是游戏数值（R1 = 0.015 米/单位）。render：true = 场上有真实 3D 模型，false = 只实现逻辑不上场。pop_cost=0 表示征召牌只吃 CP 不吃人口。",
+	"version": 2.0,
+	"note": "三大阵营 12 兵种 + 2 种哨塔实体。**一个卡面 = 一名独立单兵**（2026-11-22 起）：没有 squad_size / formation / squad_radius 这些编制字段，产出数量写在 planning.json 的卡牌 units 上。距离一律是游戏数值（R1 = 0.015 米/单位）。render：true = 场上有真实 3D 模型，false = 只实现逻辑不上场。base_damage = 幸存时对敌方基地的伤害（1/2/3 星，唯一消费点 RoundResolver）；static = 战场实体塔/障碍（不移动、invMass=0、不贡献基地伤害）。2026-11-24 护甲/攻击收成 4×4。",
 	"factions": {
 		"alliance": {
 			"display_name": "联盟",
@@ -41,6 +41,12 @@
 			"projectile": false,
 			"projectile_speed": 0.0,
 			"pop_cost": 0,
+			"base_damage": [
+				1,
+				2,
+				3
+			],
+			"static": false,
 			"passive_trait": null,
 			"render": true,
 			"model_path": "res://Content/art/模型/方块人/方块人_联盟步兵.glb",
@@ -71,6 +77,12 @@
 			"projectile": false,
 			"projectile_speed": 0.0,
 			"pop_cost": 0,
+			"base_damage": [
+				1,
+				2,
+				3
+			],
+			"static": false,
 			"passive_trait": null,
 			"render": false,
 			"model_path": "",
@@ -101,6 +113,12 @@
 			"projectile": true,
 			"projectile_speed": 26.0,
 			"pop_cost": 0,
+			"base_damage": [
+				1,
+				2,
+				3
+			],
+			"static": false,
 			"passive_trait": null,
 			"render": false,
 			"model_path": "",
@@ -131,12 +149,18 @@
 			"projectile": true,
 			"projectile_speed": 32.0,
 			"pop_cost": 0,
+			"base_damage": [
+				1,
+				2,
+				3
+			],
+			"static": false,
 			"passive_trait": null,
 			"render": true,
 			"model_path": "res://Content/art/模型/方块人/方块人_弩兵.glb",
 			"model_scale": 1.0,
 			"use_placeholder_mesh": false,
-			"note": "破甲特色：有效护甲 = 基础护甲 × (1-35%) - 3，专治重甲/坚固甲。",
+			"note": "破甲特色：有效护甲 = 基础护甲 × (1-35%) - 3，专治重甲。",
 			"icon_path": "res://Content/art/图标/单位/archer.png"
 		},
 		{
@@ -161,14 +185,20 @@
 			"projectile": false,
 			"projectile_speed": 0.0,
 			"pop_cost": 0,
+			"base_damage": [
+				1,
+				2,
+				3
+			],
+			"static": false,
 			"passive_trait": null,
 			"render": true,
 			"model_path": "res://Content/art/模型/野怪/豺狼人战士.glb",
 			"model_scale": 1.0,
 			"use_placeholder_mesh": false,
-			"model_note": "2026-11-22：敌人收敛成**一种外观**（豺狼人战士）。轻/线/精锐只是数值档位，共用同一个模型，避免场上出现三种一眼分不清的豺狼人。",
 			"note": "6 人一队的廉价前排，单兵弱但总血量和出手数不低。",
-			"icon_path": "res://Content/art/图标/单位/footman.png"
+			"icon_path": "res://Content/art/图标/单位/footman.png",
+			"model_note": "2026-11-22：敌人收敛成**一种外观**（豺狼人战士）。轻/线/精锐只是数值档位，共用同一个模型，避免场上出现三种一眼分不清的豺狼人。"
 		},
 		{
 			"id": "bandit_marauder",
@@ -192,6 +222,12 @@
 			"projectile": false,
 			"projectile_speed": 0.0,
 			"pop_cost": 0,
+			"base_damage": [
+				1,
+				2,
+				3
+			],
+			"static": false,
 			"passive_trait": null,
 			"render": true,
 			"model_path": "res://Content/art/模型/野怪/豺狼人战士.glb",
@@ -222,14 +258,20 @@
 			"projectile": true,
 			"projectile_speed": 24.0,
 			"pop_cost": 0,
+			"base_damage": [
+				1,
+				2,
+				3
+			],
+			"static": false,
 			"passive_trait": null,
 			"render": true,
 			"model_path": "res://Content/art/模型/野怪/豺狼人战士.glb",
 			"model_scale": 1.0,
 			"use_placeholder_mesh": false,
-			"model_note": "2026-11-22：与斥候/战士共用同一模型（敌人只有一种外观）。",
 			"note": "魔法 650：打重甲 1.25，打中甲只有 0.75；用来逼玩家换阵。",
-			"icon_path": "res://Content/art/图标/单位/gnoll_shaman.png"
+			"icon_path": "res://Content/art/图标/单位/gnoll_shaman.png",
+			"model_note": "2026-11-22：与斥候/战士共用同一模型（敌人只有一种外观）。"
 		},
 		{
 			"id": "bandit_lord",
@@ -253,6 +295,12 @@
 			"projectile": false,
 			"projectile_speed": 0.0,
 			"pop_cost": 0,
+			"base_damage": [
+				1,
+				2,
+				3
+			],
+			"static": false,
 			"passive_trait": null,
 			"render": true,
 			"model_path": "res://Content/art/模型/野怪/豺狼人战士.glb",
@@ -283,14 +331,20 @@
 			"projectile": false,
 			"projectile_speed": 0.0,
 			"pop_cost": 0,
+			"base_damage": [
+				1,
+				2,
+				3
+			],
+			"static": false,
 			"passive_trait": null,
 			"render": false,
 			"model_path": "",
 			"model_scale": 1.0,
 			"use_placeholder_mesh": false,
 			"note": "鱼人阵营：只实现逻辑、暂不上场（无模型）。",
-			"model_note": "仓库没有鱼人模型：复用最接近的既有资产 + 阵营色区分（2026-11-22）",
-			"icon_path": ""
+			"icon_path": "",
+			"model_note": "仓库没有鱼人模型：复用最接近的既有资产 + 阵营色区分（2026-11-22）"
 		},
 		{
 			"id": "murloc_raider",
@@ -314,14 +368,20 @@
 			"projectile": false,
 			"projectile_speed": 0.0,
 			"pop_cost": 0,
+			"base_damage": [
+				1,
+				2,
+				3
+			],
+			"static": false,
 			"passive_trait": null,
 			"render": false,
 			"model_path": "",
 			"model_scale": 1.0,
 			"use_placeholder_mesh": false,
 			"note": "鱼人阵营：只实现逻辑、暂不上场（无模型）。",
-			"model_note": "仓库没有鱼人模型：复用最接近的既有资产 + 阵营色区分（2026-11-22）",
-			"icon_path": ""
+			"icon_path": "",
+			"model_note": "仓库没有鱼人模型：复用最接近的既有资产 + 阵营色区分（2026-11-22）"
 		},
 		{
 			"id": "murloc_hunter",
@@ -345,14 +405,20 @@
 			"projectile": true,
 			"projectile_speed": 24.0,
 			"pop_cost": 0,
+			"base_damage": [
+				1,
+				2,
+				3
+			],
+			"static": false,
 			"passive_trait": null,
 			"render": false,
 			"model_path": "",
 			"model_scale": 1.0,
 			"use_placeholder_mesh": false,
 			"note": "鱼人阵营：只实现逻辑、暂不上场（无模型）。",
-			"model_note": "仓库没有鱼人模型：复用最接近的既有资产 + 阵营色区分（2026-11-22）",
-			"icon_path": ""
+			"icon_path": "",
+			"model_note": "仓库没有鱼人模型：复用最接近的既有资产 + 阵营色区分（2026-11-22）"
 		},
 		{
 			"id": "murloc_lord",
@@ -376,14 +442,90 @@
 			"projectile": false,
 			"projectile_speed": 0.0,
 			"pop_cost": 0,
+			"base_damage": [
+				1,
+				2,
+				3
+			],
+			"static": false,
 			"passive_trait": null,
 			"render": false,
 			"model_path": "",
 			"model_scale": 1.0,
 			"use_placeholder_mesh": false,
 			"note": "鱼人阵营：只实现逻辑、暂不上场（无模型）。",
-			"model_note": "仓库没有鱼人模型：复用最接近的既有资产 + 阵营色区分（2026-11-22）",
-			"icon_path": ""
+			"icon_path": "",
+			"model_note": "仓库没有鱼人模型：复用最接近的既有资产 + 阵营色区分（2026-11-22）"
+		},
+		{
+			"id": "watchtower_bolt",
+			"display_name": "哨塔弩炮",
+			"faction": "alliance",
+			"enabled": true,
+			"hp": 420.0,
+			"attack_damage": 26.0,
+			"attack_cooldown": 2.2,
+			"attack_range": 650.0,
+			"attack_type": "穿刺",
+			"armor": 8.0,
+			"armor_type": "重甲",
+			"hit": 100.0,
+			"dodge": 0.0,
+			"crit": 0.0,
+			"armor_pen_flat": 0.0,
+			"armor_pen_pct": 0.0,
+			"move_speed": 0.0,
+			"body_radius": 0.55,
+			"projectile": true,
+			"projectile_speed": 34.0,
+			"pop_cost": 0,
+			"base_damage": [
+				0,
+				0,
+				0
+			],
+			"static": true,
+			"passive_trait": null,
+			"render": false,
+			"model_path": "",
+			"model_scale": 1.0,
+			"use_placeholder_mesh": false,
+			"note": "棋盘哨塔/箭塔在战斗场景里的实体形态（2026-11-24 D4）：静止、投射物、重甲、不贡献基地伤害。每场战斗自动投射到己方部署线后方两翼；被拆不影响棋盘本体。（2026-11-24 Phase 2：先不上场渲染，保留逻辑实体；表现层 Phase 3 再接哨塔模型。）"
+		},
+		{
+			"id": "arrow_tower_bolt",
+			"display_name": "箭塔弩炮",
+			"faction": "alliance",
+			"enabled": true,
+			"hp": 300.0,
+			"attack_damage": 14.0,
+			"attack_cooldown": 1.4,
+			"attack_range": 550.0,
+			"attack_type": "穿刺",
+			"armor": 8.0,
+			"armor_type": "重甲",
+			"hit": 100.0,
+			"dodge": 0.0,
+			"crit": 0.0,
+			"armor_pen_flat": 0.0,
+			"armor_pen_pct": 0.0,
+			"move_speed": 0.0,
+			"body_radius": 0.5,
+			"projectile": true,
+			"projectile_speed": 34.0,
+			"pop_cost": 0,
+			"base_damage": [
+				0,
+				0,
+				0
+			],
+			"static": true,
+			"passive_trait": null,
+			"render": false,
+			"model_path": "",
+			"model_scale": 1.0,
+			"use_placeholder_mesh": false,
+			"note": "同一套静止弩炮机制的轻量版：射程 550、冷却 1.4、伤害 14。数据换一行，不新增系统。（2026-11-24 Phase 2：先不上场渲染，保留逻辑实体；表现层 Phase 3 再接哨塔模型。）"
 		}
 	]
 }

@@ -1,17 +1,6 @@
 {
-	"version": 2.1,
-	"note": "单兵模式专属旋钮。zone_dps_per_unit：**一名单兵**停在敌区里每秒给敌方基地造成的伤害（覆盖 levels.json 的 lane 值；单兵制下必须是 0.1~0.5 量级）。outpost：中立据点，规划期花 CP 买下，进攻部队下一场从「中立区靠敌侧」前压出发。free_defend：防守战开场白送几名据点防守兵（不占 CP / 人口）。formation：自动布阵间距（全游戏数值）；combat：硬核/停火线/转向。",
-	"outpost": {
-		"enabled": true,
-		"cp_cost": 5
-	},
-	"free_defend": {
-		"enabled": true,
-		"unit": "alliance_footman",
-		"star": 1,
-		"count": 3
-	},
-	"zone_dps_per_unit": 0.45,
+	"version": 3.0,
+	"note": "战斗场景全局口味（Phase 3 再改名 battle.json）。formation：自动布阵间距（全游戏数值）；combat：硬核/停火线/转向；berserk：45 秒狂暴（攻速×2、护甲归零），防止纯肉盾互刮拖满 60 秒；settle：幸存单位 base_damage 单轮上限。旧的 outpost / free_defend / zone_dps_per_unit 已删除（占区抽血不再存在）。",
 	"formation": {
 		"file_pitch": 96,
 		"rank_pitch": 144,
@@ -24,5 +13,15 @@
 		"stand_off_ratio": 0.92,
 		"turn_rate_deg": 540.0,
 		"facing_deadzone_deg": 6.0
+	},
+	"berserk": {
+		"start_seconds": 45.0,
+		"attack_speed_mult": 2.0,
+		"armor_zero": true,
+		"note": "倒计时进入第 45 秒触发：全员攻速×2、护甲按 0 结算；到 60 秒仍按幸存 base_damage 结算。"
+	},
+	"settle": {
+		"base_damage_cap": 48,
+		"note": "单轮单方最多扣 48 点基地血（36 名 3 星 = 108，必须封顶）；差值结算也走这个上限。"
 	}
 }

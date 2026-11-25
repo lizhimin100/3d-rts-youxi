@@ -15,16 +15,16 @@ namespace WarIsland.Model
         public int Star => MergedBuildings < 1 ? 1 : MergedBuildings;
     }
 
-    /// <summary>规划阶段产出的一批兵（还没落到横道）。一批 = 一座建筑产出的 N 名单兵。</summary>
+    /// <summary>规划阶段产出的一批兵（还没落到战场）。一批 = 一座建筑产出的 N 名单兵。</summary>
     public sealed class PlannedSquad
     {
         public string UnitId = "";
         public int Star = 1;
         public string SourceBuilding = "";
-        /// <summary>attack / defend / ""（不限时空）。</summary>
-        public string Role = SquadRoles.Any;
+        public int SourcePlot;
+        public int SourceTile;
         public int PopCost;
-        /// <summary>这一批出几名独立单兵（单兵制：卡面 units × 本回合加快训练倍率，向上取整）。</summary>
+        /// <summary>这一批出几名独立单兵（卡面 units × 本回合加快训练倍率，向上取整）。</summary>
         public int Units = 1;
     }
 
@@ -251,13 +251,24 @@ namespace WarIsland.Model
             return n;
         }
 
+        public int CountKind(string kind)
+        {
+            int n = 0;
+            foreach (var b in Buildings)
+            {
+                var def = DefOf(b);
+                if (def != null && def.Kind == kind) n++;
+            }
+            return n;
+        }
+
         public int PopCap()
         {
             int cap = Cfg.BasePop;
             foreach (var b in Buildings)
             {
                 var def = DefOf(b);
-                if (def == null || def.Tag == "base") continue;
+                if (def == null || def.Kind == BuildingKinds.Keep) continue;
                 cap += (int)Math.Round(def.Pop * Cfg.StarPopMult(b.Star));
             }
             return cap;
@@ -290,6 +301,19 @@ namespace WarIsland.Model
                 if (b.Plot == plot) return b;
             }
             return null;
+        }
+
+        /// <summary>拆掉一个规划块（BoardSession.Demolish 的唯一入口）；返回是否真的移除了。</summary>
+        public bool RemoveBuilding(int plot)
+        {
+            for (int i = 0; i < Buildings.Count; i++)
+            {
+                if (Buildings[i].Plot != plot) continue;
+                Buildings.RemoveAt(i);
+                Actions.Add($"remove@{plot}");
+                return true;
+            }
+            return false;
         }
 
         // =================================================================
@@ -351,32 +375,39 @@ namespace WarIsland.Model
             if (!HasCard(cardId) || Cp < card.CostCp) return false;
             var unit = Units.Get(card.Unit);
             if (unit == null || !unit.Enabled) return false;
-            // 人口按"这张牌一共几名"算（单兵制：units × 本回合加快训练倍率）
-            int need = unit.PopCost * Math.Max(Mods.UnitsOf(card), 1);
-            int free = PopFree();
+
+            int buildings = 0;
             foreach (var b in Buildings)
             {
                 var def = DefOf(b);
-                if (def == null || def.Tag != card.Tag) continue;
-                if (free >= need) return true;
+                if (def == null || def.Kind != BuildingKinds.Producer) continue;
+                if (def.Tag == card.BuildingTag) buildings += 1;
             }
-            return false;
+            if (buildings <= 0) return false;
+
+            // 人口按总人数算：per_building = units × 建筑数，split = units
+            int batch = Math.Max(Mods.UnitsOf(card), 1);
+            int totalMen = card.PerBuilding ? batch * buildings : batch;
+            return PopFree() >= unit.PopCost * totalMen;
         }
 
-        /// <summary>
-        /// 训练牌：一张牌一共产 **units 名独立单兵**（本回合加快训练会放大这个数），
-        /// 由场上匹配 Tag 的建筑**分摊**（两座兵营 = 3 + 3，不是各出 6）。
-        ///
-        /// 为什么分摊而不是"每座各产一队"：卡面上写 6 就是 6 —— 否则场上多一座兵营，
-        /// 同一张牌的产出会翻倍，卡面数字立刻变成谎话，配平也没法做。
-        /// 人口按"每名 × pop_cost"计（当前征召牌 pop_cost=0 = 只吃 CP）。
-        /// </summary>
+        /// <summary>规划期增加 CP（经济建筑结算；唯一钱包仍然只有 <see cref="Cp"/>）。</summary>
+        public void AddCp(int amount)
+        {
+            if (amount <= 0) return;
+            Cp = Math.Min(Cp + amount, Cfg.CpCap);
+        }
+
+        /// <summary>训练牌（简化入口：产出直接进 Army）。</summary>
         public int PlayTrain(string cardId) => PlayTrainOut(cardId, null, true);
 
         /// <summary>
-        /// 训练牌的可观测版本：<paramref name="produced"/> 会收到"哪座建筑产了几名"，
-        /// 供 SquadSession 把每个单兵落到对应格子的落点环上。
-        /// <paramref name="addToArmy"/> = false 时，队伍已经即时落地，只记人口（<see cref="ExtraPop"/>）。
+        /// 训练牌：默认 **每座匹配 building_tag 的建筑各产 units 名**（units_mode=per_building），
+        /// 也支持 split（一张牌总数分摊，兼容旧口径）。
+        ///
+        /// 为什么 per_building 是默认：否则"多造一座兵营"对同一张牌毫无意义，
+        /// 建筑数量就只剩人口/光环价值。代价是总产出随建筑数增长，必须靠 CP/人口配平。
+        /// 人口按总人数 × pop_cost 计，不够就整张牌打不出（不半途产出）。
         /// </summary>
         public int PlayTrainOut(string cardId, List<PlannedSquad> produced, bool addToArmy)
         {
@@ -388,39 +419,43 @@ namespace WarIsland.Model
             Hand.Remove(cardId);
             Discard.Add(cardId);
 
-            // 1) 先收集所有匹配 Tag 的建筑（按 plot 稳定排序，分摊结果可复现）
+            // 1) 先收集所有匹配 Tag 的产兵建筑（按 plot 稳定排序，结果可复现）
             var targets = new List<PlanBuilding>();
             foreach (var b in Buildings)
             {
                 var def = DefOf(b);
-                if (def == null || def.Tag != card.Tag) continue;
+                if (def == null || def.Kind != BuildingKinds.Producer) continue;
+                if (def.Tag != card.BuildingTag) continue;
                 targets.Add(b);
             }
             targets.Sort((a, b) => a.Plot.CompareTo(b.Plot));
             if (targets.Count == 0) return 0;
 
+            bool perBuilding = card.PerBuilding;
+            int totalMen = perBuilding ? batch * targets.Count : batch;
+
             // 2) 人口不够就整张牌打不出（不半途产出，避免"点一下只出一半"）
-            int popTotal = unit.PopCost * batch;
+            int popTotal = unit.PopCost * totalMen;
             if (PopUsed() + popTotal > PopCap())
             {
                 PopBlocked += 1;
                 return 0;
             }
 
-            // 3) 分摊：前面的建筑各多分 1 名，余数落在第一批
+            // 3) 产出：per_building = 每座各 batch；split = 总数分摊（前面的建筑各多分 1 名）
             int n = 0;
             int share = batch / targets.Count;
             int extra = batch % targets.Count;
             for (int i = 0; i < targets.Count; i++)
             {
-                int men = share + (i < extra ? 1 : 0);
+                int men = perBuilding ? batch : share + (i < extra ? 1 : 0);
                 if (men <= 0) continue;
                 var squad = new PlannedSquad
                 {
                     UnitId = unit.Id,
                     Star = targets[i].Star,
                     SourceBuilding = targets[i].DefId,
-                    Role = card.Role ?? SquadRoles.Any,
+                    SourcePlot = targets[i].Plot,
                     PopCost = unit.PopCost * men,
                     Units = men,
                 };
@@ -477,18 +512,13 @@ namespace WarIsland.Model
                 PopUsed = PopUsed(),
                 PopBlocked = PopBlocked,
                 Buildings = Buildings.Count,
-                Barracks = CountTag("barracks"),
+                Barracks = CountKind(BuildingKinds.Producer),
                 Farms = CountTag("farm"),
-                Towers = CountTag("tower"),
+                Towers = CountKind(BuildingKinds.Defense),
                 ArmySquads = Army.Count,
             };
-            double drain = 0.0;
-            foreach (var b in Buildings)
-            {
-                var def = DefOf(b);
-                if (def != null) drain += def.BaseDrainReduction;
-            }
-            snap.DrainReduction = Math.Min(drain, Cfg.MaxDrainReduction);
+            // 2026-11-24：占区抽血/减伤已删除，DrainReduction 恒 0（字段保留给桥契约）。
+            snap.DrainReduction = 0.0;
             var groups = new Dictionary<string, int>(StringComparer.Ordinal);
             foreach (var s in Army)
             {

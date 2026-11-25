@@ -1,9 +1,9 @@
 extends SceneTree
 ## 职责：--simulate 的入口（纯 Model，无窗口）。
 ##
-## 默认：**真小队攻防**（100 局）——
-##   规划（ScriptedPlanner）→ 征召牌在兵营格中心空降 N 名单兵 → 每人沿脊线 A* 推进 →
-##   成员弹性槽位 → 6 步伤害结算 → 双 90 秒 → 胜率 / DPS / 寻路 / 阵型报告。
+## 默认：**单轮单场死斗**（100 局）——
+##   规划（ScriptedPlanner）→ ArmyPlan → 部署线自动布阵 → 直线对冲 →
+##   6 步伤害结算 → 45 秒狂暴 → 60 秒按幸存 base_damage 扣基地 → 下一轮，直至一方基地归零。
 ##
 ## 用法：godot --headless --path . --script Tests/sim/run_simulate.gd -- \
 ##          [--games=100] [--seed=1] [--level=<id>] [--out=<path>]
@@ -72,7 +72,7 @@ func _run() -> void:
 	var encounters := JsonFile.read_dict(ENCOUNTERS_JSON, {})
 	var tuning := JsonFile.read_dict(SQUAD_JSON, {})
 	if tuning.is_empty():
-		tuning = {"zone_dps_per_unit": 0.24}
+		tuning = {}
 
 	var res: Dictionary = mdl.call("SquadSimulate",
 		units, combat, planning, levels, shells, layouts, encounters, tuning,
@@ -100,18 +100,18 @@ func _run() -> void:
 # ===========================================================================
 func _print_squad_report(res: Dictionary, games: int, seed_base: int) -> void:
 	print("========== 单兵推演 · %s ==========" % String(res.get("level", _level_id)))
-	print("战场：%s ｜ %d 局 ｜ 种子 %d..%d ｜ 每局两轮各 60s（轮末清场）" % [
+	print("战场：%s ｜ %d 局 ｜ 种子 %d..%d ｜ 单轮单场 60s，基地血跨轮保留" % [
 		String(res.get("arena_name", res.get("arena", ""))), int(res.get("games", games)),
 		seed_base, seed_base + games - 1])
-	print("说明：征召牌 → 兵营格中心空降 N 名单兵；每人沿脊线 A* 推进；接敌锁定；6 步结算。")
+	print("说明：规划 → ArmyPlan → 部署线自动布阵 → 直线对冲；45s 狂暴；60s 按幸存 base_damage 结算。")
 	print("------------------------------------------------------------------------------------------")
-	print("%-4s %-6s %-5s %-13s %-10s %-9s %-8s %-7s %-6s %-6s %-4s %-5s %s" % [
-		"idx", "seed", "res", "player_hp", "enemy_hp", "单兵", "dmg", "dps/人", "我方区", "敌方区", "卡住", "槽位", "reason"])
+	print("%-4s %-6s %-5s %-13s %-10s %-9s %-8s %-7s %-6s %-6s %-4s %s" % [
+		"idx", "seed", "res", "player_hp", "enemy_hp", "单兵", "dmg", "dps/人", "轮数", "基地伤", "卡住", "reason"])
 
 	var rows: Array = res.get("rows", [])
 	for row in rows:
 		var r: Dictionary = row
-		print("%-4d %-6d %-5s %-13s %-10s %-9s %-8d %-7.2f %-6d %-6d %-4d %-5.2f %s" % [
+		print("%-4d %-6d %-5s %-13s %-10s %-9s %-8d %-7.2f %-6d %-6d %-4d %s" % [
 			int(r.get("index", 0)), int(r.get("seed", 0)), _outcome_en(String(r.get("outcome", ""))),
 			"%d (%d%%)" % [int(r.get("player_hp", 0)), int(r.get("player_hp_pct", 0))],
 			str(int(r.get("enemy_hp", 0))),
@@ -119,8 +119,8 @@ func _print_squad_report(res: Dictionary, games: int, seed_base: int) -> void:
 				int(r.get("player_squads_lost", 0))],
 			int(r.get("player_damage", 0)),
 			float(r.get("dps_member", 0.0)),
-			int(r.get("zone_max", 0)), int(r.get("enemy_zone_max", 0)), int(r.get("stuck_events", 0)),
-			float(r.get("slot_error", 0.0)),
+			int(r.get("rounds", 0)), int(r.get("base_damage_dealt", 0)),
+			int(r.get("stuck_events", 0)),
 			String(r.get("top_reason", "")),
 		])
 
@@ -132,6 +132,14 @@ func _print_squad_report(res: Dictionary, games: int, seed_base: int) -> void:
 		float(res.get("avg_player_hp_pct", 0.0)), float(res.get("avg_enemy_hp", 0.0)),
 		float(res.get("avg_player_squads", 0.0)), float(res.get("avg_enemy_squads", 0.0)),
 		float(res.get("avg_player_squads_lost", 0.0))])
+	print("单轮死斗：平均 %.2f 轮 ｜ 单轮扣血 %.1f ｜ 每局打出基地伤 %.1f" % [
+		float(res.get("avg_rounds", 0.0)), float(res.get("avg_round_base_damage", 0.0)),
+		float(res.get("avg_player_base_damage_dealt", 0.0))])
+	print("狂暴 / 差值：狂暴轮 %d/%d（%.1f%%）｜ 60s 差值结算 %d/%d（%.1f%%）" % [
+		int(res.get("berserk_rounds", 0)), int(res.get("total_rounds", 0)),
+		float(res.get("berserk_round_rate", 0.0)) * 100.0,
+		int(res.get("tie_diff_rounds", 0)), int(res.get("total_rounds", 0)),
+		float(res.get("tie_diff_round_rate", 0.0)) * 100.0])
 	print("输出：我方总伤害 %.0f ｜ 战斗 DPS %.1f ｜ 人均 DPS %.2f" % [
 		float(res.get("avg_player_damage", 0.0)), float(res.get("avg_player_dps", 0.0)),
 		float(res.get("avg_player_dps_per_member", 0.0))])
@@ -169,11 +177,10 @@ func _print_squad_report(res: Dictionary, games: int, seed_base: int) -> void:
 		print("定性复盘样本：")
 		for s in samples:
 			var d: Dictionary = s
-			print("  seed=%d ｜ %s ｜ 我方 %d / 敌方 %d ｜ 伤害 %.0f ｜ 进攻 %d 队 / 防守 %d 队" % [
+			print("  seed=%d ｜ %s ｜ 我方 %d / 敌方 %d ｜ 轮数 %d ｜ 基地伤 %.0f" % [
 				int(d.get("seed", 0)), String(d.get("outcome_text", "")),
 				int(d.get("player_hp", 0)), int(d.get("enemy_hp", 0)),
-				float(d.get("player_damage", 0.0)),
-				int(d.get("attack_squads", 0)), int(d.get("defend_squads", 0))])
+				int(d.get("rounds", 0)), float(d.get("base_damage_dealt", 0.0))])
 			for line in d.get("reviews", []):
 				print("    - " + String(line))
 
@@ -224,6 +231,14 @@ func _squad_summary(res: Dictionary, games: int, seed_base: int) -> Dictionary:
 		"avg_overlap_after_ticks": float(res.get("avg_overlap_after_ticks", 0.0)),
 		"avg_unfired_engaged_seconds": float(res.get("avg_unfired_engaged_seconds", 0.0)),
 		"avg_heading_flips_per_sec": float(res.get("avg_heading_flips_per_sec", 0.0)),
+		"avg_rounds": float(res.get("avg_rounds", 0.0)),
+		"total_rounds": int(res.get("total_rounds", 0)),
+		"avg_round_base_damage": float(res.get("avg_round_base_damage", 0.0)),
+		"avg_player_base_damage_dealt": float(res.get("avg_player_base_damage_dealt", 0.0)),
+		"berserk_rounds": int(res.get("berserk_rounds", 0)),
+		"berserk_round_rate": float(res.get("berserk_round_rate", 0.0)),
+		"tie_diff_rounds": int(res.get("tie_diff_rounds", 0)),
+		"tie_diff_round_rate": float(res.get("tie_diff_round_rate", 0.0)),
 		"player_dps_rows": res.get("player_dps_rows", []),
 		"review_counts": res.get("review_counts", {}),
 		"samples": samples_brief,

@@ -10,10 +10,80 @@ namespace WarIsland.Model
         Strategy = 2,
     }
 
+    /// <summary>
+    /// 建筑大类。规则只认 kind，不认具体 id：
+    ///   · Producer：训练牌的产兵建筑（tag 再细分步兵/远程）；
+    ///   · Economy：规划期产 CP / 人口；
+    ///   · Support：光环（空间邻接/跨格加成）；
+    ///   · Defense：战斗场景投射实体塔。
+    /// </summary>
+    public static class BuildingKinds
+    {
+        public const string Keep = "keep";
+        public const string Producer = "producer";
+        public const string Economy = "economy";
+        public const string Support = "support";
+        public const string Defense = "defense";
+
+        public static bool IsValid(string kind)
+        {
+            return kind == Keep || kind == Producer || kind == Economy || kind == Support || kind == Defense;
+        }
+    }
+
+    /// <summary>空间光环（数据修饰器）：加成打包进 ArmyPlan.Modifiers，战斗里只乘数。</summary>
+    public sealed class BuildingAura
+    {
+        /// <summary>army（全军）/ adjacent（上下左右 N 格）/ column（同列）/ self（只作用本建筑产出）。</summary>
+        public string Scope = "adjacent";
+        public int Radius = 1;
+        public double[] AttackMult = { 1.0, 1.0, 1.0 };
+        public double[] ArmorAdd = { 0.0, 0.0, 0.0 };
+
+        public double AttackOf(int star) => Pick(AttackMult, star, 1.0);
+        public double ArmorOf(int star) => Pick(ArmorAdd, star, 0.0);
+
+        private static double Pick(double[] arr, int star, double fallback)
+        {
+            if (arr == null || arr.Length == 0) return fallback;
+            int i = star - 1;
+            if (i < 0) i = 0;
+            if (i >= arr.Length) i = arr.Length - 1;
+            return arr[i];
+        }
+    }
+
+    /// <summary>经济建筑：每次规划开始额外产 CP。</summary>
+    public sealed class BuildingEconomy
+    {
+        public int[] CpPerPlanning = { 0, 0, 0 };
+
+        public int CpOf(int star)
+        {
+            if (CpPerPlanning == null || CpPerPlanning.Length == 0) return 0;
+            int i = star - 1;
+            if (i < 0) i = 0;
+            if (i >= CpPerPlanning.Length) i = CpPerPlanning.Length - 1;
+            return CpPerPlanning[i] > 0 ? CpPerPlanning[i] : 0;
+        }
+    }
+
+    /// <summary>防御建筑：每场战斗投射几台什么实体塔、放在哪。</summary>
+    public sealed class BuildingDefense
+    {
+        public string Unit = "";
+        public int CountPerBuilding = 1;
+        /// <summary>flank（部署线后方两翼）/ center（部署线后方中间）。</summary>
+        public string Anchor = "flank";
+    }
+
     public sealed class BuildingDef
     {
         public string Id = "";
         public string DisplayName = "";
+        /// <summary>keep / producer / economy / support / defense（<see cref="BuildingKinds"/>）。</summary>
+        public string Kind = "";
+        /// <summary>大类下的细分：base / farm / infantry / ranged / economy / forge / tower。</summary>
         public string Tag = "";
         public double Armor;
         public int ArmorType;
@@ -21,7 +91,10 @@ namespace WarIsland.Model
         public int Pop;
         public bool Buildable;
         public List<string> Trains = new List<string>();
-        public double BaseDrainReduction;
+
+        public BuildingAura Aura;
+        public BuildingEconomy Economy;
+        public BuildingDefense Defense;
     }
 
     public sealed class CardDef
@@ -31,19 +104,22 @@ namespace WarIsland.Model
         public CardKind Kind;
         public string Building = "";
         public string Unit = "";
-        public string Tag = "";
+        /// <summary>训练牌匹配的建筑 Tag（2026-11-24 由 tag 更名，语义明确）。</summary>
+        public string BuildingTag = "";
         public string Effect = "";
-        /// <summary>训练牌的时空角色：attack / defend / ""（不限）。建造/策略牌忽略。</summary>
-        public string Role = "";
         public int CostCp;
         public bool Exhaust;
         /// <summary>卡组里的副本数（一张卡 = 几张牌）。</summary>
         public int Count = 1;
         /// <summary>
-        /// 训练牌一次产出**几名独立单兵**（2026-11-22 单兵制）。
-        /// 场上每座匹配 Tag 的建筑各产这么一批；「加快训练」在本回合把这里乘 1.5 再向上取整。
+        /// 训练牌一次产**几名独立单兵**（每座匹配建筑各一批，见 <see cref="UnitsMode"/>）。
+        /// 「加快训练」在本回合把这里乘 1.5 再向上取整。
         /// </summary>
         public int Units = 1;
+        /// <summary>per_building（每座各产，默认）/ split（一张牌总数分摊）。</summary>
+        public string UnitsMode = "per_building";
+
+        public bool PerBuilding => UnitsMode != "split";
     }
 
     public sealed class StrategyDef
@@ -69,25 +145,23 @@ namespace WarIsland.Model
     /// <summary>
     /// planning.json 的装载与校验。
     ///
-    /// 口径：
+    /// 口径（2026-11-24 冻结）：
     ///   · 建造牌打出即 Exhaust（本局不再回牌堆），落空地建 1 星；
-    ///   · 训练牌循环，按建筑 Tag 让**全场同类建筑**各产 1 队对应星级兵；
+    ///   · 训练牌循环，按 building_tag 让**全场同类建筑各产一批**（units_mode=per_building）；
     ///   · 策略牌循环，只影响本轮；
-    ///   · 拖同名建筑 3 合 1：累计 3 座 → 3 星（星级 = 1 + 合并数）。
+    ///   · 拖同名建筑 3 合 1：累计 3 座 → 3 星；
+    ///   · 建筑效果（aura/economy/defense）只声明数据，结算走 MechanicBus。
     /// </summary>
     public sealed class PlanningConfig
     {
-        public int CpStart = 16;
-        public int CpPerPlanning = 16;
+        public int CpStart = 12;
+        public int CpPerPlanning = 12;
         public int CpCap = 24;
 
         public int BasePop = 12;
         public int Draw = 6;
         public int MaxHand = 8;
         public List<string> OpeningHand = new List<string>();
-
-        /// <summary>哨塔等防御建筑对基地抽血的总减免上限（0..0.9）。</summary>
-        public double MaxDrainReduction = 0.45;
 
         public int MergeRequired = 3;
         public int MaxStar = 3;
@@ -96,12 +170,15 @@ namespace WarIsland.Model
         public double[] StarHp = { 1.0, 1.4, 2.0 };
         public double[] StarPop = { 1.0, 1.4, 2.0 };
 
-        public int Plots = 10;
+        public int Plots = 18;
         public List<StartBuilding> StartBuildings = new List<StartBuilding>();
 
         public readonly Dictionary<string, BuildingDef> Buildings = new Dictionary<string, BuildingDef>(StringComparer.Ordinal);
         public readonly Dictionary<string, CardDef> Cards = new Dictionary<string, CardDef>(StringComparer.Ordinal);
         public readonly Dictionary<string, StrategyDef> Strategies = new Dictionary<string, StrategyDef>(StringComparer.Ordinal);
+
+        /// <summary>全局机制（遗物/被动）：只有数据，不进代码分支。</summary>
+        public readonly List<MechanicDef> Mechanics = new List<MechanicDef>();
 
         public double StarAttackMult(int star) => Pick(StarAttack, star);
         public double StarHpMult(int star) => Pick(StarHp, star);
@@ -148,8 +225,6 @@ namespace WarIsland.Model
             var pop = JVal.Dict(d, "pop");
             if (pop != null) cfg.BasePop = JVal.Int(pop, "base", cfg.BasePop);
             else notes.Add("缺少 pop");
-
-            cfg.MaxDrainReduction = JVal.Double(d, "max_drain_reduction", cfg.MaxDrainReduction);
 
             var hand = JVal.Dict(d, "hand");
             if (hand != null)
@@ -216,17 +291,56 @@ namespace WarIsland.Model
                     {
                         Id = JVal.Str(bd, "id", ""),
                         DisplayName = JVal.Str(bd, "display_name", ""),
+                        Kind = JVal.Str(bd, "kind", ""),
                         Tag = JVal.Str(bd, "tag", ""),
                         Armor = JVal.Double(bd, "armor", 0.0),
                         Hp = JVal.Double(bd, "hp", 0.0),
                         Pop = JVal.Int(bd, "pop", 0),
                         Buildable = JVal.Bool(bd, "buildable", false),
-                        BaseDrainReduction = JVal.Double(bd, "base_drain_reduction", 0.0),
                     };
-                    string armorName = JVal.Str(bd, "armor_type", "坚固甲");
+                    string armorName = JVal.Str(bd, "armor_type", "重甲");
                     b.ArmorType = CombatTypes.TryParseArmor(armorName, out int ar) ? ar : -1;
                     var trains = JVal.StringArray(bd, "trains");
                     if (trains != null) b.Trains.AddRange(trains);
+
+                    var aura = JVal.Dict(bd, "aura");
+                    if (aura != null)
+                    {
+                        b.Aura = new BuildingAura
+                        {
+                            Scope = JVal.Str(aura, "scope", "adjacent"),
+                            Radius = JVal.Int(aura, "radius", 1),
+                        };
+                        var am = JVal.DoubleArray(aura, "attack_mult", 3);
+                        if (am != null) b.Aura.AttackMult = am;
+                        var aa = JVal.DoubleArray(aura, "armor_add", 3);
+                        if (aa != null) b.Aura.ArmorAdd = aa;
+                    }
+
+                    var eco = JVal.Dict(bd, "economy");
+                    if (eco != null)
+                    {
+                        b.Economy = new BuildingEconomy();
+                        var cps = JVal.DoubleArray(eco, "cp_per_planning", 3);
+                        if (cps != null)
+                        {
+                            b.Economy.CpPerPlanning = new int[cps.Length];
+                            for (int i = 0; i < cps.Length; i++)
+                                b.Economy.CpPerPlanning[i] = (int)Math.Round(cps[i]);
+                        }
+                    }
+
+                    var def = JVal.Dict(bd, "defense");
+                    if (def != null)
+                    {
+                        b.Defense = new BuildingDefense
+                        {
+                            Unit = JVal.Str(def, "unit", ""),
+                            CountPerBuilding = JVal.Int(def, "count_per_building", 1),
+                            Anchor = JVal.Str(def, "anchor", "flank"),
+                        };
+                    }
+
                     if (cfg.Buildings.ContainsKey(b.Id))
                         notes.Add($"建筑 id 重复：{b.Id}（后一条会覆盖前一条）");
                     cfg.Buildings[b.Id] = b;
@@ -270,13 +384,13 @@ namespace WarIsland.Model
                         DisplayName = JVal.Str(cd, "display_name", ""),
                         Building = JVal.Str(cd, "building", ""),
                         Unit = JVal.Str(cd, "unit", ""),
-                        Tag = JVal.Str(cd, "tag", ""),
+                        BuildingTag = JVal.Str(cd, "building_tag", JVal.Str(cd, "tag", "")),
                         Effect = JVal.Str(cd, "effect", ""),
-                        Role = JVal.Str(cd, "role", ""),
                         CostCp = JVal.Int(cd, "cost_cp", 0),
                         Exhaust = JVal.Bool(cd, "exhaust", false),
                         Count = JVal.Int(cd, "count", 1),
                         Units = JVal.Int(cd, "units", 1),
+                        UnitsMode = JVal.Str(cd, "units_mode", "per_building"),
                     };
                     if (kind == "build") c.Kind = CardKind.Build;
                     else if (kind == "train") c.Kind = CardKind.Train;
@@ -289,6 +403,18 @@ namespace WarIsland.Model
                     if (cfg.Cards.ContainsKey(c.Id))
                         notes.Add($"卡 id 重复：{c.Id}（后一条会覆盖前一条）");
                     cfg.Cards[c.Id] = c;
+                }
+            }
+
+            var mechanics = JVal.List(d, "mechanics");
+            if (mechanics != null)
+            {
+                foreach (var item in mechanics)
+                {
+                    var md = JVal.AsDict(item);
+                    if (md == null) continue;
+                    if (!JVal.Bool(md, "enabled", true)) continue;
+                    cfg.Mechanics.Add(MechanicBus.ParseDef(md, notes));
                 }
             }
 
@@ -306,16 +432,15 @@ namespace WarIsland.Model
                 errors.Add($"cp start/per 不能超过 cap（{CpStart}/{CpPerPlanning} > {CpCap}）");
             if (BasePop < 0)
                 errors.Add($"pop.base={BasePop} 为负");
-            if (MaxDrainReduction < 0.0 || MaxDrainReduction > 0.9)
-                errors.Add($"max_drain_reduction={MaxDrainReduction} 越界（0..0.9）");
             if (Draw < 1 || MaxHand < Draw)
                 errors.Add($"hand 配置非法（draw={Draw} max={MaxHand}）");
-            // 单兵制：不靠农场也不许卡死 —— 基地自带人口必须够造第一座兵营。
+
+            // 单兵制：不靠农场也不许卡死 —— 基地自带人口必须够造第一座产兵建筑。
             foreach (var kv in Buildings)
             {
-                if (kv.Value.Tag != "barracks") continue;
+                if (kv.Value.Kind != BuildingKinds.Producer) continue;
                 if (BasePop < Math.Max(kv.Value.Pop, 1))
-                    errors.Add($"pop.base={BasePop} 不够造一座兵营（barracks.pop={kv.Value.Pop}）—— 无农场牌时会卡死");
+                    errors.Add($"pop.base={BasePop} 不够造一座产兵建筑 {kv.Key}（pop={kv.Value.Pop}）—— 无农场牌时会卡死");
             }
             if (MergeRequired != 3)
                 errors.Add($"merge.required={MergeRequired}，规格是 3 合 1");
@@ -332,7 +457,7 @@ namespace WarIsland.Model
 
             var usedPlots = new HashSet<int>();
             bool hasBase = false;
-            int startBases = 0, startFarms = 0, startBarracks = 0;
+            int startBases = 0, startFarms = 0, startProducers = 0;
             foreach (var sb in StartBuildings)
             {
                 if (!Buildings.TryGetValue(sb.Building, out BuildingDef b))
@@ -340,34 +465,71 @@ namespace WarIsland.Model
                     errors.Add($"开局建筑 {sb.Building} 未定义");
                     continue;
                 }
-                if (b.Tag == "base") { hasBase = true; startBases += 1; }
+                if (b.Kind == BuildingKinds.Keep) { hasBase = true; startBases += 1; }
                 else if (b.Tag == "farm") startFarms += 1;
-                else if (b.Tag == "barracks") startBarracks += 1;
+                if (b.Kind == BuildingKinds.Producer) startProducers += 1;
                 if (sb.Plot < 0 || sb.Plot >= Plots)
                     errors.Add($"开局建筑 {sb.Building} 的 plot={sb.Plot} 越界");
                 if (!usedPlots.Add(sb.Plot))
                     errors.Add($"开局建筑 plot={sb.Plot} 重复");
             }
             if (!hasBase)
-                errors.Add("开局必须有 1 座基地（tag=base）");
-            if (startBases != 1 || startFarms != 2 || startBarracks != 1)
-                errors.Add($"开局预设必须是 1 基地 + 2 农场 + 1 兵营，现在是 {startBases}/{startFarms}/{startBarracks}");
+                errors.Add("开局必须有 1 座基地（kind=keep）");
+            if (startBases != 1 || startFarms != 2 || startProducers < 1)
+                errors.Add($"开局预设必须是 1 基地 + 2 农场 + ≥1 产兵建筑，现在是 {startBases}/{startFarms}/{startProducers}");
 
             foreach (var kv in Buildings)
             {
                 var b = kv.Value;
                 if (string.IsNullOrEmpty(b.Id)) errors.Add("建筑缺 id");
                 if (string.IsNullOrEmpty(b.Tag)) errors.Add($"建筑 {b.Id} 缺 tag");
+                if (!BuildingKinds.IsValid(b.Kind))
+                    errors.Add($"建筑 {b.Id} 的 kind={b.Kind} 非法（keep/producer/economy/support/defense）");
                 if (!CombatTypes.IsValidArmor(b.ArmorType))
                     errors.Add($"建筑 {b.Id} 的 armor_type 非法");
                 if (b.Hp <= 0.0) errors.Add($"建筑 {b.Id} 的 hp<=0");
                 if (b.Pop < 0) errors.Add($"建筑 {b.Id} 的 pop<0");
-                if (b.BaseDrainReduction < 0.0 || b.BaseDrainReduction > 0.9)
-                    errors.Add($"建筑 {b.Id} 的 base_drain_reduction 越界（0..0.9）");
+                if (b.Kind == BuildingKinds.Producer && b.Trains.Count == 0)
+                    errors.Add($"产兵建筑 {b.Id} 的 trains 为空");
+                if (b.Kind != BuildingKinds.Producer && b.Trains.Count > 0)
+                    errors.Add($"非产兵建筑 {b.Id} 不该有 trains");
                 foreach (var uid in b.Trains)
                 {
                     if (units == null || units.Get(uid) == null)
                         errors.Add($"建筑 {b.Id} trains → 未定义单位 {uid}");
+                }
+                if (b.Aura != null)
+                {
+                    if (b.Kind != BuildingKinds.Support)
+                        errors.Add($"建筑 {b.Id} 有 aura 但 kind={b.Kind}（应为 support）");
+                    if (b.Aura.Scope != "army" && b.Aura.Scope != "adjacent" &&
+                        b.Aura.Scope != "column" && b.Aura.Scope != "self")
+                        errors.Add($"建筑 {b.Id} 的 aura.scope={b.Aura.Scope} 非法（army/adjacent/column/self）");
+                    if (b.Aura.Radius < 0 || b.Aura.Radius > 3)
+                        errors.Add($"建筑 {b.Id} 的 aura.radius={b.Aura.Radius} 越界（0..3）");
+                    foreach (double v in b.Aura.AttackMult)
+                        if (v < 0.5 || v > 2.0) errors.Add($"建筑 {b.Id} 的 aura.attack_mult={v} 越界（0.5..2.0）");
+                    foreach (double v in b.Aura.ArmorAdd)
+                        if (v < 0.0 || v > 20.0) errors.Add($"建筑 {b.Id} 的 aura.armor_add={v} 越界（0..20）");
+                }
+                if (b.Economy != null)
+                {
+                    if (b.Kind != BuildingKinds.Economy)
+                        errors.Add($"建筑 {b.Id} 有 economy 但 kind={b.Kind}（应为 economy）");
+                    foreach (int v in b.Economy.CpPerPlanning)
+                        if (v < 0 || v > 6) errors.Add($"建筑 {b.Id} 的 economy.cp_per_planning={v} 越界（0..6）");
+                }
+                if (b.Defense != null)
+                {
+                    if (b.Kind != BuildingKinds.Defense)
+                        errors.Add($"建筑 {b.Id} 有 defense 但 kind={b.Kind}（应为 defense）");
+                    UnitDef tower = units != null ? units.Get(b.Defense.Unit) : null;
+                    if (tower == null) errors.Add($"建筑 {b.Id} 的 defense.unit={b.Defense.Unit} 未定义");
+                    else if (!tower.Static) errors.Add($"建筑 {b.Id} 的 defense.unit={b.Defense.Unit} 不是 static 单位");
+                    if (b.Defense.CountPerBuilding < 1 || b.Defense.CountPerBuilding > 4)
+                        errors.Add($"建筑 {b.Id} 的 defense.count_per_building={b.Defense.CountPerBuilding} 越界（1..4）");
+                    if (b.Defense.Anchor != "flank" && b.Defense.Anchor != "center")
+                        errors.Add($"建筑 {b.Id} 的 defense.anchor={b.Defense.Anchor} 非法（flank/center）");
                 }
             }
 
@@ -409,39 +571,40 @@ namespace WarIsland.Model
                             errors.Add($"训练牌 {c.Id} → 未定义单位 {c.Unit}");
                         else if (!units.Get(c.Unit).Enabled)
                             errors.Add($"训练牌 {c.Id} → 单位 {c.Unit} 已禁用");
-                        if (string.IsNullOrEmpty(c.Tag))
+                        if (string.IsNullOrEmpty(c.BuildingTag))
                         {
-                            errors.Add($"训练牌 {c.Id} 缺 tag（按建筑 Tag 产兵）");
+                            errors.Add($"训练牌 {c.Id} 缺 building_tag（按建筑 Tag 产兵）");
                         }
                         else
                         {
                             int matched = 0;
                             foreach (var bd in Buildings.Values)
                             {
-                                if (bd.Tag == c.Tag) matched++;
+                                if (bd.Kind != BuildingKinds.Producer) continue;
+                                if (bd.Tag == c.BuildingTag) matched++;
                             }
                             if (matched == 0)
                             {
-                                errors.Add($"训练牌 {c.Id} 的 tag={c.Tag} 没有任何建筑匹配（Tag 闭环断了）");
+                                errors.Add($"训练牌 {c.Id} 的 building_tag={c.BuildingTag} 没有任何产兵建筑匹配");
                             }
                             else
                             {
                                 bool trains = false;
                                 foreach (var bd in Buildings.Values)
                                 {
-                                    if (bd.Tag == c.Tag && bd.Trains.Contains(c.Unit)) trains = true;
+                                    if (bd.Kind == BuildingKinds.Producer && bd.Tag == c.BuildingTag &&
+                                        bd.Trains.Contains(c.Unit)) trains = true;
                                 }
                                 if (!trains)
-                                    errors.Add($"训练牌 {c.Id} → tag={c.Tag} 的建筑都不训练 {c.Unit}");
+                                    errors.Add($"训练牌 {c.Id} → building_tag={c.BuildingTag} 的建筑都不训练 {c.Unit}");
                             }
                         }
                         if (c.Exhaust)
                             errors.Add($"训练牌 {c.Id} 必须循环（exhaust=false）");
-                        if (!SquadRoles.IsValid(c.Role))
-                            errors.Add($"训练牌 {c.Id} 的 role={c.Role} 非法（attack/defend/空）");
-                        // 单兵制：一次产几名必须写明（0 会让这张牌变成"花 CP 什么也不出"）
                         if (c.Units < 1 || c.Units > 12)
                             errors.Add($"训练牌 {c.Id} 的 units={c.Units} 越界（1..12 名单兵）");
+                        if (c.UnitsMode != "per_building" && c.UnitsMode != "split")
+                            errors.Add($"训练牌 {c.Id} 的 units_mode={c.UnitsMode} 非法（per_building/split）");
                         break;
 
                     case CardKind.Strategy:
@@ -483,6 +646,8 @@ namespace WarIsland.Model
             if (OpeningHand.Count > MaxHand)
                 errors.Add($"起手牌 {OpeningHand.Count} 张超过手牌上限 {MaxHand}");
 
+            // 机制总线：数据驱动定义必须自洽
+            errors.AddRange(MechanicBus.Validate(Mechanics));
             return errors;
         }
     }

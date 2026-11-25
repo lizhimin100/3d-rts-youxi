@@ -11,7 +11,7 @@
 		},
 		{
 			"path": "Screens/bridge/ModelBridge.cs",
-			"size": 63225
+			"size": 68017
 		},
 		{
 			"path": "Screens/bridge/ModelBridge.cs.uid",
@@ -418,32 +418,72 @@
 			"size": 19
 		},
 		{
-			"path": "Model/Battle/LaneBattle.cs.uid",
+			"path": "Model/Battle/ArmyPlan.cs",
+			"size": 5276
+		},
+		{
+			"path": "Model/Battle/ArmyPlan.cs.uid",
+			"size": 19
+		},
+		{
+			"path": "Model/Battle/BattleSession.cs",
+			"size": 6903
+		},
+		{
+			"path": "Model/Battle/BattleSession.cs.uid",
+			"size": 20
+		},
+		{
+			"path": "Model/Battle/CampaignRun.cs",
+			"size": 7901
+		},
+		{
+			"path": "Model/Battle/CampaignRun.cs.uid",
 			"size": 20
 		},
 		{
 			"path": "Model/Battle/LevelDef.cs",
-			"size": 11012
+			"size": 12913
 		},
 		{
 			"path": "Model/Battle/LevelDef.cs.uid",
 			"size": 19
 		},
 		{
-			"path": "Model/Battle/LevelRunner.cs.uid",
+			"path": "Model/Battle/Phase2Checks.cs",
+			"size": 20371
+		},
+		{
+			"path": "Model/Battle/Phase2Checks.cs.uid",
 			"size": 20
 		},
 		{
-			"path": "Model/Battle/LevelSimulator.cs.uid",
+			"path": "Model/Battle/RoundResolver.cs",
+			"size": 7799
+		},
+		{
+			"path": "Model/Battle/RoundResolver.cs.uid",
 			"size": 20
 		},
 		{
-			"path": "Model/Battle/Skirmish.cs.uid",
+			"path": "Model/Board/BoardArena.cs",
+			"size": 11436
+		},
+		{
+			"path": "Model/Board/BoardArena.cs.uid",
+			"size": 20
+		},
+		{
+			"path": "Model/Board/BoardSession.cs",
+			"size": 15255
+		},
+		{
+			"path": "Model/Board/BoardSession.cs.uid",
 			"size": 20
 		},
 		{
 			"path": "Model/Combat/CombatCalculator.cs",
-			"size": 10146
+			"size": 11039
 		},
 		{
 			"path": "Model/Combat/CombatCalculator.cs.uid",
@@ -451,7 +491,7 @@
 		},
 		{
 			"path": "Model/Combat/CombatRules.cs",
-			"size": 7790
+			"size": 9049
 		},
 		{
 			"path": "Model/Combat/CombatRules.cs.uid",
@@ -459,7 +499,7 @@
 		},
 		{
 			"path": "Model/Combat/CombatTypes.cs",
-			"size": 2670
+			"size": 4042
 		},
 		{
 			"path": "Model/Combat/CombatTypes.cs.uid",
@@ -507,7 +547,7 @@
 		},
 		{
 			"path": "Model/Data/UnitCatalog.cs",
-			"size": 15251
+			"size": 18064
 		},
 		{
 			"path": "Model/Data/UnitCatalog.cs.uid",
@@ -538,8 +578,16 @@
 			"size": 19
 		},
 		{
+			"path": "Model/Mechanics/MechanicBus.cs",
+			"size": 10891
+		},
+		{
+			"path": "Model/Mechanics/MechanicBus.cs.uid",
+			"size": 20
+		},
+		{
 			"path": "Model/Planning/PlanningConfig.cs",
-			"size": 21349
+			"size": 29598
 		},
 		{
 			"path": "Model/Planning/PlanningConfig.cs.uid",
@@ -547,7 +595,7 @@
 		},
 		{
 			"path": "Model/Planning/PlanningMatch.cs",
-			"size": 19505
+			"size": 20488
 		},
 		{
 			"path": "Model/Planning/PlanningMatch.cs.uid",
@@ -555,7 +603,7 @@
 		},
 		{
 			"path": "Model/Planning/ScriptedPlanner.cs",
-			"size": 8565
+			"size": 8378
 		},
 		{
 			"path": "Model/Planning/ScriptedPlanner.cs.uid",
@@ -583,7 +631,7 @@
 		},
 		{
 			"path": "Model/Squad/SquadArena.cs",
-			"size": 27277
+			"size": 25362
 		},
 		{
 			"path": "Model/Squad/SquadArena.cs.uid",
@@ -591,7 +639,7 @@
 		},
 		{
 			"path": "Model/Squad/SquadBattle.cs",
-			"size": 80092
+			"size": 85540
 		},
 		{
 			"path": "Model/Squad/SquadBattle.cs.uid",
@@ -599,7 +647,7 @@
 		},
 		{
 			"path": "Model/Squad/SquadMatch.cs",
-			"size": 16487
+			"size": 11910
 		},
 		{
 			"path": "Model/Squad/SquadMatch.cs.uid",
@@ -607,7 +655,7 @@
 		},
 		{
 			"path": "Model/Squad/SquadSession.cs",
-			"size": 22242
+			"size": 18410
 		},
 		{
 			"path": "Model/Squad/SquadSession.cs.uid",
@@ -615,7 +663,7 @@
 		},
 		{
 			"path": "Model/Squad/SquadSimulator.cs",
-			"size": 16476
+			"size": 19007
 		},
 		{
 			"path": "Model/Squad/SquadSimulator.cs.uid",
@@ -623,7 +671,7 @@
 		},
 		{
 			"path": "Model/Squad/SquadState.cs",
-			"size": 10220
+			"size": 10811
 		},
 		{
 			"path": "Model/Squad/SquadState.cs.uid",
@@ -631,7 +679,7 @@
 		},
 		{
 			"path": "Model/Squad/SquadTuning.cs",
-			"size": 7906
+			"size": 6704
 		},
 		{
 			"path": "Model/Squad/SquadTuning.cs.uid",
@@ -731,7 +779,7 @@
 		},
 		{
 			"path": "Engine/pin.json",
-			"size": 5587
+			"size": 5760
 		},
 		{
 			"path": "Engine/platform/platform_headless.gd",
@@ -827,7 +875,7 @@
 		},
 		{
 			"path": "Tests/checks/check_all.gd",
-			"size": 80157
+			"size": 81383
 		},
 		{
 			"path": "Tests/checks/check_all.gd.uid",
@@ -855,7 +903,7 @@
 		},
 		{
 			"path": "Tests/sim/run_simulate.gd",
-			"size": 12048
+			"size": 13011
 		},
 		{
 			"path": "Tests/sim/run_simulate.gd.uid",
@@ -1423,7 +1471,7 @@
 		},
 		{
 			"path": "Content/data/combat.json",
-			"size": 783
+			"size": 882
 		},
 		{
 			"path": "Content/data/enemy_encounters.json",
@@ -1443,7 +1491,7 @@
 		},
 		{
 			"path": "Content/data/levels.json",
-			"size": 24764
+			"size": 25530
 		},
 		{
 			"path": "Content/data/long_costs.json",
@@ -1455,7 +1503,7 @@
 		},
 		{
 			"path": "Content/data/planning.json",
-			"size": 8167
+			"size": 9100
 		},
 		{
 			"path": "Content/data/player_layouts.json",
@@ -1483,11 +1531,11 @@
 		},
 		{
 			"path": "Content/data/squad.json",
-			"size": 959
+			"size": 1049
 		},
 		{
 			"path": "Content/data/units.json",
-			"size": 11267
+			"size": 14196
 		},
 		{
 			"path": "Content/i18n/legacy_budget.json",

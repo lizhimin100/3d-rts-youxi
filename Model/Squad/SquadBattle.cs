@@ -40,6 +40,15 @@ namespace WarIsland.Model
         public double MoveMult = 1.0;
         public double ArmorMult = 1.0;
         public double CritAdd;
+        // ---- 2026-11-24：数据修饰器（ArmyPlan.Modifiers）与静止塔 ----
+        /// <summary>攻击倍率（光环/遗物），只乘基础伤害。</summary>
+        public double AttackMult = 1.0;
+        /// <summary>额外护甲（光环），加在装甲值上。</summary>
+        public double ArmorAdd;
+        /// <summary>承伤倍率（减伤光环），&lt;1 = 更耐打。</summary>
+        public double DamageTakenMult = 1.0;
+        /// <summary>静止实体（哨塔/箭塔）：不移动、invMass=0。</summary>
+        public bool Static;
 
         public SquadOrder Order = SquadOrder.Hold;
         public double OrderX;
@@ -106,6 +115,8 @@ namespace WarIsland.Model
         public double Z;
         public double Speed;
         public double Damage;
+        /// <summary>跳字反馈等级（暴击/克制 = 红，被抵抗 = 白，普通 = 常规）。</summary>
+        public DamageFeedback Feedback;
         public bool Alive = true;
     }
 
@@ -115,6 +126,11 @@ namespace WarIsland.Model
         public int Side;
         public int Tile;
         public Wave Wave;
+        /// <summary>波次出生锚点（世界米）；0/0 表示回退到格子锚点。</summary>
+        public double AnchorX;
+        public double AnchorZ;
+        public int DirX = 1;
+        public bool UseLineAnchor;
     }
 
     /// <summary>
@@ -190,6 +206,9 @@ namespace WarIsland.Model
         private readonly SquadBattleStats _stats = new SquadBattleStats();
         private readonly RoundModifiers _playerMods = new RoundModifiers();
         private readonly RoundModifiers _enemyMods = new RoundModifiers();
+        private ArmyModifiers _playerArmyMods = new ArmyModifiers();
+        private bool _berserk;
+        private double _berserkAt = -1.0;
 
         public SquadBattle(UnitCatalog units, CombatRules rules, SquadArena arena, PlanningConfig planning, int seed,
             SquadTuning tuning = null)
@@ -208,6 +227,7 @@ namespace WarIsland.Model
         }
 
         public SquadArena Arena => _arena;
+        public UnitCatalog Units => _units;
         public double Time => _time;
         public bool Finished => _finished;
         public string Outcome => _outcome;
@@ -256,10 +276,16 @@ namespace WarIsland.Model
 
         public void SetBaseHp(double playerHp, double enemyHp)
         {
+            SetBaseHp(playerHp, enemyHp, playerHp, enemyHp);
+        }
+
+        /// <summary>设置当前基地血与**血条上限**（跨轮时上限保持不变，否则血条永远满格）。</summary>
+        public void SetBaseHp(double playerHp, double enemyHp, double playerMax, double enemyMax)
+        {
             _playerBaseHp = Math.Max(playerHp, 0.0);
             _enemyBaseHp = Math.Max(enemyHp, 0.0);
-            _playerBaseHpMax = Math.Max(_playerBaseHp, 1e-9);
-            _enemyBaseHpMax = Math.Max(_enemyBaseHp, 1e-9);
+            _playerBaseHpMax = Math.Max(playerMax, 1e-9);
+            _enemyBaseHpMax = Math.Max(enemyMax, 1e-9);
         }
 
         public void SetDrainReduction(double player, double enemy)
@@ -275,6 +301,19 @@ namespace WarIsland.Model
         }
 
         /// <summary>
+        /// 灌入 ArmyPlan 的数据修饰器（光环/遗物）。战斗内核不认识建筑 id，
+        /// 只按来源建筑 key 取一组乘数，落到每个单兵身上。
+        /// </summary>
+        public void SetArmyModifiers(ArmyModifiers mods)
+        {
+            _playerArmyMods = mods ?? new ArmyModifiers();
+        }
+
+        /// <summary>45 秒狂暴是否已触发（结算/报告用）。</summary>
+        public bool Berserk => _berserk;
+        public double BerserkAt => _berserkAt;
+
+        /// <summary>
         /// 把当前策略加成重新灌到已经落地的小队上（即时出兵模式下，
         /// 玩家可能先出队再打策略牌；速度/护甲/暴击要立刻生效）。
         /// </summary>
@@ -288,7 +327,7 @@ namespace WarIsland.Model
                 s.MoveMult = mods.MoveMult > 0.0 ? mods.MoveMult : 1.0;
                 s.ArmorMult = mods.ArmorMult > 0.0 ? mods.ArmorMult : 1.0;
                 s.CritAdd = mods.CritAdd;
-                s.Speed = RtsUnits.ToUnits(s.Def.MoveSpeed) * s.MoveMult;
+                s.Speed = s.Static ? 0.0 : RtsUnits.ToUnits(s.Def.MoveSpeed) * s.MoveMult;
             }
         }
 
@@ -317,6 +356,16 @@ namespace WarIsland.Model
         public int AddSquadRole(int side, string unitId, int star, double worldX, double worldZ,
             string sourceBuilding, int spawnTile, string role)
         {
+            return AddSquadEx(side, unitId, star, worldX, worldZ, sourceBuilding, spawnTile, role, null);
+        }
+
+        /// <summary>
+        /// 带数据修饰器的单兵生成（BattleSession 的唯一入口）。
+        /// <paramref name="mods"/> 为 null 时等价于"无光环"。
+        /// </summary>
+        public int AddSquadEx(int side, string unitId, int star, double worldX, double worldZ,
+            string sourceBuilding, int spawnTile, string role, ModifierSet mods)
+        {
             UnitDef def = _units.Get(unitId);
             if (def == null || !def.Enabled) return -1;
             if (!SquadRoles.IsValid(role)) role = SquadRoles.Any;
@@ -339,14 +388,24 @@ namespace WarIsland.Model
                 SpawnTile = spawnTile,
                 SourceBuilding = sourceBuilding ?? "",
                 Role = role,
+                Static = def.Static,
             };
 
             double starHp = _planning != null ? _planning.StarHpMult(squad.Star) : 1.0;
-            var mods = side == 0 ? _playerMods : _enemyMods;
-            squad.MoveMult = mods.MoveMult > 0.0 ? mods.MoveMult : 1.0;
-            squad.ArmorMult = mods.ArmorMult > 0.0 ? mods.ArmorMult : 1.0;
-            squad.CritAdd = mods.CritAdd;
-            squad.Speed = RtsUnits.ToUnits(def.MoveSpeed) * squad.MoveMult;
+            var roundMods = side == 0 ? _playerMods : _enemyMods;
+            squad.MoveMult = roundMods.MoveMult > 0.0 ? roundMods.MoveMult : 1.0;
+            squad.ArmorMult = roundMods.ArmorMult > 0.0 ? roundMods.ArmorMult : 1.0;
+            squad.CritAdd = roundMods.CritAdd;
+            if (mods != null)
+            {
+                squad.AttackMult = mods.AttackMult > 0.0 ? mods.AttackMult : 1.0;
+                squad.ArmorAdd = mods.ArmorAdd;
+                squad.DamageTakenMult = mods.DamageTakenMult > 0.0 ? mods.DamageTakenMult : 1.0;
+                squad.MoveMult *= mods.MoveMult > 0.0 ? mods.MoveMult : 1.0;
+            }
+            squad.Speed = squad.Static
+                ? 0.0
+                : RtsUnits.ToUnits(def.MoveSpeed) * squad.MoveMult;
 
             // 单兵：唯一成员的槽位就是质心（offset 0,0）。没有阵型、没有槽位弹簧。
             squad.ContactRadius = UnitBody.BodyUnits(def);
@@ -401,7 +460,8 @@ namespace WarIsland.Model
                 Vec2 off = FormationPlan.TileSlot(slot, _tuning.TileFiles, _tuning.FilePitch, _tuning.RankPitch);
                 double x = center.X + off.X * RtsUnits.R1;
                 double z = center.Y + off.Y * RtsUnits.R1;
-                int id = AddSquadRole(side, unitId, star, x, z, sourceBuilding, tileIndex, role);
+                ModifierSet mods = side == 0 ? _playerArmyMods.ForSource(sourceBuilding, tileIndex) : null;
+                int id = AddSquadEx(side, unitId, star, x, z, sourceBuilding, tileIndex, role, mods);
                 if (id > 0)
                 {
                     made += 1;
@@ -552,6 +612,31 @@ namespace WarIsland.Model
                 Tile = tileIndex,
                 Wave = wave,
             });
+            SortWaves();
+        }
+
+        /// <summary>
+        /// 按**部署线**（世界米）排一波敌人：不再依赖棋盘格子锚点。
+        /// <paramref name="dirX"/> = 排队方向（向自家后方延伸，敌人 = +1）。
+        /// </summary>
+        public void ScheduleWaveAtLine(Wave wave, int side, double worldX, double worldZ, int dirX, double offsetSeconds)
+        {
+            if (wave == null) return;
+            _waves.Add(new SquadWaveEntry
+            {
+                T = wave.T + Math.Max(offsetSeconds, 0.0),
+                Side = side,
+                Wave = wave,
+                AnchorX = worldX,
+                AnchorZ = worldZ,
+                DirX = dirX >= 0 ? 1 : -1,
+                UseLineAnchor = true,
+            });
+            SortWaves();
+        }
+
+        private void SortWaves()
+        {
             _waves.Sort((a, b) =>
             {
                 int c = a.T.CompareTo(b.T);
@@ -610,6 +695,28 @@ namespace WarIsland.Model
             s.PathLength = 0.0;
             s.OrderX = s.X;
             s.OrderZ = s.Z;
+            return true;
+        }
+
+        /// <summary>
+        /// 直线行军（开阔战场专用）：不走脊线 A*，只在起点与终点之间放两个路点。
+        /// 单轮死斗里双方都从部署线直接对冲，A* 的 1.26 m 走廊只会制造单列瓶颈。
+        /// </summary>
+        public bool OrderMarch(int squadId, double worldX, double worldZ)
+        {
+            BattleSquad s = Find(squadId);
+            if (s == null || !s.Alive) return false;
+            if (s.Static) return false;
+            var lane = _arena.WorldToLane(worldX, worldZ);
+            s.Order = SquadOrder.AttackMove;
+            s.TargetSquad = -1;
+            s.Path.Clear();
+            s.PathIndex = 0;
+            s.Path.Add(new Vec2((float)s.X, (float)s.Z));
+            s.Path.Add(_route.ClampPoint(lane, s.Radius));
+            s.PathLength = Dist(s.X, s.Z, s.Path[1].X, s.Path[1].Y);
+            s.OrderX = s.Path[1].X;
+            s.OrderZ = s.Path[1].Y;
             return true;
         }
 
@@ -829,6 +936,7 @@ namespace WarIsland.Model
         private void Tick(double dt)
         {
             _time += dt;
+            UpdateBerserk();
             SpawnDueWaves(_time);
 
             UpdateOrders(dt);
@@ -837,19 +945,47 @@ namespace WarIsland.Model
             UpdateAttacks(dt);
             UpdateShots(dt);
             Cleanup();
-            UpdateBases(dt);
             UpdateStats(dt);
-
-            if (_playerBaseHp <= 0.0 || _enemyBaseHp <= 0.0) FinishFromBases();
+            CheckAnnihilation();
+            // 2026-11-24：基地血量不再由战场逐 tick 抽取；
+            // 60 秒后由 RoundResolver 按幸存者 base_damage 一次性结算。
         }
 
-        private void FinishFromBases()
+        /// <summary>
+        /// 一方全灭就收场（不必空跑到 60 秒）：
+        ///   · 我方全灭 → 立即结束（后面还有没有敌方波次都不影响结果）；
+        ///   · 敌方全灭 → 必须等**所有波次都已出场**，否则会把"下一波还没来"误判成胜利。
+        /// 只有打满 45 秒才会触发狂暴，所以这个提前收场也让"狂暴触发率"变成真实读数。
+        /// </summary>
+        private void CheckAnnihilation()
         {
             if (_finished) return;
-            bool p = _playerBaseHp <= 0.0;
-            bool e = _enemyBaseHp <= 0.0;
-            _outcome = p && e ? "draw" : (e ? "win" : "lose");
-            _finished = true;
+            if (Survivors(0).Count == 0)
+            {
+                _outcome = "lose";
+                _finished = true;
+                return;
+            }
+            if (_nextWave >= _waves.Count && Survivors(1).Count == 0)
+            {
+                _outcome = "win";
+                _finished = true;
+            }
+        }
+
+        /// <summary>
+        /// 45 秒狂暴：全员攻速 ×N、护甲按 0 结算。
+        /// 只改"出手频率/承伤"，不改伤害数值本身 —— 配平仍看 combat.json。
+        /// </summary>
+        private void UpdateBerserk()
+        {
+            if (_berserk) return;
+            if (_tuning.BerserkStartSeconds <= 0.0) return;
+            if (_time + Eps < _tuning.BerserkStartSeconds) return;
+            _berserk = true;
+            _berserkAt = Round2(_time);
+            _stats.BerserkTriggered = true;
+            _stats.BerserkSecond = _berserkAt;
         }
 
         // =================================================================
@@ -884,6 +1020,13 @@ namespace WarIsland.Model
                 // 否则单位会停在 99~107 的锁定带里：有攻击态、却永远不进开火线。
                 s.Locked = canLock && hasFire;
                 double standOff = s.MaxRange * _tuning.StandOffRatio;
+
+                // 静止塔：不移动、不追，只靠 UpdateAttacks 自动开火。
+                if (s.Static)
+                {
+                    s.WantsMove = false;
+                    continue;
+                }
 
                 switch (s.Order)
                 {
@@ -1185,7 +1328,7 @@ namespace WarIsland.Model
             MeasureOverlap(false);
             var pushX = new double[_squads.Count];
             var pushZ = new double[_squads.Count];
-            for (int pass = 0; pass < 5; pass++)
+            for (int pass = 0; pass < 8; pass++)
             {
                 for (int i = 0; i < pushX.Length; i++)
                 {
@@ -1331,7 +1474,7 @@ namespace WarIsland.Model
 
                     var atk = new CombatAttacker
                     {
-                        Damage = s.Def.AttackDamage * (_planning != null ? _planning.StarAttackMult(s.Star) : 1.0),
+                        Damage = s.Def.AttackDamage * (_planning != null ? _planning.StarAttackMult(s.Star) : 1.0) * s.AttackMult,
                         Cooldown = s.Def.AttackCooldown,
                         AttackType = s.Def.AttackType,
                         Hit = s.Def.Hit,
@@ -1341,13 +1484,15 @@ namespace WarIsland.Model
                         ArmorPenPct = s.Def.ArmorPenPct,
                         AttackMult = 1.0,
                     };
+                    double armorValue = ts.Def.Armor * ts.ArmorMult + ts.ArmorAdd;
+                    if (_berserk && _tuning.BerserkArmorZero) armorValue = 0.0;
                     var def = new CombatDefender
                     {
-                        Armor = ts.Def.Armor * ts.ArmorMult,
+                        Armor = armorValue,
                         ArmorType = ts.Def.ArmorType,
                         Dodge = ts.Def.Dodge,
                         ArmorMult = 1.0,
-                        DamageTakenMult = 1.0,
+                        DamageTakenMult = ts.DamageTakenMult,
                     };
 
                     double rollHit = _rng.NextFloat();
@@ -1369,14 +1514,19 @@ namespace WarIsland.Model
                                 Z = mem.Z,
                                 Speed = RtsUnits.ToUnits(s.Def.ProjectileSpeed > 0.0 ? s.Def.ProjectileSpeed : 26.0),
                                 Damage = br.Damage,
+                                Feedback = br.Feedback,
                             });
                         }
                         else
                         {
-                            ApplyMemberDamage(s, mem, ts, tm, br.Damage);
+                            ApplyMemberDamage(s, mem, ts, tm, br.Damage, br.Feedback);
                         }
                     }
-                    mem.Cd = Math.Max(s.Def.AttackCooldown, 0.05);
+                    double cooldown = s.Def.AttackCooldown;
+                    if (_berserk && _tuning.BerserkAttackSpeedMult > 0.0)
+                        cooldown /= _tuning.BerserkAttackSpeedMult;
+                    mem.Cd = Math.Max(cooldown, 0.05);
+                    if (!br.Hit) CountFeedback(DamageFeedback.Miss, 0.0);
                 }
             }
         }
@@ -1441,7 +1591,8 @@ namespace WarIsland.Model
             return true;
         }
 
-        private void ApplyMemberDamage(BattleSquad sourceSquad, SquadMember source, BattleSquad targetSquad, SquadMember target, double damage)
+        private void ApplyMemberDamage(BattleSquad sourceSquad, SquadMember source, BattleSquad targetSquad, SquadMember target, double damage,
+            DamageFeedback feedback = DamageFeedback.Normal)
         {
             if (damage <= 0.0 || target == null || !target.Alive) return;
             target.Hp -= damage;
@@ -1451,6 +1602,7 @@ namespace WarIsland.Model
             else _stats.EnemyDamage += damage;
             StatOf(sourceSquad.Side, sourceSquad.Def.Id).Damage += damage;
             if (_stats.FirstContactSecond < 0.0) _stats.FirstContactSecond = Round2(_time);
+            CountFeedback(feedback, damage);
 
             if (target.Hp <= 0.0)
             {
@@ -1485,7 +1637,7 @@ namespace WarIsland.Model
                     BattleSquad srcSquad = Find(p.SourceSquad);
                     if (srcSquad != null && srcSquad.Alive && p.SourceMember >= 0 && p.SourceMember < srcSquad.Members.Count)
                     {
-                        ApplyMemberDamage(srcSquad, srcSquad.Members[p.SourceMember], ts, tm, p.Damage);
+                        ApplyMemberDamage(srcSquad, srcSquad.Members[p.SourceMember], ts, tm, p.Damage, p.Feedback);
                     }
                     p.Alive = false;
                 }
@@ -1541,67 +1693,69 @@ namespace WarIsland.Model
             }
         }
 
-        private void UpdateBases(double dt)
+        /// <summary>
+        /// 跳字反馈计数（唯一入口）。暴击/克制 = 红，被抵抗 = 白，普通 = 常规，未命中 = 不跳字。
+        /// 表现层只读这些计数与 <see cref="SquadShot.Feedback"/>，不自己查表。
+        /// </summary>
+        private void CountFeedback(DamageFeedback feedback, double damage)
         {
-            int playerInZone = 0;
-            int enemyInZone = 0;
-            double playerDps = 0.0;
-            double enemyDps = 0.0;
-            for (int i = 0; i < _squads.Count; i++)
+            switch (feedback)
             {
-                BattleSquad s = _squads[i];
-                if (!s.Alive || !IsActive(s)) continue;
-                bool inZone = s.Side == 0
-                    ? s.X >= _arena.EnemyZoneStart
-                    : s.X <= _arena.PlayerZoneEnd;
-                if (!inZone) continue;
-                if (s.Side == 0)
-                {
-                    playerInZone += 1;
-                    _stats.PlayerZoneSeconds += dt;
-                    if (!HasEnemyNear(s, RtsUnits.ToUnits(9.0))) playerDps += 1.0;
-                }
-                else
-                {
-                    enemyInZone += 1;
-                    _stats.EnemyZoneSeconds += dt;
-                    if (!HasEnemyNear(s, RtsUnits.ToUnits(9.0))) enemyDps += 1.0;
-                }
-            }
-            if (playerInZone > _stats.PlayerMaxZone) _stats.PlayerMaxZone = playerInZone;
-            if (enemyInZone > _stats.EnemyMaxZone) _stats.EnemyMaxZone = enemyInZone;
-
-            if (playerDps > 0.0 && _enemyBaseHp > 0.0)
-            {
-                double dmg = playerDps * _arena.ZoneDpsPerUnit * (1.0 - _enemyDrainReduction) * dt;
-                _enemyBaseHp -= dmg;
-                if (_stats.FirstContactSecond < 0.0) _stats.FirstContactSecond = Round2(_time);
-            }
-            if (enemyDps > 0.0 && _playerBaseHp > 0.0)
-            {
-                double dmg = enemyDps * _arena.ZoneDpsPerUnit * (1.0 - _playerDrainReduction) * dt;
-                _playerBaseHp -= dmg;
-                if (_stats.FirstContactSecond < 0.0) _stats.FirstContactSecond = Round2(_time);
+                case DamageFeedback.CritOrCounter:
+                    _stats.FeedbackCritOrCounter += 1;
+                    _stats.FeedbackCritDamage += damage;
+                    break;
+                case DamageFeedback.Resisted:
+                    _stats.FeedbackResisted += 1;
+                    _stats.FeedbackResistedDamage += damage;
+                    break;
+                case DamageFeedback.Miss:
+                    _stats.FeedbackMiss += 1;
+                    break;
+                default:
+                    _stats.FeedbackNormal += 1;
+                    _stats.FeedbackNormalDamage += damage;
+                    break;
             }
         }
 
-        private bool HasEnemyNear(BattleSquad s, double radius)
+        /// <summary>结算用：某一方还活着的单兵（不含被清场的）。</summary>
+        internal List<BattleSquad> Survivors(int side)
         {
-            double r2 = radius * radius;
+            var list = new List<BattleSquad>();
             for (int i = 0; i < _squads.Count; i++)
             {
-                BattleSquad o = _squads[i];
-                if (!o.Alive || !IsActive(o) || o.Side == s.Side) continue;
-                for (int m = 0; m < o.Members.Count; m++)
-                {
-                    SquadMember mem = o.Members[m];
-                    if (!mem.Alive) continue;
-                    double dx = mem.X - s.X;
-                    double dz = mem.Z - s.Z;
-                    if (dx * dx + dz * dz <= r2) return true;
-                }
+                BattleSquad s = _squads[i];
+                if (!s.Alive || s.Purged || s.Side != side) continue;
+                list.Add(s);
             }
-            return false;
+            return list;
+        }
+
+        /// <summary>
+        /// 幸存单位的 base_damage 之和（结算唯一口径；static 单位 base_damage 恒 0）。
+        /// <paramref name="cap"/> &lt;= 0 表示不封顶。
+        /// </summary>
+        public double SurvivorBaseDamage(int side, int cap = 0)
+        {
+            double sum = 0.0;
+            List<BattleSquad> list = Survivors(side);
+            for (int i = 0; i < list.Count; i++)
+            {
+                BattleSquad s = list[i];
+                if (s.Static) continue;
+                sum += s.Def.BaseDamageOf(s.Star);
+            }
+            if (cap > 0 && sum > cap) sum = cap;
+            return sum;
+        }
+
+        /// <summary>主动结束（60 秒到点）：只置完成标记，不改基地血。</summary>
+        public void Finish(string outcome = "")
+        {
+            if (_finished) return;
+            _outcome = outcome ?? "";
+            _finished = true;
         }
 
         private void UpdateStats(double dt)
@@ -1661,9 +1815,19 @@ namespace WarIsland.Model
             }
             int files = Math.Max(_tuning.MaxFiles, 2);
             int meleeRanks = FormationPlan.Ranks(melee, files);
-            Vec2 anchorWorld = _arena.TileSpawnWorld(entry.Tile);
-            Vec2 anchor = _arena.WorldToLane(anchorWorld.X, anchorWorld.Y);
-            int dirX = entry.Side == 0 ? -1 : 1;
+            Vec2 anchor;
+            int dirX;
+            if (entry.UseLineAnchor)
+            {
+                anchor = _arena.WorldToLane(entry.AnchorX, entry.AnchorZ);
+                dirX = entry.DirX;
+            }
+            else
+            {
+                Vec2 anchorWorld = _arena.TileSpawnWorld(entry.Tile);
+                anchor = _arena.WorldToLane(anchorWorld.X, anchorWorld.Y);
+                dirX = entry.Side == 0 ? -1 : 1;
+            }
             int slotMelee = 0;
             int slotRanged = 0;
 
@@ -1681,7 +1845,7 @@ namespace WarIsland.Model
                     Vec2 world = _arena.LaneToWorld(lane.X, lane.Y);
                     int id = AddSquad(entry.Side, def.Id, Math.Max(ws.Star, 1),
                         world.X, world.Y, "", entry.Tile);
-                    if (id >= 0) OrderAttackMove(id, goal.X, goal.Y);
+                    if (id >= 0) OrderMarch(id, goal.X, goal.Y);
                 }
             }
         }

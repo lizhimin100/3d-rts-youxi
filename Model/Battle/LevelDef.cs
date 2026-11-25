@@ -40,24 +40,69 @@ namespace WarIsland.Model
         public readonly List<Wave> Waves = new List<Wave>();
     }
 
-    /// <summary>一关：两轮各 60 秒，基地血量跨轮保留。</summary>
+    /// <summary>
+    /// 战场几何（2026-11-24）：只放"双方从哪出发、战场多宽"。
+    /// 全部是游戏数值（lane 坐标），世界米只在 Screens 乘 R1。
+    /// 与棋盘格子**完全解耦**：战斗场景不读 tiles，也不建建筑。
+    /// </summary>
+    public sealed class Battlefield
+    {
+        /// <summary>玩家部署线（lane X）。玩家单位从这里向敌阵推进。</summary>
+        public double DeployPlayer = 10300.0;
+        /// <summary>敌方部署线（lane X）。</summary>
+        public double DeployEnemy = 16400.0;
+        /// <summary>战场宽度（lane Z 方向，游戏数值）；只用于算每排人数。</summary>
+        public double Width = 13333.0;
+        /// <summary>边界留白（游戏数值，默认 300 = 4.5 米）。</summary>
+        public double Edge = 300.0;
+
+        public static Battlefield FromDict(IDictionary<string, object> d)
+        {
+            var b = new Battlefield();
+            if (d == null) return b;
+            b.DeployPlayer = JVal.Double(d, "deploy_player", b.DeployPlayer);
+            b.DeployEnemy = JVal.Double(d, "deploy_enemy", b.DeployEnemy);
+            b.Width = JVal.Double(d, "width", b.Width);
+            b.Edge = JVal.Double(d, "edge", b.Edge);
+            return b;
+        }
+
+        public List<string> Validate()
+        {
+            var errors = new List<string>();
+            if (DeployPlayer <= 0.0 || DeployEnemy <= 0.0)
+                errors.Add($"battlefield：部署线必须 > 0（{DeployPlayer}/{DeployEnemy}）");
+            if (DeployPlayer >= DeployEnemy)
+                errors.Add($"battlefield：玩家部署线 {DeployPlayer} 必须在敌方 {DeployEnemy} 之前");
+            if (DeployEnemy - DeployPlayer < 1200.0)
+                errors.Add($"battlefield：两条部署线相距 {DeployEnemy - DeployPlayer:0} < 1200（18 米），接敌太快");
+            if (Width < 600.0)
+                errors.Add($"battlefield：width={Width} < 600（9 米），放不下一个排");
+            if (Edge < 0.0 || Edge * 2.0 >= Width)
+                errors.Add($"battlefield：edge={Edge} 越界（0 .. width/2）");
+            return errors;
+        }
+    }
+
+    /// <summary>一关：单轮单场死斗循环，基地血量跨轮保留。</summary>
     public sealed class LevelDef
     {
         public string Id = "";
         public string DisplayName = "";
         public string PlayerFaction = "";
         public string EnemyFaction = "";
-        public double PlayerBaseHp = 2600.0;
-        public double EnemyBaseHp = 2000.0;
+        public double PlayerBaseHp = 72.0;
+        public double EnemyBaseHp = 72.0;
         /// <summary>
         /// **单场限时（秒）的唯一真源**。2026-11-21 从 90 收到 60：
-        /// 规划阶段无限时 + 执行 60 秒攻防双场，一局 3~5 分钟。
+        /// 规划阶段无限时 + 执行 60 秒单场死斗。
         /// 想改时长只改这里（+ levels.json 的 round_seconds），别在 GDScript 里写第二份。
         /// </summary>
         public const double RoundSecondsSpec = 60.0;
 
         public double RoundSeconds = RoundSecondsSpec;
         public LaneConfig Lane = new LaneConfig();
+        public Battlefield Battlefield = new Battlefield();
         public readonly List<LevelRound> Rounds = new List<LevelRound>();
 
         public static LevelDef FromDict(IDictionary<string, object> d, UnitCatalog units, List<string> notes)
@@ -75,6 +120,9 @@ namespace WarIsland.Model
             lv.PlayerBaseHp = JVal.Double(d, "player_base_hp", lv.PlayerBaseHp);
             lv.EnemyBaseHp = JVal.Double(d, "enemy_base_hp", lv.EnemyBaseHp);
             lv.RoundSeconds = JVal.Double(d, "round_seconds", lv.RoundSeconds);
+            var battlefield = JVal.Dict(d, "battlefield");
+            if (battlefield != null) lv.Battlefield = Battlefield.FromDict(battlefield);
+            else notes.Add("关卡缺 battlefield（用默认部署线）");
 
             var lane = JVal.Dict(d, "lane");
             if (lane != null)
@@ -157,39 +205,29 @@ namespace WarIsland.Model
                 errors.Add($"关卡 {Id}：round_seconds 必须 > 0");
 
             var lane = Lane;
-            if (lane.Length <= lane.ZoneDepth * 2.0)
-                errors.Add($"关卡 {Id}：lane.length 必须大于两倍 zone_depth");
-            if (lane.Width <= 0.0 || lane.ZoneDepth <= 0.0)
-                errors.Add($"关卡 {Id}：lane 宽/敌区必须 > 0");
-            if (lane.ZoneDpsPerSquad <= 0.0)
-                errors.Add($"关卡 {Id}：zone_dps_per_squad 必须 > 0");
-            if (lane.SpawnOffset <= 0.0 || lane.SpawnOffset >= lane.Length * 0.5)
+            if (lane.Length <= 0.0) errors.Add($"关卡 {Id}：lane.length 必须 > 0（只服务编辑器地形分段）");
+            if (lane.Width <= 0.0) errors.Add($"关卡 {Id}：lane.width 必须 > 0");
+            if (lane.SpawnOffset < 0.0 || lane.SpawnOffset >= lane.Length * 0.5)
                 errors.Add($"关卡 {Id}：spawn_offset={lane.SpawnOffset} 越界");
-            if (lane.BaseStop <= 0.0 || lane.BaseStop >= lane.ZoneDepth)
-                errors.Add($"关卡 {Id}：base_stop={lane.BaseStop} 必须在 (0, zone_depth)");
 
-            if (Rounds.Count != 2)
-                errors.Add($"关卡 {Id}：必须是两轮（进攻 + 防守），现在 {Rounds.Count} 轮");
-            else
-            {
-                if (Rounds[0].Kind != "attack")
-                    errors.Add($"关卡 {Id}：第 1 轮必须是 attack");
-                if (Rounds[1].Kind != "defend")
-                    errors.Add($"关卡 {Id}：第 2 轮必须是 defend");
-            }
+            errors.AddRange(Battlefield.Validate());
+
+            if (Rounds.Count < 1)
+                errors.Add($"关卡 {Id}：至少要有一轮敌军波次");
             if (Math.Abs(RoundSeconds - RoundSecondsSpec) > 1e-9)
                 errors.Add($"关卡 {Id}：round_seconds={RoundSeconds}，规格是 {RoundSecondsSpec:0} 秒");
 
-            foreach (var round in Rounds)
+            for (int ri = 0; ri < Rounds.Count; ri++)
             {
+                var round = Rounds[ri];
                 if (round.Waves.Count == 0)
-                    errors.Add($"关卡 {Id} 的 {round.Kind} 轮没有波次");
+                    errors.Add($"关卡 {Id} 第 {ri + 1} 轮没有波次");
                 foreach (var wave in round.Waves)
                 {
                     if (wave.T < 0.0 || wave.T > RoundSeconds)
-                        errors.Add($"关卡 {Id} 的 {round.Kind} 轮有波次时间 {wave.T} 越界");
+                        errors.Add($"关卡 {Id} 第 {ri + 1} 轮有波次时间 {wave.T} 越界");
                     if (wave.Squads.Count == 0)
-                        errors.Add($"关卡 {Id} 的 {round.Kind} 轮 t={wave.T} 是空波次");
+                        errors.Add($"关卡 {Id} 第 {ri + 1} 轮 t={wave.T} 是空波次");
                     foreach (var sq in wave.Squads)
                     {
                         var u = units.Get(sq.Unit);

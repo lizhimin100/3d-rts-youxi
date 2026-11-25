@@ -68,6 +68,15 @@ namespace WarIsland.Model
         public readonly List<LevelRound> Rounds = new List<LevelRound>();
         public readonly List<string> Notes = new List<string>();
 
+        /// <summary>关卡定义（单轮波次 + battlefield 几何的唯一来源）。</summary>
+        public LevelDef Level;
+        /// <summary>原始 JSON（只读）：BoardSession 需要 shell/layout 来建棋盘拓扑。</summary>
+        public IDictionary<string, object> ShellDict;
+        public IDictionary<string, object> LayoutDict;
+
+        /// <summary>战场几何（部署线/宽度/边距）。</summary>
+        public Battlefield Battlefield => Level != null ? Level.Battlefield : new Battlefield();
+
         public SquadRouteGraph Route;
         public int PlayerBaseTile;
         public int EnemyBaseTile;
@@ -207,6 +216,8 @@ namespace WarIsland.Model
             IDictionary<string, object> tuning = null)
         {
             var arena = new SquadArena();
+            arena.ShellDict = shell;
+            arena.LayoutDict = layout;
 
             // ---- 底壳几何 ----
             var size = JVal.Dict(shell, "size");
@@ -283,65 +294,20 @@ namespace WarIsland.Model
             else
                 arena.EnemyZoneStart = arena.MaxX * 0.67 - 1.0;
 
-            // ---- 关卡轮次与基地血量 ----
+            // ---- 关卡：单轮波次 + 战场几何（唯一解析点 = LevelDef） ----
+            arena.Level = LevelDef.FromDict(level, units, arena.Notes);
             arena.Id = JVal.Str(level, "id", JVal.Str(shell, "id", "squad_arena"));
             arena.DisplayName = JVal.Str(level, "display_name", arena.Id);
             arena.PlayerFaction = JVal.Str(level, "player_faction", "alliance");
             arena.EnemyFaction = JVal.Str(encounter, "faction", JVal.Str(level, "enemy_faction", "bandit"));
-            arena.PlayerBaseHp = JVal.Double(level, "player_base_hp", 2600.0);
-            double encHp = JVal.Double(encounter, "base_hp", 0.0);
-            arena.EnemyBaseHp = encHp > 0.0 ? encHp : JVal.Double(level, "enemy_base_hp", 2000.0);
-            arena.RoundSeconds = JVal.Double(level, "round_seconds", LevelDef.RoundSecondsSpec);
-            var lane = JVal.Dict(level, "lane");
-            arena.ZoneDpsPerUnit = JVal.Double(lane, "zone_dps_per_unit",
-                JVal.Double(lane, "zone_dps_per_squad", 0.24));
-            // 单兵模式专属覆盖（Content/data/squad.json）：不填就沿用关卡口径。
-            double tuneDps = JVal.Double(tuning, "zone_dps_per_unit",
-                JVal.Double(tuning, "zone_dps_per_squad", 0.0));
-            if (tuneDps > 0.0) arena.ZoneDpsPerUnit = tuneDps;
+            arena.PlayerBaseHp = arena.Level.PlayerBaseHp;
+            // 2026-11-24：关卡是运行时唯一真源；遭遇卡的 base_hp 只留给生成器建议，不再覆盖。
+            arena.EnemyBaseHp = arena.Level.EnemyBaseHp;
+            arena.RoundSeconds = arena.Level.RoundSeconds;
+            arena.ZoneDpsPerUnit = 0.0; // 占区抽血已删除，字段只留给桥契约
 
-            var rounds = JVal.List(level, "rounds");
-            if (rounds != null)
-            {
-                foreach (object o in rounds)
-                {
-                    var rd = JVal.AsDict(o);
-                    if (rd == null) continue;
-                    var round = new LevelRound
-                    {
-                        Kind = JVal.Str(rd, "kind", ""),
-                        Label = JVal.Str(rd, "label", ""),
-                    };
-                    var waves = JVal.List(rd, "enemy_waves");
-                    if (waves != null)
-                    {
-                        foreach (object wo in waves)
-                        {
-                            var wd = JVal.AsDict(wo);
-                            if (wd == null) continue;
-                            var wave = new Wave { T = JVal.Double(wd, "t", 0.0) };
-                            var squads = JVal.List(wd, "squads");
-                            if (squads != null)
-                            {
-                                foreach (object so in squads)
-                                {
-                                    var sd = JVal.AsDict(so);
-                                    if (sd == null) continue;
-                                    wave.Squads.Add(new WaveSquad
-                                    {
-                                        Unit = JVal.Str(sd, "unit", ""),
-                                        Count = JVal.Int(sd, "count", 1),
-                                        Star = JVal.Int(sd, "star", 1),
-                                    });
-                                }
-                            }
-                            round.Waves.Add(wave);
-                        }
-                    }
-                    round.Waves.Sort((a, b) => a.T.CompareTo(b.T));
-                    arena.Rounds.Add(round);
-                }
-            }
+            arena.Rounds.Clear();
+            arena.Rounds.AddRange(arena.Level.Rounds);
 
             // ---- 建筑：玩家布局卡 + 敌人遭遇卡 ----
             var slots = JVal.List(layout, "slots");
@@ -498,17 +464,13 @@ namespace WarIsland.Model
                 errors.Add($"arena：敌方区边界 {EnemyZoneStart:0} 越界");
             if (PlayerZoneEnd >= EnemyZoneStart)
                 errors.Add($"arena：玩家区边界 {PlayerZoneEnd:0} 必须小于敌方区边界 {EnemyZoneStart:0}");
-
             if (PlayerBaseTile == 0) errors.Add("arena：玩家侧没有主堡格（role=keep）");
             if (EnemyBaseTile == 0) errors.Add("arena：敌方侧没有主堡格（role=keep）");
             if (PlayerBaseHp <= 0.0) errors.Add($"arena：player_base_hp={PlayerBaseHp} 必须 > 0");
             if (EnemyBaseHp <= 0.0) errors.Add($"arena：enemy_base_hp={EnemyBaseHp} 必须 > 0");
             if (RoundSeconds <= 0.0 || RoundSeconds > 120.0)
                 errors.Add($"arena：round_seconds={RoundSeconds} 非法");
-            if (ZoneDpsPerUnit <= 0.0)
-                errors.Add($"arena：zone_dps_per_unit={ZoneDpsPerUnit} 必须 > 0");
-            if (ZoneDpsPerUnit > 2.0)
-                errors.Add($"arena：zone_dps_per_unit={ZoneDpsPerUnit} 过大（单兵制下 60~80 血的基地会被瞬间抽干，应在 0.1~0.5）");
+            // 占区抽血已删除：ZoneDpsPerUnit 不再参与校验。
 
             var seenTiles = new HashSet<int>();
             foreach (TacticalTile t in Tiles) seenTiles.Add(t.Index);
@@ -535,26 +497,20 @@ namespace WarIsland.Model
             if (!string.IsNullOrEmpty(expectedEnemyFaction) && expectedEnemyFaction != EnemyFaction)
                 errors.Add($"arena：关卡敌方阵营 {expectedEnemyFaction} 与遭遇卡 {EnemyFaction} 不一致");
 
-            if (Rounds.Count != 2)
-            {
-                errors.Add($"arena：必须是两轮（attack + defend），现在 {Rounds.Count} 轮");
-            }
-            else
-            {
-                if (Rounds[0].Kind != "attack") errors.Add("arena：第 1 轮必须是 attack");
-                if (Rounds[1].Kind != "defend") errors.Add("arena：第 2 轮必须是 defend");
-            }
+            // 单轮单场死斗：轮次只按回合序，不再要求 attack/defend。校验统一交给 LevelDef。
+            if (Level != null) errors.AddRange(Level.Validate(units));
+            else errors.Add("arena：缺关卡定义（LevelDef）");
 
             foreach (LevelRound round in Rounds)
             {
                 if (round.Waves.Count == 0)
-                    errors.Add($"arena：{round.Kind} 轮没有波次");
+                    errors.Add($"arena：{round.Label} 没有波次");
                 foreach (Wave wave in round.Waves)
                 {
                     if (wave.T < 0.0 || wave.T > RoundSeconds + 1e-6)
-                        errors.Add($"arena：{round.Kind} 轮波次时间 {wave.T} 越界（0..{RoundSeconds}）");
+                        errors.Add($"arena：{round.Label} 波次时间 {wave.T} 越界（0..{RoundSeconds}）");
                     if (wave.Squads.Count == 0)
-                        errors.Add($"arena：{round.Kind} 轮 t={wave.T} 是空波次");
+                        errors.Add($"arena：{round.Label} t={wave.T} 是空波次");
                     foreach (WaveSquad sq in wave.Squads)
                     {
                         UnitDef def = units != null ? units.Get(sq.Unit) : null;

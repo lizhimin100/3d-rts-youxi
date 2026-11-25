@@ -5,6 +5,7 @@ namespace WarIsland.Model
 {
     public sealed class SquadRoundResult
     {
+        /// <summary>轮次标签（"第 1 轮"…）。2026-11-24 起不再有 attack/defend。</summary>
         public string Kind = "";
         public string Label = "";
         public double Seconds;
@@ -14,10 +15,15 @@ namespace WarIsland.Model
         public double EnemyBaseHp;
         public bool PlayerBaseDestroyed;
         public bool EnemyBaseDestroyed;
+        /// <summary>本轮按幸存 base_damage 打出的伤害（唯一扣血口径）。</summary>
+        public double PlayerBaseDamage;
+        public double EnemyBaseDamage;
+        public bool TieDiffUsed;
+        public bool BerserkTriggered;
         public SquadBattleStats Stats;
     }
 
-    /// <summary>一局（两轮各 60 秒）的小队战斗结果。</summary>
+    /// <summary>一局（单轮单场死斗循环）的战斗结果。</summary>
     public sealed class SquadMatchResult
     {
         public string ArenaId = "";
@@ -34,6 +40,7 @@ namespace WarIsland.Model
         public int EnemySquadsSpawned;
 
         public readonly List<SquadRoundResult> Rounds = new List<SquadRoundResult>();
+        /// <summary>本局最后一份规划快照（单轮制只保留一份，字段名沿用旧契约）。</summary>
         public PlanningSnapshot AttackPlan;
         public PlanningSnapshot DefendPlan;
 
@@ -78,18 +85,29 @@ namespace WarIsland.Model
         public int HeadingFlips;
         public double HeadingFlipsPerSec;
 
+        // ---- 2026-11-24：单轮死斗读数 ----
+        public int RoundsPlayed;
+        public double PlayerBaseDamageDealt;
+        public double EnemyBaseDamageTaken;
+        public int BerserkRounds;
+        public int TieDiffRounds;
+        /// <summary>战败简报（只有战败非空）。</summary>
+        public string DefeatRecord = "";
+
         public readonly List<string> Reviews = new List<string>();
         public readonly List<string> ReviewCodes = new List<string>();
         public string TopReason => ReviewCodes.Count > 0 ? ReviewCodes[0] : "";
+
+        public bool BerserkTriggered => BerserkRounds > 0;
+        public bool TieDiffUsed => TieDiffRounds > 0;
     }
 
     /// <summary>
-    /// 双 60 秒小队对局：规划（ScriptedPlanner）→ 出兵落格子锚点 → 脊线推进 → 6 步结算 → 轮末清场。
-    /// 纯 Model，不读引擎时间；同 seed + 同数据 = 同结果。
+    /// 一局战役（单轮单场死斗循环）的唯一入口。
+    /// 规划 → 战斗 → 结算 → 下一轮，直到一方基地归零；规则全部在
+    /// <see cref="CampaignRun"/> / <see cref="BoardSession"/> / <see cref="BattleSession"/> / <see cref="RoundResolver"/>。
     ///
-    /// 限时口径（2026-11-21）：单场 60 秒（<see cref="LevelDef.RoundSecondsSpec"/>）。
-    /// **60 秒未全歼 = 平局且不加伤**：没有"到点强行破僵 / 按剩余血量补刀"这类机制，
-    /// 到点就结算，基地血量只在抽血（zone_dps）真正发生时下降。
+    /// 这里的 `Squad*` 名字是跨语言契约（Phase 3 才改名），不是"小队编制"。
     /// </summary>
     public static class SquadMatch
     {
@@ -103,85 +121,68 @@ namespace WarIsland.Model
         {
             var result = new SquadMatchResult
             {
-                ArenaId = arena.Id,
-                ArenaName = arena.DisplayName,
+                ArenaId = arena != null ? arena.Id : "",
+                ArenaName = arena != null ? arena.DisplayName : "",
                 Seed = seed,
-                PlayerBaseHpStart = arena.PlayerBaseHp,
-                EnemyBaseHpStart = arena.EnemyBaseHp,
             };
-
-            double playerHp = arena.PlayerBaseHp;
-            double enemyHp = arena.EnemyBaseHp;
-
-            for (int ri = 0; ri < arena.Rounds.Count; ri++)
+            if (arena == null || arena.Level == null)
             {
-                if (playerHp <= 0.0 || enemyHp <= 0.0) break;
-                LevelRound round = arena.Rounds[ri];
-                bool defending = round.Kind == "defend";
-
-                // 攻防时空流转：本轮只出"这一场"的队伍（attack 轮出进攻牌，defend 轮出防守牌）。
-                string roundRole = defending ? SquadRoles.Defend : SquadRoles.Attack;
-                var session = new SquadSession(
-                    units, combat, planning, arena,
-                    seed + 7919 * (ri + 1), false, playerHp, enemyHp, tuning);
-                session.BeginPlanning();
-                ScriptedPlanner.Plan(session.Match, defending, roundRole);
-                PlanningSnapshot snap = session.Match.Snapshot();
-                if (round.Kind == "attack") result.AttackPlan = snap;
-                else if (round.Kind == "defend") result.DefendPlan = snap;
-
-                session.Battle.SetDrainReduction(snap != null ? snap.DrainReduction : 0.0, 0.0);
-                session.EndPlanning(true);
-                session.Battle.SetActiveRole(roundRole);
-                session.BeginExecution(ri);
-
-                // **预设偏好**由 SquadSession.BeginAttack / BeginDefend 内部的 PushForward 下达：
-                //   进攻战 → 压向敌方基地（胜利条件就是拆家）；
-                //   防守战 → 前出到玩家区前缘迎战（**不能也去拆家**，否则老家没人守，
-                //            敌方波次直接把基地抽干 —— 这是 2026-11-22 实测到的一个配平陷阱）。
-                // 推演与试玩共用同一份偏好，这里不再另写一条"侧翼绕行"的规则。
-
-                SquadBattleStats stats = session.Battle.Run(arena.RoundSeconds);
-                var rr = new SquadRoundResult
-                {
-                    Kind = round.Kind,
-                    Label = round.Label,
-                    Seconds = Math.Round(session.Battle.Time * 10.0) / 10.0,
-                    PlayerBaseHpStart = playerHp,
-                    EnemyBaseHpStart = enemyHp,
-                    PlayerBaseHp = session.Battle.PlayerBaseHp,
-                    EnemyBaseHp = session.Battle.EnemyBaseHp,
-                    PlayerBaseDestroyed = session.Battle.PlayerBaseHp <= 0.0,
-                    EnemyBaseDestroyed = session.Battle.EnemyBaseHp <= 0.0,
-                    Stats = stats,
-                };
-                result.Rounds.Add(rr);
-                playerHp = rr.PlayerBaseHp;
-                enemyHp = rr.EnemyBaseHp;
-                Merge(result, stats);
+                result.Outcome = "draw";
+                result.OutcomeText = "缺关卡";
+                return result;
             }
 
-            result.PlayerBaseHp = Math.Max(playerHp, 0.0);
-            result.EnemyBaseHp = Math.Max(enemyHp, 0.0);
-            double seconds = 0.0;
-            foreach (SquadRoundResult rr in result.Rounds) seconds += rr.Seconds;
-            result.Seconds = Math.Round(seconds * 10.0) / 10.0;
+            CampaignResult campaign = CampaignRun.Run(
+                units, combat, planning, arena.ShellDict, arena.LayoutDict, arena, arena.Level, seed, tuning);
+
+            result.PlayerBaseHpStart = campaign.PlayerBaseHpStart;
+            result.EnemyBaseHpStart = campaign.EnemyBaseHpStart;
+            result.PlayerBaseHp = campaign.PlayerBaseHp;
+            result.EnemyBaseHp = campaign.EnemyBaseHp;
+            result.Outcome = campaign.Outcome;
+            result.OutcomeText = campaign.OutcomeText;
+            result.Seconds = campaign.Seconds;
+            result.PlayerSquadsProduced = campaign.PlayerUnitsProduced;
+            result.EnemySquadsSpawned = campaign.EnemyUnitsSpawned;
+            result.RoundsPlayed = campaign.Rounds;
+            result.PlayerBaseDamageDealt = campaign.PlayerBaseDamageDealt;
+            result.EnemyBaseDamageTaken = campaign.PlayerBaseDamageTaken;
+            result.BerserkRounds = campaign.BerserkRounds;
+            result.TieDiffRounds = campaign.TieDiffRounds;
+            result.DefeatRecord = campaign.DefeatRecord;
+
+            for (int i = 0; i < campaign.RoundResults.Count; i++)
+            {
+                RoundResult rr = campaign.RoundResults[i];
+                result.Rounds.Add(new SquadRoundResult
+                {
+                    Kind = rr.Label,
+                    Label = rr.Label,
+                    Seconds = rr.Seconds,
+                    PlayerBaseHpStart = rr.PlayerBaseHpBefore,
+                    PlayerBaseHp = rr.PlayerBaseHpAfter,
+                    EnemyBaseHpStart = rr.EnemyBaseHpBefore,
+                    EnemyBaseHp = rr.EnemyBaseHpAfter,
+                    PlayerBaseDestroyed = rr.PlayerBaseHpAfter <= 0.0,
+                    EnemyBaseDestroyed = rr.EnemyBaseHpAfter <= 0.0,
+                    PlayerBaseDamage = rr.PlayerBaseDamageApplied,
+                    EnemyBaseDamage = rr.EnemyBaseDamageApplied,
+                    TieDiffUsed = rr.TieDiffUsed,
+                    BerserkTriggered = rr.BerserkTriggered,
+                    Stats = rr.Stats,
+                });
+                Merge(result, rr.Stats);
+            }
+
             result.HeadingFlipsPerSec = result.Seconds > 1e-6
                 ? Math.Round(result.HeadingFlips / result.Seconds, 2)
                 : 0.0;
-            result.PlayerSquadsProduced = (result.AttackPlan?.ArmySquads ?? 0) + (result.DefendPlan?.ArmySquads ?? 0);
-            result.EnemySquadsSpawned = 0;
-            foreach (SquadRoundResult rr in result.Rounds) result.EnemySquadsSpawned += rr.Stats.EnemySquadsSpawned;
-            int statRounds = result.Rounds.Count;
-            if (statRounds > 0)
-            {
-                result.AvgSlotErrorMeters = Math.Round(result.AvgSlotErrorMeters / statRounds, 3);
-                result.AvgPathLength = Math.Round(result.AvgPathLength / statRounds, 1);
-                result.AvgStraightLength = Math.Round(result.AvgStraightLength / statRounds, 1);
-            }
+            int rounds = Math.Max(result.Rounds.Count, 1);
+            result.AvgSlotErrorMeters = Math.Round(result.AvgSlotErrorMeters / rounds, 3);
+            result.AvgPathLength = Math.Round(result.AvgPathLength / rounds, 1);
+            result.AvgStraightLength = Math.Round(result.AvgStraightLength / rounds, 1);
 
-            DecideOutcome(result);
-            BuildReview(result);
+            BuildReview(result, campaign);
             return result;
         }
 
@@ -196,10 +197,6 @@ namespace WarIsland.Model
             r.EnemyModelsLost += s.EnemyModelsLost;
             r.PlayerSquadsLost += s.PlayerSquadsLost;
             r.EnemySquadsLost += s.EnemySquadsLost;
-            r.PlayerMaxZone = Math.Max(r.PlayerMaxZone, s.PlayerMaxZone);
-            r.EnemyMaxZone = Math.Max(r.EnemyMaxZone, s.EnemyMaxZone);
-            r.PlayerZoneSeconds += s.PlayerZoneSeconds;
-            r.EnemyZoneSeconds += s.EnemyZoneSeconds;
             r.StuckEvents += s.StuckEvents;
             r.Repaths += s.Repaths;
             r.AvgSlotErrorMeters += s.AvgSlotErrorMeters;
@@ -244,34 +241,10 @@ namespace WarIsland.Model
             }
         }
 
-        private static void DecideOutcome(SquadMatchResult r)
-        {
-            bool playerDead = r.PlayerBaseHp <= 0.0;
-            bool enemyDead = r.EnemyBaseHp <= 0.0;
-            if (playerDead && enemyDead)
-            {
-                r.Outcome = "draw";
-                r.OutcomeText = "平局 · 同归于尽";
-            }
-            else if (enemyDead)
-            {
-                r.Outcome = "win";
-                r.OutcomeText = "胜利 · 拆掉敌方基地";
-            }
-            else if (playerDead)
-            {
-                r.Outcome = "lose";
-                r.OutcomeText = "战败 · 基地被破";
-            }
-            else
-            {
-                // 2026-11-21：到点未全歼 = **平局**，不加伤、不破僵。
-                r.Outcome = "draw";
-                r.OutcomeText = "平局 · 60 秒未全歼（不减血、不加伤）";
-            }
-        }
-
-        private static void BuildReview(SquadMatchResult r)
+        /// <summary>
+        /// 定性复盘：胜利只留一句总结；战败只留简要死因（不再构建全场统计报表）。
+        /// </summary>
+        private static void BuildReview(SquadMatchResult r, CampaignResult c)
         {
             r.Reviews.Clear();
             r.ReviewCodes.Clear();
@@ -279,73 +252,20 @@ namespace WarIsland.Model
             if (r.Outcome == "win")
             {
                 r.ReviewCodes.Add("win");
-                r.Reviews.Add($"胜利：敌方基地 {r.EnemyBaseHpStart:0} → 0；我方基地剩 {Percent(r.PlayerBaseHp, r.PlayerBaseHpStart)}。");
-                r.Reviews.Add($"单兵：出兵 {r.PlayerSquadsProduced} 名 / 阵亡 {r.PlayerSquadsLost} 名，人均 DPS {Dps(r.PlayerByUnit):0.0}。");
-                if (r.StuckEvents > 0)
-                    r.Reviews.Add($"寻路：卡住脱困 {r.StuckEvents} 次，重规划 {r.Repaths} 次（脊线 + 局部避障）。");
+                r.Reviews.Add($"胜利：{r.RoundsPlayed} 轮打完，敌方基地 {r.EnemyBaseHpStart:0} → 0；我方剩 {r.PlayerBaseHp:0}。");
+                return;
+            }
+            if (r.Outcome == "draw")
+            {
+                r.ReviewCodes.Add("stalemate");
+                r.Reviews.Add(r.OutcomeText);
                 return;
             }
 
-            var reasons = new List<(int Sev, string Code, string Text)>();
-            int totalSquads = (r.AttackPlan?.ArmySquads ?? 0) + (r.DefendPlan?.ArmySquads ?? 0);
-            int totalBlocked = (r.AttackPlan?.PopBlocked ?? 0) + (r.DefendPlan?.PopBlocked ?? 0);
-
-            if (totalSquads == 0)
-                reasons.Add((100, "no_army", "两轮规划一个人都没出：CP 没落到征召牌上。"));
-            if (r.EnemyBaseHp > 0.0 && r.EnemyBaseHp < r.EnemyBaseHpStart * 0.1)
-                reasons.Add((96, "close_loss", $"差一点：敌方基地只剩 {r.EnemyBaseHp:0}/{r.EnemyBaseHpStart:0}。"));
-            if (r.PlayerBaseHp <= 0.0)
-                reasons.Add((98, "base_breach", $"基地被破：敌方最多 {r.EnemyMaxZone} 名同时停在我方区域抽血。"));
-            if (r.PlayerSquadsLost >= 3 && r.EnemySquadsLost == 0)
-                reasons.Add((92, "squad_wiped", $"被打穿：我方阵亡 {r.PlayerSquadsLost} 名，敌方一人未灭。"));
-            if (r.PlayerDamage <= 0.0 && totalSquads > 0)
-                reasons.Add((94, "no_dps", "一个人都没打中：射程/阵型/克制可能完全没接上。"));
-            if (r.StuckEvents >= 6)
-                reasons.Add((84, "path_stuck", $"寻路卡住 {r.StuckEvents} 次（重规划 {r.Repaths} 次），单兵在狭道里互相挡路。"));
-            if (r.AvgSlotErrorMeters > 0.9)
-                reasons.Add((80, "slot_loose", $"站位松散：平均偏离 {r.AvgSlotErrorMeters:0.00} 米（理想 < 0.6）。"));
-            if (r.EnemyModelsLost > 0 && r.PlayerModelsLost > r.EnemyModelsLost * 1.3)
-                reasons.Add((86, "exchange", $"交换比失衡：我方阵亡 {r.PlayerModelsLost} 人，敌方 {r.EnemyModelsLost} 人。"));
-            if (totalBlocked > 0)
-                reasons.Add((72, "pop_blocked", $"人口卡死：共 {totalBlocked} 次训练被人口挡住。"));
-            if (r.PlayerMaxZone == 0 && r.Rounds.Count > 0 && r.Rounds[0].Kind == "attack")
-                reasons.Add((78, "no_zone", "进攻战一次也没摸到敌方基地。"));
-
-            reasons.Sort((a, b) =>
-            {
-                int c = b.Sev.CompareTo(a.Sev);
-                if (c != 0) return c;
-                return string.CompareOrdinal(a.Code, b.Code);
-            });
-            foreach (var reason in reasons)
-            {
-                if (r.ReviewCodes.Count >= 4) break;
-                r.ReviewCodes.Add(reason.Code);
-                r.Reviews.Add(reason.Text);
-            }
-            if (r.Reviews.Count == 0)
-            {
-                r.ReviewCodes.Add("unexplained_loss");
-                r.Reviews.Add($"没有单一短板：敌方基地剩 {r.EnemyBaseHp:0}/{r.EnemyBaseHpStart:0}，我方剩 {r.PlayerBaseHp:0}/{r.PlayerBaseHpStart:0}。");
-            }
-        }
-
-        private static double Dps(Dictionary<string, SquadUnitStat> map)
-        {
-            double dmg = 0.0;
-            double sec = 0.0;
-            foreach (var kv in map)
-            {
-                dmg += kv.Value.Damage;
-                sec += kv.Value.MemberSeconds;
-            }
-            return sec > 1e-6 ? dmg / sec : 0.0;
-        }
-
-        private static string Percent(double v, double max)
-        {
-            if (max <= 0.0) return "0%";
-            return $"{Math.Round(v / max * 100.0):0}%";
+            r.ReviewCodes.Add("defeat");
+            r.Reviews.Add(string.IsNullOrEmpty(r.DefeatRecord) ? r.OutcomeText : r.DefeatRecord);
+            if (c != null && c.DefeatKillers.Count > 0)
+                r.Reviews.Add("敌方主力：" + string.Join("、", c.DefeatKillers));
         }
     }
 }

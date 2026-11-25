@@ -12,11 +12,14 @@ namespace WarIsland.Model
     ///   · 负甲承伤上限 3 倍；
     ///   · 暴击默认 2 倍；
     ///   · 命中基准 100。
-    /// 6×6 克制表是**内容**，只有 JSON 一份；C# 不写第二份表。
+    /// 4×4 克制表是**内容**，只有 JSON 一份；C# 不写第二份表。
+    ///
+    /// 2026-11-24 冻结：攻击 4 类（普通/穿刺/魔法/攻城）、护甲 4 类（无甲/轻甲/中甲/重甲）。
+    /// 旧 6×6 的「混乱 / 神力 / 坚固甲 / 神圣甲」已物理删除，旧数据会被校验抓红。
     /// </summary>
     public sealed class CombatRules
     {
-        public const int Stride = 6;
+        public const int Stride = 4;
         public const double SpecR1 = 0.015;
         public const double SpecArmorScale = 0.06;
         public const double SpecNegativeArmorCap = 3.0;
@@ -29,13 +32,13 @@ namespace WarIsland.Model
         public double NegativeArmorCap = SpecNegativeArmorCap;
         public double CritMultiplier = SpecCritMultiplier;
 
-        /// <summary>6 个伤害类型名（顺序即行序）。</summary>
+        /// <summary>4 个伤害类型名（顺序即行序）。</summary>
         public string[] AttackNames = (string[])CombatTypes.AttackNames.Clone();
 
-        /// <summary>6 个护甲类型名（顺序即列序）。</summary>
+        /// <summary>4 个护甲类型名（顺序即列序）。</summary>
         public string[] ArmorNames = (string[])CombatTypes.ArmorNames.Clone();
 
-        /// <summary>扁平 6×6 表：row = 伤害类型，col = 护甲类型。</summary>
+        /// <summary>扁平 4×4 表：row = 伤害类型，col = 护甲类型。</summary>
         public double[] CounterTable;
 
         private readonly List<string> _parseNotes = new List<string>();
@@ -59,11 +62,11 @@ namespace WarIsland.Model
 
             var at = JVal.StringArray(d, "attack_types");
             if (at != null) r.AttackNames = at;
-            else r._parseNotes.Add("缺少 attack_types（6 个伤害类型名）");
+            else r._parseNotes.Add($"缺少 attack_types（{CombatTypes.AttackCount} 个伤害类型名）");
 
             var ar = JVal.StringArray(d, "armor_types");
             if (ar != null) r.ArmorNames = ar;
-            else r._parseNotes.Add("缺少 armor_types（6 个护甲类型名）");
+            else r._parseNotes.Add($"缺少 armor_types（{CombatTypes.ArmorCount} 个护甲类型名）");
 
             var rows = JVal.List(d, "counter_table");
             if (rows == null)
@@ -72,7 +75,7 @@ namespace WarIsland.Model
             }
             else if (rows.Count != Stride)
             {
-                r._parseNotes.Add($"counter_table 行数 {rows.Count} != {Stride}");
+                r._parseNotes.Add($"counter_table 行数 {rows.Count} != {Stride}（4×4）");
             }
             else
             {
@@ -131,6 +134,15 @@ namespace WarIsland.Model
                     if (AttackNames[i] != CombatTypes.AttackNames[i])
                         errors.Add($"attack_types[{i}]={AttackNames[i]}，规定顺序是 {CombatTypes.AttackNames[i]}（表行序不许重排）");
                 }
+                for (int i = 0; i < CombatTypes.LegacyAttackNames.Length; i++)
+                {
+                    string legacy = CombatTypes.LegacyAttackNames[i];
+                    for (int j = 0; j < AttackNames.Length; j++)
+                    {
+                        if (AttackNames[j] == legacy)
+                            errors.Add($"attack_types 仍包含已废弃类型「{legacy}」（2026-11-24 起只允许 4 类）");
+                    }
+                }
             }
 
             if (ArmorNames == null || ArmorNames.Length != CombatTypes.ArmorCount)
@@ -143,6 +155,15 @@ namespace WarIsland.Model
                 {
                     if (ArmorNames[i] != CombatTypes.ArmorNames[i])
                         errors.Add($"armor_types[{i}]={ArmorNames[i]}，规定顺序是 {CombatTypes.ArmorNames[i]}（表列序不许重排）");
+                }
+                for (int i = 0; i < CombatTypes.LegacyArmorNames.Length; i++)
+                {
+                    string legacy = CombatTypes.LegacyArmorNames[i];
+                    for (int j = 0; j < ArmorNames.Length; j++)
+                    {
+                        if (ArmorNames[j] == legacy)
+                            errors.Add($"armor_types 仍包含已废弃类型「{legacy}」（2026-11-24 起只允许 4 类）");
+                    }
                 }
             }
 

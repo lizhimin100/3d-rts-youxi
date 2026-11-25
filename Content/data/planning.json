@@ -1,37 +1,36 @@
 {
-	"version": 1.0,
-	"note": "规划阶段唯一数值源：CP / 人口 / 手牌 / 建筑 / 卡牌 / 升星。2026-11-22 单兵制：训练牌用 units 写明一次产几名独立单兵（count = 卡组副本数）；「加快训练」在本回合把 units × 1.5 向上取整。建造牌打出即 Exhaust（本局不再回牌堆），训练/策略牌循环。",
+	"version": 3.0,
+	"note": "规划阶段唯一数值源：CP / 人口 / 手牌 / 建筑 / 卡牌 / 升星 / 光环 / 经济。2026-11-24 冻结：单轮单场死斗；训练牌 units_mode=per_building（每座匹配 building_tag 的建筑各产一批）；卡牌不再有 role（攻防两轮已取消）；建筑用 kind 分类、aura/economy/defense 声明效果，由 MechanicBus 在 planning_end 统一结算（不许在代码里写 if buildingId==...）。建造牌打出即 Exhaust；训练/策略牌循环。棋盘按竖列 3 格顺序填充（BoardSession 唯一实现）。",
 	"cp": {
-		"start": 12.0,
-		"per_planning": 12.0,
-		"cap": 24.0,
-		"note": "一次规划同时供两场用。12 CP = 建造 3 + 加速 1 + 4 张征召 8，正好把进攻牌打完。"
+		"start": 12,
+		"per_planning": 12,
+		"cap": 24,
+		"note": "每次规划 12 CP：建造 3 + 加速 1 + 4 张征召 8；经济建筑（伐木场）每轮额外产 CP。"
 	},
 	"pop": {
-		"base": 12.0,
-		"note": "基地自带 12；兵营占 1。征召牌只吃 CP 不吃人口，所以没有农场也不会卡死。"
+		"base": 12,
+		"note": "基地自带 12；兵营/靶场各占 1。征召牌只吃 CP 不吃人口，没有农场也不会卡死。"
 	},
-	"max_drain_reduction": 0.45,
 	"hand": {
-		"draw": 9.0,
-		"max": 10.0,
+		"draw": 9,
+		"max": 10,
 		"opening": [
 			"build_barracks",
+			"build_blacksmith",
 			"train_boost",
-			"train_attack",
-			"train_attack",
-			"train_attack",
-			"train_attack",
-			"train_defend",
-			"train_defend",
-			"train_defend"
+			"train_footman",
+			"train_footman",
+			"train_footman",
+			"train_footman",
+			"train_crossbow",
+			"train_crossbow"
 		],
-		"note": "起手 9 张：1 建造 + 1 加快训练 + 4 进攻 + 3 防守 —— 进攻战能凑出 4×6=24 人（加速后 4×9=36 人），守家也有 3 张。"
+		"note": "起手 9 张：2 建造 + 1 加快训练 + 4 步兵 + 2 弓手。单轮死斗只准备一场，不再分进攻/防守。"
 	},
 	"merge": {
-		"required": 3.0,
-		"max_star": 3.0,
-		"note": "拖同名建筑 3 合 1：每吃掉一座同名建筑 +1 合并数，星级 = 1 + 合并数，满 3 星（不要求同星，累计 3 座即可）。"
+		"required": 3,
+		"max_star": 3,
+		"note": "同名未满星建筑拖放 3 合 1：星级 = 累计建筑数，封顶 3；目标格保留，来源格空出并成为下一个优先填充位。"
 	},
 	"star": {
 		"attack_mult": [
@@ -51,23 +50,23 @@
 		]
 	},
 	"board": {
-		"plots": 10.0,
+		"plots": 18,
 		"start": [
 			{
 				"building": "keep",
-				"plot": 0.0
+				"plot": 0
 			},
 			{
 				"building": "farm",
-				"plot": 1.0
+				"plot": 1
 			},
 			{
 				"building": "farm",
-				"plot": 2.0
+				"plot": 2
 			},
 			{
 				"building": "barracks",
-				"plot": 3.0
+				"plot": 3
 			}
 		],
 		"platforms": [
@@ -146,159 +145,165 @@
 			28.0,
 			16.0
 		],
-		"note": "类自走棋独立石台：plots 是逻辑槽位，platforms 是可视化坐标（0..1）；石台之间留出行军间隙，不做连线格。"
+		"note": "竖列组织：每列 3 格（共 6 列 18 格）；新建筑必须按列顺序从上到下填满，填满一列才开下一列。"
 	},
 	"buildings": [
 		{
 			"id": "keep",
 			"display_name": "基地",
+			"kind": "keep",
 			"tag": "base",
-			"armor": 8.0,
-			"armor_type": "坚固甲",
-			"hp": 4000.0,
-			"pop": 0.0,
+			"armor": 8,
+			"armor_type": "重甲",
+			"hp": 4000,
+			"pop": 0,
 			"buildable": false,
 			"trains": [],
-			"base_drain_reduction": 0.0,
-			"produce_tag": "base",
 			"model_path": "res://Content/art/模型/大本营.glb",
 			"model_scale": 0.5,
 			"use_placeholder_mesh": false,
 			"star_output": [
 				{
-					"pop": 0.0,
-					"train_slots": 0.0,
-					"drain_reduction": 0.0
+					"pop": 0,
+					"train_slots": 0,
+					"drain_reduction": 0
 				},
 				{
-					"pop": 0.0,
-					"train_slots": 0.0,
-					"drain_reduction": 0.0
+					"pop": 0,
+					"train_slots": 0,
+					"drain_reduction": 0
 				},
 				{
-					"pop": 0.0,
-					"train_slots": 0.0,
-					"drain_reduction": 0.0
+					"pop": 0,
+					"train_slots": 0,
+					"drain_reduction": 0
 				}
-			],
-			"icon_path": "res://Content/art/图标/建筑/creep_shell.png"
+			]
 		},
 		{
 			"id": "farm",
 			"display_name": "农场",
+			"kind": "economy",
 			"tag": "farm",
-			"armor": 4.0,
-			"armor_type": "坚固甲",
-			"hp": 450.0,
-			"pop": 10.0,
+			"armor": 4,
+			"armor_type": "重甲",
+			"hp": 450,
+			"pop": 10,
 			"buildable": true,
 			"trains": [],
-			"base_drain_reduction": 0.0,
-			"produce_tag": "farm",
-			"model_path": "res://Content/art/模型/农场.glb",
-			"model_scale": 0.5,
-			"use_placeholder_mesh": false,
-			"star_output": [
-				{
-					"pop": 10.0,
-					"train_slots": 0.0,
-					"drain_reduction": 0.0
-				},
-				{
-					"pop": 14.0,
-					"train_slots": 0.0,
-					"drain_reduction": 0.0
-				},
-				{
-					"pop": 20.0,
-					"train_slots": 0.0,
-					"drain_reduction": 0.0
-				}
-			],
-			"icon_path": "res://Content/art/图标/建筑/farm.png"
+			"economy": {
+				"cp_per_planning": [
+					0,
+					0,
+					0
+				],
+				"note": "农场只产人口；CP 由伐木场产。"
+			},
+			"icon_path": "res://Content/art/图标/建筑/农场.png"
 		},
 		{
 			"id": "barracks",
 			"display_name": "兵营",
-			"tag": "barracks",
-			"armor": 6.0,
-			"armor_type": "坚固甲",
-			"hp": 900.0,
+			"kind": "producer",
+			"tag": "infantry",
+			"armor": 6,
+			"armor_type": "重甲",
+			"hp": 900,
+			"pop": 1,
 			"buildable": true,
 			"trains": [
 				"alliance_footman",
-				"alliance_pikeman",
-				"alliance_archer",
-				"alliance_crossbowman"
+				"alliance_pikeman"
 			],
-			"base_drain_reduction": 0.0,
-			"produce_tag": "barracks",
-			"model_path": "res://Content/art/模型/兵营.glb",
-			"model_scale": 0.5,
-			"use_placeholder_mesh": false,
-			"star_output": [
-				{
-					"pop": 0.0,
-					"train_slots": 1.0,
-					"drain_reduction": 0.0
-				},
-				{
-					"pop": 0.0,
-					"train_slots": 1.0,
-					"drain_reduction": 0.0
-				},
-				{
-					"pop": 0.0,
-					"train_slots": 2.0,
-					"drain_reduction": 0.0
-				}
+			"icon_path": "res://Content/art/图标/建筑/兵营.png"
+		},
+		{
+			"id": "archery_range",
+			"display_name": "靶场",
+			"kind": "producer",
+			"tag": "ranged",
+			"armor": 4,
+			"armor_type": "中甲",
+			"hp": 700,
+			"pop": 1,
+			"buildable": true,
+			"trains": [
+				"alliance_crossbowman",
+				"alliance_archer"
 			],
-			"pop": 1.0,
-			"note": "占 1 格 + 1 人口；同 Tag 的每座兵营各产一批单兵。",
-			"icon_path": "res://Content/art/图标/建筑/barracks.png"
+			"icon_path": "res://Content/art/图标/建筑/靶场.png"
+		},
+		{
+			"id": "lumbermill",
+			"display_name": "伐木场",
+			"kind": "economy",
+			"tag": "economy",
+			"armor": 4,
+			"armor_type": "重甲",
+			"hp": 520,
+			"pop": 0,
+			"buildable": true,
+			"trains": [],
+			"economy": {
+				"cp_per_planning": [
+					1,
+					2,
+					3
+				],
+				"note": "每次规划开始额外产 CP；星级越高越多。"
+			}
+		},
+		{
+			"id": "blacksmith",
+			"display_name": "铁匠铺",
+			"kind": "support",
+			"tag": "forge",
+			"armor": 6,
+			"armor_type": "重甲",
+			"hp": 800,
+			"pop": 1,
+			"buildable": true,
+			"trains": [],
+			"aura": {
+				"scope": "adjacent",
+				"radius": 1,
+				"attack_mult": [
+					1.03,
+					1.06,
+					1.1
+				],
+				"armor_add": [
+					1,
+					2,
+					3
+				],
+				"note": "空间光环：本格 + 上下左右相邻 1 格内建筑产出的单兵获得加成；多座铁匠铺叠乘。"
+			}
 		},
 		{
 			"id": "watchtower",
 			"display_name": "哨塔",
+			"kind": "defense",
 			"tag": "tower",
-			"armor": 8.0,
-			"armor_type": "坚固甲",
-			"hp": 650.0,
-			"pop": 0.0,
+			"armor": 8,
+			"armor_type": "重甲",
+			"hp": 650,
+			"pop": 0,
 			"buildable": true,
 			"trains": [],
-			"base_drain_reduction": 0.15,
-			"note": "每座哨塔让敌方小队对基地的抽血 -15%，最多叠到 -45%。",
-			"produce_tag": "tower",
-			"model_path": "res://Content/art/模型/哨塔.glb",
-			"model_scale": 0.5,
-			"use_placeholder_mesh": false,
-			"star_output": [
-				{
-					"pop": 0.0,
-					"train_slots": 0.0,
-					"drain_reduction": 0.15
-				},
-				{
-					"pop": 0.0,
-					"train_slots": 0.0,
-					"drain_reduction": 0.22
-				},
-				{
-					"pop": 0.0,
-					"train_slots": 0.0,
-					"drain_reduction": 0.3
-				}
-			],
-			"icon_path": "res://Content/art/图标/建筑/tower.png"
+			"defense": {
+				"unit": "watchtower_bolt",
+				"count_per_building": 1,
+				"anchor": "flank",
+				"note": "每场战斗把 1 台静止弩炮投射到己方部署线后方两翼；算己方单位、可被摧毁、不影响棋盘。"
+			}
 		}
 	],
 	"strategies": {
 		"train_boost": {
 			"display_name": "加快训练",
 			"train_count_mult": 1.5,
-			"note": "本回合所有征召牌产出 +50%（6→9 / 5→8，向上取整）。不占人口、不跨回合。",
-			"icon_path": "res://Content/art/图标/clock.svg"
+			"note": "本回合所有征召牌产出 +50%（向上取整）；不占人口、不跨回合。"
 		}
 	},
 	"cards": [
@@ -307,64 +312,98 @@
 			"display_name": "建造兵营",
 			"kind": "build",
 			"building": "barracks",
-			"cost_cp": 3.0,
+			"cost_cp": 3,
 			"exhaust": true,
-			"count": 1.0,
-			"role": "",
-			"units": 0.0
+			"count": 1
 		},
 		{
-			"id": "train_attack",
-			"display_name": "征召进攻",
-			"kind": "train",
-			"unit": "alliance_footman",
-			"tag": "barracks",
-			"role": "attack",
-			"cost_cp": 2.0,
-			"exhaust": false,
-			"count": 5.0,
-			"units": 6.0
+			"id": "build_archery_range",
+			"display_name": "建造靶场",
+			"kind": "build",
+			"building": "archery_range",
+			"cost_cp": 3,
+			"exhaust": true,
+			"count": 1
 		},
 		{
-			"id": "train_defend",
-			"display_name": "征召防守",
+			"id": "build_lumbermill",
+			"display_name": "建造伐木场",
+			"kind": "build",
+			"building": "lumbermill",
+			"cost_cp": 2,
+			"exhaust": true,
+			"count": 1
+		},
+		{
+			"id": "build_blacksmith",
+			"display_name": "建造铁匠铺",
+			"kind": "build",
+			"building": "blacksmith",
+			"cost_cp": 3,
+			"exhaust": true,
+			"count": 1
+		},
+		{
+			"id": "build_watchtower",
+			"display_name": "建造哨塔",
+			"kind": "build",
+			"building": "watchtower",
+			"cost_cp": 2,
+			"exhaust": true,
+			"count": 1
+		},
+		{
+			"id": "train_footman",
+			"display_name": "征召步兵",
 			"kind": "train",
 			"unit": "alliance_footman",
-			"tag": "barracks",
-			"role": "defend",
-			"cost_cp": 2.0,
+			"building_tag": "infantry",
+			"cost_cp": 2,
 			"exhaust": false,
-			"count": 5.0,
-			"units": 5.0
+			"count": 5,
+			"units": 3,
+			"units_mode": "per_building"
+		},
+		{
+			"id": "train_crossbow",
+			"display_name": "征召弩手",
+			"kind": "train",
+			"unit": "alliance_crossbowman",
+			"building_tag": "ranged",
+			"cost_cp": 2,
+			"exhaust": false,
+			"count": 3,
+			"units": 4,
+			"units_mode": "per_building"
 		},
 		{
 			"id": "train_boost",
 			"display_name": "加快训练",
 			"kind": "strategy",
 			"effect": "train_boost",
-			"cost_cp": 1.0,
+			"cost_cp": 1,
 			"exhaust": false,
-			"count": 1.0,
-			"units": 0.0
+			"count": 1
 		}
 	],
 	"deck": {
-		"size": 12.0,
+		"size": 13,
 		"start": [
 			"build_barracks",
-			"train_attack",
-			"train_attack",
-			"train_attack",
-			"train_attack",
-			"train_attack",
-			"train_defend",
-			"train_defend",
-			"train_defend",
-			"train_defend",
-			"train_defend",
-			"train_boost"
+			"train_footman",
+			"train_footman",
+			"train_footman",
+			"train_footman",
+			"train_footman",
+			"train_crossbow",
+			"train_crossbow",
+			"train_crossbow",
+			"train_boost",
+			"build_lumbermill",
+			"build_blacksmith",
+			"build_watchtower"
 		],
-		"note": "12 张：建造兵营 ×1（Exhaust）+ 征召进攻 ×5（各 6 名）+ 征召防守 ×5（各 5 名）+ 加快训练 ×1（循环）。"
+		"note": "13 张：建造 5（兵营/靶场/伐木场/铁匠铺/哨塔，各 Exhaust）+ 征召 8（步兵 5 / 弓手 3）+ 加快训练 1。"
 	},
 	"placement": {
 		"note": "战术格子上「建筑落位」的表现层规格（唯一消费者 RtsTileSpec）。footprint_ratio = 水平占地 / 单格边长，合法区间 38%~44%；anchor_u/v = 底座中心相对格中心的本地方向偏移（以格边长为单位，负 X / 负 Z = 格子左上象限）；facing_deg = 朝向增量（工程约定模型正面 -Z，玩家侧 +180 让它面向游玩镜头 +Z）。",
@@ -375,5 +414,17 @@
 			"player": 180.0,
 			"enemy": 0.0
 		}
-	}
+	},
+	"mechanics": [
+		{
+			"id": "example_relic_guard",
+			"enabled": false,
+			"trigger": "battle_start",
+			"scope": "army",
+			"effect": {
+				"damage_taken_mult": 0.97
+			},
+			"note": "机制总线示例（默认关闭）：遗物/卡牌将来只填这条数据，不写代码分支。"
+		}
+	]
 }

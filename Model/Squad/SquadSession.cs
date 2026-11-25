@@ -11,10 +11,10 @@ namespace WarIsland.Model
         public string UnitId = "";
         public string UnitName = "";
         public string Tag = "";
-        /// <summary>attack / defend / ""（不限时空）。</summary>
-        public string Role = SquadRoles.Any;
+        /// <summary>2026-11-24 起恒为空（攻防轮已取消，字段只留给桥契约）。</summary>
+        public string Role = "";
         public int CostCp;
-        /// <summary>这张牌现在打出去会产几名单兵（已含本回合「加快训练」倍率）。</summary>
+        /// <summary>这张牌现在打出去会产几名单兵（已含本回合「加快训练」倍率与 per_building 建筑数）。</summary>
         public int Units;
         public int Buildings;
         public bool InHand;
@@ -26,12 +26,11 @@ namespace WarIsland.Model
     public sealed class SquadSessionState
     {
         public string Phase = "planning";
-        /// <summary>"" = 还没开打；attack / defend = 当前时空；done = 本轮结束。</summary>
+        /// <summary>"" = 还没开打；attack / defend = 当前是第几场（UI 两段式展示）；done = 本轮结束。</summary>
         public string RoundKind = "";
         public int PlanningIndex;
         public int Cp;
         public int CpStart;
-        /// <summary>CP 上限（HUD 的能量球显示 当前/上限）。</summary>
         public int CpCap;
         public int PopUsed;
         public int PopCap;
@@ -43,47 +42,60 @@ namespace WarIsland.Model
         public bool OutpostCaptured;
         public bool OutpostAvailable;
         public int OutpostCpCost;
-        /// <summary>本回合征召牌产出倍率（1.0 = 没打「加快训练」）。</summary>
         public double TrainCountMult = 1.0;
-        /// <summary>手牌堆/弃牌堆（HUD 的抽牌堆与弃牌堆数字直接读这两个）。</summary>
         public int DrawPile;
         public int DiscardPile;
         public int HandCount;
+        /// <summary>本局已打过的轮数 / 当前轮次（单轮死斗）。</summary>
+        public int RoundsPlayed;
+        public string Outcome = "";
+        public double PlayerBaseHp;
+        public double EnemyBaseHp;
+        /// <summary>战败简报（只有战败非空）。</summary>
+        public string DefeatRecord = "";
         public readonly List<string> Hand = new List<string>();
         public readonly List<SquadTrainEntry> TrainCards = new List<SquadTrainEntry>();
         public readonly List<string> Log = new List<string>();
     }
 
     /// <summary>
-    /// 一局小队战斗的"规划 + 执行"会话。
+    /// 一局战役的"规划 + 单场战斗"会话（UI 的唯一入口）。
     ///
-    /// 为什么要有这一层：
-    ///   · 训练牌是**规划规则**（CP/人口/建筑 Tag/星级），必须走 <see cref="PlanningMatch"/> 唯一实现；
-    ///   · 小队要**立刻**落在对应建筑所在格子的 SquadSpawnAnchor（格子正中心）——
-    ///     `PlanningMatch.PlayTrainOut` 会告诉我们是哪座建筑产的队，这里只负责查格子锚点；
-    ///   · 建造牌要落在**玩家点的那一格**（左上角建筑位），所以这里是"格子 ↔ 规划块"的唯一映射点；
-    ///   · 攻防时空流转（2026-11-22）：进攻小队只打进攻战、防守小队只打防守战，
-    ///     切换时空时把另一批队伍整批抹掉（PurgeSide），建筑与据点跨轮保留；
-    ///   · 推演（--simulate）用"先规划、开打前统一落地"，试玩用"打牌即落地"，
-    ///     两条路共用同一份 CP/人口结算，不写第二份规则。
+    /// 2026-11-24 起规则全部下沉：
+    ///   · 规划/建造/升星 → <see cref="BoardSession"/>（竖列顺序、3 合 1、光环/经济）；
+    ///   · 单场 60 秒死斗 → <see cref="BattleSession"/> / <see cref="SquadBattle"/>；
+    ///   · 幸存 base_damage 结算 → <see cref="RoundResolver"/>。
+    ///
+    /// 这个类只做三件事：把 UI 的调用翻译成上面三层的调用、保持旧方法名、维护
+    /// "每轮开场清场 + 从 ArmyPlan 重新落地"的会话状态。它**不写任何战斗/规划公式**。
     /// </summary>
     public sealed class SquadSession
     {
         public readonly SquadArena Arena;
-        public readonly PlanningMatch Match;
-        public readonly SquadBattle Battle;
+        public readonly BoardSession Board;
+        /// <summary>当前这一场的战斗内核（每轮新建，避免 finished/time/stats 跨轮残留）。</summary>
+        public SquadBattle Battle { get; private set; }
         public readonly bool InstantTrain;
         public readonly SquadTuning Tuning;
 
-        private readonly Dictionary<int, int> _plotTile = new Dictionary<int, int>();
-        private readonly Dictionary<string, List<int>> _tilesByBuilding = new Dictionary<string, List<int>>(StringComparer.Ordinal);
-        private readonly Dictionary<string, int> _tileCursor = new Dictionary<string, int>(StringComparer.Ordinal);
-        private readonly HashSet<int> _usedTiles = new HashSet<int>();
+        private readonly UnitCatalog _units;
+        private readonly CombatRules _rules;
+        private readonly PlanningConfig _planning;
+        private readonly int _seed;
+        private readonly double _playerHpMax;
+        private readonly double _enemyHpMax;
+
+        public PlanningMatch Match => Board.Match;
+
         private readonly List<string> _log = new List<string>();
+        private readonly List<RoundResult> _roundResults = new List<RoundResult>();
+        private ArmyPlan _plan = new ArmyPlan();
+        private double _playerHp;
+        private double _enemyHp;
         private bool _executing;
-        private bool _armySpawned;
-        private int _attackSquads;
-        private int _defendSquads;
+        private bool _settled = true;
+        private int _roundIndex = -1;
+        private string _outcome = "";
 
         public SquadSession(
             UnitCatalog units,
@@ -99,107 +111,35 @@ namespace WarIsland.Model
             Arena = arena ?? throw new ArgumentNullException(nameof(arena));
             InstantTrain = instantTrain;
             Tuning = SquadTuning.FromDict(tuning);
-            Match = new PlanningMatch(planning, units, seed);
+
+            var notes = new List<string>();
+            Board = BoardSession.Create(planning, units, arena.ShellDict, arena.LayoutDict, seed, notes);
+            _log.AddRange(notes);
+
+            _units = units;
+            _rules = rules;
+            _planning = planning;
+            _seed = seed;
+            _playerHp = playerBaseHp >= 0.0 ? playerBaseHp : arena.PlayerBaseHp;
+            _enemyHp = enemyBaseHp >= 0.0 ? enemyBaseHp : arena.EnemyBaseHp;
+            _playerHpMax = Math.Max(_playerHp, arena.Level != null ? arena.Level.PlayerBaseHp : _playerHp);
+            _enemyHpMax = Math.Max(_enemyHp, arena.Level != null ? arena.Level.EnemyBaseHp : _enemyHp);
+
             Battle = new SquadBattle(units, rules, arena, planning, seed ^ 0x5F3759DF, Tuning);
-            if (playerBaseHp >= 0.0)
-            {
-                Battle.SetBaseHp(playerBaseHp, enemyBaseHp >= 0.0 ? enemyBaseHp : arena.EnemyBaseHp);
-            }
-            MapStartBuildings();
+            Battle.SetBaseHp(_playerHp, _enemyHp, _playerHpMax, _enemyHpMax);
+            SyncArenaBuildings();
         }
 
         public bool Executing => _executing;
         public IReadOnlyList<string> Log => _log;
-        /// <summary>"" = 规划中；attack / defend = 当前时空；done = 本轮已结算。</summary>
+        /// <summary>"" = 规划中；attack / defend = 当前场次；done = 本轮已结算。</summary>
         public string RoundKind { get; private set; } = "";
-        public bool OutpostCaptured { get; private set; }
-        public int OutpostCpCost => Tuning.OutpostCpCost;
-        public bool OutpostAvailable => Tuning.OutpostEnabled && Arena.NeutralOutpostTile > 0;
-
-        private void MapStartBuildings()
-        {
-            var byDef = new Dictionary<string, List<int>>(StringComparer.Ordinal);
-            var tiles = new List<int>();
-            for (int i = 0; i < Arena.PlayerBuildings.Count; i++)
-            {
-                ArenaBuilding b = Arena.PlayerBuildings[i];
-                if (b.Tile <= 0) continue;
-                tiles.Add(b.Tile);
-                if (!byDef.TryGetValue(b.DefId, out List<int> list))
-                {
-                    list = new List<int>();
-                    byDef[b.DefId] = list;
-                }
-                list.Add(b.Tile);
-                _usedTiles.Add(b.Tile);
-            }
-            foreach (var kv in byDef)
-            {
-                kv.Value.Sort();
-                _tilesByBuilding[kv.Key] = kv.Value;
-            }
-            tiles.Sort();
-
-            var buildings = new List<PlanBuilding>(Match.Buildings);
-            buildings.Sort((a, b) => a.Plot.CompareTo(b.Plot));
-            foreach (PlanBuilding b in buildings)
-            {
-                int tile = TakeTile(b.DefId);
-                if (tile <= 0 && tiles.Count > 0)
-                {
-                    for (int i = 0; i < tiles.Count; i++)
-                    {
-                        if (!_usedTiles.Contains(tiles[i]))
-                        {
-                            tile = tiles[i];
-                            _usedTiles.Add(tile);
-                            break;
-                        }
-                    }
-                }
-                if (tile > 0) _plotTile[b.Plot] = tile;
-            }
-        }
-
-        private int TakeTile(string defId)
-        {
-            if (string.IsNullOrEmpty(defId)) return 0;
-            if (!_tilesByBuilding.TryGetValue(defId, out List<int> list) || list.Count == 0) return 0;
-            _tileCursor.TryGetValue(defId, out int cursor);
-            int idx = ((cursor % list.Count) + list.Count) % list.Count;
-            _tileCursor[defId] = (idx + 1) % list.Count;
-            return list[idx];
-        }
-
-        /// <summary>下一块空的玩家建造格（不含主堡格、不含据点格）。</summary>
-        public int NextFreePlayerTile()
-        {
-            var candidates = new List<int>();
-            for (int i = 0; i < Arena.Tiles.Count; i++)
-            {
-                TacticalTile t = Arena.Tiles[i];
-                if (t.Side != RegionKinds.Player || t.Role == "keep") continue;
-                if (_usedTiles.Contains(t.Index)) continue;
-                candidates.Add(t.Index);
-            }
-            candidates.Sort();
-            return candidates.Count > 0 ? candidates[0] : 0;
-        }
-
-        /// <summary>玩家还能把建筑放在哪些格子（HUD 高亮 + 自检用）。</summary>
-        public List<int> FreePlayerTiles()
-        {
-            var outTiles = new List<int>();
-            for (int i = 0; i < Arena.Tiles.Count; i++)
-            {
-                TacticalTile t = Arena.Tiles[i];
-                if (t.Side != RegionKinds.Player || t.Role == "keep") continue;
-                if (_usedTiles.Contains(t.Index)) continue;
-                outTiles.Add(t.Index);
-            }
-            outTiles.Sort();
-            return outTiles;
-        }
+        public bool OutpostCaptured => false;
+        public int OutpostCpCost => 0;
+        public bool OutpostAvailable => false;
+        public string Outcome => _outcome;
+        public IReadOnlyList<RoundResult> Rounds => _roundResults;
+        public string DefeatRecord { get; private set; } = "";
 
         // =================================================================
         // 规划
@@ -207,246 +147,193 @@ namespace WarIsland.Model
         public void BeginPlanning()
         {
             _executing = false;
-            _armySpawned = false;
+            _settled = true;
             RoundKind = "";
-            Match.BeginPlanning();
-            _log.Add($"planning:{Match.PlanningIndex}");
+            Board.BeginPlanning();
+            _plan = new ArmyPlan();
+            _log.Add($"planning:{Match.PlanningIndex}:eco+{Board.LastEconomyCp}");
         }
 
         /// <summary>
-        /// 打一张训练牌。即时模式：产出的每个单兵立刻落到对应建筑的格子落点环上
-        /// （格子中心附近的紧凑小阵列，避开左上角建筑占地）。
+        /// 打一张训练牌。即时模式：产出的每批立刻落到对应格子的小阵列（表现层预览）；
+        /// 真正的军队在每轮开场由 ArmyPlan 统一落地。
         /// </summary>
         public int PlayTrainCard(string cardId)
         {
             if (_executing) return 0;
             var produced = new List<PlannedSquad>();
-            int n = Match.PlayTrainOut(cardId, produced, !InstantTrain);
-            if (n > 0)
+            int n = Board.PlayTrain(cardId, produced);
+            if (InstantTrain && n > 0)
             {
                 for (int i = 0; i < produced.Count; i++)
                 {
-                    int men = Math.Max(produced[i].Units, 1);
-                    if (produced[i].Role == SquadRoles.Attack) _attackSquads += men;
-                    else if (produced[i].Role == SquadRoles.Defend) _defendSquads += men;
+                    PlannedSquad sq = produced[i];
+                    int tile = sq.SourceTile;
+                    if (tile <= 0) continue;
+                    Battle.AddUnitsAtTile(0, sq.UnitId, sq.Star, tile, sq.SourceBuilding,
+                        Math.Max(sq.Units, 1), 0, SquadRoles.Any);
                 }
-            }
-            if (InstantTrain && n > 0)
-            {
-                for (int i = 0; i < produced.Count; i++) SpawnPlanned(produced[i], i);
             }
             _log.Add($"train:{cardId}->{n}");
             return n;
         }
 
         /// <summary>
-        /// 打一张建造牌，并**落到玩家点的那一格**（tileIndex=0 = 自动挑第一块空格）。
-        /// 建筑位是格子的左上角（TacticalTile.BuildingAnchorWorld），出兵位是正中心。
+        /// 打一张建造牌。tile=0 表示按列顺序自动挑下一个填充位；
+        /// 非顺序格会被 BoardSession 拒绝（AllowFreePlacement 钩子可放开）。
         /// </summary>
         public bool PlayBuildCardAt(string cardId, int tileIndex)
         {
             if (_executing) return false;
-            if (!Match.Cfg.Cards.TryGetValue(cardId, out CardDef card) || card.Kind != CardKind.Build) return false;
-            if (tileIndex > 0)
-            {
-                TacticalTile t = Arena.Tile(tileIndex);
-                if (t == null || t.Side != RegionKinds.Player || t.Role == "keep") return false;
-                if (Arena.PlayerTileOccupied(tileIndex)) return false;
-                if (_usedTiles.Contains(tileIndex)) return false;
-            }
-            int plot = Match.FirstFreePlot();
-            if (plot < 0) return false;
-            if (!Match.PlayBuild(cardId, plot)) return false;
-
-            int tile = tileIndex > 0 ? tileIndex : NextFreePlayerTile();
-            if (tile <= 0)
-            {
-                _log.Add($"build:{card.Building}@{plot}=no_tile");
-                return true;
-            }
-            Arena.AddPlayerBuilding(tile, card.Building, 1);
-            _plotTile[plot] = tile;
-            _usedTiles.Add(tile);
-            if (!_tilesByBuilding.TryGetValue(card.Building, out List<int> list))
-            {
-                list = new List<int>();
-                _tilesByBuilding[card.Building] = list;
-            }
-            list.Add(tile);
-            list.Sort();
-            _log.Add($"build:{card.Building}@{plot}->tile{tile}");
+            int tile = Board.PlaceBuild(cardId, tileIndex);
+            if (tile <= 0) return false;
+            SyncArenaBuildings();
+            _log.Add($"build:{cardId}@{tile}");
             return true;
         }
 
-        /// <summary>兼容旧调用：不指定格子（自动挑第一块空的玩家格）。</summary>
         public bool PlayBuildCard(string cardId) => PlayBuildCardAt(cardId, 0);
 
-        /// <summary>
-        /// 买下中立据点（规划期动作）：进攻小队下一场从**中立区靠敌侧**出发。
-        /// 花的是 CP，走 PlanningMatch 的同一份结算，不另开钱包。
-        /// </summary>
-        public bool CaptureOutpost()
+        /// <summary>3 合 1（拖放）：目标格保留，来源格清空。</summary>
+        public int MergeBuildings(int targetTile, int sourceTile)
         {
-            if (_executing || OutpostCaptured || !OutpostAvailable) return false;
-            int cost = Math.Max(Tuning.OutpostCpCost, 0);
-            if (Match.Cp < cost) return false;
-            if (!Match.SpendCp(cost)) return false;
-            OutpostCaptured = true;
-            _log.Add($"outpost:captured(-{cost}cp)");
-            return true;
+            if (_executing) return 0;
+            int star = Board.Merge(targetTile, sourceTile);
+            if (star > 0) SyncArenaBuildings();
+            return star;
         }
 
-        /// <summary>
-        /// 收规划：推演模式下把 <see cref="PlanningMatch.Army"/> 统一落到各自建筑的出兵锚点。
-        /// 试玩模式（instantTrain）已经落地过了，这里只做收牌。
-        /// </summary>
+        /// <summary>拆除：空出的格子成为下一个顺次填充位。</summary>
+        public bool DemolishBuilding(int tile)
+        {
+            if (_executing) return false;
+            bool ok = Board.Demolish(tile);
+            if (ok) SyncArenaBuildings();
+            return ok;
+        }
+
+        public bool CaptureOutpost() => false;
+
+        /// <summary>收规划：把 Army 固化成 ArmyPlan（军队在每轮开场统一落地）。</summary>
         public void EndPlanning(bool spawnArmy = true)
         {
-            // 策略牌只影响本轮：必须在"统一落地"之前灌进去，否则新兵读到的还是默认加成。
+            _ = spawnArmy;
+            Board.EndPlanning();
+            _plan = Board.BuildArmyPlan();
             Battle.SetModifiers(Match.Mods, null);
-            if (!InstantTrain && spawnArmy && !_armySpawned)
-            {
-                for (int i = 0; i < Match.Army.Count; i++) SpawnPlanned(Match.Army[i], i);
-                _armySpawned = true;
-            }
-            Match.EndPlanning();
-            _log.Add("planning:end");
+            Battle.SetArmyModifiers(_plan.Modifiers);
+            _log.Add($"planning:end army={_plan.UnitCount} towers={_plan.Towers.Count}");
         }
 
         // =================================================================
-        // 执行：进攻战 → 防守战 → 结算
+        // 执行：单场死斗（UI 的两段 = 连续两轮）
         // =================================================================
+        public void BeginAttack() => StartRound(0, "attack");
 
-        /// <summary>
-        /// 进入**进攻战**（60 秒）：只激活进攻小队；已占领据点则先前压到中立区靠敌侧。
-        /// 敌方波次按 attack 轮排。
-        /// </summary>
-        public void BeginAttack()
-        {
-            if (_executing) return;
-            _executing = true;
-            RoundKind = SquadRoles.Attack;
-            Battle.SetModifiers(Match.Mods, null);
-            Battle.RefreshModifiers();
-            Battle.SetActiveRole(SquadRoles.Attack);
-
-            // 进攻前压：买了据点 → 中立区靠敌侧；没买 → 玩家区前缘。
-            var attackStage = Arena.AttackStageWorld(OutpostCaptured);
-            int staged = Battle.StageSide(0, SquadRoles.Attack, attackStage.X, attackStage.Y);
-            _log.Add($"attack:stage{(OutpostCaptured ? "_outpost" : "_front")}:{staged}");
-            ScheduleRound("attack", 0.0);
-            PushForward(SquadRoles.Attack);
-            _log.Add("execution:begin:attack");
-        }
-
-        /// <summary>
-        /// 进入**防守战**（60 秒）：清掉进攻时空的残兵，激活防守小队 + 据点免费防守队。
-        /// </summary>
         public void BeginDefend()
         {
-            if (RoundKind == SquadRoles.Defend) return;
             if (!_executing) BeginAttack();
-            double offset = Battle.Time;
-
-            // 轮末清场：上一场的部队（双方）全部离场，基地血量/建筑/据点保留。
-            Battle.PurgeSide(0, SquadRoles.Attack);
-            Battle.PurgeSide(1, null);
-
-            RoundKind = SquadRoles.Defend;
-            Battle.SetActiveRole(SquadRoles.Defend);
-            SpawnFreeDefenders();
-
-            if (OutpostCaptured)
-            {
-                var stage = Arena.OutpostStageWorld();
-                int moved = Battle.StageSide(0, SquadRoles.Defend, stage.X, stage.Y);
-                if (moved > 0) _log.Add($"defend:stage_outpost:{moved}");
-            }
-            ScheduleRound("defend", offset);
-            PushForward(SquadRoles.Defend);
-            _log.Add("execution:begin:defend");
+            if (!_settled) SettleCurrent(true);
+            StartRound(Math.Max(_roundIndex + 1, 1), "defend");
         }
 
-        /// <summary>本轮结算：双方部队清空（建筑与据点保留）。</summary>
         public void EndRound()
         {
-            if (RoundKind == "done") return;
+            if (!_settled) SettleCurrent(true);
             Battle.PurgeSide(1, null);
             Battle.PurgeSide(0, null);
+            _executing = false;
             RoundKind = "done";
             _log.Add("round:done");
         }
 
-        /// <summary>兼容旧入口：roundIndex 0 = 进攻战，1 = 防守战。</summary>
         public void BeginExecution(int roundIndex = 0)
         {
             if (roundIndex <= 0) BeginAttack();
             else BeginDefend();
         }
 
-        /// <summary>据点/主堡免费防守兵：防守战开场白送几名（不占 CP / 人口）。</summary>
-        private void SpawnFreeDefenders()
+        private void StartRound(int index, string kind)
         {
-            if (!Tuning.FreeDefendEnabled) return;
-            int tile = Arena.PlayerBaseTile;
-            if (tile <= 0) return;
-            int n = Battle.AddUnitsAtTile(0, Tuning.FreeDefendUnit, Tuning.FreeDefendStar,
-                tile, "keep", Math.Max(Tuning.FreeDefendCount, 1), 0, SquadRoles.Defend);
-            if (n > 0) _log.Add($"free_defend:{Tuning.FreeDefendUnit}x{n}@tile{tile}");
+            _executing = true;
+            _settled = false;
+            _roundIndex = index;
+            RoundKind = kind;
+
+            // 每轮开场：新建一份战斗内核（不继承上一场的 finished/time/stats），
+            // 棋盘建筑与基地血保留；部队由 ArmyPlan 重新落地。
+            Battle = new SquadBattle(_units, _rules, Arena, _planning, _seed ^ (0x5F3759DF + index * 7919), Tuning);
+            _plan = Board.BuildArmyPlan();
+            Battle.SetModifiers(Match.Mods, null);
+            Battle.SetArmyModifiers(_plan.Modifiers);
+            Battle.SetBaseHp(_playerHp, _enemyHp, _playerHpMax, _enemyHpMax);
+
+            LevelDef level = Arena.Level ?? new LevelDef();
+            BattleSession.SpawnArmy(Battle, _plan, level, Tuning, Arena);
+            LevelRound round = level.Rounds.Count > 0
+                ? level.Rounds[Math.Min(index, level.Rounds.Count - 1)]
+                : new LevelRound { Label = $"第 {index + 1} 轮" };
+            BattleSession.ScheduleEnemyWaves(Battle, round, level, Arena);
+
+            _log.Add($"round:begin{index + 1}:{kind}:army={_plan.UnitCount}:towers={_plan.Towers.Count}");
         }
 
-        private void ScheduleRound(string kind, double offset)
+        private void SettleCurrent(bool timeUp)
         {
-            for (int ri = 0; ri < Arena.Rounds.Count; ri++)
+            if (_settled) return;
+            LevelDef level = Arena.Level ?? new LevelDef();
+            LevelRound round = level.Rounds.Count > 0
+                ? level.Rounds[Math.Min(Math.Max(_roundIndex, 0), level.Rounds.Count - 1)]
+                : new LevelRound { Label = $"第 {_roundIndex + 1} 轮" };
+            bool up = timeUp && Battle.Time >= level.RoundSeconds - 0.06;
+            RoundResult rr = RoundResolver.Settle(Math.Max(_roundIndex, 0), round.Label, Battle, Tuning,
+                _playerHp, _enemyHp, up);
+            _roundResults.Add(rr);
+            _playerHp = rr.PlayerBaseHpAfter;
+            _enemyHp = rr.EnemyBaseHpAfter;
+            Battle.SetBaseHp(_playerHp, _enemyHp, _playerHpMax, _enemyHpMax);
+            Battle.Finish(up ? "time" : "wipe");
+            _settled = true;
+            _log.Add($"round:settle{rr.Index + 1}:{rr.PlayerBaseDamageApplied:0.#}/{rr.EnemyBaseDamageApplied:0.#}");
+
+            if (_playerHp <= 0.0 && _enemyHp <= 0.0) _outcome = "draw";
+            else if (_enemyHp <= 0.0) _outcome = "win";
+            else if (_playerHp <= 0.0) _outcome = "lose";
+            if (_outcome == "lose")
+                DefeatRecord = BuildDefeatRecord(rr);
+        }
+
+        private static string BuildDefeatRecord(RoundResult rr)
+        {
+            var killers = new List<string>();
+            if (rr.Stats != null)
             {
-                LevelRound round = Arena.Rounds[ri];
-                if (round.Kind != kind) continue;
-                for (int wi = 0; wi < round.Waves.Count; wi++)
+                var rows = new List<KeyValuePair<string, int>>();
+                foreach (var kv in rr.Stats.EnemyByUnit)
+                    if (kv.Value.Kills > 0) rows.Add(new KeyValuePair<string, int>(kv.Key, kv.Value.Kills));
+                rows.Sort((a, b) => b.Value.CompareTo(a.Value));
+                for (int i = 0; i < rows.Count && i < 3; i++) killers.Add($"{rows[i].Key}（{rows[i].Value} 杀）");
+            }
+            string fatal = rr.EnemyFatalUnits.Count > 0 ? string.Join("、", rr.EnemyFatalUnits) : "（无幸存单位）";
+            return $"败于第 {rr.Index + 1} 轮；敌方主力击杀：{(killers.Count > 0 ? string.Join("、", killers) : "（无）")}；" +
+                   $"致命扣血：{fatal}，扣 {rr.EnemyBaseDamageApplied:0.#} 点。";
+        }
+
+        /// <summary>把棋盘建筑同步到 SquadArena（3D 表现层按 arena.player_buildings 渲染）。</summary>
+        private void SyncArenaBuildings()
+        {
+            Arena.PlayerBuildings.Clear();
+            foreach (BoardBuilding b in Board.Buildings)
+            {
+                Arena.PlayerBuildings.Add(new ArenaBuilding
                 {
-                    Battle.ScheduleWaveAt(round.Waves[wi], 1, Arena.EnemyBarracksTile, offset);
-                }
+                    Tile = b.Tile,
+                    Side = RegionKinds.Player,
+                    DefId = b.DefId,
+                    Star = b.Star,
+                });
             }
-        }
-
-        /// <summary>
-        /// 预设偏好（不是玩家微操）：本时空里我方该往哪走。
-        ///   · 进攻：全力压向敌方基地（胜利条件就是拆家）；
-        ///   · 防守：前出到玩家区前缘迎战，不追进敌区。
-        /// </summary>
-        private void PushForward(string role)
-        {
-            var ids = new List<int>(Battle.SquadIdsOfSideAndRole(0, role));
-            if (ids.Count == 0) return;
-            double x;
-            if (role == SquadRoles.Attack)
-            {
-                var target = Arena.LaneToWorld(Arena.EnemyBaseX, 0.0);
-                x = target.X;
-            }
-            else
-            {
-                x = Arena.NeutralStartWorldX - 4.0;
-            }
-            int n = Battle.OrderMany(ids, SquadOrders.AttackMove, x, 0.0, -1);
-            _log.Add($"pref:{role}:attack_move={n}");
-        }
-
-        private void SpawnPlanned(PlannedSquad sq, int ordinal)
-        {
-            int tile = TakeTile(sq.SourceBuilding);
-            if (tile <= 0)
-            {
-                // 兜底：按规划块顺序落到玩家格
-                foreach (var kv in _plotTile)
-                {
-                    tile = kv.Value;
-                    break;
-                }
-            }
-            if (tile <= 0) tile = Arena.PlayerBarracksTile;
-            int n = Battle.AddUnitsAtTile(0, sq.UnitId, sq.Star, tile, sq.SourceBuilding,
-                Math.Max(sq.Units, 1), ordinal, sq.Role);
-            _log.Add($"spawn:{sq.UnitId}★{sq.Star}x{n}@{tile}#{sq.Role}");
+            Arena.PlayerBuildings.Sort((a, b) => a.Tile.CompareTo(b.Tile));
         }
 
         // =================================================================
@@ -454,8 +341,6 @@ namespace WarIsland.Model
         // =================================================================
         public SquadSessionState State()
         {
-            int armyUnits = 0;
-            for (int i = 0; i < Match.Army.Count; i++) armyUnits += Math.Max(Match.Army[i].Units, 1);
             var state = new SquadSessionState
             {
                 Phase = _executing ? "executing" : "planning",
@@ -463,38 +348,46 @@ namespace WarIsland.Model
                 PlanningIndex = Match.PlanningIndex,
                 Cp = Match.Cp,
                 CpStart = Match.CpAtStart,
-                CpCap = Match.Cfg.CpCap,
+                CpCap = Board.Cfg.CpCap,
                 PopUsed = Match.PopUsed(),
                 PopCap = Match.PopCap(),
                 PopBlocked = Match.PopBlocked,
-                ArmySquads = armyUnits,
-                ArmyModels = armyUnits,
-                AttackSquads = _attackSquads,
-                DefendSquads = _defendSquads,
-                OutpostCaptured = OutpostCaptured,
-                OutpostAvailable = OutpostAvailable,
-                OutpostCpCost = OutpostCpCost,
+                ArmySquads = _plan != null && _plan.UnitCount > 0 ? _plan.UnitCount : ArmyCount(),
+                ArmyModels = _plan != null && _plan.UnitCount > 0 ? _plan.UnitCount : ArmyCount(),
+                AttackSquads = ArmyCount(),
+                DefendSquads = 0,
+                OutpostCaptured = false,
+                OutpostAvailable = false,
+                OutpostCpCost = 0,
                 TrainCountMult = Match.Mods.TrainCountMult,
                 DrawPile = Match.DrawPile.Count,
                 DiscardPile = Match.Discard.Count,
                 HandCount = Match.Hand.Count,
+                RoundsPlayed = _roundResults.Count,
+                Outcome = _outcome,
+                PlayerBaseHp = _playerHp,
+                EnemyBaseHp = _enemyHp,
+                DefeatRecord = DefeatRecord,
             };
             for (int i = 0; i < Match.Hand.Count; i++) state.Hand.Add(Match.Hand[i]);
 
-            var cards = new List<CardDef>(Match.Cfg.Cards.Values);
+            var cards = new List<CardDef>(Board.Cfg.Cards.Values);
             cards.Sort((a, b) => string.CompareOrdinal(a.Id, b.Id));
             foreach (CardDef card in cards)
             {
                 if (card.Kind != CardKind.Train) continue;
                 UnitDef def = Match.Units.Get(card.Unit);
-                int buildings = Match.CountTag(card.Tag);
+                int buildings = CountProducers(card.BuildingTag);
                 bool inHand = Match.Hand.Contains(card.Id);
                 bool available = Match.CanPlayTrain(card.Id);
                 string reason = "ok";
                 if (!inHand) reason = "not_in_hand";
                 else if (Match.Cp < card.CostCp) reason = "no_cp";
                 else if (buildings <= 0) reason = "no_building";
-                else if (def != null && Match.PopFree() < def.PopCost) reason = "no_pop";
+                else if (!available) reason = "no_pop";
+
+                int units = Match.Mods.UnitsOf(card);
+                if (card.PerBuilding) units *= Math.Max(buildings, 0);
 
                 state.TrainCards.Add(new SquadTrainEntry
                 {
@@ -502,10 +395,10 @@ namespace WarIsland.Model
                     DisplayName = card.DisplayName,
                     UnitId = card.Unit,
                     UnitName = def != null ? def.DisplayName : card.Unit,
-                    Tag = card.Tag,
-                    Role = card.Role,
+                    Tag = card.BuildingTag,
+                    Role = "",
                     CostCp = card.CostCp,
-                    Units = Match.Mods.UnitsOf(card),
+                    Units = units,
                     Buildings = buildings,
                     InHand = inHand,
                     Available = available,
@@ -516,9 +409,30 @@ namespace WarIsland.Model
             return state;
         }
 
+        private int ArmyCount()
+        {
+            int n = 0;
+            for (int i = 0; i < Match.Army.Count; i++) n += Math.Max(Match.Army[i].Units, 1);
+            return n;
+        }
+
+        private int CountProducers(string tag)
+        {
+            int n = 0;
+            foreach (PlanBuilding b in Match.Buildings)
+            {
+                BuildingDef def = Match.DefOf(b);
+                if (def != null && def.Kind == BuildingKinds.Producer && def.Tag == tag) n++;
+            }
+            return n;
+        }
+
+        public List<int> FreePlayerTiles() => Board.PlaceableTiles();
+
         public int PlayerTileOfPlot(int plot)
         {
-            return _plotTile.TryGetValue(plot, out int tile) ? tile : 0;
+            _ = plot;
+            return 0;
         }
     }
 }

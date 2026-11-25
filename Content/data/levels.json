@@ -1,21 +1,20 @@
 {
-	"version": 1.0,
-	"note": "关卡表：第 1 关 = 联盟 vs 豺狼人。一场两轮各 60 秒：第 1 轮进攻、第 2 轮防守。2026-11-22 单兵制：基地血量按 StS 体量压到 60~80；占区伤害改成 zone_dps_per_unit（每人每秒 0.45）；敌方波次 count 是**单兵个数**，进攻波次压在前 14 秒内全部到场（守军一次性投入），防守波次仍按 0/16/32/46 分批压上（攻城节奏）。",
+	"version": 2.0,
+	"note": "关卡表。2026-11-24 冻结：**单轮单场死斗**，rounds 的每一项 = 一轮的敌军波次（按回合序，不再有 attack/defend）；battlefield 给出双方部署线（lane 坐标，游戏数值）与战场宽度/边距；基地血量跨轮保留，扣血只在 60 秒结算时按幸存单位 base_damage 一次性计算。lane 块只服务编辑器/地形分段，不再参与战斗规则。",
 	"levels": [
 		{
 			"id": "level_1",
 			"display_name": "第一关 · 灰牙前哨",
 			"player_faction": "alliance",
 			"enemy_faction": "bandit",
-			"player_base_hp": 72.0,
-			"enemy_base_hp": 72.0,
+			"player_base_hp": 48.0,
+			"enemy_base_hp": 48.0,
 			"round_seconds": 60.0,
 			"lane": {
 				"length": 4000.0,
 				"width": 420.0,
 				"zone_depth": 600.0,
 				"spawn_offset": 250.0,
-				"base_stop": 120.0,
 				"note": "全部是游戏数值（×0.015 米）：4000 = 60 米长，420 = 6.3 米宽，600 = 9 米敌区。",
 				"template": "平势",
 				"segments": [
@@ -78,54 +77,128 @@
 						],
 						"note": "接敌段更宽，适合多小队平推与侧翼展开。"
 					}
-				},
-				"zone_dps_per_unit": 0.45
+				}
 			},
 			"rounds": [
 				{
-					"kind": "attack",
-					"label": "进攻战 · 拆掉灰牙前哨",
+					"label": "第 1 轮",
 					"enemy_waves": [
 						{
 							"t": 0.0,
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 5.0
+									"count": 7
 								},
 								{
 									"unit": "bandit_marauder",
-									"count": 3.0
+									"count": 4
 								}
 							]
 						},
 						{
-							"t": 4.0,
+							"t": 3.5,
 							"squads": [
 								{
 									"unit": "bandit_marauder",
-									"count": 3.0
+									"count": 4
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 2.0
+									"count": 3
 								}
 							]
 						},
 						{
-							"t": 10.0,
+							"t": 7.0,
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 5.0
+									"count": 7
 								},
 								{
 									"unit": "bandit_marauder",
-									"count": 3.0
+									"count": 4
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 2.0
+									"count": 3
+								}
+							]
+						},
+						{
+							"t": 10.5,
+							"squads": [
+								{
+									"unit": "bandit_marauder",
+									"count": 4
+								},
+								{
+									"unit": "bandit_chief",
+									"count": 3
+								}
+							]
+						}
+					]
+				},
+				{
+					"label": "第 2 轮",
+					"enemy_waves": [
+						{
+							"t": 0.0,
+							"squads": [
+								{
+									"unit": "bandit_scout",
+									"count": 8
+								},
+								{
+									"unit": "bandit_marauder",
+									"count": 5,
+									"star": 2
+								}
+							]
+						},
+						{
+							"t": 3.5,
+							"squads": [
+								{
+									"unit": "bandit_marauder",
+									"count": 5,
+									"star": 2
+								},
+								{
+									"unit": "bandit_chief",
+									"count": 3,
+									"star": 2
+								}
+							]
+						},
+						{
+							"t": 7.0,
+							"squads": [
+								{
+									"unit": "bandit_scout",
+									"count": 8
+								},
+								{
+									"unit": "bandit_marauder",
+									"count": 5,
+									"star": 2
+								}
+							]
+						},
+						{
+							"t": 10.5,
+							"squads": [
+								{
+									"unit": "bandit_marauder",
+									"count": 5,
+									"star": 2
+								},
+								{
+									"unit": "bandit_chief",
+									"count": 3,
+									"star": 2
 								}
 							]
 						},
@@ -133,79 +206,8 @@
 							"t": 14.0,
 							"squads": [
 								{
-									"unit": "bandit_marauder",
-									"count": 3.0
-								},
-								{
-									"unit": "bandit_chief",
-									"count": 2.0
-								}
-							]
-						}
-					]
-				},
-				{
-					"kind": "defend",
-					"label": "防守战 · 守住渡口",
-					"enemy_waves": [
-						{
-							"t": 0.0,
-							"squads": [
-								{
 									"unit": "bandit_scout",
-									"count": 5.0
-								},
-								{
-									"unit": "bandit_marauder",
-									"count": 3.0
-								}
-							]
-						},
-						{
-							"t": 13.0,
-							"squads": [
-								{
-									"unit": "bandit_marauder",
-									"count": 3.0
-								},
-								{
-									"unit": "bandit_chief",
-									"count": 2.0
-								}
-							]
-						},
-						{
-							"t": 27.0,
-							"squads": [
-								{
-									"unit": "bandit_scout",
-									"count": 5.0
-								},
-								{
-									"unit": "bandit_marauder",
-									"count": 3.0
-								}
-							]
-						},
-						{
-							"t": 40.0,
-							"squads": [
-								{
-									"unit": "bandit_marauder",
-									"count": 3.0
-								},
-								{
-									"unit": "bandit_chief",
-									"count": 2.0
-								}
-							]
-						},
-						{
-							"t": 51.0,
-							"squads": [
-								{
-									"unit": "bandit_scout",
-									"count": 5.0
+									"count": 8
 								}
 							]
 						}
@@ -291,6 +293,14 @@
 				"player": "alliance",
 				"enemy": "bandit",
 				"start_preset": "1 keep + 2 farm + 1 barracks"
+			},
+			"note": "单轮单场死斗：rounds 按回合序给出每轮敌军波次。",
+			"battlefield": {
+				"deploy_player": 10300,
+				"deploy_enemy": 16400,
+				"width": 13333,
+				"edge": 300,
+				"note": "部署线 = 双方可建造区内缘（玩家格最右 -45.5m / 敌方格最左 +46m）；width 只用于算每排人数。"
 			}
 		},
 		{
@@ -298,15 +308,14 @@
 			"display_name": "平势 · 四台稳开 · 豺狼人 · 灰牙压上",
 			"player_faction": "alliance",
 			"enemy_faction": "bandit",
-			"player_base_hp": 72.0,
-			"enemy_base_hp": 72.0,
+			"player_base_hp": 48.0,
+			"enemy_base_hp": 48.0,
 			"round_seconds": 60.0,
 			"lane": {
 				"length": 4000.0,
 				"width": 420.0,
 				"zone_depth": 600.0,
 				"spawn_offset": 250.0,
-				"base_stop": 120.0,
 				"template": "even",
 				"note": "composed from map shell; lengths are game units (x R1 = meters)",
 				"segments": [
@@ -328,75 +337,73 @@
 						"width": 420.0,
 						"role": "enemy"
 					}
-				],
-				"zone_dps_per_unit": 0.45
+				]
 			},
 			"rounds": [
 				{
-					"kind": "attack",
-					"label": "进攻战",
+					"label": "第 1 轮",
 					"enemy_waves": [
 						{
 							"t": 0.0,
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 5.0,
+									"count": 7,
 									"star": 1.0
 								},
 								{
 									"unit": "bandit_marauder",
-									"count": 3.0,
+									"count": 4,
 									"star": 1.0
 								}
 							]
 						},
 						{
-							"t": 4.0,
+							"t": 3.5,
 							"squads": [
 								{
 									"unit": "bandit_marauder",
-									"count": 3.0,
+									"count": 4,
 									"star": 1.0
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 2.0,
+									"count": 3,
 									"star": 1.0
 								}
 							]
 						},
 						{
-							"t": 10.0,
+							"t": 7.0,
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 5.0,
+									"count": 7,
 									"star": 1.0
 								},
 								{
 									"unit": "bandit_marauder",
-									"count": 3.0,
+									"count": 4,
 									"star": 1.0
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 2.0,
+									"count": 3,
 									"star": 1.0
 								}
 							]
 						},
 						{
-							"t": 14.0,
+							"t": 10.5,
 							"squads": [
 								{
 									"unit": "bandit_marauder",
-									"count": 3.0,
+									"count": 4,
 									"star": 1.0
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 2.0,
+									"count": 3,
 									"star": 1.0
 								}
 							]
@@ -404,75 +411,74 @@
 					]
 				},
 				{
-					"kind": "defend",
-					"label": "防守战",
+					"label": "第 2 轮",
 					"enemy_waves": [
 						{
 							"t": 0.0,
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 5.0,
+									"count": 8,
 									"star": 1.0
 								},
 								{
 									"unit": "bandit_marauder",
-									"count": 3.0,
-									"star": 1.0
+									"count": 5,
+									"star": 2
 								}
 							]
 						},
 						{
-							"t": 13.0,
+							"t": 3.5,
 							"squads": [
 								{
 									"unit": "bandit_marauder",
-									"count": 3.0,
-									"star": 1.0
-								},
-								{
-									"unit": "bandit_chief",
-									"count": 2.0,
-									"star": 1.0
-								}
-							]
-						},
-						{
-							"t": 27.0,
-							"squads": [
-								{
-									"unit": "bandit_scout",
-									"count": 5.0,
-									"star": 1.0
-								},
-								{
-									"unit": "bandit_marauder",
-									"count": 3.0,
-									"star": 1.0
-								}
-							]
-						},
-						{
-							"t": 40.0,
-							"squads": [
-								{
-									"unit": "bandit_marauder",
-									"count": 3.0,
-									"star": 1.0
+									"count": 5,
+									"star": 2
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 2.0,
-									"star": 1.0
+									"count": 3,
+									"star": 2
 								}
 							]
 						},
 						{
-							"t": 51.0,
+							"t": 7.0,
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 5.0,
+									"count": 8,
+									"star": 1.0
+								},
+								{
+									"unit": "bandit_marauder",
+									"count": 5,
+									"star": 2
+								}
+							]
+						},
+						{
+							"t": 10.5,
+							"squads": [
+								{
+									"unit": "bandit_marauder",
+									"count": 5,
+									"star": 2
+								},
+								{
+									"unit": "bandit_chief",
+									"count": 3,
+									"star": 2
+								}
+							]
+						},
+						{
+							"t": 14.0,
+							"squads": [
+								{
+									"unit": "bandit_scout",
+									"count": 8,
 									"star": 1.0
 								}
 							]
@@ -599,6 +605,14 @@
 				"player_layout": "layout_even_four",
 				"enemy_encounter": "enc_gnoll_press",
 				"r1": 0.015
+			},
+			"note": "单轮单场死斗：rounds 按回合序给出每轮敌军波次。",
+			"battlefield": {
+				"deploy_player": 10300,
+				"deploy_enemy": 16400,
+				"width": 13333,
+				"edge": 300,
+				"note": "部署线 = 双方可建造区内缘（玩家格最右 -45.5m / 敌方格最左 +46m）；width 只用于算每排人数。"
 			}
 		},
 		{
@@ -606,15 +620,14 @@
 			"display_name": "劣势 · 三台死守 · 豺狼人 · 灰牙压上",
 			"player_faction": "alliance",
 			"enemy_faction": "bandit",
-			"player_base_hp": 72.0,
-			"enemy_base_hp": 72.0,
+			"player_base_hp": 48.0,
+			"enemy_base_hp": 48.0,
 			"round_seconds": 60.0,
 			"lane": {
 				"length": 4000.0,
 				"width": 420.0,
 				"zone_depth": 600.0,
 				"spawn_offset": 250.0,
-				"base_stop": 120.0,
 				"template": "disadvantage",
 				"note": "composed from map shell; lengths are game units (x R1 = meters)",
 				"segments": [
@@ -636,75 +649,73 @@
 						"width": 420.0,
 						"role": "enemy"
 					}
-				],
-				"zone_dps_per_unit": 0.45
+				]
 			},
 			"rounds": [
 				{
-					"kind": "attack",
-					"label": "进攻战",
+					"label": "第 1 轮",
 					"enemy_waves": [
 						{
 							"t": 0.0,
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 5.0,
+									"count": 7,
 									"star": 1.0
 								},
 								{
 									"unit": "bandit_marauder",
-									"count": 3.0,
+									"count": 4,
 									"star": 1.0
 								}
 							]
 						},
 						{
-							"t": 4.0,
+							"t": 3.5,
 							"squads": [
 								{
 									"unit": "bandit_marauder",
-									"count": 3.0,
+									"count": 4,
 									"star": 1.0
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 2.0,
+									"count": 3,
 									"star": 1.0
 								}
 							]
 						},
 						{
-							"t": 10.0,
+							"t": 7.0,
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 5.0,
+									"count": 7,
 									"star": 1.0
 								},
 								{
 									"unit": "bandit_marauder",
-									"count": 3.0,
+									"count": 4,
 									"star": 1.0
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 2.0,
+									"count": 3,
 									"star": 1.0
 								}
 							]
 						},
 						{
-							"t": 14.0,
+							"t": 10.5,
 							"squads": [
 								{
 									"unit": "bandit_marauder",
-									"count": 3.0,
+									"count": 4,
 									"star": 1.0
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 2.0,
+									"count": 3,
 									"star": 1.0
 								}
 							]
@@ -712,75 +723,74 @@
 					]
 				},
 				{
-					"kind": "defend",
-					"label": "防守战",
+					"label": "第 2 轮",
 					"enemy_waves": [
 						{
 							"t": 0.0,
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 5.0,
+									"count": 8,
 									"star": 1.0
 								},
 								{
 									"unit": "bandit_marauder",
-									"count": 3.0,
-									"star": 1.0
+									"count": 5,
+									"star": 2
 								}
 							]
 						},
 						{
-							"t": 13.0,
+							"t": 3.5,
 							"squads": [
 								{
 									"unit": "bandit_marauder",
-									"count": 3.0,
-									"star": 1.0
-								},
-								{
-									"unit": "bandit_chief",
-									"count": 2.0,
-									"star": 1.0
-								}
-							]
-						},
-						{
-							"t": 27.0,
-							"squads": [
-								{
-									"unit": "bandit_scout",
-									"count": 5.0,
-									"star": 1.0
-								},
-								{
-									"unit": "bandit_marauder",
-									"count": 3.0,
-									"star": 1.0
-								}
-							]
-						},
-						{
-							"t": 40.0,
-							"squads": [
-								{
-									"unit": "bandit_marauder",
-									"count": 3.0,
-									"star": 1.0
+									"count": 5,
+									"star": 2
 								},
 								{
 									"unit": "bandit_chief",
-									"count": 2.0,
-									"star": 1.0
+									"count": 3,
+									"star": 2
 								}
 							]
 						},
 						{
-							"t": 51.0,
+							"t": 7.0,
 							"squads": [
 								{
 									"unit": "bandit_scout",
-									"count": 5.0,
+									"count": 8,
+									"star": 1.0
+								},
+								{
+									"unit": "bandit_marauder",
+									"count": 5,
+									"star": 2
+								}
+							]
+						},
+						{
+							"t": 10.5,
+							"squads": [
+								{
+									"unit": "bandit_marauder",
+									"count": 5,
+									"star": 2
+								},
+								{
+									"unit": "bandit_chief",
+									"count": 3,
+									"star": 2
+								}
+							]
+						},
+						{
+							"t": 14.0,
+							"squads": [
+								{
+									"unit": "bandit_scout",
+									"count": 8,
 									"star": 1.0
 								}
 							]
@@ -901,6 +911,14 @@
 				"player_layout": "layout_disadvantage_three",
 				"enemy_encounter": "enc_gnoll_press",
 				"r1": 0.015
+			},
+			"note": "单轮单场死斗：rounds 按回合序给出每轮敌军波次。",
+			"battlefield": {
+				"deploy_player": 10300,
+				"deploy_enemy": 16400,
+				"width": 13333,
+				"edge": 300,
+				"note": "部署线 = 双方可建造区内缘（玩家格最右 -45.5m / 敌方格最左 +46m）；width 只用于算每排人数。"
 			}
 		},
 		{
@@ -908,15 +926,14 @@
 			"display_name": "平势 · 四台稳开 · 鱼人 · 潮汐抢滩",
 			"player_faction": "alliance",
 			"enemy_faction": "murloc",
-			"player_base_hp": 72.0,
-			"enemy_base_hp": 72.0,
+			"player_base_hp": 48.0,
+			"enemy_base_hp": 48.0,
 			"round_seconds": 60.0,
 			"lane": {
 				"length": 4000.0,
 				"width": 420.0,
 				"zone_depth": 600.0,
 				"spawn_offset": 250.0,
-				"base_stop": 120.0,
 				"template": "even",
 				"note": "composed from map shell; lengths are game units (x R1 = meters)",
 				"segments": [
@@ -938,60 +955,138 @@
 						"width": 420.0,
 						"role": "enemy"
 					}
-				],
-				"zone_dps_per_unit": 0.45
+				]
 			},
 			"rounds": [
 				{
-					"kind": "attack",
-					"label": "进攻战",
+					"label": "第 1 轮",
 					"enemy_waves": [
 						{
 							"t": 0.0,
 							"squads": [
 								{
 									"unit": "murloc_slave",
-									"count": 7.0,
+									"count": 5,
 									"star": 1.0
 								},
 								{
 									"unit": "murloc_raider",
-									"count": 3.0,
+									"count": 2,
 									"star": 1.0
 								}
 							]
 						},
 						{
-							"t": 4.0,
+							"t": 3.5,
 							"squads": [
 								{
 									"unit": "murloc_raider",
-									"count": 3.0,
+									"count": 2,
 									"star": 1.0
 								},
 								{
 									"unit": "murloc_lord",
-									"count": 1.0,
+									"count": 1,
 									"star": 1.0
 								}
 							]
 						},
 						{
-							"t": 10.0,
+							"t": 7.0,
 							"squads": [
 								{
 									"unit": "murloc_slave",
-									"count": 7.0,
+									"count": 5,
 									"star": 1.0
 								},
 								{
 									"unit": "murloc_raider",
-									"count": 3.0,
+									"count": 2,
 									"star": 1.0
 								},
 								{
 									"unit": "murloc_lord",
-									"count": 1.0,
+									"count": 1,
+									"star": 1.0
+								}
+							]
+						},
+						{
+							"t": 10.5,
+							"squads": [
+								{
+									"unit": "murloc_raider",
+									"count": 2,
+									"star": 1.0
+								},
+								{
+									"unit": "murloc_lord",
+									"count": 1,
+									"star": 1.0
+								}
+							]
+						}
+					]
+				},
+				{
+					"label": "第 2 轮",
+					"enemy_waves": [
+						{
+							"t": 0.0,
+							"squads": [
+								{
+									"unit": "murloc_slave",
+									"count": 8,
+									"star": 1.0
+								},
+								{
+									"unit": "murloc_raider",
+									"count": 4,
+									"star": 1.0
+								}
+							]
+						},
+						{
+							"t": 3.5,
+							"squads": [
+								{
+									"unit": "murloc_raider",
+									"count": 4,
+									"star": 1.0
+								},
+								{
+									"unit": "murloc_lord",
+									"count": 1,
+									"star": 1.0
+								}
+							]
+						},
+						{
+							"t": 7.0,
+							"squads": [
+								{
+									"unit": "murloc_slave",
+									"count": 8,
+									"star": 1.0
+								},
+								{
+									"unit": "murloc_raider",
+									"count": 4,
+									"star": 1.0
+								}
+							]
+						},
+						{
+							"t": 10.5,
+							"squads": [
+								{
+									"unit": "murloc_raider",
+									"count": 4,
+									"star": 1.0
+								},
+								{
+									"unit": "murloc_lord",
+									"count": 1,
 									"star": 1.0
 								}
 							]
@@ -1000,89 +1095,8 @@
 							"t": 14.0,
 							"squads": [
 								{
-									"unit": "murloc_raider",
-									"count": 3.0,
-									"star": 1.0
-								},
-								{
-									"unit": "murloc_lord",
-									"count": 1.0,
-									"star": 1.0
-								}
-							]
-						}
-					]
-				},
-				{
-					"kind": "defend",
-					"label": "防守战",
-					"enemy_waves": [
-						{
-							"t": 0.0,
-							"squads": [
-								{
 									"unit": "murloc_slave",
-									"count": 7.0,
-									"star": 1.0
-								},
-								{
-									"unit": "murloc_raider",
-									"count": 3.0,
-									"star": 1.0
-								}
-							]
-						},
-						{
-							"t": 13.0,
-							"squads": [
-								{
-									"unit": "murloc_raider",
-									"count": 3.0,
-									"star": 1.0
-								},
-								{
-									"unit": "murloc_lord",
-									"count": 1.0,
-									"star": 1.0
-								}
-							]
-						},
-						{
-							"t": 27.0,
-							"squads": [
-								{
-									"unit": "murloc_slave",
-									"count": 7.0,
-									"star": 1.0
-								},
-								{
-									"unit": "murloc_raider",
-									"count": 3.0,
-									"star": 1.0
-								}
-							]
-						},
-						{
-							"t": 40.0,
-							"squads": [
-								{
-									"unit": "murloc_raider",
-									"count": 3.0,
-									"star": 1.0
-								},
-								{
-									"unit": "murloc_lord",
-									"count": 1.0,
-									"star": 1.0
-								}
-							]
-						},
-						{
-							"t": 51.0,
-							"squads": [
-								{
-									"unit": "murloc_slave",
-									"count": 7.0,
+									"count": 8,
 									"star": 1.0
 								}
 							]
@@ -1205,7 +1219,14 @@
 				]
 			},
 			"assembly": {},
-			"note": "2026-11-22：鱼人阵营只实现逻辑、没有模型，这个关卡暂时不可组装（assembly 置空 → 选关时自动跳过）。等鱼人美术就绪再填回来。"
+			"note": "2026-11-22：鱼人阵营只实现逻辑、没有模型，这个关卡暂时不可组装（assembly 置空 → 选关时自动跳过）。等鱼人美术就绪再填回来。",
+			"battlefield": {
+				"deploy_player": 10300,
+				"deploy_enemy": 16400,
+				"width": 13333,
+				"edge": 300,
+				"note": "部署线 = 双方可建造区内缘（玩家格最右 -45.5m / 敌方格最左 +46m）；width 只用于算每排人数。"
+			}
 		}
 	],
 	"assemblies": [

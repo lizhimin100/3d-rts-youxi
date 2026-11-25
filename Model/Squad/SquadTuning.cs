@@ -1,76 +1,44 @@
+using System;
 using System.Collections.Generic;
 
 namespace WarIsland.Model
 {
     /// <summary>
-    /// 单兵模式专属旋钮（`Content/data/squad.json`）的唯一读取点。
+    /// 战斗场景全局旋钮（`Content/data/squad.json`，Phase 3 再改名 battle.json）的唯一读取点。
     ///
-    /// 为什么单独一层：这些值既不是关卡数值（不随关卡变），也不是规划数值（不属于 CP/人口），
-    /// 而是"战场这一套玩法"的全局口味。散在各处读 JSON 迟早出现两套默认值。
+    /// 2026-11-24 冻结后只剩三块：
+    ///   · formation：自动布阵间距（全游戏数值）；
+    ///   · combat：硬核/停火线/转向；
+    ///   · berserk / settle：45 秒狂暴与 60 秒结算。
+    /// 旧的 outpost / free_defend / zone_dps 已物理删除（占区抽血不再存在）。
     /// </summary>
     public sealed class SquadTuning
     {
-        /// <summary>
-        /// 一名单兵停在敌区里每秒给敌方基地造成的伤害（覆盖 levels.json 的 lane 值）。
-        /// 单兵制：0.24 / 人 / 秒 → 10 个人站住 ≈ 2.4 DPS，把 72 血的基地拆完约 30 秒。
-        /// </summary>
-        public double ZoneDpsPerUnit = 0.24;
-
-        /// <summary>中立据点：占领要多少 CP；enabled=false 表示这张底壳没有据点。</summary>
-        public int OutpostCpCost = 5;
-        public bool OutpostEnabled = true;
-
-        /// <summary>据点/主堡免费防守兵：防守战开始时白送几名（不占 CP/人口）。</summary>
-        public bool FreeDefendEnabled = true;
-        public string FreeDefendUnit = "alliance_footman";
-        public int FreeDefendStar = 1;
-        /// <summary>白送几名 —— 单兵制下的数量，不是"几队"。</summary>
-        public int FreeDefendCount = 3;
-
-        // =================================================================
-        // 2026-11-24 运动学（Phase 1）：布阵 + 分离几何 + 朝向
-        // =================================================================
-        /// <summary>同排相邻两人的中心距（游戏数值，默认 96 = 1.44 m）。</summary>
+        // ---- 布阵（游戏数值） ----
         public double FilePitch = FormationPlan.FilePitchDefault;
-        /// <summary>相邻两排的中心距（游戏数值，默认 144 = 2.16 m）。</summary>
         public double RankPitch = FormationPlan.RankPitchDefault;
-        /// <summary>近战线最后一排 → 远程线第一排的额外间距（游戏数值，默认 240 = 3.60 m）。</summary>
         public double LineGap = FormationPlan.LineGapDefault;
-        /// <summary>战场单排人数上限（偶数，默认 24）。</summary>
         public int MaxFiles = FormationPlan.MaxFilesDefault;
-        /// <summary>棋盘格内出生位的单排人数（默认 4，保证 7 m 格内放得下）。</summary>
         public int TileFiles = FormationPlan.TileFilesDefault;
-        /// <summary>硬核 = 身位和 × 该系数；0.90 表示允许 10% 贴身重叠。</summary>
+
+        // ---- 战斗几何 ----
         public double HardCoreFactor = 0.90;
-        /// <summary>停火线 = 射程 × 该系数；必须 &lt; 1.0（开火线是射程 + 4）。</summary>
         public double StandOffRatio = 0.92;
-        /// <summary>转向速度（度/秒，默认 540）。</summary>
         public double TurnRateDeg = 540.0;
-        /// <summary>朝向死区（度，默认 6）：差值小于它就不转，防止微抖。</summary>
         public double FacingDeadzoneDeg = 6.0;
+
+        // ---- 45 秒狂暴（防纯肉盾互刮拖满 60 秒） ----
+        public double BerserkStartSeconds = 45.0;
+        public double BerserkAttackSpeedMult = 2.0;
+        public bool BerserkArmorZero = true;
+
+        // ---- 结算 ----
+        public int BaseDamageCap = 48;
 
         public static SquadTuning FromDict(IDictionary<string, object> d)
         {
             var t = new SquadTuning();
             if (d == null) return t;
-            t.ZoneDpsPerUnit = JVal.Double(d, "zone_dps_per_unit",
-                JVal.Double(d, "zone_dps_per_squad", t.ZoneDpsPerUnit));
-
-            var outpost = JVal.Dict(d, "outpost");
-            if (outpost != null)
-            {
-                t.OutpostEnabled = JVal.Bool(outpost, "enabled", t.OutpostEnabled);
-                t.OutpostCpCost = JVal.Int(outpost, "cp_cost", t.OutpostCpCost);
-            }
-
-            var free = JVal.Dict(d, "free_defend");
-            if (free != null)
-            {
-                t.FreeDefendEnabled = JVal.Bool(free, "enabled", t.FreeDefendEnabled);
-                t.FreeDefendUnit = JVal.Str(free, "unit", t.FreeDefendUnit);
-                t.FreeDefendStar = JVal.Int(free, "star", t.FreeDefendStar);
-                t.FreeDefendCount = JVal.Int(free, "count", t.FreeDefendCount);
-            }
 
             var formation = JVal.Dict(d, "formation");
             if (formation != null)
@@ -90,28 +58,26 @@ namespace WarIsland.Model
                 t.TurnRateDeg = JVal.Double(combat, "turn_rate_deg", t.TurnRateDeg);
                 t.FacingDeadzoneDeg = JVal.Double(combat, "facing_deadzone_deg", t.FacingDeadzoneDeg);
             }
+
+            var berserk = JVal.Dict(d, "berserk");
+            if (berserk != null)
+            {
+                t.BerserkStartSeconds = JVal.Double(berserk, "start_seconds", t.BerserkStartSeconds);
+                t.BerserkAttackSpeedMult = JVal.Double(berserk, "attack_speed_mult", t.BerserkAttackSpeedMult);
+                t.BerserkArmorZero = JVal.Bool(berserk, "armor_zero", t.BerserkArmorZero);
+            }
+
+            var settle = JVal.Dict(d, "settle");
+            if (settle != null)
+            {
+                t.BaseDamageCap = JVal.Int(settle, "base_damage_cap", t.BaseDamageCap);
+            }
             return t;
         }
 
         public List<string> Validate(UnitCatalog units)
         {
             var errors = new List<string>();
-            if (ZoneDpsPerUnit <= 0.0)
-                errors.Add($"squad.json：zone_dps_per_unit={ZoneDpsPerUnit} 必须 > 0");
-            if (ZoneDpsPerUnit > 2.0)
-                errors.Add($"squad.json：zone_dps_per_unit={ZoneDpsPerUnit} 过大（单兵制下应在 0.1~0.5）");
-            if (OutpostCpCost < 0) errors.Add($"squad.json：outpost.cp_cost={OutpostCpCost} 不能为负");
-            if (FreeDefendEnabled)
-            {
-                UnitDef def = units != null ? units.Get(FreeDefendUnit) : null;
-                if (def == null) errors.Add($"squad.json：free_defend.unit={FreeDefendUnit} 未定义");
-                else if (!def.Enabled) errors.Add($"squad.json：free_defend.unit={FreeDefendUnit} 已禁用");
-                if (FreeDefendCount < 1 || FreeDefendCount > 12)
-                    errors.Add($"squad.json：free_defend.count={FreeDefendCount} 越界（1..12）");
-            }
-            if (FreeDefendStar < 1 || FreeDefendStar > 3)
-                errors.Add($"squad.json：free_defend.star={FreeDefendStar} 越界（1..3）");
-
             if (FilePitch < 48.0 || FilePitch > 240.0)
                 errors.Add($"squad.json：formation.file_pitch={FilePitch} 越界（48..240）");
             if (RankPitch < 72.0 || RankPitch > 360.0)
@@ -132,6 +98,36 @@ namespace WarIsland.Model
                 errors.Add($"squad.json：combat.facing_deadzone_deg={FacingDeadzoneDeg} 越界（0..45）");
             if (FilePitch < RankPitch * 0.5)
                 errors.Add($"squad.json：file_pitch={FilePitch} 小于 rank_pitch 的一半，排内会挤成一列");
+
+            if (BerserkStartSeconds < 30.0 || BerserkStartSeconds > LevelDef.RoundSecondsSpec - 5.0)
+                errors.Add($"squad.json：berserk.start_seconds={BerserkStartSeconds} 越界（30..{LevelDef.RoundSecondsSpec - 5:0}）");
+            if (BerserkAttackSpeedMult < 1.0 || BerserkAttackSpeedMult > 4.0)
+                errors.Add($"squad.json：berserk.attack_speed_mult={BerserkAttackSpeedMult} 越界（1..4）");
+            if (BaseDamageCap < 1 || BaseDamageCap > 200)
+                errors.Add($"squad.json：settle.base_damage_cap={BaseDamageCap} 越界（1..200）");
+
+            // 近战可达性：逐个近战检查"它 vs 场上最大身位"的硬核必须小于自己的射程。
+            // 不能用 2×最大身位（两个最大单位互撞的极端）——那会把小鱼人奴隶误判成够不着。
+            if (units != null)
+            {
+                double maxRadius = 0.0;
+                foreach (UnitDef u in units.All)
+                {
+                    if (!u.Enabled) continue;
+                    double r = UnitBody.BodyUnits(u);
+                    if (r > maxRadius) maxRadius = r;
+                }
+                foreach (UnitDef a in units.All)
+                {
+                    if (!a.Enabled || a.Projectile || a.AttackRange <= 0.0) continue;
+                    double need = (UnitBody.BodyUnits(a) + maxRadius) * HardCoreFactor;
+                    if (need >= a.AttackRange)
+                    {
+                        errors.Add($"squad.json：{a.Id} 的硬核 {need:0.0} ≥ 射程 {a.AttackRange:0}（近战会够不着）");
+                        break;
+                    }
+                }
+            }
             return errors;
         }
     }
